@@ -1,30 +1,45 @@
-#include "matrix/client.hpp"
-#include "matrix/event_handler_bridge.hpp"
+#include "tesseract/client.hpp"
+#include "tesseract/event_handler_bridge.hpp"
 
 // cxx-generated header
-#include "matrix-sdk-ffi/src/lib.rs.h"
+#include "tesseract-sdk-ffi/src/lib.rs.h"
 
 #include <cassert>
+#include <cstdlib>
 
-namespace matrix {
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#  include <shellapi.h>
+#elif defined(__APPLE__)
+#  include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#else
+#  include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#endif
+
+namespace tesseract {
 
 // ---------------------------------------------------------------------------
-// Pimpl that holds the rust::Box<MatrixClientFfi> with its real cxx type.
+// Pimpl that holds the rust::Box<ClientFfi> with its real cxx type.
 // ---------------------------------------------------------------------------
-struct MatrixClient::Impl {
-    rust::Box<matrix_ffi::MatrixClientFfi> ffi;
+struct Client::Impl {
+    rust::Box<tesseract_ffi::ClientFfi> ffi;
 
     explicit Impl()
-        : ffi(matrix_ffi::matrix_client_create()) {}
+        : ffi(tesseract_ffi::client_create()) {}
 };
 
 // ---------------------------------------------------------------------------
 
-static Result from_ffi(const matrix_ffi::OpResult& r) {
+static Result from_ffi(const tesseract_ffi::OpResult& r) {
     return Result{ r.ok, std::string(r.message) };
 }
 
-static RoomInfo from_ffi(const matrix_ffi::RoomInfo& r) {
+static RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
     return RoomInfo{
         .id           = std::string(r.id),
         .name         = std::string(r.name),
@@ -34,7 +49,7 @@ static RoomInfo from_ffi(const matrix_ffi::RoomInfo& r) {
     };
 }
 
-static Message from_ffi(const matrix_ffi::TimelineEvent& e) {
+static Message from_ffi(const tesseract_ffi::TimelineEvent& e) {
     return Message{
         .event_id  = std::string(e.event_id),
         .room_id   = std::string(e.room_id),
@@ -47,74 +62,55 @@ static Message from_ffi(const matrix_ffi::TimelineEvent& e) {
 
 // ---------------------------------------------------------------------------
 
-MatrixClient::MatrixClient()
+Client::Client()
     : impl_(std::make_unique<Impl>()) {}
 
-MatrixClient::~MatrixClient() = default;
+Client::~Client() = default;
 
-MatrixClient::MatrixClient(MatrixClient&&) noexcept            = default;
-MatrixClient& MatrixClient::operator=(MatrixClient&&) noexcept = default;
-
-// ---------------------------------------------------------------------------
-
-Result MatrixClient::login(
-    const std::string& homeserver,
-    const std::string& username,
-    const std::string& password)
-{
-    return from_ffi(impl_->ffi->login_password(homeserver, username, password));
-}
-
-Result MatrixClient::restore_session(const std::string& session_json) {
-    return from_ffi(impl_->ffi->restore_session(session_json));
-}
-
-std::string MatrixClient::export_session() const {
-    return std::string(impl_->ffi->export_session());
-}
-
-Result MatrixClient::logout() {
-    stop_sync();
-    return from_ffi(impl_->ffi->logout());
-}
+Client::Client(Client&&) noexcept            = default;
+Client& Client::operator=(Client&&) noexcept = default;
 
 // ---------------------------------------------------------------------------
 
-void MatrixClient::start_sync(IEventHandler* handler) {
-    assert(handler && "handler must not be null");
-    auto bridge = std::make_unique<matrix_ffi::EventHandlerBridge>(handler);
-    impl_->ffi->start_sync(std::move(bridge));
+Client::OAuthFlow Client::begin_oauth(const std::string& homeserver) {
+    auto r = impl_->ffi->oauth_begin(homeserver);
+    return OAuthFlow{
+        .ok           = r.ok,
+        .message      = std::string(r.message),
+        .auth_url     = std::string(r.auth_url),
+        .redirect_uri = std::string(r.redirect_uri),
+    };
 }
 
-void MatrixClient::stop_sync() {
-    impl_->ffi->stop_sync();
+Result Client::await_oauth() {
+    return from_ffi(impl_->ffi->oauth_await_callback());
 }
 
-// ---------------------------------------------------------------------------
-
-std::vector<RoomInfo> MatrixClient::list_rooms() const {
-    auto raw = impl_->ffi->list_rooms();
-    std::vector<RoomInfo> out;
-    out.reserve(raw.size());
-    for (const auto& r : raw) out.push_back(from_ffi(r));
-    return out;
+void Client::cancel_oauth() {
+    impl_->ffi->oauth_cancel();
 }
 
-std::vector<Message> MatrixClient::room_messages(
-    const std::string& room_id, uint64_t limit) const
-{
-    auto raw = impl_->ffi->room_messages(room_id, limit);
-    std::vector<Message> out;
-    out.reserve(raw.size());
-    for (const auto& e : raw) out.push_back(from_ffi(e));
-    return out;
-}
-
-Result MatrixClient::send_message(
-    const std::string& room_id,
-    const std::string& body)
-{
-    return from_ffi(impl_->ffi->send_message(room_id, body));
-}
-
-} // namespace matrix
+bool Client::open_in_browser(const std::string& url) {
+#if defined(_WIN32)
+    // ShellExecute returns an HINSTANCE > 32 on success per the API contract.
+    HINSTANCE hi = ShellExecuteA(nullptr, "open", url.c_str(),
+                                 nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<INT_PTR>(hi) > 32;
+#elif defined(__APPLE__)
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("open", "open", url.c_str(), static_cast<const char*>(nullptr));
+        _exit(127);
+    }
+    if (pid < 0) return false;
+    int status = 0;
+    return waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#else  // Linux / *BSD
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<const char*>(nullptr));
+        _exit(127);
+    }
+    if (pid < 0) return false;
+    int status = 0;
+    return waitpid(p

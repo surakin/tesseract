@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace matrix {
+namespace tesseract {
 
 struct RoomInfo {
     std::string id;
@@ -22,4 +22,4 @@ struct Message {
     std::string msg_type;      ///< "m.text", "m.image", …
 };
 
-} // namespace matrix
+} // namespace tesseract

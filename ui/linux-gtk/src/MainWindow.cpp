@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "LoginDialog.h"
 #include <string>
 
 namespace gtk4 {
@@ -9,12 +10,12 @@ namespace gtk4 {
 
 struct IdleMessage {
     MainWindow*    window;
-    matrix::Message msg;
+    tesseract::Message msg;
 };
 
 struct IdleRooms {
     MainWindow*                  window;
-    std::vector<matrix::RoomInfo> rooms;
+    std::vector<tesseract::RoomInfo> rooms;
 };
 
 struct IdleError {
@@ -26,7 +27,7 @@ struct IdleError {
 // EventHandler
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(const matrix::Message& msg) {
+void EventHandler::on_message(const tesseract::Message& msg) {
     auto* p = new IdleMessage{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
@@ -41,7 +42,7 @@ void EventHandler::on_message(const matrix::Message& msg) {
 }
 
 void EventHandler::on_rooms_updated(
-    const std::vector<matrix::RoomInfo>& rooms)
+    const std::vector<tesseract::RoomInfo>& rooms)
 {
     auto* p = new IdleRooms{
         reinterpret_cast<MainWindow*>(
@@ -79,7 +80,7 @@ void EventHandler::on_sync_error(
 
 MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     window_ = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(window_), "Matrix Client");
+    gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1024, 768);
 
     // Store C++ pointer so idle callbacks can reach us.
@@ -150,17 +151,15 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
-    // TODO: show a login dialog.
-    gtk_label_set_text(GTK_LABEL(status_bar_), "Logging in…");
-
-    auto res = client_.login("https://matrix.org", "user", "password");
-    if (res) {
-        event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
-        client_.start_sync(event_handler_.get());
-        gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
-    } else {
-        gtk_label_set_text(GTK_LABEL(status_bar_), res.message.c_str());
+    LoginDialog dlg(GTK_WINDOW(window_), client_);
+    if (!dlg.run()) {
+        gtk_label_set_text(GTK_LABEL(status_bar_), "Not logged in");
+        return;
     }
+
+    event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+    client_.start_sync(event_handler_.get());
+    gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
 }
 
 void MainWindow::on_send_clicked(GtkButton*, gpointer user_data) {
@@ -201,13 +200,13 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::push_message(matrix::Message msg) {
+void MainWindow::push_message(tesseract::Message msg) {
     if (msg.room_id == current_room_id_)
         append_message(msg.sender, msg.body);
     populate_rooms(client_.list_rooms());
 }
 
-void MainWindow::push_rooms(std::vector<matrix::RoomInfo> rooms) {
+void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     populate_rooms(rooms_);
 }
@@ -216,7 +215,7 @@ void MainWindow::push_error(std::string description) {
     gtk_label_set_text(GTK_LABEL(status_bar_), description.c_str());
 }
 
-void MainWindow::populate_rooms(const std::vector<matrix::RoomInfo>& rooms) {
+void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
     // Remove existing rows.
     while (GtkWidget* child =
                gtk_widget_get_first_child(room_list_))
@@ -258,3 +257,4 @@ void MainWindow::append_message(
 }
 
 } // namespace gtk4
+                                                                                                     

@@ -7,8 +7,8 @@
 #include <QStatusBar>
 #include <QSplitter>
 
-#include <matrix/client.hpp>
-#include <matrix/event_handler.hpp>
+#include <tesseract/client.hpp>
+#include <tesseract/event_handler.hpp>
 
 #include <memory>
 #include <vector>
@@ -16,20 +16,20 @@
 namespace qt6 {
 
 /// Qt signal/slot bridge for SDK callbacks (runs on background thread → queued).
-class EventBridge final : public QObject, public matrix::IEventHandler {
+class EventBridge final : public QObject, public tesseract::IEventHandler {
     Q_OBJECT
 public:
     explicit EventBridge(QObject* parent = nullptr) : QObject(parent) {}
 
     // IEventHandler – called on the sync thread
-    void on_message(const matrix::Message& msg) override;
-    void on_rooms_updated(const std::vector<matrix::RoomInfo>& rooms) override;
+    void on_message(const tesseract::Message& msg) override;
+    void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description) override;
 
 signals:
-    void messageReceived(matrix::Message msg);
-    void roomsUpdated(std::vector<matrix::RoomInfo> rooms);
+    void messageReceived(tesseract::Message msg);
+    void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString description);
 };
 
@@ -44,13 +44,13 @@ public:
 private slots:
     void onSendClicked();
     void onRoomSelected(QListWidgetItem* current, QListWidgetItem* previous);
-    void onMessageReceived(matrix::Message msg);
-    void onRoomsUpdated(std::vector<matrix::RoomInfo> rooms);
+    void onMessageReceived(tesseract::Message msg);
+    void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString description);
 
 private:
     void doLogin();
-    void populateRooms(const std::vector<matrix::RoomInfo>& rooms);
+    void populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void appendMessage(const QString& sender, const QString& body);
 
     QSplitter*   splitter_    = nullptr;
@@ -59,9 +59,9 @@ private:
     QLineEdit*   inputLine_   = nullptr;
     QPushButton* sendButton_  = nullptr;
 
-    matrix::MatrixClient          client_;
+    tesseract::Client          client_;
     std::unique_ptr<EventBridge>  bridge_;
-    std::vector<matrix::RoomInfo> rooms_;
+    std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
 };
 

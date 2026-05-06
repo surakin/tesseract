@@ -17,7 +17,7 @@
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "cacheVariables": {
-        "MATRIX_UI": "win32"
+        "TESSERACT_UI": "win32"
       }
     },
     {
@@ -34,7 +34,7 @@
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "cacheVariables": {
-        "MATRIX_UI": "gtk"
+        "TESSERACT_UI": "gtk"
       }
     },
     {
@@ -43,7 +43,7 @@
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "cacheVariables": {
-        "MATRIX_UI": "qt6"
+        "TESSERACT_UI": "qt6"
       }
     },
     {

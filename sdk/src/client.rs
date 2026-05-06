@@ -1,16 +1,21 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Context as _;
 use cxx::UniquePtr;
 use matrix_sdk::{
+    authentication::oauth::UserSession as OAuthSession,
     config::SyncSettings,
     ruma::events::room::message::{MessageType, RoomMessageEventContent},
-    Client,
+    Client, SessionChange,
 };
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::ffi::{EventHandlerBridge, OpResult, RoomInfo, TimelineEvent};
+use crate::ffi::{EventHandlerBridge, OAuthBegin, OpResult, RoomInfo, TimelineEvent};
+use crate::oauth;
 
 // ---------------------------------------------------------------------------
 
@@ -22,15 +27,55 @@ fn err(msg: impl Into<String>) -> OpResult {
     OpResult { ok: false, message: msg.into() }
 }
 
-// ---------------------------------------------------------------------------
-
-pub struct MatrixClientFfi {
-    rt:          Runtime,
-    client:      Option<Client>,
-    stop_tx:     Option<watch::Sender<bool>>,
+fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
+    OAuthBegin {
+        ok:           false,
+        message:      msg.into(),
+        auth_url:     String::new(),
+        redirect_uri: String::new(),
+    }
 }
 
-impl MatrixClientFfi {
+/// Per-user data directory used for the SDK's encrypted sqlite store. Created
+/// on first use; same location is reused on every launch so encryption keys
+/// and rooms cache survive across sessions.
+fn data_dir() -> PathBuf {
+    let base = dirs_like_home().unwrap_or_else(std::env::temp_dir);
+    let dir  = base.join("tesseract").join("matrix-store");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+fn dirs_like_home() -> Option<PathBuf> {
+    // Cheap stand-in for the `dirs` crate; covers the platforms we ship to.
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|h| h.join("Library").join("Application Support"))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+pub struct ClientFfi {
+    rt:           Runtime,
+    client:       Option<Client>,
+    stop_tx:      Option<watch::Sender<bool>>,
+    oauth_flow:   Option<oauth::PendingFlow>,
+}
+
+impl ClientFfi {
     pub fn new() -> Self {
         tracing_subscriber::fmt()
             .with_env_filter(
@@ -40,35 +85,80 @@ impl MatrixClientFfi {
             .init();
 
         Self {
-            rt:      Runtime::new().expect("tokio runtime"),
-            client:  None,
-            stop_tx: None,
+            rt:         Runtime::new().expect("tokio runtime"),
+            client:     None,
+            stop_tx:    None,
+            oauth_flow: None,
         }
     }
 
-    pub fn login_password(
-        &mut self,
-        homeserver: &str,
-        username:   &str,
-        password:   &str,
-    ) -> OpResult {
-        let hs = homeserver.to_owned();
-        let un = username.to_owned();
-        let pw = password.to_owned();
+    // -----------------------------------------------------------------------
+    // OAuth login (Matrix Authentication Service)
+    // -----------------------------------------------------------------------
+
+    pub fn oauth_begin(&mut self, homeserver: &str) -> OAuthBegin {
+        // Cancel any previous half-finished flow before starting a new one.
+        if let Some(prev) = self.oauth_flow.take() {
+            oauth::cancel(&prev);
+        }
+
+        let hs   = homeserver.to_owned();
+        let path = data_dir();
+
+        match self.rt.block_on(oauth::begin(&hs, &path)) {
+            Ok(begin) => {
+                let auth_url     = begin.auth_url;
+                let redirect_uri = begin.redirect_uri;
+                self.oauth_flow  = Some(begin.flow);
+                OAuthBegin { ok: true, message: String::new(), auth_url, redirect_uri }
+            }
+            Err(e) => oauth_err(e.to_string()),
+        }
+    }
+
+    pub fn oauth_await_callback(&mut self) -> OpResult {
+        let Some(flow) = self.oauth_flow.take() else {
+            return err("no oauth flow in progress; call oauth_begin first");
+        };
+
+        match self.rt.block_on(oauth::await_callback(flow)) {
+            Ok(client) => { self.client = Some(client); ok("") }
+            Err(e)     => err(e.to_string()),
+        }
+    }
+
+    pub fn oauth_cancel(&mut self) {
+        if let Some(flow) = self.oauth_flow.take() {
+            oauth::cancel(&flow);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Session persistence
+    // -----------------------------------------------------------------------
+
+    pub fn restore_session(&mut self, session_json: &str) -> OpResult {
+        let session: OAuthSession = match serde_json::from_str(session_json) {
+            Ok(s)  => s,
+            Err(e) => return err(format!("parse session JSON: {e}")),
+        };
+
+        let homeserver = session.user.meta.homeserver().to_owned();
+        let path       = data_dir();
 
         let result = self.rt.block_on(async move {
             let client = Client::builder()
-                .homeserver_url(&hs)
+                .homeserver_url(homeserver)
+                .sqlite_store(&path, None)
                 .build()
                 .await
                 .context("build client")?;
 
             client
-                .matrix_auth()
-                .login_username(&un, &pw)
-                .send()
+                .oauth()
+                .restore_session(session)
                 .await
-                .context("login")?;
+                .context("restore oauth session")?;
 
             anyhow::Ok(client)
         });
@@ -79,16 +169,10 @@ impl MatrixClientFfi {
         }
     }
 
-    pub fn restore_session(&mut self, session_json: &str) -> OpResult {
-        // TODO: deserialise a previously exported MatrixSession and restore it.
-        // Placeholder until session persistence format is finalised.
-        let _ = session_json;
-        err("restore_session: not yet implemented")
-    }
-
     pub fn export_session(&self) -> String {
-        // TODO: serialise client.session() to JSON.
-        String::new()
+        let Some(client) = &self.client else { return String::new() };
+        let Some(session) = client.oauth().user_session() else { return String::new() };
+        serde_json::to_string(&session).unwrap_or_default()
     }
 
     pub fn start_sync(
@@ -103,6 +187,32 @@ impl MatrixClientFfi {
         // The handler is not Send, so we wrap it in a Mutex and only call it
         // from the single sync task.
         let handler = Arc::new(Mutex::new(handler));
+
+        // Subscribe to OAuth session changes so we can re-export the session
+        // JSON every time the SDK refreshes tokens; the UI persists it.
+        {
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            self.rt.spawn(async move {
+                let mut changes = client_clone.subscribe_to_session_changes();
+                loop {
+                    match changes.recv().await {
+                        Ok(SessionChange::TokensRefreshed) => {
+                            let Some(session) = client_clone.oauth().user_session() else {
+                                continue;
+                            };
+                            let Ok(json) = serde_json::to_string(&session) else { continue };
+                            if let Ok(guard) = h.lock() {
+                                guard.on_session_refreshed(&json);
+                            }
+                        }
+                        // Logout/unknown change — UI handles those via other paths.
+                        Ok(_)  => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
 
         self.rt.spawn(async move {
             let settings = SyncSettings::default();
@@ -167,127 +277,4 @@ impl MatrixClientFfi {
     }
 
     pub fn stop_sync(&mut self) {
-        if let Some(tx) = self.stop_tx.take() {
-            let _ = tx.send(true);
-        }
-    }
-
-    pub fn list_rooms(&self) -> Vec<RoomInfo> {
-        let Some(client) = &self.client else { return Vec::new() };
-
-        client
-            .joined_rooms()
-            .into_iter()
-            .map(|r| RoomInfo {
-                id:           r.room_id().to_string(),
-                name:         r.name().unwrap_or_default(),
-                topic:        r.topic().unwrap_or_default(),
-                unread_count: r.unread_notification_counts().notification_count,
-                is_direct:    r.is_direct().unwrap_or(false),
-            })
-            .collect()
-    }
-
-    pub fn room_messages(&self, room_id: &str, limit: u64) -> Vec<TimelineEvent> {
-        use matrix_sdk::ruma::{RoomId, api::client::message::get_message_events};
-
-        let Some(client) = &self.client else { return Vec::new() };
-
-        let room_id = match RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(_) => return Vec::new(),
-        };
-
-        let client  = client.clone();
-        let room_id = room_id.to_owned();
-
-        self.rt.block_on(async move {
-            let room = client.get_room(&room_id)?;
-            let request = get_message_events::v3::Request::backward(room_id.clone())
-                .limit(matrix_sdk::ruma::UInt::new(limit).unwrap_or_default());
-
-            let resp = room.messages(request).await.ok()?;
-
-            let events = resp
-                .chunk
-                .into_iter()
-                .filter_map(|ev| {
-                    use matrix_sdk::ruma::events::AnyTimelineEvent;
-                    let ev = ev.deserialize().ok()?;
-                    if let AnyTimelineEvent::MessageLike(
-                        matrix_sdk::ruma::events::AnyMessageLikeEvent::RoomMessage(
-                            matrix_sdk::ruma::events::MessageLikeEvent::Original(e),
-                        ),
-                    ) = ev
-                    {
-                        let (body, msg_type) = match e.content.msgtype {
-                            MessageType::Text(t)  => (t.body, "m.text".to_owned()),
-                            MessageType::Image(i) => (i.body, "m.image".to_owned()),
-                            MessageType::File(f)  => (f.body, "m.file".to_owned()),
-                            other                 => (other.body().to_owned(), "m.other".to_owned()),
-                        };
-                        Some(TimelineEvent {
-                            event_id:  e.event_id.to_string(),
-                            room_id:   room_id.to_string(),
-                            sender:    e.sender.to_string(),
-                            body,
-                            timestamp: e.origin_server_ts.as_secs().into(),
-                            msg_type,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            Some(events)
-        })
-        .unwrap_or_default()
-    }
-
-    pub fn send_message(&self, room_id: &str, body: &str) -> OpResult {
-        let Some(client) = &self.client else {
-            return err("not logged in");
-        };
-
-        use matrix_sdk::ruma::RoomId;
-        let room_id = match RoomId::parse(room_id) {
-            Ok(id) => id,
-            Err(e) => return err(e.to_string()),
-        };
-
-        let client  = client.clone();
-        let body    = body.to_owned();
-        let room_id = room_id.to_owned();
-
-        let result = self.rt.block_on(async move {
-            let room = client.get_room(&room_id).context("room not found")?;
-            room.send(RoomMessageEventContent::text_plain(body))
-                .await
-                .context("send")?;
-            anyhow::Ok(())
-        });
-
-        match result {
-            Ok(_)  => ok(""),
-            Err(e) => err(e.to_string()),
-        }
-    }
-
-    pub fn logout(&mut self) -> OpResult {
-        let Some(client) = self.client.take() else {
-            return ok("");
-        };
-
-        self.stop_sync();
-
-        let result = self.rt.block_on(async move {
-            client.matrix_auth().logout().await.context("logout")
-        });
-
-        match result {
-            Ok(_)  => ok(""),
-            Err(e) => err(e.to_string()),
-        }
-    }
-}
+        if let Some(tx) = s

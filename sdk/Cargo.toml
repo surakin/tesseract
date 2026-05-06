@@ -1,19 +1,19 @@
 [package]
-name    = "matrix-sdk-ffi"
+name    = "tesseract-sdk-ffi"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name      = "matrix_sdk_ffi"
+name      = "tesseract_sdk_ffi"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }
-matrix-sdk = { version = "0.10", features = ["e2e-encryption", "sqlite"] }
+matrix-sdk = { version = "0.11", features = ["e2e-encryption", "sqlite"] }
 anyhow     = "1"
 tracing    = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[build-dependencies]
-cxx-build = "1.0"
+url        = "2"
+serde_json = "1"
+tiny_h

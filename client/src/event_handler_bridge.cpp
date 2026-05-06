@@ -1,9 +1,9 @@
-#include "matrix/event_handler_bridge.hpp"
+#include "tesseract/event_handler_bridge.hpp"
 
 // cxx-generated header (produced by sdk/build.rs)
-#include "matrix-sdk-ffi/src/lib.rs.h"
+#include "tesseract-sdk-ffi/src/lib.rs.h"
 
-namespace matrix_ffi {
+namespace tesseract_ffi {
 
 void EventHandlerBridge::on_sync_token(rust::Str /*token*/) const {
     // Nothing to propagate for a plain sync token; extend if persistence needed.
@@ -12,7 +12,7 @@ void EventHandlerBridge::on_sync_token(rust::Str /*token*/) const {
 void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
     if (!handler_) return;
 
-    matrix::Message msg{
+    tesseract::Message msg{
         .event_id  = std::string(ev.event_id),
         .room_id   = std::string(ev.room_id),
         .sender    = std::string(ev.sender),
@@ -28,7 +28,7 @@ void EventHandlerBridge::on_rooms_updated(
 {
     if (!handler_) return;
 
-    std::vector<matrix::RoomInfo> cpp_rooms;
+    std::vector<tesseract::RoomInfo> cpp_rooms;
     cpp_rooms.reserve(rooms.size());
     for (const auto& r : rooms) {
         cpp_rooms.push_back({
@@ -49,4 +49,4 @@ void EventHandlerBridge::on_error(
     handler_->on_sync_error(std::string(context), std::string(message));
 }
 
-} // namespace matrix_ffi
+void EventHandlerBridge::on_s

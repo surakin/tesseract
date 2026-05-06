@@ -3,8 +3,8 @@
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    app.setApplicationName("Matrix Client");
-    app.setOrganizationName("matrix");
+    app.setApplicationName("Tesseract");
+    app.setOrganizationName("tesseract");
 
     qt6::MainWindow window;
     window.show();

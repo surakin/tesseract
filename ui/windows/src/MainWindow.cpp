@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "LoginDialog.h"
 #include <windowsx.h>
 #include <string>
 
@@ -8,16 +9,16 @@ namespace win32 {
 // EventHandler – marshals SDK callbacks onto the UI thread
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(const matrix::Message& msg) {
-    auto* p = new matrix::Message(msg);
-    PostMessage(hwnd_, WM_MATRIX_MESSAGE, 0, reinterpret_cast<LPARAM>(p));
+void EventHandler::on_message(const tesseract::Message& msg) {
+    auto* p = new tesseract::Message(msg);
+    PostMessage(hwnd_, WM_TESSERACT_MESSAGE, 0, reinterpret_cast<LPARAM>(p));
 }
 
 void EventHandler::on_rooms_updated(
-    const std::vector<matrix::RoomInfo>& rooms)
+    const std::vector<tesseract::RoomInfo>& rooms)
 {
-    auto* p = new std::vector<matrix::RoomInfo>(rooms);
-    PostMessage(hwnd_, WM_MATRIX_ROOMS, 0, reinterpret_cast<LPARAM>(p));
+    auto* p = new std::vector<tesseract::RoomInfo>(rooms);
+    PostMessage(hwnd_, WM_TESSERACT_ROOMS, 0, reinterpret_cast<LPARAM>(p));
 }
 
 void EventHandler::on_sync_error(
@@ -26,7 +27,7 @@ void EventHandler::on_sync_error(
 {
     // Copy to heap; WPARAM unused, LPARAM = std::string*.
     auto* p = new std::string(description);
-    PostMessage(hwnd_, WM_MATRIX_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
+    PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
 }
 
 // ---------------------------------------------------------------------------
@@ -91,19 +92,19 @@ LRESULT CALLBACK MainWindow::wnd_proc(
         }
         return 0;
 
-    case WM_MATRIX_MESSAGE: {
-        auto* p = reinterpret_cast<matrix::Message*>(lParam);
-        self->on_matrix_message(p);
+    case WM_TESSERACT_MESSAGE: {
+        auto* p = reinterpret_cast<tesseract::Message*>(lParam);
+        self->on_tesseract_message(p);
         delete p;
         return 0;
     }
-    case WM_MATRIX_ROOMS: {
-        auto* p = reinterpret_cast<std::vector<matrix::RoomInfo>*>(lParam);
-        self->on_matrix_rooms(p);
+    case WM_TESSERACT_ROOMS: {
+        auto* p = reinterpret_cast<std::vector<tesseract::RoomInfo>*>(lParam);
+        self->on_tesseract_rooms(p);
         delete p;
         return 0;
     }
-    case WM_MATRIX_SYNC_ERROR: {
+    case WM_TESSERACT_SYNC_ERROR: {
         auto* p = reinterpret_cast<std::string*>(lParam);
         MessageBoxA(hwnd, p->c_str(), "Sync error", MB_ICONWARNING);
         delete p;
@@ -125,7 +126,7 @@ MainWindow::~MainWindow() {
 
 bool MainWindow::create(int nCmdShow) {
     hwnd_ = CreateWindowExW(
-        0, CLASS_NAME, L"Matrix Client",
+        0, CLASS_NAME, L"Tesseract",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768,
         nullptr, nullptr, hInst_, this);
@@ -201,28 +202,17 @@ void MainWindow::on_size(int w, int h) {
 }
 
 void MainWindow::on_login_clicked() {
-    // TODO: Replace with a proper login dialog.
-    // For now, demonstrate the call path with placeholder credentials.
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(L"Logging in…"));
-
-    auto res = client_.login(
-        "https://matrix.org",
-        "user",     // TODO: prompt the user
-        "password"  // TODO: prompt the user
-    );
-
-    if (res) {
-        event_handler_ = std::make_unique<EventHandler>(hwnd_);
-        client_.start_sync(event_handler_.get());
-        SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                     reinterpret_cast<LPARAM>(L"Connected"));
-    } else {
-        std::wstring msg(res.message.begin(), res.message.end());
-        MessageBoxW(hwnd_, msg.c_str(), L"Login failed", MB_ICONERROR);
+    LoginDialog dlg(hwnd_, hInst_, client_);
+    if (!dlg.run()) {
         SendMessageW(hStatus_, SB_SETTEXTW, 0,
                      reinterpret_cast<LPARAM>(L"Not logged in"));
+        return;
     }
+
+    event_handler_ = std::make_unique<EventHandler>(hwnd_);
+    client_.start_sync(event_handler_.get());
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Connected"));
 }
 
 void MainWindow::on_send_clicked() {
@@ -255,15 +245,15 @@ void MainWindow::on_room_selected(int index) {
     }
 }
 
-void MainWindow::on_matrix_message(matrix::Message* msg) {
+void MainWindow::on_tesseract_message(tesseract::Message* msg) {
     if (msg->room_id == current_room_id_) {
         append_message(msg->sender, msg->body);
     }
     // Refresh room list to update unread counts.
-    on_matrix_rooms(nullptr);
+    on_tesseract_rooms(nullptr);
 }
 
-void MainWindow::on_matrix_rooms(std::vector<matrix::RoomInfo>* rooms) {
+void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
     if (rooms) rooms_ = *rooms;
     else       rooms_ = client_.list_rooms();
 
@@ -290,3 +280,4 @@ void MainWindow::append_message(
 }
 
 } // namespace win32
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                          

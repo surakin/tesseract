@@ -3,7 +3,7 @@
 
 int main(int argc, char** argv) {
     GtkApplication* app = gtk_application_new(
-        "org.matrix.client.gtk", G_APPLICATION_DEFAULT_FLAGS);
+        "org.tesseract.gtk", G_APPLICATION_DEFAULT_FLAGS);
 
     std::unique_ptr<gtk4::MainWindow> window;
 
