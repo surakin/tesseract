@@ -1,9 +1,9 @@
 mod client;
 mod oauth;
 
-/// The cxx bridge declares the shared types and functions between Rust and C++.
-/// Rust-side async operations are driven by an embedded tokio runtime so C++
-/// sees a purely synchronous API.
+// Production cxx bridge — skipped during `cargo test` to avoid needing C++ linked.
+// Tests use the pure-Rust stub module below instead.
+#[cfg(not(test))]
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
@@ -123,8 +123,50 @@ pub mod ffi {
     }
 }
 
+/// Pure-Rust stubs that mirror the cxx-generated shapes, compiled only during
+/// `cargo test`. They let unit tests run without a C++ toolchain.
+#[cfg(test)]
+pub mod ffi {
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomInfo {
+        pub id:           String,
+        pub name:         String,
+        pub topic:        String,
+        pub unread_count: u64,
+        pub is_direct:    bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct TimelineEvent {
+        pub event_id:  String,
+        pub room_id:   String,
+        pub sender:    String,
+        pub body:      String,
+        pub timestamp: u64,
+        pub msg_type:  String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct OpResult {
+        pub ok:      bool,
+        pub message: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct OAuthBegin {
+        pub ok:           bool,
+        pub message:      String,
+        pub auth_url:     String,
+        pub redirect_uri: String,
+    }
+
+    pub struct EventHandlerBridge;
+}
+
+#[cfg(not(test))]
 pub use client::ClientFfi;
 
-pub fn client_create() -> Box<ClientFfi> {
-    Box::new(ClientFfi::new())
+#[cfg(not(test))]
+pub fn client_create() -> Box<client::ClientFfi> {
+    Box::new(client::ClientFfi::new())
 }

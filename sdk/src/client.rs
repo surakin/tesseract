@@ -1,23 +1,32 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
-use cxx::UniquePtr;
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
-    config::SyncSettings,
-    ruma::events::room::message::{MessageType, RoomMessageEventContent},
+    ruma::events::room::message::RoomMessageEventContent,
     store::RoomLoadSettings,
-    Client, SessionChange,
+    Client,
 };
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::ffi::{EventHandlerBridge, OAuthBegin, OpResult, TimelineEvent};
+use crate::ffi::{OAuthBegin, OpResult};
 use crate::oauth;
+
+// These imports are only needed for the sync loop, which is excluded from test builds.
+#[cfg(not(test))]
+use std::sync::{Arc, Mutex};
+#[cfg(not(test))]
+use cxx::UniquePtr;
+#[cfg(not(test))]
+use matrix_sdk::{
+    config::SyncSettings,
+    ruma::events::room::message::MessageType,
+    SessionChange,
+};
+#[cfg(not(test))]
+use crate::ffi::{EventHandlerBridge, TimelineEvent};
 
 // ---------------------------------------------------------------------------
 
@@ -70,10 +79,12 @@ fn dirs_like_home() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------------------
 
-/// Wraps UniquePtr<EventHandlerBridge> so it can be shared across threads.
-/// Safety: EventHandlerBridge only emits Qt signals, which are cross-thread safe.
+// SendHandler carries a cxx UniquePtr so it cannot be compiled in test mode.
+#[cfg(not(test))]
 struct SendHandler(UniquePtr<EventHandlerBridge>);
+#[cfg(not(test))]
 unsafe impl Send for SendHandler {}
+#[cfg(not(test))]
 impl std::ops::Deref for SendHandler {
     type Target = UniquePtr<EventHandlerBridge>;
     fn deref(&self) -> &Self::Target { &self.0 }
@@ -198,6 +209,7 @@ impl ClientFfi {
         serde_json::to_string(&persisted).unwrap_or_default()
     }
 
+    #[cfg(not(test))]
     pub fn start_sync(
         &mut self,
         handler: UniquePtr<EventHandlerBridge>,
@@ -387,5 +399,98 @@ impl ClientFfi {
             Ok(_)  => ok(""),
             Err(e) => err(format!("oauth logout failed (local store cleared): {e}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_ffi_new_starts_empty() {
+        let c = ClientFfi::new();
+        assert!(c.client.is_none());
+        assert!(c.stop_tx.is_none());
+        assert!(c.oauth_flow.is_none());
+    }
+
+    #[test]
+    fn op_result_ok_sets_fields() {
+        let r = ok("success");
+        assert!(r.ok);
+        assert_eq!(r.message, "success");
+    }
+
+    #[test]
+    fn op_result_err_sets_fields() {
+        let r = err("failure");
+        assert!(!r.ok);
+        assert_eq!(r.message, "failure");
+    }
+
+    #[test]
+    fn oauth_err_has_no_urls() {
+        let r = oauth_err("bad server");
+        assert!(!r.ok);
+        assert_eq!(r.message, "bad server");
+        assert!(r.auth_url.is_empty());
+        assert!(r.redirect_uri.is_empty());
+    }
+
+    #[test]
+    fn export_session_is_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(c.export_session().is_empty());
+    }
+
+    #[test]
+    fn list_rooms_is_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(c.list_rooms().is_empty());
+    }
+
+    #[test]
+    fn room_messages_is_empty() {
+        let c = ClientFfi::new();
+        assert!(c.room_messages("!x:example.com", 10).is_empty());
+    }
+
+    #[test]
+    fn send_message_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.send_message("!room:example.com", "hello");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn restore_session_fails_on_invalid_json() {
+        let mut c = ClientFfi::new();
+        let r = c.restore_session("not json {{{");
+        assert!(!r.ok);
+        assert!(r.message.contains("parse session JSON"));
+    }
+
+    #[test]
+    fn oauth_cancel_is_noop_without_flow() {
+        let mut c = ClientFfi::new();
+        c.oauth_cancel(); // must not panic
+    }
+
+    #[test]
+    fn stop_sync_is_noop_without_start() {
+        let mut c = ClientFfi::new();
+        c.stop_sync(); // must not panic
+    }
+
+    #[test]
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn data_dir_ends_with_expected_suffix() {
+        let d = data_dir();
+        let s = d.to_string_lossy();
+        assert!(
+            s.ends_with("tesseract/matrix-store"),
+            "unexpected data_dir: {s}"
+        );
     }
 }

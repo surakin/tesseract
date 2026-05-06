@@ -9,12 +9,14 @@ Tesseract is a cross-platform desktop Matrix/chat client. The core networking is
 ## Build Commands
 
 **Prerequisites (Linux/Qt6):**
+
 ```bash
 sudo apt install qt6-base-dev ninja-build cmake libssl-dev sqlite3 libsqlite3-dev
 # also requires a Rust toolchain: rustup
 ```
 
 **Configure and build:**
+
 ```bash
 cmake --preset linux-qt6-debug          # or windows-debug, linux-gtk-debug, linux-qt6-release
 cmake --build build/linux-qt6-debug
@@ -29,7 +31,7 @@ Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` —
 
 ## Architecture
 
-```
+```text
 sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
 client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
@@ -57,14 +59,30 @@ ui/
 
 The three archives (`tesseract_sdk_bridge_cxx`, `tesseract_client`, `tesseract_sdk_ffi-static`) have a circular dependency through the FFI. They are linked with `WHOLE_ARCHIVE` to guarantee all symbols are present regardless of link order.
 
-## No Tests
+## Running Tests
 
-There is no automated test suite. Testing is manual: build, run the executable, and exercise the OAuth login flow against a real Matrix homeserver.
+### Rust unit tests (standalone — no C++ required)
+
+```bash
+cargo test -p tesseract-sdk-ffi
+```
+
+The cxx bridge is excluded from the test build via `#[cfg(not(test))]` so no C++ toolchain is needed.
+
+### C++ tests via CMake / ctest
+
+```bash
+cmake --preset linux-qt6-debug
+cmake --build build/linux-qt6-debug
+ctest --test-dir build/linux-qt6-debug --output-on-failure
+```
+
+Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ctest test. The `tesseract_tests` executable links the full stack (Rust SDK + bridge + client lib) with the same `WHOLE_ARCHIVE` pattern as the UI targets.
 
 ## Key Files
 
 | File | Purpose |
-|------|---------|
+| ---- | ------- |
 | `CMakeLists.txt` | Root build: UI detection, Corrosion setup, WHOLE_ARCHIVE linking |
 | `CMakePresets.json` | Per-platform build presets |
 | `sdk/Cargo.toml` | Rust dependencies (`matrix-sdk`, `cxx`, `tokio`, `tiny_http`) |

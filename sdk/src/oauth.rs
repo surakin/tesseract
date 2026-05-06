@@ -190,11 +190,7 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
     // tiny_http strips the scheme/host, leaving only "/callback?code=…".
     // OAuth::finish_login takes a UrlOrQuery — the query-string variant is
     // exactly what we have.
-    let query_part = captured
-        .splitn(2, '?')
-        .nth(1)
-        .ok_or_else(|| anyhow!("redirect did not include a query string"))?
-        .to_owned();
+    let query_part = extract_query(&captured)?;
 
     flow.client
         .oauth()
@@ -203,6 +199,16 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         .context("oauth finish_login")?;
 
     Ok(flow.client)
+}
+
+/// Extract the query string from a captured loopback URL such as
+/// `/callback?code=…&state=…`.  Returns an error when no `?` is present.
+fn extract_query(captured: &str) -> anyhow::Result<String> {
+    captured
+        .splitn(2, '?')
+        .nth(1)
+        .ok_or_else(|| anyhow!("redirect did not include a query string"))
+        .map(str::to_owned)
 }
 
 /// Trip the cancel flag; the listener will return on its next poll.
@@ -218,5 +224,36 @@ pub fn cancel(flow: &PendingFlow) {
                 let _ = std::net::TcpStream::connect_timeout(
                     &addr, Duration::from_millis(250));
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_query_returns_code_and_state() {
+        let url = "/callback?code=abc123&state=xyz";
+        assert_eq!(extract_query(url).unwrap(), "code=abc123&state=xyz");
+    }
+
+    #[test]
+    fn extract_query_returns_single_param() {
+        assert_eq!(extract_query("/callback?code=X").unwrap(), "code=X");
+    }
+
+    #[test]
+    fn extract_query_errors_without_question_mark() {
+        assert!(extract_query("/callback").is_err());
+    }
+
+    #[test]
+    fn html_success_mentions_signed_in() {
+        assert!(HTML_SUCCESS.contains("signed in"));
+    }
+
+    #[test]
+    fn html_failure_mentions_failed() {
+        assert!(HTML_FAILURE.contains("failed"));
     }
 }

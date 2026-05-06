@@ -50,6 +50,12 @@ target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
 add_subdirectory(client)
 
 # ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+enable_testing()
+add_subdirectory(tests)
+
+# ---------------------------------------------------------------------------
 # UI backend selection
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "auto")
