@@ -2,5 +2,6 @@
     "cSpell.words": [
         "gboolean",
         "tesseract"
-    ]
+    ],
+    "C_Cpp.errorSquiggles": "enabled"
 }
