@@ -1,0 +1,65 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows – Win32 (Debug)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": {
+        "MATRIX_UI": "win32"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows – Win32 (Release)",
+      "inherits": "windows-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-gtk-debug",
+      "displayName": "Linux – GTK4 (Debug)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": {
+        "MATRIX_UI": "gtk"
+      }
+    },
+    {
+      "name": "linux-qt6-debug",
+      "displayName": "Linux – Qt6 (Debug)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": {
+        "MATRIX_UI": "qt6"
+      }
+    },
+    {
+      "name": "linux-qt6-release",
+      "displayName": "Linux – Qt6 (Release)",
+      "inherits": "linux-qt6-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-debug",     "configurePreset": "windows-debug"    },
+    { "name": "windows-release",   "configurePreset": "windows-release"  },
+    { "name": "linux-gtk-debug",   "configurePreset": "linux-gtk-debug"  },
+    { "name": "linux-qt6-debug",   "configurePreset": "linux-qt6-debug"  },
+    { "name": "linux-qt6-release", "configurePreset": "linux-qt6-release"}
+  ]
+}

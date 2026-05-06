@@ -1,0 +1,13 @@
+build/
+target/
+.cache/
+compile_commands.json
+*.user
+*.suo
+.vs/
+.idea/
+*.o
+*.a
+*.so
+*.dll
+*.exe
