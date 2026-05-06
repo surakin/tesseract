@@ -104,10 +104,10 @@ pub async fn begin(
                 redirect_uris: vec![redirect_url.clone()],
             }],
             // client_uri – purely informational; required to be a valid URL.
-            Some(Localized::new(
+            Localized::new(
                 Url::parse("https://github.com/").expect("client_uri"),
                 [],
-            )),
+            ),
         )
     };
     let raw_metadata = matrix_sdk::ruma::serde::Raw::new(&metadata)
@@ -119,7 +119,7 @@ pub async fn begin(
     //    `Client` until `finish_login` is called on the same instance.
     let auth_data = client
         .oauth()
-        .login(redirect_url, None /* device_id */, Some(registration_data), None /* prompt */)
+        .login(redirect_url, None /* device_id */, Some(registration_data))
         .build()
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;

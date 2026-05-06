@@ -1,7 +1,7 @@
 #include "tesseract/event_handler_bridge.hpp"
 
-// cxx-generated header (produced by sdk/build.rs)
-#include "tesseract-sdk-ffi/src/lib.rs.h"
+// cxx-generated header (produced by corrosion_add_cxxbridge)
+#include "tesseract_sdk_bridge_cxx/lib.h"
 
 namespace tesseract_ffi {
 
@@ -49,4 +49,9 @@ void EventHandlerBridge::on_error(
     handler_->on_sync_error(std::string(context), std::string(message));
 }
 
-void EventHandlerBridge::on_s
+void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const {
+    if (!handler_) return;
+    handler_->on_session_saved(std::string(session_json));
+}
+
+} // namespace tesseract_ffi

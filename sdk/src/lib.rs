@@ -93,4 +93,33 @@ pub mod ffi {
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
 
         /// Abort an in-flight OAuth flow (user closed the dialog).
-    
+        fn oauth_cancel(self: &mut ClientFfi);
+
+        /// Restore a session from the JSON string saved by export_session().
+        fn restore_session(self: &mut ClientFfi, session_json: &str) -> OpResult;
+
+        /// Serialise the current session to JSON (empty on error / not logged in).
+        fn export_session(self: &ClientFfi) -> String;
+
+        /// Start the sync loop; callbacks are delivered via `handler`.
+        fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
+
+        /// Stop the sync loop.
+        fn stop_sync(self: &mut ClientFfi);
+
+        /// Return the list of joined rooms.
+        fn list_rooms(self: &ClientFfi) -> Vec<RoomInfo>;
+
+        /// Send a plain-text message to a room.
+        fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+
+        /// Fetch recent messages from a room (newest-first; returns empty until timeline is cached).
+        fn room_messages(self: &ClientFfi, room_id: &str, limit: u64) -> Vec<TimelineEvent>;
+    }
+}
+
+pub use client::ClientFfi;
+
+pub fn client_create() -> Box<ClientFfi> {
+    Box::new(ClientFfi::new())
+}

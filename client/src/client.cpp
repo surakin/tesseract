@@ -1,8 +1,8 @@
 #include "tesseract/client.hpp"
 #include "tesseract/event_handler_bridge.hpp"
 
-// cxx-generated header
-#include "tesseract-sdk-ffi/src/lib.rs.h"
+// cxx-generated header (produced by corrosion_add_cxxbridge)
+#include "tesseract_sdk_bridge_cxx/lib.h"
 
 #include <cassert>
 #include <cstdlib>
@@ -113,4 +113,56 @@ bool Client::open_in_browser(const std::string& url) {
     }
     if (pid < 0) return false;
     int status = 0;
-    return waitpid(p
+    return waitpid(pid, &status, 0) == pid
+        && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
+Result Client::restore_session(const std::string& session_json) {
+    return from_ffi(impl_->ffi->restore_session(session_json));
+}
+
+std::string Client::export_session() const {
+    return std::string(impl_->ffi->export_session());
+}
+
+Result Client::logout() {
+    stop_sync();
+    return Result{true, ""};
+}
+
+void Client::start_sync(IEventHandler* handler) {
+    impl_->ffi->start_sync(
+        std::make_unique<tesseract_ffi::EventHandlerBridge>(handler));
+}
+
+void Client::stop_sync() {
+    impl_->ffi->stop_sync();
+}
+
+std::vector<RoomInfo> Client::list_rooms() const {
+    auto ffi_rooms = impl_->ffi->list_rooms();
+    std::vector<RoomInfo> result;
+    result.reserve(ffi_rooms.size());
+    for (const auto& r : ffi_rooms)
+        result.push_back(from_ffi(r));
+    return result;
+}
+
+Result Client::send_message(const std::string& room_id, const std::string& body) {
+    return from_ffi(impl_->ffi->send_message(room_id, body));
+}
+
+std::vector<Message> Client::room_messages(
+    const std::string& room_id, std::size_t limit) const
+{
+    auto ffi_msgs = impl_->ffi->room_messages(room_id,
+                        static_cast<std::uint64_t>(limit));
+    std::vector<Message> result;
+    result.reserve(ffi_msgs.size());
+    for (const auto& m : ffi_msgs)
+        result.push_back(from_ffi(m));
+    return result;
+}
+
+} // namespace tesseract

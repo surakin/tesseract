@@ -73,4 +73,35 @@ public:
     /// Serialise the current session (empty on error / not logged in).
     std::string export_session() const;
 
-    /// Log out and i
+    /// Log out and invalidate the current session.
+    Result      logout();
+
+    // ------------------------------------------------------------------
+    // Sync loop
+    // ------------------------------------------------------------------
+
+    /// Start the background sync loop; events are delivered via `handler`.
+    /// The handler pointer must remain valid until stop_sync() returns.
+    void        start_sync(IEventHandler* handler);
+
+    /// Stop the background sync loop.
+    void        stop_sync();
+
+    // ------------------------------------------------------------------
+    // Rooms and messaging
+    // ------------------------------------------------------------------
+
+    std::vector<RoomInfo> list_rooms() const;
+
+    Result               send_message(const std::string& room_id,
+                                      const std::string& body);
+
+    std::vector<Message> room_messages(const std::string& room_id,
+                                       std::size_t        limit) const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace tesseract

@@ -23,11 +23,25 @@ FetchContent_MakeAvailable(Corrosion)
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 
+# Native C deps pulled in by the Rust crate (openssl-sys, rusqlite).
+# Corrosion only discovers standard Rust runtime libs automatically; crate-specific
+# native deps must be declared explicitly.
+find_package(OpenSSL REQUIRED)
+find_package(SQLite3 REQUIRED)
+target_link_libraries(tesseract_sdk_ffi-static INTERFACE
+    OpenSSL::SSL OpenSSL::Crypto SQLite3::SQLite3
+)
+
 # Generate the cxx C++ glue from sdk/src/lib.rs and expose it as a CMake
 # interface target named "tesseract_sdk_bridge_cxx".
 corrosion_add_cxxbridge(tesseract_sdk_bridge_cxx
-    CRATE  tesseract-sdk-ffi
-    FILES  src/lib.rs
+    CRATE  tesseract_sdk_ffi
+    FILES  lib.rs
+)
+
+# The generated cxx bridge code includes tesseract/event_handler_bridge.hpp.
+target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/client/include
 )
 
 # ---------------------------------------------------------------------------

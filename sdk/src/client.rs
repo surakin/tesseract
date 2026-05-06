@@ -4,17 +4,19 @@ use std::{
 };
 
 use anyhow::Context as _;
+use serde::{Deserialize, Serialize};
 use cxx::UniquePtr;
 use matrix_sdk::{
-    authentication::oauth::UserSession as OAuthSession,
+    authentication::oauth::{ClientId, OAuthSession, UserSession},
     config::SyncSettings,
     ruma::events::room::message::{MessageType, RoomMessageEventContent},
+    store::RoomLoadSettings,
     Client, SessionChange,
 };
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::ffi::{EventHandlerBridge, OAuthBegin, OpResult, RoomInfo, TimelineEvent};
+use crate::ffi::{EventHandlerBridge, OAuthBegin, OpResult, TimelineEvent};
 use crate::oauth;
 
 // ---------------------------------------------------------------------------
@@ -67,6 +69,23 @@ fn dirs_like_home() -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+
+/// Wraps UniquePtr<EventHandlerBridge> so it can be shared across threads.
+/// Safety: EventHandlerBridge only emits Qt signals, which are cross-thread safe.
+struct SendHandler(UniquePtr<EventHandlerBridge>);
+unsafe impl Send for SendHandler {}
+impl std::ops::Deref for SendHandler {
+    type Target = UniquePtr<EventHandlerBridge>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+/// Serialisable wrapper for a full OAuth session (client_id + user session).
+#[derive(Serialize, Deserialize)]
+struct PersistedSession {
+    client_id: ClientId,
+    #[serde(flatten)]
+    user: UserSession,
+}
 
 pub struct ClientFfi {
     rt:           Runtime,
@@ -138,25 +157,26 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     pub fn restore_session(&mut self, session_json: &str) -> OpResult {
-        let session: OAuthSession = match serde_json::from_str(session_json) {
+        let persisted: PersistedSession = match serde_json::from_str(session_json) {
             Ok(s)  => s,
             Err(e) => return err(format!("parse session JSON: {e}")),
         };
 
-        let homeserver = session.user.meta.homeserver().to_owned();
+        let homeserver = persisted.user.meta.user_id.server_name().to_string();
         let path       = data_dir();
 
         let result = self.rt.block_on(async move {
             let client = Client::builder()
-                .homeserver_url(homeserver)
+                .server_name_or_homeserver_url(homeserver)
                 .sqlite_store(&path, None)
                 .build()
                 .await
                 .context("build client")?;
 
+            let session = OAuthSession { client_id: persisted.client_id, user: persisted.user };
             client
                 .oauth()
-                .restore_session(session)
+                .restore_session(session, RoomLoadSettings::default())
                 .await
                 .context("restore oauth session")?;
 
@@ -171,8 +191,9 @@ impl ClientFfi {
 
     pub fn export_session(&self) -> String {
         let Some(client) = &self.client else { return String::new() };
-        let Some(session) = client.oauth().user_session() else { return String::new() };
-        serde_json::to_string(&session).unwrap_or_default()
+        let Some(session) = client.oauth().full_session() else { return String::new() };
+        let persisted = PersistedSession { client_id: session.client_id, user: session.user };
+        serde_json::to_string(&persisted).unwrap_or_default()
     }
 
     pub fn start_sync(
@@ -184,9 +205,8 @@ impl ClientFfi {
         let (stop_tx, mut stop_rx) = watch::channel(false);
         self.stop_tx = Some(stop_tx);
 
-        // The handler is not Send, so we wrap it in a Mutex and only call it
-        // from the single sync task.
-        let handler = Arc::new(Mutex::new(handler));
+        // Wrap in SendHandler to allow sharing across threads (Qt signals are thread-safe).
+        let handler = Arc::new(Mutex::new(SendHandler(handler)));
 
         // Subscribe to OAuth session changes so we can re-export the session
         // JSON every time the SDK refreshes tokens; the UI persists it.
@@ -277,4 +297,49 @@ impl ClientFfi {
     }
 
     pub fn stop_sync(&mut self) {
-        if let Some(tx) = s
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(true);
+        }
+    }
+
+    pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
+        let Some(client) = self.client.clone() else { return Vec::new() };
+        let rooms = client.joined_rooms();
+        self.rt.block_on(async move {
+            let mut result = Vec::new();
+            for room in rooms {
+                let name = room
+                    .display_name()
+                    .await
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|_| room.room_id().to_string());
+                result.push(crate::ffi::RoomInfo {
+                    id:           room.room_id().to_string(),
+                    name,
+                    topic:        room.topic().unwrap_or_default(),
+                    unread_count: room.unread_notification_counts().notification_count,
+                    is_direct:    room.is_direct().await.unwrap_or(false),
+                });
+            }
+            result
+        })
+    }
+
+    pub fn send_message(&mut self, room_id: &str, body: &str) -> crate::ffi::OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id)  => id,
+            Err(e)  => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let content = RoomMessageEventContent::text_plain(body);
+        match self.rt.block_on(async move { room.send(content).await }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    pub fn room_messages(&self, _room_id: &str, _limit: u64) -> Vec<crate::ffi::TimelineEvent> {
+        Vec::new()
+    }
+}

@@ -17,4 +17,9 @@ public:
     virtual void on_sync_error(const std::string& context,
                                 const std::string& description) = 0;
 
-    /// Fired whenever the S
+    /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the next
+    /// launch can call restore_session().
+    virtual void on_session_saved(const std::string& /*session_json*/) {}
+};
+
+} // namespace tesseract

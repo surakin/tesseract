@@ -16,9 +16,14 @@ target_compile_features(tesseract_qt PRIVATE cxx_std_20)
 target_include_directories(tesseract_qt PRIVATE src)
 
 target_link_libraries(tesseract_qt PRIVATE
-    tesseract_client
+    # All three static archives are mutually dependent (client ↔ bridge ↔ ffi).
+    # Link them as whole-archive so every symbol is unconditionally present,
+    # removing all ordering constraints between them.
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     Qt6::Core
     Qt6::Widgets
 )
 
-set_target_properties(tesserac
+set_target_properties(tesseract_qt PROPERTIES
+    OUTPUT_NAME "tesseract"
+)

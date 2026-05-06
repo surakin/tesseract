@@ -19,8 +19,8 @@ target_include_directories(tesseract_client
 # The cxx bridge (tesseract-sdk-ffi-bridge) is compiled as a separate object
 # archive by the Rust build script and made available via corrosion_add_cxxbridge.
 target_link_libraries(tesseract_client
-    PUBLIC
-        tesseract-sdk-ffi          # Corrosion target (Rust)
+    PRIVATE
+        tesseract_sdk_ffi          # Corrosion target (Rust)
         tesseract_sdk_bridge_cxx   # cxx generated C++ glue (from corrosion_add_cxxbridge)
 )
 
@@ -29,4 +29,4 @@ if(WIN32)
     target_link_libraries(tesseract_client PUBLIC
         Ws2_32 Bcrypt Userenv Ntdll
         Shell32)               # ShellExecuteA in open_in_browser()
-e
+endif()

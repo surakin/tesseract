@@ -3,6 +3,7 @@
 /// It maps the Rust extern "C++" type EventHandlerBridge to the concrete C++ type
 /// that wraps tesseract::IEventHandler.
 
+#include "rust/cxx.h"
 #include "event_handler.hpp"
 #include "types.hpp"
 
@@ -29,3 +30,6 @@ public:
 
 private:
     tesseract::IEventHandler* handler_; // non-owning;
+};
+
+} // namespace tesseract_ffi

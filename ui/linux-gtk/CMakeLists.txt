@@ -26,4 +26,5 @@ target_link_libraries(tesseract_gtk PRIVATE
 )
 
 set_target_properties(tesseract_gtk PROPERTIES
-    OUTPU
+    OUTPUT_NAME "tesseract"
+)
