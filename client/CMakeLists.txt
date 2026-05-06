@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.25)
 add_library(tesseract_client STATIC
     src/client.cpp
     src/event_handler_bridge.cpp
+    src/session_store.cpp
 )
 
 target_compile_features(tesseract_client PUBLIC cxx_std_20)

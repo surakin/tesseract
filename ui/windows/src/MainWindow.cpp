@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+
+#include <tesseract/session_store.hpp>
+
 #include <windowsx.h>
 #include <string>
 
@@ -28,6 +31,12 @@ void EventHandler::on_sync_error(
     // Copy to heap; WPARAM unused, LPARAM = std::string*.
     auto* p = new std::string(description);
     PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
+}
+
+void EventHandler::on_session_saved(const std::string& session_json) {
+    // Called on the Rust sync thread when tokens rotate. SessionStore::save
+    // is just a tmp-file + rename, fine to do off the UI thread.
+    tesseract::SessionStore::save(session_json);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,12 +211,36 @@ void MainWindow::on_size(int w, int h) {
 }
 
 void MainWindow::on_login_clicked() {
+    // Try a saved session first.
+    if (auto saved = tesseract::SessionStore::load()) {
+        SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                     reinterpret_cast<LPARAM>(L"Restoring session…"));
+        auto res = client_.restore_session(*saved);
+        if (res) {
+            event_handler_ = std::make_unique<EventHandler>(hwnd_);
+            client_.start_sync(event_handler_.get());
+            SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                         reinterpret_cast<LPARAM>(L"Connected"));
+            return;
+        }
+        // Stored session is unusable; throw it away and fall through.
+        tesseract::SessionStore::clear();
+        std::wstring msg = L"Saved session expired: ";
+        msg.append(res.message.begin(), res.message.end());
+        SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                     reinterpret_cast<LPARAM>(msg.c_str()));
+    }
+
     LoginDialog dlg(hwnd_, hInst_, client_);
     if (!dlg.run()) {
         SendMessageW(hStatus_, SB_SETTEXTW, 0,
                      reinterpret_cast<LPARAM>(L"Not logged in"));
         return;
     }
+
+    // Persist the freshly-issued session so the next launch can skip the
+    // dialog. on_session_saved keeps it up to date thereafter.
+    tesseract::SessionStore::save(client_.export_session());
 
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
     client_.start_sync(event_handler_.get());

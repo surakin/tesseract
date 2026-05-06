@@ -127,8 +127,10 @@ std::string Client::export_session() const {
 }
 
 Result Client::logout() {
-    stop_sync();
-    return Result{true, ""};
+    // The Rust side stops sync internally and clears the SQLite store. The
+    // caller is responsible for deleting any persisted session JSON it owns
+    // (see tesseract::SessionStore).
+    return from_ffi(impl_->ffi->logout());
 }
 
 void Client::start_sync(IEventHandler* handler) {

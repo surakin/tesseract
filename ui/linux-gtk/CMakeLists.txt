@@ -21,7 +21,10 @@ target_link_directories(tesseract_gtk PRIVATE ${GTK4_LIBRARY_DIRS})
 target_compile_options(tesseract_gtk PRIVATE ${GTK4_CFLAGS_OTHER})
 
 target_link_libraries(tesseract_gtk PRIVATE
-    tesseract_client
+    # All three static archives are mutually dependent (client ↔ bridge ↔ ffi).
+    # Link them as whole-archive so every symbol is unconditionally present,
+    # removing all ordering constraints between them. Mirrors ui/linux-qt.
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     ${GTK4_LIBRARIES}
 )
 

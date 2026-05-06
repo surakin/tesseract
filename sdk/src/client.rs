@@ -96,12 +96,14 @@ pub struct ClientFfi {
 
 impl ClientFfi {
     pub fn new() -> Self {
-        tracing_subscriber::fmt()
+        // try_init() instead of init() so a second ClientFfi (e.g. after
+        // logout-then-login in the same process) doesn't panic.
+        let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
                     .add_directive("matrix_sdk=info".parse().unwrap()),
             )
-            .init();
+            .try_init();
 
         Self {
             rt:         Runtime::new().expect("tokio runtime"),
@@ -218,10 +220,17 @@ impl ClientFfi {
                 loop {
                     match changes.recv().await {
                         Ok(SessionChange::TokensRefreshed) => {
-                            let Some(session) = client_clone.oauth().user_session() else {
+                            // Emit the *full* session shape (client_id + user)
+                            // so it round-trips through restore_session(),
+                            // which expects a PersistedSession.
+                            let Some(full) = client_clone.oauth().full_session() else {
                                 continue;
                             };
-                            let Ok(json) = serde_json::to_string(&session) else { continue };
+                            let persisted = PersistedSession {
+                                client_id: full.client_id,
+                                user:      full.user,
+                            };
+                            let Ok(json) = serde_json::to_string(&persisted) else { continue };
                             if let Ok(guard) = h.lock() {
                                 guard.on_session_refreshed(&json);
                             }
@@ -340,6 +349,43 @@ impl ClientFfi {
     }
 
     pub fn room_messages(&self, _room_id: &str, _limit: u64) -> Vec<crate::ffi::TimelineEvent> {
+        // Will be replaced by a Timeline-backed implementation once the
+        // sliding-sync rewrite lands. Until then, history loading is a no-op.
         Vec::new()
+    }
+
+    /// Revoke OAuth tokens at the MAS, drop the in-memory client and stop
+    /// the sync loop, then remove the local SQLite store so the next login
+    /// starts from a clean state. The caller (C++ SessionStore) is also
+    /// expected to delete its persisted session.json.
+    pub fn logout(&mut self) -> crate::ffi::OpResult {
+        // Stop sync first so no background tasks touch the Client while we
+        // tear it down.
+        self.stop_sync();
+
+        // Cancel any in-flight oauth flow.
+        if let Some(flow) = self.oauth_flow.take() {
+            oauth::cancel(&flow);
+        }
+
+        let Some(client) = self.client.take() else {
+            // Already logged out; clean the store anyway in case a previous
+            // logout left it half-populated.
+            let _ = std::fs::remove_dir_all(data_dir());
+            return ok("");
+        };
+
+        let revoke = self.rt.block_on(async move {
+            client.oauth().logout().await
+        });
+
+        // Always remove the local store. Even if the server-side revoke
+        // failed, the local keys are no longer useful with this account.
+        let _ = std::fs::remove_dir_all(data_dir());
+
+        match revoke {
+            Ok(_)  => ok(""),
+            Err(e) => err(format!("oauth logout failed (local store cleared): {e}")),
+        }
     }
 }

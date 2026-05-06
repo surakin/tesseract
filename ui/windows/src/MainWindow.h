@@ -34,6 +34,7 @@ public:
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description) override;
+    void on_session_saved(const std::string& session_json) override;
 
 private:
     HWND hwnd_;

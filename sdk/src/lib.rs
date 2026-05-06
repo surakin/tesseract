@@ -115,6 +115,11 @@ pub mod ffi {
 
         /// Fetch recent messages from a room (newest-first; returns empty until timeline is cached).
         fn room_messages(self: &ClientFfi, room_id: &str, limit: u64) -> Vec<TimelineEvent>;
+
+        /// Revoke OAuth tokens at the MAS, drop the in-memory client, and
+        /// remove the on-disk SQLite store. Caller is also expected to delete
+        /// any persisted session JSON it owns (see SessionStore on the C++ side).
+        fn logout(self: &mut ClientFfi) -> OpResult;
     }
 }
 

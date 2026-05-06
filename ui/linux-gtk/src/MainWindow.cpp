@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+
+#include <tesseract/session_store.hpp>
+
 #include <string>
 
 namespace gtk4 {
@@ -72,6 +75,12 @@ void EventHandler::on_sync_error(
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
+}
+
+void EventHandler::on_session_saved(const std::string& session_json) {
+    // Called on the Rust sync thread when tokens rotate. SessionStore::save
+    // is just a tmp-file + rename, fine to do off the GTK main loop.
+    tesseract::SessionStore::save(session_json);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,11 +160,31 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
+    // Try a saved session first.
+    if (auto saved = tesseract::SessionStore::load()) {
+        gtk_label_set_text(GTK_LABEL(status_bar_), "Restoring session…");
+        auto res = client_.restore_session(*saved);
+        if (res) {
+            event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+            client_.start_sync(event_handler_.get());
+            gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+            return;
+        }
+        // Stored session is unusable; throw it away and fall through.
+        tesseract::SessionStore::clear();
+        std::string msg = "Saved session expired: " + res.message;
+        gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+    }
+
     LoginDialog dlg(GTK_WINDOW(window_), client_);
     if (!dlg.run()) {
         gtk_label_set_text(GTK_LABEL(status_bar_), "Not logged in");
         return;
     }
+
+    // Persist the freshly-issued session so the next launch can skip the
+    // dialog. on_session_saved keeps it up to date thereafter.
+    tesseract::SessionStore::save(client_.export_session());
 
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());

@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
 
+#include <tesseract/session_store.hpp>
+
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QMessageBox>
@@ -33,6 +35,12 @@ void EventBridge::on_sync_error(
     const std::string& description)
 {
     emit syncError(QString::fromStdString(description));
+}
+
+void EventBridge::on_session_saved(const std::string& session_json) {
+    // Called on the Rust sync thread when tokens rotate. SessionStore::save
+    // is just a tmp-file + rename, fine to do off the GUI thread.
+    tesseract::SessionStore::save(session_json);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,11 +118,34 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::doLogin() {
+    // Try a saved session first; only show the LoginDialog if there's nothing
+    // valid on disk.
+    if (auto saved = tesseract::SessionStore::load()) {
+        statusBar()->showMessage("Restoring session…");
+        auto res = client_.restore_session(*saved);
+        if (res) {
+            client_.start_sync(bridge_.get());
+            statusBar()->showMessage("Connected");
+            onRoomsUpdated(client_.list_rooms());
+            return;
+        }
+        // Stored session is unusable (homeserver dropped SSS support, refresh
+        // token expired, etc.). Throw it away and show the LoginDialog.
+        tesseract::SessionStore::clear();
+        statusBar()->showMessage(
+            "Saved session expired: " + QString::fromStdString(res.message),
+            6000);
+    }
+
     LoginDialog dlg(client_, this);
     if (dlg.exec() != QDialog::Accepted) {
         statusBar()->showMessage("Not logged in");
         return;
     }
+
+    // Persist the freshly-issued session so the next launch can skip the
+    // dialog. on_session_saved keeps it up to date thereafter.
+    tesseract::SessionStore::save(client_.export_session());
 
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
