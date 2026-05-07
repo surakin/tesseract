@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<gtk4::MainWindow> window;
 
     g_signal_connect(app, "activate", G_CALLBACK(+[](GtkApplication* app, gpointer data) {
-        auto*& win = *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
+        auto& win = *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
         if (!win) win = std::make_unique<gtk4::MainWindow>(app);
     }), &window);
 

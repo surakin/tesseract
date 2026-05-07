@@ -2,6 +2,7 @@
 #include "event_handler.h"
 #include "types.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,7 +31,6 @@ public:
     Client();
     ~Client();
 
-    // Non-copyable, movable.
     Client(const Client&)            = delete;
     Client& operator=(const Client&) = delete;
     Client(Client&&)                 noexcept;
@@ -40,64 +40,59 @@ public:
     // Authentication (OAuth 2.0 / Matrix Authentication Service)
     // ------------------------------------------------------------------
 
-    /// First-phase output of begin_oauth(): the URL to open in the user's
-    /// browser plus the loopback redirect URI we're listening on.
     struct OAuthFlow {
         bool        ok = false;
-        std::string message;        ///< Error description if ok == false.
-        std::string auth_url;       ///< Open this in the default browser.
-        std::string redirect_uri;   ///< Loopback URI we'll receive the code on.
+        std::string message;
+        std::string auth_url;
+        std::string redirect_uri;
 
         explicit operator bool() const noexcept { return ok; }
     };
 
-    /// Phase 1: discover the homeserver, register the client and produce the
-    /// authorisation URL. Performs network I/O — call from a worker thread.
     OAuthFlow   begin_oauth(const std::string& homeserver);
-
-    /// Phase 2: block until the user finishes authentication in the browser
-    /// and the loopback listener receives the redirect, then exchange the
-    /// code for tokens. Call from a worker thread.
     Result      await_oauth();
-
-    /// Abort an in-flight OAuth flow (user closed the dialog).
     void        cancel_oauth();
 
-    /// Open `url` in the user's default browser. Returns false if the platform
-    /// helper failed; the UI can fall back to displaying the URL for copy/paste.
     static bool open_in_browser(const std::string& url);
 
-    /// Restore a session previously saved with export_session().
     Result      restore_session(const std::string& session_json);
-
-    /// Serialise the current session (empty on error / not logged in).
     std::string export_session() const;
-
-    /// Log out and invalidate the current session.
     Result      logout();
 
     // ------------------------------------------------------------------
     // Sync loop
     // ------------------------------------------------------------------
 
-    /// Start the background sync loop; events are delivered via `handler`.
-    /// The handler pointer must remain valid until stop_sync() returns.
-    void        start_sync(IEventHandler* handler);
-
-    /// Stop the background sync loop.
-    void        stop_sync();
+    void start_sync(IEventHandler* handler);
+    void stop_sync();
 
     // ------------------------------------------------------------------
-    // Rooms and messaging
+    // Room list (utility — push pipeline drives UI updates via callbacks)
     // ------------------------------------------------------------------
 
     std::vector<RoomInfo> list_rooms() const;
 
-    Result               send_message(const std::string& room_id,
-                                      const std::string& body);
+    // ------------------------------------------------------------------
+    // Timeline subscription (Step 2)
+    // ------------------------------------------------------------------
 
-    std::vector<Message> room_messages(const std::string& room_id,
-                                       std::size_t        limit) const;
+    /// Subscribe to a room's timeline. Emits on_timeline_reset then
+    /// on_message for cached items, followed by live on_message callbacks.
+    /// Call paginate_back() immediately after to load message history.
+    Result subscribe_room(const std::string& room_id);
+
+    /// Unsubscribe from a room's timeline and cancel its background task.
+    void   unsubscribe_room(const std::string& room_id);
+
+    /// Paginate backwards in a subscribed room. History arrives via
+    /// on_message callbacks in oldest-first order.
+    Result paginate_back(const std::string& room_id, std::uint16_t count);
+
+    // ------------------------------------------------------------------
+    // Messaging
+    // ------------------------------------------------------------------
+
+    Result send_message(const std::string& room_id, const std::string& body);
 
 private:
     struct Impl;

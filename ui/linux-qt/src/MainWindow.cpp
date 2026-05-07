@@ -9,8 +9,6 @@
 #include <QScrollBar>
 #include <QMetaType>
 
-// Register types for queued (cross-thread) signal/slot delivery.
-// Must happen before the signals are connected.
 Q_DECLARE_METATYPE(tesseract::Message)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
 
@@ -21,7 +19,7 @@ namespace qt6 {
 // ---------------------------------------------------------------------------
 
 void EventBridge::on_message(const tesseract::Message& msg) {
-    emit messageReceived(msg);          // Qt::QueuedConnection by default
+    emit messageReceived(msg);
 }
 
 void EventBridge::on_rooms_updated(
@@ -37,9 +35,11 @@ void EventBridge::on_sync_error(
     emit syncError(QString::fromStdString(description));
 }
 
+void EventBridge::on_timeline_reset(const std::string& room_id) {
+    emit timelineReset(QString::fromStdString(room_id));
+}
+
 void EventBridge::on_session_saved(const std::string& session_json) {
-    // Called on the Rust sync thread when tokens rotate. SessionStore::save
-    // is just a tmp-file + rename, fine to do off the GUI thread.
     tesseract::SessionStore::save(session_json);
 }
 
@@ -56,7 +56,6 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle("Tesseract");
     resize(1024, 768);
 
-    // ---- Central widget ----
     auto* central = new QWidget(this);
     setCentralWidget(central);
 
@@ -64,12 +63,10 @@ MainWindow::MainWindow(QWidget* parent)
     hLayout->setContentsMargins(0, 0, 0, 0);
     hLayout->setSpacing(0);
 
-    // ---- Room list ----
     roomList_ = new QListWidget(this);
     roomList_->setFixedWidth(220);
     hLayout->addWidget(roomList_);
 
-    // ---- Right panel ----
     auto* vLayout = new QVBoxLayout;
     vLayout->setContentsMargins(4, 4, 4, 4);
     vLayout->setSpacing(4);
@@ -80,24 +77,19 @@ MainWindow::MainWindow(QWidget* parent)
     vLayout->addWidget(msgView_, 1);
 
     auto* inputRow = new QHBoxLayout;
-    inputLine_ = new QLineEdit(this);
+    inputLine_  = new QLineEdit(this);
     sendButton_ = new QPushButton("Send", this);
     inputRow->addWidget(inputLine_, 1);
     inputRow->addWidget(sendButton_);
     vLayout->addLayout(inputRow);
 
-    // ---- Status bar ----
     statusBar()->showMessage("Not logged in");
 
-    // ---- Connections ----
     connect(sendButton_, &QPushButton::clicked,
             this, &MainWindow::onSendClicked);
-
     connect(roomList_, &QListWidget::currentItemChanged,
             this, &MainWindow::onRoomSelected);
 
-    // Build bridge and connect cross-thread signals (auto = QueuedConnection
-    // when sender and receiver live in different threads).
     bridge_ = std::make_unique<EventBridge>(this);
 
     connect(bridge_.get(), &EventBridge::messageReceived,
@@ -106,8 +98,9 @@ MainWindow::MainWindow(QWidget* parent)
             this,          &MainWindow::onRoomsUpdated);
     connect(bridge_.get(), &EventBridge::syncError,
             this,          &MainWindow::onSyncError);
+    connect(bridge_.get(), &EventBridge::timelineReset,
+            this,          &MainWindow::onTimelineReset);
 
-    // Trigger login once the event loop is running.
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
 }
 
@@ -118,19 +111,15 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::doLogin() {
-    // Try a saved session first; only show the LoginDialog if there's nothing
-    // valid on disk.
     if (auto saved = tesseract::SessionStore::load()) {
         statusBar()->showMessage("Restoring session…");
         auto res = client_.restore_session(*saved);
         if (res) {
             client_.start_sync(bridge_.get());
             statusBar()->showMessage("Connected");
-            onRoomsUpdated(client_.list_rooms());
+            // Room list will arrive via on_rooms_updated once SyncService fires.
             return;
         }
-        // Stored session is unusable (homeserver dropped SSS support, refresh
-        // token expired, etc.). Throw it away and show the LoginDialog.
         tesseract::SessionStore::clear();
         statusBar()->showMessage(
             "Saved session expired: " + QString::fromStdString(res.message),
@@ -143,13 +132,10 @@ void MainWindow::doLogin() {
         return;
     }
 
-    // Persist the freshly-issued session so the next launch can skip the
-    // dialog. on_session_saved keeps it up to date thereafter.
     tesseract::SessionStore::save(client_.export_session());
-
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
-    onRoomsUpdated(client_.list_rooms());
+    // Room list arrives via on_rooms_updated from RoomListService.
 }
 
 void MainWindow::onSendClicked() {
@@ -173,22 +159,30 @@ void MainWindow::onRoomSelected(
     int idx = roomList_->row(current);
     if (idx < 0 || idx >= static_cast<int>(rooms_.size())) return;
 
-    currentRoomId_ = rooms_[idx].id;
-    msgView_->clear();
+    const std::string newRoomId = rooms_[idx].id;
 
-    auto msgs = client_.room_messages(currentRoomId_, 50);
-    for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
-        appendMessage(QString::fromStdString(it->sender),
-                      QString::fromStdString(it->body));
+    // Unsubscribe from previous room before subscribing to the new one.
+    if (!currentRoomId_.empty() && currentRoomId_ != newRoomId)
+        client_.unsubscribe_room(currentRoomId_);
+
+    currentRoomId_ = newRoomId;
+
+    // subscribe_room emits on_timeline_reset then cached messages; paginate
+    // back to fill initial history (on_message callbacks arrive in order).
+    auto res = client_.subscribe_room(currentRoomId_);
+    if (!res) {
+        statusBar()->showMessage(
+            "Subscribe failed: " + QString::fromStdString(res.message), 4000);
+        return;
+    }
+    client_.paginate_back(currentRoomId_, 50);
 }
 
 void MainWindow::onMessageReceived(tesseract::Message msg) {
     if (msg.room_id == currentRoomId_)
         appendMessage(QString::fromStdString(msg.sender),
                       QString::fromStdString(msg.body));
-
-    // Refresh room list unread counts.
-    populateRooms(client_.list_rooms());
+    // Room list unread counts update via on_rooms_updated from RoomListService.
 }
 
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
@@ -198,6 +192,11 @@ void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
 
 void MainWindow::onSyncError(QString description) {
     statusBar()->showMessage("Sync error: " + description, 8000);
+}
+
+void MainWindow::onTimelineReset(QString roomId) {
+    if (roomId.toStdString() == currentRoomId_)
+        msgView_->clear();
 }
 
 // ---------------------------------------------------------------------------

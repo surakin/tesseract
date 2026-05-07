@@ -7,7 +7,21 @@
       "Bash(git -C /home/rayden/src/tesseract status)",
       "Bash(git -C /home/rayden/src/tesseract log --oneline -50)",
       "Bash(git -C /home/rayden/src/tesseract show fd5c86e --stat)",
-      "Bash(git -C /home/rayden/src/tesseract show fd5c86e --format=full)"
+      "Bash(git -C /home/rayden/src/tesseract show fd5c86e --format=full)",
+      "Bash(cmake --preset linux-qt6-debug)",
+      "Bash(cmake --build build/linux-qt6-debug)",
+      "Bash(cargo info *)",
+      "Bash(cargo update *)",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrix-sdk-ui-0.14.0/src -name \"*.rs\" | xargs grep -l \"RoomExt\" 2>/dev/null)",
+      "Read(//home/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrix-sdk-ui-0.14.0/src/**)",
+      "Bash(grep -rn \"subscribe_to_room\\\\|room_info_notable_update\\\\|joined_rooms_diff\" ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrix-sdk-0.14.0/src/ 2>/dev/null | grep \"pub fn\\\\|pub async fn\" | head -20)",
+      "Read(//home/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrix-sdk-0.14.0/src/**)",
+      "Bash(grep -rn \"pub struct RoomInfoNotableUpdate\\\\|pub enum RoomInfoNotableUpdate\" ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrix-sdk-base-0.14.0/ 2>/dev/null | head -5)",
+      "Read(//home/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/**)",
+      "Bash(find ~/.cargo/registry/src -path \"*/eyeball-im-0.7*\" -name \"*.rs\" 2>/dev/null | head -10)",
+      "Read(//home/rayden/.cargo/registry/src/**)",
+      "Bash(cmake --preset linux-gtk-debug)",
+      "Bash(cmake --build /home/rayden/src/tesseract/build/linux-gtk-debug)"
     ]
   }
 }

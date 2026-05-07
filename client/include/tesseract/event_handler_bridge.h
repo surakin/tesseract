@@ -22,14 +22,16 @@ public:
     explicit EventHandlerBridge(tesseract::IEventHandler* handler)
         : handler_(handler) {}
 
-    void on_sync_token(rust::Str token) const;
     void on_message_event(const TimelineEvent& event) const;
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_error(rust::Str context, rust::Str message) const;
     void on_session_refreshed(rust::Str session_json) const;
+    /// Signals the UI to clear the message view for room_id before the
+    /// initial cached timeline items arrive via on_message_event.
+    void on_timeline_reset(rust::Str room_id) const;
 
 private:
-    tesseract::IEventHandler* handler_; // non-owning;
+    tesseract::IEventHandler* handler_; // non-owning
 };
 
 } // namespace tesseract_ffi

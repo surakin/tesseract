@@ -114,12 +114,16 @@ pub async fn begin(
         .map_err(|e| anyhow!("serialise client metadata: {e}"))?;
     let registration_data = ClientRegistrationData::new(raw_metadata);
 
-    // 4. Ask the SDK for the authorisation URL. PKCE verifier, state, and
+    // 4. Fail fast if the homeserver does not support Simplified Sliding Sync.
+    //    Tesseract has a single sync code path (no v2 fallback).
+    probe_sss_support(&client).await?;
+
+    // 5. Ask the SDK for the authorisation URL. PKCE verifier, state, and
     //    nonce are generated inside `OAuth::login()`; they're held in the
     //    `Client` until `finish_login` is called on the same instance.
     let auth_data = client
         .oauth()
-        .login(redirect_url, None /* device_id */, Some(registration_data))
+        .login(redirect_url, None /* device_id */, Some(registration_data), None /* additional_scopes */)
         .build()
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;
@@ -207,6 +211,24 @@ fn extract_query(captured: &str) -> anyhow::Result<String> {
         .nth(1)
         .ok_or_else(|| anyhow!("redirect did not include a query string"))
         .map(str::to_owned)
+}
+
+/// Check that the homeserver supports Simplified Sliding Sync.
+/// Tesseract has no v2-sync fallback; login/restore must fail clearly here
+/// rather than surfacing a cryptic error later inside SyncService::start().
+async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
+    let versions = client.available_sliding_sync_versions().await;
+    let has_native = versions
+        .iter()
+        .any(|v| matches!(v, matrix_sdk::sliding_sync::Version::Native));
+    if !has_native {
+        anyhow::bail!(
+            "This homeserver does not support Simplified Sliding Sync (SSS). \
+             Tesseract requires SSS support (Synapse ≥ 1.110 or Conduit ≥ 0.7). \
+             Please use a compatible homeserver."
+        );
+    }
+    Ok(())
 }
 
 /// Trip the cancel flag; the listener will return on its next poll.

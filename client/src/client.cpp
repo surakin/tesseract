@@ -24,7 +24,7 @@
 namespace tesseract {
 
 // ---------------------------------------------------------------------------
-// Pimpl that holds the rust::Box<ClientFfi> with its real cxx type.
+// Pimpl
 // ---------------------------------------------------------------------------
 struct Client::Impl {
     rust::Box<tesseract_ffi::ClientFfi> ffi;
@@ -65,7 +65,6 @@ void Client::cancel_oauth() {
 
 bool Client::open_in_browser(const std::string& url) {
 #if defined(_WIN32)
-    // ShellExecute returns an HINSTANCE > 32 on success per the API contract.
     HINSTANCE hi = ShellExecuteA(nullptr, "open", url.c_str(),
                                  nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(hi) > 32;
@@ -78,7 +77,7 @@ bool Client::open_in_browser(const std::string& url) {
     if (pid < 0) return false;
     int status = 0;
     return waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-#else  // Linux / *BSD
+#else
     pid_t pid = fork();
     if (pid == 0) {
         execlp("xdg-open", "xdg-open", url.c_str(), static_cast<const char*>(nullptr));
@@ -100,9 +99,6 @@ std::string Client::export_session() const {
 }
 
 Result Client::logout() {
-    // The Rust side stops sync internally and clears the SQLite store. The
-    // caller is responsible for deleting any persisted session JSON it owns
-    // (see tesseract::SessionStore).
     return from_ffi(impl_->ffi->logout());
 }
 
@@ -124,20 +120,20 @@ std::vector<RoomInfo> Client::list_rooms() const {
     return result;
 }
 
-Result Client::send_message(const std::string& room_id, const std::string& body) {
-    return from_ffi(impl_->ffi->send_message(room_id, body));
+Result Client::subscribe_room(const std::string& room_id) {
+    return from_ffi(impl_->ffi->subscribe_room(room_id));
 }
 
-std::vector<Message> Client::room_messages(
-    const std::string& room_id, std::size_t limit) const
-{
-    auto ffi_msgs = impl_->ffi->room_messages(room_id,
-                        static_cast<std::uint64_t>(limit));
-    std::vector<Message> result;
-    result.reserve(ffi_msgs.size());
-    for (const auto& m : ffi_msgs)
-        result.push_back(from_ffi(m));
-    return result;
+void Client::unsubscribe_room(const std::string& room_id) {
+    impl_->ffi->unsubscribe_room(room_id);
+}
+
+Result Client::paginate_back(const std::string& room_id, std::uint16_t count) {
+    return from_ffi(impl_->ffi->paginate_back(room_id, count));
+}
+
+Result Client::send_message(const std::string& room_id, const std::string& body) {
+    return from_ffi(impl_->ffi->send_message(room_id, body));
 }
 
 } // namespace tesseract

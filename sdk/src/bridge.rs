@@ -7,7 +7,7 @@ pub fn client_create() -> Box<ClientFfi> {
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
-    // Shared plain-data types (zero-cost copies across the FFI boundary)
+    // Shared plain-data types
     // -------------------------------------------------------------------------
 
     /// Lightweight room descriptor returned by list_rooms().
@@ -37,10 +37,7 @@ pub mod ffi {
         message: String,
     }
 
-    /// First-phase result of an OAuth flow: contains the URL the C++ side must
-    /// open in the user's browser, plus the redirect URI we'll listen on.
-    /// `await_oauth_callback` should be called next to block until the
-    /// authorisation code is delivered back to the loopback listener.
+    /// First-phase result of an OAuth flow.
     struct OAuthBegin {
         ok:           bool,
         message:      String,
@@ -49,21 +46,20 @@ pub mod ffi {
     }
 
     // -------------------------------------------------------------------------
-    // C++ types that Rust calls back into (event notifications)
+    // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
     unsafe extern "C++" {
         include!("tesseract/event_handler_bridge.h");
 
         type EventHandlerBridge;
 
-        fn on_sync_token(self: &EventHandlerBridge, token: &str);
         fn on_message_event(self: &EventHandlerBridge, event: &TimelineEvent);
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str);
-        /// Fired whenever the SDK rotates the OAuth tokens. The argument is
-        /// the freshly-serialised session JSON; the UI must persist it so the
-        /// next launch can `restore_session()`.
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
+        /// Fired when a room's timeline is reset (room selected / subscribed).
+        /// The UI should clear its message view for this room_id.
+        fn on_timeline_reset(self: &EventHandlerBridge, room_id: &str);
     }
 
     // -------------------------------------------------------------------------
@@ -72,53 +68,48 @@ pub mod ffi {
     extern "Rust" {
         type ClientFfi;
 
-        /// Allocate a new client (no network activity yet).
         fn client_create() -> Box<ClientFfi>;
 
-        // ----- OAuth login (modern Matrix Authentication Service flow) -----
+        // ----- OAuth -----
 
-        /// Phase 1: discover the homeserver, register the OAuth client, start
-        /// a localhost redirect listener, and produce the URL to open in the
-        /// user's browser. Blocks on network I/O but does not wait for the
-        /// callback.
-        fn oauth_begin(
-            self: &mut ClientFfi,
-            homeserver: &str,
-        ) -> OAuthBegin;
-
-        /// Phase 2: block until the loopback listener receives the redirect,
-        /// then exchange the code for tokens. Must be paired with a prior
-        /// successful `oauth_begin`. Caller should run this on a worker
-        /// thread so the UI doesn't freeze.
+        fn oauth_begin(self: &mut ClientFfi, homeserver: &str) -> OAuthBegin;
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
-
-        /// Abort an in-flight OAuth flow (user closed the dialog).
         fn oauth_cancel(self: &mut ClientFfi);
 
-        /// Restore a session from the JSON string saved by export_session().
-        fn restore_session(self: &mut ClientFfi, session_json: &str) -> OpResult;
+        // ----- Session -----
 
-        /// Serialise the current session to JSON (empty on error / not logged in).
+        fn restore_session(self: &mut ClientFfi, session_json: &str) -> OpResult;
         fn export_session(self: &ClientFfi) -> String;
 
-        /// Start the sync loop; callbacks are delivered via `handler`.
-        fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
+        // ----- Sync -----
 
-        /// Stop the sync loop.
+        fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn stop_sync(self: &mut ClientFfi);
 
-        /// Return the list of joined rooms.
+        // ----- Room list -----
+
         fn list_rooms(self: &ClientFfi) -> Vec<RoomInfo>;
 
-        /// Send a plain-text message to a room.
+        // ----- Timeline subscription (Step 2) -----
+
+        /// Subscribe to a room's timeline. Emits on_timeline_reset then
+        /// on_message_event for each cached item, and on_message_event for
+        /// every subsequent live update. Call paginate_back to load history.
+        fn subscribe_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Unsubscribe from a room's timeline and cancel its background task.
+        fn unsubscribe_room(self: &mut ClientFfi, room_id: &str);
+
+        /// Paginate backwards in a subscribed room's timeline. New items
+        /// arrive via on_message_event callbacks in oldest-first order.
+        fn paginate_back(self: &mut ClientFfi, room_id: &str, count: u16) -> OpResult;
+
+        // ----- Messaging -----
+
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
 
-        /// Fetch recent messages from a room (newest-first; returns empty until timeline is cached).
-        fn room_messages(self: &ClientFfi, room_id: &str, limit: u64) -> Vec<TimelineEvent>;
+        // ----- Session teardown -----
 
-        /// Revoke OAuth tokens at the MAS, drop the in-memory client, and
-        /// remove the on-disk SQLite store. Caller is also expected to delete
-        /// any persisted session JSON it owns (see SessionStore on the C++ side).
         fn logout(self: &mut ClientFfi) -> OpResult;
     }
 }

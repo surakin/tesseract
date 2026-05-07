@@ -26,12 +26,14 @@ public:
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description) override;
+    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
 
 signals:
     void messageReceived(tesseract::Message msg);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString description);
+    void timelineReset(QString roomId);
 };
 
 // ---------------------------------------------------------------------------
@@ -48,6 +50,7 @@ private slots:
     void onMessageReceived(tesseract::Message msg);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString description);
+    void onTimelineReset(QString roomId);
 
 private:
     void doLogin();
@@ -60,7 +63,7 @@ private:
     QLineEdit*   inputLine_   = nullptr;
     QPushButton* sendButton_  = nullptr;
 
-    tesseract::Client          client_;
+    tesseract::Client             client_;
     std::unique_ptr<EventBridge>  bridge_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;

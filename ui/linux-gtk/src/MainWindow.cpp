@@ -8,7 +8,7 @@
 namespace gtk4 {
 
 // ---------------------------------------------------------------------------
-// g_idle_add helpers: heap-allocated payload structs
+// g_idle_add helpers
 // ---------------------------------------------------------------------------
 
 struct IdleMessage {
@@ -24,6 +24,11 @@ struct IdleRooms {
 struct IdleError {
     MainWindow*  window;
     std::string  description;
+};
+
+struct IdleTimelineReset {
+    MainWindow* window;
+    std::string room_id;
 };
 
 // ---------------------------------------------------------------------------
@@ -77,9 +82,21 @@ void EventHandler::on_sync_error(
     }, p);
 }
 
+void EventHandler::on_timeline_reset(const std::string& room_id) {
+    auto* p = new IdleTimelineReset{
+        reinterpret_cast<MainWindow*>(
+            g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        room_id
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleTimelineReset*>(data);
+        d->window->push_timeline_reset(std::move(d->room_id));
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
 void EventHandler::on_session_saved(const std::string& session_json) {
-    // Called on the Rust sync thread when tokens rotate. SessionStore::save
-    // is just a tmp-file + rename, fine to do off the GTK main loop.
     tesseract::SessionStore::save(session_json);
 }
 
@@ -92,14 +109,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1024, 768);
 
-    // Store C++ pointer so idle callbacks can reach us.
     g_object_set_data(G_OBJECT(window_), "cpp_window", this);
 
-    // ---- Layout: horizontal box ----
     GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_window_set_child(GTK_WINDOW(window_), hbox);
 
-    // ---- Room list (left) ----
     GtkWidget* room_scroll = gtk_scrolled_window_new();
     gtk_widget_set_size_request(room_scroll, 200, -1);
     room_list_ = gtk_list_box_new();
@@ -109,12 +123,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_signal_connect(room_list_, "row-activated",
                      G_CALLBACK(on_room_row_activated), this);
 
-    // ---- Right panel ----
     GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_hexpand(vbox, TRUE);
     gtk_box_append(GTK_BOX(hbox), vbox);
 
-    // Message view
     msg_scroll_ = gtk_scrolled_window_new();
     gtk_widget_set_vexpand(msg_scroll_, TRUE);
     msg_view_ = gtk_text_view_new();
@@ -123,7 +135,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(msg_scroll_), msg_view_);
     gtk_box_append(GTK_BOX(vbox), msg_scroll_);
 
-    // Input row
     GtkWidget* input_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_margin_start(input_row, 4);
     gtk_widget_set_margin_end(input_row, 4);
@@ -138,7 +149,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_box_append(GTK_BOX(input_row), send_btn_);
     g_signal_connect(send_btn_, "clicked", G_CALLBACK(on_send_clicked), this);
 
-    // Status bar
     status_bar_ = gtk_label_new("Not logged in");
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
@@ -146,7 +156,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
     gtk_widget_show(window_);
 
-    // Trigger login after the main loop starts.
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
         return G_SOURCE_REMOVE;
@@ -160,7 +169,6 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
-    // Try a saved session first.
     if (auto saved = tesseract::SessionStore::load()) {
         gtk_label_set_text(GTK_LABEL(status_bar_), "Restoring session…");
         auto res = client_.restore_session(*saved);
@@ -168,9 +176,9 @@ void MainWindow::do_login() {
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
             gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+            // Room list arrives via on_rooms_updated from RoomListService.
             return;
         }
-        // Stored session is unusable; throw it away and fall through.
         tesseract::SessionStore::clear();
         std::string msg = "Saved session expired: " + res.message;
         gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
@@ -182,10 +190,7 @@ void MainWindow::do_login() {
         return;
     }
 
-    // Persist the freshly-issued session so the next launch can skip the
-    // dialog. on_session_saved keeps it up to date thereafter.
     tesseract::SessionStore::save(client_.export_session());
-
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());
     gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
@@ -199,9 +204,8 @@ void MainWindow::on_send_clicked(GtkButton*, gpointer user_data) {
     if (!text || !*text) return;
 
     auto res = self->client_.send_message(self->current_room_id_, text);
-    if (res) {
+    if (res)
         gtk_editable_set_text(GTK_EDITABLE(self->input_entry_), "");
-    }
 }
 
 void MainWindow::on_room_row_activated(
@@ -211,16 +215,17 @@ void MainWindow::on_room_row_activated(
     int   index = gtk_list_box_row_get_index(row);
 
     if (index < 0 || index >= static_cast<int>(self->rooms_.size())) return;
-    self->current_room_id_ = self->rooms_[index].id;
 
-    // Clear and load messages.
-    GtkTextBuffer* buf =
-        gtk_text_view_get_buffer(GTK_TEXT_VIEW(self->msg_view_));
-    gtk_text_buffer_set_text(buf, "", 0);
+    const std::string new_id = self->rooms_[index].id;
 
-    auto msgs = self->client_.room_messages(self->current_room_id_, 50);
-    for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
-        self->append_message(it->sender, it->body);
+    if (!self->current_room_id_.empty() && self->current_room_id_ != new_id)
+        self->client_.unsubscribe_room(self->current_room_id_);
+
+    self->current_room_id_ = new_id;
+
+    auto res = self->client_.subscribe_room(self->current_room_id_);
+    if (res)
+        self->client_.paginate_back(self->current_room_id_, 50);
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
@@ -232,7 +237,7 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
 void MainWindow::push_message(tesseract::Message msg) {
     if (msg.room_id == current_room_id_)
         append_message(msg.sender, msg.body);
-    populate_rooms(client_.list_rooms());
+    // Room list unread counts update via push_rooms from RoomListService.
 }
 
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
@@ -244,8 +249,15 @@ void MainWindow::push_error(std::string description) {
     gtk_label_set_text(GTK_LABEL(status_bar_), description.c_str());
 }
 
+void MainWindow::push_timeline_reset(std::string room_id) {
+    if (room_id != current_room_id_) return;
+
+    GtkTextBuffer* buf =
+        gtk_text_view_get_buffer(GTK_TEXT_VIEW(msg_view_));
+    gtk_text_buffer_set_text(buf, "", 0);
+}
+
 void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
-    // Remove existing rows.
     while (GtkWidget* child =
                gtk_widget_get_first_child(room_list_))
     {
@@ -278,10 +290,8 @@ void MainWindow::append_message(
     std::string line = sender + ": " + body + "\n";
     gtk_text_buffer_insert(buf, &end, line.c_str(), -1);
 
-    // Scroll to bottom.
     gtk_text_buffer_get_end_iter(buf, &end);
-    GtkTextMark* mark =
-        gtk_text_buffer_get_mark(buf, "insert");
+    GtkTextMark* mark = gtk_text_buffer_get_mark(buf, "insert");
     gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(msg_view_), mark);
 }
 

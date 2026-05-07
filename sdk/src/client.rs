@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
-    ruma::events::room::message::RoomMessageEventContent,
+    ruma::{
+        events::room::message::RoomMessageEventContent,
+        OwnedRoomId,
+    },
     store::RoomLoadSettings,
     Client,
 };
@@ -19,11 +23,15 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(test))]
 use cxx::UniquePtr;
 #[cfg(not(test))]
-use matrix_sdk::{
-    config::SyncSettings,
-    ruma::events::room::message::MessageType,
-    SessionChange,
+use matrix_sdk::SessionChange;
+#[cfg(not(test))]
+use matrix_sdk_ui::{
+    eyeball_im::VectorDiff,
+    sync_service::SyncService,
+    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineItem, TimelineItemContent, TimelineItemKind},
 };
+#[cfg(not(test))]
+use futures_util::StreamExt;
 #[cfg(not(test))]
 use crate::ffi::{EventHandlerBridge, TimelineEvent};
 
@@ -46,9 +54,6 @@ fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
     }
 }
 
-/// Per-user data directory used for the SDK's encrypted sqlite store. Created
-/// on first use; same location is reused on every launch so encryption keys
-/// and rooms cache survive across sessions.
 fn data_dir() -> PathBuf {
     let base = dirs_like_home().unwrap_or_else(std::env::temp_dir);
     let dir  = base.join("tesseract").join("matrix-store");
@@ -57,11 +62,8 @@ fn data_dir() -> PathBuf {
 }
 
 fn dirs_like_home() -> Option<PathBuf> {
-    // Cheap stand-in for the `dirs` crate; covers the platforms we ship to.
     #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("APPDATA").map(PathBuf::from)
-    }
+    { std::env::var_os("APPDATA").map(PathBuf::from) }
     #[cfg(target_os = "macos")]
     {
         std::env::var_os("HOME")
@@ -88,6 +90,12 @@ impl std::ops::Deref for SendHandler {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+#[cfg(not(test))]
+struct TimelineHandle {
+    timeline:    Arc<matrix_sdk_ui::Timeline>,
+    abort_tasks: Vec<tokio::task::AbortHandle>,
+}
+
 /// Serialisable wrapper for a full OAuth session (client_id + user session).
 #[derive(Serialize, Deserialize)]
 struct PersistedSession {
@@ -97,16 +105,20 @@ struct PersistedSession {
 }
 
 pub struct ClientFfi {
-    rt:           Runtime,
-    client:       Option<Client>,
-    stop_tx:      Option<watch::Sender<bool>>,
-    oauth_flow:   Option<oauth::PendingFlow>,
+    rt:         Runtime,
+    client:     Option<Client>,
+    stop_tx:    Option<watch::Sender<bool>>,
+    oauth_flow: Option<oauth::PendingFlow>,
+    #[cfg(not(test))]
+    handler:      Option<Arc<Mutex<SendHandler>>>,
+    #[cfg(not(test))]
+    sync_service: Option<Arc<SyncService>>,
+    #[cfg(not(test))]
+    timelines:    HashMap<OwnedRoomId, TimelineHandle>,
 }
 
 impl ClientFfi {
     pub fn new() -> Self {
-        // try_init() instead of init() so a second ClientFfi (e.g. after
-        // logout-then-login in the same process) doesn't panic.
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
@@ -119,15 +131,20 @@ impl ClientFfi {
             client:     None,
             stop_tx:    None,
             oauth_flow: None,
+            #[cfg(not(test))]
+            handler:      None,
+            #[cfg(not(test))]
+            sync_service: None,
+            #[cfg(not(test))]
+            timelines:    HashMap::new(),
         }
     }
 
     // -----------------------------------------------------------------------
-    // OAuth login (Matrix Authentication Service)
+    // OAuth login
     // -----------------------------------------------------------------------
 
     pub fn oauth_begin(&mut self, homeserver: &str) -> OAuthBegin {
-        // Cancel any previous half-finished flow before starting a new one.
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
         }
@@ -191,6 +208,9 @@ impl ClientFfi {
                 .await
                 .context("restore oauth session")?;
 
+            // Fail fast if the homeserver no longer supports SSS.
+            probe_sss_support(&client).await?;
+
             anyhow::Ok(client)
         });
 
@@ -207,21 +227,21 @@ impl ClientFfi {
         serde_json::to_string(&persisted).unwrap_or_default()
     }
 
+    // -----------------------------------------------------------------------
+    // Sync loop (Step 2: SyncService + RoomListService)
+    // -----------------------------------------------------------------------
+
     #[cfg(not(test))]
-    pub fn start_sync(
-        &mut self,
-        handler: UniquePtr<EventHandlerBridge>,
-    ) {
+    pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
         let Some(client) = self.client.clone() else { return };
 
-        let (stop_tx, mut stop_rx) = watch::channel(false);
+        let (stop_tx, stop_rx) = watch::channel(false);
         self.stop_tx = Some(stop_tx);
 
-        // Wrap in SendHandler to allow sharing across threads (Qt signals are thread-safe).
         let handler = Arc::new(Mutex::new(SendHandler(handler)));
+        self.handler = Some(Arc::clone(&handler));
 
-        // Subscribe to OAuth session changes so we can re-export the session
-        // JSON every time the SDK refreshes tokens; the UI persists it.
+        // Session refresh watcher.
         {
             let h            = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -230,12 +250,7 @@ impl ClientFfi {
                 loop {
                     match changes.recv().await {
                         Ok(SessionChange::TokensRefreshed) => {
-                            // Emit the *full* session shape (client_id + user)
-                            // so it round-trips through restore_session(),
-                            // which expects a PersistedSession.
-                            let Some(full) = client_clone.oauth().full_session() else {
-                                continue;
-                            };
+                            let Some(full) = client_clone.oauth().full_session() else { continue };
                             let persisted = PersistedSession {
                                 client_id: full.client_id,
                                 user:      full.user,
@@ -245,7 +260,6 @@ impl ClientFfi {
                                 guard.on_session_refreshed(&json);
                             }
                         }
-                        // Logout/unknown change — UI handles those via other paths.
                         Ok(_)  => continue,
                         Err(_) => break,
                     }
@@ -253,60 +267,73 @@ impl ClientFfi {
             });
         }
 
-        self.rt.spawn(async move {
-            let settings = SyncSettings::default();
+        // Build SyncService.
+        let sync_service = match self.rt.block_on(
+            SyncService::builder(client.clone()).build()
+        ) {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                if let Ok(guard) = handler.lock() {
+                    guard.on_error("sync_init", &e.to_string());
+                }
+                return;
+            }
+        };
+        self.sync_service = Some(Arc::clone(&sync_service));
 
-            // Attach a room-message event handler.
-            {
-                let h = Arc::clone(&handler);
-                client.add_event_handler(
-                    move |ev: matrix_sdk::ruma::events::SyncMessageLikeEvent<
-                        RoomMessageEventContent,
-                    >,
-                          room: matrix_sdk::Room| {
-                        let h = Arc::clone(&h);
-                        async move {
-                            if let matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(e) = ev
-                            {
-                                if let MessageType::Text(t) = e.content.msgtype {
-                                    let event = TimelineEvent {
-                                        event_id:  e.event_id.to_string(),
-                                        room_id:   room.room_id().to_string(),
-                                        sender:    e.sender.to_string(),
-                                        body:      t.body,
-                                        timestamp: e
-                                            .origin_server_ts
-                                            .as_secs()
-                                            .into(),
-                                        msg_type:  "m.text".to_owned(),
-                                    };
-                                    if let Ok(guard) = h.lock() {
-                                        guard.on_message_event(&event);
-                                    }
-                                }
+        // Room info watcher: re-emits the full room list on every notable room update.
+        {
+            let h                 = Arc::clone(&handler);
+            let client_clone      = client.clone();
+            let mut notable_rx    = client.room_info_notable_update_receiver();
+            let mut stop_rx_rooms = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = stop_rx_rooms.changed() => {
+                            if *stop_rx_rooms.borrow() { break; }
+                        }
+                        result = notable_rx.recv() => {
+                            use tokio::sync::broadcast::error::RecvError;
+                            match result {
+                                Ok(_)                      => {}
+                                Err(RecvError::Lagged(_))  => {}
+                                Err(RecvError::Closed)     => break,
+                            }
+                            let rooms = build_room_infos(&client_clone).await;
+                            if let Ok(guard) = h.lock() {
+                                guard.on_rooms_updated(&rooms);
                             }
                         }
-                    },
-                );
-            }
+                    }
+                }
+            });
+        }
+
+        // Start SyncService and monitor state.
+        let svc_clone      = Arc::clone(&sync_service);
+        let h_state        = Arc::clone(&handler);
+        let mut stop_rx_sv = stop_rx.clone();
+
+        self.rt.spawn(async move {
+            svc_clone.start().await;
+
+            use matrix_sdk_ui::sync_service::State as SyncServiceState;
+            let mut state_stream = svc_clone.state();
 
             loop {
                 tokio::select! {
-                    _ = stop_rx.changed() => {
-                        if *stop_rx.borrow() { break; }
+                    _ = stop_rx_sv.changed() => {
+                        if *stop_rx_sv.borrow() {
+                            let _ = svc_clone.stop().await;
+                            break;
+                        }
                     }
-                    result = client.sync_once(settings.clone()) => {
-                        match result {
-                            Ok(resp) => {
-                                if let Ok(guard) = handler.lock() {
-                                    guard.on_sync_token(resp.next_batch.as_str());
-                                }
-                            }
-                            Err(e) => {
-                                if let Ok(guard) = handler.lock() {
-                                    guard.on_error("sync", &e.to_string());
-                                }
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    Some(state) = state_stream.next() => {
+                        if matches!(state, SyncServiceState::Error) {
+                            if let Ok(guard) = h_state.lock() {
+                                guard.on_error("sync", "SyncService encountered an error");
                             }
                         }
                     }
@@ -319,36 +346,112 @@ impl ClientFfi {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(true);
         }
+        #[cfg(not(test))]
+        if let Some(svc) = self.sync_service.take() {
+            self.rt.block_on(async move { let _ = svc.stop().await; });
+        }
     }
 
-    pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
-        let Some(client) = self.client.clone() else { return Vec::new() };
-        let rooms = client.joined_rooms();
-        self.rt.block_on(async move {
-            let mut result = Vec::new();
-            for room in rooms {
-                let name = room
-                    .display_name()
-                    .await
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|_| room.room_id().to_string());
-                result.push(crate::ffi::RoomInfo {
-                    id:           room.room_id().to_string(),
-                    name,
-                    topic:        room.topic().unwrap_or_default(),
-                    unread_count: room.unread_notification_counts().notification_count,
-                    is_direct:    room.is_direct().await.unwrap_or(false),
-                });
+    // -----------------------------------------------------------------------
+    // Timeline subscription (Step 2)
+    // -----------------------------------------------------------------------
+
+    #[cfg(not(test))]
+    pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(handler) = self.handler.clone() else { return err("sync not started") };
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+
+        // Drop any previous subscription for this room.
+        if let Some(prev) = self.timelines.remove(&room_id) {
+            for h in prev.abort_tasks { h.abort(); }
+        }
+
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+
+        let timeline = match self.rt.block_on(room.timeline()) {
+            Ok(t)  => Arc::new(t),
+            Err(e) => return err(format!("build timeline: {e}")),
+        };
+
+        let room_id_str = room_id.to_string();
+
+        // Notify the UI to clear the message view for this room.
+        if let Ok(guard) = handler.lock() {
+            guard.on_timeline_reset(&room_id_str);
+        }
+
+        // Spawn a task that streams timeline items to the UI.
+        let tl    = Arc::clone(&timeline);
+        let h     = Arc::clone(&handler);
+        let rid   = room_id_str.clone();
+
+        let abort = self.rt.spawn(async move {
+            let (initial_items, mut stream) = tl.subscribe().await;
+
+            for item in initial_items.iter() {
+                if let Some(ev) = timeline_item_to_ffi(item, &rid) {
+                    if let Ok(guard) = h.lock() {
+                        guard.on_message_event(&ev);
+                    }
+                }
             }
-            result
-        })
+
+            while let Some(diffs) = stream.next().await {
+                for diff in diffs {
+                    handle_timeline_diff(diff, &h, &rid);
+                }
+            }
+        }).abort_handle();
+
+        self.timelines.insert(room_id, TimelineHandle {
+            timeline,
+            abort_tasks: vec![abort],
+        });
+
+        ok("")
     }
 
-    pub fn send_message(&mut self, room_id: &str, body: &str) -> crate::ffi::OpResult {
+    #[cfg(not(test))]
+    pub fn unsubscribe_room(&mut self, room_id: &str) {
+        if let Ok(id) = room_id.parse::<OwnedRoomId>() {
+            if let Some(h) = self.timelines.remove(&id) {
+                for abort in h.abort_tasks { abort.abort(); }
+            }
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn paginate_back(&mut self, room_id: &str, count: u16) -> OpResult {
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return err("room not subscribed; call subscribe_room first");
+        };
+
+        let tl = Arc::clone(&handle.timeline);
+        match self.rt.block_on(tl.paginate_backwards(count)) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Messaging
+    // -----------------------------------------------------------------------
+
+    pub fn send_message(&mut self, room_id: &str, body: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
-            Ok(id)  => id,
-            Err(e)  => return err(format!("invalid room id: {e}")),
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
         };
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
         let content = RoomMessageEventContent::text_plain(body);
@@ -358,29 +461,26 @@ impl ClientFfi {
         }
     }
 
-    pub fn room_messages(&self, _room_id: &str, _limit: u64) -> Vec<crate::ffi::TimelineEvent> {
-        // Will be replaced by a Timeline-backed implementation once the
-        // sliding-sync rewrite lands. Until then, history loading is a no-op.
-        Vec::new()
+    pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
+        let Some(client) = self.client.clone() else { return Vec::new() };
+        self.rt.block_on(build_room_infos(&client))
     }
 
-    /// Revoke OAuth tokens at the MAS, drop the in-memory client and stop
-    /// the sync loop, then remove the local SQLite store so the next login
-    /// starts from a clean state. The caller (C++ SessionStore) is also
-    /// expected to delete its persisted session.json.
-    pub fn logout(&mut self) -> crate::ffi::OpResult {
-        // Stop sync first so no background tasks touch the Client while we
-        // tear it down.
+    // -----------------------------------------------------------------------
+    // Logout
+    // -----------------------------------------------------------------------
+
+    pub fn logout(&mut self) -> OpResult {
         self.stop_sync();
 
-        // Cancel any in-flight oauth flow.
         if let Some(flow) = self.oauth_flow.take() {
             oauth::cancel(&flow);
         }
 
+        #[cfg(not(test))]
+        { self.timelines.clear(); }
+
         let Some(client) = self.client.take() else {
-            // Already logged out; clean the store anyway in case a previous
-            // logout left it half-populated.
             let _ = std::fs::remove_dir_all(data_dir());
             return ok("");
         };
@@ -389,8 +489,6 @@ impl ClientFfi {
             client.oauth().logout().await
         });
 
-        // Always remove the local store. Even if the server-side revoke
-        // failed, the local keys are no longer useful with this account.
         let _ = std::fs::remove_dir_all(data_dir());
 
         match revoke {
@@ -399,6 +497,106 @@ impl ClientFfi {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
+    let versions = client.available_sliding_sync_versions().await;
+    let has_native = versions.iter().any(|v| {
+        matches!(v, matrix_sdk::sliding_sync::Version::Native)
+    });
+    if !has_native {
+        anyhow::bail!(
+            "This homeserver does not support Simplified Sliding Sync. \
+             Tesseract requires SSS (Synapse ≥ 1.110 or Conduit ≥ 0.7)."
+        );
+    }
+    Ok(())
+}
+
+async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
+    let mut result = Vec::new();
+    for room in client.joined_rooms() {
+        let name = room
+            .display_name()
+            .await
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| room.room_id().to_string());
+        result.push(crate::ffi::RoomInfo {
+            id:           room.room_id().to_string(),
+            name,
+            topic:        room.topic().unwrap_or_default(),
+            unread_count: room.unread_notification_counts().notification_count,
+            is_direct:    room.is_direct().await.unwrap_or(false),
+        });
+    }
+    result
+}
+
+#[cfg(not(test))]
+fn timeline_item_to_ffi(
+    item: &Arc<TimelineItem>,
+    room_id: &str,
+) -> Option<TimelineEvent> {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+
+    let event_item = match item.kind() {
+        TimelineItemKind::Event(e) => e,
+        _ => return None,
+    };
+
+    let (body, msg_type) = match event_item.content() {
+        TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Message(msg), .. }) => {
+            match msg.msgtype() {
+                MessageType::Text(t)  => (t.body.clone(), "m.text".to_owned()),
+                MessageType::Image(i) => (i.body.clone(), "m.image".to_owned()),
+                MessageType::File(f)  => (f.body.clone(), "m.file".to_owned()),
+                _                     => return None,
+            }
+        }
+        _ => return None,
+    };
+
+    Some(TimelineEvent {
+        event_id:  event_item.event_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        room_id:   room_id.to_owned(),
+        sender:    event_item.sender().to_string(),
+        body,
+        timestamp: event_item.timestamp().get().into(),
+        msg_type,
+    })
+}
+
+#[cfg(not(test))]
+fn handle_timeline_diff(
+    diff: VectorDiff<Arc<TimelineItem>>,
+    handler: &Arc<Mutex<SendHandler>>,
+    room_id: &str,
+) {
+    let items: Vec<Arc<TimelineItem>> = match diff {
+        VectorDiff::Append    { values }       => values.into_iter().collect(),
+        VectorDiff::PushBack  { value }        => vec![value],
+        VectorDiff::PushFront { value }        => vec![value],
+        VectorDiff::Insert    { value, .. }    => vec![value],
+        VectorDiff::Set       { value, .. }    => vec![value],
+        VectorDiff::Reset     { values }       => values.into_iter().collect(),
+        _ => return,
+    };
+
+    for item in &items {
+        if let Some(ev) = timeline_item_to_ffi(item, room_id) {
+            if let Ok(guard) = handler.lock() {
+                guard.on_message_event(&ev);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -448,12 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn room_messages_is_empty() {
-        let c = ClientFfi::new();
-        assert!(c.room_messages("!x:example.com", 10).is_empty());
-    }
-
-    #[test]
     fn send_message_fails_when_not_logged_in() {
         let mut c = ClientFfi::new();
         let r = c.send_message("!room:example.com", "hello");
@@ -472,13 +664,13 @@ mod tests {
     #[test]
     fn oauth_cancel_is_noop_without_flow() {
         let mut c = ClientFfi::new();
-        c.oauth_cancel(); // must not panic
+        c.oauth_cancel();
     }
 
     #[test]
     fn stop_sync_is_noop_without_start() {
         let mut c = ClientFfi::new();
-        c.stop_sync(); // must not panic
+        c.stop_sync();
     }
 
     #[test]

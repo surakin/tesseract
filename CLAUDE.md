@@ -89,7 +89,7 @@ Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ct
 | `sdk/src/lib.rs` | `cxx::bridge` — the FFI boundary between Rust and C++ |
 | `sdk/src/client.rs` | Matrix SDK wrapper (sync, rooms, messaging) |
 | `sdk/src/oauth.rs` | RFC 8252 loopback OAuth implementation |
-| `client/include/tesseract/*.hpp` | C++ public API headers |
+| `client/include/tesseract/*.h` | C++ public API headers |
 | `ui/linux-qt/src/MainWindow.h` | Qt UI with EventBridge pattern for thread marshaling |
 
 ## Roadmap
@@ -99,15 +99,7 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 ### Status
 
 - **Step 1 done** — OAuth fix-ups: real `logout` (FFI + Rust + C++ + SQLite store wipe), `SessionStore` + restore-or-login on startup, full-`PersistedSession` shape on token refresh, `WHOLE_ARCHIVE` link visibility on Win32 and GTK, `tracing_subscriber` `try_init` hardening.
-
-### Steps in order
-
-**Step 2 — Sliding-sync replacement (SSS-only)**
-- Pull `matrix-sdk-ui = "0.11"` with `sqlite` + `e2e-encryption` features.
-- Replace the `sync_once` loop with `SyncService` + `RoomListService`; per-room `Timeline` for the active room (kept in `HashMap<RoomId, Timeline>` on `ClientFfi`).
-- New FFI: `subscribe_room` / `unsubscribe_room` / `paginate_back`. Drop the `room_messages` stub — push pipeline replaces it.
-- `on_room_list_updated` callback fed by `RoomListService` diffs, replacing the manual "after every message, refetch all rooms" hack in the UIs.
-- **Mandatory SSS gating**: probe SSS support at the end of `oauth::begin()` (and again inside `restore_session`); if the homeserver doesn't support SSS, fail fast with a distinct error and surface a clear message in `LoginDialog`. No fallback to v2 sync — single code path.
+- **Step 2 done** — Sliding-sync replacement: `matrix-sdk-ui = "0.11"` added; `SyncService` + `RoomListService` replace the `sync_once` loop; per-room `Timeline` held in `HashMap<OwnedRoomId, TimelineHandle>` on `ClientFfi`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back` + `on_timeline_reset` callback; `room_messages` stub dropped; room-list driven by `RoomListService` diffs (UIs no longer call `list_rooms` after every message); SSS probed in `oauth::begin()` and `restore_session` — fails fast with a clear error if the server does not support it.
 
 **Step 3 — Spaces (room-list hierarchy)**
 - Recognise rooms with `type: m.space`; consume `m.space.child` / `m.space.parent` to build a tree.

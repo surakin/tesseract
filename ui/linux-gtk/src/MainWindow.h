@@ -19,9 +19,9 @@ public:
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description) override;
+    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
 
-    // Non-owning reference; caller manages lifetime.
     GtkWindow* window_;
 };
 
@@ -34,10 +34,10 @@ public:
 
     GtkWidget* widget() const { return window_; }
 
-    // Called from EventHandler via g_idle_add.
     void push_message(tesseract::Message msg);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
+    void push_timeline_reset(std::string room_id);
 
 private:
     static void on_send_clicked(GtkButton*, gpointer user_data);

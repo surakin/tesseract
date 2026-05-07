@@ -3,10 +3,6 @@
 
 namespace tesseract_ffi {
 
-void EventHandlerBridge::on_sync_token(rust::Str /*token*/) const {
-    // Nothing to propagate for a plain sync token; extend if persistence needed.
-}
-
 void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
     if (!handler_) return;
     handler_->on_message(tesseract::from_ffi(ev));
@@ -34,6 +30,11 @@ void EventHandlerBridge::on_error(
 void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const {
     if (!handler_) return;
     handler_->on_session_saved(std::string(session_json));
+}
+
+void EventHandlerBridge::on_timeline_reset(rust::Str room_id) const {
+    if (!handler_) return;
+    handler_->on_timeline_reset(std::string(room_id));
 }
 
 } // namespace tesseract_ffi
