@@ -201,8 +201,6 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
     Ok(flow.client)
 }
 
-/// Extract the query string from a captured loopback URL such as
-/// `/callback?code=…&state=…`.  Returns an error when no `?` is present.
 fn extract_query(captured: &str) -> anyhow::Result<String> {
     captured
         .splitn(2, '?')

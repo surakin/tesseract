@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "tesseract/session_store.hpp"
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 
@@ -13,9 +14,11 @@ namespace fs = std::filesystem;
 struct SessionFixture {
     std::string dir;
 
-    SessionFixture()
-        : dir((fs::temp_directory_path() / "tesseract_unit_tests").string())
-    {
+    SessionFixture() {
+        static std::atomic<int> counter{0};
+        auto n = counter.fetch_add(1, std::memory_order_relaxed);
+        dir = (fs::temp_directory_path()
+               / ("tesseract_unit_tests_" + std::to_string(n))).string();
         fs::create_directories(dir);
 #if defined(_WIN32)
         _putenv_s("APPDATA", dir.c_str());

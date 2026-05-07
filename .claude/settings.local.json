@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(git fetch *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(git -C /home/rayden/src/tesseract log --oneline -20)",
+      "Bash(git -C /home/rayden/src/tesseract status)",
+      "Bash(git -C /home/rayden/src/tesseract log --oneline -50)",
+      "Bash(git -C /home/rayden/src/tesseract show fd5c86e --stat)",
+      "Bash(git -C /home/rayden/src/tesseract show fd5c86e --format=full)"
     ]
   }
 }

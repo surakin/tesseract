@@ -2,7 +2,7 @@
 #include "tesseract/event_handler_bridge.hpp"
 
 // cxx-generated header (produced by corrosion_add_cxxbridge)
-#include "tesseract_sdk_bridge_cxx/bridge.h"
+#include "ffi_convert.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -32,33 +32,6 @@ struct Client::Impl {
     explicit Impl()
         : ffi(tesseract_ffi::client_create()) {}
 };
-
-// ---------------------------------------------------------------------------
-
-static Result from_ffi(const tesseract_ffi::OpResult& r) {
-    return Result{ r.ok, std::string(r.message) };
-}
-
-static RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
-    return RoomInfo{
-        .id           = std::string(r.id),
-        .name         = std::string(r.name),
-        .topic        = std::string(r.topic),
-        .unread_count = r.unread_count,
-        .is_direct    = r.is_direct,
-    };
-}
-
-static Message from_ffi(const tesseract_ffi::TimelineEvent& e) {
-    return Message{
-        .event_id  = std::string(e.event_id),
-        .room_id   = std::string(e.room_id),
-        .sender    = std::string(e.sender),
-        .body      = std::string(e.body),
-        .timestamp = e.timestamp,
-        .msg_type  = std::string(e.msg_type),
-    };
-}
 
 // ---------------------------------------------------------------------------
 

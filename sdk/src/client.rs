@@ -14,7 +14,6 @@ use tokio::sync::watch;
 use crate::ffi::{OAuthBegin, OpResult};
 use crate::oauth;
 
-// These imports are only needed for the sync loop, which is excluded from test builds.
 #[cfg(not(test))]
 use std::sync::{Arc, Mutex};
 #[cfg(not(test))]
@@ -79,7 +78,6 @@ fn dirs_like_home() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------------------
 
-// SendHandler carries a cxx UniquePtr so it cannot be compiled in test mode.
 #[cfg(not(test))]
 struct SendHandler(UniquePtr<EventHandlerBridge>);
 #[cfg(not(test))]

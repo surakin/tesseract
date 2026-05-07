@@ -1,7 +1,5 @@
 #include "tesseract/event_handler_bridge.hpp"
-
-// cxx-generated header (produced by corrosion_add_cxxbridge)
-#include "tesseract_sdk_bridge_cxx/bridge.h"
+#include "ffi_convert.hpp"
 
 namespace tesseract_ffi {
 
@@ -11,16 +9,7 @@ void EventHandlerBridge::on_sync_token(rust::Str /*token*/) const {
 
 void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
     if (!handler_) return;
-
-    tesseract::Message msg{
-        .event_id  = std::string(ev.event_id),
-        .room_id   = std::string(ev.room_id),
-        .sender    = std::string(ev.sender),
-        .body      = std::string(ev.body),
-        .timestamp = ev.timestamp,
-        .msg_type  = std::string(ev.msg_type),
-    };
-    handler_->on_message(msg);
+    handler_->on_message(tesseract::from_ffi(ev));
 }
 
 void EventHandlerBridge::on_rooms_updated(
@@ -30,15 +19,8 @@ void EventHandlerBridge::on_rooms_updated(
 
     std::vector<tesseract::RoomInfo> cpp_rooms;
     cpp_rooms.reserve(rooms.size());
-    for (const auto& r : rooms) {
-        cpp_rooms.push_back({
-            .id           = std::string(r.id),
-            .name         = std::string(r.name),
-            .topic        = std::string(r.topic),
-            .unread_count = r.unread_count,
-            .is_direct    = r.is_direct,
-        });
-    }
+    for (const auto& r : rooms)
+        cpp_rooms.push_back(tesseract::from_ffi(r));
     handler_->on_rooms_updated(cpp_rooms);
 }
 
