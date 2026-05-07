@@ -36,7 +36,7 @@ target_link_libraries(tesseract_sdk_ffi-static INTERFACE
 # interface target named "tesseract_sdk_bridge_cxx".
 corrosion_add_cxxbridge(tesseract_sdk_bridge_cxx
     CRATE  tesseract_sdk_ffi
-    FILES  lib.rs
+    FILES  bridge.rs
 )
 
 # The generated cxx bridge code includes tesseract/event_handler_bridge.hpp.

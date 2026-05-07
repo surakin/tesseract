@@ -2,7 +2,7 @@
 #include "tesseract/event_handler_bridge.hpp"
 
 // cxx-generated header (produced by corrosion_add_cxxbridge)
-#include "tesseract_sdk_bridge_cxx/lib.h"
+#include "tesseract_sdk_bridge_cxx/bridge.h"
 
 #include <cassert>
 #include <cstdlib>
