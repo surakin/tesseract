@@ -136,4 +136,9 @@ Result Client::send_message(const std::string& room_id, const std::string& body)
     return from_ffi(impl_->ffi->send_message(room_id, body));
 }
 
+std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id) {
+    auto v = impl_->ffi->fetch_avatar_bytes(room_id);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 } // namespace tesseract

@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace gtk4 {
@@ -61,6 +62,8 @@ private:
     std::unique_ptr<EventHandler>    event_handler_;
     std::vector<tesseract::RoomInfo>    rooms_;
     std::string                      current_room_id_;
+    /// avatar_url → raw image bytes; keyed on URL so a changed avatar causes re-fetch.
+    std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
 };
 
 } // namespace gtk4

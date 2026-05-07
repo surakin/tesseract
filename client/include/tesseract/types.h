@@ -11,6 +11,7 @@ struct RoomInfo {
     std::string topic;
     uint64_t    unread_count = 0;
     bool        is_direct    = false;
+    std::string avatar_url;   ///< mxc:// URI; empty when the room has no avatar.
 };
 
 struct Message {

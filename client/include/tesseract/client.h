@@ -94,6 +94,16 @@ public:
 
     Result send_message(const std::string& room_id, const std::string& body);
 
+    // ------------------------------------------------------------------
+    // Media
+    // ------------------------------------------------------------------
+
+    /// Download the avatar image for the given room and return the raw bytes
+    /// (JPEG or PNG). Returns an empty vector when no avatar is set or on
+    /// error. The SDK's SQLite media cache is consulted first, so repeat
+    /// calls for the same avatar are instant.
+    std::vector<uint8_t> fetch_avatar_bytes(const std::string& room_id);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

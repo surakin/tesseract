@@ -16,6 +16,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
         .topic        = std::string(r.topic),
         .unread_count = r.unread_count,
         .is_direct    = r.is_direct,
+        .avatar_url   = std::string(r.avatar_url),
     };
 }
 

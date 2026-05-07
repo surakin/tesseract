@@ -1,6 +1,8 @@
 #pragma once
 #include <QMainWindow>
+#include <QHash>
 #include <QListWidget>
+#include <QPixmap>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
@@ -67,6 +69,8 @@ private:
     std::unique_ptr<EventBridge>  bridge_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
+    /// avatar_url → scaled QPixmap; keyed on URL so a changed avatar causes re-fetch.
+    QHash<QString, QPixmap>       avatarCache_;
 };
 
 } // namespace qt6

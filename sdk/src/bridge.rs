@@ -17,6 +17,8 @@ pub mod ffi {
         topic:         String,
         unread_count:  u64,
         is_direct:     bool,
+        /// mxc:// URI of the room avatar, empty string if none.
+        avatar_url:    String,
     }
 
     /// A single timeline event (message).
@@ -107,6 +109,14 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+
+        // ----- Media -----
+
+        /// Download the avatar image for a room and return the raw bytes
+        /// (typically JPEG or PNG). Returns an empty Vec when no avatar is set
+        /// or the download fails. The SDK media cache is consulted first so
+        /// subsequent calls are instant.
+        fn fetch_avatar_bytes(self: &mut ClientFfi, room_id: &str) -> Vec<u8>;
 
         // ----- Session teardown -----
 

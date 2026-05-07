@@ -202,12 +202,38 @@ void MainWindow::onTimelineReset(QString roomId) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
+    roomList_->setIconSize(QSize(32, 32));
     roomList_->clear();
+
     for (const auto& r : rooms) {
+        // Populate avatar cache on first sight of this URL.
+        if (!r.avatar_url.empty()) {
+            QString qurl = QString::fromStdString(r.avatar_url);
+            if (!avatarCache_.contains(qurl)) {
+                auto bytes = client_.fetch_avatar_bytes(r.id);
+                if (!bytes.empty()) {
+                    QPixmap pm;
+                    pm.loadFromData(
+                        reinterpret_cast<const uchar*>(bytes.data()),
+                        static_cast<uint>(bytes.size()));
+                    if (!pm.isNull())
+                        avatarCache_[qurl] = pm.scaled(
+                            32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                }
+            }
+        }
+
         QString label = QString::fromStdString(r.name);
         if (r.unread_count > 0)
             label += QString(" (%1)").arg(r.unread_count);
-        roomList_->addItem(label);
+
+        auto* item = new QListWidgetItem(label);
+        if (!r.avatar_url.empty()) {
+            QString qurl = QString::fromStdString(r.avatar_url);
+            if (avatarCache_.contains(qurl))
+                item->setIcon(QIcon(avatarCache_[qurl]));
+        }
+        roomList_->addItem(item);
     }
 }
 

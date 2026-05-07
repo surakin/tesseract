@@ -19,6 +19,7 @@ pub mod ffi {
         pub topic:        String,
         pub unread_count: u64,
         pub is_direct:    bool,
+        pub avatar_url:   String,
     }
 
     #[derive(Debug, PartialEq, Default)]

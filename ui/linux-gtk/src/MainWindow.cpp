@@ -258,23 +258,54 @@ void MainWindow::push_timeline_reset(std::string room_id) {
 }
 
 void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
-    while (GtkWidget* child =
-               gtk_widget_get_first_child(room_list_))
-    {
+    while (GtkWidget* child = gtk_widget_get_first_child(room_list_))
         gtk_list_box_remove(GTK_LIST_BOX(room_list_), child);
-    }
 
     for (const auto& r : rooms) {
+        // Populate avatar cache on first sight of this URL.
+        if (!r.avatar_url.empty() && avatar_cache_.find(r.avatar_url) == avatar_cache_.end()) {
+            auto bytes = client_.fetch_avatar_bytes(r.id);
+            avatar_cache_[r.avatar_url] = std::move(bytes);
+        }
+
+        GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_widget_set_margin_start(row, 6);
+        gtk_widget_set_margin_top(row, 4);
+        gtk_widget_set_margin_bottom(row, 4);
+
+        // Avatar slot (32×32).
+        auto it = !r.avatar_url.empty() ? avatar_cache_.find(r.avatar_url) : avatar_cache_.end();
+        if (it != avatar_cache_.end() && !it->second.empty()) {
+            GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
+            GError*     err = nullptr;
+            GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+            g_bytes_unref(gb);
+            if (tex) {
+                GtkWidget* img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+                gtk_image_set_pixel_size(GTK_IMAGE(img), 32);
+                gtk_box_append(GTK_BOX(row), img);
+                g_object_unref(tex);
+            } else {
+                if (err) g_error_free(err);
+                GtkWidget* placeholder = gtk_label_new(nullptr);
+                gtk_widget_set_size_request(placeholder, 32, 32);
+                gtk_box_append(GTK_BOX(row), placeholder);
+            }
+        } else {
+            GtkWidget* placeholder = gtk_label_new(nullptr);
+            gtk_widget_set_size_request(placeholder, 32, 32);
+            gtk_box_append(GTK_BOX(row), placeholder);
+        }
+
+        // Room name + unread count.
         std::string label = r.name;
         if (r.unread_count > 0)
             label += " (" + std::to_string(r.unread_count) + ")";
-
         GtkWidget* lbl = gtk_label_new(label.c_str());
         gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_set_margin_start(lbl, 8);
-        gtk_widget_set_margin_top(lbl, 4);
-        gtk_widget_set_margin_bottom(lbl, 4);
-        gtk_list_box_append(GTK_LIST_BOX(room_list_), lbl);
+        gtk_box_append(GTK_BOX(row), lbl);
+
+        gtk_list_box_append(GTK_LIST_BOX(room_list_), row);
     }
 }
 

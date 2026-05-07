@@ -466,6 +466,21 @@ impl ClientFfi {
         self.rt.block_on(build_room_infos(&client))
     }
 
+    pub fn fetch_avatar_bytes(&mut self, room_id: &str) -> Vec<u8> {
+        use matrix_sdk::media::MediaFormat;
+        let Some(client) = self.client.clone() else { return Vec::new() };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return Vec::new(),
+        };
+        let Some(room) = client.get_room(&room_id) else { return Vec::new() };
+        self.rt
+            .block_on(room.avatar(MediaFormat::File))
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
     // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
@@ -530,6 +545,9 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             topic:        room.topic().unwrap_or_default(),
             unread_count: room.unread_notification_counts().notification_count,
             is_direct:    room.is_direct().await.unwrap_or(false),
+            avatar_url:   room.avatar_url()
+                              .map(|u| u.to_string())
+                              .unwrap_or_default(),
         });
     }
     result
