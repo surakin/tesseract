@@ -24,12 +24,14 @@ pub mod ffi {
 
     #[derive(Debug, PartialEq, Default)]
     pub struct TimelineEvent {
-        pub event_id:  String,
-        pub room_id:   String,
-        pub sender:    String,
-        pub body:      String,
-        pub timestamp: u64,
-        pub msg_type:  String,
+        pub event_id:          String,
+        pub room_id:           String,
+        pub sender:            String,
+        pub sender_name:       String,
+        pub sender_avatar_url: String,
+        pub body:              String,
+        pub timestamp:         u64,
+        pub msg_type:          String,
     }
 
     #[derive(Debug, PartialEq, Default)]

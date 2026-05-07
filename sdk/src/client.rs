@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Context as _;
@@ -19,6 +18,8 @@ use crate::ffi::{OAuthBegin, OpResult};
 use crate::oauth;
 
 #[cfg(not(test))]
+use std::collections::HashMap;
+#[cfg(not(test))]
 use std::sync::{Arc, Mutex};
 #[cfg(not(test))]
 use cxx::UniquePtr;
@@ -28,7 +29,7 @@ use matrix_sdk::SessionChange;
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
-    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineItem, TimelineItemContent, TimelineItemKind},
+    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind},
 };
 #[cfg(not(test))]
 use futures_util::StreamExt;
@@ -492,6 +493,22 @@ impl ClientFfi {
             .unwrap_or_default()
     }
 
+    pub fn fetch_media_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
+        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::MxcUri;
+        let Some(client) = self.client.clone() else { return Vec::new() };
+        let uri = Box::<MxcUri>::from(mxc_url);
+        if !uri.is_valid() { return Vec::new(); }
+        let request = MediaRequestParameters {
+            source: MediaSource::Plain(uri.into()),
+            format: MediaFormat::File,
+        };
+        self.rt
+            .block_on(client.media().get_media_content(&request, true))
+            .unwrap_or_default()
+    }
+
     // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
@@ -588,14 +605,26 @@ fn timeline_item_to_ffi(
         _ => return None,
     };
 
+    let (sender_name, sender_avatar_url) =
+        if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+            (
+                p.display_name.clone().unwrap_or_default(),
+                p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+            )
+        } else {
+            (String::new(), String::new())
+        };
+
     Some(TimelineEvent {
-        event_id:  event_item.event_id()
+        event_id:          event_item.event_id()
             .map(|id| id.to_string())
             .unwrap_or_default(),
-        room_id:   room_id.to_owned(),
-        sender:    event_item.sender().to_string(),
+        room_id:           room_id.to_owned(),
+        sender:            event_item.sender().to_string(),
+        sender_name,
+        sender_avatar_url,
         body,
-        timestamp: event_item.timestamp().get().into(),
+        timestamp:         event_item.timestamp().get().into(),
         msg_type,
     })
 }

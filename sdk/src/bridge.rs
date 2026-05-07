@@ -23,14 +23,18 @@ pub mod ffi {
 
     /// A single timeline event (message).
     struct TimelineEvent {
-        event_id:  String,
-        room_id:   String,
-        sender:    String,
-        body:      String,
+        event_id:          String,
+        room_id:           String,
+        sender:            String,
+        /// Resolved display name; empty string when not yet available (fall back to sender).
+        sender_name:       String,
+        /// mxc:// URI of the sender's avatar; empty string when unavailable.
+        sender_avatar_url: String,
+        body:              String,
         /// Unix timestamp in milliseconds.
-        timestamp: u64,
+        timestamp:         u64,
         /// "m.text" | "m.image" | "m.file" | …
-        msg_type:  String,
+        msg_type:          String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -117,6 +121,12 @@ pub mod ffi {
         /// or the download fails. The SDK media cache is consulted first so
         /// subsequent calls are instant.
         fn fetch_avatar_bytes(self: &mut ClientFfi, room_id: &str) -> Vec<u8>;
+
+        /// Download arbitrary mxc:// media and return the raw bytes. Returns
+        /// an empty Vec when the URL is invalid, media is unavailable, or the
+        /// client is not logged in. The SDK media cache is consulted first so
+        /// repeat calls for the same URL are instant.
+        fn fetch_media_bytes(self: &mut ClientFfi, mxc_url: &str) -> Vec<u8>;
 
         // ----- Session teardown -----
 

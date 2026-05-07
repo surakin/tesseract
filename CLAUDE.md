@@ -100,8 +100,10 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 
 - **Step 1 done** — OAuth fix-ups: real `logout` (FFI + Rust + C++ + SQLite store wipe), `SessionStore` + restore-or-login on startup, full-`PersistedSession` shape on token refresh, `WHOLE_ARCHIVE` link visibility on Win32 and GTK, `tracing_subscriber` `try_init` hardening.
 - **Step 2 done** — Sliding-sync replacement: `matrix-sdk-ui = "0.11"` added; `SyncService` + `RoomListService` replace the `sync_once` loop; per-room `Timeline` held in `HashMap<OwnedRoomId, TimelineHandle>` on `ClientFfi`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back` + `on_timeline_reset` callback; `room_messages` stub dropped; room-list driven by `RoomListService` diffs (UIs no longer call `list_rooms` after every message); SSS probed in `oauth::begin()` and `restore_session` — fails fast with a clear error if the server does not support it.
+- **Step 3 done** — Room avatar polish: `kRoomAvatarSize = 36` constant; explicit `setIconSize` on the room list widget so all cells have a uniform slot.
+- **Step 4 done** — Message sender identity: `sender_name` + `sender_avatar_url` fields added to `TimelineEvent` (populated from `event_item.sender_profile()` in the SDK, no extra HTTP calls); new FFI `fetch_media_bytes(mxc_url)` wrapping the SDK media cache for arbitrary mxc downloads (reused by Steps 7–9); `Message` C++ struct carries the new fields; Qt UI resolves display name (falls back to user ID) and shows a 24 × 24 inline avatar per message row via `QTextDocument::addResource`.
 
-**Step 3 — Spaces (room-list hierarchy)**
+**Step 5 — Spaces (room-list hierarchy)**
 - Recognise rooms with `type: m.space`; consume `m.space.child` / `m.space.parent` to build a tree.
 - New FFI surface returning the space tree (parent → children → leaf rooms) alongside the flat room list.
 - UI: sidebar shifts from a flat list to a tree (or two-pane: spaces / rooms within selected space). Defaults to "All rooms" when no space is selected. Plumbing follows directly from sliding sync — `RoomListService` already exposes spaces; the UI just needs to learn them.

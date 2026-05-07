@@ -18,6 +18,8 @@ struct Message {
     std::string event_id;
     std::string room_id;
     std::string sender;
+    std::string sender_name;        ///< resolved display name; empty → fall back to sender
+    std::string sender_avatar_url;  ///< mxc:// URI; empty when user has no avatar
     std::string body;
     uint64_t    timestamp = 0; ///< Unix ms
     std::string msg_type;      ///< "m.text", "m.image", …

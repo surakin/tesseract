@@ -104,6 +104,12 @@ public:
     /// calls for the same avatar are instant.
     std::vector<uint8_t> fetch_avatar_bytes(const std::string& room_id);
 
+    /// Download arbitrary mxc:// media and return the raw bytes. Returns an
+    /// empty vector when the URL is invalid, the media is unavailable, or the
+    /// client is not logged in. The SDK's SQLite media cache is consulted
+    /// first, so repeat calls for the same URL are instant.
+    std::vector<uint8_t> fetch_media_bytes(const std::string& mxc_url);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

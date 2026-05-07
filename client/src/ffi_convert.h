@@ -22,12 +22,14 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
 
 inline Message from_ffi(const tesseract_ffi::TimelineEvent& e) {
     return {
-        .event_id  = std::string(e.event_id),
-        .room_id   = std::string(e.room_id),
-        .sender    = std::string(e.sender),
-        .body      = std::string(e.body),
-        .timestamp = e.timestamp,
-        .msg_type  = std::string(e.msg_type),
+        .event_id          = std::string(e.event_id),
+        .room_id           = std::string(e.room_id),
+        .sender            = std::string(e.sender),
+        .sender_name       = std::string(e.sender_name),
+        .sender_avatar_url = std::string(e.sender_avatar_url),
+        .body              = std::string(e.body),
+        .timestamp         = e.timestamp,
+        .msg_type          = std::string(e.msg_type),
     };
 }
 

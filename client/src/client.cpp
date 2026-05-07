@@ -141,4 +141,9 @@ std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id) {
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url) {
+    auto v = impl_->ffi->fetch_media_bytes(mxc_url);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 } // namespace tesseract

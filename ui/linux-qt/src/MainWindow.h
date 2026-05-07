@@ -57,7 +57,10 @@ private slots:
 private:
     void doLogin();
     void populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void appendMessage(const QString& sender, const QString& body);
+    void appendMessage(const tesseract::Message& msg);
+
+    static constexpr int kRoomAvatarSize = 36;
+    static constexpr int kUserAvatarSize = 24;
 
     QSplitter*   splitter_    = nullptr;
     QListWidget* roomList_    = nullptr;
@@ -71,6 +74,8 @@ private:
     std::string                   currentRoomId_;
     /// avatar_url → scaled QPixmap; keyed on URL so a changed avatar causes re-fetch.
     QHash<QString, QPixmap>       avatarCache_;
+    /// sender_avatar_url → scaled QPixmap for inline message avatars.
+    QHash<QString, QPixmap>       userAvatarCache_;
 };
 
 } // namespace qt6

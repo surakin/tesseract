@@ -8,6 +8,8 @@
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QMetaType>
+#include <QTextDocument>
+#include <QUrl>
 
 Q_DECLARE_METATYPE(tesseract::Message)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
@@ -181,8 +183,7 @@ void MainWindow::onRoomSelected(
 
 void MainWindow::onMessageReceived(tesseract::Message msg) {
     if (msg.room_id == currentRoomId_)
-        appendMessage(QString::fromStdString(msg.sender),
-                      QString::fromStdString(msg.body));
+        appendMessage(msg);
     // Room list unread counts update via on_rooms_updated from RoomListService.
 }
 
@@ -209,7 +210,7 @@ void MainWindow::onTimelineReset(QString roomId) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
-    roomList_->setIconSize(QSize(32, 32));
+    roomList_->setIconSize(QSize(kRoomAvatarSize, kRoomAvatarSize));
     roomList_->clear();
 
     for (const auto& r : rooms) {
@@ -225,7 +226,8 @@ void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
                         static_cast<uint>(bytes.size()));
                     if (!pm.isNull())
                         avatarCache_[qurl] = pm.scaled(
-                            32, 32, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                            kRoomAvatarSize, kRoomAvatarSize,
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 }
             }
         }
@@ -244,12 +246,46 @@ void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
     }
 }
 
-void MainWindow::appendMessage(
-    const QString& sender,
-    const QString& body)
-{
-    msgView_->append("<b>" + sender.toHtmlEscaped() + ":</b> " +
-                     body.toHtmlEscaped());
+void MainWindow::appendMessage(const tesseract::Message& msg) {
+    QString sender    = QString::fromStdString(msg.sender);
+    QString name      = QString::fromStdString(msg.sender_name);
+    if (name.isEmpty()) name = sender;
+    QString avatarUrl = QString::fromStdString(msg.sender_avatar_url);
+
+    // Fetch and cache sender avatar on first sight of this mxc URL.
+    if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
+        auto bytes = client_.fetch_media_bytes(msg.sender_avatar_url);
+        if (!bytes.empty()) {
+            QPixmap pm;
+            pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                            static_cast<uint>(bytes.size()));
+            if (!pm.isNull())
+                userAvatarCache_[avatarUrl] = pm.scaled(
+                    kUserAvatarSize, kUserAvatarSize,
+                    Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        }
+    }
+
+    // Re-register the resource with the document (needed after clear() resets it).
+    if (userAvatarCache_.contains(avatarUrl)) {
+        msgView_->document()->addResource(
+            QTextDocument::ImageResource,
+            QUrl(avatarUrl),
+            userAvatarCache_[avatarUrl]);
+    }
+
+    QString html;
+    if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
+        html = QString("<img src='%1' width='%2' height='%2'> <b>%3:</b> %4")
+            .arg(avatarUrl.toHtmlEscaped())
+            .arg(kUserAvatarSize)
+            .arg(name.toHtmlEscaped())
+            .arg(QString::fromStdString(msg.body).toHtmlEscaped());
+    } else {
+        html = "<b>" + name.toHtmlEscaped() + ":</b> " +
+               QString::fromStdString(msg.body).toHtmlEscaped();
+    }
+    msgView_->append(html);
 
     QScrollBar* sb = msgView_->verticalScrollBar();
     sb->setValue(sb->maximum());
