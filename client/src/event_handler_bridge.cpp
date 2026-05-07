@@ -1,5 +1,5 @@
-#include "tesseract/event_handler_bridge.hpp"
-#include "ffi_convert.hpp"
+#include "tesseract/event_handler_bridge.h"
+#include "ffi_convert.h"
 
 namespace tesseract_ffi {
 

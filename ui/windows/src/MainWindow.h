@@ -4,8 +4,8 @@
 #include <windows.h>
 #include <commctrl.h>
 
-#include <tesseract/client.hpp>
-#include <tesseract/event_handler.hpp>
+#include <tesseract/client.h>
+#include <tesseract/event_handler.h>
 
 #include <atomic>
 #include <memory>

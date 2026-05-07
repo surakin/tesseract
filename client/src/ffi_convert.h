@@ -1,5 +1,5 @@
 #pragma once
-#include "tesseract/client.hpp"
+#include "tesseract/client.h"
 #include "tesseract_sdk_bridge_cxx/bridge.h"
 #include <string>
 

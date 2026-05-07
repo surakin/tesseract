@@ -6,7 +6,7 @@
 #include <QStackedWidget>
 #include <QString>
 
-#include <tesseract/client.hpp>
+#include <tesseract/client.h>
 
 #include <atomic>
 #include <thread>

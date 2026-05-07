@@ -1,4 +1,4 @@
-#include "tesseract/session_store.hpp"
+#include "tesseract/session_store.h"
 
 #include <cstdlib>
 #include <filesystem>

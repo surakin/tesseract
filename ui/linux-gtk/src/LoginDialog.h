@@ -1,7 +1,7 @@
 #pragma once
 #include <gtk/gtk.h>
 
-#include <tesseract/client.hpp>
+#include <tesseract/client.h>
 
 #include <atomic>
 #include <string>

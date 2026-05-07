@@ -52,7 +52,7 @@ pub mod ffi {
     // C++ types that Rust calls back into (event notifications)
     // -------------------------------------------------------------------------
     unsafe extern "C++" {
-        include!("tesseract/event_handler_bridge.hpp");
+        include!("tesseract/event_handler_bridge.h");
 
         type EventHandlerBridge;
 

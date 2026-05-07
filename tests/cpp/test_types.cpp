@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
-#include "tesseract/client.hpp"
-#include "tesseract/types.hpp"
+#include "tesseract/client.h"
+#include "tesseract/types.h"
 
 // ---------------------------------------------------------------------------
 // tesseract::Result

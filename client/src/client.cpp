@@ -1,8 +1,8 @@
-#include "tesseract/client.hpp"
-#include "tesseract/event_handler_bridge.hpp"
+#include "tesseract/client.h"
+#include "tesseract/event_handler_bridge.h"
 
 // cxx-generated header (produced by corrosion_add_cxxbridge)
-#include "ffi_convert.hpp"
+#include "ffi_convert.h"
 
 #include <cassert>
 #include <cstdlib>

@@ -4,8 +4,8 @@
 /// that wraps tesseract::IEventHandler.
 
 #include "rust/cxx.h"
-#include "event_handler.hpp"
-#include "types.hpp"
+#include "event_handler.h"
+#include "types.h"
 
 // Forward declarations for cxx-generated types.
 namespace tesseract_ffi {

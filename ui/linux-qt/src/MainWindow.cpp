@@ -1,7 +1,7 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
 
-#include <tesseract/session_store.hpp>
+#include <tesseract/session_store.h>
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>

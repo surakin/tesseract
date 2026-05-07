@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "tesseract/session_store.hpp"
+#include "tesseract/session_store.h"
 
 #include <atomic>
 #include <filesystem>

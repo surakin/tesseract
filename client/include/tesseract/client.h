@@ -1,6 +1,6 @@
 #pragma once
-#include "event_handler.hpp"
-#include "types.hpp"
+#include "event_handler.h"
+#include "types.h"
 
 #include <memory>
 #include <string>

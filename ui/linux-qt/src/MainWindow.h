@@ -7,8 +7,8 @@
 #include <QStatusBar>
 #include <QSplitter>
 
-#include <tesseract/client.hpp>
-#include <tesseract/event_handler.hpp>
+#include <tesseract/client.h>
+#include <tesseract/event_handler.h>
 
 #include <memory>
 #include <vector>
