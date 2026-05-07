@@ -261,7 +261,15 @@ impl ClientFfi {
                                 guard.on_session_refreshed(&json);
                             }
                         }
-                        Ok(_)  => continue,
+                        Ok(SessionChange::UnknownToken { .. }) => {
+                            if let Ok(guard) = h.lock() {
+                                guard.on_error(
+                                    "sync_auth_error",
+                                    "Session token is no longer valid; please log in again.",
+                                );
+                            }
+                            break;
+                        }
                         Err(_) => break,
                     }
                 }

@@ -80,6 +80,8 @@ void EventHandler::on_sync_error(
         auto* d = static_cast<IdleError*>(data);
         if (d->context == "sync_reconnect")
             d->window->handle_reconnect();
+        else if (d->context == "sync_auth_error")
+            d->window->handle_auth_error();
         else
             d->window->push_error(std::move(d->description));
         delete d;
@@ -261,6 +263,13 @@ void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
 void MainWindow::handle_reconnect() {
     gtk_label_set_text(GTK_LABEL(status_bar_), "Sync error: reconnecting…");
     client_.stop_sync();
+    do_login();
+}
+
+void MainWindow::handle_auth_error() {
+    tesseract::SessionStore::clear();
+    client_.stop_sync();
+    gtk_label_set_text(GTK_LABEL(status_bar_), "Session expired; please log in again.");
     do_login();
 }
 

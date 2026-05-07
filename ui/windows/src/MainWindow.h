@@ -19,6 +19,8 @@ constexpr UINT WM_TESSERACT_MESSAGE        = WM_APP + 1;
 constexpr UINT WM_TESSERACT_ROOMS          = WM_APP + 2;
 constexpr UINT WM_TESSERACT_SYNC_ERROR     = WM_APP + 3;
 constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
+constexpr UINT WM_TESSERACT_RECONNECT      = WM_APP + 5;
+constexpr UINT WM_TESSERACT_AUTH_ERROR     = WM_APP + 6;
 
 namespace win32 {
 
@@ -62,6 +64,8 @@ private:
     void on_tesseract_timeline_reset(std::string* room_id);
 
     void layout_controls();
+    void on_reconnect();
+    void on_auth_error();
     void append_message(const tesseract::Message& msg);
 
     HINSTANCE hInst_;

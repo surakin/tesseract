@@ -25,11 +25,17 @@ void EventHandler::on_rooms_updated(
 }
 
 void EventHandler::on_sync_error(
-    const std::string& /*context*/,
+    const std::string& context,
     const std::string& description)
 {
-    auto* p = new std::string(description);
-    PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
+    if (context == "sync_reconnect") {
+        PostMessage(hwnd_, WM_TESSERACT_RECONNECT, 0, 0);
+    } else if (context == "sync_auth_error") {
+        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR, 0, 0);
+    } else {
+        auto* p = new std::string(description);
+        PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
+    }
 }
 
 void EventHandler::on_timeline_reset(const std::string& room_id) {
@@ -122,6 +128,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(
         delete p;
         return 0;
     }
+    case WM_TESSERACT_RECONNECT:
+        self->on_reconnect();
+        return 0;
+    case WM_TESSERACT_AUTH_ERROR:
+        self->on_auth_error();
+        return 0;
 
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -271,6 +283,21 @@ void MainWindow::on_room_selected(int index) {
     auto res = client_.subscribe_room(current_room_id_);
     if (res)
         client_.paginate_back(current_room_id_, 50);
+}
+
+void MainWindow::on_reconnect() {
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Sync error: reconnecting…"));
+    client_.stop_sync();
+    on_login_clicked();
+}
+
+void MainWindow::on_auth_error() {
+    tesseract::SessionStore::clear();
+    client_.stop_sync();
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Session expired; please log in again."));
+    on_login_clicked();
 }
 
 void MainWindow::on_tesseract_message(tesseract::Message* msg) {

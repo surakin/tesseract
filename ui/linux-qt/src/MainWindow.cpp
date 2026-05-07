@@ -197,6 +197,11 @@ void MainWindow::onSyncError(QString context, QString description) {
         statusBar()->showMessage("Sync error: reconnecting…");
         client_.stop_sync();
         doLogin();
+    } else if (context == "sync_auth_error") {
+        tesseract::SessionStore::clear();
+        client_.stop_sync();
+        statusBar()->showMessage("Session expired; please log in again.");
+        doLogin();
     } else {
         statusBar()->showMessage("Sync error: " + description, 8000);
     }
