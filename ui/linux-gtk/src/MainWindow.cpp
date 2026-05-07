@@ -22,8 +22,9 @@ struct IdleRooms {
 };
 
 struct IdleError {
-    MainWindow*  window;
-    std::string  description;
+    MainWindow* window;
+    std::string context;
+    std::string description;
 };
 
 struct IdleTimelineReset {
@@ -66,17 +67,21 @@ void EventHandler::on_rooms_updated(
 }
 
 void EventHandler::on_sync_error(
-    const std::string& /*context*/,
+    const std::string& context,
     const std::string& description)
 {
     auto* p = new IdleError{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        context,
         description
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleError*>(data);
-        d->window->push_error(std::move(d->description));
+        if (d->context == "sync_reconnect")
+            d->window->handle_reconnect();
+        else
+            d->window->push_error(std::move(d->description));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -251,6 +256,12 @@ void MainWindow::push_message(tesseract::Message msg) {
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     populate_rooms(rooms_);
+}
+
+void MainWindow::handle_reconnect() {
+    gtk_label_set_text(GTK_LABEL(status_bar_), "Sync error: reconnecting…");
+    client_.stop_sync();
+    do_login();
 }
 
 void MainWindow::push_error(std::string description) {

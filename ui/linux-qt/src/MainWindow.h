@@ -34,7 +34,7 @@ public:
 signals:
     void messageReceived(tesseract::Message msg);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
-    void syncError(QString description);
+    void syncError(QString context, QString description);
     void timelineReset(QString roomId);
 };
 
@@ -51,7 +51,7 @@ private slots:
     void onRoomSelected(QListWidgetItem* current, QListWidgetItem* previous);
     void onMessageReceived(tesseract::Message msg);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
-    void onSyncError(QString description);
+    void onSyncError(QString context, QString description);
     void onTimelineReset(QString roomId);
 
 private:

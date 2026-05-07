@@ -332,9 +332,20 @@ impl ClientFfi {
                     }
                     Some(state) = state_stream.next() => {
                         if matches!(state, SyncServiceState::Error) {
+                            // Clear the local SQLite store — the most common
+                            // cause of State::Error is a stale to_device.since
+                            // token accumulated across SDK upgrades or server
+                            // migrations.  Deleting the store lets the next
+                            // restore_session() start from scratch.
+                            let _ = std::fs::remove_dir_all(data_dir());
                             if let Ok(guard) = h_state.lock() {
-                                guard.on_error("sync", "SyncService encountered an error");
+                                guard.on_error(
+                                    "sync_reconnect",
+                                    "Sync state corrupted; reconnecting automatically…",
+                                );
                             }
+                            let _ = svc_clone.stop().await;
+                            break;
                         }
                     }
                 }

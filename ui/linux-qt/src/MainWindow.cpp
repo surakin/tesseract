@@ -29,10 +29,11 @@ void EventBridge::on_rooms_updated(
 }
 
 void EventBridge::on_sync_error(
-    const std::string& /*context*/,
+    const std::string& context,
     const std::string& description)
 {
-    emit syncError(QString::fromStdString(description));
+    emit syncError(QString::fromStdString(context),
+                   QString::fromStdString(description));
 }
 
 void EventBridge::on_timeline_reset(const std::string& room_id) {
@@ -190,8 +191,14 @@ void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
     populateRooms(rooms_);
 }
 
-void MainWindow::onSyncError(QString description) {
-    statusBar()->showMessage("Sync error: " + description, 8000);
+void MainWindow::onSyncError(QString context, QString description) {
+    if (context == "sync_reconnect") {
+        statusBar()->showMessage("Sync error: reconnecting…");
+        client_.stop_sync();
+        doLogin();
+    } else {
+        statusBar()->showMessage("Sync error: " + description, 8000);
+    }
 }
 
 void MainWindow::onTimelineReset(QString roomId) {

@@ -38,6 +38,7 @@ public:
     void push_message(tesseract::Message msg);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
+    void handle_reconnect();
     void push_timeline_reset(std::string room_id);
 
 private:
