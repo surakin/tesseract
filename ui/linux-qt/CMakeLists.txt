@@ -27,3 +27,10 @@ target_link_libraries(tesseract_qt PRIVATE
 set_target_properties(tesseract_qt PROPERTIES
     OUTPUT_NAME "tesseract"
 )
+
+# Embed the application icon as a Qt resource so the binary is self-contained.
+qt_add_resources(tesseract_qt "tesseract_icons"
+    PREFIX "/icons"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/../icons"
+    FILES  "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
+)

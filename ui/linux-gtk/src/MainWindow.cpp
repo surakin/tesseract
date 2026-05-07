@@ -109,6 +109,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1024, 768);
 
+    // Register the bundled icon so the window manager can show it.
+#ifdef TESSERACT_ICON_SEARCH_PATH
+    gtk_icon_theme_add_search_path(
+        gtk_icon_theme_get_for_display(gtk_widget_get_display(window_)),
+        TESSERACT_ICON_SEARCH_PATH);
+    gtk_window_set_icon_name(GTK_WINDOW(window_), "tesseract");
+#endif
+
     g_object_set_data(G_OBJECT(window_), "cpp_window", this);
 
     GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
