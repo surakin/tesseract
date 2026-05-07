@@ -275,7 +275,7 @@ void MainWindow::on_room_selected(int index) {
 
 void MainWindow::on_tesseract_message(tesseract::Message* msg) {
     if (msg->room_id == current_room_id_)
-        append_message(msg->sender, msg->body);
+        append_message(*msg);
     // Room list unread counts update via on_tesseract_rooms from RoomListService.
 }
 
@@ -297,12 +297,14 @@ void MainWindow::on_tesseract_timeline_reset(std::string* room_id) {
         SetWindowTextW(hMsgView_, L"");
 }
 
-void MainWindow::append_message(
-    const std::string& sender,
-    const std::string& body)
-{
-    std::string  line  = sender + ": " + body + "\r\n";
-    std::wstring wline(line.begin(), line.end());
+void MainWindow::append_message(const tesseract::Message& msg) {
+    // Win32 EDIT control: text-only (no inline images; see roadmap decision).
+    const std::string& name = msg.sender_name.empty() ? msg.sender : msg.sender_name;
+    std::string line = name + ": " + msg.body + "\r\n";
+    // Use MultiByteToWideChar so display names with non-ASCII chars render correctly.
+    int sz = MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, nullptr, 0);
+    std::wstring wline(sz > 0 ? sz - 1 : 0, L'\0');
+    if (sz > 0) MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, &wline[0], sz);
 
     int len = GetWindowTextLengthW(hMsgView_);
     SendMessageW(hMsgView_, EM_SETSEL, len, len);

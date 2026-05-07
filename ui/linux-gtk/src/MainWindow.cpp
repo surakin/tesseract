@@ -249,7 +249,7 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
 
 void MainWindow::push_message(tesseract::Message msg) {
     if (msg.room_id == current_room_id_)
-        append_message(msg.sender, msg.body);
+        append_message(msg);
     // Room list unread counts update via push_rooms from RoomListService.
 }
 
@@ -301,18 +301,18 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
             g_bytes_unref(gb);
             if (tex) {
                 GtkWidget* img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
-                gtk_image_set_pixel_size(GTK_IMAGE(img), 32);
+                gtk_image_set_pixel_size(GTK_IMAGE(img), kRoomAvatarSize);
                 gtk_box_append(GTK_BOX(row), img);
                 g_object_unref(tex);
             } else {
                 if (err) g_error_free(err);
                 GtkWidget* placeholder = gtk_label_new(nullptr);
-                gtk_widget_set_size_request(placeholder, 32, 32);
+                gtk_widget_set_size_request(placeholder, kRoomAvatarSize, kRoomAvatarSize);
                 gtk_box_append(GTK_BOX(row), placeholder);
             }
         } else {
             GtkWidget* placeholder = gtk_label_new(nullptr);
-            gtk_widget_set_size_request(placeholder, 32, 32);
+            gtk_widget_set_size_request(placeholder, kRoomAvatarSize, kRoomAvatarSize);
             gtk_box_append(GTK_BOX(row), placeholder);
         }
 
@@ -328,19 +328,57 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
     }
 }
 
-void MainWindow::append_message(
-    const std::string& sender,
-    const std::string& body)
-{
-    GtkTextBuffer* buf =
-        gtk_text_view_get_buffer(GTK_TEXT_VIEW(msg_view_));
-    GtkTextIter end;
-    gtk_text_buffer_get_end_iter(buf, &end);
+void MainWindow::append_message(const tesseract::Message& msg) {
+    const std::string& name      = msg.sender_name.empty() ? msg.sender : msg.sender_name;
+    const std::string& avatarUrl = msg.sender_avatar_url;
 
-    std::string line = sender + ": " + body + "\n";
-    gtk_text_buffer_insert(buf, &end, line.c_str(), -1);
+    // Fetch and cache sender avatar on first sight of this mxc URL.
+    if (!avatarUrl.empty() && user_avatar_cache_.find(avatarUrl) == user_avatar_cache_.end())
+        user_avatar_cache_[avatarUrl] = client_.fetch_media_bytes(avatarUrl);
 
-    gtk_text_buffer_get_end_iter(buf, &end);
+    GtkTextBuffer* buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(msg_view_));
+    GtkTextIter iter;
+    gtk_text_buffer_get_end_iter(buf, &iter);
+
+    // Inline avatar via GtkTextChildAnchor.
+    auto it = !avatarUrl.empty() ? user_avatar_cache_.find(avatarUrl) : user_avatar_cache_.end();
+    if (it != user_avatar_cache_.end() && !it->second.empty()) {
+        GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
+        GError*     err = nullptr;
+        GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+        g_bytes_unref(gb);
+        if (tex) {
+            GtkTextChildAnchor* anchor =
+                gtk_text_buffer_create_child_anchor(buf, &iter);
+            GtkWidget* img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+            gtk_image_set_pixel_size(GTK_IMAGE(img), kUserAvatarSize);
+            gtk_text_view_add_child_at_anchor(
+                GTK_TEXT_VIEW(msg_view_), img, anchor);
+            gtk_widget_show(img);
+            g_object_unref(tex);
+            gtk_text_buffer_get_end_iter(buf, &iter);
+            gtk_text_buffer_insert(buf, &iter, " ", 1);
+        } else {
+            if (err) g_error_free(err);
+        }
+    }
+
+    // Bold sender name — reuse a named tag so it isn't recreated per message.
+    gtk_text_buffer_get_end_iter(buf, &iter);
+    GtkTextTagTable* table = gtk_text_buffer_get_tag_table(buf);
+    GtkTextTag* bold = gtk_text_tag_table_lookup(table, "bold");
+    if (!bold)
+        bold = gtk_text_buffer_create_tag(buf, "bold",
+                                          "weight", PANGO_WEIGHT_BOLD, nullptr);
+    std::string header = name + ": ";
+    gtk_text_buffer_insert_with_tags(buf, &iter, header.c_str(), -1, bold, nullptr);
+
+    // Plain message body + newline.
+    gtk_text_buffer_get_end_iter(buf, &iter);
+    std::string line = msg.body + "\n";
+    gtk_text_buffer_insert(buf, &iter, line.c_str(), -1);
+
+    gtk_text_buffer_get_end_iter(buf, &iter);
     GtkTextMark* mark = gtk_text_buffer_get_mark(buf, "insert");
     gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(msg_view_), mark);
 }

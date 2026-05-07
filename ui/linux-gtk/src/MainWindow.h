@@ -47,8 +47,11 @@ private:
     static void on_login_clicked(GtkButton*, gpointer user_data);
 
     void populate_rooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void append_message(const std::string& sender, const std::string& body);
+    void append_message(const tesseract::Message& msg);
     void do_login();
+
+    static constexpr int kRoomAvatarSize = 36;
+    static constexpr int kUserAvatarSize = 24;
 
     GtkApplication* app_    = nullptr;
     GtkWidget* window_      = nullptr;
@@ -65,6 +68,8 @@ private:
     std::string                      current_room_id_;
     /// avatar_url → raw image bytes; keyed on URL so a changed avatar causes re-fetch.
     std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
+    /// sender_avatar_url → raw image bytes for inline message avatars.
+    std::unordered_map<std::string, std::vector<uint8_t>> user_avatar_cache_;
 };
 
 } // namespace gtk4

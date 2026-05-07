@@ -62,7 +62,7 @@ private:
     void on_tesseract_timeline_reset(std::string* room_id);
 
     void layout_controls();
-    void append_message(const std::string& sender, const std::string& body);
+    void append_message(const tesseract::Message& msg);
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
