@@ -171,7 +171,7 @@ impl ClientFfi {
 
         match self.rt.block_on(oauth::await_callback(flow)) {
             Ok(client) => { self.client = Some(client); ok("") }
-            Err(e)     => err(e.to_string()),
+            Err(e)     => err(format!("{e:#}")),
         }
     }
 
@@ -237,6 +237,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else { return };
 
         let (stop_tx, stop_rx) = watch::channel(false);
+        let stop_tx_auth = stop_tx.clone();
         self.stop_tx = Some(stop_tx);
 
         let handler = Arc::new(Mutex::new(SendHandler(handler)));
@@ -262,6 +263,10 @@ impl ClientFfi {
                             }
                         }
                         Ok(SessionChange::UnknownToken { .. }) => {
+                            // Stop SyncService before it can reach State::Error and
+                            // wipe the SQLite data directory while a fresh login is
+                            // already in progress.
+                            let _ = stop_tx_auth.send(true);
                             if let Ok(guard) = h.lock() {
                                 guard.on_error(
                                     "sync_auth_error",
