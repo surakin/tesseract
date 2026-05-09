@@ -153,6 +153,8 @@ impl ClientFfi {
         let hs   = homeserver.to_owned();
         let path = data_dir();
 
+        let _ = std::fs::remove_dir_all(&path);
+
         match self.rt.block_on(oauth::begin(&hs, &path)) {
             Ok(begin) => {
                 let auth_url     = begin.auth_url;
@@ -345,7 +347,7 @@ impl ClientFfi {
                         }
                     }
                     Some(state) = state_stream.next() => {
-                        if matches!(state, SyncServiceState::Error) {
+                        if matches!(state, SyncServiceState::Error(_)) {
                             // Clear the local SQLite store — the most common
                             // cause of State::Error is a stale to_device.since
                             // token accumulated across SDK upgrades or server
@@ -509,9 +511,9 @@ impl ClientFfi {
     pub fn fetch_media_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
-        use matrix_sdk::ruma::MxcUri;
+        use matrix_sdk::ruma::OwnedMxcUri;
         let Some(client) = self.client.clone() else { return Vec::new() };
-        let uri = Box::<MxcUri>::from(mxc_url);
+        let uri = OwnedMxcUri::from(mxc_url);
         if !uri.is_valid() { return Vec::new(); }
         let request = MediaRequestParameters {
             source: MediaSource::Plain(uri.into()),
