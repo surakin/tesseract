@@ -63,15 +63,137 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]") {
 }
 
 // ---------------------------------------------------------------------------
-// tesseract::Message
+// tesseract::Event (base)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Message default-initialised fields", "[types]") {
-    tesseract::Message m{};
-    CHECK(m.event_id.empty());
-    CHECK(m.room_id.empty());
-    CHECK(m.sender.empty());
-    CHECK(m.body.empty());
-    CHECK(m.timestamp == 0u);
-    CHECK(m.msg_type.empty());
+TEST_CASE("Event default-initialised fields", "[types]") {
+    tesseract::Event ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Unhandled);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::TextEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("TextEvent default-initialised fields", "[types]") {
+    tesseract::TextEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Text);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::ImageEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ImageEvent default-initialised fields", "[types]") {
+    tesseract::ImageEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Image);
+    CHECK(ev.image_url.empty());
+    CHECK(ev.width == 0u);
+    CHECK(ev.height == 0u);
+}
+
+TEST_CASE("ImageEvent fields are settable", "[types]") {
+    tesseract::ImageEvent ev{};
+    ev.event_id = "evt123";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@user:example.org";
+    ev.body = "look at this";
+    ev.timestamp = 1234567890;
+    ev.image_url = "mxc://example.org/image";
+    ev.width = 1920;
+    ev.height = 1080;
+
+    CHECK(ev.event_id == "evt123");
+    CHECK(ev.room_id == "!room:example.org");
+    CHECK(ev.sender == "@user:example.org");
+    CHECK(ev.body == "look at this");
+    CHECK(ev.timestamp == 1234567890);
+    CHECK(ev.image_url == "mxc://example.org/image");
+    CHECK(ev.width == 1920);
+    CHECK(ev.height == 1080);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::FileEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("FileEvent default-initialised fields", "[types]") {
+    tesseract::FileEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::File);
+    CHECK(ev.file_url.empty());
+    CHECK(ev.file_name.empty());
+    CHECK(ev.file_size == 0u);
+}
+
+TEST_CASE("FileEvent fields are settable", "[types]") {
+    tesseract::FileEvent ev{};
+    ev.event_id = "evt456";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@user:example.org";
+    ev.body = "sending a file";
+    ev.timestamp = 1234567890;
+    ev.file_url = "mxc://example.org/file";
+    ev.file_name = "document.pdf";
+    ev.file_size = 102400;
+
+    CHECK(ev.event_id == "evt456");
+    CHECK(ev.room_id == "!room:example.org");
+    CHECK(ev.sender == "@user:example.org");
+    CHECK(ev.body == "sending a file");
+    CHECK(ev.timestamp == 1234567890);
+    CHECK(ev.file_url == "mxc://example.org/file");
+    CHECK(ev.file_name == "document.pdf");
+    CHECK(ev.file_size == 102400);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::UnhandledEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("UnhandledEvent default-initialised fields", "[types]") {
+    tesseract::UnhandledEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Unhandled);
+    CHECK(ev.msg_type.empty());
+}
+
+TEST_CASE("UnhandledEvent constructed with msg_type", "[types]") {
+    tesseract::UnhandledEvent ev("m.sticker");
+    CHECK(ev.type == tesseract::EventType::Unhandled);
+    CHECK(ev.msg_type == "m.sticker");
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::EventType enum
+// ---------------------------------------------------------------------------
+
+TEST_CASE("EventType enum values are correct", "[types]") {
+    CHECK(static_cast<int>(tesseract::EventType::Text) == 0);
+    CHECK(static_cast<int>(tesseract::EventType::Image) == 1);
+    CHECK(static_cast<int>(tesseract::EventType::File) == 2);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 3);
 }

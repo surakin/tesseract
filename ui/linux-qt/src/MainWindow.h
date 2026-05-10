@@ -24,17 +24,18 @@ public:
     explicit EventBridge(QObject* parent = nullptr) : QObject(parent) {}
 
     // IEventHandler – called on the sync thread
-    void on_message(const tesseract::Message& msg) override;
+    void on_message(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
-                       const std::string& description) override;
+                       const std::string& description,
+                       bool soft_logout) override;
     void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
 
 signals:
-    void messageReceived(tesseract::Message msg);
+    void eventReceived(tesseract::Event* ev);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
-    void syncError(QString context, QString description);
+    void syncError(QString context, QString description, bool soft_logout);
     void timelineReset(QString roomId);
 };
 
@@ -49,18 +50,19 @@ public:
 private slots:
     void onSendClicked();
     void onRoomSelected(QListWidgetItem* current, QListWidgetItem* previous);
-    void onMessageReceived(tesseract::Message msg);
+    void onEventReceived(tesseract::Event* ev);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
-    void onSyncError(QString context, QString description);
+    void onSyncError(QString context, QString description, bool soft_logout);
     void onTimelineReset(QString roomId);
 
 private:
     void doLogin();
     void populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void appendMessage(const tesseract::Message& msg);
+    void appendEvent(const tesseract::Event& ev);
 
     static constexpr int kRoomAvatarSize = 36;
     static constexpr int kUserAvatarSize = 24;
+    static constexpr int kMaxImageSize = 400;
 
     QSplitter*   splitter_    = nullptr;
     QListWidget* roomList_    = nullptr;
@@ -76,6 +78,8 @@ private:
     QHash<QString, QPixmap>       avatarCache_;
     /// sender_avatar_url → scaled QPixmap for inline message avatars.
     QHash<QString, QPixmap>       userAvatarCache_;
+    /// image_url → scaled QPixmap for inline image messages.
+    QHash<QString, QPixmap>       imageCache_;
 };
 
 } // namespace qt6

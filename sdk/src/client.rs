@@ -118,6 +118,12 @@ pub struct ClientFfi {
     timelines:    HashMap<OwnedRoomId, TimelineHandle>,
 }
 
+impl Drop for ClientFfi {
+    fn drop(&mut self) {
+        self.stop_sync();
+    }
+}
+
 impl ClientFfi {
     pub fn new() -> Self {
         let _ = tracing_subscriber::fmt()
@@ -211,9 +217,6 @@ impl ClientFfi {
                 .await
                 .context("restore oauth session")?;
 
-            // Fail fast if the homeserver no longer supports SSS.
-            probe_sss_support(&client).await?;
-
             anyhow::Ok(client)
         });
 
@@ -264,7 +267,7 @@ impl ClientFfi {
                                 guard.on_session_refreshed(&json);
                             }
                         }
-                        Ok(SessionChange::UnknownToken { .. }) => {
+                        Ok(SessionChange::UnknownToken { soft_logout }) => {
                             // Stop SyncService before it can reach State::Error and
                             // wipe the SQLite data directory while a fresh login is
                             // already in progress.
@@ -273,6 +276,7 @@ impl ClientFfi {
                                 guard.on_error(
                                     "sync_auth_error",
                                     "Session token is no longer valid; please log in again.",
+                                    soft_logout,
                                 );
                             }
                             break;
@@ -290,7 +294,7 @@ impl ClientFfi {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 if let Ok(guard) = handler.lock() {
-                    guard.on_error("sync_init", &e.to_string());
+                    guard.on_error("sync_init", &e.to_string(), false);
                 }
                 return;
             }
@@ -358,6 +362,7 @@ impl ClientFfi {
                                 guard.on_error(
                                     "sync_reconnect",
                                     "Sync state corrupted; reconnecting automatically…",
+                                    false,
                                 );
                             }
                             let _ = svc_clone.stop().await;
@@ -524,6 +529,26 @@ impl ClientFfi {
             .unwrap_or_default()
     }
 
+pub fn fetch_source_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
+        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let Some(client) = self.client.clone() else { return Vec::new() };
+        if mxc_url.is_empty() { return Vec::new(); }
+
+        let uri = OwnedMxcUri::from(mxc_url);
+        if !uri.is_valid() { return Vec::new(); }
+
+        let request = MediaRequestParameters {
+            source: MediaSource::Plain(uri.into()),
+            format: MediaFormat::File,
+        };
+self.rt
+            .block_on(client.media().get_media_content(&request, true))
+            .unwrap_or_default()
+    }
+
     // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
@@ -560,23 +585,12 @@ impl ClientFfi {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
-    let versions = client.available_sliding_sync_versions().await;
-    let has_native = versions.iter().any(|v| {
-        matches!(v, matrix_sdk::sliding_sync::Version::Native)
-    });
-    if !has_native {
-        anyhow::bail!(
-            "This homeserver does not support Simplified Sliding Sync. \
-             Tesseract requires SSS (Synapse ≥ 1.110 or Conduit ≥ 0.7)."
-        );
-    }
-    Ok(())
-}
-
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();
     for room in client.joined_rooms() {
+        if room.is_tombstoned() {
+            continue;
+        }
         let name = room
             .display_name()
             .await
@@ -608,17 +622,56 @@ fn timeline_item_to_ffi(
         _ => return None,
     };
 
-    let (body, msg_type) = match event_item.content() {
-        TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Message(msg), .. }) => {
-            match msg.msgtype() {
-                MessageType::Text(t)  => (t.body.clone(), "m.text".to_owned()),
-                MessageType::Image(i) => (i.body.clone(), "m.image".to_owned()),
-                MessageType::File(f)  => (f.body.clone(), "m.file".to_owned()),
-                _                     => return None,
-            }
-        }
+    let msg_content = match event_item.content() {
+        TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Message(msg), .. }) => msg,
         _ => return None,
     };
+
+    let (body, msg_type, source_json, width, height, file_json, file_name, file_size) =
+        match msg_content.msgtype() {
+            MessageType::Text(t) => (
+                t.body.clone(),
+                "m.text".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+            ),
+            MessageType::Image(i) => {
+                let source_str = match &i.source {
+                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => String::new(),
+                };
+                let (w, h) = i
+                    .info
+                    .as_ref()
+                    .map(|info| {
+                        (
+                            info.width.map(|v| u64::from(v)).unwrap_or(0u64),
+                            info.height.map(|v| u64::from(v)).unwrap_or(0u64),
+                        )
+                    })
+                    .unwrap_or((0u64, 0u64));
+                (i.body.clone(), "m.image".to_owned(), source_str, w, h, String::new(), String::new(), 0u64)
+            }
+            MessageType::File(f) => {
+                let file_str = match &f.source {
+                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => String::new(),
+                };
+                let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
+                let size = f
+                    .info
+                    .as_ref()
+                    .and_then(|info| info.size)
+                    .map(|v| u64::from(v))
+                    .unwrap_or(0u64);
+                (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64, file_str, name, size)
+            }
+            _ => return None,
+        };
 
     let (sender_name, sender_avatar_url) =
         if let TimelineDetails::Ready(p) = event_item.sender_profile() {
@@ -641,6 +694,12 @@ fn timeline_item_to_ffi(
         body,
         timestamp:         event_item.timestamp().get().into(),
         msg_type,
+        source_json,
+        width,
+        height,
+        file_json,
+        file_name,
+        file_size,
     })
 }
 

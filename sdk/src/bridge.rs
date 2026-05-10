@@ -22,19 +22,29 @@ pub mod ffi {
     }
 
     /// A single timeline event (message).
+    /// Discriminated union: inspect `msg_type` to determine which fields are valid.
+    /// For `m.image` → source_json, width, height are populated.
+    /// For `m.file`  → file_json, file_name, file_size are populated.
     struct TimelineEvent {
         event_id:          String,
         room_id:           String,
         sender:            String,
-        /// Resolved display name; empty string when not yet available (fall back to sender).
         sender_name:       String,
-        /// mxc:// URI of the sender's avatar; empty string when unavailable.
         sender_avatar_url: String,
         body:              String,
         /// Unix timestamp in milliseconds.
         timestamp:         u64,
         /// "m.text" | "m.image" | "m.file" | …
         msg_type:          String,
+        /// mxc:// URI of the image (valid when msg_type is "m.image").
+        source_json:       String,
+        width:             u64,
+        height:            u64,
+        /// JSON serialisation of a `MediaSource` for the file attachment.
+        /// Non-empty when msg_type is "m.file".
+        file_json:         String,
+        file_name:         String,
+        file_size:         u64,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -61,7 +71,7 @@ pub mod ffi {
 
         fn on_message_event(self: &EventHandlerBridge, event: &TimelineEvent);
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
-        fn on_error(self: &EventHandlerBridge, context: &str, message: &str);
+        fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
         /// Fired when a room's timeline is reset (room selected / subscribed).
         /// The UI should clear its message view for this room_id.
@@ -127,6 +137,11 @@ pub mod ffi {
         /// client is not logged in. The SDK media cache is consulted first so
         /// repeat calls for the same URL are instant.
         fn fetch_media_bytes(self: &mut ClientFfi, mxc_url: &str) -> Vec<u8>;
+
+        /// Download media from a JSON-serialised `MediaSource` (plain mxc:// or
+        /// encrypted `EncryptedFile`). Returns raw bytes on success or an
+        /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
+        fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
 
         // ----- Session teardown -----
 

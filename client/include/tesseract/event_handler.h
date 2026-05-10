@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -12,10 +13,11 @@ class IEventHandler {
 public:
     virtual ~IEventHandler() = default;
 
-    virtual void on_message(const Message& msg) = 0;
+    virtual void on_message(Event* ev) = 0;
     virtual void on_rooms_updated(const std::vector<RoomInfo>& rooms) = 0;
     virtual void on_sync_error(const std::string& context,
-                                const std::string& description) = 0;
+                                const std::string& description,
+                                bool soft_logout) = 0;
 
     /// Fired when a room's timeline subscription is reset (room selected).
     /// The UI should clear its message view for this room and await fresh

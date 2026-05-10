@@ -16,7 +16,7 @@ class EventHandler final : public tesseract::IEventHandler {
 public:
     explicit EventHandler(GtkWindow* window) : window_(window) {}
 
-    void on_message(const tesseract::Message& msg) override;
+    void on_message(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description) override;
@@ -35,11 +35,11 @@ public:
 
     GtkWidget* widget() const { return window_; }
 
-    void push_message(tesseract::Message msg);
+    void push_event(std::unique_ptr<tesseract::Event> ev);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
     void handle_reconnect();
-    void handle_auth_error();
+    void handle_auth_error(bool soft_logout);
     void push_timeline_reset(std::string room_id);
 
 private:
@@ -48,7 +48,7 @@ private:
     static void on_login_clicked(GtkButton*, gpointer user_data);
 
     void populate_rooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void append_message(const tesseract::Message& msg);
+    void append_event(const tesseract::Event& ev);
     void do_login();
 
     static constexpr int kRoomAvatarSize = 36;
@@ -71,6 +71,8 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
     /// sender_avatar_url → raw image bytes for inline message avatars.
     std::unordered_map<std::string, std::vector<uint8_t>> user_avatar_cache_;
+    /// image_url → raw image bytes for inline image messages.
+    std::unordered_map<std::string, std::vector<uint8_t>> image_cache_;
 };
 
 } // namespace gtk4

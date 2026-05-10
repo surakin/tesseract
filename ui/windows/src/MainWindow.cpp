@@ -12,8 +12,8 @@ namespace win32 {
 // EventHandler
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(const tesseract::Message& msg) {
-    auto* p = new tesseract::Message(msg);
+void EventHandler::on_message(tesseract::Event* ev) {
+    auto* p = ev;
     PostMessage(hwnd_, WM_TESSERACT_MESSAGE, 0, reinterpret_cast<LPARAM>(p));
 }
 
@@ -26,12 +26,14 @@ void EventHandler::on_rooms_updated(
 
 void EventHandler::on_sync_error(
     const std::string& context,
-    const std::string& description)
+    const std::string& description,
+    bool soft_logout)
 {
     if (context == "sync_reconnect") {
         PostMessage(hwnd_, WM_TESSERACT_RECONNECT, 0, 0);
     } else if (context == "sync_auth_error") {
-        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR, 0, 0);
+        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR,
+                    static_cast<WPARAM>(soft_logout), 0);
     } else {
         auto* p = new std::string(description);
         PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
@@ -105,7 +107,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(
         return 0;
 
     case WM_TESSERACT_MESSAGE: {
-        auto* p = reinterpret_cast<tesseract::Message*>(lParam);
+        auto* p = reinterpret_cast<tesseract::Event*>(lParam);
         self->on_tesseract_message(p);
         delete p;
         return 0;
@@ -132,7 +134,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(
         self->on_reconnect();
         return 0;
     case WM_TESSERACT_AUTH_ERROR:
-        self->on_auth_error();
+        self->on_auth_error(static_cast<bool>(wParam));
         return 0;
 
     default:
@@ -292,7 +294,20 @@ void MainWindow::on_reconnect() {
     on_login_clicked();
 }
 
-void MainWindow::on_auth_error() {
+void MainWindow::on_auth_error(bool soft_logout) {
+    if (soft_logout) {
+        if (auto saved = tesseract::SessionStore::load()) {
+            SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                         reinterpret_cast<LPARAM>(L"Reconnecting session…"));
+            if (client_.restore_session(*saved)) {
+                event_handler_ = std::make_unique<EventHandler>(hwnd_);
+                client_.start_sync(event_handler_.get());
+                SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                             reinterpret_cast<LPARAM>(L"Reconnected"));
+                return;
+            }
+        }
+    }
     tesseract::SessionStore::clear();
     client_.stop_sync();
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -300,9 +315,9 @@ void MainWindow::on_auth_error() {
     on_login_clicked();
 }
 
-void MainWindow::on_tesseract_message(tesseract::Message* msg) {
-    if (msg->room_id == current_room_id_)
-        append_message(*msg);
+void MainWindow::on_tesseract_message(tesseract::Event* ev) {
+    if (ev->room_id == current_room_id_)
+        append_message(*ev);
     // Room list unread counts update via on_tesseract_rooms from RoomListService.
 }
 
@@ -324,18 +339,18 @@ void MainWindow::on_tesseract_timeline_reset(std::string* room_id) {
         SetWindowTextW(hMsgView_, L"");
 }
 
-void MainWindow::append_message(const tesseract::Message& msg) {
+void MainWindow::append_message(const tesseract::Event& ev) {
     // Win32 EDIT control: text-only (no inline images; see roadmap decision).
-    const std::string& name = msg.sender_name.empty() ? msg.sender : msg.sender_name;
-    std::string line = name + ": " + msg.body + "\r\n";
+    const std::string& name = ev.sender_name.empty() ? ev.sender : ev.sender_name;
+    std::string line = name + ": " + ev.body + "\r\n";
     // Use MultiByteToWideChar so display names with non-ASCII chars render correctly.
     int sz = MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, nullptr, 0);
     std::wstring wline(sz > 0 ? sz - 1 : 0, L'\0');
     if (sz > 0) MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, &wline[0], sz);
 
     int len = GetWindowTextLengthW(hMsgView_);
-    SendMessageW(hMsgView_, EM_SETSEL, len, len);
-    SendMessageW(hMsgView_, EM_REPLACESEL, FALSE,
+    SendMessage(hMsgView_, EM_SETSEL, len, len);
+    SendMessage(hMsgView_, EM_REPLACESEL, FALSE,
                  reinterpret_cast<LPARAM>(wline.c_str()));
 }
 

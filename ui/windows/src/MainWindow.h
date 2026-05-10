@@ -29,10 +29,11 @@ class EventHandler final : public tesseract::IEventHandler {
 public:
     explicit EventHandler(HWND hwnd) : hwnd_(hwnd) {}
 
-    void on_message(const tesseract::Message& msg) override;
+    void on_message(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
-                       const std::string& description) override;
+                       const std::string& description,
+                       bool soft_logout) override;
     void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
 
@@ -59,14 +60,14 @@ private:
     void on_login_clicked();
     void on_send_clicked();
     void on_room_selected(int index);
-    void on_tesseract_message(tesseract::Message* msg);
+    void on_tesseract_message(tesseract::Event* ev);
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
     void on_tesseract_timeline_reset(std::string* room_id);
 
     void layout_controls();
     void on_reconnect();
-    void on_auth_error();
-    void append_message(const tesseract::Message& msg);
+    void on_auth_error(bool soft_logout);
+    void append_message(const tesseract::Event& ev);
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;

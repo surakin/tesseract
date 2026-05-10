@@ -12,8 +12,8 @@ namespace gtk4 {
 // ---------------------------------------------------------------------------
 
 struct IdleMessage {
-    MainWindow*    window;
-    tesseract::Message msg;
+    MainWindow*                        window;
+    std::unique_ptr<tesseract::Event> ev;
 };
 
 struct IdleRooms {
@@ -25,6 +25,7 @@ struct IdleError {
     MainWindow* window;
     std::string context;
     std::string description;
+    bool soft_logout;
 };
 
 struct IdleTimelineReset {
@@ -36,15 +37,15 @@ struct IdleTimelineReset {
 // EventHandler
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(const tesseract::Message& msg) {
+void EventHandler::on_message(tesseract::Event* ev) {
     auto* p = new IdleMessage{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        msg
+        std::unique_ptr<tesseract::Event>(ev)
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleMessage*>(data);
-        d->window->push_message(std::move(d->msg));
+        d->window->push_event(std::move(d->ev));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -68,20 +69,22 @@ void EventHandler::on_rooms_updated(
 
 void EventHandler::on_sync_error(
     const std::string& context,
-    const std::string& description)
+    const std::string& description,
+    bool soft_logout)
 {
     auto* p = new IdleError{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
         context,
-        description
+        description,
+        soft_logout
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleError*>(data);
         if (d->context == "sync_reconnect")
             d->window->handle_reconnect();
         else if (d->context == "sync_auth_error")
-            d->window->handle_auth_error();
+            d->window->handle_auth_error(d->soft_logout);
         else
             d->window->push_error(std::move(d->description));
         delete d;
@@ -249,10 +252,9 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::push_message(tesseract::Message msg) {
-    if (msg.room_id == current_room_id_)
-        append_message(msg);
-    // Room list unread counts update via push_rooms from RoomListService.
+void MainWindow::push_event(std::unique_ptr<tesseract::Event> ev) {
+    if (ev->room_id == current_room_id_)
+        append_event(*ev);
 }
 
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
@@ -266,7 +268,17 @@ void MainWindow::handle_reconnect() {
     do_login();
 }
 
-void MainWindow::handle_auth_error() {
+void MainWindow::handle_auth_error(bool soft_logout) {
+    if (soft_logout) {
+        if (auto saved = tesseract::SessionStore::load()) {
+            gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnecting session…");
+            if (client_.restore_session(*saved)) {
+                client_.start_sync(event_handler_.get());
+                gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnected");
+                return;
+            }
+        }
+    }
     tesseract::SessionStore::clear();
     client_.stop_sync();
     gtk_label_set_text(GTK_LABEL(status_bar_), "Session expired; please log in again.");
@@ -337,9 +349,13 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
     }
 }
 
-void MainWindow::append_message(const tesseract::Message& msg) {
-    const std::string& name      = msg.sender_name.empty() ? msg.sender : msg.sender_name;
-    const std::string& avatarUrl = msg.sender_avatar_url;
+void MainWindow::append_event(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) {
+        return;
+    }
+
+    const std::string& name      = ev.sender_name.empty() ? ev.sender : ev.sender_name;
+    const std::string& avatarUrl = ev.sender_avatar_url;
 
     // Fetch and cache sender avatar on first sight of this mxc URL.
     if (!avatarUrl.empty() && user_avatar_cache_.find(avatarUrl) == user_avatar_cache_.end())
@@ -350,9 +366,9 @@ void MainWindow::append_message(const tesseract::Message& msg) {
     gtk_text_buffer_get_end_iter(buf, &iter);
 
     // Inline avatar via GtkTextChildAnchor.
-    auto it = !avatarUrl.empty() ? user_avatar_cache_.find(avatarUrl) : user_avatar_cache_.end();
-    if (it != user_avatar_cache_.end() && !it->second.empty()) {
-        GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
+    auto avatarIt = !avatarUrl.empty() ? user_avatar_cache_.find(avatarUrl) : user_avatar_cache_.end();
+    if (avatarIt != user_avatar_cache_.end() && !avatarIt->second.empty()) {
+        GBytes*     gb  = g_bytes_new(avatarIt->second.data(), avatarIt->second.size());
         GError*     err = nullptr;
         GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
         g_bytes_unref(gb);
@@ -372,20 +388,63 @@ void MainWindow::append_message(const tesseract::Message& msg) {
         }
     }
 
-    // Bold sender name — reuse a named tag so it isn't recreated per message.
-    gtk_text_buffer_get_end_iter(buf, &iter);
+    // Bold sender name tag
     GtkTextTagTable* table = gtk_text_buffer_get_tag_table(buf);
     GtkTextTag* bold = gtk_text_tag_table_lookup(table, "bold");
     if (!bold)
         bold = gtk_text_buffer_create_tag(buf, "bold",
                                           "weight", PANGO_WEIGHT_BOLD, nullptr);
+
+    gtk_text_buffer_get_end_iter(buf, &iter);
     std::string header = name + ": ";
     gtk_text_buffer_insert_with_tags(buf, &iter, header.c_str(), -1, bold, nullptr);
 
-    // Plain message body + newline.
-    gtk_text_buffer_get_end_iter(buf, &iter);
-    std::string line = msg.body + "\n";
-    gtk_text_buffer_insert(buf, &iter, line.c_str(), -1);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        if (!img.image_url.empty()) {
+            if (image_cache_.find(img.image_url) == image_cache_.end())
+                image_cache_[img.image_url] = client_.fetch_media_bytes(img.image_url);
+
+            auto it = image_cache_.find(img.image_url);
+            if (it != image_cache_.end() && !it->second.empty()) {
+                GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
+                GError*     err = nullptr;
+                GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+                g_bytes_unref(gb);
+                if (tex) {
+                    GtkTextChildAnchor* anchor =
+                        gtk_text_buffer_create_child_anchor(buf, &iter);
+                    GtkWidget* img_widget = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+                    gtk_text_view_add_child_at_anchor(
+                        GTK_TEXT_VIEW(msg_view_), img_widget, anchor);
+                    gtk_widget_show(img_widget);
+                    g_object_unref(tex);
+                    gtk_text_buffer_get_end_iter(buf, &iter);
+                    gtk_text_buffer_insert(buf, &iter, "\n", 1);
+                } else {
+                    if (err) g_error_free(err);
+                }
+            }
+        }
+        if (!img.body.empty()) {
+            gtk_text_buffer_get_end_iter(buf, &iter);
+            gtk_text_buffer_insert(buf, &iter, img.body.c_str(), -1);
+        }
+    } else if (ev.type == tesseract::EventType::File) {
+        const auto& file = static_cast<const tesseract::FileEvent&>(ev);
+        std::string file_info = " [File: " + file.file_name + "]";
+        gtk_text_buffer_get_end_iter(buf, &iter);
+        gtk_text_buffer_insert(buf, &iter, file_info.c_str(), -1);
+        if (!file.body.empty()) {
+            gtk_text_buffer_insert(buf, &iter, " ", 1);
+            gtk_text_buffer_insert(buf, &iter, file.body.c_str(), -1);
+        }
+    } else {
+        // TextEvent
+        gtk_text_buffer_get_end_iter(buf, &iter);
+        std::string line = ev.body + "\n";
+        gtk_text_buffer_insert(buf, &iter, line.c_str(), -1);
+    }
 
     gtk_text_buffer_get_end_iter(buf, &iter);
     GtkTextMark* mark = gtk_text_buffer_get_mark(buf, "insert");

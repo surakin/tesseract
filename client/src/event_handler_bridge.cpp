@@ -5,7 +5,10 @@ namespace tesseract_ffi {
 
 void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
     if (!handler_) return;
-    handler_->on_message(tesseract::from_ffi(ev));
+    last_event_ = tesseract::make_event(ev);
+    auto* raw = last_event_.get();
+    handler_->on_message(raw);
+    last_event_.release();
 }
 
 void EventHandlerBridge::on_rooms_updated(
@@ -21,10 +24,10 @@ void EventHandlerBridge::on_rooms_updated(
 }
 
 void EventHandlerBridge::on_error(
-    rust::Str context, rust::Str message) const
+    rust::Str context, rust::Str message, bool soft_logout) const
 {
     if (!handler_) return;
-    handler_->on_sync_error(std::string(context), std::string(message));
+    handler_->on_sync_error(std::string(context), std::string(message), soft_logout);
 }
 
 void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const {

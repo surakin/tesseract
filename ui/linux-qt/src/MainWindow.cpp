@@ -11,7 +11,7 @@
 #include <QTextDocument>
 #include <QUrl>
 
-Q_DECLARE_METATYPE(tesseract::Message)
+Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
 
 namespace qt6 {
@@ -20,8 +20,8 @@ namespace qt6 {
 // EventBridge – called on the Rust sync thread, emits queued signals
 // ---------------------------------------------------------------------------
 
-void EventBridge::on_message(const tesseract::Message& msg) {
-    emit messageReceived(msg);
+void EventBridge::on_message(tesseract::Event* ev) {
+    emit eventReceived(ev);
 }
 
 void EventBridge::on_rooms_updated(
@@ -32,10 +32,12 @@ void EventBridge::on_rooms_updated(
 
 void EventBridge::on_sync_error(
     const std::string& context,
-    const std::string& description)
+    const std::string& description,
+    bool soft_logout)
 {
     emit syncError(QString::fromStdString(context),
-                   QString::fromStdString(description));
+                   QString::fromStdString(description),
+                   soft_logout);
 }
 
 void EventBridge::on_timeline_reset(const std::string& room_id) {
@@ -53,7 +55,7 @@ void EventBridge::on_session_saved(const std::string& session_json) {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    qRegisterMetaType<tesseract::Message>();
+    qRegisterMetaType<tesseract::Event*>();
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
 
     setWindowTitle("Tesseract");
@@ -95,8 +97,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     bridge_ = std::make_unique<EventBridge>(this);
 
-    connect(bridge_.get(), &EventBridge::messageReceived,
-            this,          &MainWindow::onMessageReceived);
+    connect(bridge_.get(), &EventBridge::eventReceived,
+            this,          &MainWindow::onEventReceived);
     connect(bridge_.get(), &EventBridge::roomsUpdated,
             this,          &MainWindow::onRoomsUpdated);
     connect(bridge_.get(), &EventBridge::syncError,
@@ -181,10 +183,10 @@ void MainWindow::onRoomSelected(
     client_.paginate_back(currentRoomId_, 50);
 }
 
-void MainWindow::onMessageReceived(tesseract::Message msg) {
-    if (msg.room_id == currentRoomId_)
-        appendMessage(msg);
-    // Room list unread counts update via on_rooms_updated from RoomListService.
+void MainWindow::onEventReceived(tesseract::Event* ev) {
+    if (ev && ev->room_id == currentRoomId_)
+        appendEvent(*ev);
+    delete ev;
 }
 
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
@@ -192,12 +194,22 @@ void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
     populateRooms(rooms_);
 }
 
-void MainWindow::onSyncError(QString context, QString description) {
+void MainWindow::onSyncError(QString context, QString description, bool soft_logout) {
     if (context == "sync_reconnect") {
         statusBar()->showMessage("Sync error: reconnecting…");
         client_.stop_sync();
         doLogin();
     } else if (context == "sync_auth_error") {
+        if (soft_logout) {
+            if (auto saved = tesseract::SessionStore::load()) {
+                statusBar()->showMessage("Reconnecting session…");
+                if (client_.restore_session(*saved)) {
+                    client_.start_sync(bridge_.get());
+                    statusBar()->showMessage("Reconnected");
+                    return;
+                }
+            }
+        }
         tesseract::SessionStore::clear();
         client_.stop_sync();
         statusBar()->showMessage("Session expired; please log in again.");
@@ -251,15 +263,20 @@ void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
     }
 }
 
-void MainWindow::appendMessage(const tesseract::Message& msg) {
-    QString sender    = QString::fromStdString(msg.sender);
-    QString name      = QString::fromStdString(msg.sender_name);
+void MainWindow::appendEvent(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) {
+        // Skip unhandled event types for now
+        return;
+    }
+
+    QString sender    = QString::fromStdString(ev.sender);
+    QString name      = QString::fromStdString(ev.sender_name);
     if (name.isEmpty()) name = sender;
-    QString avatarUrl = QString::fromStdString(msg.sender_avatar_url);
+    QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
 
     // Fetch and cache sender avatar on first sight of this mxc URL.
     if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
-        auto bytes = client_.fetch_media_bytes(msg.sender_avatar_url);
+        auto bytes = client_.fetch_media_bytes(ev.sender_avatar_url);
         if (!bytes.empty()) {
             QPixmap pm;
             pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
@@ -271,7 +288,7 @@ void MainWindow::appendMessage(const tesseract::Message& msg) {
         }
     }
 
-    // Re-register the resource with the document (needed after clear() resets it).
+    // Re-register the avatar resource with the document.
     if (userAvatarCache_.contains(avatarUrl)) {
         msgView_->document()->addResource(
             QTextDocument::ImageResource,
@@ -280,16 +297,97 @@ void MainWindow::appendMessage(const tesseract::Message& msg) {
     }
 
     QString html;
-    if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
-        html = QString("<img src='%1' width='%2' height='%2'> <b>%3:</b> %4")
-            .arg(avatarUrl.toHtmlEscaped())
-            .arg(kUserAvatarSize)
+
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        QString imgUrl = QString::fromStdString(img.image_url);
+
+        if (!imgUrl.isEmpty() && !imageCache_.contains(imgUrl)) {
+            auto bytes = client_.fetch_media_bytes(img.image_url);
+            if (!bytes.empty()) {
+                QPixmap pm;
+                pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                static_cast<uint>(bytes.size()));
+                if (!pm.isNull()) {
+                    if (img.width > 0 && img.height > 0) {
+                        imageCache_[imgUrl] = pm.scaled(
+                            static_cast<int>(std::min(static_cast<uint64_t>(kMaxImageSize), img.width)),
+                            static_cast<int>(std::min(static_cast<uint64_t>(kMaxImageSize), img.height)),
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    } else {
+                        imageCache_[imgUrl] = pm.scaled(
+                            kMaxImageSize, kMaxImageSize,
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    }
+                }
+            }
+        }
+
+        QString avatarImg;
+        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
+            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
+                .arg(avatarUrl.toHtmlEscaped())
+                .arg(kUserAvatarSize);
+        }
+
+        if (imageCache_.contains(imgUrl)) {
+            msgView_->document()->addResource(
+                QTextDocument::ImageResource,
+                QUrl(imgUrl),
+                imageCache_[imgUrl]);
+            html = avatarImg +
+                   QString("<b>%1:</b><br>"
+                           "<img src='%2' width='%3' height='%4'><br>")
+                   .arg(name.toHtmlEscaped())
+                   .arg(imgUrl.toHtmlEscaped())
+                   .arg(imageCache_[imgUrl].width())
+                   .arg(imageCache_[imgUrl].height());
+            if (!img.body.empty()) {
+                html += QString::fromStdString(img.body).toHtmlEscaped();
+            }
+        } else {
+            html = avatarImg + QString("<b>%1:</b> [Image] %2")
+                .arg(name.toHtmlEscaped())
+                .arg(QString::fromStdString(img.body).toHtmlEscaped());
+        }
+    } else if (ev.type == tesseract::EventType::File) {
+        const auto& file = static_cast<const tesseract::FileEvent&>(ev);
+        QString fileUrl = QString::fromStdString(file.file_url);
+        QString fileLink;
+        if (!fileUrl.isEmpty()) {
+            fileLink = QString(" <a href='%1'>📎 %2</a>")
+                .arg(fileUrl.toHtmlEscaped())
+                .arg(QString::fromStdString(file.file_name).toHtmlEscaped());
+        } else {
+            fileLink = QString(" 📎 %1")
+                .arg(QString::fromStdString(file.file_name).toHtmlEscaped());
+        }
+
+        QString avatarImg;
+        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
+            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
+                .arg(avatarUrl.toHtmlEscaped())
+                .arg(kUserAvatarSize);
+        }
+        html = avatarImg + QString("<b>%1:</b>%2 %3")
             .arg(name.toHtmlEscaped())
-            .arg(QString::fromStdString(msg.body).toHtmlEscaped());
+            .arg(fileLink)
+            .arg(QString::fromStdString(file.body).toHtmlEscaped());
+    } else if (ev.type == tesseract::EventType::Text) {
+        // TextEvent
+        QString avatarImg;
+        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
+            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
+                .arg(avatarUrl.toHtmlEscaped())
+                .arg(kUserAvatarSize);
+        }
+        html = avatarImg + "<b>" + name.toHtmlEscaped() + ":</b> " +
+               QString::fromStdString(ev.body).toHtmlEscaped();
     } else {
-        html = "<b>" + name.toHtmlEscaped() + ":</b> " +
-               QString::fromStdString(msg.body).toHtmlEscaped();
+        // Unknown non-unhandled type — shouldn't happen, but skip gracefully
+        return;
     }
+
     msgView_->append(html);
 
     QScrollBar* sb = msgView_->verticalScrollBar();
