@@ -140,6 +140,14 @@ std::string Client::get_user_id() const {
     return std::string(impl_->ffi->user_id());
 }
 
+std::string Client::get_display_name() const {
+    return std::string(impl_->ffi->current_user_display_name());
+}
+
+std::string Client::get_avatar_url() const {
+    return std::string(impl_->ffi->current_user_avatar_url());
+}
+
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id) {
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);
     return std::vector<uint8_t>(v.begin(), v.end());

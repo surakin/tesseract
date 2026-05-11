@@ -1,6 +1,5 @@
 #import "MainWindowController.h"
 #import "LoginWindowController.h"
-#import "RecoveryWindowController.h"
 #import "RoomListController.h"
 #import "MessageListController.h"
 #import "ComposeBar.h"
@@ -12,12 +11,22 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <thread>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static std::string nsstr(NSString* s) {
     return s ? std::string(s.UTF8String) : std::string{};
 }
+
+// User-strip view that surfaces an NSMenu on right-click / Ctrl-click.
+@interface UserStripView : NSView
+@property (nonatomic, strong) NSMenu* contextMenu;
+@end
+
+@implementation UserStripView
+- (NSMenu*)menuForEvent:(NSEvent*)/*event*/ { return _contextMenu; }
+@end
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
@@ -38,13 +47,22 @@ static std::string nsstr(NSString* s) {
     MessageListController* _msgList;
     ComposeBar*            _compose;
     LoginWindowController*    _loginWC;
-    RecoveryWindowController* _recoveryWC;
 
-    // Recovery banner widgets (Step 6)
-    NSView*      _recoveryBanner;
-    NSTextField* _recoveryLabel;
-    NSLayoutConstraint* _recoveryBannerHeight;
-    BOOL         _recoveryBannerDismissed;
+    // User identity strip (sidebar footer)
+    UserStripView*       _userStrip;
+    NSImageView*         _userAvatar;
+    NSTextField*         _userNameLabel;
+    std::string          _myDisplayName;
+    std::string          _myAvatarUrl;
+
+    // Recovery banner widgets (Step 6) — inline key entry, no modal dialog.
+    NSView*              _recoveryBanner;
+    NSTextField*         _recoveryLabel;
+    NSSecureTextField*   _recoveryKeyField;
+    NSButton*            _recoveryVerifyBtn;
+    NSLayoutConstraint*  _recoveryBannerHeight;
+    BOOL                 _recoveryBannerDismissed;
+    BOOL                 _recoveryInFlight;
 
     // State
     NSString* _currentRoomId;
@@ -149,6 +167,32 @@ static std::string nsstr(NSString* s) {
     _roomList.view.translatesAutoresizingMaskIntoConstraints = NO;
     [_sidebarContainer addSubview:_roomList.view];
 
+    // ── User identity strip (sidebar footer) ──────────────────────────────────
+    _userStrip = [[UserStripView alloc] init];
+    _userStrip.translatesAutoresizingMaskIntoConstraints = NO;
+    _userStrip.wantsLayer = YES;
+    _userStrip.layer.backgroundColor =
+        [NSColor colorWithCalibratedWhite:0.91 alpha:1.0].CGColor;
+    _userStrip.hidden = YES;
+    [_sidebarContainer addSubview:_userStrip];
+
+    _userAvatar = [[NSImageView alloc] init];
+    _userAvatar.translatesAutoresizingMaskIntoConstraints = NO;
+    [_userStrip addSubview:_userAvatar];
+
+    _userNameLabel = [NSTextField labelWithString:@""];
+    _userNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _userNameLabel.font = [NSFont boldSystemFontOfSize:13];
+    _userNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_userStrip addSubview:_userNameLabel];
+
+    NSMenu* userMenu = [[NSMenu alloc] init];
+    [userMenu addItemWithTitle:@"Logout"
+                        action:@selector(_doLogout)
+                 keyEquivalent:@""];
+    for (NSMenuItem* item in userMenu.itemArray) item.target = self;
+    _userStrip.contextMenu = userMenu;
+
     _msgList = [[MessageListController alloc] init];
     _msgList.delegate = self;
     _msgList.client   = &_impl->client;
@@ -193,19 +237,26 @@ static std::string nsstr(NSString* s) {
     _recoveryBanner.hidden = YES;
     [_msgContainer addSubview:_recoveryBanner];
 
-    _recoveryLabel = [NSTextField labelWithString:
-        @"Verify this device to decrypt historical messages."];
+    _recoveryLabel = [NSTextField labelWithString:@"Verify this device:"];
     _recoveryLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _recoveryLabel.textColor = [NSColor colorWithCalibratedRed:0.36 green:0.27 blue:0.0 alpha:1.0];
     _recoveryLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [_recoveryBanner addSubview:_recoveryLabel];
 
-    NSButton* verifyBtn = [NSButton buttonWithTitle:@"Verify"
-                                             target:self
-                                             action:@selector(_onRecoveryVerifyClicked)];
-    verifyBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    verifyBtn.bezelStyle = NSBezelStyleRounded;
-    [_recoveryBanner addSubview:verifyBtn];
+    _recoveryKeyField = [[NSSecureTextField alloc] init];
+    _recoveryKeyField.translatesAutoresizingMaskIntoConstraints = NO;
+    _recoveryKeyField.placeholderString = @"Recovery key or passphrase";
+    _recoveryKeyField.target = self;
+    _recoveryKeyField.action = @selector(_onRecoveryVerifyClicked);  // Enter triggers verify
+    [_recoveryBanner addSubview:_recoveryKeyField];
+
+    _recoveryVerifyBtn = [NSButton buttonWithTitle:@"Verify"
+                                            target:self
+                                            action:@selector(_onRecoveryVerifyClicked)];
+    _recoveryVerifyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    _recoveryVerifyBtn.bezelStyle = NSBezelStyleRounded;
+    _recoveryVerifyBtn.keyEquivalent = @"\r";
+    [_recoveryBanner addSubview:_recoveryVerifyBtn];
 
     NSButton* dismissBtn = [NSButton buttonWithTitle:@"✕"
                                               target:self
@@ -262,11 +313,26 @@ static std::string nsstr(NSString* s) {
         [navSep.bottomAnchor   constraintEqualToAnchor:_navBar.bottomAnchor],
         [navSep.heightAnchor   constraintEqualToConstant:1],
 
-        // Room list fills sidebar below the (possibly-hidden) nav bar
+        // Room list fills sidebar below the (possibly-hidden) nav bar, above
+        // the user strip pinned to the bottom.
         [_roomList.view.topAnchor      constraintEqualToAnchor:_navBar.bottomAnchor],
         [_roomList.view.leadingAnchor  constraintEqualToAnchor:_sidebarContainer.leadingAnchor],
         [_roomList.view.trailingAnchor constraintEqualToAnchor:_sidebarContainer.trailingAnchor],
-        [_roomList.view.bottomAnchor   constraintEqualToAnchor:_sidebarContainer.bottomAnchor],
+        [_roomList.view.bottomAnchor   constraintEqualToAnchor:_userStrip.topAnchor],
+
+        [_userStrip.leadingAnchor  constraintEqualToAnchor:_sidebarContainer.leadingAnchor],
+        [_userStrip.trailingAnchor constraintEqualToAnchor:_sidebarContainer.trailingAnchor],
+        [_userStrip.bottomAnchor   constraintEqualToAnchor:_sidebarContainer.bottomAnchor],
+        [_userStrip.heightAnchor   constraintEqualToConstant:48],
+
+        [_userAvatar.leadingAnchor constraintEqualToAnchor:_userStrip.leadingAnchor constant:8],
+        [_userAvatar.centerYAnchor constraintEqualToAnchor:_userStrip.centerYAnchor],
+        [_userAvatar.widthAnchor   constraintEqualToConstant:32],
+        [_userAvatar.heightAnchor  constraintEqualToConstant:32],
+
+        [_userNameLabel.leadingAnchor  constraintEqualToAnchor:_userAvatar.trailingAnchor constant:10],
+        [_userNameLabel.trailingAnchor constraintEqualToAnchor:_userStrip.trailingAnchor constant:-8],
+        [_userNameLabel.centerYAnchor  constraintEqualToAnchor:_userStrip.centerYAnchor],
 
         // Room header: full width of msg container, 60pt tall
         [_roomHeaderView.topAnchor     constraintEqualToAnchor:_msgContainer.topAnchor],
@@ -318,25 +384,25 @@ static std::string nsstr(NSString* s) {
         [_statusLabel.heightAnchor  constraintEqualToConstant:20],
     ]];
 
-    // Recovery banner: collapsible height (0 when hidden, 30 when shown) plus
-    // internal label/button layout. Buttons captured from _recoveryBanner's
-    // subview list — index 1 = verify, index 2 = dismiss (label is index 0).
+    // Recovery banner: collapsible height (0 when hidden, 36 when shown) plus
+    // internal layout. Subview order: 0=label, 1=key field, 2=verify, 3=dismiss.
     _recoveryBannerHeight = [_recoveryBanner.heightAnchor constraintEqualToConstant:0];
     _recoveryBannerHeight.active = YES;
 
-    NSButton* verifyBtnLayout  = _recoveryBanner.subviews[1];
-    NSButton* dismissBtnLayout = _recoveryBanner.subviews[2];
+    NSButton* dismissBtnLayout = _recoveryBanner.subviews[3];
     [NSLayoutConstraint activateConstraints:@[
-        [_recoveryLabel.leadingAnchor    constraintEqualToAnchor:_recoveryBanner.leadingAnchor constant:12],
-        [_recoveryLabel.centerYAnchor    constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
-        [_recoveryLabel.trailingAnchor
-            constraintLessThanOrEqualToAnchor:verifyBtnLayout.leadingAnchor constant:-6],
+        [_recoveryLabel.leadingAnchor      constraintEqualToAnchor:_recoveryBanner.leadingAnchor constant:12],
+        [_recoveryLabel.centerYAnchor      constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
 
-        [verifyBtnLayout.centerYAnchor   constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
-        [verifyBtnLayout.trailingAnchor  constraintEqualToAnchor:dismissBtnLayout.leadingAnchor constant:-6],
+        [_recoveryKeyField.leadingAnchor   constraintEqualToAnchor:_recoveryLabel.trailingAnchor constant:8],
+        [_recoveryKeyField.centerYAnchor   constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [_recoveryKeyField.trailingAnchor  constraintEqualToAnchor:_recoveryVerifyBtn.leadingAnchor constant:-8],
 
-        [dismissBtnLayout.centerYAnchor  constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
-        [dismissBtnLayout.trailingAnchor constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
+        [_recoveryVerifyBtn.centerYAnchor  constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [_recoveryVerifyBtn.trailingAnchor constraintEqualToAnchor:dismissBtnLayout.leadingAnchor constant:-6],
+
+        [dismissBtnLayout.centerYAnchor    constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [dismissBtnLayout.trailingAnchor   constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
     ]];
 }
 
@@ -347,7 +413,10 @@ static std::string nsstr(NSString* s) {
         auto res = _impl->client.restore_session(*saved);
         if (res) {
             _myUserId = @(_impl->client.get_user_id().c_str());
+            _myDisplayName = _impl->client.get_display_name();
+            _myAvatarUrl   = _impl->client.get_avatar_url();
             _msgList.myUserId = _myUserId;
+            [self _populateUserStrip];
             [self _startSync];
             [self _setStatus:@"Connected"];
             [self _maybeShowRecoveryBanner];
@@ -362,7 +431,10 @@ static std::string nsstr(NSString* s) {
           completionHandler:^(NSModalResponse resp) {
         if (resp == NSModalResponseOK) {
             _myUserId = @(_impl->client.get_user_id().c_str());
+            _myDisplayName = _impl->client.get_display_name();
+            _myAvatarUrl   = _impl->client.get_avatar_url();
             _msgList.myUserId = _myUserId;
+            [self _populateUserStrip];
             tesseract::SessionStore::save(_impl->client.export_session());
             [self _startSync];
             [self _setStatus:@"Connected"];
@@ -507,31 +579,65 @@ static std::string nsstr(NSString* s) {
         [_msgList clearMessages];
 }
 
-// ── Recovery banner + dialog (Step 6) ────────────────────────────────────────
+// ── Recovery banner (Step 6) — inline key entry, no modal dialog. ────────────
 
 - (void)_maybeShowRecoveryBanner {
     if (_recoveryBannerDismissed) return;
     if (!_impl->client.needs_recovery()) return;
-    _recoveryLabel.stringValue = @"Verify this device to decrypt historical messages.";
-    _recoveryBanner.hidden = NO;
-    _recoveryBannerHeight.constant = 30;
+    if (_recoveryBanner.hidden) {
+        // Fresh prompt — restore the input row.
+        _recoveryLabel.stringValue = @"Verify this device:";
+        _recoveryKeyField.stringValue = @"";
+        _recoveryKeyField.hidden  = NO;
+        _recoveryKeyField.enabled = YES;
+        _recoveryVerifyBtn.hidden  = NO;
+        _recoveryVerifyBtn.enabled = YES;
+        _recoveryBanner.hidden = NO;
+        _recoveryBannerHeight.constant = 36;
+        _recoveryInFlight = NO;
+    }
 }
 
 - (void)_onRecoveryVerifyClicked {
-    if (_recoveryWC) {
-        [_recoveryWC.window makeKeyAndOrderFront:nil];
+    NSString* key = [_recoveryKeyField.stringValue
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (key.length == 0) {
+        _recoveryLabel.stringValue = @"Please enter a recovery key or passphrase.";
         return;
     }
-    _recoveryWC = [[RecoveryWindowController alloc]
-        initWithClient:&_impl->client];
-    [self.window beginSheet:_recoveryWC.window
-          completionHandler:^(NSModalResponse /*resp*/) {
-        _recoveryWC = nil;
-        if (!self->_impl->client.needs_recovery()) {
-            self->_recoveryBanner.hidden = YES;
-            self->_recoveryBannerHeight.constant = 0;
-        }
-    }];
+    _recoveryKeyField.enabled  = NO;
+    _recoveryVerifyBtn.enabled = NO;
+    _recoveryKeyField.hidden   = YES;
+    _recoveryVerifyBtn.hidden  = YES;
+    _recoveryLabel.stringValue = @"Verifying…";
+    _recoveryInFlight = YES;
+
+    std::string k = key.UTF8String ? key.UTF8String : "";
+    std::thread([self, k]() {
+        auto res = self->_impl->client.recover(k);
+        bool        ok  = res.ok;
+        std::string msg = res.message;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _onRecoverDone:ok message:@(msg.c_str())];
+        });
+    }).detach();
+}
+
+- (void)_onRecoverDone:(BOOL)ok message:(NSString*)msg {
+    if (ok) {
+        // Backup watcher will repaint into "Importing keys…" and hide the
+        // banner once state reaches Enabled.
+        _recoveryLabel.stringValue = @"Downloading historical keys…";
+        return;
+    }
+    _recoveryLabel.stringValue =
+        [NSString stringWithFormat:@"Recovery failed: %@", msg];
+    _recoveryKeyField.hidden   = NO;
+    _recoveryKeyField.enabled  = YES;
+    _recoveryVerifyBtn.hidden  = NO;
+    _recoveryVerifyBtn.enabled = YES;
+    [_recoveryKeyField selectText:nil];
+    _recoveryInFlight = NO;
 }
 
 - (void)_onRecoveryDismissClicked {
@@ -545,7 +651,10 @@ static std::string nsstr(NSString* s) {
     // re-evaluate the banner each time the SDK pings us.
     [self _maybeShowRecoveryBanner];
 
+    // Live progress only when the input field is hidden, so we don't clobber
+    // "Verify this device:" while the user is typing.
     if (!_recoveryBanner.hidden
+        && _recoveryKeyField.hidden
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
@@ -559,8 +668,6 @@ static std::string nsstr(NSString* s) {
         _recoveryBanner.hidden = YES;
         _recoveryBannerHeight.constant = 0;
     }
-    if (_recoveryWC)
-        [_recoveryWC updateProgress:progress];
 }
 
 // ── Room header ──────────────────────────────────────────────────────────────
@@ -604,6 +711,59 @@ static std::string nsstr(NSString* s) {
     }
 
     _roomHeaderView.hidden = NO;
+}
+
+// ── User identity strip + logout ─────────────────────────────────────────────
+
+- (void)_populateUserStrip {
+    NSString* shown = _myDisplayName.empty()
+        ? _myUserId
+        : @(_myDisplayName.c_str());
+    _userNameLabel.stringValue = shown ?: @"";
+
+    if (!_myAvatarUrl.empty()) {
+        NSString* key = @(_myAvatarUrl.c_str());
+        std::string url_copy = _myAvatarUrl;
+        __weak typeof(self) weakSelf = self;
+        _userAvatar.image = [[AvatarCache shared]
+            avatarForKey:key
+                   fetch:[this, url_copy]() {
+                       return _impl->client.fetch_media_bytes(url_copy);
+                   }
+              completion:^(NSImage* img) {
+                  weakSelf.userAvatar.image = img;
+              }];
+    } else {
+        _userAvatar.image = [AvatarCache initialsImageForName:shown size:32];
+    }
+
+    _userStrip.hidden = NO;
+}
+
+- (void)_doLogout {
+    auto res = _impl->client.logout();
+    tesseract::SessionStore::clear();
+    [self stopSync];
+
+    // Reset visible state.
+    if (_currentRoomId)
+        _impl->client.unsubscribe_room(nsstr(_currentRoomId));
+    _currentRoomId  = nil;
+    _myUserId       = nil;
+    _myDisplayName.clear();
+    _myAvatarUrl.clear();
+    _rooms.clear();
+    [self _refreshRoomList];
+    [_msgList clearMessages];
+    _roomHeaderView.hidden = YES;
+    _userStrip.hidden = YES;
+    _recoveryBanner.hidden = YES;
+    _recoveryBannerHeight.constant = 0;
+    _recoveryBannerDismissed = NO;
+
+    [self _setStatus:(res.ok ? @"Signed out" : @"Sign out failed")];
+
+    [self doLogin];
 }
 
 @end

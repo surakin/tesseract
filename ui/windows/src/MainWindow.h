@@ -27,6 +27,7 @@ constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
 constexpr UINT WM_TESSERACT_RECONNECT      = WM_APP + 5;
 constexpr UINT WM_TESSERACT_AUTH_ERROR     = WM_APP + 6;
 constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
+constexpr UINT WM_TESSERACT_RECOVER_DONE    = WM_APP + 8;
 
 namespace win32 {
 
@@ -64,6 +65,10 @@ struct MessageData {
 // ---------------------------------------------------------------------------
 
 class MainWindow {
+    // Owner-drawn sidebar widgets need access to MainWindow state for paint.
+    friend LRESULT CALLBACK room_header_wnd_proc(HWND, UINT, WPARAM, LPARAM);
+    friend LRESULT CALLBACK user_strip_wnd_proc (HWND, UINT, WPARAM, LPARAM);
+
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
@@ -90,9 +95,12 @@ private:
     void on_auth_error(bool soft_logout);
     void on_backup_progress(tesseract::BackupProgress* progress);
     void maybe_show_recovery_banner();
-    void open_recovery_dialog();
     void on_recovery_verify_clicked();
     void on_recovery_dismiss_clicked();
+    void on_recover_done(bool ok, std::wstring msg);
+    void layout_recovery_banner(int w);
+    void populate_user_strip();
+    void do_logout();
     void append_message(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
@@ -119,6 +127,7 @@ private:
     static constexpr int kBubblePadY     = 8;
     static constexpr int kBubbleRadius   = 12;
     static constexpr int kMaxBubbleWidth = 420;
+    static constexpr int kUserStripH     = 48;
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
@@ -130,11 +139,17 @@ private:
     HWND      hStatus_     = nullptr;
     HWND      hRecoveryBanner_ = nullptr;
     HWND      hRecoveryLabel_  = nullptr;
+    HWND      hRecoveryKeyEdit_ = nullptr;
     HWND      hRecoveryVerify_ = nullptr;
     HWND      hRecoveryDismiss_ = nullptr;
     bool      recovery_banner_visible_   = false;
     bool      recovery_banner_dismissed_ = false;
-    class RecoveryDialog* recovery_dialog_ = nullptr;
+    bool      recovery_in_flight_        = false;
+
+    HWND             hUserStrip_     = nullptr;
+    std::string      my_display_name_;
+    std::string      my_avatar_url_;
+    Gdiplus::Bitmap* user_avatar_bmp_ = nullptr;  // owned; null = use initials
 
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
@@ -153,8 +168,10 @@ private:
     static constexpr int            IDC_MSGLIST  = 102;
     static constexpr int            IDC_INPUT    = 103;
     static constexpr int            IDC_SEND     = 104;
+    static constexpr int            IDC_RECOVERY_KEY     = 109;
     static constexpr int            IDC_RECOVERY_VERIFY  = 110;
     static constexpr int            IDC_RECOVERY_DISMISS = 111;
+    static constexpr int            IDM_LOGOUT           = 120;
 };
 
 } // namespace win32

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
-#include "RecoveryDialog.h"
+
+#include <thread>
 
 #include <tesseract/session_store.h>
 
@@ -126,6 +127,97 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         }
 
         EndPaint(hwnd, &ps);
+        return 0;
+    }
+    default:
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// User-strip WndProc (sidebar footer with avatar + display name + right-click)
+// ---------------------------------------------------------------------------
+
+LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        Gdiplus::Graphics g(hdc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int x0 = rc.left, y0 = rc.top;
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+
+        // Background
+        Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFE8EAEE));
+        g.FillRectangle(&bg, x0, y0, w, h);
+
+        // Top border
+        Gdiplus::Pen border(Gdiplus::Color(0xFFD0D3D8), 1.0f);
+        g.DrawLine(&border, (float)x0, (float)y0, (float)rc.right, (float)y0);
+
+        const std::string& shown = self->my_display_name_.empty()
+            ? self->my_user_id_
+            : self->my_display_name_;
+        if (shown.empty()) {
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        constexpr int AVATAR = 32;
+        int ax = x0 + 8;
+        int ay = y0 + (h - AVATAR) / 2;
+        if (self->user_avatar_bmp_)
+            self->draw_circle_bitmap(g, self->user_avatar_bmp_, ax, ay, AVATAR);
+        else
+            self->draw_initials_circle(g, shown, ax, ay, AVATAR);
+
+        Gdiplus::FontFamily ff(L"Segoe UI");
+        Gdiplus::Font nameFont(&ff, 11.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF111111));
+        Gdiplus::StringFormat sf;
+        sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+        int tx = ax + AVATAR + 10;
+        int text_w = rc.right - tx - 8;
+        auto wname = utf8_to_wstr(shown);
+        g.DrawString(wname.c_str(), -1, &nameFont,
+                     Gdiplus::RectF((float)tx, (float)y0, (float)text_w, (float)h),
+                     &sf, &nameBrush);
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_CONTEXTMENU: {
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING, MainWindow::IDM_LOGOUT, L"Logout");
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
+        // For keyboard-triggered context menus (-1,-1) anchor to widget centre.
+        if (x == -1 && y == -1) {
+            RECT rc; GetWindowRect(hwnd, &rc);
+            x = rc.left + (rc.right - rc.left) / 2;
+            y = rc.top  + (rc.bottom - rc.top) / 2;
+        }
+        UINT pick = TrackPopupMenu(menu,
+            TPM_RIGHTBUTTON | TPM_RETURNCMD,
+            x, y, 0, hwnd, nullptr);
+        DestroyMenu(menu);
+        if (pick == static_cast<UINT>(MainWindow::IDM_LOGOUT)) {
+            // Forward to the parent so MainWindow::wnd_proc's WM_COMMAND
+            // handler runs do_logout(). HIWORD=0 mimics a menu accelerator.
+            PostMessageW(GetParent(hwnd), WM_COMMAND,
+                         MAKEWPARAM(MainWindow::IDM_LOGOUT, 0), 0);
+        }
         return 0;
     }
     default:
@@ -282,6 +374,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->on_recovery_verify_clicked();
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_DISMISS)
             self->on_recovery_dismiss_clicked();
+        if (LOWORD(wParam) == IDM_LOGOUT)
+            self->do_logout();
         if (HIWORD(wParam) == LBN_SELCHANGE && LOWORD(wParam) == IDC_ROOMLIST) {
             int idx = (int)SendMessageW(self->hRoomList_, LB_GETCURSEL, 0, 0);
             if (idx != LB_ERR) self->on_room_selected(idx);
@@ -341,6 +435,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_TESSERACT_BACKUP_PROGRESS: {
         auto* p = reinterpret_cast<tesseract::BackupProgress*>(lParam);
         self->on_backup_progress(p);
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_RECOVER_DONE: {
+        auto* p = reinterpret_cast<std::wstring*>(lParam);
+        self->on_recover_done(wParam != 0, std::move(*p));
         delete p;
         return 0;
     }
@@ -433,6 +533,22 @@ void MainWindow::on_create(HWND hwnd) {
     SetWindowLongPtrW(hRoomHeader_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     ShowWindow(hRoomHeader_, SW_HIDE);
 
+    // User identity strip (sidebar footer)
+    WNDCLASSEXW uswc{};
+    uswc.cbSize = sizeof(uswc);
+    uswc.lpfnWndProc = user_strip_wnd_proc;
+    uswc.hInstance = hInst_;
+    uswc.lpszClassName = L"TesseractUserStrip";
+    uswc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassExW(&uswc);
+
+    hUserStrip_ = CreateWindowExW(
+        0, L"TesseractUserStrip", nullptr,
+        WS_CHILD,
+        0, 600 - kUserStripH, 240, kUserStripH,
+        hwnd, nullptr, hInst_, nullptr);
+    SetWindowLongPtrW(hUserStrip_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
     // Message list — variable-height owner-drawn, not selectable
     hMsgList_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
@@ -461,21 +577,27 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, nullptr, hInst_, nullptr);
 
     // Recovery banner (Step 6) — initially hidden; toggled by
-    // maybe_show_recovery_banner() after start_sync.
+    // maybe_show_recovery_banner() after start_sync. Inline recovery: the
+    // key edit + Verify button live in the banner itself; no modal dialog.
     hRecoveryBanner_ = CreateWindowExW(
         0, L"STATIC", nullptr,
         WS_CHILD | SS_NOTIFY,
         240, kRoomHeaderH, 784, 30,
         hwnd, nullptr, hInst_, nullptr);
     hRecoveryLabel_ = CreateWindowExW(
-        0, L"STATIC",
-        L"Verify this device to decrypt historical messages.",
+        0, L"STATIC", L"Verify this device:",
         WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP,
-        252, kRoomHeaderH + 8, 600, 18,
+        252, kRoomHeaderH + 8, 140, 18,
         hwnd, nullptr, hInst_, nullptr);
+    hRecoveryKeyEdit_ = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
+        400, kRoomHeaderH + 4, 480, 22,
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_KEY)),
+        hInst_, nullptr);
     hRecoveryVerify_ = CreateWindowExW(
         0, L"BUTTON", L"Verify",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
         900, kRoomHeaderH + 4, 80, 22,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_VERIFY)),
         hInst_, nullptr);
@@ -487,6 +609,7 @@ void MainWindow::on_create(HWND hwnd) {
         hInst_, nullptr);
     ShowWindow(hRecoveryBanner_,  SW_HIDE);
     ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
     ShowWindow(hRecoveryVerify_,  SW_HIDE);
     ShowWindow(hRecoveryDismiss_, SW_HIDE);
 
@@ -523,10 +646,16 @@ void MainWindow::on_size(int w, int h) {
         msg_area_h -= kRoomHeaderH;
     }
     if (recovery_banner_visible_) {
+        constexpr int LABEL_W = 140;
         SetWindowPos(hRecoveryBanner_, nullptr,
                      ROOM_W, msg_area_y, w - ROOM_W, BANNER_H, SWP_NOZORDER);
         SetWindowPos(hRecoveryLabel_, nullptr,
-                     ROOM_W + 12, msg_area_y + 8, w - ROOM_W - 140, 18, SWP_NOZORDER);
+                     ROOM_W + 12, msg_area_y + 8, LABEL_W, 18, SWP_NOZORDER);
+        // Edit fills the gap between label and the right-anchored buttons.
+        int edit_x = ROOM_W + 12 + LABEL_W + 8;
+        int edit_w = std::max(40, w - edit_x - 124 - 8);
+        SetWindowPos(hRecoveryKeyEdit_, nullptr,
+                     edit_x, msg_area_y + 4, edit_w, 22, SWP_NOZORDER);
         SetWindowPos(hRecoveryVerify_, nullptr,
                      w - 124, msg_area_y + 4, 80, 22, SWP_NOZORDER);
         SetWindowPos(hRecoveryDismiss_, nullptr,
@@ -535,7 +664,14 @@ void MainWindow::on_size(int w, int h) {
         msg_area_h -= BANNER_H;
     }
 
-    SetWindowPos(hRoomList_, nullptr, 0, 0, ROOM_W, msg_h, SWP_NOZORDER);
+    bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
+    int room_list_h = user_strip_visible ? msg_h - kUserStripH : msg_h;
+
+    SetWindowPos(hRoomList_, nullptr, 0, 0, ROOM_W, room_list_h, SWP_NOZORDER);
+    if (hUserStrip_) {
+        SetWindowPos(hUserStrip_, nullptr,
+                     0, room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
+    }
     SetWindowPos(hRoomHeader_, nullptr, ROOM_W, 0, w - ROOM_W, kRoomHeaderH, SWP_NOZORDER);
     SetWindowPos(hMsgList_,  nullptr, ROOM_W, msg_area_y, w - ROOM_W, msg_area_h, SWP_NOZORDER);
     SetWindowPos(hInput_,    nullptr, ROOM_W, msg_h, w - ROOM_W - SEND_W, INPUT_H, SWP_NOZORDER);
@@ -553,7 +689,10 @@ void MainWindow::on_login_clicked() {
                      reinterpret_cast<LPARAM>(L"Restoring session…"));
         auto res = client_.restore_session(*saved);
         if (res) {
-            my_user_id_    = client_.get_user_id();
+            my_user_id_       = client_.get_user_id();
+            my_display_name_  = client_.get_display_name();
+            my_avatar_url_    = client_.get_avatar_url();
+            populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(hwnd_);
             client_.start_sync(event_handler_.get());
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -574,7 +713,10 @@ void MainWindow::on_login_clicked() {
         return;
     }
 
-    my_user_id_    = client_.get_user_id();
+    my_user_id_       = client_.get_user_id();
+    my_display_name_  = client_.get_display_name();
+    my_avatar_url_    = client_.get_avatar_url();
+    populate_user_strip();
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
     client_.start_sync(event_handler_.get());
@@ -595,7 +737,10 @@ void MainWindow::on_auth_error(bool soft_logout) {
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
                          reinterpret_cast<LPARAM>(L"Reconnecting session…"));
             if (client_.restore_session(*saved)) {
-                my_user_id_    = client_.get_user_id();
+                my_user_id_       = client_.get_user_id();
+                my_display_name_  = client_.get_display_name();
+                my_avatar_url_    = client_.get_avatar_url();
+                populate_user_strip();
                 event_handler_ = std::make_unique<EventHandler>(hwnd_);
                 client_.start_sync(event_handler_.get());
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -958,48 +1103,103 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
 }
 
 // ---------------------------------------------------------------------------
-// Recovery banner + dialog (Step 6)
+// Recovery banner (Step 6) — inline key entry, no modal dialog.
 // ---------------------------------------------------------------------------
+
+namespace {
+std::wstring widen_utf8(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
+                                static_cast<int>(s.size()), nullptr, 0);
+    std::wstring out(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(),
+                        static_cast<int>(s.size()), out.data(), n);
+    return out;
+}
+
+std::string narrow_edit_utf8(HWND hEdit) {
+    int len = GetWindowTextLengthW(hEdit);
+    if (len <= 0) return {};
+    std::wstring buf(static_cast<size_t>(len), L'\0');
+    GetWindowTextW(hEdit, buf.data(), len + 1);
+    int n = WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
+                                nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
+                        out.data(), n, nullptr, nullptr);
+    return out;
+}
+} // namespace
 
 void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_.needs_recovery())  return;
-    SetWindowTextW(hRecoveryLabel_,
-                   L"Verify this device to decrypt historical messages.");
-    ShowWindow(hRecoveryBanner_,  SW_SHOW);
-    ShowWindow(hRecoveryLabel_,   SW_SHOW);
-    ShowWindow(hRecoveryVerify_,  SW_SHOW);
-    ShowWindow(hRecoveryDismiss_, SW_SHOW);
-    recovery_banner_visible_ = true;
-    RECT rc; GetClientRect(hwnd_, &rc);
-    on_size(rc.right, rc.bottom);
-}
-
-void MainWindow::open_recovery_dialog() {
-    if (recovery_dialog_) return;
-    RecoveryDialog dlg(hwnd_, hInst_, client_);
-    recovery_dialog_ = &dlg;
-    dlg.run();
-    recovery_dialog_ = nullptr;
-    if (!client_.needs_recovery()) {
-        ShowWindow(hRecoveryBanner_,  SW_HIDE);
-        ShowWindow(hRecoveryLabel_,   SW_HIDE);
-        ShowWindow(hRecoveryVerify_,  SW_HIDE);
-        ShowWindow(hRecoveryDismiss_, SW_HIDE);
-        recovery_banner_visible_ = false;
+    if (!recovery_banner_visible_) {
+        // Fresh prompt — restore the input row.
+        SetWindowTextW(hRecoveryLabel_, L"Verify this device:");
+        SetWindowTextW(hRecoveryKeyEdit_, L"");
+        EnableWindow(hRecoveryKeyEdit_, TRUE);
+        EnableWindow(hRecoveryVerify_,  TRUE);
+        ShowWindow(hRecoveryBanner_,   SW_SHOW);
+        ShowWindow(hRecoveryLabel_,    SW_SHOW);
+        ShowWindow(hRecoveryKeyEdit_,  SW_SHOW);
+        ShowWindow(hRecoveryVerify_,   SW_SHOW);
+        ShowWindow(hRecoveryDismiss_,  SW_SHOW);
+        recovery_banner_visible_ = true;
+        recovery_in_flight_      = false;
         RECT rc; GetClientRect(hwnd_, &rc);
         on_size(rc.right, rc.bottom);
     }
 }
 
 void MainWindow::on_recovery_verify_clicked() {
-    open_recovery_dialog();
+    std::string key = narrow_edit_utf8(hRecoveryKeyEdit_);
+    if (key.empty()) {
+        SetWindowTextW(hRecoveryLabel_,
+                       L"Please enter a recovery key or passphrase.");
+        return;
+    }
+    EnableWindow(hRecoveryKeyEdit_, FALSE);
+    EnableWindow(hRecoveryVerify_,  FALSE);
+    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
+    ShowWindow(hRecoveryVerify_,  SW_HIDE);
+    SetWindowTextW(hRecoveryLabel_, L"Verifying…");
+    recovery_in_flight_ = true;
+
+    HWND target = hwnd_;
+    std::thread([this, target, key]() {
+        auto res = client_.recover(key);
+        WPARAM ok = res.ok ? 1 : 0;
+        auto*  p  = new std::wstring(widen_utf8(res.message));
+        PostMessageW(target, WM_TESSERACT_RECOVER_DONE,
+                     ok, reinterpret_cast<LPARAM>(p));
+    }).detach();
+}
+
+void MainWindow::on_recover_done(bool ok, std::wstring msg) {
+    if (ok) {
+        // The backup watcher will repaint into "Importing keys…" and hide
+        // the banner once state reaches Enabled.
+        SetWindowTextW(hRecoveryLabel_, L"Downloading historical keys…");
+        return;
+    }
+    std::wstring txt = L"Recovery failed: ";
+    txt += msg;
+    SetWindowTextW(hRecoveryLabel_, txt.c_str());
+    EnableWindow(hRecoveryKeyEdit_, TRUE);
+    EnableWindow(hRecoveryVerify_,  TRUE);
+    ShowWindow(hRecoveryKeyEdit_, SW_SHOW);
+    ShowWindow(hRecoveryVerify_,  SW_SHOW);
+    SetFocus(hRecoveryKeyEdit_);
+    SendMessageW(hRecoveryKeyEdit_, EM_SETSEL, 0, -1);
+    recovery_in_flight_ = false;
 }
 
 void MainWindow::on_recovery_dismiss_clicked() {
     recovery_banner_dismissed_ = true;
     ShowWindow(hRecoveryBanner_,  SW_HIDE);
     ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
     ShowWindow(hRecoveryVerify_,  SW_HIDE);
     ShowWindow(hRecoveryDismiss_, SW_HIDE);
     recovery_banner_visible_ = false;
@@ -1012,7 +1212,10 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
     // re-evaluate the banner each time the SDK pings us.
     maybe_show_recovery_banner();
 
+    // Live progress only when the input field is hidden, so we don't clobber
+    // "Verify this device:" while the user is typing.
     if (recovery_banner_visible_
+        && !IsWindowVisible(hRecoveryKeyEdit_)
         && progress->state == tesseract::BackupState::Downloading
         && progress->imported_keys > 0)
     {
@@ -1025,14 +1228,67 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
     {
         ShowWindow(hRecoveryBanner_,  SW_HIDE);
         ShowWindow(hRecoveryLabel_,   SW_HIDE);
+        ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
         ShowWindow(hRecoveryVerify_,  SW_HIDE);
         ShowWindow(hRecoveryDismiss_, SW_HIDE);
         recovery_banner_visible_ = false;
         RECT rc; GetClientRect(hwnd_, &rc);
         on_size(rc.right, rc.bottom);
     }
-    if (recovery_dialog_)
-        recovery_dialog_->set_progress(*progress);
+}
+
+// ---------------------------------------------------------------------------
+// User identity strip + logout
+// ---------------------------------------------------------------------------
+
+void MainWindow::populate_user_strip() {
+    if (user_avatar_bmp_) {
+        delete user_avatar_bmp_;
+        user_avatar_bmp_ = nullptr;
+    }
+    if (!my_avatar_url_.empty()) {
+        auto bytes = client_.fetch_media_bytes(my_avatar_url_);
+        if (!bytes.empty()) user_avatar_bmp_ = bitmap_from_bytes(bytes);
+    }
+    ShowWindow(hUserStrip_, SW_SHOW);
+    InvalidateRect(hUserStrip_, nullptr, FALSE);
+    RECT rc; GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
+void MainWindow::do_logout() {
+    auto res = client_.logout();
+    tesseract::SessionStore::clear();
+    client_.stop_sync();
+    event_handler_.reset();
+
+    // Reset visible state.
+    current_room_id_.clear();
+    current_room_info_ = tesseract::RoomInfo{};
+    my_user_id_.clear();
+    my_display_name_.clear();
+    my_avatar_url_.clear();
+    if (user_avatar_bmp_) { delete user_avatar_bmp_; user_avatar_bmp_ = nullptr; }
+    rooms_.clear();
+    messages_.clear();
+    SendMessageW(hRoomList_, LB_RESETCONTENT, 0, 0);
+    SendMessageW(hMsgList_,  LB_RESETCONTENT, 0, 0);
+    ShowWindow(hRoomHeader_, SW_HIDE);
+    ShowWindow(hUserStrip_,  SW_HIDE);
+    ShowWindow(hRecoveryBanner_,  SW_HIDE);
+    ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
+    ShowWindow(hRecoveryVerify_,  SW_HIDE);
+    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    recovery_banner_visible_   = false;
+    recovery_banner_dismissed_ = false;
+    RECT rc; GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+        reinterpret_cast<LPARAM>(res ? L"Signed out" : L"Sign out failed"));
+
+    on_login_clicked();
 }
 
 } // namespace win32

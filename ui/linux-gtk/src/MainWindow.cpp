@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
-#include "RecoveryDialog.h"
+
+#include <thread>
 
 #include <tesseract/session_store.h>
 
@@ -271,6 +272,51 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_signal_connect(room_list_, "row-activated",
                      G_CALLBACK(on_room_row_activated), this);
 
+    // ---- User identity strip (sidebar footer) ----
+    user_strip_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(user_strip_, "user-strip");
+    gtk_widget_set_margin_start(user_strip_, 8);
+    gtk_widget_set_margin_end(user_strip_,   8);
+    gtk_widget_set_margin_top(user_strip_,   6);
+    gtk_widget_set_margin_bottom(user_strip_, 6);
+    gtk_widget_set_visible(user_strip_, FALSE);
+    {
+        user_avatar_img_ = gtk_image_new();
+        gtk_widget_set_size_request(user_avatar_img_, 32, 32);
+        gtk_image_set_pixel_size(GTK_IMAGE(user_avatar_img_), 32);
+        gtk_box_append(GTK_BOX(user_strip_), user_avatar_img_);
+
+        user_name_lbl_ = gtk_label_new("");
+        gtk_label_set_xalign(GTK_LABEL(user_name_lbl_), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(user_name_lbl_), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_hexpand(user_name_lbl_, TRUE);
+        gtk_box_append(GTK_BOX(user_strip_), user_name_lbl_);
+
+        // Right-click gesture → popover menu with single "Logout" item.
+        GtkGesture* gesture = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
+        g_signal_connect(gesture, "pressed",
+                         G_CALLBACK(on_user_strip_right_click_), this);
+        gtk_widget_add_controller(user_strip_, GTK_EVENT_CONTROLLER(gesture));
+
+        // Build the GMenu model + GSimpleActionGroup once.
+        GMenu* menu = g_menu_new();
+        g_menu_append(menu, "Logout", "user.logout");
+        user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+        gtk_widget_set_parent(user_popover_, user_strip_);
+        gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
+        g_object_unref(menu);
+
+        GSimpleActionGroup* group = g_simple_action_group_new();
+        GSimpleAction* act = g_simple_action_new("logout", nullptr);
+        g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_), this);
+        g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+        g_object_unref(act);
+        gtk_widget_insert_action_group(user_strip_, "user", G_ACTION_GROUP(group));
+        g_object_unref(group);
+    }
+    gtk_box_append(GTK_BOX(side_vbox), user_strip_);
+
     // Chat area
     GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_hexpand(vbox, TRUE);
@@ -309,6 +355,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_box_append(GTK_BOX(vbox), room_header_);
 
     // Recovery banner (Step 6) — hidden until needs_recovery() is true.
+    // Inline recovery: the key-entry field + Verify button live in the banner
+    // itself; no modal dialog.
     recovery_banner_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_add_css_class(recovery_banner_, "recovery-banner");
     gtk_widget_set_margin_start(recovery_banner_,  12);
@@ -317,17 +365,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_margin_bottom(recovery_banner_, 6);
     gtk_widget_set_visible(recovery_banner_, FALSE);
     {
-        recovery_label_ = gtk_label_new(
-            "Verify this device to decrypt historical messages.");
-        gtk_widget_set_hexpand(recovery_label_, TRUE);
+        recovery_label_ = gtk_label_new("Verify this device:");
         gtk_label_set_xalign(GTK_LABEL(recovery_label_), 0.0f);
         gtk_box_append(GTK_BOX(recovery_banner_), recovery_label_);
 
-        GtkWidget* verify_btn = gtk_button_new_with_label("Verify");
-        gtk_widget_add_css_class(verify_btn, "suggested-action");
-        g_signal_connect(verify_btn, "clicked",
+        recovery_key_entry_ = gtk_entry_new();
+        gtk_entry_set_visibility(GTK_ENTRY(recovery_key_entry_), FALSE);
+        gtk_entry_set_placeholder_text(GTK_ENTRY(recovery_key_entry_),
+                                       "Recovery key or passphrase");
+        gtk_widget_set_hexpand(recovery_key_entry_, TRUE);
+        g_signal_connect(recovery_key_entry_, "activate",
                          G_CALLBACK(on_recovery_verify_clicked_), this);
-        gtk_box_append(GTK_BOX(recovery_banner_), verify_btn);
+        gtk_box_append(GTK_BOX(recovery_banner_), recovery_key_entry_);
+
+        recovery_verify_btn_ = gtk_button_new_with_label("Verify");
+        gtk_widget_add_css_class(recovery_verify_btn_, "suggested-action");
+        g_signal_connect(recovery_verify_btn_, "clicked",
+                         G_CALLBACK(on_recovery_verify_clicked_), this);
+        gtk_box_append(GTK_BOX(recovery_banner_), recovery_verify_btn_);
 
         GtkWidget* dismiss_btn = gtk_button_new_with_label("✕");
         gtk_widget_set_size_request(dismiss_btn, 24, 24);
@@ -416,7 +471,10 @@ void MainWindow::do_login() {
         gtk_label_set_text(GTK_LABEL(status_bar_), "Restoring session…");
         auto res = client_.restore_session(*saved);
         if (res) {
-            my_user_id_ = client_.get_user_id();
+            my_user_id_       = client_.get_user_id();
+            my_display_name_  = client_.get_display_name();
+            my_avatar_url_    = client_.get_avatar_url();
+            populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
             gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
@@ -434,7 +492,10 @@ void MainWindow::do_login() {
         return;
     }
 
-    my_user_id_ = client_.get_user_id();
+    my_user_id_       = client_.get_user_id();
+    my_display_name_  = client_.get_display_name();
+    my_avatar_url_    = client_.get_avatar_url();
+    populate_user_strip();
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());
@@ -541,7 +602,10 @@ void MainWindow::handle_auth_error(bool soft_logout) {
         if (auto saved = tesseract::SessionStore::load()) {
             gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnecting session…");
             if (client_.restore_session(*saved)) {
-                my_user_id_ = client_.get_user_id();
+                my_user_id_       = client_.get_user_id();
+                my_display_name_  = client_.get_display_name();
+                my_avatar_url_    = client_.get_avatar_url();
+                populate_user_strip();
                 client_.start_sync(event_handler_.get());
                 gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnected");
                 maybe_show_recovery_banner();
@@ -990,28 +1054,71 @@ void MainWindow::append_event(const tesseract::Event& ev) {
 }
 
 // ---------------------------------------------------------------------------
-// Recovery banner + dialog (Step 6)
+// Recovery banner (Step 6) — inline key entry, no modal dialog.
 // ---------------------------------------------------------------------------
+
+namespace {
+struct RecoverDone {
+    MainWindow* window;
+    bool        ok;
+    std::string message;
+};
+} // namespace
 
 void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_.needs_recovery()) return;
-    gtk_label_set_text(GTK_LABEL(recovery_label_),
-                       "Verify this device to decrypt historical messages.");
-    gtk_widget_set_visible(recovery_banner_, TRUE);
-}
-
-void MainWindow::open_recovery_dialog() {
-    if (recovery_dialog_) return;
-    recovery_dialog_ = std::make_unique<RecoveryDialog>(GTK_WINDOW(window_), client_);
-    recovery_dialog_->run();
-    recovery_dialog_.reset();
-    if (!client_.needs_recovery())
-        gtk_widget_set_visible(recovery_banner_, FALSE);
+    if (!gtk_widget_get_visible(recovery_banner_)) {
+        // Fresh prompt — restore the input row.
+        gtk_label_set_text(GTK_LABEL(recovery_label_), "Verify this device:");
+        gtk_editable_set_text(GTK_EDITABLE(recovery_key_entry_), "");
+        gtk_widget_set_visible(recovery_key_entry_, TRUE);
+        gtk_widget_set_sensitive(recovery_key_entry_, TRUE);
+        gtk_widget_set_visible(recovery_verify_btn_, TRUE);
+        gtk_widget_set_sensitive(recovery_verify_btn_, TRUE);
+        gtk_widget_set_visible(recovery_banner_, TRUE);
+    }
 }
 
 void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
-    static_cast<MainWindow*>(user_data)->open_recovery_dialog();
+    auto* self = static_cast<MainWindow*>(user_data);
+    const char* key_c = gtk_editable_get_text(GTK_EDITABLE(self->recovery_key_entry_));
+    std::string key   = key_c ? key_c : "";
+    if (key.empty()) {
+        gtk_label_set_text(GTK_LABEL(self->recovery_label_),
+                           "Please enter a recovery key or passphrase.");
+        return;
+    }
+    gtk_widget_set_sensitive(self->recovery_key_entry_, FALSE);
+    gtk_widget_set_sensitive(self->recovery_verify_btn_, FALSE);
+    gtk_widget_set_visible(self->recovery_key_entry_, FALSE);
+    gtk_widget_set_visible(self->recovery_verify_btn_, FALSE);
+    gtk_label_set_text(GTK_LABEL(self->recovery_label_), "Verifying…");
+
+    // Worker thread; marshal result back via g_idle_add.
+    std::thread([self, key]() {
+        auto res = self->client_.recover(key);
+        auto* p  = new RecoverDone{ self, res.ok, res.message };
+        g_idle_add([](gpointer data) -> gboolean {
+            auto* d = static_cast<RecoverDone*>(data);
+            if (d->ok) {
+                // Backup watcher will repaint into "Importing keys…" and hide
+                // the banner once state reaches Enabled.
+                gtk_label_set_text(GTK_LABEL(d->window->recovery_label_),
+                                   "Downloading historical keys…");
+            } else {
+                std::string txt = "Recovery failed: " + d->message;
+                gtk_label_set_text(GTK_LABEL(d->window->recovery_label_), txt.c_str());
+                gtk_widget_set_visible(d->window->recovery_key_entry_,  TRUE);
+                gtk_widget_set_sensitive(d->window->recovery_key_entry_, TRUE);
+                gtk_widget_grab_focus(d->window->recovery_key_entry_);
+                gtk_widget_set_visible(d->window->recovery_verify_btn_,  TRUE);
+                gtk_widget_set_sensitive(d->window->recovery_verify_btn_, TRUE);
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, p);
+    }).detach();
 }
 
 void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data) {
@@ -1025,7 +1132,11 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
     // re-evaluate the banner each time the SDK pings us.
     maybe_show_recovery_banner();
 
+    // Live progress only when the input field is hidden (recovery in flight
+    // or finished), so we don't clobber "Verify this device:" while the user
+    // is typing.
     if (gtk_widget_get_visible(recovery_banner_)
+        && !gtk_widget_get_visible(recovery_key_entry_)
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
@@ -1038,8 +1149,83 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
     {
         gtk_widget_set_visible(recovery_banner_, FALSE);
     }
-    if (recovery_dialog_)
-        recovery_dialog_->set_progress(progress);
+}
+
+// ---------------------------------------------------------------------------
+// User identity strip + logout
+// ---------------------------------------------------------------------------
+
+void MainWindow::populate_user_strip() {
+    std::string shown = my_display_name_.empty() ? my_user_id_ : my_display_name_;
+    gtk_label_set_text(GTK_LABEL(user_name_lbl_), shown.c_str());
+
+    bool has_avatar = false;
+    if (!my_avatar_url_.empty()) {
+        auto bytes = client_.fetch_media_bytes(my_avatar_url_);
+        if (!bytes.empty()) {
+            GdkTexture* tex = make_scaled_texture(bytes, 32, 32);
+            if (tex) {
+                gtk_image_set_from_paintable(GTK_IMAGE(user_avatar_img_),
+                                             GDK_PAINTABLE(tex));
+                g_object_unref(tex);
+                has_avatar = true;
+            }
+        }
+    }
+    if (!has_avatar) {
+        // Fallback: GTK's "avatar-default-symbolic" if available, otherwise a
+        // generic person icon.
+        gtk_image_set_from_icon_name(GTK_IMAGE(user_avatar_img_),
+                                     "avatar-default-symbolic");
+    }
+    gtk_widget_set_visible(user_strip_, TRUE);
+}
+
+void MainWindow::on_user_strip_right_click_(GtkGestureClick* gesture,
+                                            int /*n_press*/,
+                                            double x, double y,
+                                            gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+    GdkRectangle r = { static_cast<int>(x), static_cast<int>(y), 1, 1 };
+    gtk_popover_set_pointing_to(GTK_POPOVER(self->user_popover_), &r);
+    gtk_popover_popup(GTK_POPOVER(self->user_popover_));
+}
+
+void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
+                                     GVariant* /*parameter*/,
+                                     gpointer user_data) {
+    static_cast<MainWindow*>(user_data)->do_logout();
+}
+
+void MainWindow::do_logout() {
+    gtk_popover_popdown(GTK_POPOVER(user_popover_));
+
+    auto res = client_.logout();
+    tesseract::SessionStore::clear();
+    client_.stop_sync();
+    event_handler_.reset();
+
+    // Reset visible state.
+    if (!current_room_id_.empty())
+        client_.unsubscribe_room(current_room_id_);
+    current_room_id_.clear();
+    my_user_id_.clear();
+    my_display_name_.clear();
+    my_avatar_url_.clear();
+    rooms_.clear();
+    refresh_room_list();
+    clear_messages();
+    gtk_widget_set_visible(user_strip_, FALSE);
+    gtk_widget_set_visible(recovery_banner_, FALSE);
+    recovery_banner_dismissed_ = false;
+    gtk_widget_set_visible(room_header_, FALSE);
+
+    gtk_label_set_text(GTK_LABEL(status_bar_),
+                       res ? "Signed out"
+                           : ("Sign out failed: " + res.message).c_str());
+
+    do_login();
 }
 
 } // namespace gtk4

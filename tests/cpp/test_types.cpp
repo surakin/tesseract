@@ -317,3 +317,22 @@ TEST_CASE("backup_state starts in Unknown with zero counters", "[client][recover
     CHECK(p.imported_keys == 0u);
     CHECK(p.total_keys    == 0u);
 }
+
+// ---------------------------------------------------------------------------
+// tesseract::Client identity getters (sidebar user strip)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("get_user_id is empty when not logged in", "[client][identity]") {
+    tesseract::Client c;
+    CHECK(c.get_user_id().empty());
+}
+
+TEST_CASE("get_display_name is empty when not logged in", "[client][identity]") {
+    tesseract::Client c;
+    CHECK(c.get_display_name().empty());
+}
+
+TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]") {
+    tesseract::Client c;
+    CHECK(c.get_avatar_url().empty());
+}

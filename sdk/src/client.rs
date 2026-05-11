@@ -435,19 +435,14 @@ impl ClientFfi {
             });
         }
 
-        // Backup-progress watcher (Step 6).
+        // Backup-state watcher (Step 6).
         //
-        // Two independent streams feed the same `on_backup_progress` callback:
-        //   - `Backups::state_stream()` — high-level state transitions
-        //     (Unknown → Enabling → Downloading → Enabled, etc.).
-        //   - `Encryption::room_keys_received_stream()` — fires once per
-        //     batch of room keys imported into the local store (this is what
-        //     advances during `recover()` after the backup decryption key is
-        //     installed). Each batch carries `Vec<RoomKeyInfo>`; we add
-        //     `.len()` to a shared counter.
+        // Subscribes to `Backups::state_stream()` for high-level transitions
+        // (Unknown → Enabling → Downloading → Enabled, etc.) and emits an
+        // `on_backup_progress` callback on every change.
         //
-        // `total_keys` is left at 0 because matrix-sdk does not expose a
-        // cheap "how many keys does the backup contain" query.
+        // `total_keys` is left at 0 because matrix-sdk does not expose a cheap
+        // "how many keys does the backup contain" query.
         {
             let h            = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -458,10 +453,6 @@ impl ClientFfi {
             self.rt.spawn(async move {
                 use futures_util::StreamExt;
                 let mut state_stream = client_clone.encryption().backups().state_stream();
-                let keys_stream = client_clone
-                    .encryption()
-                    .room_keys_received_stream()
-                    .await;
 
                 // Emit an initial snapshot so a UI that opens before the
                 // first state change still has a starting value.
@@ -477,59 +468,87 @@ impl ClientFfi {
                     }
                 }
 
-                match keys_stream {
-                    Some(mut keys_stream) => loop {
-                        tokio::select! {
-                            _ = stop_rx.changed() => {
-                                if *stop_rx.borrow() { break; }
+                loop {
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { break; }
+                        }
+                        Some(Ok(state)) = state_stream.next() => {
+                            let s = backup_state_code(state);
+                            state_code.store(s, Ordering::Relaxed);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_backup_progress(&BackupProgress {
+                                    state:         s,
+                                    imported_keys: imported.load(Ordering::Relaxed),
+                                    total_keys:    0,
+                                });
                             }
-                            Some(Ok(state)) = state_stream.next() => {
-                                let s = backup_state_code(state);
-                                state_code.store(s, Ordering::Relaxed);
+                        }
+                        else => break,
+                    }
+                }
+            });
+        }
+
+        // Imported-room-keys watcher (Step 6).
+        //
+        // `Encryption::room_keys_received_stream()` only becomes available once
+        // the OlmMachine is initialised — which can lag a beat behind login. If
+        // we were to call it once at start_sync time it might return `None`,
+        // and we'd silently miss every batch (this is exactly what made the
+        // recovery dialog show "0 keys imported").
+        //
+        // So we poll with a short backoff until the stream becomes available,
+        // then forward each batch's `.len()` into the shared imported_keys
+        // counter and re-emit an `on_backup_progress` so the UI updates live.
+        {
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let state_code   = Arc::clone(&self.backup_state_code);
+            let imported     = Arc::clone(&self.imported_keys);
+            let mut stop_rx  = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                use futures_util::StreamExt;
+
+                let keys_stream = loop {
+                    if *stop_rx.borrow() { return; }
+                    if let Some(s) = client_clone
+                        .encryption()
+                        .room_keys_received_stream()
+                        .await
+                    {
+                        break s;
+                    }
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { return; }
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+                    }
+                };
+                let mut keys_stream = Box::pin(keys_stream);
+
+                loop {
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { break; }
+                        }
+                        Some(batch) = keys_stream.next() => {
+                            if let Ok(keys) = batch {
+                                let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
+                                    + keys.len() as u64;
                                 if let Ok(guard) = h.lock() {
                                     guard.on_backup_progress(&BackupProgress {
-                                        state:         s,
-                                        imported_keys: imported.load(Ordering::Relaxed),
+                                        state:         state_code.load(Ordering::Relaxed),
+                                        imported_keys: n,
                                         total_keys:    0,
                                     });
                                 }
                             }
-                            Some(batch) = keys_stream.next() => {
-                                if let Ok(keys) = batch {
-                                    let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
-                                        + keys.len() as u64;
-                                    if let Ok(guard) = h.lock() {
-                                        guard.on_backup_progress(&BackupProgress {
-                                            state:         state_code.load(Ordering::Relaxed),
-                                            imported_keys: n,
-                                            total_keys:    0,
-                                        });
-                                    }
-                                }
-                            }
-                            else => break,
                         }
-                    },
-                    // No olm machine yet — fall back to a state-only watcher.
-                    None => loop {
-                        tokio::select! {
-                            _ = stop_rx.changed() => {
-                                if *stop_rx.borrow() { break; }
-                            }
-                            Some(Ok(state)) = state_stream.next() => {
-                                let s = backup_state_code(state);
-                                state_code.store(s, Ordering::Relaxed);
-                                if let Ok(guard) = h.lock() {
-                                    guard.on_backup_progress(&BackupProgress {
-                                        state:         s,
-                                        imported_keys: imported.load(Ordering::Relaxed),
-                                        total_keys:    0,
-                                    });
-                                }
-                            }
-                            else => break,
-                        }
-                    },
+                        else => break,
+                    }
                 }
             });
         }
@@ -702,6 +721,33 @@ impl ClientFfi {
             .and_then(|c| c.user_id())
             .map(|id| id.to_string())
             .unwrap_or_default()
+    }
+
+    pub fn current_user_display_name(&self) -> String {
+        let Some(client) = self.client.clone() else { return String::new() };
+        self.rt.block_on(async move {
+            client
+                .account()
+                .get_display_name()
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        })
+    }
+
+    pub fn current_user_avatar_url(&self) -> String {
+        let Some(client) = self.client.clone() else { return String::new() };
+        self.rt.block_on(async move {
+            client
+                .account()
+                .get_avatar_url()
+                .await
+                .ok()
+                .flatten()
+                .map(|u| u.to_string())
+                .unwrap_or_default()
+        })
     }
 
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
@@ -1192,6 +1238,18 @@ mod tests {
         assert_eq!(s.state, BACKUP_STATE_UNKNOWN);
         assert_eq!(s.imported_keys, 0);
         assert_eq!(s.total_keys, 0);
+    }
+
+    #[test]
+    fn current_user_display_name_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(c.current_user_display_name().is_empty());
+    }
+
+    #[test]
+    fn current_user_avatar_url_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(c.current_user_avatar_url().is_empty());
     }
 
     #[test]

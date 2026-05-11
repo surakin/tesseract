@@ -1,7 +1,10 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
-#include "RecoveryDialog.h"
 #include "RoomListDelegate.h"
+
+#include <QThreadPool>
+#include <QMenu>
+#include <QAction>
 
 #include <tesseract/session_store.h>
 
@@ -154,6 +157,33 @@ MainWindow::MainWindow(QWidget* parent)
     roomList_->setUniformItemSizes(true);
     roomList_->setMouseTracking(true);
     sideLayout->addWidget(roomList_);
+
+    // ---- User identity strip (footer) ----
+    userStrip_ = new QWidget(sidePanel);
+    userStrip_->setObjectName("userStrip");
+    userStrip_->setStyleSheet(
+        "#userStrip { background-color:#E8EAEE; border-top:1px solid #D0D3D8; }");
+    userStrip_->setFixedHeight(48);
+    userStrip_->setVisible(false);
+    userStrip_->setContextMenuPolicy(Qt::CustomContextMenu);
+    {
+        auto* uLayout = new QHBoxLayout(userStrip_);
+        uLayout->setContentsMargins(8, 6, 8, 6);
+        uLayout->setSpacing(8);
+
+        userAvatarLabel_ = new QLabel(userStrip_);
+        userAvatarLabel_->setFixedSize(32, 32);
+        uLayout->addWidget(userAvatarLabel_);
+
+        userNameLabel_ = new QLabel(userStrip_);
+        userNameLabel_->setStyleSheet("font-size:13px; font-weight:bold; color:#111111;");
+        userNameLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
+        uLayout->addWidget(userNameLabel_, 1);
+    }
+    sideLayout->addWidget(userStrip_);
+    connect(userStrip_, &QWidget::customContextMenuRequested,
+            this,       &MainWindow::onUserStripContextMenu);
+
     hLayout->addWidget(sidePanel);
 
     // ---- Main chat area ----
@@ -199,6 +229,8 @@ MainWindow::MainWindow(QWidget* parent)
     vLayout->addWidget(roomHeader_);
 
     // Recovery banner (Step 6) — hidden until needs_recovery() is true.
+    // Inline recovery: the key-entry field + Verify button live in the banner
+    // itself; no modal dialog.
     recoveryBanner_ = new QWidget(chatPanel);
     recoveryBanner_->setObjectName("recoveryBanner");
     recoveryBanner_->setStyleSheet(
@@ -209,17 +241,23 @@ MainWindow::MainWindow(QWidget* parent)
         bannerLayout->setContentsMargins(12, 6, 6, 6);
         bannerLayout->setSpacing(8);
 
-        recoveryLabel_ = new QLabel(tr("Verify this device to decrypt historical messages."),
-                                    recoveryBanner_);
+        recoveryLabel_ = new QLabel(tr("Verify this device:"), recoveryBanner_);
         recoveryLabel_->setStyleSheet("color:#5C4500;");
-        bannerLayout->addWidget(recoveryLabel_, 1);
+        bannerLayout->addWidget(recoveryLabel_);
 
-        auto* verifyBtn = new QPushButton(tr("Verify"), recoveryBanner_);
-        verifyBtn->setStyleSheet(
+        recoveryKeyEdit_ = new QLineEdit(recoveryBanner_);
+        recoveryKeyEdit_->setEchoMode(QLineEdit::Password);
+        recoveryKeyEdit_->setPlaceholderText(tr("Recovery key or passphrase"));
+        recoveryKeyEdit_->setMinimumWidth(220);
+        bannerLayout->addWidget(recoveryKeyEdit_, 1);
+
+        recoveryVerifyBtn_ = new QPushButton(tr("Verify"), recoveryBanner_);
+        recoveryVerifyBtn_->setDefault(true);
+        recoveryVerifyBtn_->setStyleSheet(
             "QPushButton { background-color:#E0A800; color:white; border:none; "
             "border-radius:4px; padding:4px 10px; font-weight:bold; }"
             "QPushButton:hover { background-color:#C99100; }");
-        bannerLayout->addWidget(verifyBtn);
+        bannerLayout->addWidget(recoveryVerifyBtn_);
 
         auto* dismissBtn = new QPushButton("✕", recoveryBanner_);
         dismissBtn->setFlat(true);
@@ -227,10 +265,14 @@ MainWindow::MainWindow(QWidget* parent)
         dismissBtn->setStyleSheet("QPushButton { color:#5C4500; }");
         bannerLayout->addWidget(dismissBtn);
 
-        connect(verifyBtn,  &QPushButton::clicked,
-                this,       &MainWindow::onRecoveryBannerClicked);
-        connect(dismissBtn, &QPushButton::clicked,
-                this,       &MainWindow::onDismissRecoveryBanner);
+        connect(recoveryVerifyBtn_, &QPushButton::clicked,
+                this,               &MainWindow::onRecoveryVerifyClicked);
+        connect(recoveryKeyEdit_,   &QLineEdit::returnPressed,
+                this,               &MainWindow::onRecoveryVerifyClicked);
+        connect(dismissBtn,         &QPushButton::clicked,
+                this,               &MainWindow::onDismissRecoveryBanner);
+        connect(this, &MainWindow::recoverFinished,
+                this, &MainWindow::onRecoverFinished, Qt::QueuedConnection);
     }
     vLayout->addWidget(recoveryBanner_);
 
@@ -345,7 +387,10 @@ void MainWindow::doLogin() {
         statusBar()->showMessage("Restoring session…");
         auto res = client_.restore_session(*saved);
         if (res) {
-            myUserId_ = client_.get_user_id();
+            myUserId_      = client_.get_user_id();
+            myDisplayName_ = client_.get_display_name();
+            myAvatarUrl_   = client_.get_avatar_url();
+            populateUserStrip();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage("Connected");
             maybeShowRecoveryBanner();
@@ -363,7 +408,10 @@ void MainWindow::doLogin() {
         return;
     }
 
-    myUserId_ = client_.get_user_id();
+    myUserId_      = client_.get_user_id();
+    myDisplayName_ = client_.get_display_name();
+    myAvatarUrl_   = client_.get_avatar_url();
+    populateUserStrip();
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
@@ -442,7 +490,10 @@ void MainWindow::onSyncError(
             if (auto saved = tesseract::SessionStore::load()) {
                 statusBar()->showMessage("Reconnecting session…");
                 if (client_.restore_session(*saved)) {
-                    myUserId_ = client_.get_user_id();
+                    myUserId_      = client_.get_user_id();
+                    myDisplayName_ = client_.get_display_name();
+                    myAvatarUrl_   = client_.get_avatar_url();
+                    populateUserStrip();
                     client_.start_sync(bridge_.get());
                     statusBar()->showMessage("Reconnected");
                     maybeShowRecoveryBanner();
@@ -789,26 +840,53 @@ QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
 void MainWindow::maybeShowRecoveryBanner() {
     if (recoveryBannerDismissed_) return;
     if (!client_.needs_recovery()) return;
-    recoveryLabel_->setText(tr("Verify this device to decrypt historical messages."));
-    recoveryBanner_->setVisible(true);
+    if (!recoveryBanner_->isVisible()) {
+        // Fresh prompt — show the input row.
+        recoveryLabel_->setText(tr("Verify this device:"));
+        recoveryKeyEdit_->setVisible(true);
+        recoveryKeyEdit_->setEnabled(true);
+        recoveryKeyEdit_->clear();
+        recoveryVerifyBtn_->setVisible(true);
+        recoveryVerifyBtn_->setEnabled(true);
+        recoveryBanner_->setVisible(true);
+    }
 }
 
-void MainWindow::onRecoveryBannerClicked() {
-    if (recoveryDialog_) {
-        recoveryDialog_->raise();
-        recoveryDialog_->activateWindow();
+void MainWindow::onRecoveryVerifyClicked() {
+    QString key = recoveryKeyEdit_->text().trimmed();
+    if (key.isEmpty()) {
+        recoveryLabel_->setText(tr("Please enter a recovery key or passphrase."));
         return;
     }
-    recoveryDialog_ = new RecoveryDialog(client_, this);
-    recoveryDialog_->setAttribute(Qt::WA_DeleteOnClose);
-    connect(recoveryDialog_, &QObject::destroyed, this, [this]() {
-        recoveryDialog_ = nullptr;
-        // Once recovery is in flight the banner becomes informational; let
-        // the backup-progress watcher decide when to clear it.
-        if (!client_.needs_recovery())
-            recoveryBanner_->setVisible(false);
+    recoveryKeyEdit_->setEnabled(false);
+    recoveryVerifyBtn_->setEnabled(false);
+    recoveryKeyEdit_->setVisible(false);
+    recoveryVerifyBtn_->setVisible(false);
+    recoveryLabel_->setText(tr("Verifying…"));
+
+    // Worker thread; result marshalled back via queued signal.
+    auto* runner = QRunnable::create([this, k = key.toStdString()]() {
+        auto res = client_.recover(k);
+        emit recoverFinished(res.ok, QString::fromStdString(res.message));
     });
-    recoveryDialog_->show();
+    QThreadPool::globalInstance()->start(runner);
+}
+
+void MainWindow::onRecoverFinished(bool ok, QString error) {
+    if (ok) {
+        // The backup watcher will repaint into "Importing keys…" and then hide
+        // the banner once state reaches Enabled. Nothing more to do here.
+        recoveryLabel_->setText(tr("Downloading historical keys…"));
+        return;
+    }
+    // Retry: re-show the input field.
+    recoveryLabel_->setText(tr("Recovery failed: %1").arg(error));
+    recoveryKeyEdit_->setVisible(true);
+    recoveryKeyEdit_->setEnabled(true);
+    recoveryKeyEdit_->selectAll();
+    recoveryKeyEdit_->setFocus();
+    recoveryVerifyBtn_->setVisible(true);
+    recoveryVerifyBtn_->setEnabled(true);
 }
 
 void MainWindow::onDismissRecoveryBanner() {
@@ -821,9 +899,11 @@ void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
     // re-evaluate the banner each time the SDK pings us.
     maybeShowRecoveryBanner();
 
-    // Update the banner text passively so users see download progress even
-    // when the dialog is closed.
+    // Live progress while the SDK pulls keys from the backup. Only update when
+    // the input field is hidden (i.e. recovery is in flight or finished) so we
+    // don't clobber the "Verify this device:" prompt while the user is typing.
     if (recoveryBanner_->isVisible()
+        && !recoveryKeyEdit_->isVisible()
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
@@ -836,8 +916,72 @@ void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
     {
         recoveryBanner_->setVisible(false);
     }
-    if (recoveryDialog_)
-        recoveryDialog_->onBackupProgress(progress);
+}
+
+// ---------------------------------------------------------------------------
+// User identity strip + logout
+// ---------------------------------------------------------------------------
+
+void MainWindow::populateUserStrip() {
+    QString shown = myDisplayName_.empty()
+        ? QString::fromStdString(myUserId_)
+        : QString::fromStdString(myDisplayName_);
+    userNameLabel_->setText(shown);
+
+    QPixmap avatar;
+    if (!myAvatarUrl_.empty()) {
+        auto bytes = client_.fetch_media_bytes(myAvatarUrl_);
+        if (!bytes.empty()) {
+            QPixmap raw;
+            if (raw.loadFromData(bytes.data(), static_cast<int>(bytes.size()))) {
+                avatar = makeCirclePixmap(
+                    raw.scaled(32, 32, Qt::KeepAspectRatioByExpanding,
+                               Qt::SmoothTransformation),
+                    32);
+            }
+        }
+    }
+    if (avatar.isNull())
+        avatar = makeInitialsPixmap(shown, 32);
+    userAvatarLabel_->setPixmap(avatar);
+
+    userStrip_->setVisible(true);
+}
+
+void MainWindow::onUserStripContextMenu(const QPoint& pos) {
+    QMenu menu(this);
+    QAction* logoutAct = menu.addAction(tr("Logout"));
+    QAction* picked = menu.exec(userStrip_->mapToGlobal(pos));
+    if (picked == logoutAct)
+        doLogout();
+}
+
+void MainWindow::doLogout() {
+    auto res = client_.logout();
+    tesseract::SessionStore::clear();
+    client_.stop_sync();
+
+    // Reset visible state.
+    if (!currentRoomId_.empty())
+        client_.unsubscribe_room(currentRoomId_);
+    currentRoomId_.clear();
+    myUserId_.clear();
+    myDisplayName_.clear();
+    myAvatarUrl_.clear();
+    rooms_.clear();
+    refreshRoomList();
+    clearMessages();
+    userStrip_->setVisible(false);
+    recoveryBanner_->setVisible(false);
+    recoveryBannerDismissed_ = false;
+    roomHeader_->setVisible(false);
+
+    statusBar()->showMessage(res
+        ? "Signed out"
+        : QString::fromStdString("Sign out failed: " + res.message),
+        res ? 3000 : 6000);
+
+    doLogin();
 }
 
 } // namespace qt6

@@ -102,6 +102,16 @@ public:
     /// Returns an empty string when not logged in.
     std::string get_user_id() const;
 
+    /// Returns the current user's display name as set on the homeserver, or
+    /// an empty string if none is set / not logged in / the fetch fails.
+    /// The result is cached by the SDK after the first call.
+    std::string get_display_name() const;
+
+    /// Returns the mxc:// URI of the current user's avatar, or an empty
+    /// string if none is set / not logged in / the fetch fails. Pair with
+    /// `fetch_media_bytes(mxc_url)` to render. Cached by the SDK.
+    std::string get_avatar_url() const;
+
     // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------

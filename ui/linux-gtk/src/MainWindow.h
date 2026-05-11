@@ -11,8 +11,6 @@
 
 namespace gtk4 {
 
-class RecoveryDialog;
-
 /// Marshals SDK callbacks onto the GTK main loop via g_idle_add.
 class EventHandler final : public tesseract::IEventHandler {
 public:
@@ -58,6 +56,11 @@ private:
     static void    on_back_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
+    static void    on_user_strip_right_click_(GtkGestureClick* gesture,
+                                              int n_press, double x, double y,
+                                              gpointer user_data);
+    static void    on_logout_activate_(GSimpleAction* action,
+                                       GVariant* parameter, gpointer user_data);
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
@@ -65,8 +68,9 @@ private:
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
+    void do_logout();
+    void populate_user_strip();
     void maybe_show_recovery_banner();
-    void open_recovery_dialog();
 
     static constexpr int kRoomAvatarSize = 36;
     static constexpr int kMsgAvatarSize  = 32;
@@ -85,11 +89,18 @@ private:
     GtkWidget*      msg_box_            = nullptr;
     GtkWidget*      input_text_view_    = nullptr;
     GtkWidget*      send_btn_           = nullptr;
-    GtkWidget*      status_bar_         = nullptr;
-    GtkWidget*      recovery_banner_    = nullptr;
-    GtkWidget*      recovery_label_     = nullptr;
+    GtkWidget*      status_bar_         = nullptr;    GtkWidget*      recovery_banner_       = nullptr;
+    GtkWidget*      recovery_label_        = nullptr;
+    GtkWidget*      recovery_key_entry_    = nullptr;
+    GtkWidget*      recovery_verify_btn_   = nullptr;
     bool            recovery_banner_dismissed_ = false;
-    std::unique_ptr<RecoveryDialog> recovery_dialog_;
+
+    GtkWidget*      user_strip_       = nullptr;
+    GtkWidget*      user_avatar_img_  = nullptr;
+    GtkWidget*      user_name_lbl_    = nullptr;
+    GtkWidget*      user_popover_     = nullptr;
+    std::string     my_display_name_;
+    std::string     my_avatar_url_;
 
     tesseract::Client              client_;
     std::unique_ptr<EventHandler>  event_handler_;

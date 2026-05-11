@@ -63,11 +63,18 @@ private slots:
     void onTimelineReset(QString roomId);
     void onSpaceBack();
     void onBackupProgress(tesseract::BackupProgress progress);
-    void onRecoveryBannerClicked();
+    void onRecoveryVerifyClicked();
+    void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
+    void onUserStripContextMenu(const QPoint& pos);
+
+signals:
+    void recoverFinished(bool ok, QString error);
 
 private:
     void     doLogin();
+    void     doLogout();
+    void     populateUserStrip();
     void     maybeShowRecoveryBanner();
     void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void     refreshRoomList();
@@ -86,10 +93,17 @@ private:
     static constexpr int kMaxStickerSize  = 256;
     static constexpr int kMsgMaxWidth     = 520;
 
-    QWidget*             recoveryBanner_  = nullptr;
-    QLabel*              recoveryLabel_   = nullptr;
+    QWidget*             recoveryBanner_     = nullptr;
+    QLabel*              recoveryLabel_      = nullptr;
+    QLineEdit*           recoveryKeyEdit_    = nullptr;
+    QPushButton*         recoveryVerifyBtn_  = nullptr;
     bool                 recoveryBannerDismissed_ = false;
-    class RecoveryDialog* recoveryDialog_ = nullptr;
+
+    QWidget*             userStrip_       = nullptr;
+    QLabel*              userAvatarLabel_ = nullptr;
+    QLabel*              userNameLabel_   = nullptr;
+    std::string          myDisplayName_;
+    std::string          myAvatarUrl_;
 
     QListView*           roomList_        = nullptr;
     QStandardItemModel*  roomModel_       = nullptr;

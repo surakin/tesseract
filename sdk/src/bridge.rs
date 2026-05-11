@@ -168,6 +168,16 @@ pub mod ffi {
         /// an empty string if not logged in.
         fn user_id(self: &ClientFfi) -> String;
 
+        /// Returns the current user's display name, or an empty string when
+        /// none is set / not logged in / the network fetch fails. Cached by
+        /// matrix-sdk after the first call.
+        fn current_user_display_name(self: &ClientFfi) -> String;
+
+        /// Returns the mxc:// URI of the current user's avatar, or an empty
+        /// string when none is set / not logged in / the network fetch fails.
+        /// Cached by matrix-sdk after the first call.
+        fn current_user_avatar_url(self: &ClientFfi) -> String;
+
         // ----- Media -----
 
         /// Download the avatar image for a room and return the raw bytes
