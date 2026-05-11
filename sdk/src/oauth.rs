@@ -205,11 +205,12 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
     // Best-effort: rename the freshly minted device to "<hostname>" so the
     // user can tell sessions apart. ClientMetadata.client_name only feeds the
     // OAuth consent page; the device display name comes from PUT /devices.
-    if let Some(device_id) = flow.client.device_id() {
-        if let Some(host) = hostname::get().ok().and_then(|h| h.into_string().ok()) {
-            if let Err(e) = flow.client.rename_device(device_id, &host).await {
-                tracing::warn!("rename_device({host:?}) failed: {e}");
-            }
+    if let (Some(device_id), Some(host)) = (
+        flow.client.device_id(),
+        hostname::get().ok().and_then(|h| h.into_string().ok()),
+    ) {
+        if let Err(e) = flow.client.rename_device(device_id, &host).await {
+            tracing::warn!("rename_device({host:?}) failed: {e}");
         }
     }
 
