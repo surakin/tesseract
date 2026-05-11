@@ -129,7 +129,7 @@ void MainWindow::draw_initials_circle(Gdiplus::Graphics& g, const std::string& n
     g.FillEllipse(&bg, x, y, size, size);
 
     std::wstring wn = utf8_to_wstr(name);
-    wchar_t init[2] = { wn.empty() ? L'?' : towupper(wn[0]), L'\0' };
+    wchar_t init[2] = { wn.empty() ? L'?' : static_cast<wchar_t>(towupper(wn[0])), L'\0' };
     Gdiplus::FontFamily ff(L"Segoe UI");
     Gdiplus::Font font(&ff, (float)size * 0.38f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush white(Gdiplus::Color(0xFFFFFFFF));
@@ -320,7 +320,7 @@ void MainWindow::on_create(HWND hwnd) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL |
         LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
         0, 0, 240, 600,
-        hwnd, reinterpret_cast<HMENU>(IDC_ROOMLIST), hInst_, nullptr);
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ROOMLIST)), hInst_, nullptr);
 
     // Message list — variable-height owner-drawn, not selectable
     hMsgList_ = CreateWindowExW(
@@ -328,20 +328,20 @@ void MainWindow::on_create(HWND hwnd) {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL |
         LBS_OWNERDRAWVARIABLE | LBS_HASSTRINGS | LBS_NOSEL,
         240, 0, 784, 700,
-        hwnd, reinterpret_cast<HMENU>(IDC_MSGLIST), hInst_, nullptr);
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_MSGLIST)), hInst_, nullptr);
 
     // Multi-line compose input
     hInput_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", nullptr,
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
         240, 700, 684, 60,
-        hwnd, reinterpret_cast<HMENU>(IDC_INPUT), hInst_, nullptr);
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_INPUT)), hInst_, nullptr);
 
     hSend_ = CreateWindowExW(
         0, L"BUTTON", L"Send",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         924, 700, 100, 60,
-        hwnd, reinterpret_cast<HMENU>(IDC_SEND), hInst_, nullptr);
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SEND)), hInst_, nullptr);
 
     hStatus_ = CreateWindowExW(
         0, STATUSCLASSNAMEW, L"Not logged in",

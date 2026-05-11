@@ -24,7 +24,8 @@ target_compile_features(tesseract_tests PRIVATE cxx_std_20)
 # All three archives are mutually dependent (same WHOLE_ARCHIVE pattern used
 # by the UI executables) so every symbol is present regardless of link order.
 target_link_libraries(tesseract_tests PRIVATE
-    $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
+    tesseract_sdk_ffi-static
     Catch2::Catch2WithMain
 )
 

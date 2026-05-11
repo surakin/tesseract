@@ -1,5 +1,6 @@
 build/
 target/
+.cargo/config.toml
 .cache/
 _deps/
 CMakeFiles/

@@ -5,12 +5,12 @@ edition = "2021"
 
 [lib]
 name      = "tesseract_sdk_ffi"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["staticlib"]
 
 [dependencies]
 cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }
-matrix-sdk    = { version = "0.16.1", features = ["e2e-encryption", "sqlite"] }
+matrix-sdk    = { version = "0.16.1", features = ["e2e-encryption", "bundled-sqlite"] }
 matrix-sdk-ui = { version = "0.16.1" }
 futures-util = "0.3"
 anyhow     = "1"

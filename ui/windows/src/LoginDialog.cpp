@@ -17,6 +17,16 @@ std::wstring widen(const std::string& s) {
     return out;
 }
 
+std::string narrow(const std::wstring& w) {
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+                                nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+                        out.data(), n, nullptr, nullptr);
+    return out;
+}
+
 std::string narrow(HWND hEdit) {
     int len = GetWindowTextLengthW(hEdit);
     if (len <= 0) return {};
@@ -169,13 +179,13 @@ void LoginDialog::on_create() {
     auto add = [&](const wchar_t* cls, const wchar_t* text, DWORD style,
                    int x, int y, int w, int h, int id) -> HWND
     {
-        HWND h = CreateWindowExW(0, cls, text,
-                                 WS_CHILD | WS_VISIBLE | style,
-                                 x, y, w, h,
-                                 hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-                                 hInst_, nullptr);
-        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-        return h;
+        HWND ctl = CreateWindowExW(0, cls, text,
+                                  WS_CHILD | WS_VISIBLE | style,
+                                  x, y, w, h,
+                                  hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                                  hInst_, nullptr);
+        SendMessageW(ctl, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        return ctl;
     };
 
     hHsLabel_ = add(L"STATIC", L"Homeserver:", 0,                 16, 18, 100, 20, 0);
@@ -290,7 +300,7 @@ void LoginDialog::on_begin_completed(bool ok, std::wstring text) {
     }
 
     // text == auth_url
-    tesseract::Client::open_in_browser(std::string(text.begin(), text.end()));
+    tesseract::Client::open_in_browser(narrow(text));
     show_waiting();
     start_phase2();
 }
