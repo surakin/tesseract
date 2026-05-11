@@ -12,5 +12,3 @@ show emoji reactions and custom emojis per MSC4027
 
 reaction/reply buttons on hover over messages
 
-backfill recent messages for every room in the background
-
