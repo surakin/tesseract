@@ -719,15 +719,23 @@ fn handle_timeline_diff(
     handler: &Arc<Mutex<SendHandler>>,
     room_id: &str,
 ) {
-    let items: Vec<Arc<TimelineItem>> = match diff {
-        VectorDiff::Append    { values }       => values.into_iter().collect(),
-        VectorDiff::PushBack  { value }        => vec![value],
-        VectorDiff::PushFront { value }        => vec![value],
-        VectorDiff::Insert    { value, .. }    => vec![value],
-        VectorDiff::Set       { value, .. }    => vec![value],
-        VectorDiff::Reset     { values }       => values.into_iter().collect(),
+    let (reset, items): (bool, Vec<Arc<TimelineItem>>) = match diff {
+        VectorDiff::Append    { values }    => (false, values.into_iter().collect()),
+        VectorDiff::PushBack  { value }     => (false, vec![value]),
+        VectorDiff::PushFront { value }     => (false, vec![value]),
+        VectorDiff::Insert    { value, .. } => (false, vec![value]),
+        VectorDiff::Set       { value, .. } => (false, vec![value]),
+        // Reset rebuilds the full timeline; clear the UI first to avoid
+        // appending to the already-displayed items.
+        VectorDiff::Reset     { values }    => (true,  values.into_iter().collect()),
         _ => return,
     };
+
+    if reset {
+        if let Ok(guard) = handler.lock() {
+            guard.on_timeline_reset(room_id);
+        }
+    }
 
     for item in &items {
         if let Some(ev) = timeline_item_to_ffi(item, room_id) {

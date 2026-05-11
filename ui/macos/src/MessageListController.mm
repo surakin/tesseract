@@ -224,6 +224,21 @@ struct MessageData {
 
 - (void)pushEvent:(std::unique_ptr<tesseract::Event>)ev {
     if (!ev) return;
+    if (ev->type == tesseract::EventType::Unhandled) return;
+
+    // Update in place if we already have this event (sender profile resolved / edit).
+    if (!ev->event_id.empty()) {
+        for (NSInteger i = 0; i < (NSInteger)_messages.size(); ++i) {
+            if (_messages[i].event_id == ev->event_id) {
+                _messages[i].body              = ev->body;
+                _messages[i].sender_name       = ev->sender_name;
+                _messages[i].sender_avatar_url = ev->sender_avatar_url;
+                [_table reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:i]
+                                  columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+                return;
+            }
+        }
+    }
 
     MessageData md;
     md.event_id         = ev->event_id;
@@ -236,9 +251,6 @@ struct MessageData {
     md.is_own           = _myUserId
         && [@(ev->sender.c_str()) isEqualToString:_myUserId];
 
-    if (ev->type == tesseract::EventType::Unhandled)
-        return;  // Skip redactions, reactions, etc.
-
     NSInteger row = (NSInteger)_messages.size();
     _messages.push_back(std::move(md));
 
@@ -247,7 +259,6 @@ struct MessageData {
                   withAnimation:NSTableViewAnimationEffectNone];
     [_table endUpdates];
 
-    // Scroll to bottom only if we were already near the bottom.
     [self _scrollToBottomIfNeeded];
 }
 

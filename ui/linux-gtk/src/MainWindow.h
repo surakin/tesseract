@@ -76,6 +76,7 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
     std::unordered_map<std::string, std::vector<uint8_t>> user_avatar_cache_;
     std::unordered_map<std::string, std::vector<uint8_t>> image_cache_;
+    std::unordered_map<std::string, GtkWidget*>           msg_event_widgets_;
 };
 
 } // namespace gtk4

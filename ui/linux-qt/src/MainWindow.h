@@ -90,6 +90,7 @@ private:
     QHash<QString, QPixmap>       avatarCache_;
     QHash<QString, QPixmap>       userAvatarCache_;
     QHash<QString, QPixmap>       imageCache_;
+    QHash<QString, QWidget*>      msgEventWidgets_;
 };
 
 } // namespace qt6

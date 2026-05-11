@@ -522,7 +522,24 @@ void MainWindow::on_tesseract_timeline_reset(std::string* room_id) {
 void MainWindow::append_message(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
+    // If we already have this event (e.g. sender profile resolved via a Set
+    // diff, or a message edit), update it in place instead of duplicating.
+    if (!ev.event_id.empty()) {
+        for (size_t i = 0; i < messages_.size(); ++i) {
+            if (messages_[i].event_id == ev.event_id) {
+                messages_[i].body              = ev.body;
+                messages_[i].sender_name       = ev.sender_name;
+                messages_[i].sender_avatar_url = ev.sender_avatar_url;
+                RECT rc;
+                if (SendMessageW(hMsgList_, LB_GETITEMRECT, (WPARAM)i, (LPARAM)&rc) != LB_ERR)
+                    InvalidateRect(hMsgList_, &rc, FALSE);
+                return;
+            }
+        }
+    }
+
     MessageData msg;
+    msg.event_id          = ev.event_id;
     msg.body              = ev.body;
     msg.sender            = ev.sender;
     msg.sender_name       = ev.sender_name;

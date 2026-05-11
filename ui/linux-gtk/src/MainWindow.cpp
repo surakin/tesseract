@@ -405,6 +405,7 @@ void MainWindow::push_timeline_reset(std::string room_id) {
 }
 
 void MainWindow::clear_messages() {
+    msg_event_widgets_.clear();
     GtkWidget* child;
     while ((child = gtk_widget_get_first_child(msg_box_)) != nullptr)
         gtk_box_remove(GTK_BOX(msg_box_), child);
@@ -498,6 +499,72 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
 void MainWindow::append_event(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
+    // Update in place if we already have this event (sender profile resolved / edit).
+    if (!ev.event_id.empty()) {
+        auto it = msg_event_widgets_.find(ev.event_id);
+        if (it != msg_event_widgets_.end()) {
+            GtkWidget* row = it->second;
+            const std::string& name = ev.sender_name.empty() ? ev.sender : ev.sender_name;
+            auto* name_lbl = static_cast<GtkWidget*>(
+                g_object_get_data(G_OBJECT(row), "name_lbl"));
+            if (name_lbl)
+                gtk_label_set_text(GTK_LABEL(name_lbl), name.c_str());
+            std::string body_text;
+            if (ev.type == tesseract::EventType::File) {
+                const auto& file = static_cast<const tesseract::FileEvent&>(ev);
+                body_text = "📎 " + file.file_name;
+                if (file.file_size > 0) {
+                    double kb = file.file_size / 1024.0;
+                    char size_buf[32];
+                    if (kb < 1024)
+                        snprintf(size_buf, sizeof(size_buf), " (%.1f KB)", kb);
+                    else
+                        snprintf(size_buf, sizeof(size_buf), " (%.1f MB)", kb / 1024.0);
+                    body_text += size_buf;
+                }
+            } else if (ev.type == tesseract::EventType::Image) {
+                const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+                body_text = img.body.empty() ? "🖼 Image" : img.body;
+            } else {
+                body_text = ev.body;
+            }
+            auto* body_lbl = static_cast<GtkWidget*>(
+                g_object_get_data(G_OBJECT(row), "body_lbl"));
+            if (body_lbl)
+                gtk_label_set_text(GTK_LABEL(body_lbl), body_text.c_str());
+            if (!ev.sender_avatar_url.empty()) {
+                if (user_avatar_cache_.find(ev.sender_avatar_url) == user_avatar_cache_.end())
+                    user_avatar_cache_[ev.sender_avatar_url] =
+                        client_.fetch_media_bytes(ev.sender_avatar_url);
+                auto avit = user_avatar_cache_.find(ev.sender_avatar_url);
+                if (avit != user_avatar_cache_.end() && !avit->second.empty()) {
+                    auto* old_av = static_cast<GtkWidget*>(
+                        g_object_get_data(G_OBJECT(row), "avatar"));
+                    if (old_av) {
+                        GBytes*     gb  = g_bytes_new(avit->second.data(), avit->second.size());
+                        GError*     err = nullptr;
+                        GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+                        g_bytes_unref(gb);
+                        if (tex) {
+                            GtkWidget* new_img =
+                                gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+                            gtk_image_set_pixel_size(GTK_IMAGE(new_img), kMsgAvatarSize);
+                            gtk_widget_set_valign(new_img, GTK_ALIGN_START);
+                            gtk_box_remove(GTK_BOX(row), old_av);
+                            gtk_box_prepend(GTK_BOX(row), new_img);
+                            gtk_widget_set_visible(new_img, TRUE);
+                            g_object_set_data(G_OBJECT(row), "avatar", new_img);
+                            g_object_unref(tex);
+                        } else {
+                            if (err) g_error_free(err);
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
+
     const bool is_own = (!my_user_id_.empty() && ev.sender == my_user_id_);
     const std::string& name =
         ev.sender_name.empty() ? ev.sender : ev.sender_name;
@@ -530,6 +597,7 @@ void MainWindow::append_event(const tesseract::Event& ev) {
 
     if (!is_own) {
         // ---- Sender avatar ----
+        GtkWidget* av_widget = nullptr;
         auto avit = !ev.sender_avatar_url.empty() ?
                     user_avatar_cache_.find(ev.sender_avatar_url) :
                     user_avatar_cache_.end();
@@ -539,23 +607,20 @@ void MainWindow::append_event(const tesseract::Event& ev) {
             GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
             g_bytes_unref(gb);
             if (tex) {
-                GtkWidget* img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
-                gtk_image_set_pixel_size(GTK_IMAGE(img), kMsgAvatarSize);
-                gtk_widget_set_valign(img, GTK_ALIGN_START);
-                gtk_box_append(GTK_BOX(row), img);
+                av_widget = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+                gtk_image_set_pixel_size(GTK_IMAGE(av_widget), kMsgAvatarSize);
+                gtk_widget_set_valign(av_widget, GTK_ALIGN_START);
                 g_object_unref(tex);
             } else {
                 if (err) g_error_free(err);
-                GtkWidget* ph = gtk_label_new(nullptr);
-                gtk_widget_set_size_request(ph, kMsgAvatarSize, kMsgAvatarSize);
-                gtk_box_append(GTK_BOX(row), ph);
             }
-        } else {
-            // Initials placeholder
-            GtkWidget* ph = gtk_label_new(nullptr);
-            gtk_widget_set_size_request(ph, kMsgAvatarSize, kMsgAvatarSize);
-            gtk_box_append(GTK_BOX(row), ph);
         }
+        if (!av_widget) {
+            av_widget = gtk_label_new(nullptr);
+            gtk_widget_set_size_request(av_widget, kMsgAvatarSize, kMsgAvatarSize);
+        }
+        gtk_box_append(GTK_BOX(row), av_widget);
+        g_object_set_data(G_OBJECT(row), "avatar", av_widget);
     }
 
     // ---- Content vbox (name + bubble) ----
@@ -566,6 +631,7 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
         gtk_widget_add_css_class(name_lbl, "sender-name");
         gtk_box_append(GTK_BOX(content), name_lbl);
+        g_object_set_data(G_OBJECT(row), "name_lbl", name_lbl);
     }
 
     // ---- Bubble ----
@@ -600,6 +666,7 @@ void MainWindow::append_event(const tesseract::Event& ev) {
     gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
     gtk_label_set_max_width_chars(GTK_LABEL(body_lbl), 55);
     gtk_box_append(GTK_BOX(bubble), body_lbl);
+    g_object_set_data(G_OBJECT(row), "body_lbl", body_lbl);
 
     // Timestamp
     if (!ts_str.empty()) {
@@ -625,6 +692,8 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         gtk_box_append(GTK_BOX(row), spacer);
     }
 
+    if (!ev.event_id.empty())
+        msg_event_widgets_[ev.event_id] = row;
     gtk_box_append(GTK_BOX(msg_box_), row);
     gtk_widget_set_visible(row, TRUE);
 

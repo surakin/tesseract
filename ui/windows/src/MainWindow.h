@@ -49,6 +49,7 @@ private:
 // ---------------------------------------------------------------------------
 
 struct MessageData {
+    std::string          event_id;
     std::string          body;
     std::string          sender;
     std::string          sender_name;

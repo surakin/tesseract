@@ -346,6 +346,7 @@ void MainWindow::onTimelineReset(QString roomId) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::clearMessages() {
+    msgEventWidgets_.clear();
     while (msgLayout_->count() > 0) {
         QLayoutItem* item = msgLayout_->takeAt(0);
         if (item->widget())
@@ -397,6 +398,41 @@ void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
 void MainWindow::appendMessageBubble(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
+    // Update in place if we already have this event (sender profile resolved / edit).
+    QString qid = QString::fromStdString(ev.event_id);
+    if (!qid.isEmpty() && msgEventWidgets_.contains(qid)) {
+        QWidget* existing = msgEventWidgets_.value(qid);
+        bool isOwn = (!myUserId_.empty() && ev.sender == myUserId_);
+        if (!isOwn) {
+            QString newName = QString::fromStdString(
+                ev.sender_name.empty() ? ev.sender : ev.sender_name);
+            if (auto* lbl = existing->findChild<QLabel*>("senderName"))
+                lbl->setText(newName);
+            QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
+            if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
+                auto bytes = client_.fetch_media_bytes(ev.sender_avatar_url);
+                if (!bytes.empty()) {
+                    QPixmap pm;
+                    pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                    static_cast<uint>(bytes.size()));
+                    if (!pm.isNull())
+                        userAvatarCache_[avatarUrl] = makeCirclePixmap(pm, kMsgAvatarSize);
+                }
+            }
+            if (auto* lbl = existing->findChild<QLabel*>("avatar")) {
+                if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl))
+                    lbl->setPixmap(userAvatarCache_[avatarUrl]);
+                else
+                    lbl->setPixmap(makeInitialsPixmap(newName, kMsgAvatarSize));
+            }
+        }
+        if (ev.type == tesseract::EventType::Text) {
+            if (auto* lbl = existing->findChild<QLabel*>("body"))
+                lbl->setText(QString::fromStdString(ev.body).toHtmlEscaped());
+        }
+        return;
+    }
+
     // Fetch/cache sender avatar.
     QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
     if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
@@ -430,6 +466,8 @@ void MainWindow::appendMessageBubble(const tesseract::Event& ev) {
     }
 
     QWidget* row = createBubbleRow(ev);
+    if (!qid.isEmpty())
+        msgEventWidgets_[qid] = row;
     msgLayout_->addWidget(row);
 
     // Scroll to bottom after layout pass.
@@ -514,6 +552,7 @@ QWidget* MainWindow::createBubbleRow(const tesseract::Event& ev) {
         // Text
         auto* bodyLabel = new QLabel(
             QString::fromStdString(ev.body).toHtmlEscaped(), bubble);
+        bodyLabel->setObjectName("body");
         bodyLabel->setWordWrap(true);
         bodyLabel->setStyleSheet(isOwn ? "color: white; background: transparent;"
                                        : "color: #1C1E21; background: transparent;");
@@ -538,6 +577,7 @@ QWidget* MainWindow::createBubbleRow(const tesseract::Event& ev) {
     } else {
         // Sender avatar
         auto* avatarLabel = new QLabel(row);
+        avatarLabel->setObjectName("avatar");
         avatarLabel->setFixedSize(kMsgAvatarSize, kMsgAvatarSize);
         if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl))
             avatarLabel->setPixmap(userAvatarCache_[avatarUrl]);
@@ -551,6 +591,7 @@ QWidget* MainWindow::createBubbleRow(const tesseract::Event& ev) {
         otherLayout->setSpacing(2);
 
         auto* nameLabel = new QLabel(name, otherBox);
+        nameLabel->setObjectName("senderName");
         nameLabel->setStyleSheet(
             "font-weight: bold; font-size: 12px; color: #555; background: transparent;");
         otherLayout->addWidget(nameLabel);
