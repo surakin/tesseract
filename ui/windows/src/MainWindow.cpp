@@ -55,6 +55,84 @@ Gdiplus::Bitmap* bitmap_from_bytes(const std::vector<uint8_t>& data) {
 namespace win32 {
 
 // ---------------------------------------------------------------------------
+// Room header WndProc
+// ---------------------------------------------------------------------------
+
+LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        Gdiplus::Graphics g(hdc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int x0 = rc.left, y0 = rc.top;
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+
+        // Background
+        Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFFFFFFF));
+        g.FillRectangle(&bg, x0, y0, w, h);
+
+        // Bottom border
+        Gdiplus::Pen border(Gdiplus::Color(0xFFD0D3D8), 1.0f);
+        g.DrawLine(&border, (float)x0, (float)(rc.bottom - 1), (float)rc.right, (float)(rc.bottom - 1));
+
+        const auto& info = self->current_room_info_;
+        if (info.id.empty()) {
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        // Avatar
+        Gdiplus::Bitmap* bmp = self->get_room_avatar(info.id);
+        int ax = x0 + 16;
+        int ay = y0 + (h - kRoomAvatarSize) / 2;
+        if (bmp)
+            self->draw_circle_bitmap(g, bmp, ax, ay, kRoomAvatarSize);
+        else
+            self->draw_initials_circle(g, info.name, ax, ay, kRoomAvatarSize);
+
+        // Name
+        Gdiplus::FontFamily ff(L"Segoe UI");
+        Gdiplus::Font nameFont(&ff, 15.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF111111));
+        Gdiplus::StringFormat sf;
+        sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+
+        int tx = ax + kRoomAvatarSize + 12;
+        int text_w = rc.right - tx - 16;
+
+        auto wname = utf8_to_wstr(info.name);
+        g.DrawString(wname.c_str(), -1, &nameFont,
+                     Gdiplus::RectF((float)tx, (float)(y0 + 14), (float)text_w, 22.0f),
+                     &sf, &nameBrush);
+
+        // Topic
+        if (!info.topic.empty()) {
+            Gdiplus::Font topicFont(&ff, 12.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+            Gdiplus::SolidBrush topicBrush(Gdiplus::Color(0xFF65676B));
+            auto wtopic = utf8_to_wstr(info.topic);
+            g.DrawString(wtopic.c_str(), -1, &topicFont,
+                         Gdiplus::RectF((float)tx, (float)(y0 + 34), (float)text_w, 18.0f),
+                         &sf, &topicBrush);
+        }
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    default:
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EventHandler
 // ---------------------------------------------------------------------------
 
@@ -322,12 +400,28 @@ void MainWindow::on_create(HWND hwnd) {
         0, 0, 240, 600,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ROOMLIST)), hInst_, nullptr);
 
+    // Room header — above message area
+    WNDCLASSEXW rhwc{};
+    rhwc.cbSize = sizeof(rhwc);
+    rhwc.lpfnWndProc = room_header_wnd_proc;
+    rhwc.hInstance = hInst_;
+    rhwc.lpszClassName = L"TesseractRoomHeader";
+    RegisterClassExW(&rhwc);
+
+    hRoomHeader_ = CreateWindowExW(
+        0, L"TesseractRoomHeader", nullptr,
+        WS_CHILD | WS_VISIBLE,
+        240, 0, 784, kRoomHeaderH,
+        hwnd, nullptr, hInst_, nullptr);
+    SetWindowLongPtrW(hRoomHeader_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    ShowWindow(hRoomHeader_, SW_HIDE);
+
     // Message list — variable-height owner-drawn, not selectable
     hMsgList_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_VSCROLL |
         LBS_OWNERDRAWVARIABLE | LBS_HASSTRINGS | LBS_NOSEL,
-        240, 0, 784, 700,
+        240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_MSGLIST)), hInst_, nullptr);
 
     // Multi-line compose input
@@ -373,8 +467,16 @@ void MainWindow::on_size(int w, int h) {
     int content_h = h - STATUS_H;
     int msg_h     = content_h - INPUT_H;
 
+    int msg_area_y = 0;
+    int msg_area_h = msg_h;
+    if (hRoomHeader_ && IsWindowVisible(hRoomHeader_)) {
+        msg_area_y = kRoomHeaderH;
+        msg_area_h -= kRoomHeaderH;
+    }
+
     SetWindowPos(hRoomList_, nullptr, 0, 0, ROOM_W, msg_h, SWP_NOZORDER);
-    SetWindowPos(hMsgList_,  nullptr, ROOM_W, 0, w - ROOM_W, msg_h, SWP_NOZORDER);
+    SetWindowPos(hRoomHeader_, nullptr, ROOM_W, 0, w - ROOM_W, kRoomHeaderH, SWP_NOZORDER);
+    SetWindowPos(hMsgList_,  nullptr, ROOM_W, msg_area_y, w - ROOM_W, msg_area_h, SWP_NOZORDER);
     SetWindowPos(hInput_,    nullptr, ROOM_W, msg_h, w - ROOM_W - SEND_W, INPUT_H, SWP_NOZORDER);
     SetWindowPos(hSend_,     nullptr, w - SEND_W, msg_h, SEND_W, INPUT_H, SWP_NOZORDER);
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
@@ -491,8 +593,19 @@ void MainWindow::on_room_selected(int index) {
         client_.unsubscribe_room(current_room_id_);
 
     current_room_id_ = new_id;
+    current_room_info_ = rooms_[index];
+    update_room_header(current_room_info_);
     auto res = client_.subscribe_room(current_room_id_);
     if (res) client_.paginate_back(current_room_id_, 50);
+}
+
+void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
+    if (info.id.empty()) {
+        ShowWindow(hRoomHeader_, SW_HIDE);
+        return;
+    }
+    ShowWindow(hRoomHeader_, SW_SHOW);
+    InvalidateRect(hRoomHeader_, nullptr, FALSE);
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ private:
     void on_auth_error(bool soft_logout);
     void append_message(const tesseract::Event& ev);
     void clear_messages();
+    void update_room_header(const tesseract::RoomInfo& info);
 
     int  compute_message_height(size_t idx);
     void draw_room_item(DRAWITEMSTRUCT* dis);
@@ -104,6 +105,7 @@ private:
 
     static constexpr int kRoomAvatarSize = 36;
     static constexpr int kMsgAvatarSize  = 32;
+    static constexpr int kRoomHeaderH    = 60;
     static constexpr int kRoomRowH       = 62;
     static constexpr int kMsgRowPad      = 6;
     static constexpr int kBubblePadX     = 12;
@@ -113,16 +115,18 @@ private:
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
-    HWND      hRoomList_  = nullptr;
-    HWND      hMsgList_   = nullptr;
-    HWND      hInput_     = nullptr;
-    HWND      hSend_      = nullptr;
-    HWND      hStatus_    = nullptr;
+    HWND      hRoomList_   = nullptr;
+    HWND      hRoomHeader_ = nullptr;
+    HWND      hMsgList_    = nullptr;
+    HWND      hInput_      = nullptr;
+    HWND      hSend_       = nullptr;
+    HWND      hStatus_     = nullptr;
 
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::vector<MessageData>         messages_;
+    tesseract::RoomInfo              current_room_info_;
     std::string                      current_room_id_;
     std::string                      my_user_id_;
 

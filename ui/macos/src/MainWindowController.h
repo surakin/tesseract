@@ -15,8 +15,10 @@
 - (void)pushEvent:(std::unique_ptr<tesseract::Event>)ev;
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms;
 - (void)handleSyncErrorContext:(NSString*)ctx
-                   description:(NSString*)desc
-                   softLogout:(BOOL)soft;
+                    description:(NSString*)desc
+                    softLogout:(BOOL)soft;
 - (void)handleTimelineReset:(NSString*)roomId;
+
+- (void)updateRoomHeader:(const tesseract::RoomInfo&)info;
 
 @end

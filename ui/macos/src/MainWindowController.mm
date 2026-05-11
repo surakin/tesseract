@@ -40,6 +40,14 @@ static std::string nsstr(NSString* s) {
     NSString* _currentRoomId;
     NSString* _myUserId;
     NSTextField* _statusLabel;
+    std::vector<tesseract::RoomInfo> _rooms;
+
+    // Room header
+    NSView* _msgContainer;
+    NSView* _roomHeaderView;
+    NSImageView* _roomHeaderAvatar;
+    NSTextField* _roomHeaderName;
+    NSTextField* _roomHeaderTopic;
 }
 
 - (instancetype)init {
@@ -98,6 +106,43 @@ static std::string nsstr(NSString* s) {
     _msgList.delegate = self;
     [self addChildViewController:_msgList];
 
+    // Message container: header + message list stacked vertically
+    _msgContainer = [[NSView alloc] init];
+    _msgContainer.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Room header bar
+    _roomHeaderView = [[NSView alloc] init];
+    _roomHeaderView.translatesAutoresizingMaskIntoConstraints = NO;
+    [_msgContainer addSubview:_roomHeaderView];
+
+    // Avatar
+    _roomHeaderAvatar = [[NSImageView alloc] init];
+    _roomHeaderAvatar.translatesAutoresizingMaskIntoConstraints = NO;
+    [_roomHeaderView addSubview:_roomHeaderAvatar];
+
+    // Name label
+    _roomHeaderName = [NSTextField labelWithString:@""];
+    _roomHeaderName.translatesAutoresizingMaskIntoConstraints = NO;
+    _roomHeaderName.font = [NSFont boldSystemFontOfSize:15];
+    _roomHeaderName.textColor = [NSColor labelColor];
+    _roomHeaderName.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_roomHeaderView addSubview:_roomHeaderName];
+
+    // Topic label
+    _roomHeaderTopic = [NSTextField labelWithString:@""];
+    _roomHeaderTopic.translatesAutoresizingMaskIntoConstraints = NO;
+    _roomHeaderTopic.font = [NSFont systemFontOfSize:12];
+    _roomHeaderTopic.textColor = [NSColor secondaryLabelColor];
+    _roomHeaderTopic.lineBreakMode = NSLineBreakByTruncatingTail;
+    _roomHeaderTopic.hidden = YES;
+    [_roomHeaderView addSubview:_roomHeaderTopic];
+
+    // Message list fills remaining space
+    _msgList.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [_msgContainer addSubview:_msgList.view];
+
+    _roomHeaderView.hidden = YES;
+
     NSSplitView* split = [[NSSplitView alloc] init];
     split.translatesAutoresizingMaskIntoConstraints = NO;
     split.vertical        = YES;
@@ -105,7 +150,7 @@ static std::string nsstr(NSString* s) {
     split.autosaveName    = @"TesseractMainSplit";
 
     [split addArrangedSubview:_roomList.view];
-    [split addArrangedSubview:_msgList.view];
+    [split addArrangedSubview:_msgContainer];
     [split setHoldingPriority:NSLayoutPriorityDefaultLow + 1
               forSubviewAtIndex:0];
     [content addSubview:split];
@@ -113,13 +158,41 @@ static std::string nsstr(NSString* s) {
     // ── Auto Layout ───────────────────────────────────────────────────────────
     [NSLayoutConstraint activateConstraints:@[
         // Split view fills top portion
-        [split.topAnchor    constraintEqualToAnchor:content.topAnchor],
+        [split.topAnchor     constraintEqualToAnchor:content.topAnchor],
         [split.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [split.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [split.bottomAnchor  constraintEqualToAnchor:_compose.topAnchor],
 
         // Left pane width
         [_roomList.view.widthAnchor constraintEqualToConstant:220],
+
+        // Room header: full width of msg container, 60pt tall
+        [_roomHeaderView.topAnchor     constraintEqualToAnchor:_msgContainer.topAnchor],
+        [_roomHeaderView.leadingAnchor constraintEqualToAnchor:_msgContainer.leadingAnchor],
+        [_roomHeaderView.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
+        [_roomHeaderView.heightAnchor  constraintEqualToConstant:60],
+
+        // Header avatar: 40x40, centered vertically, 16px from left
+        [_roomHeaderAvatar.leadingAnchor constraintEqualToAnchor:_roomHeaderView.leadingAnchor constant:16],
+        [_roomHeaderAvatar.centerYAnchor constraintEqualToAnchor:_roomHeaderView.centerYAnchor],
+        [_roomHeaderAvatar.widthAnchor  constraintEqualToConstant:40],
+        [_roomHeaderAvatar.heightAnchor constraintEqualToConstant:40],
+
+        // Header name: right of avatar, top portion
+        [_roomHeaderName leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderName.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
+        [_roomHeaderName.topAnchor constraintEqualToAnchor:_roomHeaderView.topAnchor constant:14],
+
+        // Header topic: right of avatar, below name
+        [_roomHeaderTopic leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderTopic.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
+        [_roomHeaderTopic.topAnchor constraintEqualToAnchor:_roomHeaderName.bottomAnchor constant:2],
+
+        // Message list fills remaining space below header
+        [_msgList.view.topAnchor     constraintEqualToAnchor:_roomHeaderView.bottomAnchor],
+        [_msgList.view.leadingAnchor constraintEqualToAnchor:_msgContainer.leadingAnchor],
+        [_msgList.view.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
+        [_msgList.view.bottomAnchor  constraintEqualToAnchor:_msgContainer.bottomAnchor],
 
         // Compose bar
         [_compose.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
@@ -133,8 +206,8 @@ static std::string nsstr(NSString* s) {
 
         [_statusLabel.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
         [_statusLabel.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [_statusLabel.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
-        [_statusLabel.heightAnchor   constraintEqualToConstant:20],
+        [_statusLabel.bottomAnchor  constraintEqualToAnchor:content.bottomAnchor],
+        [_statusLabel.heightAnchor  constraintEqualToConstant:20],
     ]];
 }
 
@@ -196,6 +269,15 @@ static std::string nsstr(NSString* s) {
     _currentRoomId = roomId;
     [_msgList clearMessages];
 
+    // Find room info from cached rooms for header
+    std::string target = nsstr(roomId);
+    for (const auto& r : _rooms) {
+        if (r.id == target) {
+            [self updateRoomHeader:r];
+            break;
+        }
+    }
+
     auto res = _impl->client.subscribe_room(nsstr(roomId));
     if (!res.ok) {
         [self _setStatus:[@"Error: " stringByAppendingString:
@@ -229,6 +311,7 @@ static std::string nsstr(NSString* s) {
 }
 
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms {
+    _rooms = rooms;
     [_roomList updateRooms:std::move(rooms)];
 }
 
@@ -255,6 +338,41 @@ static std::string nsstr(NSString* s) {
 - (void)handleTimelineReset:(NSString*)roomId {
     if ([roomId isEqualToString:_currentRoomId])
         [_msgList clearMessages];
+}
+
+// ── Room header ──────────────────────────────────────────────────────────────
+
+- (void)updateRoomHeader:(const tesseract::RoomInfo&)info {
+    if (info.id.empty()) {
+        _roomHeaderView.hidden = YES;
+        return;
+    }
+
+    _roomHeaderName.stringValue = @(info.name.c_str());
+
+    if (!info.topic.empty()) {
+        _roomHeaderTopic.stringValue = @(info.topic.c_str());
+        _roomHeaderTopic.hidden = NO;
+    } else {
+        _roomHeaderTopic.hidden = YES;
+    }
+
+    NSString* key = @(info.avatar_url.empty() ? info.id.c_str() : info.avatar_url.c_str());
+    NSImage* cached = [[AvatarCache shared] cachedImageForKey:key];
+    if (cached) {
+        _roomHeaderAvatar.image = cached;
+    } else {
+        _roomHeaderAvatar.image = [AvatarCache initialsImageForName:@(info.name.c_str()) size:40];
+        __weak typeof(self) weakSelf = self;
+        [[AvatarCache shared] avatarForKey:key
+                                    fetch:[&, info] { return _impl->client.fetch_avatar_bytes(info.id); }
+                               completion:^(NSImage* img) {
+            if ([key isEqualToString:@(info.avatar_url.empty() ? info.id.c_str() : info.avatar_url.c_str())])
+                weakSelf.roomHeaderAvatar.image = img;
+        }];
+    }
+
+    _roomHeaderView.hidden = NO;
 }
 
 @end
