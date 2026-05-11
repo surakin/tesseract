@@ -96,16 +96,8 @@ pub async fn begin(
         .context("build matrix-sdk Client")?;
 
     // 3. Native-app client metadata for dynamic registration.
-    //    `client_name` becomes the device display name in Element's
-    //    Sessions view (MAS has no separate initial_device_display_name).
-    let device_name = hostname::get()
-        .ok()
-        .and_then(|h| h.into_string().ok())
-        .map(|h| format!("Tesseract on {h}"))
-        .unwrap_or_else(|| "Tesseract".to_owned());
-
     let metadata = ClientMetadata {
-        client_name: Some(Localized::new(device_name, [])),
+        client_name: Some(Localized::new("Tesseract".to_owned(), [])),
         ..ClientMetadata::new(
             ApplicationType::Native,
             vec![OAuthGrantType::AuthorizationCode {
@@ -209,6 +201,17 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         .finish_login(UrlOrQuery::Query(query_part))
         .await
         .context("oauth finish_login")?;
+
+    // Best-effort: rename the freshly minted device to "<hostname>" so the
+    // user can tell sessions apart. ClientMetadata.client_name only feeds the
+    // OAuth consent page; the device display name comes from PUT /devices.
+    if let Some(device_id) = flow.client.device_id() {
+        if let Some(host) = hostname::get().ok().and_then(|h| h.into_string().ok()) {
+            if let Err(e) = flow.client.rename_device(device_id, &host).await {
+                tracing::warn!("rename_device({host:?}) failed: {e}");
+            }
+        }
+    }
 
     Ok(flow.client)
 }
