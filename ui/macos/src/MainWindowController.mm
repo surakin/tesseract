@@ -4,9 +4,11 @@
 #import "MessageListController.h"
 #import "ComposeBar.h"
 #import "EventBridge.h"
+#import "AvatarCache.h"
 
 #include <tesseract/client.h>
 #include <tesseract/session_store.h>
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -41,6 +43,13 @@ static std::string nsstr(NSString* s) {
     NSString* _myUserId;
     NSTextField* _statusLabel;
     std::vector<tesseract::RoomInfo> _rooms;
+    std::vector<std::string>         _spaceStack;
+
+    // Sidebar nav bar (visible when inside a space)
+    NSView*      _sidebarContainer;
+    NSView*      _navBar;
+    NSButton*    _backButton;
+    NSTextField* _spaceNameLabel;
 
     // Room header
     NSView* _msgContainer;
@@ -97,13 +106,45 @@ static std::string nsstr(NSString* s) {
     };
     [content addSubview:_compose];
 
-    // ── Split view ────────────────────────────────────────────────────────────
+    // ── Sidebar (nav bar + room list) ─────────────────────────────────────────
+    _sidebarContainer = [[NSView alloc] init];
+    _sidebarContainer.translatesAutoresizingMaskIntoConstraints = NO;
+
+    _navBar = [[NSView alloc] init];
+    _navBar.translatesAutoresizingMaskIntoConstraints = NO;
+    _navBar.hidden = YES;
+
+    _backButton = [NSButton buttonWithTitle:@"←"
+                                     target:self
+                                     action:@selector(_onBackClicked)];
+    _backButton.translatesAutoresizingMaskIntoConstraints = NO;
+    _backButton.bezelStyle = NSBezelStyleRounded;
+    [_navBar addSubview:_backButton];
+
+    _spaceNameLabel = [NSTextField labelWithString:@""];
+    _spaceNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _spaceNameLabel.font = [NSFont boldSystemFontOfSize:12];
+    _spaceNameLabel.textColor = [NSColor labelColor];
+    _spaceNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_navBar addSubview:_spaceNameLabel];
+
+    NSBox* navSep = [[NSBox alloc] init];
+    navSep.boxType = NSBoxSeparator;
+    navSep.translatesAutoresizingMaskIntoConstraints = NO;
+    [_navBar addSubview:navSep];
+
+    [_sidebarContainer addSubview:_navBar];
+
     _roomList = [[RoomListController alloc] init];
     _roomList.delegate = self;
+    _roomList.client   = &_impl->client;
     [self addChildViewController:_roomList];
+    _roomList.view.translatesAutoresizingMaskIntoConstraints = NO;
+    [_sidebarContainer addSubview:_roomList.view];
 
     _msgList = [[MessageListController alloc] init];
     _msgList.delegate = self;
+    _msgList.client   = &_impl->client;
     [self addChildViewController:_msgList];
 
     // Message container: header + message list stacked vertically
@@ -149,7 +190,7 @@ static std::string nsstr(NSString* s) {
     split.dividerStyle    = NSSplitViewDividerStyleThin;
     split.autosaveName    = @"TesseractMainSplit";
 
-    [split addArrangedSubview:_roomList.view];
+    [split addArrangedSubview:_sidebarContainer];
     [split addArrangedSubview:_msgContainer];
     [split setHoldingPriority:NSLayoutPriorityDefaultLow + 1
               forSubviewAtIndex:0];
@@ -164,7 +205,32 @@ static std::string nsstr(NSString* s) {
         [split.bottomAnchor  constraintEqualToAnchor:_compose.topAnchor],
 
         // Left pane width
-        [_roomList.view.widthAnchor constraintEqualToConstant:220],
+        [_sidebarContainer.widthAnchor constraintEqualToConstant:220],
+
+        // Nav bar at top of sidebar (hidden by default)
+        [_navBar.topAnchor      constraintEqualToAnchor:_sidebarContainer.topAnchor],
+        [_navBar.leadingAnchor  constraintEqualToAnchor:_sidebarContainer.leadingAnchor],
+        [_navBar.trailingAnchor constraintEqualToAnchor:_sidebarContainer.trailingAnchor],
+        [_navBar.heightAnchor   constraintEqualToConstant:36],
+
+        [_backButton.leadingAnchor constraintEqualToAnchor:_navBar.leadingAnchor constant:6],
+        [_backButton.centerYAnchor constraintEqualToAnchor:_navBar.centerYAnchor],
+        [_backButton.widthAnchor   constraintEqualToConstant:32],
+
+        [_spaceNameLabel.leadingAnchor  constraintEqualToAnchor:_backButton.trailingAnchor constant:6],
+        [_spaceNameLabel.trailingAnchor constraintEqualToAnchor:_navBar.trailingAnchor constant:-6],
+        [_spaceNameLabel.centerYAnchor  constraintEqualToAnchor:_navBar.centerYAnchor],
+
+        [navSep.leadingAnchor  constraintEqualToAnchor:_navBar.leadingAnchor],
+        [navSep.trailingAnchor constraintEqualToAnchor:_navBar.trailingAnchor],
+        [navSep.bottomAnchor   constraintEqualToAnchor:_navBar.bottomAnchor],
+        [navSep.heightAnchor   constraintEqualToConstant:1],
+
+        // Room list fills sidebar below the (possibly-hidden) nav bar
+        [_roomList.view.topAnchor      constraintEqualToAnchor:_navBar.bottomAnchor],
+        [_roomList.view.leadingAnchor  constraintEqualToAnchor:_sidebarContainer.leadingAnchor],
+        [_roomList.view.trailingAnchor constraintEqualToAnchor:_sidebarContainer.trailingAnchor],
+        [_roomList.view.bottomAnchor   constraintEqualToAnchor:_sidebarContainer.bottomAnchor],
 
         // Room header: full width of msg container, 60pt tall
         [_roomHeaderView.topAnchor     constraintEqualToAnchor:_msgContainer.topAnchor],
@@ -287,6 +353,37 @@ static std::string nsstr(NSString* s) {
     _impl->client.paginate_back(nsstr(roomId), 50);
 }
 
+- (void)roomListDidSelectSpaceId:(NSString*)spaceId {
+    _spaceStack.push_back(nsstr(spaceId));
+    [self _refreshRoomList];
+}
+
+- (void)_onBackClicked {
+    if (!_spaceStack.empty()) _spaceStack.pop_back();
+    [self _refreshRoomList];
+}
+
+- (void)_refreshRoomList {
+    if (_spaceStack.empty()) {
+        [_roomList updateRooms:_rooms];
+        _navBar.hidden = YES;
+    } else {
+        const std::string& space_id = _spaceStack.back();
+        auto child_ids = _impl->client.space_children(space_id);
+        std::vector<tesseract::RoomInfo> filtered;
+        for (const auto& r : _rooms)
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) != child_ids.end())
+                filtered.push_back(r);
+        [_roomList updateRooms:std::move(filtered)];
+        for (const auto& r : _rooms)
+            if (r.id == space_id) {
+                _spaceNameLabel.stringValue = @(r.name.c_str());
+                break;
+            }
+        _navBar.hidden = NO;
+    }
+}
+
 // ── MessageListDelegate ───────────────────────────────────────────────────────
 
 - (void)messageListDidScrollToTop {
@@ -311,8 +408,13 @@ static std::string nsstr(NSString* s) {
 }
 
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms {
-    _rooms = rooms;
-    [_roomList updateRooms:std::move(rooms)];
+    _rooms = std::move(rooms);
+    [self _refreshRoomList];
+    if (_currentRoomId) {
+        std::string target = nsstr(_currentRoomId);
+        for (const auto& r : _rooms)
+            if (r.id == target) { [self updateRoomHeader:r]; break; }
+    }
 }
 
 - (void)handleSyncErrorContext:(NSString*)ctx
@@ -352,9 +454,11 @@ static std::string nsstr(NSString* s) {
 
     if (!info.topic.empty()) {
         _roomHeaderTopic.stringValue = @(info.topic.c_str());
+        _roomHeaderTopic.toolTip     = @(info.topic.c_str());
         _roomHeaderTopic.hidden = NO;
     } else {
         _roomHeaderTopic.hidden = YES;
+        _roomHeaderTopic.toolTip = nil;
     }
 
     NSString* key = @(info.avatar_url.empty() ? info.id.c_str() : info.avatar_url.c_str());

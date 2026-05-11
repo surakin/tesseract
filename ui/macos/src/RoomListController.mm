@@ -1,6 +1,8 @@
 #import "RoomListController.h"
 #import "AvatarCache.h"
 
+#include <tesseract/client.h>
+
 static const CGFloat kRowHeight   = 64;
 static const CGFloat kAvatarSize  = 36;
 static const CGFloat kPadH        = 10;
@@ -94,6 +96,8 @@ static NSString* const kCellId    = @"RoomCell";
 @implementation RoomListController {
     NSTableView*                    _table;
     NSScrollView*                   _scroll;
+    // Display order; pointers refer to `_rooms` storage which lives for the
+    // lifetime of the row. Rebuilt every updateRooms:.
     std::vector<tesseract::RoomInfo> _rooms;
     NSString*                       _selectedRoomId;
 }
@@ -123,7 +127,12 @@ static NSString* const kCellId    = @"RoomCell";
 }
 
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms {
-    _rooms = std::move(rooms);
+    // Sort: regular rooms first, spaces at the bottom.
+    std::vector<tesseract::RoomInfo> sorted;
+    sorted.reserve(rooms.size());
+    for (const auto& r : rooms) if (!r.is_space) sorted.push_back(r);
+    for (const auto& r : rooms) if ( r.is_space) sorted.push_back(r);
+    _rooms = std::move(sorted);
     [_table reloadData];
 
     // Restore selection if the room is still present.
@@ -152,10 +161,13 @@ static NSString* const kCellId    = @"RoomCell";
     }
 
     const tesseract::RoomInfo& room = _rooms[row];
-    NSString* roomId = @(room.id.c_str());
-    NSString* name   = @(room.name.c_str());
+    NSString* roomId  = @(room.id.c_str());
+    NSString* rawName = @(room.name.c_str());
+    NSString* display = room.is_space
+        ? [@"# " stringByAppendingString:rawName]
+        : rawName;
 
-    cell.nameLabel.stringValue    = name;
+    cell.nameLabel.stringValue    = display;
     cell.previewLabel.stringValue = @(room.last_message_body.c_str());
 
     if (room.unread_count > 0) {
@@ -167,13 +179,37 @@ static NSString* const kCellId    = @"RoomCell";
         cell.badgeLabel.hidden = YES;
     }
 
-    // Avatar: use cached image or kick off a background fetch.
-    NSImage* cached = [[AvatarCache shared] cachedImageForKey:roomId];
+    NSString* key = !room.avatar_url.empty()
+        ? @(room.avatar_url.c_str())
+        : roomId;
+    NSImage* cached = [[AvatarCache shared] cachedImageForKey:key];
     if (cached) {
         cell.avatarView.image = cached;
     } else {
-        cell.avatarView.image = [AvatarCache initialsImageForName:name
+        cell.avatarView.image = [AvatarCache initialsImageForName:rawName
                                                              size:kAvatarSize];
+        if (_client && !room.avatar_url.empty()) {
+            tesseract::Client* client = _client;
+            std::string room_id = room.id;
+            __weak NSTableView* weakTable = _table;
+            __weak typeof(self) weakSelf  = self;
+            [[AvatarCache shared] avatarForKey:key
+                                         fetch:[client, room_id] {
+                                             return client->fetch_avatar_bytes(room_id);
+                                         }
+                                    completion:^(NSImage*) {
+                NSTableView* t = weakTable;
+                typeof(self) s = weakSelf;
+                if (!t || !s) return;
+                NSInteger idx = NSNotFound;
+                for (NSInteger i = 0; i < (NSInteger)s->_rooms.size(); ++i) {
+                    if (s->_rooms[i].id == room_id) { idx = i; break; }
+                }
+                if (idx != NSNotFound)
+                    [t reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:idx]
+                                 columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+            }];
+        }
     }
 
     return cell;
@@ -186,8 +222,17 @@ static NSString* const kCellId    = @"RoomCell";
 - (void)tableViewSelectionDidChange:(NSNotification*)n {
     NSInteger row = _table.selectedRow;
     if (row < 0 || row >= (NSInteger)_rooms.size()) return;
-    _selectedRoomId = @(_rooms[row].id.c_str());
-    [_delegate roomListDidSelectRoomId:_selectedRoomId];
+    const tesseract::RoomInfo& room = _rooms[row];
+    NSString* roomId = @(room.id.c_str());
+    if (room.is_space) {
+        if ([_delegate respondsToSelector:@selector(roomListDidSelectSpaceId:)])
+            [_delegate roomListDidSelectSpaceId:roomId];
+        // Clear selection so re-entering the same space is detected.
+        [_table deselectAll:nil];
+        return;
+    }
+    _selectedRoomId = roomId;
+    [_delegate roomListDidSelectRoomId:roomId];
 }
 
 @end

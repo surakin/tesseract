@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+namespace tesseract { class Client; }
+
 @protocol MessageListDelegate <NSObject>
 - (void)messageListDidScrollToTop;
 @end
@@ -11,8 +13,9 @@
 @interface MessageListController : NSViewController
     <NSTableViewDelegate, NSTableViewDataSource>
 
-@property (nonatomic, weak) id<MessageListDelegate> delegate;
-@property (nonatomic, copy) NSString* myUserId;
+@property (nonatomic, weak)   id<MessageListDelegate> delegate;
+@property (nonatomic, copy)   NSString*               myUserId;
+@property (nonatomic, assign) tesseract::Client*      client;
 
 - (void)clearMessages;
 - (void)pushEvent:(std::unique_ptr<tesseract::Event>)ev;
