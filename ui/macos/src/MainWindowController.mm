@@ -146,14 +146,12 @@ static std::string nsstr(NSString* s) {
     _roomList = [[RoomListController alloc] init];
     _roomList.delegate = self;
     _roomList.client   = &_impl->client;
-    [self addChildViewController:_roomList];
     _roomList.view.translatesAutoresizingMaskIntoConstraints = NO;
     [_sidebarContainer addSubview:_roomList.view];
 
     _msgList = [[MessageListController alloc] init];
     _msgList.delegate = self;
     _msgList.client   = &_impl->client;
-    [self addChildViewController:_msgList];
 
     // Message container: header + message list stacked vertically
     _msgContainer = [[NSView alloc] init];
@@ -283,12 +281,12 @@ static std::string nsstr(NSString* s) {
         [_roomHeaderAvatar.heightAnchor constraintEqualToConstant:40],
 
         // Header name: right of avatar, top portion
-        [_roomHeaderName leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderName.leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
         [_roomHeaderName.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
         [_roomHeaderName.topAnchor constraintEqualToAnchor:_roomHeaderView.topAnchor constant:14],
 
         // Header topic: right of avatar, below name
-        [_roomHeaderTopic leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderTopic.leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
         [_roomHeaderTopic.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
         [_roomHeaderTopic.topAnchor constraintEqualToAnchor:_roomHeaderName.bottomAnchor constant:2],
 
@@ -591,11 +589,17 @@ static std::string nsstr(NSString* s) {
     } else {
         _roomHeaderAvatar.image = [AvatarCache initialsImageForName:@(info.name.c_str()) size:40];
         __weak typeof(self) weakSelf = self;
+        std::string room_id = info.id;
+        std::string avatar_url = info.avatar_url;
+        tesseract::Client* client = &_impl->client;
         [[AvatarCache shared] avatarForKey:key
-                                    fetch:[&, info] { return _impl->client.fetch_avatar_bytes(info.id); }
+                                    fetch:[client, room_id] { return client->fetch_avatar_bytes(room_id); }
                                completion:^(NSImage* img) {
-            if ([key isEqualToString:@(info.avatar_url.empty() ? info.id.c_str() : info.avatar_url.c_str())])
-                weakSelf.roomHeaderAvatar.image = img;
+            __strong typeof(self) s = weakSelf;
+            if (!s) return;
+            NSString* expected = @(avatar_url.empty() ? room_id.c_str() : avatar_url.c_str());
+            if ([key isEqualToString:expected])
+                s->_roomHeaderAvatar.image = img;
         }];
     }
 

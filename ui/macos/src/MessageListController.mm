@@ -187,9 +187,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         _bubble.layer.backgroundColor = [NSColor systemBlueColor].CGColor;
         _bodyLabel.textColor          = [NSColor whiteColor];
     } else {
-        _bubble.layer.backgroundColor =
-            [NSColor colorNamed:@"BubbleGray"]
+        NSColor* bg = [NSColor colorNamed:@"BubbleGray"]
             ?: [NSColor colorWithRed:0.91 green:0.91 blue:0.91 alpha:1];
+        _bubble.layer.backgroundColor = bg.CGColor;
         _bodyLabel.textColor = [NSColor labelColor];
     }
 
@@ -380,7 +380,7 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
-@interface MessageListController () <NSScrollViewDelegate>
+@interface MessageListController () <NSTableViewDataSource, NSTableViewDelegate>
 @end
 
 @implementation MessageListController {

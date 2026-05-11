@@ -44,6 +44,17 @@ target_link_libraries(tesseract_sdk_ffi-static INTERFACE
     OpenSSL::SSL OpenSSL::Crypto
 )
 
+# Apple system frameworks required by Rust crates (security-framework,
+# core-foundation, native-tls). Attached to the Rust archive's interface so
+# both the UI executable and the test executable pick them up.
+if(APPLE)
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
+        "-framework Security"
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+endif()
+
 # ---------------------------------------------------------------------------
 # MSVC environment forwarding via .cargo/config.toml
 # ---------------------------------------------------------------------------

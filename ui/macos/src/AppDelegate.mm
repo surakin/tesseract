@@ -8,7 +8,7 @@
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     _mainWC = [[MainWindowController alloc] init];
     [_mainWC.window makeKeyAndOrderFront:nil];
-    [NSApp activate];
+    [NSApp activateIgnoringOtherApps:YES];
 
     // Run after the window is on-screen so the sheet attaches properly.
     dispatch_async(dispatch_get_main_queue(), ^{

@@ -45,7 +45,7 @@ static NSColor* colorForName(NSString* name) {
 - (NSImage*)avatarForKey:(NSString*)key
                    fetch:(std::function<std::vector<uint8_t>()>)fetch
               completion:(void (^)(NSImage*))completion {
-    NSImage* cached = nil;
+    __block NSImage* cached = nil;
     dispatch_sync(_q, ^{ cached = _cache[key]; });
     if (cached) return cached;
 
