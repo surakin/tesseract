@@ -1,6 +1,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QHash>
+#include <QLabel>
 #include <QListView>
 #include <QPixmap>
 #include <QScrollArea>
@@ -64,6 +65,7 @@ private:
     void     populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void     appendMessageBubble(const tesseract::Event& ev);
     void     clearMessages();
+    void     updateRoomHeader(const tesseract::RoomInfo& info);
     QWidget* createBubbleRow(const tesseract::Event& ev);
     QPixmap  makeCirclePixmap(const QPixmap& src, int size);
     QPixmap  makeInitialsPixmap(const QString& name, int size);
@@ -74,13 +76,17 @@ private:
     static constexpr int kMaxImageHeight  = 200;
     static constexpr int kBubbleMaxWidth  = 520;
 
-    QListView*           roomList_       = nullptr;
-    QStandardItemModel*  roomModel_      = nullptr;
-    QScrollArea*         msgScrollArea_  = nullptr;
-    QWidget*             msgContainer_   = nullptr;
-    QVBoxLayout*         msgLayout_      = nullptr;
-    QTextEdit*           composeEdit_    = nullptr;
-    QPushButton*         sendButton_     = nullptr;
+    QListView*           roomList_        = nullptr;
+    QStandardItemModel*  roomModel_       = nullptr;
+    QWidget*             roomHeader_      = nullptr;
+    QLabel*              roomHeaderAvatar_= nullptr;
+    QLabel*              roomHeaderName_  = nullptr;
+    QLabel*              roomHeaderTopic_ = nullptr;
+    QScrollArea*         msgScrollArea_   = nullptr;
+    QWidget*             msgContainer_    = nullptr;
+    QVBoxLayout*         msgLayout_       = nullptr;
+    QTextEdit*           composeEdit_     = nullptr;
+    QPushButton*         sendButton_      = nullptr;
 
     tesseract::Client             client_;
     std::unique_ptr<EventBridge>  bridge_;

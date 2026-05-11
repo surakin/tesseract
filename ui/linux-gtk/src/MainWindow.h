@@ -54,19 +54,24 @@ private:
     void populate_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void append_event(const tesseract::Event& ev);
     void clear_messages();
+    void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
 
     static constexpr int kRoomAvatarSize = 36;
     static constexpr int kMsgAvatarSize  = 32;
 
     GtkApplication* app_              = nullptr;
-    GtkWidget*      window_           = nullptr;
-    GtkWidget*      room_list_        = nullptr;
-    GtkWidget*      msg_scroll_       = nullptr;
-    GtkWidget*      msg_box_          = nullptr; // GtkBox, replaces GtkTextView
-    GtkWidget*      input_text_view_  = nullptr; // GtkTextView, replaces GtkEntry
-    GtkWidget*      send_btn_         = nullptr;
-    GtkWidget*      status_bar_       = nullptr;
+    GtkWidget*      window_             = nullptr;
+    GtkWidget*      room_list_          = nullptr;
+    GtkWidget*      room_header_        = nullptr;
+    GtkWidget*      room_header_avatar_ = nullptr;
+    GtkWidget*      room_header_name_   = nullptr;
+    GtkWidget*      room_header_topic_  = nullptr;
+    GtkWidget*      msg_scroll_         = nullptr;
+    GtkWidget*      msg_box_            = nullptr;
+    GtkWidget*      input_text_view_    = nullptr;
+    GtkWidget*      send_btn_           = nullptr;
+    GtkWidget*      status_bar_         = nullptr;
 
     tesseract::Client              client_;
     std::unique_ptr<EventHandler>  event_handler_;

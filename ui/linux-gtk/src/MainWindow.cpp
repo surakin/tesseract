@@ -173,6 +173,18 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             font-size: 11px;
             font-weight: bold;
         }
+        .room-header {
+            background-color: white;
+            border-bottom: 1px solid #D0D3D8;
+        }
+        .room-header-name {
+            font-weight: bold;
+            font-size: 15px;
+        }
+        .room-header-topic {
+            font-size: 12px;
+            color: #65676B;
+        }
     )css");
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),
@@ -199,6 +211,38 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_hexpand(vbox, TRUE);
     gtk_box_append(GTK_BOX(hbox), vbox);
+
+    // Room header bar
+    room_header_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_add_css_class(room_header_, "room-header");
+    gtk_widget_set_margin_start(room_header_, 16);
+    gtk_widget_set_margin_end(room_header_, 16);
+    gtk_widget_set_margin_top(room_header_, 10);
+    gtk_widget_set_margin_bottom(room_header_, 10);
+    gtk_widget_set_visible(room_header_, FALSE);
+
+    room_header_avatar_ = gtk_image_new();
+    gtk_image_set_pixel_size(GTK_IMAGE(room_header_avatar_), 40);
+    gtk_widget_set_valign(room_header_avatar_, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(room_header_), room_header_avatar_);
+
+    GtkWidget* name_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_hexpand(name_box, TRUE);
+
+    room_header_name_ = gtk_label_new("");
+    gtk_widget_add_css_class(room_header_name_, "room-header-name");
+    gtk_label_set_xalign(GTK_LABEL(room_header_name_), 0.0f);
+    gtk_box_append(GTK_BOX(name_box), room_header_name_);
+
+    room_header_topic_ = gtk_label_new("");
+    gtk_widget_add_css_class(room_header_topic_, "room-header-topic");
+    gtk_label_set_xalign(GTK_LABEL(room_header_topic_), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(room_header_topic_), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_visible(room_header_topic_, FALSE);
+    gtk_box_append(GTK_BOX(name_box), room_header_topic_);
+
+    gtk_box_append(GTK_BOX(room_header_), name_box);
+    gtk_box_append(GTK_BOX(vbox), room_header_);
 
     // Message scroll area (replaces GtkTextView)
     msg_scroll_ = gtk_scrolled_window_new();
@@ -350,6 +394,7 @@ void MainWindow::on_room_row_activated(
         self->client_.unsubscribe_room(self->current_room_id_);
 
     self->current_room_id_ = new_id;
+    self->update_room_header(self->rooms_[index]);
     auto res = self->client_.subscribe_room(self->current_room_id_);
     if (res)
         self->client_.paginate_back(self->current_room_id_, 50);
@@ -369,6 +414,9 @@ void MainWindow::push_event(std::unique_ptr<tesseract::Event> ev) {
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     populate_rooms(rooms_);
+    if (!current_room_id_.empty())
+        for (const auto& r : rooms_)
+            if (r.id == current_room_id_) { update_room_header(r); break; }
 }
 
 void MainWindow::handle_reconnect() {
@@ -402,6 +450,40 @@ void MainWindow::push_error(std::string description) {
 void MainWindow::push_timeline_reset(std::string room_id) {
     if (room_id != current_room_id_) return;
     clear_messages();
+}
+
+void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
+    gtk_label_set_text(GTK_LABEL(room_header_name_), info.name.c_str());
+
+    if (!info.topic.empty()) {
+        gtk_label_set_text(GTK_LABEL(room_header_topic_), info.topic.c_str());
+        gtk_widget_set_visible(room_header_topic_, TRUE);
+    } else {
+        gtk_widget_set_visible(room_header_topic_, FALSE);
+    }
+
+    if (!info.avatar_url.empty()) {
+        if (avatar_cache_.find(info.avatar_url) == avatar_cache_.end())
+            avatar_cache_[info.avatar_url] = client_.fetch_avatar_bytes(info.id);
+        auto it = avatar_cache_.find(info.avatar_url);
+        if (it != avatar_cache_.end() && !it->second.empty()) {
+            GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
+            GError*     err = nullptr;
+            GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+            g_bytes_unref(gb);
+            if (tex) {
+                gtk_image_set_from_paintable(GTK_IMAGE(room_header_avatar_),
+                                             GDK_PAINTABLE(tex));
+                g_object_unref(tex);
+            } else if (err) {
+                g_error_free(err);
+            }
+        }
+    } else {
+        gtk_image_clear(GTK_IMAGE(room_header_avatar_));
+    }
+
+    gtk_widget_set_visible(room_header_, TRUE);
 }
 
 void MainWindow::clear_messages() {

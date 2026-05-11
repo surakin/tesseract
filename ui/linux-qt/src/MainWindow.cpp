@@ -141,6 +141,39 @@ MainWindow::MainWindow(QWidget* parent)
     vLayout->setSpacing(0);
     hLayout->addWidget(chatPanel, 1);
 
+    // Room header bar
+    roomHeader_ = new QWidget(chatPanel);
+    roomHeader_->setObjectName("roomHeader");
+    roomHeader_->setStyleSheet(
+        "#roomHeader { background-color:#FFFFFF; border-bottom:1px solid #D0D3D8; }");
+    roomHeader_->setFixedHeight(60);
+    roomHeader_->setVisible(false);
+
+    auto* headerLayout = new QHBoxLayout(roomHeader_);
+    headerLayout->setContentsMargins(16, 0, 16, 0);
+    headerLayout->setSpacing(12);
+
+    roomHeaderAvatar_ = new QLabel(roomHeader_);
+    roomHeaderAvatar_->setFixedSize(40, 40);
+    headerLayout->addWidget(roomHeaderAvatar_);
+
+    auto* nameBlock = new QWidget(roomHeader_);
+    auto* nameVBox  = new QVBoxLayout(nameBlock);
+    nameVBox->setContentsMargins(0, 0, 0, 0);
+    nameVBox->setSpacing(2);
+
+    roomHeaderName_ = new QLabel(nameBlock);
+    roomHeaderName_->setStyleSheet("font-size:15px; font-weight:bold; color:#111111;");
+    nameVBox->addWidget(roomHeaderName_);
+
+    roomHeaderTopic_ = new QLabel(nameBlock);
+    roomHeaderTopic_->setStyleSheet("font-size:12px; color:#65676B;");
+    roomHeaderTopic_->setVisible(false);
+    nameVBox->addWidget(roomHeaderTopic_);
+
+    headerLayout->addWidget(nameBlock, 1);
+    vLayout->addWidget(roomHeader_);
+
     // Message scroll area
     msgScrollArea_ = new QScrollArea(chatPanel);
     msgScrollArea_->setWidgetResizable(true);
@@ -290,6 +323,9 @@ void MainWindow::onRoomSelectionChanged(
 
     currentRoomId_ = newId;
 
+    for (const auto& r : rooms_)
+        if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
+
     auto res = client_.subscribe_room(currentRoomId_);
     if (!res) {
         statusBar()->showMessage(
@@ -308,6 +344,9 @@ void MainWindow::onEventReceived(tesseract::Event* ev) {
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     populateRooms(rooms_);
+    if (!currentRoomId_.empty())
+        for (const auto& r : rooms_)
+            if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
 }
 
 void MainWindow::onSyncError(
@@ -344,6 +383,45 @@ void MainWindow::onTimelineReset(QString roomId) {
 }
 
 // ---------------------------------------------------------------------------
+
+void MainWindow::updateRoomHeader(const tesseract::RoomInfo& info) {
+    roomHeaderName_->setText(QString::fromStdString(info.name));
+
+    if (!info.topic.empty()) {
+        roomHeaderTopic_->setText(QString::fromStdString(info.topic));
+        roomHeaderTopic_->setVisible(true);
+        roomHeader_->setFixedHeight(68);
+    } else {
+        roomHeaderTopic_->setVisible(false);
+        roomHeader_->setFixedHeight(60);
+    }
+
+    QPixmap pm;
+    if (!info.avatar_url.empty()) {
+        QString qurl = QString::fromStdString(info.avatar_url);
+        if (!avatarCache_.contains(qurl)) {
+            auto bytes = client_.fetch_avatar_bytes(info.id);
+            if (!bytes.empty()) {
+                QPixmap raw;
+                raw.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                 static_cast<uint>(bytes.size()));
+                if (!raw.isNull())
+                    avatarCache_[qurl] = raw.scaled(
+                        kRoomAvatarSize, kRoomAvatarSize,
+                        Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            }
+        }
+        if (avatarCache_.contains(qurl))
+            pm = avatarCache_[qurl];
+    }
+    if (pm.isNull())
+        pm = makeInitialsPixmap(QString::fromStdString(info.name), 40);
+    else
+        pm = makeCirclePixmap(pm, 40);
+
+    roomHeaderAvatar_->setPixmap(pm);
+    roomHeader_->setVisible(true);
+}
 
 void MainWindow::clearMessages() {
     msgEventWidgets_.clear();
