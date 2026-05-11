@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), Qt6 Widgets, or GTK4 (Linux).
+Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit/Objective-C++ (macOS), Qt6 Widgets, or GTK4 (Linux).
 
 ## Build Commands
 
@@ -15,17 +15,30 @@ sudo apt install qt6-base-dev ninja-build cmake libssl-dev sqlite3 libsqlite3-de
 # also requires a Rust toolchain: rustup
 ```
 
+**Prerequisites (macOS/AppKit):**
+
+```bash
+brew install openssl@3 ninja cmake
+xcode-select --install   # Xcode Command Line Tools
+# also requires a Rust toolchain: rustup
+```
+
 **Configure and build:**
 
 ```bash
 cmake --preset linux-qt6-debug          # or windows-debug, linux-gtk-debug, linux-qt6-release
 cmake --build build/linux-qt6-debug
 ./build/linux-qt6-debug/ui/linux-qt/tesseract
+
+# macOS:
+cmake --preset macos-native-debug
+cmake --build build/macos-native-debug
+open build/macos-native-debug/ui/macos/Tesseract.app
 ```
 
-**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`.
+**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`, `macos-native-debug`, `macos-native-release`.
 
-**Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32` (otherwise auto-detected from platform).
+**Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
 
 Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` — no global install needed. OpenSSL and SQLite are found via `find_package()`.
 
@@ -36,6 +49,7 @@ sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
 client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
   windows/   ← Win32 executable
+  macos/     ← AppKit / Objective-C++ executable (.app bundle)
   linux-qt/  ← Qt6 Widgets executable
   linux-gtk/ ← GTK4 executable
 ```

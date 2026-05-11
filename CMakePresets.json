@@ -53,13 +53,32 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "macos-native-debug",
+      "displayName": "macOS – Native AppKit (Debug)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "TESSERACT_UI": "macos"
+      }
+    },
+    {
+      "name": "macos-native-release",
+      "displayName": "macOS – Native AppKit (Release)",
+      "inherits": "macos-native-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "windows-debug",     "configurePreset": "windows-debug"    },
-    { "name": "windows-release",   "configurePreset": "windows-release"  },
-    { "name": "linux-gtk-debug",   "configurePreset": "linux-gtk-debug"  },
-    { "name": "linux-qt6-debug",   "configurePreset": "linux-qt6-debug"  },
-    { "name": "linux-qt6-release", "configurePreset": "linux-qt6-release"}
+    { "name": "windows-debug",       "configurePreset": "windows-debug"      },
+    { "name": "windows-release",     "configurePreset": "windows-release"    },
+    { "name": "linux-gtk-debug",     "configurePreset": "linux-gtk-debug"    },
+    { "name": "linux-qt6-debug",     "configurePreset": "linux-qt6-debug"    },
+    { "name": "linux-qt6-release",   "configurePreset": "linux-qt6-release"  },
+    { "name": "macos-native-debug",  "configurePreset": "macos-native-debug" },
+    { "name": "macos-native-release","configurePreset": "macos-native-release"}
   ]
 }

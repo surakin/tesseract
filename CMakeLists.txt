@@ -23,6 +23,19 @@ FetchContent_MakeAvailable(Corrosion)
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 
+# macOS: Homebrew ships OpenSSL as a keg-only formula (not on the default
+# search path). Auto-detect the prefix for Apple Silicon and Intel.
+if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+    foreach(_ossl_dir
+            "/opt/homebrew/opt/openssl@3"
+            "/usr/local/opt/openssl@3")
+        if(IS_DIRECTORY "${_ossl_dir}")
+            set(OPENSSL_ROOT_DIR "${_ossl_dir}" CACHE PATH "Homebrew OpenSSL root")
+            break()
+        endif()
+    endforeach()
+endif()
+
 # Native C deps pulled in by the Rust crate (openssl-sys).
 # SQLite is no longer needed here: matrix-sdk is built with the bundled-sqlite
 # feature, so rusqlite compiles its own copy of SQLite internally.
@@ -171,8 +184,10 @@ add_subdirectory(tests)
 if(TESSERACT_UI STREQUAL "auto")
     if(WIN32)
         set(TESSERACT_UI "win32")
+    elseif(APPLE)
+        set(TESSERACT_UI "macos")
     else()
-        # Prefer Qt6 on Linux/macOS; fall back to gtk.
+        # Prefer Qt6 on Linux; fall back to gtk.
         find_package(Qt6 COMPONENTS Core Widgets QUIET)
         if(Qt6_FOUND)
             set(TESSERACT_UI "qt6")
@@ -188,6 +203,12 @@ if(TESSERACT_UI STREQUAL "win32")
         message(FATAL_ERROR "win32 UI only available on Windows")
     endif()
     add_subdirectory(ui/windows)
+
+elseif(TESSERACT_UI STREQUAL "macos")
+    if(NOT APPLE)
+        message(FATAL_ERROR "macos UI only available on macOS")
+    endif()
+    add_subdirectory(ui/macos)
 
 elseif(TESSERACT_UI STREQUAL "gtk")
     add_subdirectory(ui/linux-gtk)
