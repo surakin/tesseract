@@ -106,7 +106,6 @@ struct PersistedSession {
 }
 
 pub struct ClientFfi {
-    rt:         Runtime,
     client:     Option<Client>,
     stop_tx:    Option<watch::Sender<bool>>,
     oauth_flow: Option<oauth::PendingFlow>,
@@ -116,11 +115,19 @@ pub struct ClientFfi {
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
     timelines:    HashMap<OwnedRoomId, TimelineHandle>,
+    // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
+    // uses tokio primitives and requires the runtime to still be alive.
+    rt:         Runtime,
 }
 
 impl Drop for ClientFfi {
     fn drop(&mut self) {
         self.stop_sync();
+        #[cfg(not(test))]
+        for (_, th) in self.timelines.drain() {
+            for h in th.abort_tasks { h.abort(); }
+        }
+        // Field drops proceed: client → … → rt (runtime drops last)
     }
 }
 
@@ -134,7 +141,6 @@ impl ClientFfi {
             .try_init();
 
         Self {
-            rt:         Runtime::new().expect("tokio runtime"),
             client:     None,
             stop_tx:    None,
             oauth_flow: None,
@@ -144,6 +150,7 @@ impl ClientFfi {
             sync_service: None,
             #[cfg(not(test))]
             timelines:    HashMap::new(),
+            rt:         Runtime::new().expect("tokio runtime"),
         }
     }
 
@@ -247,6 +254,20 @@ impl ClientFfi {
 
         let handler = Arc::new(Mutex::new(SendHandler(handler)));
         self.handler = Some(Arc::clone(&handler));
+
+        // Subscribe the event cache before SyncService starts so every sync
+        // response is persisted to SQLite from the very first update.
+        // subscribe() is synchronous but internally calls tokio::task::spawn,
+        // so it must be called within the runtime context.
+        let _rt_guard = self.rt.enter();
+        if let Err(e) = client.event_cache().subscribe() {
+            tracing::error!("event cache subscribe failed: {e}");
+            if let Ok(guard) = handler.lock() {
+                guard.on_error("event_cache_init", &e.to_string(), false);
+            }
+            return;
+        }
+        drop(_rt_guard);
 
         // Session refresh watcher.
         {

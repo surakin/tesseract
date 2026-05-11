@@ -14,12 +14,14 @@ pub use bridge::ffi;
 pub mod ffi {
     #[derive(Debug, PartialEq, Default)]
     pub struct RoomInfo {
-        pub id:           String,
-        pub name:         String,
-        pub topic:        String,
-        pub unread_count: u64,
-        pub is_direct:    bool,
-        pub avatar_url:   String,
+        pub id:                String,
+        pub name:              String,
+        pub topic:             String,
+        pub unread_count:      u64,
+        pub is_direct:         bool,
+        pub avatar_url:        String,
+        pub last_message_body: String,
+        pub last_activity_ts:  u64,
     }
 
     #[derive(Debug, PartialEq, Default)]
