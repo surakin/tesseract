@@ -1,5 +1,5 @@
 #import "MainWindowController.h"
-#import "LoginWindowController.h"
+#import "LoginView.h"
 #import "RoomListController.h"
 #import "MessageListController.h"
 #import "ComposeBar.h"
@@ -31,7 +31,7 @@ static std::string nsstr(NSString* s) {
 // ── Controller ────────────────────────────────────────────────────────────────
 
 @interface MainWindowController ()
-    <RoomListDelegate, MessageListDelegate>
+    <RoomListDelegate, MessageListDelegate, LoginViewDelegate>
 @end
 
 @implementation MainWindowController {
@@ -46,7 +46,8 @@ static std::string nsstr(NSString* s) {
     RoomListController*    _roomList;
     MessageListController* _msgList;
     ComposeBar*            _compose;
-    LoginWindowController*    _loginWC;
+    LoginView*             _loginView;
+    NSArray<NSView*>*      _mainContentViews;  // toggled vs _loginView visibility
 
     // User identity strip (sidebar footer)
     UserStripView*       _userStrip;
@@ -103,6 +104,15 @@ static std::string nsstr(NSString* s) {
     _impl = std::make_unique<Impl>();
     [self _buildUI];
     return self;
+}
+
+- (void)dealloc {
+    // _loginView holds a non-owning pointer to _impl->client and calls
+    // cancel_oauth() + joins its worker on dealloc. Release it now so the
+    // client is still alive — _impl destructs later when ARC tears down
+    // C++ ivars after this method returns.
+    [_loginView removeFromSuperview];
+    _loginView = nil;
 }
 
 // ── UI construction ───────────────────────────────────────────────────────────
@@ -404,11 +414,28 @@ static std::string nsstr(NSString* s) {
         [dismissBtnLayout.centerYAnchor    constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
         [dismissBtnLayout.trailingAnchor   constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
     ]];
+
+    // ── Inline login view ─────────────────────────────────────────────────────
+    // Sibling of split/compose/statusSep/_statusLabel; toggled via -hidden.
+    _mainContentViews = @[split, _compose, statusSep, _statusLabel];
+
+    _loginView = [[LoginView alloc] initWithClient:&_impl->client];
+    _loginView.delegate = self;
+    _loginView.hidden   = YES;
+    [content addSubview:_loginView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [_loginView.topAnchor      constraintEqualToAnchor:content.topAnchor],
+        [_loginView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
+        [_loginView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [_loginView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
+    ]];
 }
 
 // ── Login flow ────────────────────────────────────────────────────────────────
 
 - (void)doLogin {
+    NSString* statusMsg = nil;
     if (auto saved = tesseract::SessionStore::load()) {
         auto res = _impl->client.restore_session(*saved);
         if (res) {
@@ -419,31 +446,42 @@ static std::string nsstr(NSString* s) {
             [self _populateUserStrip];
             [self _startSync];
             [self _setStatus:@"Connected"];
+            [self _showMainContent];
             [self _maybeShowRecoveryBanner];
             return;
         }
         tesseract::SessionStore::clear();
+        statusMsg = [@"Saved session expired: " stringByAppendingString:
+                     @(res.message.c_str())];
     }
 
-    _loginWC = [[LoginWindowController alloc]
-        initWithClient:&_impl->client];
-    [self.window beginSheet:_loginWC.window
-          completionHandler:^(NSModalResponse resp) {
-        if (resp == NSModalResponseOK) {
-            _myUserId = @(_impl->client.get_user_id().c_str());
-            _myDisplayName = _impl->client.get_display_name();
-            _myAvatarUrl   = _impl->client.get_avatar_url();
-            _msgList.myUserId = _myUserId;
-            [self _populateUserStrip];
-            tesseract::SessionStore::save(_impl->client.export_session());
-            [self _startSync];
-            [self _setStatus:@"Connected"];
-            [self _maybeShowRecoveryBanner];
-        } else {
-            [self _setStatus:@"Login cancelled"];
-        }
-        _loginWC = nil;
-    }];
+    [_loginView reset];
+    [_loginView setStatusMessage:(statusMsg ?: @"")];
+    [self _showLoginView];
+    [self _setStatus:@"Not logged in"];
+}
+
+- (void)_showLoginView {
+    for (NSView* v in _mainContentViews) v.hidden = YES;
+    _loginView.hidden = NO;
+}
+
+- (void)_showMainContent {
+    _loginView.hidden = YES;
+    for (NSView* v in _mainContentViews) v.hidden = NO;
+}
+
+- (void)loginViewDidSucceed:(LoginView*)view {
+    _myUserId = @(_impl->client.get_user_id().c_str());
+    _myDisplayName = _impl->client.get_display_name();
+    _myAvatarUrl   = _impl->client.get_avatar_url();
+    _msgList.myUserId = _myUserId;
+    [self _populateUserStrip];
+    tesseract::SessionStore::save(_impl->client.export_session());
+    [self _startSync];
+    [self _setStatus:@"Connected"];
+    [self _showMainContent];
+    [self _maybeShowRecoveryBanner];
 }
 
 - (void)_startSync {
@@ -763,7 +801,9 @@ static std::string nsstr(NSString* s) {
 
     [self _setStatus:(res.ok ? @"Signed out" : @"Sign out failed")];
 
-    [self doLogin];
+    [_loginView reset];
+    [_loginView setStatusMessage:@""];
+    [self _showLoginView];
 }
 
 @end

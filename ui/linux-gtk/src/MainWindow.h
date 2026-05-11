@@ -11,6 +11,8 @@
 
 namespace gtk4 {
 
+class LoginView;
+
 /// Marshals SDK callbacks onto the GTK main loop via g_idle_add.
 class EventHandler final : public tesseract::IEventHandler {
 public:
@@ -69,6 +71,7 @@ private:
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
     void do_logout();
+    void on_login_succeeded();
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
@@ -77,6 +80,9 @@ private:
 
     GtkApplication* app_              = nullptr;
     GtkWidget*      window_             = nullptr;
+    GtkWidget*      content_stack_      = nullptr;
+    GtkWidget*      main_content_       = nullptr;
+    std::unique_ptr<LoginView> login_view_;
     GtkWidget*      room_nav_bar_       = nullptr;
     GtkWidget*      back_button_        = nullptr;
     GtkWidget*      space_name_lbl_     = nullptr;

@@ -7,8 +7,8 @@ qt_add_executable(tesseract_qt
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h          # MOC input
-    src/LoginDialog.cpp
-    src/LoginDialog.h         # MOC input
+    src/LoginView.cpp
+    src/LoginView.h           # MOC input
     src/RoomListDelegate.cpp
     src/RoomListDelegate.h    # MOC input
 )

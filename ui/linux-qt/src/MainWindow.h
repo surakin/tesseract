@@ -5,6 +5,7 @@
 #include <QListView>
 #include <QPixmap>
 #include <QScrollArea>
+#include <QStackedWidget>
 #include <QTextEdit>
 #include <QPushButton>
 #include <QStatusBar>
@@ -18,6 +19,8 @@
 #include <vector>
 
 namespace qt6 {
+
+class LoginView;
 
 /// Qt signal/slot bridge for SDK callbacks (runs on background thread → queued).
 class EventBridge final : public QObject, public tesseract::IEventHandler {
@@ -55,6 +58,7 @@ protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
+    void onLoginSucceeded();
     void onSendClicked();
     void onRoomSelectionChanged(const QModelIndex& current, const QModelIndex& previous);
     void onEventReceived(tesseract::Event* ev);
@@ -119,6 +123,10 @@ private:
     QVBoxLayout*         msgLayout_       = nullptr;
     QTextEdit*           composeEdit_     = nullptr;
     QPushButton*         sendButton_      = nullptr;
+
+    QStackedWidget*      contentStack_    = nullptr;
+    LoginView*           loginView_       = nullptr;
+    QWidget*             mainContent_     = nullptr;
 
     tesseract::Client             client_;
     std::unique_ptr<EventBridge>  bridge_;

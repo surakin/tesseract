@@ -1,10 +1,10 @@
 #pragma once
-#include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QString>
+#include <QWidget>
 
 #include <tesseract/client.h>
 
@@ -13,25 +13,25 @@
 
 namespace qt6 {
 
-/// Modal sign-in dialog driving the OAuth / Matrix Authentication Service
-/// flow. Two pages (form, waiting) are shown via a QStackedWidget. The
-/// OAuth work runs on a std::thread and reports back via Qt signals so the
-/// UI thread stays responsive while the user is in their browser.
-///
-/// Usage:
-///   LoginDialog dlg(client, this);
-///   if (dlg.exec() == QDialog::Accepted) {
-///       client.start_sync(...);
-///   }
-class LoginDialog final : public QDialog {
+/// Inline sign-in view shown inside the main window when the user is not
+/// logged in. Drives the same two-phase OAuth / MAS flow as the previous
+/// modal LoginDialog (form → worker → browser → worker → done), but is a
+/// plain QWidget the main window can swap into a QStackedWidget instead of
+/// running modally.
+class LoginView final : public QWidget {
     Q_OBJECT
 public:
-    explicit LoginDialog(tesseract::Client& client, QWidget* parent = nullptr);
-    ~LoginDialog() override;
+    explicit LoginView(tesseract::Client& client, QWidget* parent = nullptr);
+    ~LoginView() override;
+
+    /// Return the view to its initial "form" state. Call before showing the
+    /// view again after a successful sign-in or logout.
+    void reset();
 
 signals:
-    /// Worker → UI thread completion notifications. Auto-connections deliver
-    /// these as queued events on the GUI thread.
+    void loginSucceeded();
+
+    /// Worker → UI thread completion notifications.
     void beginCompleted(bool ok, QString errorOrAuthUrl);
     void awaitCompleted(bool ok, QString error);
 
@@ -43,7 +43,7 @@ private slots:
 
 private:
     void showForm();
-    void showWaiting(const QString& redirectUri);
+    void showWaiting();
     void joinWorker();
 
     tesseract::Client& client_;

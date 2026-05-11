@@ -1,5 +1,5 @@
 #include "MainWindow.h"
-#include "LoginDialog.h"
+#include "LoginView.h"
 #include "RoomListDelegate.h"
 
 #include <QThreadPool>
@@ -115,15 +115,23 @@ MainWindow::MainWindow(QWidget* parent)
     setWindowTitle("Tesseract");
     resize(1100, 768);
 
-    auto* central = new QWidget(this);
-    setCentralWidget(central);
+    contentStack_ = new QStackedWidget(this);
+    setCentralWidget(contentStack_);
 
-    auto* hLayout = new QHBoxLayout(central);
+    loginView_ = new LoginView(client_, contentStack_);
+    contentStack_->addWidget(loginView_);
+    connect(loginView_, &LoginView::loginSucceeded,
+            this,       &MainWindow::onLoginSucceeded);
+
+    mainContent_ = new QWidget(contentStack_);
+    contentStack_->addWidget(mainContent_);
+
+    auto* hLayout = new QHBoxLayout(mainContent_);
     hLayout->setContentsMargins(0, 0, 0, 0);
     hLayout->setSpacing(0);
 
     // ---- Sidebar (room list) ----
-    auto* sidePanel = new QWidget(this);
+    auto* sidePanel = new QWidget(mainContent_);
     sidePanel->setFixedWidth(260);
     sidePanel->setObjectName("sidePanel");
     sidePanel->setStyleSheet("#sidePanel { background-color: #F0F2F5; border-right: 1px solid #D0D3D8; }");
@@ -360,6 +368,12 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow() {
     client_.stop_sync();
+    // LoginView is a child widget, normally destroyed during ~QMainWindow
+    // — but that runs *after* client_ has been destroyed, and ~LoginView
+    // calls client_.cancel_oauth(). Tear it down here while client_ is
+    // still alive.
+    delete loginView_;
+    loginView_ = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +407,7 @@ void MainWindow::doLogin() {
             populateUserStrip();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage("Connected");
+            contentStack_->setCurrentWidget(mainContent_);
             maybeShowRecoveryBanner();
             return;
         }
@@ -402,12 +417,12 @@ void MainWindow::doLogin() {
             6000);
     }
 
-    LoginDialog dlg(client_, this);
-    if (dlg.exec() != QDialog::Accepted) {
-        statusBar()->showMessage("Not logged in");
-        return;
-    }
+    loginView_->reset();
+    contentStack_->setCurrentWidget(loginView_);
+    statusBar()->showMessage("Not logged in");
+}
 
+void MainWindow::onLoginSucceeded() {
     myUserId_      = client_.get_user_id();
     myDisplayName_ = client_.get_display_name();
     myAvatarUrl_   = client_.get_avatar_url();
@@ -415,6 +430,7 @@ void MainWindow::doLogin() {
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
+    contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
 }
 
@@ -981,7 +997,8 @@ void MainWindow::doLogout() {
         : QString::fromStdString("Sign out failed: " + res.message),
         res ? 3000 : 6000);
 
-    doLogin();
+    loginView_->reset();
+    contentStack_->setCurrentWidget(loginView_);
 }
 
 } // namespace qt6

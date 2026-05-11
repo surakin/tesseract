@@ -6,7 +6,7 @@ pkg_check_modules(GTK4 REQUIRED gtk4)
 add_executable(tesseract_gtk
     src/main.cpp
     src/MainWindow.cpp
-    src/LoginDialog.cpp
+    src/LoginView.cpp
 )
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)

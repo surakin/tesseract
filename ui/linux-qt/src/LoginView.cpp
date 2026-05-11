@@ -1,24 +1,42 @@
-#include "LoginDialog.h"
+#include "LoginView.h"
 
 #include <QDesktopServices>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QUrl>
 #include <QVBoxLayout>
 
 namespace qt6 {
 
-LoginDialog::LoginDialog(tesseract::Client& client, QWidget* parent)
-    : QDialog(parent)
+LoginView::LoginView(tesseract::Client& client, QWidget* parent)
+    : QWidget(parent)
     , client_(client)
 {
-    setWindowTitle(tr("Sign in to Tesseract"));
-    setModal(true);
-    setMinimumWidth(420);
+    setObjectName("loginView");
+    setStyleSheet("#loginView { background-color: #F0F2F5; }");
+
+    // ---- Centered card hosting the form / waiting pages ----
+    auto* card = new QFrame(this);
+    card->setObjectName("loginCard");
+    card->setStyleSheet(
+        "#loginCard { background-color:#FFFFFF; border:1px solid #D0D3D8; "
+        "border-radius:8px; }");
+    card->setMinimumWidth(420);
+    card->setMaximumWidth(480);
+
+    auto* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(24, 24, 24, 24);
+    cardLayout->setSpacing(12);
+
+    auto* title = new QLabel(tr("Sign in to Tesseract"), card);
+    title->setStyleSheet("font-size:18px; font-weight:bold; color:#111111;");
+    cardLayout->addWidget(title);
 
     // ---- Form page ----
-    auto* formPage   = new QWidget(this);
+    auto* formPage   = new QWidget(card);
     auto* formLayout = new QFormLayout(formPage);
+    formLayout->setContentsMargins(0, 0, 0, 0);
 
     hsEdit_ = new QLineEdit("matrix.org", formPage);
     hsEdit_->setPlaceholderText(tr("e.g. matrix.org"));
@@ -32,17 +50,20 @@ LoginDialog::LoginDialog(tesseract::Client& client, QWidget* parent)
 
     auto* formButtons = new QHBoxLayout;
     formButtons->addStretch(1);
-    auto* closeBtn = new QPushButton(tr("Close"), formPage);
-    signInBtn_     = new QPushButton(tr("Sign in"), formPage);
+    signInBtn_ = new QPushButton(tr("Sign in"), formPage);
     signInBtn_->setDefault(true);
-    formButtons->addWidget(closeBtn);
+    signInBtn_->setStyleSheet(
+        "QPushButton { background-color:#0084FF; color:white; border:none; "
+        "border-radius:4px; padding:6px 16px; font-weight:bold; }"
+        "QPushButton:hover { background-color:#0077E5; }"
+        "QPushButton:disabled { background-color:#A0C4E8; }");
     formButtons->addWidget(signInBtn_);
     formLayout->addRow(formButtons);
 
     // ---- Waiting page ----
-    auto* waitPage   = new QWidget(this);
+    auto* waitPage   = new QWidget(card);
     auto* waitLayout = new QVBoxLayout(waitPage);
-    waitLayout->setContentsMargins(16, 16, 16, 16);
+    waitLayout->setContentsMargins(0, 0, 0, 0);
 
     waitingLbl_ = new QLabel(tr("Waiting for sign-in in your browser…"), waitPage);
     waitingLbl_->setWordWrap(true);
@@ -55,29 +76,35 @@ LoginDialog::LoginDialog(tesseract::Client& client, QWidget* parent)
     waitLayout->addLayout(waitButtons);
 
     // ---- Stack ----
-    stack_ = new QStackedWidget(this);
+    stack_ = new QStackedWidget(card);
     stack_->addWidget(formPage);   // index 0
     stack_->addWidget(waitPage);   // index 1
+    cardLayout->addWidget(stack_);
 
+    // ---- Outer layout: center the card horizontally and vertically ----
     auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(12, 12, 12, 12);
-    outer->addWidget(stack_);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->addStretch(1);
+    auto* hCenter = new QHBoxLayout;
+    hCenter->addStretch(1);
+    hCenter->addWidget(card);
+    hCenter->addStretch(1);
+    outer->addLayout(hCenter);
+    outer->addStretch(2);
 
     // ---- Connections ----
-    connect(signInBtn_, &QPushButton::clicked, this, &LoginDialog::onSignIn);
-    connect(closeBtn,   &QPushButton::clicked, this, &QDialog::reject);
-    connect(cancelBtn_, &QPushButton::clicked, this, &LoginDialog::onCancel);
+    connect(signInBtn_, &QPushButton::clicked, this, &LoginView::onSignIn);
+    connect(cancelBtn_, &QPushButton::clicked, this, &LoginView::onCancel);
 
-    // Cross-thread signals (worker → GUI thread).
-    connect(this, &LoginDialog::beginCompleted,
-            this, &LoginDialog::onBeginCompleted, Qt::QueuedConnection);
-    connect(this, &LoginDialog::awaitCompleted,
-            this, &LoginDialog::onAwaitCompleted, Qt::QueuedConnection);
+    connect(this, &LoginView::beginCompleted,
+            this, &LoginView::onBeginCompleted, Qt::QueuedConnection);
+    connect(this, &LoginView::awaitCompleted,
+            this, &LoginView::onAwaitCompleted, Qt::QueuedConnection);
 
     showForm();
 }
 
-LoginDialog::~LoginDialog() {
+LoginView::~LoginView() {
     cancelled_.store(true);
     client_.cancel_oauth();
     joinWorker();
@@ -85,20 +112,31 @@ LoginDialog::~LoginDialog() {
 
 // ---------------------------------------------------------------------------
 
-void LoginDialog::showForm() {
+void LoginView::reset() {
+    cancelled_.store(true);
+    client_.cancel_oauth();
+    joinWorker();
+    cancelled_.store(false);
+    formError_->setVisible(false);
+    showForm();
+}
+
+void LoginView::showForm() {
     stack_->setCurrentIndex(0);
     signInBtn_->setEnabled(true);
     hsEdit_->setEnabled(true);
+    cancelBtn_->setEnabled(true);
+    waitingLbl_->setText(tr("Waiting for sign-in in your browser…"));
     hsEdit_->setFocus();
 }
 
-void LoginDialog::showWaiting(const QString& /*redirectUri*/) {
+void LoginView::showWaiting() {
     stack_->setCurrentIndex(1);
 }
 
 // ---------------------------------------------------------------------------
 
-void LoginDialog::onSignIn() {
+void LoginView::onSignIn() {
     QString hs = hsEdit_->text().trimmed();
     if (hs.isEmpty()) {
         formError_->setText(tr("Please enter a homeserver."));
@@ -119,13 +157,11 @@ void LoginDialog::onSignIn() {
             emit beginCompleted(false, QString::fromStdString(flow.message));
             return;
         }
-        // Hand the URL to the GUI thread; it'll open the browser and then
-        // start phase 2.
         emit beginCompleted(true, QString::fromStdString(flow.auth_url));
     });
 }
 
-void LoginDialog::onBeginCompleted(bool ok, QString errorOrAuthUrl) {
+void LoginView::onBeginCompleted(bool ok, QString errorOrAuthUrl) {
     joinWorker();
 
     if (!ok) {
@@ -135,14 +171,11 @@ void LoginDialog::onBeginCompleted(bool ok, QString errorOrAuthUrl) {
         return;
     }
 
-    // Open the URL via Qt's helper (falls back through xdg-open / open / start
-    // depending on platform — same effect as Client::open_in_browser, but
-    // uses the Qt event loop's hooks).
     if (!QDesktopServices::openUrl(QUrl(errorOrAuthUrl))) {
         tesseract::Client::open_in_browser(errorOrAuthUrl.toStdString());
     }
 
-    showWaiting(errorOrAuthUrl);
+    showWaiting();
 
     // Phase 2 on a worker thread: block on the loopback listener.
     cancelled_.store(false);
@@ -153,11 +186,11 @@ void LoginDialog::onBeginCompleted(bool ok, QString errorOrAuthUrl) {
     });
 }
 
-void LoginDialog::onAwaitCompleted(bool ok, QString error) {
+void LoginView::onAwaitCompleted(bool ok, QString error) {
     joinWorker();
 
     if (ok) {
-        accept();
+        emit loginSucceeded();
     } else {
         formError_->setText(tr("Sign-in failed: %1").arg(error));
         formError_->setVisible(true);
@@ -165,18 +198,16 @@ void LoginDialog::onAwaitCompleted(bool ok, QString error) {
     }
 }
 
-void LoginDialog::onCancel() {
+void LoginView::onCancel() {
     cancelled_.store(true);
     client_.cancel_oauth();
     waitingLbl_->setText(tr("Cancelling…"));
     cancelBtn_->setEnabled(false);
-    // The worker thread will return shortly; reject() once it's joined to
-    // avoid racing on Client state.
     joinWorker();
-    reject();
+    showForm();
 }
 
-void LoginDialog::joinWorker() {
+void LoginView::joinWorker() {
     if (worker_.joinable()) worker_.join();
 }
 

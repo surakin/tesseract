@@ -12,8 +12,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/AvatarCache.mm
     src/MainWindowController.h
     src/MainWindowController.mm
-    src/LoginWindowController.h
-    src/LoginWindowController.mm
+    src/LoginView.h
+    src/LoginView.mm
     src/RoomListController.h
     src/RoomListController.mm
     src/MessageListController.h

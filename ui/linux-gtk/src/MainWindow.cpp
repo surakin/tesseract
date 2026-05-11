@@ -1,5 +1,5 @@
 #include "MainWindow.h"
-#include "LoginDialog.h"
+#include "LoginView.h"
 
 #include <thread>
 
@@ -238,8 +238,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_object_unref(css);
 
     // ---- Layout ----
+    // Top-level stack swaps between the inline login view and the main UI.
+    content_stack_ = gtk_stack_new();
+    gtk_stack_set_transition_type(
+        GTK_STACK(content_stack_), GTK_STACK_TRANSITION_TYPE_NONE);
+    gtk_window_set_child(GTK_WINDOW(window_), content_stack_);
+
+    login_view_ = std::make_unique<LoginView>(client_);
+    login_view_->set_on_success([this]() { on_login_succeeded(); });
+    gtk_stack_add_named(GTK_STACK(content_stack_),
+                        login_view_->widget(), "login");
+
     GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_window_set_child(GTK_WINDOW(window_), hbox);
+    main_content_ = hbox;
+    gtk_stack_add_named(GTK_STACK(content_stack_), hbox, "main");
 
     // Sidebar (nav bar + room list, wrapped in a vertical box)
     GtkWidget* side_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -462,11 +474,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
 MainWindow::~MainWindow() {
     client_.stop_sync();
+    // login_view_ holds a reference to client_ and calls cancel_oauth() +
+    // joins its worker on destruction. Tear it down here so client_ is
+    // still alive when ~LoginView runs.
+    login_view_.reset();
 }
 
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
+    std::string status_msg;
     if (auto saved = tesseract::SessionStore::load()) {
         gtk_label_set_text(GTK_LABEL(status_bar_), "Restoring session…");
         auto res = client_.restore_session(*saved);
@@ -478,20 +495,21 @@ void MainWindow::do_login() {
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
             gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             maybe_show_recovery_banner();
             return;
         }
         tesseract::SessionStore::clear();
-        std::string msg = "Saved session expired: " + res.message;
-        gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+        status_msg = "Saved session expired: " + res.message;
     }
 
-    LoginDialog dlg(GTK_WINDOW(window_), client_);
-    if (!dlg.run()) {
-        gtk_label_set_text(GTK_LABEL(status_bar_), "Not logged in");
-        return;
-    }
+    login_view_->reset();
+    login_view_->set_status_message(status_msg);
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+    gtk_label_set_text(GTK_LABEL(status_bar_), "Not logged in");
+}
 
+void MainWindow::on_login_succeeded() {
     my_user_id_       = client_.get_user_id();
     my_display_name_  = client_.get_display_name();
     my_avatar_url_    = client_.get_avatar_url();
@@ -500,6 +518,7 @@ void MainWindow::do_login() {
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());
     gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
 }
 
@@ -1225,7 +1244,9 @@ void MainWindow::do_logout() {
                        res ? "Signed out"
                            : ("Sign out failed: " + res.message).c_str());
 
-    do_login();
+    login_view_->reset();
+    login_view_->set_status_message("");
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
 }
 
 } // namespace gtk4

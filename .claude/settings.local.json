@@ -21,7 +21,32 @@
       "Bash(find ~/.cargo/registry/src -path \"*/eyeball-im-0.7*\" -name \"*.rs\" 2>/dev/null | head -10)",
       "Read(//home/rayden/.cargo/registry/src/**)",
       "Bash(cmake --preset linux-gtk-debug)",
-      "Bash(cmake --build /home/rayden/src/tesseract/build/linux-gtk-debug)"
+      "Bash(cmake --build /home/rayden/src/tesseract/build/linux-gtk-debug)",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-*/matrix-sdk-0.14.0/src -type f -name \"*.rs\")",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-*/matrix-sdk-base-0.14.0/src -name \"*.rs\" -type f)",
+      "Bash(find ~/.cargo/registry -type d -name \"matrix-sdk-base-*\" | head -3)",
+      "Read(//home/rayden/.cargo/registry/**)",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-*/matrix-sdk-base-0.14.1/src -name \"*.rs\" -type f)",
+      "Bash(cmake --build /home/rayden/src/tesseract/build/linux-qt6-debug)",
+      "Bash(git -C /home/rayden/src/tesseract add sdk/src/bridge.rs sdk/src/client.rs sdk/src/lib.rs client/include/tesseract/types.h client/include/tesseract/client.h client/src/ffi_convert.h client/src/client.cpp ui/linux-gtk/src/MainWindow.h ui/linux-gtk/src/MainWindow.cpp ui/linux-qt/src/MainWindow.h ui/linux-qt/src/MainWindow.cpp)",
+      "Bash(git -C /home/rayden/src/tesseract commit -m ' *)",
+      "Bash(git -C /home/rayden/src/tesseract push)",
+      "Bash(cmake --build build/linux-gtk-debug)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(cargo test *)",
+      "Bash(grep -v \"\\\\.d$\")",
+      "Bash(git -C /home/rayden/src/tesseract diff)",
+      "Bash(git -C /home/rayden/src/tesseract log --oneline -5)",
+      "Bash(git -C /home/rayden/src/tesseract add CLAUDE.md sdk/src/bridge.rs sdk/src/client.rs sdk/src/lib.rs client/include/tesseract/types.h client/include/tesseract/client.h client/src/ffi_convert.h client/src/client.cpp ui/linux-qt/src/MainWindow.h ui/linux-qt/src/MainWindow.cpp)",
+      "Bash(git -C /home/rayden/src/tesseract add ui/linux-gtk/src/MainWindow.h ui/linux-gtk/src/MainWindow.cpp ui/windows/src/MainWindow.h ui/windows/src/MainWindow.cpp)",
+      "Bash(git -C /home/rayden/src/tesseract add sdk/src/client.rs ui/linux-qt/src/MainWindow.cpp ui/linux-gtk/src/MainWindow.h ui/linux-gtk/src/MainWindow.cpp ui/windows/src/MainWindow.h ui/windows/src/MainWindow.cpp)",
+      "Bash(git add *)",
+      "Bash(git show *)",
+      "Bash(cmake --build build/linux-gtk-debug --target tesseract)",
+      "Bash(cmake --preset linux-gtk-debug -B build/linux-gtk-debug)",
+      "Bash(ctest --test-dir build/linux-qt6-debug --output-on-failure)",
+      "Bash(cmake --build build/linux-qt6-debug --target tesseract_tests)"
     ]
   }
 }

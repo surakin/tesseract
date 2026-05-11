@@ -31,6 +31,8 @@ constexpr UINT WM_TESSERACT_RECOVER_DONE    = WM_APP + 8;
 
 namespace win32 {
 
+class LoginView;
+
 /// Win32 event handler: marshals Rust callbacks onto the UI thread via PostMessage.
 class EventHandler final : public tesseract::IEventHandler {
 public:
@@ -84,7 +86,10 @@ private:
     void on_create(HWND hwnd);
     void on_destroy();
     void on_size(int w, int h);
-    void on_login_clicked();
+    void start_login();
+    void on_login_succeeded();
+    void show_login_view();
+    void show_main_content();
     void on_send_clicked();
     void on_room_selected(int index);
     void on_tesseract_message(tesseract::Event* ev);
@@ -131,6 +136,8 @@ private:
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
+    std::unique_ptr<LoginView> login_view_;
+    bool      login_visible_ = false;
     HWND      hRoomList_   = nullptr;
     HWND      hRoomHeader_ = nullptr;
     HWND      hMsgList_    = nullptr;

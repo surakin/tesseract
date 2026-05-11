@@ -1,4 +1,4 @@
-#include "LoginDialog.h"
+#include "LoginView.h"
 
 namespace gtk4 {
 
@@ -18,32 +18,47 @@ GtkWidget* make_label(const char* text, bool error = false) {
 
 // ---------------------------------------------------------------------------
 
-LoginDialog::LoginDialog(GtkWindow* parent, tesseract::Client& client)
-    : parent_(parent), client_(client)
-{
-    window_ = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(window_), "Sign in to Tesseract");
-    gtk_window_set_modal(GTK_WINDOW(window_), TRUE);
-    if (parent_) {
-        gtk_window_set_transient_for(GTK_WINDOW(window_), parent_);
-    }
-    gtk_window_set_default_size(GTK_WINDOW(window_), 460, 220);
-    gtk_window_set_resizable(GTK_WINDOW(window_), FALSE);
+LoginView::LoginView(tesseract::Client& client) : client_(client) {
+    // ---- Root: vertical box centered horizontally + vertically ----
+    root_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_hexpand(root_, TRUE);
+    gtk_widget_set_vexpand(root_, TRUE);
 
-    g_signal_connect(window_, "close-request",
-                     G_CALLBACK(on_window_close_request), this);
+    // Outer top spacer
+    GtkWidget* top_spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_vexpand(top_spacer, TRUE);
+    gtk_box_append(GTK_BOX(root_), top_spacer);
 
-    // ---- Stack ----
+    // Centered horizontal row with the card
+    GtkWidget* center_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_halign(center_row, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(root_), center_row);
+
+    GtkWidget* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_size_request(card, 420, -1);
+    gtk_widget_add_css_class(card, "login-card");
+    gtk_widget_set_margin_top(card,    24);
+    gtk_widget_set_margin_bottom(card, 24);
+    gtk_widget_set_margin_start(card,  24);
+    gtk_widget_set_margin_end(card,    24);
+    gtk_box_append(GTK_BOX(center_row), card);
+
+    GtkWidget* title = gtk_label_new("Sign in to Tesseract");
+    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    gtk_widget_add_css_class(title, "login-title");
+    gtk_box_append(GTK_BOX(card), title);
+
+    status_lbl_ = make_label("");
+    gtk_widget_set_visible(status_lbl_, FALSE);
+    gtk_box_append(GTK_BOX(card), status_lbl_);
+
+    // ---- Stack: form / waiting pages ----
     stack_ = gtk_stack_new();
     gtk_stack_set_transition_type(
         GTK_STACK(stack_), GTK_STACK_TRANSITION_TYPE_NONE);
-    gtk_widget_set_margin_top(stack_,    16);
-    gtk_widget_set_margin_bottom(stack_, 16);
-    gtk_widget_set_margin_start(stack_,  16);
-    gtk_widget_set_margin_end(stack_,    16);
-    gtk_window_set_child(GTK_WINDOW(window_), stack_);
+    gtk_box_append(GTK_BOX(card), stack_);
 
-    // ---- Form page ----
+    // Form page
     {
         GtkWidget* col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
 
@@ -62,41 +77,27 @@ LoginDialog::LoginDialog(GtkWindow* parent, tesseract::Client& client)
         gtk_widget_set_visible(error_lbl_, FALSE);
         gtk_box_append(GTK_BOX(col), error_lbl_);
 
-        // Spacer
-        GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-        gtk_widget_set_vexpand(spacer, TRUE);
-        gtk_box_append(GTK_BOX(col), spacer);
-
-        // Buttons row
         GtkWidget* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_set_halign(buttons, GTK_ALIGN_END);
 
-        close_btn_ = gtk_button_new_with_label("Close");
         signin_btn_ = gtk_button_new_with_label("Sign in");
         gtk_widget_add_css_class(signin_btn_, "suggested-action");
 
-        gtk_box_append(GTK_BOX(buttons), close_btn_);
         gtk_box_append(GTK_BOX(buttons), signin_btn_);
         gtk_box_append(GTK_BOX(col), buttons);
 
         g_signal_connect(signin_btn_, "clicked",
                          G_CALLBACK(on_signin_clicked), this);
-        g_signal_connect(close_btn_,  "clicked",
-                         G_CALLBACK(on_close_clicked),  this);
 
         gtk_stack_add_named(GTK_STACK(stack_), col, "form");
     }
 
-    // ---- Waiting page ----
+    // Waiting page
     {
         GtkWidget* col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
 
-        status_lbl_ = make_label("Waiting for sign-in in your browser…");
-        gtk_box_append(GTK_BOX(col), status_lbl_);
-
-        GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-        gtk_widget_set_vexpand(spacer, TRUE);
-        gtk_box_append(GTK_BOX(col), spacer);
+        wait_lbl_ = make_label("Waiting for sign-in in your browser…");
+        gtk_box_append(GTK_BOX(col), wait_lbl_);
 
         GtkWidget* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_set_halign(buttons, GTK_ALIGN_END);
@@ -111,49 +112,55 @@ LoginDialog::LoginDialog(GtkWindow* parent, tesseract::Client& client)
         gtk_stack_add_named(GTK_STACK(stack_), col, "waiting");
     }
 
+    // Outer bottom spacer
+    GtkWidget* bottom_spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_vexpand(bottom_spacer, TRUE);
+    gtk_box_append(GTK_BOX(root_), bottom_spacer);
+
     show_form();
 }
 
-LoginDialog::~LoginDialog() {
+LoginView::~LoginView() {
     cancelled_.store(true);
     client_.cancel_oauth();
     join_worker();
-    if (loop_) {
-        if (g_main_loop_is_running(loop_)) g_main_loop_quit(loop_);
-        g_main_loop_unref(loop_);
-        loop_ = nullptr;
-    }
-    if (window_) gtk_window_destroy(GTK_WINDOW(window_));
-}
-
-bool LoginDialog::run() {
-    loop_ = g_main_loop_new(nullptr, FALSE);
-
-    gtk_window_present(GTK_WINDOW(window_));
-    gtk_widget_grab_focus(hs_entry_);
-
-    // Pump the main loop until finish() quits it.
-    g_main_loop_run(loop_);
-
-    return accepted_;
 }
 
 // ---------------------------------------------------------------------------
 
-void LoginDialog::show_form() {
+void LoginView::reset() {
+    cancelled_.store(true);
+    client_.cancel_oauth();
+    join_worker();
+    cancelled_.store(false);
+    set_error("");
+    show_form();
+}
+
+void LoginView::set_status_message(const std::string& msg) {
+    if (msg.empty()) {
+        gtk_widget_set_visible(status_lbl_, FALSE);
+    } else {
+        gtk_label_set_text(GTK_LABEL(status_lbl_), msg.c_str());
+        gtk_widget_set_visible(status_lbl_, TRUE);
+    }
+}
+
+void LoginView::show_form() {
     gtk_stack_set_visible_child_name(GTK_STACK(stack_), "form");
     gtk_widget_set_sensitive(signin_btn_, TRUE);
     gtk_widget_set_sensitive(hs_entry_,   TRUE);
+    gtk_widget_grab_focus(hs_entry_);
 }
 
-void LoginDialog::show_waiting() {
+void LoginView::show_waiting() {
     gtk_stack_set_visible_child_name(GTK_STACK(stack_), "waiting");
-    gtk_label_set_text(GTK_LABEL(status_lbl_),
+    gtk_label_set_text(GTK_LABEL(wait_lbl_),
                        "Waiting for sign-in in your browser…");
     gtk_widget_set_sensitive(cancel_btn_, TRUE);
 }
 
-void LoginDialog::set_error(const std::string& msg) {
+void LoginView::set_error(const std::string& msg) {
     if (msg.empty()) {
         gtk_widget_set_visible(error_lbl_, FALSE);
     } else {
@@ -166,32 +173,23 @@ void LoginDialog::set_error(const std::string& msg) {
 // Button handlers
 // ---------------------------------------------------------------------------
 
-void LoginDialog::on_signin_clicked(GtkButton*, gpointer user_data) {
-    static_cast<LoginDialog*>(user_data)->start_phase1();
+void LoginView::on_signin_clicked(GtkButton*, gpointer user_data) {
+    static_cast<LoginView*>(user_data)->start_phase1();
 }
 
-void LoginDialog::on_close_clicked(GtkButton*, gpointer user_data) {
-    static_cast<LoginDialog*>(user_data)->finish(false);
-}
-
-void LoginDialog::on_cancel_clicked(GtkButton*, gpointer user_data) {
-    auto* self = static_cast<LoginDialog*>(user_data);
+void LoginView::on_cancel_clicked(GtkButton*, gpointer user_data) {
+    auto* self = static_cast<LoginView*>(user_data);
     self->cancelled_.store(true);
     self->client_.cancel_oauth();
-    gtk_label_set_text(GTK_LABEL(self->status_lbl_), "Cancelling…");
+    gtk_label_set_text(GTK_LABEL(self->wait_lbl_), "Cancelling…");
     gtk_widget_set_sensitive(self->cancel_btn_, FALSE);
-    // Worker thread will return; on_await_done will surface the result.
-}
-
-void LoginDialog::on_window_close_request(GtkWindow*, gpointer user_data) {
-    static_cast<LoginDialog*>(user_data)->finish(false);
 }
 
 // ---------------------------------------------------------------------------
 // Worker phases
 // ---------------------------------------------------------------------------
 
-void LoginDialog::start_phase1() {
+void LoginView::start_phase1() {
     const char* hs_c = gtk_editable_get_text(GTK_EDITABLE(hs_entry_));
     std::string hs   = hs_c ? hs_c : "";
     if (hs.empty()) {
@@ -209,7 +207,7 @@ void LoginDialog::start_phase1() {
         auto flow = client_.begin_oauth(hs);
         if (cancelled_.load()) return;
 
-        auto* p = new LoginIdle{
+        auto* p = new LoginViewIdle{
             this, flow.ok,
             flow.ok ? flow.auth_url : flow.message,
         };
@@ -217,9 +215,9 @@ void LoginDialog::start_phase1() {
     });
 }
 
-gboolean LoginDialog::on_begin_done(gpointer data) {
-    auto* d    = static_cast<LoginIdle*>(data);
-    auto* self = d->dlg;
+gboolean LoginView::on_begin_done(gpointer data) {
+    auto* d    = static_cast<LoginViewIdle*>(data);
+    auto* self = d->view;
 
     self->join_worker();
 
@@ -231,7 +229,6 @@ gboolean LoginDialog::on_begin_done(gpointer data) {
         return G_SOURCE_REMOVE;
     }
 
-    // text == auth_url
     tesseract::Client::open_in_browser(d->text);
     self->show_waiting();
     self->start_phase2();
@@ -239,26 +236,26 @@ gboolean LoginDialog::on_begin_done(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
-void LoginDialog::start_phase2() {
+void LoginView::start_phase2() {
     join_worker();
     cancelled_.store(false);
 
     worker_ = std::thread([this]() {
         auto res = client_.await_oauth();
         if (cancelled_.load()) return;
-        auto* p = new LoginIdle{ this, res.ok, res.message };
+        auto* p = new LoginViewIdle{ this, res.ok, res.message };
         g_idle_add(on_await_done, p);
     });
 }
 
-gboolean LoginDialog::on_await_done(gpointer data) {
-    auto* d    = static_cast<LoginIdle*>(data);
-    auto* self = d->dlg;
+gboolean LoginView::on_await_done(gpointer data) {
+    auto* d    = static_cast<LoginViewIdle*>(data);
+    auto* self = d->view;
 
     self->join_worker();
 
     if (d->ok) {
-        self->finish(true);
+        if (self->on_success_) self->on_success_();
     } else {
         self->set_error("Sign-in failed: " + d->text);
         self->show_form();
@@ -267,21 +264,7 @@ gboolean LoginDialog::on_await_done(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
-void LoginDialog::finish(bool accepted) {
-    accepted_ = accepted;
-    cancelled_.store(true);
-    client_.cancel_oauth();
-    join_worker();
-    if (loop_ && g_main_loop_is_running(loop_)) {
-        g_main_loop_quit(loop_);
-    }
-    if (window_) {
-        gtk_window_destroy(GTK_WINDOW(window_));
-        window_ = nullptr;
-    }
-}
-
-void LoginDialog::join_worker() {
+void LoginView::join_worker() {
     if (worker_.joinable()) worker_.join();
 }
 

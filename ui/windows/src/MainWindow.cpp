@@ -1,5 +1,5 @@
 #include "MainWindow.h"
-#include "LoginDialog.h"
+#include "LoginView.h"
 
 #include <thread>
 
@@ -487,6 +487,10 @@ MainWindow::MainWindow(HINSTANCE hInst) : hInst_(hInst) {}
 
 MainWindow::~MainWindow() {
     client_.stop_sync();
+    // login_view_ holds a reference to client_ and calls cancel_oauth() +
+    // joins its worker on destruction. Tear it down here so client_ is
+    // still alive when ~LoginView runs.
+    login_view_.reset();
     for (auto& [k, v] : avatar_cache_)      delete v;
     for (auto& [k, v] : user_avatar_cache_) delete v;
     if (gdiplus_token_)
@@ -616,7 +620,11 @@ void MainWindow::on_create(HWND hwnd) {
     SetWindowSubclass(hInput_, input_subclass_proc, 0,
                       reinterpret_cast<DWORD_PTR>(this));
 
-    on_login_clicked();
+    login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
+    login_view_->set_on_success([this]() { on_login_succeeded(); });
+    ShowWindow(login_view_->hwnd(), SW_HIDE);
+
+    start_login();
 }
 
 void MainWindow::on_destroy() {
@@ -633,6 +641,16 @@ void MainWindow::on_size(int w, int h) {
     constexpr int SEND_W   = 100;
     constexpr int INPUT_H  = 60;
     constexpr int STATUS_H = 22;
+
+    // Status bar always sized.
+    SendMessageW(hStatus_, WM_SIZE, 0, 0);
+
+    if (login_visible_ && login_view_ && login_view_->hwnd()) {
+        SetWindowPos(login_view_->hwnd(), nullptr,
+                     0, 0, w, h - STATUS_H, SWP_NOZORDER);
+        login_view_->layout(w, h - STATUS_H);
+        return;
+    }
 
     int content_h = h - STATUS_H;
     int msg_h     = content_h - INPUT_H;
@@ -683,7 +701,8 @@ void MainWindow::on_size(int w, int h) {
 // Login / reconnect
 // ---------------------------------------------------------------------------
 
-void MainWindow::on_login_clicked() {
+void MainWindow::start_login() {
+    std::wstring status_msg;
     if (auto saved = tesseract::SessionStore::load()) {
         SendMessageW(hStatus_, SB_SETTEXTW, 0,
                      reinterpret_cast<LPARAM>(L"Restoring session…"));
@@ -697,22 +716,25 @@ void MainWindow::on_login_clicked() {
             client_.start_sync(event_handler_.get());
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
                          reinterpret_cast<LPARAM>(L"Connected"));
+            show_main_content();
             maybe_show_recovery_banner();
             return;
         }
         tesseract::SessionStore::clear();
-        std::wstring err = L"Saved session expired: ";
-        err += utf8_to_wstr(res.message);
-        SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(err.c_str()));
+        status_msg = L"Saved session expired: ";
+        status_msg += utf8_to_wstr(res.message);
     }
 
-    LoginDialog dlg(hwnd_, hInst_, client_);
-    if (!dlg.run()) {
-        SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                     reinterpret_cast<LPARAM>(L"Not logged in"));
-        return;
+    if (login_view_) {
+        login_view_->reset();
+        login_view_->set_status_message(status_msg);
     }
+    show_login_view();
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Not logged in"));
+}
 
+void MainWindow::on_login_succeeded() {
     my_user_id_       = client_.get_user_id();
     my_display_name_  = client_.get_display_name();
     my_avatar_url_    = client_.get_avatar_url();
@@ -721,14 +743,56 @@ void MainWindow::on_login_clicked() {
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
     client_.start_sync(event_handler_.get());
     SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Connected"));
+    show_main_content();
     maybe_show_recovery_banner();
+}
+
+void MainWindow::show_login_view() {
+    login_visible_ = true;
+    if (login_view_ && login_view_->hwnd()) {
+        ShowWindow(login_view_->hwnd(), SW_SHOW);
+    }
+    // Hide all main-content widgets.
+    ShowWindow(hRoomList_,        SW_HIDE);
+    ShowWindow(hRoomHeader_,      SW_HIDE);
+    ShowWindow(hUserStrip_,       SW_HIDE);
+    ShowWindow(hMsgList_,         SW_HIDE);
+    ShowWindow(hInput_,           SW_HIDE);
+    ShowWindow(hSend_,            SW_HIDE);
+    ShowWindow(hRecoveryBanner_,  SW_HIDE);
+    ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
+    ShowWindow(hRecoveryVerify_,  SW_HIDE);
+    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
+void MainWindow::show_main_content() {
+    login_visible_ = false;
+    if (login_view_ && login_view_->hwnd()) {
+        ShowWindow(login_view_->hwnd(), SW_HIDE);
+    }
+    // Unconditional main-content widgets. Conditional widgets
+    // (hRoomHeader_, hUserStrip_, recovery banner) are shown by their own
+    // code paths once their state is set.
+    ShowWindow(hRoomList_, SW_SHOW);
+    ShowWindow(hMsgList_,  SW_SHOW);
+    ShowWindow(hInput_,    SW_SHOW);
+    ShowWindow(hSend_,     SW_SHOW);
+
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
 }
 
 void MainWindow::on_reconnect() {
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Sync error: reconnecting…"));
     client_.stop_sync();
-    on_login_clicked();
+    start_login();
 }
 
 void MainWindow::on_auth_error(bool soft_logout) {
@@ -754,7 +818,7 @@ void MainWindow::on_auth_error(bool soft_logout) {
     client_.stop_sync();
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(L"Session expired; please log in again."));
-    on_login_clicked();
+    start_login();
 }
 
 // ---------------------------------------------------------------------------
@@ -1288,7 +1352,7 @@ void MainWindow::do_logout() {
     SendMessageW(hStatus_, SB_SETTEXTW, 0,
         reinterpret_cast<LPARAM>(res ? L"Signed out" : L"Sign out failed"));
 
-    on_login_clicked();
+    start_login();
 }
 
 } // namespace win32
