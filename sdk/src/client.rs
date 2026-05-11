@@ -493,6 +493,14 @@ impl ClientFfi {
         }
     }
 
+    pub fn user_id(&self) -> String {
+        self.client
+            .as_ref()
+            .and_then(|c| c.user_id())
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    }
+
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
         let Some(client) = self.client.clone() else { return Vec::new() };
         self.rt.block_on(build_room_infos(&client))
@@ -597,14 +605,16 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .map(|n| n.to_string())
             .unwrap_or_else(|_| room.room_id().to_string());
         result.push(crate::ffi::RoomInfo {
-            id:           room.room_id().to_string(),
+            id:                room.room_id().to_string(),
             name,
-            topic:        room.topic().unwrap_or_default(),
-            unread_count: room.unread_notification_counts().notification_count,
-            is_direct:    room.is_direct().await.unwrap_or(false),
-            avatar_url:   room.avatar_url()
-                              .map(|u| u.to_string())
-                              .unwrap_or_default(),
+            topic:             room.topic().unwrap_or_default(),
+            unread_count:      room.unread_notification_counts().notification_count,
+            is_direct:         room.is_direct().await.unwrap_or(false),
+            avatar_url:        room.avatar_url()
+                                   .map(|u| u.to_string())
+                                   .unwrap_or_default(),
+            last_message_body: String::new(),
+            last_activity_ts:  0,
         });
     }
     result

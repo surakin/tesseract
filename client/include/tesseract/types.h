@@ -50,9 +50,11 @@ struct RoomInfo {
     std::string id;
     std::string name;
     std::string topic;
-    uint64_t    unread_count = 0;
-    bool        is_direct    = false;
+    uint64_t    unread_count       = 0;
+    bool        is_direct          = false;
     std::string avatar_url;
+    std::string last_message_body;
+    uint64_t    last_activity_ts   = 0;
 };
 
 } // namespace tesseract

@@ -1,15 +1,25 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+#include "RoomListDelegate.h"
 
 #include <tesseract/session_store.h>
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QMessageBox>
-#include <QScrollBar>
 #include <QMetaType>
-#include <QTextDocument>
-#include <QUrl>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QFrame>
+#include <QScrollBar>
+#include <QFont>
+#include <QFontMetrics>
+#include <QPainter>
+#include <QPainterPath>
+#include <QDateTime>
+#include <QTimer>
+#include <QStandardItem>
+#include <algorithm>
 
 Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
@@ -17,7 +27,7 @@ Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
 namespace qt6 {
 
 // ---------------------------------------------------------------------------
-// EventBridge – called on the Rust sync thread, emits queued signals
+// EventBridge
 // ---------------------------------------------------------------------------
 
 void EventBridge::on_message(tesseract::Event* ev) {
@@ -49,7 +59,41 @@ void EventBridge::on_session_saved(const std::string& session_json) {
 }
 
 // ---------------------------------------------------------------------------
-// MainWindow
+// Helpers
+// ---------------------------------------------------------------------------
+
+QPixmap MainWindow::makeCirclePixmap(const QPixmap& src, int size) {
+    QPixmap result(size, size);
+    result.fill(Qt::transparent);
+    QPainter p(&result);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPainterPath path;
+    path.addEllipse(0, 0, size, size);
+    p.setClipPath(path);
+    p.drawPixmap(0, 0, size, size, src);
+    return result;
+}
+
+QPixmap MainWindow::makeInitialsPixmap(const QString& name, int size) {
+    QPixmap result(size, size);
+    result.fill(Qt::transparent);
+    QPainter p(&result);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(QColor(0x8E, 0x8E, 0x93));
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(0, 0, size, size);
+    p.setPen(Qt::white);
+    QFont f;
+    f.setPixelSize(size / 2);
+    f.setBold(true);
+    p.setFont(f);
+    p.drawText(QRect(0, 0, size, size), Qt::AlignCenter,
+               name.isEmpty() ? "?" : QString(name[0].toUpper()));
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// MainWindow constructor
 // ---------------------------------------------------------------------------
 
 MainWindow::MainWindow(QWidget* parent)
@@ -59,7 +103,7 @@ MainWindow::MainWindow(QWidget* parent)
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
 
     setWindowTitle("Tesseract");
-    resize(1024, 768);
+    resize(1100, 768);
 
     auto* central = new QWidget(this);
     setCentralWidget(central);
@@ -68,35 +112,96 @@ MainWindow::MainWindow(QWidget* parent)
     hLayout->setContentsMargins(0, 0, 0, 0);
     hLayout->setSpacing(0);
 
-    roomList_ = new QListWidget(this);
-    roomList_->setFixedWidth(220);
-    hLayout->addWidget(roomList_);
+    // ---- Sidebar (room list) ----
+    auto* sidePanel = new QWidget(this);
+    sidePanel->setFixedWidth(260);
+    sidePanel->setObjectName("sidePanel");
+    sidePanel->setStyleSheet("#sidePanel { background-color: #F0F2F5; border-right: 1px solid #D0D3D8; }");
 
-    auto* vLayout = new QVBoxLayout;
-    vLayout->setContentsMargins(4, 4, 4, 4);
-    vLayout->setSpacing(4);
-    hLayout->addLayout(vLayout);
+    auto* sideLayout = new QVBoxLayout(sidePanel);
+    sideLayout->setContentsMargins(0, 0, 0, 0);
+    sideLayout->setSpacing(0);
 
-    msgView_ = new QTextEdit(this);
-    msgView_->setReadOnly(true);
-    vLayout->addWidget(msgView_, 1);
+    roomModel_ = new QStandardItemModel(this);
+    roomList_  = new QListView(sidePanel);
+    roomList_->setModel(roomModel_);
+    roomList_->setItemDelegate(new RoomListDelegate(roomList_));
+    roomList_->setFrameShape(QFrame::NoFrame);
+    roomList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    roomList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    roomList_->setUniformItemSizes(true);
+    roomList_->setMouseTracking(true);
+    sideLayout->addWidget(roomList_);
+    hLayout->addWidget(sidePanel);
 
-    auto* inputRow = new QHBoxLayout;
-    inputLine_  = new QLineEdit(this);
-    sendButton_ = new QPushButton("Send", this);
-    inputRow->addWidget(inputLine_, 1);
-    inputRow->addWidget(sendButton_);
-    vLayout->addLayout(inputRow);
+    // ---- Main chat area ----
+    auto* chatPanel = new QWidget(this);
+    auto* vLayout   = new QVBoxLayout(chatPanel);
+    vLayout->setContentsMargins(0, 0, 0, 0);
+    vLayout->setSpacing(0);
+    hLayout->addWidget(chatPanel, 1);
+
+    // Message scroll area
+    msgScrollArea_ = new QScrollArea(chatPanel);
+    msgScrollArea_->setWidgetResizable(true);
+    msgScrollArea_->setFrameShape(QFrame::NoFrame);
+    msgScrollArea_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    msgScrollArea_->setStyleSheet("QScrollArea { background-color: #FFFFFF; }");
+
+    msgContainer_ = new QWidget(msgScrollArea_);
+    msgContainer_->setStyleSheet("background-color: #FFFFFF;");
+    msgLayout_    = new QVBoxLayout(msgContainer_);
+    msgLayout_->setAlignment(Qt::AlignTop);
+    msgLayout_->setSpacing(2);
+    msgLayout_->setContentsMargins(12, 12, 12, 12);
+    msgScrollArea_->setWidget(msgContainer_);
+    vLayout->addWidget(msgScrollArea_, 1);
+
+    // Compose bar
+    auto* composeBar = new QWidget(chatPanel);
+    composeBar->setStyleSheet("background-color: #F0F2F5; border-top: 1px solid #D0D3D8;");
+    auto* composeLayout = new QHBoxLayout(composeBar);
+    composeLayout->setContentsMargins(12, 8, 12, 8);
+    composeLayout->setSpacing(8);
+
+    composeEdit_ = new QTextEdit(composeBar);
+    composeEdit_->setPlaceholderText("Message…");
+    composeEdit_->setFixedHeight(40);
+    composeEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    composeEdit_->setStyleSheet(
+        "QTextEdit { border: 1px solid #CED0D4; border-radius: 20px; "
+        "padding: 8px 14px; background-color: #FFFFFF; font-size: 14px; }");
+    composeEdit_->installEventFilter(this);
+
+    sendButton_ = new QPushButton("Send", composeBar);
+    sendButton_->setFixedSize(64, 40);
+    sendButton_->setStyleSheet(
+        "QPushButton { background-color: #0084FF; color: white; border: none; "
+        "border-radius: 20px; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background-color: #0077E5; }"
+        "QPushButton:pressed { background-color: #006BD6; }");
+
+    composeLayout->addWidget(composeEdit_, 1);
+    composeLayout->addWidget(sendButton_);
+    vLayout->addWidget(composeBar);
 
     statusBar()->showMessage("Not logged in");
 
-    connect(sendButton_, &QPushButton::clicked,
-            this, &MainWindow::onSendClicked);
-    connect(roomList_, &QListWidget::currentItemChanged,
-            this, &MainWindow::onRoomSelected);
+    // ---- Auto-grow compose field (max 5 lines) ----
+    connect(composeEdit_->document(), &QTextDocument::contentsChanged,
+            this, [this]() {
+        int docH = static_cast<int>(composeEdit_->document()->size().height());
+        QFontMetrics fm(composeEdit_->font());
+        int maxH  = fm.lineSpacing() * 5 + 20;
+        composeEdit_->setFixedHeight(std::clamp(docH + 16, 40, maxH));
+    });
+
+    // ---- Signals ----
+    connect(sendButton_, &QPushButton::clicked, this, &MainWindow::onSendClicked);
+    connect(roomList_->selectionModel(), &QItemSelectionModel::currentRowChanged,
+            this, &MainWindow::onRoomSelectionChanged);
 
     bridge_ = std::make_unique<EventBridge>(this);
-
     connect(bridge_.get(), &EventBridge::eventReceived,
             this,          &MainWindow::onEventReceived);
     connect(bridge_.get(), &EventBridge::roomsUpdated,
@@ -115,14 +220,29 @@ MainWindow::~MainWindow() {
 
 // ---------------------------------------------------------------------------
 
+bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == composeEdit_ && event->type() == QEvent::KeyPress) {
+        auto* ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Return
+            && !(ke->modifiers() & Qt::ShiftModifier))
+        {
+            onSendClicked();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+// ---------------------------------------------------------------------------
+
 void MainWindow::doLogin() {
     if (auto saved = tesseract::SessionStore::load()) {
         statusBar()->showMessage("Restoring session…");
         auto res = client_.restore_session(*saved);
         if (res) {
+            myUserId_ = client_.get_user_id();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage("Connected");
-            // Room list will arrive via on_rooms_updated once SyncService fires.
             return;
         }
         tesseract::SessionStore::clear();
@@ -137,43 +257,39 @@ void MainWindow::doLogin() {
         return;
     }
 
+    myUserId_ = client_.get_user_id();
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
-    // Room list arrives via on_rooms_updated from RoomListService.
 }
 
 void MainWindow::onSendClicked() {
     if (currentRoomId_.empty()) return;
 
-    QString text = inputLine_->text().trimmed();
+    QString text = composeEdit_->toPlainText().trimmed();
     if (text.isEmpty()) return;
 
     auto res = client_.send_message(currentRoomId_, text.toStdString());
-    if (res) {
-        inputLine_->clear();
-    } else {
+    if (res)
+        composeEdit_->clear();
+    else
         statusBar()->showMessage(QString::fromStdString(res.message), 4000);
-    }
 }
 
-void MainWindow::onRoomSelected(
-    QListWidgetItem* current, QListWidgetItem* /*previous*/)
+void MainWindow::onRoomSelectionChanged(
+    const QModelIndex& current, const QModelIndex& /*previous*/)
 {
-    if (!current) return;
-    int idx = roomList_->row(current);
-    if (idx < 0 || idx >= static_cast<int>(rooms_.size())) return;
+    if (!current.isValid()) return;
 
-    const std::string newRoomId = rooms_[idx].id;
+    QString roomId = roomModel_->data(current, RoomIdRole).toString();
+    if (roomId.isEmpty()) return;
 
-    // Unsubscribe from previous room before subscribing to the new one.
-    if (!currentRoomId_.empty() && currentRoomId_ != newRoomId)
+    const std::string newId = roomId.toStdString();
+    if (!currentRoomId_.empty() && currentRoomId_ != newId)
         client_.unsubscribe_room(currentRoomId_);
 
-    currentRoomId_ = newRoomId;
+    currentRoomId_ = newId;
 
-    // subscribe_room emits on_timeline_reset then cached messages; paginate
-    // back to fill initial history (on_message callbacks arrive in order).
     auto res = client_.subscribe_room(currentRoomId_);
     if (!res) {
         statusBar()->showMessage(
@@ -185,7 +301,7 @@ void MainWindow::onRoomSelected(
 
 void MainWindow::onEventReceived(tesseract::Event* ev) {
     if (ev && ev->room_id == currentRoomId_)
-        appendEvent(*ev);
+        appendMessageBubble(*ev);
     delete ev;
 }
 
@@ -194,7 +310,9 @@ void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
     populateRooms(rooms_);
 }
 
-void MainWindow::onSyncError(QString context, QString description, bool soft_logout) {
+void MainWindow::onSyncError(
+    QString context, QString description, bool soft_logout)
+{
     if (context == "sync_reconnect") {
         statusBar()->showMessage("Sync error: reconnecting…");
         client_.stop_sync();
@@ -204,6 +322,7 @@ void MainWindow::onSyncError(QString context, QString description, bool soft_log
             if (auto saved = tesseract::SessionStore::load()) {
                 statusBar()->showMessage("Reconnecting session…");
                 if (client_.restore_session(*saved)) {
+                    myUserId_ = client_.get_user_id();
                     client_.start_sync(bridge_.get());
                     statusBar()->showMessage("Reconnected");
                     return;
@@ -221,26 +340,33 @@ void MainWindow::onSyncError(QString context, QString description, bool soft_log
 
 void MainWindow::onTimelineReset(QString roomId) {
     if (roomId.toStdString() == currentRoomId_)
-        msgView_->clear();
+        clearMessages();
 }
 
 // ---------------------------------------------------------------------------
 
+void MainWindow::clearMessages() {
+    while (msgLayout_->count() > 0) {
+        QLayoutItem* item = msgLayout_->takeAt(0);
+        if (item->widget())
+            item->widget()->deleteLater();
+        delete item;
+    }
+}
+
 void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
-    roomList_->setIconSize(QSize(kRoomAvatarSize, kRoomAvatarSize));
-    roomList_->clear();
+    roomModel_->clear();
 
     for (const auto& r : rooms) {
-        // Populate avatar cache on first sight of this URL.
+        // Fetch and cache avatar on first sight.
         if (!r.avatar_url.empty()) {
             QString qurl = QString::fromStdString(r.avatar_url);
             if (!avatarCache_.contains(qurl)) {
                 auto bytes = client_.fetch_avatar_bytes(r.id);
                 if (!bytes.empty()) {
                     QPixmap pm;
-                    pm.loadFromData(
-                        reinterpret_cast<const uchar*>(bytes.data()),
-                        static_cast<uint>(bytes.size()));
+                    pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                    static_cast<uint>(bytes.size()));
                     if (!pm.isNull())
                         avatarCache_[qurl] = pm.scaled(
                             kRoomAvatarSize, kRoomAvatarSize,
@@ -249,32 +375,30 @@ void MainWindow::populateRooms(const std::vector<tesseract::RoomInfo>& rooms) {
             }
         }
 
-        QString label = QString::fromStdString(r.name);
-        if (r.unread_count > 0)
-            label += QString(" (%1)").arg(r.unread_count);
+        auto* item = new QStandardItem;
+        item->setData(QString::fromStdString(r.name), Qt::DisplayRole);
+        item->setData(QString::fromStdString(r.last_message_body), LastMessageRole);
+        item->setData(static_cast<int>(r.unread_count), UnreadCountRole);
+        item->setData(QString::fromStdString(r.id), RoomIdRole);
+        item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
 
-        auto* item = new QListWidgetItem(label);
         if (!r.avatar_url.empty()) {
             QString qurl = QString::fromStdString(r.avatar_url);
             if (avatarCache_.contains(qurl))
-                item->setIcon(QIcon(avatarCache_[qurl]));
+                item->setData(avatarCache_[qurl], Qt::DecorationRole);
         }
-        roomList_->addItem(item);
+
+        roomModel_->appendRow(item);
     }
 }
 
-void MainWindow::appendEvent(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) {
-        // Skip unhandled event types for now
-        return;
-    }
+// ---------------------------------------------------------------------------
 
-    QString sender    = QString::fromStdString(ev.sender);
-    QString name      = QString::fromStdString(ev.sender_name);
-    if (name.isEmpty()) name = sender;
+void MainWindow::appendMessageBubble(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) return;
+
+    // Fetch/cache sender avatar.
     QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
-
-    // Fetch and cache sender avatar on first sight of this mxc URL.
     if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
         auto bytes = client_.fetch_media_bytes(ev.sender_avatar_url);
         if (!bytes.empty()) {
@@ -282,26 +406,14 @@ void MainWindow::appendEvent(const tesseract::Event& ev) {
             pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
                             static_cast<uint>(bytes.size()));
             if (!pm.isNull())
-                userAvatarCache_[avatarUrl] = pm.scaled(
-                    kUserAvatarSize, kUserAvatarSize,
-                    Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                userAvatarCache_[avatarUrl] = makeCirclePixmap(pm, kMsgAvatarSize);
         }
     }
 
-    // Re-register the avatar resource with the document.
-    if (userAvatarCache_.contains(avatarUrl)) {
-        msgView_->document()->addResource(
-            QTextDocument::ImageResource,
-            QUrl(avatarUrl),
-            userAvatarCache_[avatarUrl]);
-    }
-
-    QString html;
-
+    // Fetch/cache image for image events.
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
         QString imgUrl = QString::fromStdString(img.image_url);
-
         if (!imgUrl.isEmpty() && !imageCache_.contains(imgUrl)) {
             auto bytes = client_.fetch_media_bytes(img.image_url);
             if (!bytes.empty()) {
@@ -309,89 +421,147 @@ void MainWindow::appendEvent(const tesseract::Event& ev) {
                 pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
                                 static_cast<uint>(bytes.size()));
                 if (!pm.isNull()) {
-                    if (img.width > 0 && img.height > 0) {
-                        imageCache_[imgUrl] = pm.scaled(
-                            static_cast<int>(std::min(static_cast<uint64_t>(kMaxImageSize), img.width)),
-                            static_cast<int>(std::min(static_cast<uint64_t>(kMaxImageSize), img.height)),
-                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    } else {
-                        imageCache_[imgUrl] = pm.scaled(
-                            kMaxImageSize, kMaxImageSize,
-                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    }
+                    imageCache_[imgUrl] = pm.scaled(
+                        kMaxImageWidth, kMaxImageHeight,
+                        Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 }
             }
         }
+    }
 
-        QString avatarImg;
-        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
-            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
-                .arg(avatarUrl.toHtmlEscaped())
-                .arg(kUserAvatarSize);
+    QWidget* row = createBubbleRow(ev);
+    msgLayout_->addWidget(row);
+
+    // Scroll to bottom after layout pass.
+    QTimer::singleShot(0, this, [this]() {
+        msgScrollArea_->verticalScrollBar()->setValue(
+            msgScrollArea_->verticalScrollBar()->maximum());
+    });
+}
+
+QWidget* MainWindow::createBubbleRow(const tesseract::Event& ev) {
+    bool isOwn = (!myUserId_.empty() && ev.sender == myUserId_);
+
+    QString sender    = QString::fromStdString(ev.sender);
+    QString name      = QString::fromStdString(ev.sender_name);
+    if (name.isEmpty()) name = sender;
+    QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
+
+    // Timestamp string.
+    QString tsStr;
+    if (ev.timestamp > 0) {
+        QDateTime dt = QDateTime::fromMSecsSinceEpoch(
+            static_cast<qint64>(ev.timestamp));
+        tsStr = dt.toString("hh:mm");
+    }
+
+    // ---- Outer row ----
+    auto* row = new QWidget(msgContainer_);
+    auto* rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 3, 0, 3);
+    rowLayout->setSpacing(8);
+
+    // ---- Bubble frame ----
+    auto* bubble = new QFrame;
+    bubble->setMaximumWidth(kBubbleMaxWidth);
+    if (isOwn) {
+        bubble->setStyleSheet(
+            "QFrame { background-color: #0084FF; border-radius: 18px; }");
+    } else {
+        bubble->setStyleSheet(
+            "QFrame { background-color: #E4E6EB; border-radius: 18px; }");
+    }
+
+    auto* bubbleLayout = new QVBoxLayout(bubble);
+    bubbleLayout->setContentsMargins(14, 10, 14, 8);
+    bubbleLayout->setSpacing(4);
+
+    // ---- Bubble content ----
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        QString imgUrl = QString::fromStdString(img.image_url);
+        if (!imgUrl.isEmpty() && imageCache_.contains(imgUrl)) {
+            auto* imgLabel = new QLabel(bubble);
+            imgLabel->setPixmap(imageCache_[imgUrl]);
+            imgLabel->setScaledContents(false);
+            bubbleLayout->addWidget(imgLabel);
         }
-
-        if (imageCache_.contains(imgUrl)) {
-            msgView_->document()->addResource(
-                QTextDocument::ImageResource,
-                QUrl(imgUrl),
-                imageCache_[imgUrl]);
-            html = avatarImg +
-                   QString("<b>%1:</b><br>"
-                           "<img src='%2' width='%3' height='%4'><br>")
-                   .arg(name.toHtmlEscaped())
-                   .arg(imgUrl.toHtmlEscaped())
-                   .arg(imageCache_[imgUrl].width())
-                   .arg(imageCache_[imgUrl].height());
-            if (!img.body.empty()) {
-                html += QString::fromStdString(img.body).toHtmlEscaped();
-            }
-        } else {
-            html = avatarImg + QString("<b>%1:</b> [Image] %2")
-                .arg(name.toHtmlEscaped())
-                .arg(QString::fromStdString(img.body).toHtmlEscaped());
+        if (!img.body.empty()) {
+            auto* bodyLabel = new QLabel(
+                QString::fromStdString(img.body).toHtmlEscaped(), bubble);
+            bodyLabel->setWordWrap(true);
+            bodyLabel->setStyleSheet(isOwn ? "color: white; background: transparent;"
+                                           : "color: #1C1E21; background: transparent;");
+            bubbleLayout->addWidget(bodyLabel);
         }
     } else if (ev.type == tesseract::EventType::File) {
         const auto& file = static_cast<const tesseract::FileEvent&>(ev);
-        QString fileUrl = QString::fromStdString(file.file_url);
-        QString fileLink;
-        if (!fileUrl.isEmpty()) {
-            fileLink = QString(" <a href='%1'>📎 %2</a>")
-                .arg(fileUrl.toHtmlEscaped())
-                .arg(QString::fromStdString(file.file_name).toHtmlEscaped());
-        } else {
-            fileLink = QString(" 📎 %1")
-                .arg(QString::fromStdString(file.file_name).toHtmlEscaped());
+        QString fileText = QString("📎 %1").arg(
+            QString::fromStdString(file.file_name));
+        if (file.file_size > 0) {
+            double kb = file.file_size / 1024.0;
+            if (kb < 1024)
+                fileText += QString(" (%1 KB)").arg(kb, 0, 'f', 1);
+            else
+                fileText += QString(" (%1 MB)").arg(kb / 1024.0, 0, 'f', 1);
         }
-
-        QString avatarImg;
-        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
-            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
-                .arg(avatarUrl.toHtmlEscaped())
-                .arg(kUserAvatarSize);
-        }
-        html = avatarImg + QString("<b>%1:</b>%2 %3")
-            .arg(name.toHtmlEscaped())
-            .arg(fileLink)
-            .arg(QString::fromStdString(file.body).toHtmlEscaped());
-    } else if (ev.type == tesseract::EventType::Text) {
-        // TextEvent
-        QString avatarImg;
-        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl)) {
-            avatarImg = QString("<img src='%1' width='%2' height='%2'> ")
-                .arg(avatarUrl.toHtmlEscaped())
-                .arg(kUserAvatarSize);
-        }
-        html = avatarImg + "<b>" + name.toHtmlEscaped() + ":</b> " +
-               QString::fromStdString(ev.body).toHtmlEscaped();
+        auto* fileLabel = new QLabel(fileText, bubble);
+        fileLabel->setWordWrap(true);
+        fileLabel->setStyleSheet(isOwn ? "color: white; background: transparent;"
+                                       : "color: #1C1E21; background: transparent;");
+        bubbleLayout->addWidget(fileLabel);
     } else {
-        // Unknown non-unhandled type — shouldn't happen, but skip gracefully
-        return;
+        // Text
+        auto* bodyLabel = new QLabel(
+            QString::fromStdString(ev.body).toHtmlEscaped(), bubble);
+        bodyLabel->setWordWrap(true);
+        bodyLabel->setStyleSheet(isOwn ? "color: white; background: transparent;"
+                                       : "color: #1C1E21; background: transparent;");
+        bodyLabel->setTextFormat(Qt::PlainText);
+        bubbleLayout->addWidget(bodyLabel);
     }
 
-    msgView_->append(html);
+    // Timestamp
+    if (!tsStr.isEmpty()) {
+        auto* tsLabel = new QLabel(tsStr, bubble);
+        tsLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+        tsLabel->setStyleSheet(
+            isOwn ? "color: rgba(255,255,255,0.7); font-size: 10px; background: transparent;"
+                  : "color: #999; font-size: 10px; background: transparent;");
+        bubbleLayout->addWidget(tsLabel);
+    }
 
-    QScrollBar* sb = msgView_->verticalScrollBar();
-    sb->setValue(sb->maximum());
+    // ---- Row assembly ----
+    if (isOwn) {
+        rowLayout->addStretch();
+        rowLayout->addWidget(bubble);
+    } else {
+        // Sender avatar
+        auto* avatarLabel = new QLabel(row);
+        avatarLabel->setFixedSize(kMsgAvatarSize, kMsgAvatarSize);
+        if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl))
+            avatarLabel->setPixmap(userAvatarCache_[avatarUrl]);
+        else
+            avatarLabel->setPixmap(makeInitialsPixmap(name, kMsgAvatarSize));
+
+        // Container: name + bubble stacked vertically
+        auto* otherBox    = new QWidget(row);
+        auto* otherLayout = new QVBoxLayout(otherBox);
+        otherLayout->setContentsMargins(0, 0, 0, 0);
+        otherLayout->setSpacing(2);
+
+        auto* nameLabel = new QLabel(name, otherBox);
+        nameLabel->setStyleSheet(
+            "font-weight: bold; font-size: 12px; color: #555; background: transparent;");
+        otherLayout->addWidget(nameLabel);
+        otherLayout->addWidget(bubble);
+
+        rowLayout->addWidget(avatarLabel, 0, Qt::AlignTop);
+        rowLayout->addWidget(otherBox);
+        rowLayout->addStretch();
+    }
+
+    return row;
 }
 
 } // namespace qt6

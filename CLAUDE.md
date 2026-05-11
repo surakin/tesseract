@@ -99,42 +99,54 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 ### Status
 
 - **Step 1 done** — OAuth fix-ups: real `logout` (FFI + Rust + C++ + SQLite store wipe), `SessionStore` + restore-or-login on startup, full-`PersistedSession` shape on token refresh, `WHOLE_ARCHIVE` link visibility on Win32 and GTK, `tracing_subscriber` `try_init` hardening.
-- **Step 2 done** — Sliding-sync replacement: `matrix-sdk-ui = "0.11"` added; `SyncService` + `RoomListService` replace the `sync_once` loop; per-room `Timeline` held in `HashMap<OwnedRoomId, TimelineHandle>` on `ClientFfi`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back` + `on_timeline_reset` callback; `room_messages` stub dropped; room-list driven by `RoomListService` diffs (UIs no longer call `list_rooms` after every message); SSS probed in `oauth::begin()` and `restore_session` — fails fast with a clear error if the server does not support it.
+- **Step 2 done** — Sliding-sync replacement: `matrix-sdk-ui = "0.16.1"` added; `SyncService` + `RoomListService` replace the `sync_once` loop; per-room `Timeline` held in `HashMap<OwnedRoomId, TimelineHandle>` on `ClientFfi`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back` + `on_timeline_reset` callback; `room_messages` stub dropped; room-list driven by `RoomListService` diffs (UIs no longer call `list_rooms` after every message); SSS probed only at `oauth::begin()` (not restore_session).
 - **Step 3 done** — Room avatar polish: `kRoomAvatarSize = 36` constant; explicit `setIconSize` on the room list widget so all cells have a uniform slot.
-- **Step 4 done** — Message sender identity: `sender_name` + `sender_avatar_url` fields added to `TimelineEvent` (populated from `event_item.sender_profile()` in the SDK, no extra HTTP calls); new FFI `fetch_media_bytes(mxc_url)` wrapping the SDK media cache for arbitrary mxc downloads (reused by Steps 7–9); `Message` C++ struct carries the new fields; Qt UI resolves display name (falls back to user ID) and shows a 24 × 24 inline avatar per message row via `QTextDocument::addResource`.
+- **Step 4 done** — Message sender identity + media infrastructure: `sender_name` + `sender_avatar_url` fields in `TimelineEvent`; `ImageEvent` / `FileEvent` C++ types with `source_json` / `file_json`, dimensions, and file-size fields; `fetch_media_bytes(mxc_url)` and `fetch_source_bytes(source_json)` FFI (the latter handles encrypted `EncryptedFile` transparently); 21 C++ tests covering all event subtypes and `EventType` enum values; Qt UI shows 24 × 24 inline sender avatar per message row.
+- **Stability hardening done** — `soft_logout` flag threaded from `SessionChange::UnknownToken` through `on_error` to all UIs (soft logout retries restore without clearing the store); tombstoned (upgraded) rooms filtered out of the room list; `Drop` impl on `ClientFfi` calls `stop_sync()` for graceful shutdown; `matrix-sdk` upgraded to 0.16.1.
 
-**Step 5 — Spaces (room-list hierarchy)**
-- Recognise rooms with `type: m.space`; consume `m.space.child` / `m.space.parent` to build a tree.
-- New FFI surface returning the space tree (parent → children → leaf rooms) alongside the flat room list.
-- UI: sidebar shifts from a flat list to a tree (or two-pane: spaces / rooms within selected space). Defaults to "All rooms" when no space is selected. Plumbing follows directly from sliding sync — `RoomListService` already exposes spaces; the UI just needs to learn them.
-- Space creation / management UI is a follow-up.
+**Step 5 — UI redesign (WhatsApp / Telegram / Discord-inspired)**
 
-**Step 4 — Device verification + key backup (recovery key)**
+Goal: a visually polished, modern chat layout that forms the shell for threads, stickers, and emoji in later steps.
+
+- **Message bubbles / cards** — right-aligned own messages, left-aligned others, with sender avatar and display name inline (infrastructure already in `TimelineEvent`). Compact timestamp on each bubble.
+- **Thread support** — reply-to indicator on each bubble (show quoted snippet + sender); threaded reply panel slides in from the right when a thread is opened; new FFI `send_reply(room_id, event_id, body)` wrapping `Timeline::send_reply`.
+- **Emoji reactions** — reaction bar below each bubble showing emoji + count; tap to toggle; new FFI `send_reaction(room_id, event_id, key)` / `redact_reaction`; reactions carried in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
+- **Emoji picker** — bottom-bar button opens a floating picker (tabbed: frequently-used + Unicode categories). Inserts into the compose field. Separate from sticker packs (MSC2545, Step 9).
+- **Inline image / file rendering** — use `ImageEvent` / `FileEvent` already in place: images render as thumbnails (max 320 × 240) via `fetch_source_bytes`; files render as a card with icon, name, and size.
+- **Compose bar polish** — multi-line expanding input, send-on-Enter (Shift+Enter for newline), `/` command hint, typing indicator sent to the room.
+- **Sidebar** — room list gets unread badge, last-message preview, and last-activity sort; DM rooms show the other user's avatar; spaces/groups deferred to Step 7.
+
+**Step 6 — Device verification + key backup (recovery key)**
 - `recover(client, key_or_passphrase)` wraps `client.encryption().recovery().recover(...)` and waits for backup steady-state.
 - New FFI `needs_recovery`, `recover`, `backup_state`; new callback `on_backup_progress`.
 - New `RecoveryDialog` per platform, parallel to `LoginDialog`.
 - Launch flow: after login completes, if `needs_recovery()` is true, run `RecoveryDialog`. Skip and Verify both close it; Verify blocks until the SDK reports completion.
 
-**Step 5 — MSC2545 phase A: receive (encrypted-aware)**
+**Step 7 — Spaces (room-list hierarchy)**
+- Recognise rooms with `type: m.space`; consume `m.space.child` / `m.space.parent` to build a tree.
+- New FFI surface returning the space tree (parent → children → leaf rooms) alongside the flat room list.
+- UI: sidebar shifts from a flat list to a tree (or two-pane: spaces / rooms within selected space). Defaults to "All rooms" when no space is selected. Plumbing follows directly from sliding sync — `RoomListService` already exposes spaces; the UI just needs to learn them.
+- Space creation / management UI is a follow-up.
+
+**Step 8 — MSC2545 phase A: receive (encrypted-aware)**
 - New `sdk/src/image_packs.rs` aggregating `im.ponies.user_emotes`, `im.ponies.emote_rooms`, and per-room `im.ponies.room_emotes` events; live updates via `add_event_handler`.
-- FFI carries `MediaSource` as an opaque JSON token (`source_json`) — handles both plain `mxc` and encrypted `EncryptedFile`.
-- `fetch_image_bytes(source_json)` routes through `client.media().get_media_content()` for the right plain/encrypted path; cache key = SHA-256 of canonical `MediaSource` JSON.
+- FFI carries `MediaSource` as an opaque JSON token (`source_json`) — handles both plain `mxc` and encrypted `EncryptedFile`. `fetch_source_bytes` (already in place) is the download path.
 - Render stickers (`m.sticker`) inline in the timeline; render inline emoticons in HTML body via Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, and (Win32 decision pending) RichEdit or text-only fallback.
 
-**Step 6 — MSC2545 phase B: send**
+**Step 9 — MSC2545 phase B: send**
 - `send_emoticon_message(room_id, plain_body, html_body)` and `send_sticker(room_id, shortcode)`.
-- Picker UI per platform (popup with tabs + virtualised thumbnail grid).
-- `:shortcode:` autocomplete in the input.
+- Picker UI per platform (popup with tabs + virtualised thumbnail grid). Dovetails with the emoji picker from Step 5.
+- `:shortcode:` autocomplete in the compose input.
 
-**Step 7 — MSC2545 phase C: pack management**
+**Step 10 — MSC2545 phase C: pack management**
 - List enabled packs, toggle subscription via `im.ponies.emote_rooms`, drill into a room's pack from room settings.
 
-**Step 8 — Notifications, layer 1: foreground toasts**
+**Step 11 — Notifications, layer 1: foreground toasts**
 - `tesseract::INotifier` abstraction; per-platform impls (Windows Toast, libnotify via D-Bus, `g_notification_send`).
 - Push-rule evaluation through matrix-sdk-ui's `NotificationClient`.
 - Suppress notifications for the focused room.
 
-**Step 9 — Notifications, layer 2: server pushers**
+**Step 12 — Notifications, layer 2: server pushers**
 - `register_pusher` / `remove_pusher` FFI wrapping `client.pusher().set(...)`.
 - Linux: UnifiedPush via D-Bus `org.unifiedpush.Connector1`.
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
@@ -142,9 +154,10 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 
 ### Decisions still open
 
-- **Win32 inline images** — RichEdit 4.1 (with `IRichEditOleCallback`) for inline emoticons/stickers, or text-only emoticons + sticker-as-card on Win32 in v1?
+- **Win32 inline images** — RichEdit 4.1 (with `IRichEditOleCallback`) for inline images/stickers, or text-only emoticons + attachment-card on Win32 in v1?
 - **Disk media cache** — rely on the SDK's sqlite media store, or maintain a separate `<appdata>/tesseract/media-cache/` for faster picker startup?
-- **Cross-pack scope in v1** — pinned packs vs all subscribed packs in the picker?
+- **Cross-pack scope in v1** — pinned packs vs all subscribed packs in the sticker/emoji picker?
 - **Timeline persistence** — opt in to sqlite-backed `Timeline::with_focus(...)`, or memory-only?
 - **Room-list window** — `AllRooms` for desktop (recommended), or windowed?
 - **Pack-entry encrypted badging** — show a lock glyph on encrypted packs in the picker?
+- **Thread panel layout** — slide-in panel (Telegram style) vs inline thread expansion (Discord style) vs separate window?

@@ -12,13 +12,17 @@ pub mod ffi {
 
     /// Lightweight room descriptor returned by list_rooms().
     struct RoomInfo {
-        id:            String,
-        name:          String,
-        topic:         String,
-        unread_count:  u64,
-        is_direct:     bool,
+        id:                String,
+        name:              String,
+        topic:             String,
+        unread_count:      u64,
+        is_direct:         bool,
         /// mxc:// URI of the room avatar, empty string if none.
-        avatar_url:    String,
+        avatar_url:        String,
+        /// Body text of the most recent message (best-effort, may be empty).
+        last_message_body: String,
+        /// Unix timestamp in milliseconds of the most recent activity, or 0.
+        last_activity_ts:  u64,
     }
 
     /// A single timeline event (message).
@@ -123,6 +127,12 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+
+        // ----- Identity -----
+
+        /// Returns the current user's Matrix ID (e.g. @alice:example.org), or
+        /// an empty string if not logged in.
+        fn user_id(self: &ClientFfi) -> String;
 
         // ----- Media -----
 

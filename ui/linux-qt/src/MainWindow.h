@@ -1,13 +1,14 @@
 #pragma once
 #include <QMainWindow>
 #include <QHash>
-#include <QListWidget>
+#include <QListView>
 #include <QPixmap>
+#include <QScrollArea>
 #include <QTextEdit>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QStatusBar>
-#include <QSplitter>
+#include <QStandardItemModel>
+#include <QVBoxLayout>
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
@@ -47,38 +48,47 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
+
 private slots:
     void onSendClicked();
-    void onRoomSelected(QListWidgetItem* current, QListWidgetItem* previous);
+    void onRoomSelectionChanged(const QModelIndex& current, const QModelIndex& previous);
     void onEventReceived(tesseract::Event* ev);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString context, QString description, bool soft_logout);
     void onTimelineReset(QString roomId);
 
 private:
-    void doLogin();
-    void populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void appendEvent(const tesseract::Event& ev);
+    void     doLogin();
+    void     populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
+    void     appendMessageBubble(const tesseract::Event& ev);
+    void     clearMessages();
+    QWidget* createBubbleRow(const tesseract::Event& ev);
+    QPixmap  makeCirclePixmap(const QPixmap& src, int size);
+    QPixmap  makeInitialsPixmap(const QString& name, int size);
 
-    static constexpr int kRoomAvatarSize = 36;
-    static constexpr int kUserAvatarSize = 24;
-    static constexpr int kMaxImageSize = 400;
+    static constexpr int kRoomAvatarSize  = 36;
+    static constexpr int kMsgAvatarSize   = 32;
+    static constexpr int kMaxImageWidth   = 320;
+    static constexpr int kMaxImageHeight  = 200;
+    static constexpr int kBubbleMaxWidth  = 520;
 
-    QSplitter*   splitter_    = nullptr;
-    QListWidget* roomList_    = nullptr;
-    QTextEdit*   msgView_     = nullptr;
-    QLineEdit*   inputLine_   = nullptr;
-    QPushButton* sendButton_  = nullptr;
+    QListView*           roomList_       = nullptr;
+    QStandardItemModel*  roomModel_      = nullptr;
+    QScrollArea*         msgScrollArea_  = nullptr;
+    QWidget*             msgContainer_   = nullptr;
+    QVBoxLayout*         msgLayout_      = nullptr;
+    QTextEdit*           composeEdit_    = nullptr;
+    QPushButton*         sendButton_     = nullptr;
 
     tesseract::Client             client_;
     std::unique_ptr<EventBridge>  bridge_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
-    /// avatar_url → scaled QPixmap; keyed on URL so a changed avatar causes re-fetch.
+    std::string                   myUserId_;
     QHash<QString, QPixmap>       avatarCache_;
-    /// sender_avatar_url → scaled QPixmap for inline message avatars.
     QHash<QString, QPixmap>       userAvatarCache_;
-    /// image_url → scaled QPixmap for inline image messages.
     QHash<QString, QPixmap>       imageCache_;
 };
 

@@ -13,12 +13,14 @@ inline Result from_ffi(const tesseract_ffi::OpResult& r) {
 
 inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
     return {
-        .id           = std::string(r.id),
-        .name         = std::string(r.name),
-        .topic        = std::string(r.topic),
-        .unread_count = r.unread_count,
-        .is_direct    = r.is_direct,
-        .avatar_url   = std::string(r.avatar_url),
+        .id                = std::string(r.id),
+        .name              = std::string(r.name),
+        .topic             = std::string(r.topic),
+        .unread_count      = r.unread_count,
+        .is_direct         = r.is_direct,
+        .avatar_url        = std::string(r.avatar_url),
+        .last_message_body = std::string(r.last_message_body),
+        .last_activity_ts  = r.last_activity_ts,
     };
 }
 

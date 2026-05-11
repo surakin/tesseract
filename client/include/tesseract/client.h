@@ -95,6 +95,14 @@ public:
     Result send_message(const std::string& room_id, const std::string& body);
 
     // ------------------------------------------------------------------
+    // Identity
+    // ------------------------------------------------------------------
+
+    /// Returns the current user's Matrix ID, e.g. @alice:example.org.
+    /// Returns an empty string when not logged in.
+    std::string get_user_id() const;
+
+    // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------
 
