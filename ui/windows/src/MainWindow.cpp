@@ -94,11 +94,11 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // Avatar
         Gdiplus::Bitmap* bmp = self->get_room_avatar(info.id);
         int ax = x0 + 16;
-        int ay = y0 + (h - kRoomAvatarSize) / 2;
+        int ay = y0 + (h - MainWindow::kRoomAvatarSize) / 2;
         if (bmp)
-            self->draw_circle_bitmap(g, bmp, ax, ay, kRoomAvatarSize);
+            self->draw_circle_bitmap(g, bmp, ax, ay, MainWindow::kRoomAvatarSize);
         else
-            self->draw_initials_circle(g, info.name, ax, ay, kRoomAvatarSize);
+            self->draw_initials_circle(g, info.name, ax, ay, MainWindow::kRoomAvatarSize);
 
         // Name
         Gdiplus::FontFamily ff(L"Segoe UI");
@@ -108,7 +108,7 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
         sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
-        int tx = ax + kRoomAvatarSize + 12;
+        int tx = ax + MainWindow::kRoomAvatarSize + 12;
         int text_w = rc.right - tx - 16;
 
         auto wname = utf8_to_wstr(info.name);
@@ -501,7 +501,6 @@ LRESULT CALLBACK MainWindow::msg_list_subclass_proc(
                 }
             }
         }
-        (void)flag;
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }

@@ -39,10 +39,17 @@ endif()
 # Native C deps pulled in by the Rust crate (openssl-sys).
 # SQLite is no longer needed here: matrix-sdk is built with the bundled-sqlite
 # feature, so rusqlite compiles its own copy of SQLite internally.
-find_package(OpenSSL REQUIRED)
-target_link_libraries(tesseract_sdk_ffi-static INTERFACE
-    OpenSSL::SSL OpenSSL::Crypto
-)
+#
+# Windows is the odd one out: native-tls uses SChannel (Windows SSPI) on
+# Windows targets, so openssl-sys is never pulled into the Rust dependency
+# graph. Skip find_package(OpenSSL) there to support MinGW cross-builds that
+# don't ship a Windows OpenSSL.
+if(NOT WIN32)
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
+        OpenSSL::SSL OpenSSL::Crypto
+    )
+endif()
 
 # Apple system frameworks required by Rust crates (security-framework,
 # core-foundation, native-tls). Attached to the Rust archive's interface so

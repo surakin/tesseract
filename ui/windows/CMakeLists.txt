@@ -26,6 +26,13 @@ target_compile_definitions(tesseract_win32 PRIVATE
     UNICODE _UNICODE
     WIN32_LEAN_AND_MEAN NOMINMAX)
 
+# MinGW: main.cpp uses wWinMain (wide entry). MinGW's default crtexewin
+# object resolves WinMain; -municode swaps to the unicode entry resolver.
+# MSVC auto-detects the entry point, so this only matters for MinGW.
+if(MINGW)
+    target_compile_options(tesseract_win32 PRIVATE -municode)
+    target_link_options(tesseract_win32 PRIVATE -municode)
+endif()
 
 set_target_properties(tesseract_win32 PROPERTIES
     OUTPUT_NAME "Tesseract")
