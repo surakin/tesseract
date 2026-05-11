@@ -96,8 +96,16 @@ pub async fn begin(
         .context("build matrix-sdk Client")?;
 
     // 3. Native-app client metadata for dynamic registration.
+    //    `client_name` becomes the device display name in Element's
+    //    Sessions view (MAS has no separate initial_device_display_name).
+    let device_name = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .map(|h| format!("Tesseract on {h}"))
+        .unwrap_or_else(|| "Tesseract".to_owned());
+
     let metadata = ClientMetadata {
-        client_name: Some(Localized::new("Tesseract".to_owned(), [])),
+        client_name: Some(Localized::new(device_name, [])),
         ..ClientMetadata::new(
             ApplicationType::Native,
             vec![OAuthGrantType::AuthorizationCode {
