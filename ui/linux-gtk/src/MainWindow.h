@@ -63,6 +63,14 @@ private:
                                               gpointer user_data);
     static void    on_logout_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
+    static void    on_reaction_clicked_(GtkButton* btn, gpointer user_data);
+
+    /// Build a footer GtkBox (horizontal) holding reaction chips on the left
+    /// and the timestamp anchored to the right. Always returned non-null; an
+    /// event with no reactions and no timestamp still yields an empty footer
+    /// so the in-place rebuild path has a uniform widget to swap in.
+    GtkWidget* build_message_footer(const tesseract::Event& ev,
+                                    const std::string& ts_str);
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();

@@ -828,6 +828,99 @@ void MainWindow::on_adj_upper_changed_(GObject* obj, GParamSpec*, gpointer user_
 
 // ---------------------------------------------------------------------------
 
+namespace {
+struct ReactionClickCtx {
+    MainWindow* window;
+    std::string room_id;
+    std::string event_id;
+    std::string key;
+};
+} // namespace
+
+void MainWindow::on_reaction_clicked_(GtkButton* /*btn*/, gpointer user_data) {
+    auto* ctx = static_cast<ReactionClickCtx*>(user_data);
+    if (!ctx || !ctx->window) return;
+    auto result = ctx->window->client_.send_reaction(
+        ctx->room_id, ctx->event_id, ctx->key);
+    if (!result.ok && ctx->window->status_bar_) {
+        std::string msg = "Failed to toggle reaction: " + result.message;
+        gtk_label_set_text(GTK_LABEL(ctx->window->status_bar_), msg.c_str());
+    }
+}
+
+GtkWidget* MainWindow::build_message_footer(const tesseract::Event& ev,
+                                            const std::string& ts_str) {
+    GtkWidget* footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_margin_top(footer, 2);
+
+    GtkWidget* chip_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_halign(chip_box, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(chip_box, TRUE);
+
+    for (const auto& r : ev.reactions) {
+        GtkWidget* chip = gtk_button_new();
+        gtk_widget_add_css_class(chip, "reaction-chip");
+        if (r.reacted_by_me)
+            gtk_widget_add_css_class(chip, "reaction-mine");
+
+        // For MSC 4027 custom-image reactions, use the cached chip icon
+        // when available; otherwise fall back to the shortcode text.
+        GtkWidget* chip_content = nullptr;
+        if (!r.source_json.empty()) {
+            auto it = image_cache_.find(r.source_json);
+            if (it != image_cache_.end() && !it->second.empty()) {
+                GdkTexture* tex = make_scaled_texture(it->second, 20, 20);
+                if (tex) {
+                    GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+                    GtkWidget* img  = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+                    gtk_image_set_pixel_size(GTK_IMAGE(img), 20);
+                    gtk_box_append(GTK_BOX(hbox), img);
+                    std::string count = std::to_string(r.count);
+                    gtk_box_append(GTK_BOX(hbox), gtk_label_new(count.c_str()));
+                    g_object_unref(tex);
+                    chip_content = hbox;
+                }
+            }
+        }
+        if (!chip_content) {
+            std::string label = r.key + " " + std::to_string(r.count);
+            chip_content = gtk_label_new(label.c_str());
+        }
+        gtk_button_set_child(GTK_BUTTON(chip), chip_content);
+
+        if (!r.senders.empty()) {
+            std::string tip = "Reacted by:";
+            for (const auto& s : r.senders)
+                tip += "\n  " + s;
+            gtk_widget_set_tooltip_text(chip, tip.c_str());
+        }
+
+        auto* ctx = new ReactionClickCtx{this, ev.room_id, ev.event_id, r.key};
+        g_signal_connect_data(
+            chip, "clicked",
+            G_CALLBACK(MainWindow::on_reaction_clicked_),
+            ctx,
+            +[](gpointer data, GClosure*) {
+                delete static_cast<ReactionClickCtx*>(data);
+            },
+            G_CONNECT_DEFAULT);
+
+        gtk_box_append(GTK_BOX(chip_box), chip);
+    }
+
+    gtk_box_append(GTK_BOX(footer), chip_box);
+
+    if (!ts_str.empty()) {
+        GtkWidget* ts_lbl = gtk_label_new(ts_str.c_str());
+        gtk_label_set_xalign(GTK_LABEL(ts_lbl), 1.0f);
+        gtk_widget_set_halign(ts_lbl, GTK_ALIGN_END);
+        gtk_widget_add_css_class(ts_lbl, "timestamp");
+        gtk_box_append(GTK_BOX(footer), ts_lbl);
+    }
+
+    return footer;
+}
+
 void MainWindow::append_event(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
@@ -898,6 +991,40 @@ void MainWindow::append_event(const tesseract::Event& ev) {
                     }
                 }
             }
+
+            // Rebuild the reactions+timestamp footer in place. The reaction
+            // set changes on every live update, so always swap the footer
+            // rather than diff individual chips.
+            std::string ts_str_in;
+            if (ev.timestamp > 0) {
+                time_t t = static_cast<time_t>(ev.timestamp / 1000);
+                struct tm tm_info;
+                localtime_r(&t, &tm_info);
+                char buf[6];
+                strftime(buf, sizeof(buf), "%H:%M", &tm_info);
+                ts_str_in = buf;
+            }
+            // Pre-fetch MSC 4027 chip icons so they render with the image.
+            for (const auto& r : ev.reactions) {
+                if (!r.source_json.empty() &&
+                    image_cache_.find(r.source_json) == image_cache_.end())
+                {
+                    image_cache_[r.source_json] =
+                        client_.fetch_media_bytes(r.source_json);
+                }
+            }
+            GtkWidget* old_footer = static_cast<GtkWidget*>(
+                g_object_get_data(G_OBJECT(row), "footer"));
+            GtkWidget* bubble = static_cast<GtkWidget*>(
+                g_object_get_data(G_OBJECT(row), "bubble"));
+            if (old_footer && bubble) {
+                gtk_box_remove(GTK_BOX(bubble), old_footer);
+            }
+            if (bubble) {
+                GtkWidget* footer = build_message_footer(ev, ts_str_in);
+                gtk_box_append(GTK_BOX(bubble), footer);
+                g_object_set_data(G_OBJECT(row), "footer", footer);
+            }
             return;
         }
     }
@@ -923,6 +1050,13 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         fetch_if_missing(static_cast<const tesseract::ImageEvent&>(ev).image_url);
     else if (ev.type == tesseract::EventType::Sticker)
         fetch_if_missing(static_cast<const tesseract::StickerEvent&>(ev).image_url);
+
+    // Pre-fetch MSC 4027 chip icons so they can render with the image
+    // instead of falling back to the shortcode label.
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            fetch_if_missing(r.source_json);
+    }
 
     // Timestamp string (HH:MM).
     std::string ts_str;
@@ -1049,13 +1183,11 @@ void MainWindow::append_event(const tesseract::Event& ev) {
     }
     g_object_set_data(G_OBJECT(row), "body_lbl", body_lbl); // may be nullptr for images/stickers
 
-    // Timestamp
-    if (!ts_str.empty()) {
-        GtkWidget* ts_lbl = gtk_label_new(ts_str.c_str());
-        gtk_label_set_xalign(GTK_LABEL(ts_lbl), 1.0f);
-        gtk_widget_add_css_class(ts_lbl, "timestamp");
-        gtk_box_append(GTK_BOX(bubble), ts_lbl);
-    }
+    // Footer: reaction chips (left) + right-anchored timestamp.
+    GtkWidget* footer = build_message_footer(ev, ts_str);
+    gtk_box_append(GTK_BOX(bubble), footer);
+    g_object_set_data(G_OBJECT(row), "footer", footer);
+    g_object_set_data(G_OBJECT(row), "bubble", bubble);
 
     gtk_box_append(GTK_BOX(content), bubble);
     gtk_widget_set_halign(content, GTK_ALIGN_START);

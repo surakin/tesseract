@@ -94,6 +94,15 @@ public:
 
     Result send_message(const std::string& room_id, const std::string& body);
 
+    /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
+    /// First call adds the reaction; second redacts it. Requires that the
+    /// room is currently subscribed via `subscribe_room`. `key` may be a
+    /// Unicode emoji (e.g. "👍") or, in a future MSC 4027 send pass, a
+    /// shortcode like ":partyparrot:".
+    Result send_reaction(const std::string& room_id,
+                         const std::string& event_id,
+                         const std::string& key);
+
     // ------------------------------------------------------------------
     // Identity
     // ------------------------------------------------------------------

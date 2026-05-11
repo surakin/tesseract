@@ -55,6 +55,7 @@ private:
 
 struct MessageData {
     std::string          event_id;
+    std::string          room_id;
     std::string          body;
     std::string          sender;
     std::string          sender_name;
@@ -62,6 +63,13 @@ struct MessageData {
     uint64_t             timestamp  = 0;
     bool                 is_own     = false;
     tesseract::EventType type       = tesseract::EventType::Text;
+    std::vector<tesseract::Reaction> reactions;
+    /// Populated during `draw_message_item`, consumed by the WM_LBUTTONDOWN
+    /// hit-test on the message list. Coordinates are relative to the row's
+    /// top-left and become stale on the next paint of the same item — that's
+    /// fine: every reaction click happens after a paint that has already
+    /// recorded the chip rects for that row.
+    mutable std::vector<std::pair<RECT, std::string>> chip_rects;
 };
 
 // ---------------------------------------------------------------------------
@@ -76,6 +84,8 @@ public:
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
     static LRESULT CALLBACK input_subclass_proc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
+    static LRESULT CALLBACK msg_list_subclass_proc(HWND, UINT, WPARAM, LPARAM,
+                                                    UINT_PTR, DWORD_PTR);
 
     explicit MainWindow(HINSTANCE hInst);
     ~MainWindow();
@@ -132,6 +142,8 @@ private:
     static constexpr int kBubblePadY     = 8;
     static constexpr int kBubbleRadius   = 12;
     static constexpr int kMaxBubbleWidth = 420;
+    static constexpr int kReactionH      = 22;
+    static constexpr int kReactionPad    = 4;
     static constexpr int kUserStripH     = 48;
 
     HINSTANCE hInst_;

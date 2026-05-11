@@ -41,62 +41,69 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
     };
 }
 
+/// Copy every base-`Event` field (including `reactions`) from an FFI
+/// `TimelineEvent` onto a freshly allocated subtype. Each branch in
+/// `make_event` calls this before filling in its subtype-specific fields,
+/// so adding a new base field (like `reactions`) only needs to be wired up
+/// here once.
+inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e) {
+    ev.event_id          = std::string(e.event_id);
+    ev.room_id           = std::string(e.room_id);
+    ev.sender            = std::string(e.sender);
+    ev.sender_name       = std::string(e.sender_name);
+    ev.sender_avatar_url = std::string(e.sender_avatar_url);
+    ev.body              = std::string(e.body);
+    ev.timestamp         = e.timestamp;
+
+    ev.reactions.clear();
+    ev.reactions.reserve(e.reactions.size());
+    for (const auto& r : e.reactions) {
+        Reaction out{
+            std::string(r.key),
+            r.count,
+            r.reacted_by_me,
+            std::string(r.source_json),
+            {},
+        };
+        out.senders.reserve(r.senders.size());
+        for (const auto& s : r.senders)
+            out.senders.emplace_back(std::string(s));
+        ev.reactions.push_back(std::move(out));
+    }
+}
+
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) {
     std::string msg_type(e.msg_type);
 
     if (msg_type == "m.text") {
         auto ev = std::make_unique<TextEvent>();
-        ev->event_id = std::string(e.event_id);
-        ev->room_id = std::string(e.room_id);
-        ev->sender = std::string(e.sender);
-        ev->sender_name = std::string(e.sender_name);
-        ev->sender_avatar_url = std::string(e.sender_avatar_url);
-        ev->body = std::string(e.body);
-        ev->timestamp = e.timestamp;
+        assign_base(*ev, e);
         return ev;
     }
 
     if (msg_type == "m.image") {
         auto ev = std::make_unique<ImageEvent>();
-        ev->event_id = std::string(e.event_id);
-        ev->room_id = std::string(e.room_id);
-        ev->sender = std::string(e.sender);
-        ev->sender_name = std::string(e.sender_name);
-        ev->sender_avatar_url = std::string(e.sender_avatar_url);
-        ev->body = std::string(e.body);
-        ev->timestamp = e.timestamp;
+        assign_base(*ev, e);
         ev->image_url = std::string(e.source_json);
-        ev->width = e.width;
-        ev->height = e.height;
-        ev->filename = std::string(e.image_filename);
+        ev->width     = e.width;
+        ev->height    = e.height;
+        ev->filename  = std::string(e.image_filename);
         return ev;
     }
 
     if (msg_type == "m.sticker") {
         auto ev = std::make_unique<StickerEvent>();
-        ev->event_id = std::string(e.event_id);
-        ev->room_id = std::string(e.room_id);
-        ev->sender = std::string(e.sender);
-        ev->sender_name = std::string(e.sender_name);
-        ev->sender_avatar_url = std::string(e.sender_avatar_url);
-        ev->body = std::string(e.body);
-        ev->timestamp = e.timestamp;
+        assign_base(*ev, e);
         ev->image_url = std::string(e.source_json);
-        ev->width = e.width;
-        ev->height = e.height;
+        ev->width     = e.width;
+        ev->height    = e.height;
         return ev;
     }
 
     if (msg_type == "m.file") {
         auto ev = std::make_unique<FileEvent>();
-        ev->event_id = std::string(e.event_id);
-        ev->room_id = std::string(e.room_id);
-        ev->sender = std::string(e.sender);
-        ev->sender_name = std::string(e.sender_name);
-        ev->sender_avatar_url = std::string(e.sender_avatar_url);
-        ev->body = std::string(e.body);
-        ev->timestamp = e.timestamp;
-        ev->file_url = std::string(e.file_json);
+        assign_base(*ev, e);
+        ev->file_url  = std::string(e.file_json);
         ev->file_name = std::string(e.file_name);
         ev->file_size = e.file_size;
         return ev;
@@ -104,13 +111,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
 
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
-    ev->event_id = std::string(e.event_id);
-    ev->room_id = std::string(e.room_id);
-    ev->sender = std::string(e.sender);
-    ev->sender_name = std::string(e.sender_name);
-    ev->sender_avatar_url = std::string(e.sender_avatar_url);
-    ev->body = std::string(e.body);
-    ev->timestamp = e.timestamp;
+    assign_base(*ev, e);
     return ev;
 }
 

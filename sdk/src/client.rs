@@ -29,12 +29,14 @@ use matrix_sdk::SessionChange;
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
-    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind},
+    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind},
 };
 #[cfg(not(test))]
 use futures_util::StreamExt;
 #[cfg(not(test))]
-use crate::ffi::{EventHandlerBridge, TimelineEvent};
+use crate::ffi::{EventHandlerBridge, ReactionGroup, TimelineEvent};
+#[cfg(not(test))]
+use matrix_sdk::{Room, ruma::UserId};
 
 // ---------------------------------------------------------------------------
 
@@ -643,12 +645,16 @@ impl ClientFfi {
         let tl    = Arc::clone(&timeline);
         let h     = Arc::clone(&handler);
         let rid   = room_id_str.clone();
+        let room  = room.clone();
+        let me    = client.user_id().map(|u| u.to_owned());
 
         let abort = self.rt.spawn(async move {
             let (initial_items, mut stream) = tl.subscribe().await;
 
             for item in initial_items.iter() {
-                if let Some(ev) = timeline_item_to_ffi(item, &rid) {
+                if let Some(ev) = timeline_item_to_ffi(
+                    item, &rid, &room, me.as_deref()).await
+                {
                     if let Ok(guard) = h.lock() {
                         guard.on_message_event(&ev);
                     }
@@ -657,7 +663,7 @@ impl ClientFfi {
 
             while let Some(diffs) = stream.next().await {
                 for diff in diffs {
-                    handle_timeline_diff(diff, &h, &rid);
+                    handle_timeline_diff(diff, &h, &rid, &room, me.as_deref()).await;
                 }
             }
         }).abort_handle();
@@ -713,6 +719,44 @@ impl ClientFfi {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
         }
+    }
+
+    /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
+    /// First call adds the reaction; second redacts it. Requires that
+    /// `room_id` is currently subscribed via `subscribe_room` — we look up
+    /// its `Timeline` handle to invoke `toggle_reaction`.
+    #[cfg(not(test))]
+    pub fn send_reaction(&mut self, room_id: &str, event_id: &str, key: &str) -> OpResult {
+        if self.client.is_none() { return err("not logged in"); }
+        if key.is_empty() { return err("reaction key is empty"); }
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return err("room not subscribed; call subscribe_room first");
+        };
+        let tl = Arc::clone(&handle.timeline);
+        let item_id = TimelineEventItemId::EventId(event_id);
+        let key = key.to_owned();
+
+        match self.rt.block_on(async move {
+            tl.toggle_reaction(&item_id, &key).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_reaction(&mut self, _room_id: &str, _event_id: &str, _key: &str) -> OpResult {
+        err("not logged in")
     }
 
     pub fn user_id(&self) -> String {
@@ -971,9 +1015,59 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
 }
 
 #[cfg(not(test))]
-fn timeline_item_to_ffi(
+async fn collect_reactions(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+    room: &Room,
+    me: Option<&UserId>,
+) -> Vec<ReactionGroup> {
+    let Some(table) = event_item.content().reactions() else {
+        return Vec::new();
+    };
+
+    let mut out: Vec<ReactionGroup> = Vec::with_capacity(table.len());
+    for (key, by_sender) in table.iter() {
+        let count = by_sender.len() as u64;
+        let reacted_by_me = me
+            .as_ref()
+            .map(|uid| by_sender.contains_key(*uid))
+            .unwrap_or(false);
+
+        let mut senders: Vec<String> = Vec::with_capacity(by_sender.len());
+        for uid in by_sender.keys() {
+            // Cheap-ish lookup: hits the SDK's in-memory state store. No
+            // network. Falls back to the bare Matrix ID when membership
+            // for this user hasn't been hydrated yet.
+            let label = match room.get_member_no_sync(uid).await {
+                Ok(Some(m)) => m
+                    .display_name()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| uid.to_string()),
+                _ => uid.to_string(),
+            };
+            senders.push(label);
+        }
+
+        out.push(ReactionGroup {
+            key: key.clone(),
+            count,
+            reacted_by_me,
+            // MSC 4027 surfaces would be filled in here. matrix-sdk-ui's
+            // ReactionsByKeyBySender does not currently carry the source
+            // MediaSource, so we leave `source_json` empty and rely on a
+            // future raw-event lookup pass for custom-image reactions.
+            source_json: String::new(),
+            senders,
+        });
+    }
+    out
+}
+
+#[cfg(not(test))]
+async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
     room_id: &str,
+    room: &Room,
+    me: Option<&UserId>,
 ) -> Option<TimelineEvent> {
     use matrix_sdk::ruma::events::room::message::MessageType;
 
@@ -1003,6 +1097,7 @@ fn timeline_item_to_ffi(
             } else {
                 (String::new(), String::new())
             };
+        let reactions = collect_reactions(event_item, room, me).await;
         return Some(TimelineEvent {
             event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
             room_id:           room_id.to_owned(),
@@ -1019,6 +1114,7 @@ fn timeline_item_to_ffi(
             file_name:         String::new(),
             file_size:         0u64,
             image_filename:    String::new(),
+            reactions,
         });
     }
 
@@ -1086,6 +1182,8 @@ fn timeline_item_to_ffi(
             (String::new(), String::new())
         };
 
+    let reactions = collect_reactions(event_item, room, me).await;
+
     Some(TimelineEvent {
         event_id:          event_item.event_id()
             .map(|id| id.to_string())
@@ -1104,14 +1202,17 @@ fn timeline_item_to_ffi(
         file_name,
         file_size,
         image_filename,
+        reactions,
     })
 }
 
 #[cfg(not(test))]
-fn handle_timeline_diff(
+async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
     handler: &Arc<Mutex<SendHandler>>,
     room_id: &str,
+    room: &Room,
+    me: Option<&UserId>,
 ) {
     let (reset, items): (bool, Vec<Arc<TimelineItem>>) = match diff {
         VectorDiff::Append    { values }    => (false, values.into_iter().collect()),
@@ -1132,7 +1233,7 @@ fn handle_timeline_diff(
     }
 
     for item in &items {
-        if let Some(ev) = timeline_item_to_ffi(item, room_id) {
+        if let Some(ev) = timeline_item_to_ffi(item, room_id, room, me).await {
             if let Ok(guard) = handler.lock() {
                 guard.on_message_event(&ev);
             }

@@ -71,6 +71,7 @@ private slots:
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
+    void onReactionChipClicked();
 
 signals:
     void recoverFinished(bool ok, QString error);

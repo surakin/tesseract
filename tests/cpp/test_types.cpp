@@ -245,6 +245,91 @@ TEST_CASE("StickerEvent fields are settable", "[types]") {
 // tesseract::EventType enum
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// tesseract::Reaction
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Reaction default-initialised fields", "[types][reactions]") {
+    tesseract::Reaction r{};
+    CHECK(r.key.empty());
+    CHECK(r.count == 0u);
+    CHECK_FALSE(r.reacted_by_me);
+    CHECK(r.source_json.empty());
+    CHECK(r.senders.empty());
+}
+
+TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]") {
+    tesseract::Reaction r{
+        .key           = "👍",
+        .count         = 3,
+        .reacted_by_me = true,
+        .source_json   = "",
+        .senders       = {"@alice:example.org", "@bob:example.org", "Carol"},
+    };
+    CHECK(r.key == "👍");
+    CHECK(r.count == 3u);
+    CHECK(r.reacted_by_me);
+    CHECK(r.senders.size() == 3);
+    CHECK(r.senders.back() == "Carol");
+    // sender list size must match the count — UI relies on this invariant
+    // to populate the tooltip.
+    CHECK(r.senders.size() == static_cast<size_t>(r.count));
+}
+
+TEST_CASE("MSC 4027 custom reaction preserves source_json", "[types][reactions]") {
+    tesseract::Reaction r{
+        .key           = ":partyparrot:",
+        .count         = 2,
+        .reacted_by_me = false,
+        .source_json   = R"({"url":"mxc://example.org/abc123"})",
+        .senders       = {"@alice:example.org", "@bob:example.org"},
+    };
+    CHECK_FALSE(r.source_json.empty());
+    CHECK(r.source_json.find("mxc://example.org/abc123") != std::string::npos);
+
+    // Copy-assignment must preserve the JSON blob verbatim — chip-icon
+    // dedup keys by source_json so any trimming would break caching.
+    tesseract::Reaction copy = r;
+    CHECK(copy.source_json == r.source_json);
+}
+
+TEST_CASE("Event base type carries reactions", "[types][reactions]") {
+    tesseract::TextEvent ev;
+    ev.event_id = "$abc:example.org";
+    ev.body     = "hello";
+    ev.reactions = {
+        {"👍", 2, true,  "", {"@alice:example.org", "@bob:example.org"}},
+        {"❤",  1, false, "", {"@bob:example.org"}},
+    };
+
+    CHECK(ev.reactions.size() == 2);
+    CHECK(ev.reactions[0].key == "👍");
+    CHECK(ev.reactions[0].reacted_by_me);
+    CHECK(ev.reactions[1].senders.front() == "@bob:example.org");
+}
+
+TEST_CASE("Reactions live on every Event subtype (base field)", "[types][reactions]") {
+    // Each subtype should carry its own reaction list since the field is on
+    // the base. Sanity-check that subtype-specific fields don't shadow it.
+    tesseract::TextEvent   t;   t.reactions.push_back({"👍", 1, true, "", {"@a"}});
+    tesseract::ImageEvent  img; img.reactions.push_back({"❤", 2, false, "", {"@a", "@b"}});
+    tesseract::StickerEvent st; st.reactions.push_back({"😂", 3, false, "", {"@a","@b","@c"}});
+    tesseract::FileEvent   f;   f.reactions.push_back({"🔥", 4, true, "", {"@a","@b","@c","@d"}});
+    tesseract::UnhandledEvent u;u.reactions.push_back({"👀", 0, false, "", {}});
+
+    CHECK(t.reactions.size()   == 1);
+    CHECK(img.reactions.size() == 1);
+    CHECK(st.reactions.size()  == 1);
+    CHECK(f.reactions.size()   == 1);
+    CHECK(u.reactions.size()   == 1);
+    CHECK(t.reactions[0].reacted_by_me);
+    CHECK(f.reactions[0].senders.size() == 4);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::EventType enum
+// ---------------------------------------------------------------------------
+
 TEST_CASE("EventType enum values are correct", "[types]") {
     CHECK(static_cast<int>(tesseract::EventType::Text)      == 0);
     CHECK(static_cast<int>(tesseract::EventType::Image)     == 1);

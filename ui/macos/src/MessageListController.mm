@@ -2,6 +2,13 @@
 #import "AvatarCache.h"
 
 #include <tesseract/client.h>
+#import <objc/runtime.h>
+
+// Keys for objc_setAssociatedObject — stash (roomId, eventId, reactionKey)
+// on each chip NSButton so `reactionChipClicked:` can forward to the client.
+static const void* const kChipRoomIdKey   = &kChipRoomIdKey;
+static const void* const kChipEventIdKey  = &kChipEventIdKey;
+static const void* const kChipKeyKey      = &kChipKeyKey;
 
 static NSString* const kCellId     = @"MsgCell";
 static const CGFloat kAvatarSize   = 28;
@@ -16,11 +23,14 @@ static const CGFloat kCornerRadius = 12;
 static const CGFloat kMaxImageW    = 320;
 static const CGFloat kMaxImageH    = 200;
 static const CGFloat kMaxStickerSz = 256;
+static const CGFloat kChipH        = 20;
+static const CGFloat kChipGap      = 4;
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
 struct MessageData {
     std::string event_id;
+    std::string room_id;
     std::string sender;
     std::string sender_name;
     std::string sender_avatar_url;
@@ -38,11 +48,15 @@ struct MessageData {
     // File
     std::string file_name;
     uint64_t    file_size = 0;
+
+    // Reactions
+    std::vector<tesseract::Reaction> reactions;
 };
 
 static MessageData makeMessageData(const tesseract::Event& ev, NSString* myUserId) {
     MessageData md;
     md.event_id          = ev.event_id;
+    md.room_id           = ev.room_id;
     md.sender            = ev.sender;
     md.sender_name       = ev.sender_name;
     md.sender_avatar_url = ev.sender_avatar_url;
@@ -51,6 +65,7 @@ static MessageData makeMessageData(const tesseract::Event& ev, NSString* myUserI
     md.type              = ev.type;
     md.is_own            = myUserId
         && [@(ev.sender.c_str()) isEqualToString:myUserId];
+    md.reactions         = ev.reactions;
 
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
@@ -108,16 +123,19 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 - (void)configureWith:(const MessageData&)msg
            tableWidth:(CGFloat)w
             myUserId:(NSString*)myUserId
-          mediaImage:(NSImage*)mediaImage;
+          mediaImage:(NSImage*)mediaImage
+        chipIcons:(NSDictionary<NSString*, NSImage*>*)chipIcons
+       chipTarget:(id)chipTarget;
 @end
 
 @implementation BubbleCellView {
-    NSImageView* _avatarView;
-    NSTextField* _senderLabel;
-    NSTextField* _bodyLabel;
-    NSImageView* _mediaView;
-    NSTextField* _timestampLabel;
-    NSView*      _bubble;
+    NSImageView*  _avatarView;
+    NSTextField*  _senderLabel;
+    NSTextField*  _bodyLabel;
+    NSImageView*  _mediaView;
+    NSTextField*  _timestampLabel;
+    NSView*       _bubble;
+    NSStackView*  _chipStack;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -166,13 +184,22 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     _timestampLabel.alignment = NSTextAlignmentRight;
     [_bubble addSubview:_timestampLabel];
 
+    _chipStack = [NSStackView stackViewWithViews:@[]];
+    _chipStack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    _chipStack.alignment   = NSLayoutAttributeCenterY;
+    _chipStack.spacing     = kChipGap;
+    _chipStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [_bubble addSubview:_chipStack];
+
     return self;
 }
 
 - (void)configureWith:(const MessageData&)msg
            tableWidth:(CGFloat)tableW
             myUserId:(NSString*)myUserId
-          mediaImage:(NSImage*)mediaImage {
+          mediaImage:(NSImage*)mediaImage
+        chipIcons:(NSDictionary<NSString*, NSImage*>*)chipIcons
+       chipTarget:(id)chipTarget {
     BOOL own = msg.is_own;
     NSString* sender = @(msg.sender_name.empty()
                            ? msg.sender.c_str()
@@ -229,6 +256,71 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     _timestampLabel.stringValue = ts ?: @"";
     _timestampLabel.hidden = (ts.length == 0);
     if (borderless) _timestampLabel.hidden = YES;  // no timestamp under stickers
+
+    // Rebuild the reaction chip row. Stickers omit chips too (matches
+    // borderless rule for the timestamp).
+    for (NSView* v in _chipStack.arrangedSubviews.copy)
+        [_chipStack removeArrangedSubview:v], [v removeFromSuperview];
+    _chipStack.hidden = (borderless || msg.reactions.empty());
+    if (!_chipStack.hidden) {
+        for (const auto& r : msg.reactions) {
+            NSButton* chip = [[NSButton alloc] init];
+            chip.translatesAutoresizingMaskIntoConstraints = NO;
+            chip.bezelStyle    = NSBezelStyleInline;
+            chip.bordered      = NO;
+            chip.wantsLayer    = YES;
+            chip.layer.cornerRadius = kChipH / 2;
+            chip.layer.borderWidth  = 1;
+            NSColor* fill   = r.reacted_by_me
+                ? [[NSColor controlAccentColor] colorWithAlphaComponent:0.20]
+                : [[NSColor separatorColor] colorWithAlphaComponent:0.25];
+            NSColor* border = r.reacted_by_me
+                ? [[NSColor controlAccentColor] colorWithAlphaComponent:0.6]
+                : [NSColor separatorColor];
+            chip.layer.backgroundColor = fill.CGColor;
+            chip.layer.borderColor     = border.CGColor;
+            chip.font = [NSFont systemFontOfSize:10];
+
+            NSString* qsrc = r.source_json.empty() ? nil : @(r.source_json.c_str());
+            NSImage* icon  = qsrc ? chipIcons[qsrc] : nil;
+            NSString* count = [NSString stringWithFormat:@"%llu",
+                               (unsigned long long)r.count];
+            if (icon) {
+                chip.image          = icon;
+                chip.imageScaling   = NSImageScaleProportionallyDown;
+                chip.imagePosition  = NSImageLeft;
+                chip.title          = count;
+            } else {
+                chip.title = [NSString stringWithFormat:@"%s %@",
+                              r.key.c_str(), count];
+            }
+
+            // Tooltip: "Reacted by:\n  Alice\n  Bob".
+            if (!r.senders.empty()) {
+                NSMutableString* tip = [@"Reacted by:" mutableCopy];
+                for (const auto& s : r.senders)
+                    [tip appendFormat:@"\n  %s", s.c_str()];
+                chip.toolTip = tip;
+            }
+
+            // Stash click context on the chip itself.
+            objc_setAssociatedObject(chip, kChipRoomIdKey,
+                @(msg.room_id.c_str()),
+                OBJC_ASSOCIATION_COPY_NONATOMIC);
+            objc_setAssociatedObject(chip, kChipEventIdKey,
+                @(msg.event_id.c_str()),
+                OBJC_ASSOCIATION_COPY_NONATOMIC);
+            objc_setAssociatedObject(chip, kChipKeyKey,
+                @(r.key.c_str()),
+                OBJC_ASSOCIATION_COPY_NONATOMIC);
+
+            chip.target = chipTarget;
+            chip.action = @selector(reactionChipClicked:);
+
+            [chip.heightAnchor constraintEqualToConstant:kChipH].active = YES;
+            [_chipStack addArrangedSubview:chip];
+        }
+    }
 
     if (!own) {
         NSString* name = sender;
@@ -303,27 +395,35 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         topAnchor = _bodyLabel;
     }
 
-    // Timestamp pinned to bubble bottom-right (unless hidden).
-    if (!_timestampLabel.hidden) {
+    // Footer row: chip stack on the left, timestamp anchored to the right.
+    // When chips are hidden the timestamp still sits flush right because
+    // the `>=` constraint from the (zero-width) chip stack does not push it.
+    BOOL hasFooter = !_timestampLabel.hidden || !_chipStack.hidden;
+    if (hasFooter) {
         [bubbleC addObjectsFromArray:@[
+            [_chipStack.leadingAnchor constraintEqualToAnchor:_bubble.leadingAnchor
+                                                     constant:kBubblePadH],
+            [_chipStack.bottomAnchor  constraintEqualToAnchor:_bubble.bottomAnchor
+                                                     constant:-4],
             [_timestampLabel.trailingAnchor constraintEqualToAnchor:_bubble.trailingAnchor
                                                            constant:-kBubblePadH],
-            [_timestampLabel.bottomAnchor   constraintEqualToAnchor:_bubble.bottomAnchor
-                                                           constant:-4],
+            [_timestampLabel.centerYAnchor  constraintEqualToAnchor:_chipStack.centerYAnchor],
+            [_timestampLabel.leadingAnchor  constraintGreaterThanOrEqualToAnchor:
+                                              _chipStack.trailingAnchor constant:8],
         ]];
         if (topAnchor) {
-            [bubbleC addObject:[_timestampLabel.topAnchor
+            [bubbleC addObject:[_chipStack.topAnchor
                 constraintGreaterThanOrEqualToAnchor:topAnchor.bottomAnchor constant:2]];
         } else {
-            [bubbleC addObject:[_timestampLabel.topAnchor
+            [bubbleC addObject:[_chipStack.topAnchor
                 constraintEqualToAnchor:_bubble.topAnchor constant:kBubblePadV]];
         }
-        topAnchor = _timestampLabel;
+        topAnchor = _chipStack;
     }
 
     // Bubble bottom anchor — pinned to the last element.
     if (topAnchor) {
-        if (topAnchor == _timestampLabel || topAnchor == _bodyLabel) {
+        if (topAnchor == _chipStack || topAnchor == _bodyLabel) {
             [bubbleC addObject:[_bubble.bottomAnchor
                 constraintEqualToAnchor:topAnchor.bottomAnchor constant:kBubblePadV]];
         } else {
@@ -446,6 +546,10 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                 _messages[i] = makeMessageData(*ev, _myUserId);
                 [self _prefetchAvatarFor:_messages[i]];
                 [self _prefetchMediaFor:_messages[i]];
+                [self _prefetchChipIconsFor:_messages[i]];
+                // Reaction count changes row height; let the table re-measure.
+                [_table noteHeightOfRowsWithIndexesChanged:
+                    [NSIndexSet indexSetWithIndex:i]];
                 [_table reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:i]
                                   columnIndexes:[NSIndexSet indexSetWithIndex:0]];
                 return;
@@ -456,6 +560,7 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     MessageData md = makeMessageData(*ev, _myUserId);
     [self _prefetchAvatarFor:md];
     [self _prefetchMediaFor:md];
+    [self _prefetchChipIconsFor:md];
 
     NSInteger row = (NSInteger)_messages.size();
     _messages.push_back(std::move(md));
@@ -541,6 +646,54 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     });
 }
 
+// MSC 4027 chip icons: fetch the MediaSource referenced by each
+// custom-image reaction so the chip can render with the image instead of
+// the bare shortcode. Same async path as `_prefetchMediaFor:`.
+- (void)_prefetchChipIconsFor:(const MessageData&)msg {
+    if (msg.reactions.empty() || !_client) return;
+    tesseract::Client* client = _client;
+    __weak typeof(self) weakSelf = self;
+    for (const auto& r : msg.reactions) {
+        if (r.source_json.empty()) continue;
+        NSString* key = @(r.source_json.c_str());
+        if (_imageCache[key]) continue;
+        if ([_imageInflight containsObject:key]) continue;
+        [_imageInflight addObject:key];
+
+        std::string url = r.source_json;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            auto bytes = client->fetch_media_bytes(url);
+            NSImage* img = nil;
+            if (!bytes.empty()) {
+                NSData* data = [NSData dataWithBytes:bytes.data()
+                                              length:bytes.size()];
+                img = [[NSImage alloc] initWithData:data];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) s = weakSelf;
+                if (!s) return;
+                [s->_imageInflight removeObject:key];
+                if (!img) return;
+                s->_imageCache[key] = img;
+                // Refresh every row that references this chip icon.
+                NSMutableIndexSet* idx = [NSMutableIndexSet indexSet];
+                for (NSInteger i = 0; i < (NSInteger)s->_messages.size(); ++i) {
+                    for (const auto& rr : s->_messages[i].reactions) {
+                        if (rr.source_json == url) {
+                            [idx addIndex:(NSUInteger)i];
+                            break;
+                        }
+                    }
+                }
+                if (idx.count > 0) {
+                    [s->_table reloadDataForRowIndexes:idx
+                                         columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+                }
+            });
+        });
+    }
+}
+
 - (void)_scrollToBottomIfNeeded {
     NSClipView* clip = _scroll.contentView;
     CGFloat maxY = _table.frame.size.height - clip.bounds.size.height;
@@ -580,11 +733,39 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     NSImage* media = nil;
     if (!m.image_url.empty())
         media = _imageCache[@(m.image_url.c_str())];
+
+    NSMutableDictionary<NSString*, NSImage*>* chipIcons =
+        [NSMutableDictionary dictionary];
+    for (const auto& r : m.reactions) {
+        if (r.source_json.empty()) continue;
+        NSString* key = @(r.source_json.c_str());
+        NSImage* img  = _imageCache[key];
+        if (img) chipIcons[key] = img;
+    }
+
     [cell configureWith:m
              tableWidth:tv.bounds.size.width
               myUserId:_myUserId
-            mediaImage:media];
+            mediaImage:media
+          chipIcons:chipIcons
+         chipTarget:self];
     return cell;
+}
+
+- (void)reactionChipClicked:(NSButton*)sender {
+    if (!_client) return;
+    NSString* roomId  = objc_getAssociatedObject(sender, kChipRoomIdKey);
+    NSString* eventId = objc_getAssociatedObject(sender, kChipEventIdKey);
+    NSString* key     = objc_getAssociatedObject(sender, kChipKeyKey);
+    if (roomId.length == 0 || eventId.length == 0 || key.length == 0) return;
+
+    std::string rid(roomId.UTF8String);
+    std::string eid(eventId.UTF8String);
+    std::string k  (key.UTF8String);
+    // toggle_reaction is fast (local-echo path); call inline. The timeline
+    // re-emits the parent event on success, which refreshes the chip state.
+    auto result = _client->send_reaction(rid, eid, k);
+    (void)result;
 }
 
 - (CGFloat)tableView:(NSTableView*)tv heightOfRow:(NSInteger)row {
@@ -651,10 +832,19 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     CGFloat bubblePadV = borderless ? 0 : 2 * kBubblePadV;
     CGFloat innerSpacing = (mediaH > 0 && bodyH > 0) ? 4 : 0;
-    CGFloat tsH = borderless ? 0 : (msg.timestamp > 0 ? kTsH + 4 : 0);
-    CGFloat senderH  = own ? 0 : kSenderH + 2;
+    BOOL hasChips = !borderless && !msg.reactions.empty();
+    // Footer row replaces the standalone timestamp; chip row height
+    // dominates the timestamp height when both are present.
+    CGFloat footerInnerH = 0;
+    if (hasChips) {
+        footerInnerH = MAX(kChipH, kTsH);
+    } else if (!borderless && msg.timestamp > 0) {
+        footerInnerH = kTsH;
+    }
+    CGFloat footerH = footerInnerH > 0 ? footerInnerH + 4 : 0;
+    CGFloat senderH = own ? 0 : kSenderH + 2;
 
-    CGFloat bubbleContentH = mediaH + innerSpacing + bodyH + tsH;
+    CGFloat bubbleContentH = mediaH + innerSpacing + bodyH + footerH;
     if (bubbleContentH == 0) bubbleContentH = 18;  // minimum
 
     return senderH + bubblePadV + bubbleContentH + 2 * kRowPadV;

@@ -26,6 +26,15 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct ReactionGroup {
+        pub key:           String,
+        pub count:         u64,
+        pub reacted_by_me: bool,
+        pub source_json:   String,
+        pub senders:       Vec<String>,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct TimelineEvent {
         pub event_id:          String,
         pub room_id:           String,
@@ -42,6 +51,7 @@ pub mod ffi {
         pub file_name:         String,
         pub file_size:         u64,
         pub image_filename:    String,
+        pub reactions:         Vec<ReactionGroup>,
     }
 
     #[derive(Debug, PartialEq, Default)]

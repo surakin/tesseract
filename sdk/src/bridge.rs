@@ -27,6 +27,25 @@ pub mod ffi {
         is_space:          bool,
     }
 
+    /// One aggregated reaction key on a `TimelineEvent`.
+    /// `count` always equals `senders.len()`.
+    struct ReactionGroup {
+        /// Unicode emoji string for normal reactions, or `:shortcode:` for
+        /// MSC 4027 custom-image reactions.
+        key:           String,
+        count:         u64,
+        /// True when the current user is among the senders for this key.
+        reacted_by_me: bool,
+        /// JSON-serialised `MediaSource` (compatible with
+        /// `fetch_source_bytes`) when this is an MSC 4027 custom-image
+        /// reaction. Empty string for plain Unicode reactions.
+        source_json:   String,
+        /// Display label for each sender, in iteration order from the SDK.
+        /// Each entry is the member's display name when resolvable from the
+        /// room state, otherwise the bare Matrix ID.
+        senders:       Vec<String>,
+    }
+
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
     /// For `m.image`   → source_json, width, height are populated.
@@ -58,6 +77,8 @@ pub mod ffi {
         /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
         /// user-written caption and should be displayed below the image.
         image_filename:    String,
+        /// Aggregated reactions, grouped by key. May be empty.
+        reactions:         Vec<ReactionGroup>,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -161,6 +182,16 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+
+        /// Toggle the current user's `key` reaction on `event_id` in
+        /// `room_id`. Adds the reaction when the user has not yet reacted
+        /// with this key; redacts it when they have. Wraps matrix-sdk-ui's
+        /// `Timeline::toggle_reaction`. Requires that `room_id` is
+        /// currently subscribed via `subscribe_room`.
+        fn send_reaction(self: &mut ClientFfi,
+                         room_id: &str,
+                         event_id: &str,
+                         key: &str) -> OpResult;
 
         // ----- Identity -----
 

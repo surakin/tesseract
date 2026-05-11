@@ -15,7 +15,10 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QFrame>
+#include <QIcon>
 #include <QScrollBar>
+#include <QStringList>
+#include <QToolButton>
 #include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
@@ -672,37 +675,7 @@ void MainWindow::onSpaceBack() {
 void MainWindow::appendMessage(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
-    // Update in place if we already have this event (sender profile resolved / edit).
     QString qid = QString::fromStdString(ev.event_id);
-    if (!qid.isEmpty() && msgEventWidgets_.contains(qid)) {
-        QWidget* existing = msgEventWidgets_.value(qid);
-        QString newName = QString::fromStdString(
-            ev.sender_name.empty() ? ev.sender : ev.sender_name);
-        if (auto* lbl = existing->findChild<QLabel*>("senderName"))
-            lbl->setText(newName);
-        QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
-        if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
-            auto bytes = client_.fetch_media_bytes(ev.sender_avatar_url);
-            if (!bytes.empty()) {
-                QPixmap pm;
-                pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                                static_cast<uint>(bytes.size()));
-                if (!pm.isNull())
-                    userAvatarCache_[avatarUrl] = makeCirclePixmap(pm, kMsgAvatarSize);
-            }
-        }
-        if (auto* lbl = existing->findChild<QLabel*>("avatar")) {
-            if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl))
-                lbl->setPixmap(userAvatarCache_[avatarUrl]);
-            else
-                lbl->setPixmap(makeInitialsPixmap(newName, kMsgAvatarSize));
-        }
-        if (ev.type == tesseract::EventType::Text) {
-            if (auto* lbl = existing->findChild<QLabel*>("body"))
-                lbl->setText(QString::fromStdString(ev.body).toHtmlEscaped());
-        }
-        return;
-    }
 
     // Fetch/cache sender avatar.
     QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
@@ -739,7 +712,30 @@ void MainWindow::appendMessage(const tesseract::Event& ev) {
         fetchAndCacheImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
     }
 
+    // Pre-fetch chip icons for MSC 4027 custom-image reactions so the chip
+    // can render with the image instead of falling back to the shortcode.
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            fetchAndCacheImage(r.source_json, 20, 20);
+    }
+
     QWidget* row = createMessageRow(ev);
+
+    // Replace any existing row for this event_id (live re-emit after reaction
+    // change, edit, or sender-profile resolution) in place, preserving its
+    // position in the layout. Otherwise append.
+    if (!qid.isEmpty() && msgEventWidgets_.contains(qid)) {
+        QWidget* existing = msgEventWidgets_.value(qid);
+        const int index = msgLayout_->indexOf(existing);
+        if (index >= 0) {
+            msgLayout_->removeWidget(existing);
+            msgLayout_->insertWidget(index, row);
+            existing->deleteLater();
+            msgEventWidgets_[qid] = row;
+            return;
+        }
+    }
+
     if (!qid.isEmpty())
         msgEventWidgets_[qid] = row;
     autoScrollPending_ = true;
@@ -836,17 +832,98 @@ QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
         contentLayout->addWidget(bodyLabel);
     }
 
+    // Footer row: reaction chips (flow from the left) + timestamp anchored
+    // to the right of the content box.
+    auto* footer = new QWidget(contentBox);
+    auto* footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(0, 2, 0, 0);
+    footerLayout->setSpacing(4);
+
+    for (const auto& r : ev.reactions) {
+        auto* chip = new QToolButton(footer);
+        chip->setCheckable(true);
+        chip->setChecked(r.reacted_by_me);
+        chip->setAutoRaise(false);
+        chip->setFocusPolicy(Qt::NoFocus);
+        chip->setProperty("eventId",    QString::fromStdString(ev.event_id));
+        chip->setProperty("roomId",     QString::fromStdString(ev.room_id));
+        chip->setProperty("reactionKey", QString::fromStdString(r.key));
+
+        QString qsrc = QString::fromStdString(r.source_json);
+        bool hasIcon = !qsrc.isEmpty() && imageCache_.contains(qsrc);
+        if (hasIcon) {
+            // MSC 4027 custom-image reaction.
+            chip->setIcon(QIcon(imageCache_[qsrc]));
+            chip->setIconSize(QSize(20, 20));
+            chip->setText(QString::number(r.count));
+            chip->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        } else {
+            chip->setText(QString("%1 %2")
+                .arg(QString::fromStdString(r.key))
+                .arg(r.count));
+        }
+
+        chip->setStyleSheet(
+            "QToolButton {"
+            "  border: 1px solid #d0d4d9;"
+            "  border-radius: 10px;"
+            "  padding: 1px 8px;"
+            "  background: #f3f4f6;"
+            "  color: #1C1E21;"
+            "  font-size: 11px;"
+            "}"
+            "QToolButton:hover { background: #e6e9ec; }"
+            "QToolButton:checked {"
+            "  background: #d6e4ff;"
+            "  border-color: #3578E5;"
+            "  color: #0b3aa1;"
+            "}");
+
+        QStringList names;
+        names.reserve(static_cast<int>(r.senders.size()));
+        for (const auto& s : r.senders)
+            names << QString::fromStdString(s);
+        if (!names.isEmpty())
+            chip->setToolTip(tr("Reacted by:\n  %1").arg(names.join("\n  ")));
+
+        connect(chip, &QToolButton::clicked,
+                this, &MainWindow::onReactionChipClicked);
+        footerLayout->addWidget(chip);
+    }
+    footerLayout->addStretch();
     if (!tsStr.isEmpty()) {
-        auto* tsLabel = new QLabel(tsStr, contentBox);
+        auto* tsLabel = new QLabel(tsStr, footer);
         tsLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
         tsLabel->setStyleSheet("color: #999; font-size: 10px; background: transparent;");
-        contentLayout->addWidget(tsLabel);
+        footerLayout->addWidget(tsLabel, 0, Qt::AlignRight | Qt::AlignBottom);
     }
+    contentLayout->addWidget(footer);
 
     rowLayout->addWidget(avatarLabel, 0, Qt::AlignTop);
     rowLayout->addWidget(contentBox);
     rowLayout->addStretch();
     return row;
+}
+
+void MainWindow::onReactionChipClicked() {
+    auto* sender = qobject_cast<QToolButton*>(QObject::sender());
+    if (!sender) return;
+    const QString roomId  = sender->property("roomId").toString();
+    const QString eventId = sender->property("eventId").toString();
+    const QString key     = sender->property("reactionKey").toString();
+    if (roomId.isEmpty() || eventId.isEmpty() || key.isEmpty()) return;
+
+    auto result = client_.send_reaction(
+        roomId.toStdString(), eventId.toStdString(), key.toStdString());
+    if (!result.ok) {
+        statusBar()->showMessage(
+            tr("Failed to toggle reaction: %1")
+                .arg(QString::fromStdString(result.message)),
+            5000);
+        // Revert the optimistic check state — the timeline will re-emit on
+        // success and put us back in the right place.
+        sender->setChecked(!sender->isChecked());
+    }
 }
 
 // ---------------------------------------------------------------------------

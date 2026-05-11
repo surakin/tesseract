@@ -1,10 +1,28 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace tesseract {
 
 enum class EventType { Text, Image, File, Sticker, Unhandled };
+
+/// One aggregated reaction key attached to a timeline event.
+/// `senders.size() == count`. The UI uses `senders` to populate the chip's
+/// tooltip (e.g. "Reacted by:\n  Alice\n  Bob"). Each sender entry is the
+/// member's display name when resolvable from the room state, otherwise the
+/// bare Matrix ID.
+struct Reaction {
+    std::string key;
+    uint64_t    count         = 0;
+    bool        reacted_by_me = false;
+    /// JSON `MediaSource` for MSC 4027 custom-image reactions; empty for
+    /// plain Unicode reactions. Pass to `Client::fetch_media_bytes` (treats
+    /// it as an mxc:// URI when not a full JSON blob) to download the chip
+    /// icon.
+    std::string source_json;
+    std::vector<std::string> senders;
+};
 
 struct Event {
     std::string event_id;
@@ -15,6 +33,7 @@ struct Event {
     std::string body;
     uint64_t    timestamp = 0;
     EventType   type = EventType::Unhandled;
+    std::vector<Reaction> reactions;
     virtual ~Event() = default;
 };
 

@@ -467,6 +467,45 @@ LRESULT CALLBACK MainWindow::input_subclass_proc(
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
+// Intercepts WM_LBUTTONDOWN on the owner-drawn message list so a click on a
+// reaction chip toggles the reaction instead of just selecting the row.
+// Owner-drawn LISTBOX has no widget tree, so we hit-test against the
+// per-message `chip_rects` recorded during the last paint of the row.
+LRESULT CALLBACK MainWindow::msg_list_subclass_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData)
+{
+    if (msg == WM_LBUTTONDOWN) {
+        auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        int idx = LBItemFromPt(hwnd, pt, FALSE);
+        if (idx >= 0 && (size_t)idx < self->messages_.size()) {
+            const auto& m = self->messages_[(size_t)idx];
+            RECT item_rc;
+            if (SendMessageW(hwnd, LB_GETITEMRECT, (WPARAM)idx,
+                             (LPARAM)&item_rc) != LB_ERR)
+            {
+                POINT local{ pt.x - item_rc.left, pt.y - item_rc.top };
+                for (const auto& entry : m.chip_rects) {
+                    const RECT& chip_rc = entry.first;
+                    if (PtInRect(&chip_rc, local)) {
+                        auto result = self->client_.send_reaction(
+                            m.room_id, m.event_id, entry.second);
+                        if (!result.ok && self->hStatus_) {
+                            SetWindowTextW(self->hStatus_,
+                                utf8_to_wstr("Failed to toggle reaction: "
+                                             + result.message).c_str());
+                        }
+                        return 0; // consume — don't change list selection
+                    }
+                }
+            }
+        }
+        (void)flag;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
 // ---------------------------------------------------------------------------
 // Lifetime
 // ---------------------------------------------------------------------------
@@ -619,6 +658,8 @@ void MainWindow::on_create(HWND hwnd) {
 
     SetWindowSubclass(hInput_, input_subclass_proc, 0,
                       reinterpret_cast<DWORD_PTR>(this));
+    SetWindowSubclass(hMsgList_, msg_list_subclass_proc, 0,
+                      reinterpret_cast<DWORD_PTR>(this));
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
@@ -628,7 +669,8 @@ void MainWindow::on_create(HWND hwnd) {
 }
 
 void MainWindow::on_destroy() {
-    if (hInput_) RemoveWindowSubclass(hInput_, input_subclass_proc, 0);
+    if (hInput_)   RemoveWindowSubclass(hInput_,   input_subclass_proc,    0);
+    if (hMsgList_) RemoveWindowSubclass(hMsgList_, msg_list_subclass_proc, 0);
     client_.stop_sync();
 }
 
@@ -909,13 +951,21 @@ void MainWindow::append_message(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
 
     // If we already have this event (e.g. sender profile resolved via a Set
-    // diff, or a message edit), update it in place instead of duplicating.
+    // diff, a message edit, or a reaction change), update it in place
+    // instead of duplicating. Reactions update on every toggle, so we
+    // refresh the full reaction set + invalidate the row to repaint.
     if (!ev.event_id.empty()) {
         for (size_t i = 0; i < messages_.size(); ++i) {
             if (messages_[i].event_id == ev.event_id) {
                 messages_[i].body              = ev.body;
                 messages_[i].sender_name       = ev.sender_name;
                 messages_[i].sender_avatar_url = ev.sender_avatar_url;
+                messages_[i].reactions         = ev.reactions;
+                messages_[i].chip_rects.clear();
+                // Reaction count can change the row height. Re-measure by
+                // forcing the listbox to refresh item heights for this row.
+                SendMessageW(hMsgList_, LB_SETITEMHEIGHT, (WPARAM)i,
+                             MAKELPARAM(compute_message_height(i), 0));
                 RECT rc;
                 if (SendMessageW(hMsgList_, LB_GETITEMRECT, (WPARAM)i, (LPARAM)&rc) != LB_ERR)
                     InvalidateRect(hMsgList_, &rc, FALSE);
@@ -926,6 +976,7 @@ void MainWindow::append_message(const tesseract::Event& ev) {
 
     MessageData msg;
     msg.event_id          = ev.event_id;
+    msg.room_id           = ev.room_id;
     msg.body              = ev.body;
     msg.sender            = ev.sender;
     msg.sender_name       = ev.sender_name;
@@ -933,6 +984,7 @@ void MainWindow::append_message(const tesseract::Event& ev) {
     msg.timestamp         = ev.timestamp;
     msg.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
     msg.type              = ev.type;
+    msg.reactions         = ev.reactions;
     messages_.push_back(std::move(msg));
 
     // LB_ADDSTRING triggers WM_MEASUREITEM for the variable-height list
@@ -981,7 +1033,11 @@ int MainWindow::compute_message_height(size_t idx) {
 
     int name_h  = msg.is_own ? 0 : 20;
     int body_h  = (int)bound.Height + 2 * kBubblePadY;
-    int row_h   = kMsgRowPad + name_h + std::max(body_h, kMsgAvatarSize) + kMsgRowPad;
+    int reactions_h = msg.reactions.empty() ? 0 : (kReactionH + kReactionPad);
+    int row_h   = kMsgRowPad + name_h
+                + std::max(body_h, kMsgAvatarSize)
+                + reactions_h
+                + kMsgRowPad;
     return std::max(row_h, 48);
 }
 
@@ -1083,6 +1139,9 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
 void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     if (dis->itemID >= messages_.size()) return;
     const auto& msg = messages_[dis->itemID];
+    // Reset chip rects every paint — coordinates are row-relative and
+    // become stale on resize / reorder.
+    msg.chip_rects.clear();
 
     Gdiplus::Graphics g(dis->hDC);
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -1112,9 +1171,13 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     int bubble_w = std::min((int)bound.Width + 2 * kBubblePadX + 4, bubble_max_w);
     int y_cur   = y0 + kMsgRowPad;
 
+    int bubble_x = 0;
+    int bubble_bottom = 0;
     if (msg.is_own) {
         int bx = rc.right - 8 - bubble_w;
         int by = y_cur;
+        bubble_x = bx;
+        bubble_bottom = by + body_h;
 
         Gdiplus::SolidBrush bubbleBrush(Gdiplus::Color(0xFF0084FF));
         fill_rounded_rect(g, bubbleBrush, (float)bx, (float)by,
@@ -1152,6 +1215,8 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
         // Gray bubble
         int bx = ax + kMsgAvatarSize + 8;
         int by = y_cur;
+        bubble_x = bx;
+        bubble_bottom = by + body_h;
 
         Gdiplus::SolidBrush bubbleBrush(Gdiplus::Color(0xFFE4E6EB));
         fill_rounded_rect(g, bubbleBrush, (float)bx, (float)by,
@@ -1163,6 +1228,64 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
                                     (float)(bubble_w - 2*kBubblePadX),
                                     (float)(body_h  - 2*kBubblePadY)),
                      &sfWrap, &textBrush);
+    }
+
+    // Reaction chips: rounded pills below the bubble, aligned with the
+    // bubble's leading edge. Record each chip's screen-space RECT relative
+    // to the row origin so WM_LBUTTONDOWN can hit-test against it.
+    if (!msg.reactions.empty()) {
+        Gdiplus::Font chipFont(&ff, 8.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+        Gdiplus::StringFormat chipFmt;
+        chipFmt.SetAlignment(Gdiplus::StringAlignmentCenter);
+        chipFmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+        float chip_x = (float)bubble_x;
+        float chip_y = (float)(bubble_bottom + kReactionPad);
+        for (const auto& r : msg.reactions) {
+            std::wstring label = utf8_to_wstr(r.key) + L" " +
+                                 std::to_wstring(r.count);
+            Gdiplus::RectF tb;
+            g.MeasureString(label.c_str(), -1, &chipFont,
+                            Gdiplus::PointF{}, &chipFmt, &tb);
+            float pill_w = tb.Width + 14.0f;
+            float pill_h = (float)kReactionH;
+
+            Gdiplus::Color fill = r.reacted_by_me
+                ? Gdiplus::Color(0xFFD6E4FF)
+                : Gdiplus::Color(0xFFEDEFF1);
+            Gdiplus::Color border = r.reacted_by_me
+                ? Gdiplus::Color(0xFF3578E5)
+                : Gdiplus::Color(0xFFD0D4D9);
+            Gdiplus::Color textc = r.reacted_by_me
+                ? Gdiplus::Color(0xFF0B3AA1)
+                : Gdiplus::Color(0xFF1A1A2E);
+
+            Gdiplus::SolidBrush fillBrush(fill);
+            fill_rounded_rect(g, fillBrush, chip_x, chip_y,
+                              pill_w, pill_h, pill_h / 2.0f);
+            Gdiplus::Pen borderPen(border, 1.0f);
+            Gdiplus::GraphicsPath path;
+            path.AddArc(chip_x,                   chip_y, pill_h, pill_h,  90, 180);
+            path.AddArc(chip_x + pill_w - pill_h, chip_y, pill_h, pill_h, 270, 180);
+            path.CloseFigure();
+            g.DrawPath(&borderPen, &path);
+
+            Gdiplus::SolidBrush textBr(textc);
+            g.DrawString(label.c_str(), -1, &chipFont,
+                         Gdiplus::RectF(chip_x, chip_y, pill_w, pill_h),
+                         &chipFmt, &textBr);
+
+            // Store row-relative rect for hit-testing.
+            RECT chip_rc{
+                (LONG)(chip_x         - x0),
+                (LONG)(chip_y         - y0),
+                (LONG)(chip_x + pill_w - x0),
+                (LONG)(chip_y + pill_h - y0),
+            };
+            msg.chip_rects.emplace_back(chip_rc, r.key);
+
+            chip_x += pill_w + (float)kReactionPad;
+        }
     }
 }
 

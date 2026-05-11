@@ -136,6 +136,12 @@ Result Client::send_message(const std::string& room_id, const std::string& body)
     return from_ffi(impl_->ffi->send_message(room_id, body));
 }
 
+Result Client::send_reaction(const std::string& room_id,
+                             const std::string& event_id,
+                             const std::string& key) {
+    return from_ffi(impl_->ffi->send_reaction(room_id, event_id, key));
+}
+
 std::string Client::get_user_id() const {
     return std::string(impl_->ffi->user_id());
 }
