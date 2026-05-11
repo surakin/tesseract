@@ -69,4 +69,28 @@ struct RoomInfo {
     bool        is_space           = false;
 };
 
+/// Server-side key-backup state. Mirrors the encoding of the `u8`-typed
+/// `state` field carried over the FFI in `BackupProgress` (see
+/// `sdk/src/bridge.rs`).
+enum class BackupState : uint8_t {
+    Unknown     = 0,
+    Disabled    = 1,
+    Enabled     = 2,
+    Downloading = 3,
+    Creating    = 4,
+};
+
+/// Snapshot of server-side key-backup status plus a running count of room
+/// keys imported into this device. Carried by `IEventHandler::on_backup_progress`
+/// and returned by `Client::backup_state()`.
+struct BackupProgress {
+    BackupState state         = BackupState::Unknown;
+    /// Room keys imported into the local store since `start_sync` began.
+    uint64_t    imported_keys = 0;
+    /// Best-effort total of room keys present on the server-side backup,
+    /// or 0 when unknown (currently always 0 — matrix-sdk does not expose
+    /// a cheap way to query this).
+    uint64_t    total_keys    = 0;
+};
+
 } // namespace tesseract

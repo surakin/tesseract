@@ -159,4 +159,16 @@ std::vector<std::string> Client::space_children(const std::string& space_id) con
     return result;
 }
 
+bool Client::needs_recovery() const {
+    return impl_->ffi->needs_recovery();
+}
+
+Result Client::recover(const std::string& key_or_passphrase) {
+    return from_ffi(impl_->ffi->recover(key_or_passphrase));
+}
+
+BackupProgress Client::backup_state() const {
+    return from_ffi(impl_->ffi->backup_state());
+}
+
 } // namespace tesseract

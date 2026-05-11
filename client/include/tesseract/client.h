@@ -128,6 +128,26 @@ public:
     /// or when `space_id` is not a known space.
     std::vector<std::string> space_children(const std::string& space_id) const;
 
+    // ------------------------------------------------------------------
+    // Recovery / key backup (Step 6)
+    // ------------------------------------------------------------------
+
+    /// True when this device is missing the cross-signing / backup secrets
+    /// that already exist in server-side secret storage. The UI should
+    /// surface a "Verify this device" banner when this returns true.
+    bool needs_recovery() const;
+
+    /// Unlock server-side secret storage with the user's recovery key (or
+    /// passphrase), importing the cross-signing private keys + backup
+    /// decryption key into this device. Returns once the SDK has imported
+    /// the secrets; the historical key download continues asynchronously
+    /// and is reported via `IEventHandler::on_backup_progress`.
+    Result recover(const std::string& key_or_passphrase);
+
+    /// Current snapshot of the backup state and the running imported-key
+    /// counter. Cheap; reads atomics populated by the sync watcher.
+    BackupProgress backup_state() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

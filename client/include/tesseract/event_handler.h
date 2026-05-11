@@ -27,6 +27,11 @@ public:
     /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the next
     /// launch can call restore_session().
     virtual void on_session_saved(const std::string& /*session_json*/) {}
+
+    /// Fired when the server-side key-backup state changes, or as room keys
+    /// are imported from the backup during/after `recover()`. UIs use this
+    /// to drive the recovery banner and the RecoveryDialog progress text.
+    virtual void on_backup_progress(const BackupProgress& /*progress*/) {}
 };
 
 } // namespace tesseract

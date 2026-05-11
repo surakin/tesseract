@@ -14,6 +14,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MainWindowController.mm
     src/LoginWindowController.h
     src/LoginWindowController.mm
+    src/RecoveryWindowController.h
+    src/RecoveryWindowController.mm
     src/RoomListController.h
     src/RoomListController.mm
     src/MessageListController.h

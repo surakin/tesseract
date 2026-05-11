@@ -11,6 +11,22 @@ inline Result from_ffi(const tesseract_ffi::OpResult& r) {
     return { r.ok, std::string(r.message) };
 }
 
+inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p) {
+    BackupState state;
+    switch (p.state) {
+        case 1:  state = BackupState::Disabled;    break;
+        case 2:  state = BackupState::Enabled;     break;
+        case 3:  state = BackupState::Downloading; break;
+        case 4:  state = BackupState::Creating;    break;
+        default: state = BackupState::Unknown;     break;
+    }
+    return {
+        .state         = state,
+        .imported_keys = p.imported_keys,
+        .total_keys    = p.total_keys,
+    };
+}
+
 inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
     return {
         .id                = std::string(r.id),

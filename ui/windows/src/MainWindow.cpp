@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+#include "RecoveryDialog.h"
 
 #include <tesseract/session_store.h>
 
@@ -170,6 +171,12 @@ void EventHandler::on_session_saved(const std::string& session_json) {
     tesseract::SessionStore::save(session_json);
 }
 
+void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress) {
+    auto* p = new tesseract::BackupProgress(progress);
+    PostMessage(hwnd_, WM_TESSERACT_BACKUP_PROGRESS, 0,
+                reinterpret_cast<LPARAM>(p));
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -271,6 +278,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_COMMAND:
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_SEND)
             self->on_send_clicked();
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_VERIFY)
+            self->on_recovery_verify_clicked();
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_DISMISS)
+            self->on_recovery_dismiss_clicked();
         if (HIWORD(wParam) == LBN_SELCHANGE && LOWORD(wParam) == IDC_ROOMLIST) {
             int idx = (int)SendMessageW(self->hRoomList_, LB_GETCURSEL, 0, 0);
             if (idx != LB_ERR) self->on_room_selected(idx);
@@ -327,6 +338,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_TESSERACT_AUTH_ERROR:
         self->on_auth_error(static_cast<bool>(wParam));
         return 0;
+    case WM_TESSERACT_BACKUP_PROGRESS: {
+        auto* p = reinterpret_cast<tesseract::BackupProgress*>(lParam);
+        self->on_backup_progress(p);
+        delete p;
+        return 0;
+    }
 
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -443,6 +460,36 @@ void MainWindow::on_create(HWND hwnd) {
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
 
+    // Recovery banner (Step 6) — initially hidden; toggled by
+    // maybe_show_recovery_banner() after start_sync.
+    hRecoveryBanner_ = CreateWindowExW(
+        0, L"STATIC", nullptr,
+        WS_CHILD | SS_NOTIFY,
+        240, kRoomHeaderH, 784, 30,
+        hwnd, nullptr, hInst_, nullptr);
+    hRecoveryLabel_ = CreateWindowExW(
+        0, L"STATIC",
+        L"Verify this device to decrypt historical messages.",
+        WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP,
+        252, kRoomHeaderH + 8, 600, 18,
+        hwnd, nullptr, hInst_, nullptr);
+    hRecoveryVerify_ = CreateWindowExW(
+        0, L"BUTTON", L"Verify",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        900, kRoomHeaderH + 4, 80, 22,
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_VERIFY)),
+        hInst_, nullptr);
+    hRecoveryDismiss_ = CreateWindowExW(
+        0, L"BUTTON", L"X",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        985, kRoomHeaderH + 4, 24, 22,
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_DISMISS)),
+        hInst_, nullptr);
+    ShowWindow(hRecoveryBanner_,  SW_HIDE);
+    ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryVerify_,  SW_HIDE);
+    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+
     SetWindowSubclass(hInput_, input_subclass_proc, 0,
                       reinterpret_cast<DWORD_PTR>(this));
 
@@ -467,11 +514,25 @@ void MainWindow::on_size(int w, int h) {
     int content_h = h - STATUS_H;
     int msg_h     = content_h - INPUT_H;
 
+    constexpr int BANNER_H = 30;
+
     int msg_area_y = 0;
     int msg_area_h = msg_h;
     if (hRoomHeader_ && IsWindowVisible(hRoomHeader_)) {
         msg_area_y = kRoomHeaderH;
         msg_area_h -= kRoomHeaderH;
+    }
+    if (recovery_banner_visible_) {
+        SetWindowPos(hRecoveryBanner_, nullptr,
+                     ROOM_W, msg_area_y, w - ROOM_W, BANNER_H, SWP_NOZORDER);
+        SetWindowPos(hRecoveryLabel_, nullptr,
+                     ROOM_W + 12, msg_area_y + 8, w - ROOM_W - 140, 18, SWP_NOZORDER);
+        SetWindowPos(hRecoveryVerify_, nullptr,
+                     w - 124, msg_area_y + 4, 80, 22, SWP_NOZORDER);
+        SetWindowPos(hRecoveryDismiss_, nullptr,
+                     w - 39,  msg_area_y + 4, 24, 22, SWP_NOZORDER);
+        msg_area_y += BANNER_H;
+        msg_area_h -= BANNER_H;
     }
 
     SetWindowPos(hRoomList_, nullptr, 0, 0, ROOM_W, msg_h, SWP_NOZORDER);
@@ -497,6 +558,7 @@ void MainWindow::on_login_clicked() {
             client_.start_sync(event_handler_.get());
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
                          reinterpret_cast<LPARAM>(L"Connected"));
+            maybe_show_recovery_banner();
             return;
         }
         tesseract::SessionStore::clear();
@@ -517,6 +579,7 @@ void MainWindow::on_login_clicked() {
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
     client_.start_sync(event_handler_.get());
     SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Connected"));
+    maybe_show_recovery_banner();
 }
 
 void MainWindow::on_reconnect() {
@@ -537,6 +600,7 @@ void MainWindow::on_auth_error(bool soft_logout) {
                 client_.start_sync(event_handler_.get());
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
                              reinterpret_cast<LPARAM>(L"Reconnected"));
+                maybe_show_recovery_banner();
                 return;
             }
         }
@@ -891,6 +955,84 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
                                     (float)(body_h  - 2*kBubblePadY)),
                      &sfWrap, &textBrush);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Recovery banner + dialog (Step 6)
+// ---------------------------------------------------------------------------
+
+void MainWindow::maybe_show_recovery_banner() {
+    if (recovery_banner_dismissed_) return;
+    if (!client_.needs_recovery())  return;
+    SetWindowTextW(hRecoveryLabel_,
+                   L"Verify this device to decrypt historical messages.");
+    ShowWindow(hRecoveryBanner_,  SW_SHOW);
+    ShowWindow(hRecoveryLabel_,   SW_SHOW);
+    ShowWindow(hRecoveryVerify_,  SW_SHOW);
+    ShowWindow(hRecoveryDismiss_, SW_SHOW);
+    recovery_banner_visible_ = true;
+    RECT rc; GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
+void MainWindow::open_recovery_dialog() {
+    if (recovery_dialog_) return;
+    RecoveryDialog dlg(hwnd_, hInst_, client_);
+    recovery_dialog_ = &dlg;
+    dlg.run();
+    recovery_dialog_ = nullptr;
+    if (!client_.needs_recovery()) {
+        ShowWindow(hRecoveryBanner_,  SW_HIDE);
+        ShowWindow(hRecoveryLabel_,   SW_HIDE);
+        ShowWindow(hRecoveryVerify_,  SW_HIDE);
+        ShowWindow(hRecoveryDismiss_, SW_HIDE);
+        recovery_banner_visible_ = false;
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+    }
+}
+
+void MainWindow::on_recovery_verify_clicked() {
+    open_recovery_dialog();
+}
+
+void MainWindow::on_recovery_dismiss_clicked() {
+    recovery_banner_dismissed_ = true;
+    ShowWindow(hRecoveryBanner_,  SW_HIDE);
+    ShowWindow(hRecoveryLabel_,   SW_HIDE);
+    ShowWindow(hRecoveryVerify_,  SW_HIDE);
+    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    recovery_banner_visible_ = false;
+    RECT rc; GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
+void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
+    // Recovery state is populated asynchronously by the first sync cycle, so
+    // re-evaluate the banner each time the SDK pings us.
+    maybe_show_recovery_banner();
+
+    if (recovery_banner_visible_
+        && progress->state == tesseract::BackupState::Downloading
+        && progress->imported_keys > 0)
+    {
+        std::wstring txt = L"Importing keys from backup… "
+            + std::to_wstring(progress->imported_keys) + L" imported.";
+        SetWindowTextW(hRecoveryLabel_, txt.c_str());
+    }
+    if (progress->state == tesseract::BackupState::Enabled
+        && !client_.needs_recovery())
+    {
+        ShowWindow(hRecoveryBanner_,  SW_HIDE);
+        ShowWindow(hRecoveryLabel_,   SW_HIDE);
+        ShowWindow(hRecoveryVerify_,  SW_HIDE);
+        ShowWindow(hRecoveryDismiss_, SW_HIDE);
+        recovery_banner_visible_ = false;
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+    }
+    if (recovery_dialog_)
+        recovery_dialog_->set_progress(*progress);
 }
 
 } // namespace win32

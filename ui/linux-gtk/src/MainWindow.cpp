@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+#include "RecoveryDialog.h"
 
 #include <tesseract/session_store.h>
 
@@ -150,6 +151,27 @@ void EventHandler::on_session_saved(const std::string& session_json) {
     tesseract::SessionStore::save(session_json);
 }
 
+namespace {
+struct IdleBackupProgress {
+    MainWindow*               window;
+    tesseract::BackupProgress progress;
+};
+} // namespace
+
+void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress) {
+    auto* p = new IdleBackupProgress{
+        reinterpret_cast<MainWindow*>(
+            g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        progress
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleBackupProgress*>(data);
+        d->window->push_backup_progress(d->progress);
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
 // ---------------------------------------------------------------------------
 // MainWindow
 // ---------------------------------------------------------------------------
@@ -286,6 +308,35 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_box_append(GTK_BOX(room_header_), name_box);
     gtk_box_append(GTK_BOX(vbox), room_header_);
 
+    // Recovery banner (Step 6) — hidden until needs_recovery() is true.
+    recovery_banner_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(recovery_banner_, "recovery-banner");
+    gtk_widget_set_margin_start(recovery_banner_,  12);
+    gtk_widget_set_margin_end(recovery_banner_,    6);
+    gtk_widget_set_margin_top(recovery_banner_,    6);
+    gtk_widget_set_margin_bottom(recovery_banner_, 6);
+    gtk_widget_set_visible(recovery_banner_, FALSE);
+    {
+        recovery_label_ = gtk_label_new(
+            "Verify this device to decrypt historical messages.");
+        gtk_widget_set_hexpand(recovery_label_, TRUE);
+        gtk_label_set_xalign(GTK_LABEL(recovery_label_), 0.0f);
+        gtk_box_append(GTK_BOX(recovery_banner_), recovery_label_);
+
+        GtkWidget* verify_btn = gtk_button_new_with_label("Verify");
+        gtk_widget_add_css_class(verify_btn, "suggested-action");
+        g_signal_connect(verify_btn, "clicked",
+                         G_CALLBACK(on_recovery_verify_clicked_), this);
+        gtk_box_append(GTK_BOX(recovery_banner_), verify_btn);
+
+        GtkWidget* dismiss_btn = gtk_button_new_with_label("✕");
+        gtk_widget_set_size_request(dismiss_btn, 24, 24);
+        g_signal_connect(dismiss_btn, "clicked",
+                         G_CALLBACK(on_recovery_dismiss_clicked_), this);
+        gtk_box_append(GTK_BOX(recovery_banner_), dismiss_btn);
+    }
+    gtk_box_append(GTK_BOX(vbox), recovery_banner_);
+
     // Message scroll area (replaces GtkTextView)
     msg_scroll_ = gtk_scrolled_window_new();
     gtk_widget_set_vexpand(msg_scroll_, TRUE);
@@ -369,6 +420,7 @@ void MainWindow::do_login() {
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
             gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+            maybe_show_recovery_banner();
             return;
         }
         tesseract::SessionStore::clear();
@@ -387,6 +439,7 @@ void MainWindow::do_login() {
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());
     gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+    maybe_show_recovery_banner();
 }
 
 void MainWindow::on_send_clicked(GtkButton*, gpointer user_data) {
@@ -491,6 +544,7 @@ void MainWindow::handle_auth_error(bool soft_logout) {
                 my_user_id_ = client_.get_user_id();
                 client_.start_sync(event_handler_.get());
                 gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnected");
+                maybe_show_recovery_banner();
                 return;
             }
         }
@@ -933,6 +987,59 @@ void MainWindow::append_event(const tesseract::Event& ev) {
     auto_scroll_pending_ = true;
     gtk_box_append(GTK_BOX(msg_box_), row);
     gtk_widget_set_visible(row, TRUE);
+}
+
+// ---------------------------------------------------------------------------
+// Recovery banner + dialog (Step 6)
+// ---------------------------------------------------------------------------
+
+void MainWindow::maybe_show_recovery_banner() {
+    if (recovery_banner_dismissed_) return;
+    if (!client_.needs_recovery()) return;
+    gtk_label_set_text(GTK_LABEL(recovery_label_),
+                       "Verify this device to decrypt historical messages.");
+    gtk_widget_set_visible(recovery_banner_, TRUE);
+}
+
+void MainWindow::open_recovery_dialog() {
+    if (recovery_dialog_) return;
+    recovery_dialog_ = std::make_unique<RecoveryDialog>(GTK_WINDOW(window_), client_);
+    recovery_dialog_->run();
+    recovery_dialog_.reset();
+    if (!client_.needs_recovery())
+        gtk_widget_set_visible(recovery_banner_, FALSE);
+}
+
+void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
+    static_cast<MainWindow*>(user_data)->open_recovery_dialog();
+}
+
+void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->recovery_banner_dismissed_ = true;
+    gtk_widget_set_visible(self->recovery_banner_, FALSE);
+}
+
+void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
+    // Recovery state is populated asynchronously by the first sync cycle, so
+    // re-evaluate the banner each time the SDK pings us.
+    maybe_show_recovery_banner();
+
+    if (gtk_widget_get_visible(recovery_banner_)
+        && progress.state == tesseract::BackupState::Downloading
+        && progress.imported_keys > 0)
+    {
+        std::string txt = "Importing keys from backup… "
+            + std::to_string(progress.imported_keys) + " imported.";
+        gtk_label_set_text(GTK_LABEL(recovery_label_), txt.c_str());
+    }
+    if (progress.state == tesseract::BackupState::Enabled
+        && !client_.needs_recovery())
+    {
+        gtk_widget_set_visible(recovery_banner_, FALSE);
+    }
+    if (recovery_dialog_)
+        recovery_dialog_->set_progress(progress);
 }
 
 } // namespace gtk4

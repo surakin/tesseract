@@ -4,6 +4,7 @@ add_executable(tesseract_win32 WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/LoginDialog.cpp
+    src/RecoveryDialog.cpp
 )
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)

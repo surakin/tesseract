@@ -14,7 +14,7 @@ use matrix_sdk::{
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::ffi::{OAuthBegin, OpResult};
+use crate::ffi::{BackupProgress, OAuthBegin, OpResult};
 use crate::oauth;
 
 #[cfg(not(test))]
@@ -55,6 +55,32 @@ fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
     }
 }
 
+// `BackupProgress.state` encoding — kept in sync with the docs on the cxx
+// shared struct in `bridge.rs` and the `BackupState` enum in
+// `client/include/tesseract/types.h`.
+const BACKUP_STATE_UNKNOWN:     u8 = 0;
+const BACKUP_STATE_DISABLED:    u8 = 1;
+const BACKUP_STATE_ENABLED:     u8 = 2;
+const BACKUP_STATE_DOWNLOADING: u8 = 3;
+const BACKUP_STATE_CREATING:    u8 = 4;
+
+#[cfg(not(test))]
+fn backup_state_code(s: matrix_sdk::encryption::backups::BackupState) -> u8 {
+    use matrix_sdk::encryption::backups::BackupState as B;
+    match s {
+        B::Unknown                   => BACKUP_STATE_UNKNOWN,
+        B::Disabling                 => BACKUP_STATE_DISABLED,
+        B::Enabled                   => BACKUP_STATE_ENABLED,
+        B::Downloading | B::Enabling | B::Resuming => BACKUP_STATE_DOWNLOADING,
+        B::Creating                  => BACKUP_STATE_CREATING,
+    }
+}
+
+#[cfg(test)]
+fn backup_progress_default() -> BackupProgress {
+    BackupProgress { state: BACKUP_STATE_UNKNOWN, imported_keys: 0, total_keys: 0 }
+}
+
 fn data_dir() -> PathBuf {
     let base = dirs_like_home().unwrap_or_else(std::env::temp_dir);
     let dir  = base.join("tesseract").join("matrix-store");
@@ -80,6 +106,9 @@ fn dirs_like_home() -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+
+#[cfg(not(test))]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(not(test))]
 struct SendHandler(UniquePtr<EventHandlerBridge>);
@@ -115,6 +144,14 @@ pub struct ClientFfi {
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
     timelines:    HashMap<OwnedRoomId, TimelineHandle>,
+    /// Latest known backup state code (see BACKUP_STATE_* constants).
+    /// Updated by the backup watcher task and read by `backup_state()`.
+    #[cfg(not(test))]
+    backup_state_code: Arc<std::sync::atomic::AtomicU8>,
+    /// Running counter of room keys imported from the backup since this
+    /// process started. Reset to 0 only on logout.
+    #[cfg(not(test))]
+    imported_keys:    Arc<AtomicU64>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     rt:         Runtime,
@@ -150,6 +187,10 @@ impl ClientFfi {
             sync_service: None,
             #[cfg(not(test))]
             timelines:    HashMap::new(),
+            #[cfg(not(test))]
+            backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
+            #[cfg(not(test))]
+            imported_keys:    Arc::new(AtomicU64::new(0)),
             rt:         Runtime::new().expect("tokio runtime"),
         }
     }
@@ -348,6 +389,147 @@ impl ClientFfi {
                             }
                         }
                     }
+                }
+            });
+        }
+
+        // Recovery state watcher (Step 6).
+        //
+        // `client.encryption().recovery().state()` starts as `Unknown` and is
+        // only populated once the relevant account-data events arrive during
+        // the first sync cycle. Without this watcher, a UI that calls
+        // `needs_recovery()` right after `start_sync()` always sees `false`.
+        //
+        // Every state transition triggers an extra `on_backup_progress` so the
+        // UI gets a chance to re-evaluate `needs_recovery()`. Reusing that
+        // callback (instead of adding a dedicated one) keeps the FFI small —
+        // the UI was already re-checking via this slot.
+        {
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let state_code   = Arc::clone(&self.backup_state_code);
+            let imported     = Arc::clone(&self.imported_keys);
+            let mut stop_rx  = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                use futures_util::StreamExt;
+                let mut rec_stream = client_clone.encryption().recovery().state_stream();
+                loop {
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { break; }
+                        }
+                        Some(_state) = rec_stream.next() => {
+                            // Re-emit a snapshot; the UI re-queries needs_recovery().
+                            if let Ok(guard) = h.lock() {
+                                guard.on_backup_progress(&BackupProgress {
+                                    state:         state_code.load(Ordering::Relaxed),
+                                    imported_keys: imported.load(Ordering::Relaxed),
+                                    total_keys:    0,
+                                });
+                            }
+                        }
+                        else => break,
+                    }
+                }
+            });
+        }
+
+        // Backup-progress watcher (Step 6).
+        //
+        // Two independent streams feed the same `on_backup_progress` callback:
+        //   - `Backups::state_stream()` — high-level state transitions
+        //     (Unknown → Enabling → Downloading → Enabled, etc.).
+        //   - `Encryption::room_keys_received_stream()` — fires once per
+        //     batch of room keys imported into the local store (this is what
+        //     advances during `recover()` after the backup decryption key is
+        //     installed). Each batch carries `Vec<RoomKeyInfo>`; we add
+        //     `.len()` to a shared counter.
+        //
+        // `total_keys` is left at 0 because matrix-sdk does not expose a
+        // cheap "how many keys does the backup contain" query.
+        {
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let state_code   = Arc::clone(&self.backup_state_code);
+            let imported     = Arc::clone(&self.imported_keys);
+            let mut stop_rx  = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                use futures_util::StreamExt;
+                let mut state_stream = client_clone.encryption().backups().state_stream();
+                let keys_stream = client_clone
+                    .encryption()
+                    .room_keys_received_stream()
+                    .await;
+
+                // Emit an initial snapshot so a UI that opens before the
+                // first state change still has a starting value.
+                {
+                    let s = backup_state_code(client_clone.encryption().backups().state());
+                    state_code.store(s, Ordering::Relaxed);
+                    if let Ok(guard) = h.lock() {
+                        guard.on_backup_progress(&BackupProgress {
+                            state:         s,
+                            imported_keys: imported.load(Ordering::Relaxed),
+                            total_keys:    0,
+                        });
+                    }
+                }
+
+                match keys_stream {
+                    Some(mut keys_stream) => loop {
+                        tokio::select! {
+                            _ = stop_rx.changed() => {
+                                if *stop_rx.borrow() { break; }
+                            }
+                            Some(Ok(state)) = state_stream.next() => {
+                                let s = backup_state_code(state);
+                                state_code.store(s, Ordering::Relaxed);
+                                if let Ok(guard) = h.lock() {
+                                    guard.on_backup_progress(&BackupProgress {
+                                        state:         s,
+                                        imported_keys: imported.load(Ordering::Relaxed),
+                                        total_keys:    0,
+                                    });
+                                }
+                            }
+                            Some(batch) = keys_stream.next() => {
+                                if let Ok(keys) = batch {
+                                    let n = imported.fetch_add(keys.len() as u64, Ordering::Relaxed)
+                                        + keys.len() as u64;
+                                    if let Ok(guard) = h.lock() {
+                                        guard.on_backup_progress(&BackupProgress {
+                                            state:         state_code.load(Ordering::Relaxed),
+                                            imported_keys: n,
+                                            total_keys:    0,
+                                        });
+                                    }
+                                }
+                            }
+                            else => break,
+                        }
+                    },
+                    // No olm machine yet — fall back to a state-only watcher.
+                    None => loop {
+                        tokio::select! {
+                            _ = stop_rx.changed() => {
+                                if *stop_rx.borrow() { break; }
+                            }
+                            Some(Ok(state)) = state_stream.next() => {
+                                let s = backup_state_code(state);
+                                state_code.store(s, Ordering::Relaxed);
+                                if let Ok(guard) = h.lock() {
+                                    guard.on_backup_progress(&BackupProgress {
+                                        state:         s,
+                                        imported_keys: imported.load(Ordering::Relaxed),
+                                        total_keys:    0,
+                                    });
+                                }
+                            }
+                            else => break,
+                        }
+                    },
                 }
             });
         }
@@ -616,6 +798,63 @@ self.rt
     }
 
     // -----------------------------------------------------------------------
+    // Recovery / key backup (Step 6)
+    // -----------------------------------------------------------------------
+
+    /// Returns true when this device is missing the cross-signing / backup
+    /// secrets that are already present in server-side secret storage. The
+    /// UI surfaces a "Verify this device" banner when this is true.
+    #[cfg(not(test))]
+    pub fn needs_recovery(&self) -> bool {
+        let Some(client) = self.client.clone() else { return false };
+        self.rt.block_on(async move {
+            use matrix_sdk::encryption::recovery::RecoveryState;
+            matches!(client.encryption().recovery().state(), RecoveryState::Incomplete)
+        })
+    }
+
+    #[cfg(test)]
+    pub fn needs_recovery(&self) -> bool { false }
+
+    /// Unlock the server-side secret storage with the supplied recovery key
+    /// (or passphrase), importing the cross-signing private keys and the
+    /// backup decryption key into this device. The actual backup download
+    /// runs asynchronously; observe `on_backup_progress` for progress.
+    #[cfg(not(test))]
+    pub fn recover(&mut self, key_or_passphrase: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        if key_or_passphrase.trim().is_empty() {
+            return err("recovery key or passphrase is empty");
+        }
+        let key = key_or_passphrase.to_owned();
+        match self.rt.block_on(async move {
+            client.encryption().recovery().recover(&key).await
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn recover(&mut self, _key_or_passphrase: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Snapshot of the current backup state plus the running imported-key
+    /// counter. Cheap; reads atomic state populated by the watcher task.
+    #[cfg(not(test))]
+    pub fn backup_state(&self) -> BackupProgress {
+        BackupProgress {
+            state:         self.backup_state_code.load(Ordering::Relaxed),
+            imported_keys: self.imported_keys.load(Ordering::Relaxed),
+            total_keys:    0,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn backup_state(&self) -> BackupProgress { backup_progress_default() }
+
+    // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
 
@@ -628,6 +867,11 @@ self.rt
 
         #[cfg(not(test))]
         { self.timelines.clear(); }
+        #[cfg(not(test))]
+        {
+            self.imported_keys.store(0, Ordering::Relaxed);
+            self.backup_state_code.store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
+        }
 
         let Some(client) = self.client.take() else {
             let _ = std::fs::remove_dir_all(data_dir());
@@ -925,6 +1169,29 @@ mod tests {
     fn stop_sync_is_noop_without_start() {
         let mut c = ClientFfi::new();
         c.stop_sync();
+    }
+
+    #[test]
+    fn needs_recovery_is_false_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(!c.needs_recovery());
+    }
+
+    #[test]
+    fn recover_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.recover("some-key");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn backup_state_starts_unknown() {
+        let c = ClientFfi::new();
+        let s = c.backup_state();
+        assert_eq!(s.state, BACKUP_STATE_UNKNOWN);
+        assert_eq!(s.imported_keys, 0);
+        assert_eq!(s.total_keys, 0);
     }
 
     #[test]

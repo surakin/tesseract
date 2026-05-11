@@ -22,6 +22,7 @@ pub mod ffi {
         pub avatar_url:        String,
         pub last_message_body: String,
         pub last_activity_ts:  u64,
+        pub is_space:          bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -34,6 +35,13 @@ pub mod ffi {
         pub body:              String,
         pub timestamp:         u64,
         pub msg_type:          String,
+        pub source_json:       String,
+        pub width:             u64,
+        pub height:            u64,
+        pub file_json:         String,
+        pub file_name:         String,
+        pub file_size:         u64,
+        pub image_filename:    String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -50,12 +58,20 @@ pub mod ffi {
         pub redirect_uri: String,
     }
 
+    #[derive(Debug, PartialEq, Default)]
+    pub struct BackupProgress {
+        pub state:         u8,
+        pub imported_keys: u64,
+        pub total_keys:    u64,
+    }
+
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str) {}
         pub fn on_message_event(&self, _event: &TimelineEvent) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
-        pub fn on_error(&self, _ctx: &str, _msg: &str) {}
+        pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
+        pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
     }
 }

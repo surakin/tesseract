@@ -11,6 +11,8 @@
 
 namespace gtk4 {
 
+class RecoveryDialog;
+
 /// Marshals SDK callbacks onto the GTK main loop via g_idle_add.
 class EventHandler final : public tesseract::IEventHandler {
 public:
@@ -23,6 +25,7 @@ public:
                        bool soft_logout) override;
     void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
+    void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
     GtkWindow* window_;
 };
@@ -42,6 +45,7 @@ public:
     void handle_reconnect();
     void handle_auth_error(bool soft_logout);
     void push_timeline_reset(std::string room_id);
+    void push_backup_progress(tesseract::BackupProgress progress);
 
 private:
     static void    on_send_clicked(GtkButton*, gpointer user_data);
@@ -52,6 +56,8 @@ private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);
     static void    on_adj_upper_changed_(GObject* obj, GParamSpec*, gpointer user_data);
     static void    on_back_clicked_(GtkButton*, gpointer user_data);
+    static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
+    static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
@@ -59,6 +65,8 @@ private:
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
+    void maybe_show_recovery_banner();
+    void open_recovery_dialog();
 
     static constexpr int kRoomAvatarSize = 36;
     static constexpr int kMsgAvatarSize  = 32;
@@ -78,6 +86,10 @@ private:
     GtkWidget*      input_text_view_    = nullptr;
     GtkWidget*      send_btn_           = nullptr;
     GtkWidget*      status_bar_         = nullptr;
+    GtkWidget*      recovery_banner_    = nullptr;
+    GtkWidget*      recovery_label_     = nullptr;
+    bool            recovery_banner_dismissed_ = false;
+    std::unique_ptr<RecoveryDialog> recovery_dialog_;
 
     tesseract::Client              client_;
     std::unique_ptr<EventHandler>  event_handler_;

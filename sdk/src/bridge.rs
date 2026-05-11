@@ -74,6 +74,28 @@ pub mod ffi {
         redirect_uri: String,
     }
 
+    /// Snapshot of the server-side key-backup state plus a running counter of
+    /// imported room keys for this device. Carried by `on_backup_progress`
+    /// callbacks and returned by `backup_state()`.
+    ///
+    /// `state` is a `u8` because cxx does not support C++-side enums in shared
+    /// structs without extra boilerplate; the C++ wrapper translates it to a
+    /// typed `tesseract::BackupState` enum.
+    ///   0 = Unknown
+    ///   1 = Disabled    (no backup on the server)
+    ///   2 = Enabled     (steady-state: backup is up to date for this device)
+    ///   3 = Downloading (still importing keys from the backup)
+    ///   4 = Creating    (uploading initial backup)
+    struct BackupProgress {
+        state:         u8,
+        /// Room keys imported into the local store since recover() started,
+        /// or 0 when no recover is in progress.
+        imported_keys: u64,
+        /// Best-effort total of room keys present on the server-side backup,
+        /// or 0 when unknown.
+        total_keys:    u64,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -89,6 +111,9 @@ pub mod ffi {
         /// Fired when a room's timeline is reset (room selected / subscribed).
         /// The UI should clear its message view for this room_id.
         fn on_timeline_reset(self: &EventHandlerBridge, room_id: &str);
+        /// Fired when the key-backup state changes or when imported-key
+        /// counters advance during a recover() call.
+        fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
     }
 
     // -------------------------------------------------------------------------
@@ -168,6 +193,23 @@ pub mod ffi {
         /// (via `m.space.child` state events). Only returns IDs of rooms the
         /// client is a member of (i.e. present in the room list).
         fn space_children(self: &ClientFfi, space_id: &str) -> Vec<String>;
+
+        // ----- Recovery / key backup (Step 6) -----
+
+        /// Returns true when this device is missing the cross-signing /
+        /// backup secrets that already exist on the server. The UI should
+        /// surface a "Verify this device" banner when this is true.
+        fn needs_recovery(self: &ClientFfi) -> bool;
+
+        /// Unlock the server-side secret storage with a recovery key or
+        /// passphrase, import the cross-signing private keys + backup
+        /// decryption key into this device, and start downloading historical
+        /// room keys. Returns once the SDK reports a steady-state backup, or
+        /// with an error if the key is wrong / no secret storage exists.
+        fn recover(self: &mut ClientFfi, key_or_passphrase: &str) -> OpResult;
+
+        /// Current snapshot of the backup state and import counters.
+        fn backup_state(self: &ClientFfi) -> BackupProgress;
 
         // ----- Session teardown -----
 

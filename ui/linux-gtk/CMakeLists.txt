@@ -7,6 +7,7 @@ add_executable(tesseract_gtk
     src/main.cpp
     src/MainWindow.cpp
     src/LoginDialog.cpp
+    src/RecoveryDialog.cpp
 )
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)

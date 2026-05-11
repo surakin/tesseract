@@ -1,5 +1,6 @@
 #import "MainWindowController.h"
 #import "LoginWindowController.h"
+#import "RecoveryWindowController.h"
 #import "RoomListController.h"
 #import "MessageListController.h"
 #import "ComposeBar.h"
@@ -36,7 +37,14 @@ static std::string nsstr(NSString* s) {
     RoomListController*    _roomList;
     MessageListController* _msgList;
     ComposeBar*            _compose;
-    LoginWindowController* _loginWC;
+    LoginWindowController*    _loginWC;
+    RecoveryWindowController* _recoveryWC;
+
+    // Recovery banner widgets (Step 6)
+    NSView*      _recoveryBanner;
+    NSTextField* _recoveryLabel;
+    NSLayoutConstraint* _recoveryBannerHeight;
+    BOOL         _recoveryBannerDismissed;
 
     // State
     NSString* _currentRoomId;
@@ -178,6 +186,36 @@ static std::string nsstr(NSString* s) {
     _roomHeaderTopic.hidden = YES;
     [_roomHeaderView addSubview:_roomHeaderTopic];
 
+    // Recovery banner (Step 6) — hidden until needs_recovery() is true.
+    _recoveryBanner = [[NSView alloc] init];
+    _recoveryBanner.translatesAutoresizingMaskIntoConstraints = NO;
+    _recoveryBanner.wantsLayer = YES;
+    _recoveryBanner.layer.backgroundColor =
+        [NSColor colorWithCalibratedRed:1.0 green:0.96 blue:0.84 alpha:1.0].CGColor;
+    _recoveryBanner.hidden = YES;
+    [_msgContainer addSubview:_recoveryBanner];
+
+    _recoveryLabel = [NSTextField labelWithString:
+        @"Verify this device to decrypt historical messages."];
+    _recoveryLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _recoveryLabel.textColor = [NSColor colorWithCalibratedRed:0.36 green:0.27 blue:0.0 alpha:1.0];
+    _recoveryLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [_recoveryBanner addSubview:_recoveryLabel];
+
+    NSButton* verifyBtn = [NSButton buttonWithTitle:@"Verify"
+                                             target:self
+                                             action:@selector(_onRecoveryVerifyClicked)];
+    verifyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    verifyBtn.bezelStyle = NSBezelStyleRounded;
+    [_recoveryBanner addSubview:verifyBtn];
+
+    NSButton* dismissBtn = [NSButton buttonWithTitle:@"✕"
+                                              target:self
+                                              action:@selector(_onRecoveryDismissClicked)];
+    dismissBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    dismissBtn.bezelStyle = NSBezelStyleInline;
+    [_recoveryBanner addSubview:dismissBtn];
+
     // Message list fills remaining space
     _msgList.view.translatesAutoresizingMaskIntoConstraints = NO;
     [_msgContainer addSubview:_msgList.view];
@@ -254,8 +292,14 @@ static std::string nsstr(NSString* s) {
         [_roomHeaderTopic.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
         [_roomHeaderTopic.topAnchor constraintEqualToAnchor:_roomHeaderName.bottomAnchor constant:2],
 
-        // Message list fills remaining space below header
-        [_msgList.view.topAnchor     constraintEqualToAnchor:_roomHeaderView.bottomAnchor],
+        // Recovery banner sits between header and message list. Height is 0
+        // when hidden; toggled to 30 by _maybeShowRecoveryBanner.
+        [_recoveryBanner.topAnchor      constraintEqualToAnchor:_roomHeaderView.bottomAnchor],
+        [_recoveryBanner.leadingAnchor  constraintEqualToAnchor:_msgContainer.leadingAnchor],
+        [_recoveryBanner.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
+
+        // Message list fills remaining space below the banner.
+        [_msgList.view.topAnchor     constraintEqualToAnchor:_recoveryBanner.bottomAnchor],
         [_msgList.view.leadingAnchor constraintEqualToAnchor:_msgContainer.leadingAnchor],
         [_msgList.view.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
         [_msgList.view.bottomAnchor  constraintEqualToAnchor:_msgContainer.bottomAnchor],
@@ -275,6 +319,27 @@ static std::string nsstr(NSString* s) {
         [_statusLabel.bottomAnchor  constraintEqualToAnchor:content.bottomAnchor],
         [_statusLabel.heightAnchor  constraintEqualToConstant:20],
     ]];
+
+    // Recovery banner: collapsible height (0 when hidden, 30 when shown) plus
+    // internal label/button layout. Buttons captured from _recoveryBanner's
+    // subview list — index 1 = verify, index 2 = dismiss (label is index 0).
+    _recoveryBannerHeight = [_recoveryBanner.heightAnchor constraintEqualToConstant:0];
+    _recoveryBannerHeight.active = YES;
+
+    NSButton* verifyBtnLayout  = _recoveryBanner.subviews[1];
+    NSButton* dismissBtnLayout = _recoveryBanner.subviews[2];
+    [NSLayoutConstraint activateConstraints:@[
+        [_recoveryLabel.leadingAnchor    constraintEqualToAnchor:_recoveryBanner.leadingAnchor constant:12],
+        [_recoveryLabel.centerYAnchor    constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [_recoveryLabel.trailingAnchor
+            constraintLessThanOrEqualToAnchor:verifyBtnLayout.leadingAnchor constant:-6],
+
+        [verifyBtnLayout.centerYAnchor   constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [verifyBtnLayout.trailingAnchor  constraintEqualToAnchor:dismissBtnLayout.leadingAnchor constant:-6],
+
+        [dismissBtnLayout.centerYAnchor  constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [dismissBtnLayout.trailingAnchor constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
+    ]];
 }
 
 // ── Login flow ────────────────────────────────────────────────────────────────
@@ -287,6 +352,7 @@ static std::string nsstr(NSString* s) {
             _msgList.myUserId = _myUserId;
             [self _startSync];
             [self _setStatus:@"Connected"];
+            [self _maybeShowRecoveryBanner];
             return;
         }
         tesseract::SessionStore::clear();
@@ -302,6 +368,7 @@ static std::string nsstr(NSString* s) {
             tesseract::SessionStore::save(_impl->client.export_session());
             [self _startSync];
             [self _setStatus:@"Connected"];
+            [self _maybeShowRecoveryBanner];
         } else {
             [self _setStatus:@"Login cancelled"];
         }
@@ -440,6 +507,62 @@ static std::string nsstr(NSString* s) {
 - (void)handleTimelineReset:(NSString*)roomId {
     if ([roomId isEqualToString:_currentRoomId])
         [_msgList clearMessages];
+}
+
+// ── Recovery banner + dialog (Step 6) ────────────────────────────────────────
+
+- (void)_maybeShowRecoveryBanner {
+    if (_recoveryBannerDismissed) return;
+    if (!_impl->client.needs_recovery()) return;
+    _recoveryLabel.stringValue = @"Verify this device to decrypt historical messages.";
+    _recoveryBanner.hidden = NO;
+    _recoveryBannerHeight.constant = 30;
+}
+
+- (void)_onRecoveryVerifyClicked {
+    if (_recoveryWC) {
+        [_recoveryWC.window makeKeyAndOrderFront:nil];
+        return;
+    }
+    _recoveryWC = [[RecoveryWindowController alloc]
+        initWithClient:&_impl->client];
+    [self.window beginSheet:_recoveryWC.window
+          completionHandler:^(NSModalResponse /*resp*/) {
+        _recoveryWC = nil;
+        if (!self->_impl->client.needs_recovery()) {
+            self->_recoveryBanner.hidden = YES;
+            self->_recoveryBannerHeight.constant = 0;
+        }
+    }];
+}
+
+- (void)_onRecoveryDismissClicked {
+    _recoveryBannerDismissed = YES;
+    _recoveryBanner.hidden = YES;
+    _recoveryBannerHeight.constant = 0;
+}
+
+- (void)handleBackupProgress:(const tesseract::BackupProgress&)progress {
+    // Recovery state is populated asynchronously by the first sync cycle, so
+    // re-evaluate the banner each time the SDK pings us.
+    [self _maybeShowRecoveryBanner];
+
+    if (!_recoveryBanner.hidden
+        && progress.state == tesseract::BackupState::Downloading
+        && progress.imported_keys > 0)
+    {
+        _recoveryLabel.stringValue = [NSString
+            stringWithFormat:@"Importing keys from backup… %llu imported.",
+            (unsigned long long)progress.imported_keys];
+    }
+    if (progress.state == tesseract::BackupState::Enabled
+        && !_impl->client.needs_recovery())
+    {
+        _recoveryBanner.hidden = YES;
+        _recoveryBannerHeight.constant = 0;
+    }
+    if (_recoveryWC)
+        [_recoveryWC updateProgress:progress];
 }
 
 // ── Room header ──────────────────────────────────────────────────────────────

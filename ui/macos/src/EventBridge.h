@@ -19,6 +19,7 @@ public:
                        bool soft_logout)                                 override;
     void on_timeline_reset(const std::string& room_id)                   override;
     void on_session_saved(const std::string& session_json)               override;
+    void on_backup_progress(const tesseract::BackupProgress& progress)   override;
 
 private:
     // __unsafe_unretained: non-owning ARC pointer. MainWindowController

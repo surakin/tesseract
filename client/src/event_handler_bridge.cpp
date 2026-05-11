@@ -40,4 +40,9 @@ void EventHandlerBridge::on_timeline_reset(rust::Str room_id) const {
     handler_->on_timeline_reset(std::string(room_id));
 }
 
+void EventHandlerBridge::on_backup_progress(const BackupProgress& progress) const {
+    if (!handler_) return;
+    handler_->on_backup_progress(tesseract::from_ffi(progress));
+}
+
 } // namespace tesseract_ffi

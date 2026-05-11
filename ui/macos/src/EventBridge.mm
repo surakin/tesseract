@@ -69,3 +69,15 @@ void EventBridge::on_session_saved(const std::string& session_json) {
     // Safe to call from any thread — file I/O with an internal atomic rename.
     tesseract::SessionStore::save(session_json);
 }
+
+void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
+    struct P {
+        __unsafe_unretained MainWindowController* ctrl;
+        tesseract::BackupProgress progress;
+    };
+    auto* p = new P{ctrl_, progress};
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [p->ctrl handleBackupProgress:p->progress];
+        delete p;
+    });
+}

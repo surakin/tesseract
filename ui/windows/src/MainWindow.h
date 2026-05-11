@@ -26,6 +26,7 @@ constexpr UINT WM_TESSERACT_SYNC_ERROR     = WM_APP + 3;
 constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
 constexpr UINT WM_TESSERACT_RECONNECT      = WM_APP + 5;
 constexpr UINT WM_TESSERACT_AUTH_ERROR     = WM_APP + 6;
+constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
 
 namespace win32 {
 
@@ -41,6 +42,7 @@ public:
                        bool soft_logout) override;
     void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
+    void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
 private:
     HWND hwnd_;
@@ -86,6 +88,11 @@ private:
 
     void on_reconnect();
     void on_auth_error(bool soft_logout);
+    void on_backup_progress(tesseract::BackupProgress* progress);
+    void maybe_show_recovery_banner();
+    void open_recovery_dialog();
+    void on_recovery_verify_clicked();
+    void on_recovery_dismiss_clicked();
     void append_message(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
@@ -121,6 +128,13 @@ private:
     HWND      hInput_      = nullptr;
     HWND      hSend_       = nullptr;
     HWND      hStatus_     = nullptr;
+    HWND      hRecoveryBanner_ = nullptr;
+    HWND      hRecoveryLabel_  = nullptr;
+    HWND      hRecoveryVerify_ = nullptr;
+    HWND      hRecoveryDismiss_ = nullptr;
+    bool      recovery_banner_visible_   = false;
+    bool      recovery_banner_dismissed_ = false;
+    class RecoveryDialog* recovery_dialog_ = nullptr;
 
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
@@ -139,6 +153,8 @@ private:
     static constexpr int            IDC_MSGLIST  = 102;
     static constexpr int            IDC_INPUT    = 103;
     static constexpr int            IDC_SEND     = 104;
+    static constexpr int            IDC_RECOVERY_VERIFY  = 110;
+    static constexpr int            IDC_RECOVERY_DISMISS = 111;
 };
 
 } // namespace win32

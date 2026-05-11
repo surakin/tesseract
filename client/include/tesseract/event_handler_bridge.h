@@ -12,6 +12,7 @@
 namespace tesseract_ffi {
     struct TimelineEvent;
     struct RoomInfo;
+    struct BackupProgress;
 }
 
 namespace tesseract_ffi {
@@ -30,6 +31,7 @@ public:
     /// Signals the UI to clear the message view for room_id before the
     /// initial cached timeline items arrive via on_message_event.
     void on_timeline_reset(rust::Str room_id) const;
+    void on_backup_progress(const BackupProgress& progress) const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning

@@ -18,6 +18,7 @@
                     description:(NSString*)desc
                     softLogout:(BOOL)soft;
 - (void)handleTimelineReset:(NSString*)roomId;
+- (void)handleBackupProgress:(const tesseract::BackupProgress&)progress;
 
 - (void)updateRoomHeader:(const tesseract::RoomInfo&)info;
 

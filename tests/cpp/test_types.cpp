@@ -252,3 +252,68 @@ TEST_CASE("EventType enum values are correct", "[types]") {
     CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
     CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 4);
 }
+
+// ---------------------------------------------------------------------------
+// tesseract::BackupState / BackupProgress  (Step 6)
+// ---------------------------------------------------------------------------
+//
+// The wire-level u8 codes must stay in sync with `BACKUP_STATE_*` in
+// sdk/src/client.rs and the conversion in client/src/ffi_convert.h.
+
+TEST_CASE("BackupState enum values match the FFI wire encoding", "[types][recovery]") {
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Unknown)     == 0);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Disabled)    == 1);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Enabled)     == 2);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Downloading) == 3);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Creating)    == 4);
+}
+
+TEST_CASE("BackupProgress default-initialised fields", "[types][recovery]") {
+    tesseract::BackupProgress p{};
+    CHECK(p.state         == tesseract::BackupState::Unknown);
+    CHECK(p.imported_keys == 0u);
+    CHECK(p.total_keys    == 0u);
+}
+
+TEST_CASE("BackupProgress fields are settable", "[types][recovery]") {
+    tesseract::BackupProgress p{
+        .state         = tesseract::BackupState::Downloading,
+        .imported_keys = 234,
+        .total_keys    = 1200,
+    };
+    CHECK(p.state         == tesseract::BackupState::Downloading);
+    CHECK(p.imported_keys == 234u);
+    CHECK(p.total_keys    == 1200u);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::Client recovery surface (Step 6)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("needs_recovery is false when not logged in", "[client][recovery]") {
+    tesseract::Client c;
+    CHECK_FALSE(c.needs_recovery());
+}
+
+TEST_CASE("recover fails with 'not logged in' before login", "[client][recovery]") {
+    tesseract::Client c;
+    auto r = c.recover("some-key");
+    CHECK_FALSE(static_cast<bool>(r));
+    CHECK(r.message == "not logged in");
+}
+
+TEST_CASE("recover rejects empty key before login", "[client][recovery]") {
+    tesseract::Client c;
+    // Empty input is rejected at the FFI boundary; "not logged in" wins first
+    // because we never reach the empty-string check without a Client.
+    auto r = c.recover("");
+    CHECK_FALSE(static_cast<bool>(r));
+}
+
+TEST_CASE("backup_state starts in Unknown with zero counters", "[client][recovery]") {
+    tesseract::Client c;
+    auto p = c.backup_state();
+    CHECK(p.state         == tesseract::BackupState::Unknown);
+    CHECK(p.imported_keys == 0u);
+    CHECK(p.total_keys    == 0u);
+}

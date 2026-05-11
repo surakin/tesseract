@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginDialog.h"
+#include "RecoveryDialog.h"
 #include "RoomListDelegate.h"
 
 #include <tesseract/session_store.h>
@@ -23,6 +24,7 @@
 
 Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
+Q_DECLARE_METATYPE(tesseract::BackupProgress)
 
 namespace qt6 {
 
@@ -56,6 +58,10 @@ void EventBridge::on_timeline_reset(const std::string& room_id) {
 
 void EventBridge::on_session_saved(const std::string& session_json) {
     tesseract::SessionStore::save(session_json);
+}
+
+void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
+    emit backupProgress(progress);
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +107,7 @@ MainWindow::MainWindow(QWidget* parent)
 {
     qRegisterMetaType<tesseract::Event*>();
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
+    qRegisterMetaType<tesseract::BackupProgress>();
 
     setWindowTitle("Tesseract");
     resize(1100, 768);
@@ -191,6 +198,42 @@ MainWindow::MainWindow(QWidget* parent)
     headerLayout->addWidget(nameBlock, 1);
     vLayout->addWidget(roomHeader_);
 
+    // Recovery banner (Step 6) — hidden until needs_recovery() is true.
+    recoveryBanner_ = new QWidget(chatPanel);
+    recoveryBanner_->setObjectName("recoveryBanner");
+    recoveryBanner_->setStyleSheet(
+        "#recoveryBanner { background-color:#FFF4D6; border-bottom:1px solid #E0C97A; }");
+    recoveryBanner_->setVisible(false);
+    {
+        auto* bannerLayout = new QHBoxLayout(recoveryBanner_);
+        bannerLayout->setContentsMargins(12, 6, 6, 6);
+        bannerLayout->setSpacing(8);
+
+        recoveryLabel_ = new QLabel(tr("Verify this device to decrypt historical messages."),
+                                    recoveryBanner_);
+        recoveryLabel_->setStyleSheet("color:#5C4500;");
+        bannerLayout->addWidget(recoveryLabel_, 1);
+
+        auto* verifyBtn = new QPushButton(tr("Verify"), recoveryBanner_);
+        verifyBtn->setStyleSheet(
+            "QPushButton { background-color:#E0A800; color:white; border:none; "
+            "border-radius:4px; padding:4px 10px; font-weight:bold; }"
+            "QPushButton:hover { background-color:#C99100; }");
+        bannerLayout->addWidget(verifyBtn);
+
+        auto* dismissBtn = new QPushButton("✕", recoveryBanner_);
+        dismissBtn->setFlat(true);
+        dismissBtn->setFixedSize(24, 24);
+        dismissBtn->setStyleSheet("QPushButton { color:#5C4500; }");
+        bannerLayout->addWidget(dismissBtn);
+
+        connect(verifyBtn,  &QPushButton::clicked,
+                this,       &MainWindow::onRecoveryBannerClicked);
+        connect(dismissBtn, &QPushButton::clicked,
+                this,       &MainWindow::onDismissRecoveryBanner);
+    }
+    vLayout->addWidget(recoveryBanner_);
+
     // Message scroll area
     msgScrollArea_ = new QScrollArea(chatPanel);
     msgScrollArea_->setWidgetResizable(true);
@@ -267,6 +310,8 @@ MainWindow::MainWindow(QWidget* parent)
             this,          &MainWindow::onSyncError);
     connect(bridge_.get(), &EventBridge::timelineReset,
             this,          &MainWindow::onTimelineReset);
+    connect(bridge_.get(), &EventBridge::backupProgress,
+            this,          &MainWindow::onBackupProgress);
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
 }
@@ -303,6 +348,7 @@ void MainWindow::doLogin() {
             myUserId_ = client_.get_user_id();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage("Connected");
+            maybeShowRecoveryBanner();
             return;
         }
         tesseract::SessionStore::clear();
@@ -321,6 +367,7 @@ void MainWindow::doLogin() {
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
     statusBar()->showMessage("Connected");
+    maybeShowRecoveryBanner();
 }
 
 void MainWindow::onSendClicked() {
@@ -398,6 +445,7 @@ void MainWindow::onSyncError(
                     myUserId_ = client_.get_user_id();
                     client_.start_sync(bridge_.get());
                     statusBar()->showMessage("Reconnected");
+                    maybeShowRecoveryBanner();
                     return;
                 }
             }
@@ -732,6 +780,64 @@ QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
     rowLayout->addWidget(contentBox);
     rowLayout->addStretch();
     return row;
+}
+
+// ---------------------------------------------------------------------------
+// Recovery banner + dialog (Step 6)
+// ---------------------------------------------------------------------------
+
+void MainWindow::maybeShowRecoveryBanner() {
+    if (recoveryBannerDismissed_) return;
+    if (!client_.needs_recovery()) return;
+    recoveryLabel_->setText(tr("Verify this device to decrypt historical messages."));
+    recoveryBanner_->setVisible(true);
+}
+
+void MainWindow::onRecoveryBannerClicked() {
+    if (recoveryDialog_) {
+        recoveryDialog_->raise();
+        recoveryDialog_->activateWindow();
+        return;
+    }
+    recoveryDialog_ = new RecoveryDialog(client_, this);
+    recoveryDialog_->setAttribute(Qt::WA_DeleteOnClose);
+    connect(recoveryDialog_, &QObject::destroyed, this, [this]() {
+        recoveryDialog_ = nullptr;
+        // Once recovery is in flight the banner becomes informational; let
+        // the backup-progress watcher decide when to clear it.
+        if (!client_.needs_recovery())
+            recoveryBanner_->setVisible(false);
+    });
+    recoveryDialog_->show();
+}
+
+void MainWindow::onDismissRecoveryBanner() {
+    recoveryBannerDismissed_ = true;
+    recoveryBanner_->setVisible(false);
+}
+
+void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
+    // Recovery state is populated asynchronously by the first sync cycle, so
+    // re-evaluate the banner each time the SDK pings us.
+    maybeShowRecoveryBanner();
+
+    // Update the banner text passively so users see download progress even
+    // when the dialog is closed.
+    if (recoveryBanner_->isVisible()
+        && progress.state == tesseract::BackupState::Downloading
+        && progress.imported_keys > 0)
+    {
+        recoveryLabel_->setText(
+            tr("Importing keys from backup… %1 imported.")
+                .arg(static_cast<qulonglong>(progress.imported_keys)));
+    }
+    if (progress.state == tesseract::BackupState::Enabled
+        && !client_.needs_recovery())
+    {
+        recoveryBanner_->setVisible(false);
+    }
+    if (recoveryDialog_)
+        recoveryDialog_->onBackupProgress(progress);
 }
 
 } // namespace qt6

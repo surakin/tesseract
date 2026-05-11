@@ -33,12 +33,14 @@ public:
                        bool soft_logout) override;
     void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
+    void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
 signals:
     void eventReceived(tesseract::Event* ev);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString context, QString description, bool soft_logout);
     void timelineReset(QString roomId);
+    void backupProgress(tesseract::BackupProgress progress);
 };
 
 // ---------------------------------------------------------------------------
@@ -60,9 +62,13 @@ private slots:
     void onSyncError(QString context, QString description, bool soft_logout);
     void onTimelineReset(QString roomId);
     void onSpaceBack();
+    void onBackupProgress(tesseract::BackupProgress progress);
+    void onRecoveryBannerClicked();
+    void onDismissRecoveryBanner();
 
 private:
     void     doLogin();
+    void     maybeShowRecoveryBanner();
     void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void     refreshRoomList();
     void     appendMessage(const tesseract::Event& ev);
@@ -79,6 +85,11 @@ private:
     static constexpr int kMaxImageHeight  = 200;
     static constexpr int kMaxStickerSize  = 256;
     static constexpr int kMsgMaxWidth     = 520;
+
+    QWidget*             recoveryBanner_  = nullptr;
+    QLabel*              recoveryLabel_   = nullptr;
+    bool                 recoveryBannerDismissed_ = false;
+    class RecoveryDialog* recoveryDialog_ = nullptr;
 
     QListView*           roomList_        = nullptr;
     QStandardItemModel*  roomModel_       = nullptr;
