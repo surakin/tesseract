@@ -3,15 +3,16 @@
 #define NOMINMAX
 #include <windows.h>
 #include <commctrl.h>
+#include <ole2.h>
+#include <algorithm>  // std::min/std::max — must precede gdiplus.h with NOMINMAX
+#include <gdiplus.h>
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 
-#include <atomic>
 #include <memory>
-#include <mutex>
-#include <queue>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Custom window messages
@@ -43,10 +44,24 @@ private:
 
 // ---------------------------------------------------------------------------
 
+struct MessageData {
+    std::string          body;
+    std::string          sender;
+    std::string          sender_name;
+    std::string          sender_avatar_url;
+    uint64_t             timestamp  = 0;
+    bool                 is_own     = false;
+    tesseract::EventType type       = tesseract::EventType::Text;
+};
+
+// ---------------------------------------------------------------------------
+
 class MainWindow {
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
+    static LRESULT CALLBACK input_subclass_proc(HWND, UINT, WPARAM, LPARAM,
+                                                 UINT_PTR, DWORD_PTR);
 
     explicit MainWindow(HINSTANCE hInst);
     ~MainWindow();
@@ -64,27 +79,55 @@ private:
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
     void on_tesseract_timeline_reset(std::string* room_id);
 
-    void layout_controls();
     void on_reconnect();
     void on_auth_error(bool soft_logout);
     void append_message(const tesseract::Event& ev);
+    void clear_messages();
+
+    int  compute_message_height(size_t idx);
+    void draw_room_item(DRAWITEMSTRUCT* dis);
+    void draw_message_item(DRAWITEMSTRUCT* dis);
+
+    Gdiplus::Bitmap* get_room_avatar(const std::string& room_id);
+    Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
+    void draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
+                             int x, int y, int size);
+    void draw_initials_circle(Gdiplus::Graphics& g, const std::string& name,
+                               int x, int y, int size);
+    static void fill_rounded_rect(Gdiplus::Graphics& g, Gdiplus::Brush& brush,
+                                   float x, float y, float w, float h, float r);
+
+    static constexpr int kRoomAvatarSize = 36;
+    static constexpr int kMsgAvatarSize  = 32;
+    static constexpr int kRoomRowH       = 62;
+    static constexpr int kMsgRowPad      = 6;
+    static constexpr int kBubblePadX     = 12;
+    static constexpr int kBubblePadY     = 8;
+    static constexpr int kBubbleRadius   = 12;
+    static constexpr int kMaxBubbleWidth = 420;
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
     HWND      hRoomList_  = nullptr;
-    HWND      hMsgView_   = nullptr;
+    HWND      hMsgList_   = nullptr;
     HWND      hInput_     = nullptr;
     HWND      hSend_      = nullptr;
     HWND      hStatus_    = nullptr;
 
-    tesseract::Client             client_;
+    tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
-    std::vector<tesseract::RoomInfo>    rooms_;
+    std::vector<tesseract::RoomInfo> rooms_;
+    std::vector<MessageData>         messages_;
     std::string                      current_room_id_;
+    std::string                      my_user_id_;
+
+    ULONG_PTR  gdiplus_token_ = 0;
+    std::unordered_map<std::string, Gdiplus::Bitmap*> avatar_cache_;
+    std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_ROOMLIST = 101;
-    static constexpr int            IDC_MSGVIEW  = 102;
+    static constexpr int            IDC_MSGLIST  = 102;
     static constexpr int            IDC_INPUT    = 103;
     static constexpr int            IDC_SEND     = 104;
 };

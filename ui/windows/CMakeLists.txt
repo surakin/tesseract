@@ -17,6 +17,8 @@ target_link_libraries(tesseract_win32 PRIVATE
     # ui/linux-qt/CMakeLists.txt.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     comctl32
+    gdiplus
+    ole32
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE
