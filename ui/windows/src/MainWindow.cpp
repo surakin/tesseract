@@ -8,6 +8,8 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <ctime>
+#include <cwchar>
 #include <string>
 
 namespace {
@@ -1016,30 +1018,32 @@ int MainWindow::compute_message_height(size_t idx) {
     int avail_w = rc.right - rc.left;
     if (avail_w < 60) avail_w = 600;
 
-    int bubble_max_w = std::min(kMaxBubbleWidth, (int)(avail_w * 0.70f));
-    int text_w       = bubble_max_w - 2 * kBubblePadX;
+    // Flat-text layout (see docs/UI-PARITY.md): avatar on the left, name +
+    // body + footer to the right. No bubble padding.
+    int body_max_w = std::min(kMsgMaxWidth,
+                              avail_w - kMsgAvatarSize - 3 * tesseract::visual::kMsgAvatarGap);
+    if (body_max_w < 60) body_max_w = 60;
 
     Gdiplus::RectF bound;
     HDC hdc = GetDC(hMsgList_);
     {
-        // Inner scope: Graphics is destroyed before ReleaseDC below.
         Gdiplus::Graphics g(hdc);
         Gdiplus::FontFamily ff(L"Segoe UI");
         Gdiplus::Font bodyFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
         auto wbody = utf8_to_wstr(msg.body);
         Gdiplus::StringFormat sf;
-        Gdiplus::RectF layout(0, 0, (float)text_w, 4096.0f);
+        Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
         g.MeasureString(wbody.c_str(), -1, &bodyFont, layout, &sf, &bound);
     }
     ReleaseDC(hMsgList_, hdc);
 
-    int name_h  = msg.is_own ? 0 : 20;
-    int body_h  = (int)bound.Height + 2 * kBubblePadY;
+    int name_h      = tesseract::visual::kMsgSenderNameHeight + 2;   // +2 gap
+    int body_h      = (int)bound.Height;
     int reactions_h = msg.reactions.empty() ? 0 : (kReactionH + kReactionPad);
-    int row_h   = kMsgRowPad + name_h
-                + std::max(body_h, kMsgAvatarSize)
-                + reactions_h
-                + kMsgRowPad;
+    int ts_h        = tesseract::visual::kMsgTimestampHeight + 2;
+    int content_h   = name_h + body_h + reactions_h + ts_h;
+
+    int row_h = kMsgRowPad + std::max(content_h, kMsgAvatarSize) + kMsgRowPad;
     return std::max(row_h, 48);
 }
 
@@ -1160,80 +1164,68 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     Gdiplus::FontFamily ff(L"Segoe UI");
     Gdiplus::Font bodyFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
 
-    int bubble_max_w = std::min(kMaxBubbleWidth, (int)(w * 0.70f));
-    int text_max_w   = bubble_max_w - 2 * kBubblePadX;
+    // Flat-text layout — same anatomy on every platform (see UI-PARITY.md):
+    // 32 px avatar on the left for everyone, sender name above body, body
+    // wraps at kMsgMaxWidth, footer with timestamp on the right.
+    int ax = x0 + tesseract::visual::kMsgAvatarGap;
+    int bx = ax + kMsgAvatarSize + tesseract::visual::kMsgAvatarGap;
+    int body_max_w = std::min(kMsgMaxWidth,
+                              w - (bx - x0) - tesseract::visual::kMsgAvatarGap);
+    if (body_max_w < 60) body_max_w = 60;
 
     auto wbody = utf8_to_wstr(msg.body);
     Gdiplus::StringFormat sfWrap;
-    Gdiplus::RectF layout(0, 0, (float)text_max_w, 4096.0f);
+    Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
     Gdiplus::RectF bound;
     g.MeasureString(wbody.c_str(), -1, &bodyFont, layout, &sfWrap, &bound);
+    int body_h = (int)bound.Height;
 
-    int body_h  = (int)bound.Height + 2 * kBubblePadY;
-    int bubble_w = std::min((int)bound.Width + 2 * kBubblePadX + 4, bubble_max_w);
-    int y_cur   = y0 + kMsgRowPad;
+    int y_cur = y0 + kMsgRowPad;
 
-    int bubble_x = 0;
-    int bubble_bottom = 0;
-    if (msg.is_own) {
-        int bx = rc.right - 8 - bubble_w;
-        int by = y_cur;
-        bubble_x = bx;
-        bubble_bottom = by + body_h;
-
-        Gdiplus::SolidBrush bubbleBrush(Gdiplus::Color(0xFF0084FF));
-        fill_rounded_rect(g, bubbleBrush, (float)bx, (float)by,
-                          (float)bubble_w, (float)body_h, (float)kBubbleRadius);
-
-        Gdiplus::SolidBrush textBrush(Gdiplus::Color(0xFFFFFFFF));
-        g.DrawString(wbody.c_str(), -1, &bodyFont,
-                     Gdiplus::RectF((float)(bx + kBubblePadX), (float)(by + kBubblePadY),
-                                    (float)(bubble_w - 2*kBubblePadX),
-                                    (float)(body_h  - 2*kBubblePadY)),
-                     &sfWrap, &textBrush);
-    } else {
-        int ax = x0 + 8;
-
-        // Sender name
-        const std::string& disp = msg.sender_name.empty() ? msg.sender : msg.sender_name;
-        Gdiplus::Font nameFont(&ff, 9.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF555555));
-        Gdiplus::StringFormat sfNoWrap;
-        sfNoWrap.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
-        sfNoWrap.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-        g.DrawString(utf8_to_wstr(disp).c_str(), -1, &nameFont,
-                     Gdiplus::RectF((float)(ax + kMsgAvatarSize + 8), (float)y_cur,
-                                    300.0f, 18.0f),
-                     &sfNoWrap, &nameBrush);
-        y_cur += 20;
-
-        // Avatar
+    // Avatar (always — own messages too).
+    const std::string& disp = msg.sender_name.empty() ? msg.sender : msg.sender_name;
+    {
         Gdiplus::Bitmap* bmp = get_user_avatar(msg.sender_avatar_url);
         if (bmp)
             draw_circle_bitmap(g, bmp, ax, y_cur, kMsgAvatarSize);
         else
             draw_initials_circle(g, disp, ax, y_cur, kMsgAvatarSize);
-
-        // Gray bubble
-        int bx = ax + kMsgAvatarSize + 8;
-        int by = y_cur;
-        bubble_x = bx;
-        bubble_bottom = by + body_h;
-
-        Gdiplus::SolidBrush bubbleBrush(Gdiplus::Color(0xFFE4E6EB));
-        fill_rounded_rect(g, bubbleBrush, (float)bx, (float)by,
-                          (float)bubble_w, (float)body_h, (float)kBubbleRadius);
-
-        Gdiplus::SolidBrush textBrush(Gdiplus::Color(0xFF1A1A2E));
-        g.DrawString(wbody.c_str(), -1, &bodyFont,
-                     Gdiplus::RectF((float)(bx + kBubblePadX), (float)(by + kBubblePadY),
-                                    (float)(bubble_w - 2*kBubblePadX),
-                                    (float)(body_h  - 2*kBubblePadY)),
-                     &sfWrap, &textBrush);
     }
 
-    // Reaction chips: rounded pills below the bubble, aligned with the
-    // bubble's leading edge. Record each chip's screen-space RECT relative
+    // Sender name (always — both own and other).
+    {
+        Gdiplus::Font nameFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontSenderName,
+                                Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF555555));
+        Gdiplus::StringFormat sfNoWrap;
+        sfNoWrap.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+        sfNoWrap.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+        g.DrawString(utf8_to_wstr(disp).c_str(), -1, &nameFont,
+                     Gdiplus::RectF((float)bx, (float)y_cur,
+                                    (float)body_max_w,
+                                    (float)tesseract::visual::kMsgSenderNameHeight),
+                     &sfNoWrap, &nameBrush);
+        y_cur += tesseract::visual::kMsgSenderNameHeight + 2;
+    }
+
+    // Body text — flat, no bubble.
+    int body_left = bx;
+    int body_top  = y_cur;
+    {
+        Gdiplus::SolidBrush textBrush(Gdiplus::Color(0xFF111111));
+        g.DrawString(wbody.c_str(), -1, &bodyFont,
+                     Gdiplus::RectF((float)body_left, (float)body_top,
+                                    (float)body_max_w, (float)body_h),
+                     &sfWrap, &textBrush);
+    }
+    y_cur += body_h;
+
+    // bubble_x / bubble_bottom retained for the reaction-chip block below.
+    int bubble_x = body_left;
+    int bubble_bottom = y_cur;
+
+    // Reaction chips: rounded pills beneath the body, aligned with the
+    // body's leading edge. Record each chip's screen-space RECT relative
     // to the row origin so WM_LBUTTONDOWN can hit-test against it.
     if (!msg.reactions.empty()) {
         Gdiplus::Font chipFont(&ff, 8.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
@@ -1288,6 +1280,38 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
 
             chip_x += pill_w + (float)kReactionPad;
         }
+    }
+
+    // Timestamp footer: HH:MM, secondary colour, right-aligned beneath the
+    // body / reactions row. Matches the Qt and GTK footer style.
+    if (msg.timestamp != 0) {
+        int footer_y = msg.reactions.empty()
+            ? bubble_bottom + 2
+            : bubble_bottom + kReactionPad + kReactionH + 2;
+
+        time_t t = static_cast<time_t>(msg.timestamp / 1000);
+        struct tm tm_local;
+#if defined(_WIN32)
+        localtime_s(&tm_local, &t);
+#else
+        localtime_r(&t, &tm_local);
+#endif
+        wchar_t ts_buf[8] = {0};
+        wcsftime(ts_buf, 8, L"%H:%M", &tm_local);
+
+        Gdiplus::Font tsFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontTimestamp,
+                              Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush tsBrush(Gdiplus::Color(0xFF8E8E93));
+        Gdiplus::StringFormat tsFmt;
+        tsFmt.SetAlignment(Gdiplus::StringAlignmentFar);
+        tsFmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
+
+        int ts_right = body_left + body_max_w;
+        g.DrawString(ts_buf, -1, &tsFont,
+                     Gdiplus::RectF((float)body_left, (float)footer_y,
+                                    (float)(ts_right - body_left),
+                                    (float)tesseract::visual::kMsgTimestampHeight),
+                     &tsFmt, &tsBrush);
     }
 }
 

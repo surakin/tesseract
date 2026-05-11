@@ -1,7 +1,9 @@
 #import "ComposeBar.h"
 
-static const CGFloat kMinHeight = 38;
-static const CGFloat kMaxHeight = 120;
+#include <tesseract/visual.h>
+
+static const CGFloat kMinHeight = tesseract::visual::kComposeMinHeight;
+static const CGFloat kMaxHeight = tesseract::visual::kComposeMaxHeight;
 static const CGFloat kPad       = 8;
 static const CGFloat kBtnW      = 64;
 

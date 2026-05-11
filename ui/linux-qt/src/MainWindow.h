@@ -14,6 +14,7 @@
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/visual.h>
 
 #include <memory>
 #include <vector>
@@ -91,11 +92,11 @@ private:
     QPixmap  makeCirclePixmap(const QPixmap& src, int size);
     QPixmap  makeInitialsPixmap(const QString& name, int size);
 
-    static constexpr int kRoomAvatarSize  = 36;
-    static constexpr int kMsgAvatarSize   = 32;
-    static constexpr int kMaxImageWidth   = 320;
-    static constexpr int kMaxImageHeight  = 200;
-    static constexpr int kMaxStickerSize  = 256;
+    static constexpr int kRoomAvatarSize  = tesseract::visual::kRoomAvatarSize;
+    static constexpr int kMsgAvatarSize   = tesseract::visual::kMsgAvatarSize;
+    static constexpr int kMaxImageWidth   = tesseract::visual::kMaxInlineImageWidth;
+    static constexpr int kMaxImageHeight  = tesseract::visual::kMaxInlineImageHeight;
+    static constexpr int kMaxStickerSize  = tesseract::visual::kStickerSize;
     static constexpr int kMsgMaxWidth     = 520;
 
     QWidget*             recoveryBanner_     = nullptr;

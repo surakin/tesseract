@@ -3,6 +3,7 @@
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/visual.h>
 
 #include <memory>
 #include <string>
@@ -83,8 +84,8 @@ private:
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
-    static constexpr int kRoomAvatarSize = 36;
-    static constexpr int kMsgAvatarSize  = 32;
+    static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
+    static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
 
     GtkApplication* app_              = nullptr;
     GtkWidget*      window_             = nullptr;

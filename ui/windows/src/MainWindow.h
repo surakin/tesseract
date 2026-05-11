@@ -13,6 +13,7 @@
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/visual.h>
 
 #include <memory>
 #include <string>
@@ -133,18 +134,15 @@ private:
     static void fill_rounded_rect(Gdiplus::Graphics& g, Gdiplus::Brush& brush,
                                    float x, float y, float w, float h, float r);
 
-    static constexpr int kRoomAvatarSize = 36;
-    static constexpr int kMsgAvatarSize  = 32;
+    static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
+    static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
     static constexpr int kRoomHeaderH    = 60;
-    static constexpr int kRoomRowH       = 62;
-    static constexpr int kMsgRowPad      = 6;
-    static constexpr int kBubblePadX     = 12;
-    static constexpr int kBubblePadY     = 8;
-    static constexpr int kBubbleRadius   = 12;
-    static constexpr int kMaxBubbleWidth = 420;
-    static constexpr int kReactionH      = 22;
-    static constexpr int kReactionPad    = 4;
-    static constexpr int kUserStripH     = 48;
+    static constexpr int kRoomRowH       = tesseract::visual::kRoomRowHeight;
+    static constexpr int kMsgRowPad      = tesseract::visual::kMsgRowVerticalPad;
+    static constexpr int kMsgMaxWidth    = 520;            // matches Qt
+    static constexpr int kReactionH      = tesseract::visual::kReactionChipHeight;
+    static constexpr int kReactionPad    = tesseract::visual::kReactionChipGap;
+    static constexpr int kUserStripH     = tesseract::visual::kUserStripHeight;
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;

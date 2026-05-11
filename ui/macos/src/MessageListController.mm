@@ -2,6 +2,7 @@
 #import "AvatarCache.h"
 
 #include <tesseract/client.h>
+#include <tesseract/visual.h>
 #import <objc/runtime.h>
 
 // Keys for objc_setAssociatedObject — stash (roomId, eventId, reactionKey)
@@ -10,21 +11,24 @@ static const void* const kChipRoomIdKey   = &kChipRoomIdKey;
 static const void* const kChipEventIdKey  = &kChipEventIdKey;
 static const void* const kChipKeyKey      = &kChipKeyKey;
 
+// Sizes/spacing live in client/include/tesseract/visual.h — see
+// docs/UI-PARITY.md for the canonical anatomy. Per-platform constants
+// kept here are limited to inner content padding inside the (now
+// invisible) bubble layout container.
 static NSString* const kCellId     = @"MsgCell";
-static const CGFloat kAvatarSize   = 28;
-static const CGFloat kBubblePadH   = 10;
+static const CGFloat kAvatarSize   = tesseract::visual::kMsgAvatarSize;
+static const CGFloat kBubblePadH   = 10;   // inner content padding (no visual bubble)
 static const CGFloat kBubblePadV   = 7;
-static const CGFloat kRowPadV      = 6;
-static const CGFloat kMaxBubbleW   = 420;
-static const CGFloat kSenderH      = 16;
-static const CGFloat kTsH          = 14;
-static const CGFloat kAvatarGap    = 8;
-static const CGFloat kCornerRadius = 12;
-static const CGFloat kMaxImageW    = 320;
-static const CGFloat kMaxImageH    = 200;
-static const CGFloat kMaxStickerSz = 256;
-static const CGFloat kChipH        = 20;
-static const CGFloat kChipGap      = 4;
+static const CGFloat kRowPadV      = tesseract::visual::kMsgRowVerticalPad;
+static const CGFloat kMaxBubbleW   = 520;  // matches Qt's kMsgMaxWidth
+static const CGFloat kSenderH      = tesseract::visual::kMsgSenderNameHeight;
+static const CGFloat kTsH          = tesseract::visual::kMsgTimestampHeight;
+static const CGFloat kAvatarGap    = tesseract::visual::kMsgAvatarGap;
+static const CGFloat kMaxImageW    = tesseract::visual::kMaxInlineImageWidth;
+static const CGFloat kMaxImageH    = tesseract::visual::kMaxInlineImageHeight;
+static const CGFloat kMaxStickerSz = tesseract::visual::kStickerSize;
+static const CGFloat kChipH        = tesseract::visual::kReactionChipHeight;
+static const CGFloat kChipGap      = tesseract::visual::kReactionChipGap;
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -141,9 +145,13 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 - (instancetype)initWithFrame:(NSRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
 
+    // Invisible layout container — the spec (docs/UI-PARITY.md) calls for
+    // flat text rendering on every platform, so this view has no
+    // background and no rounded corners. It exists only so the inner
+    // content (media / body / footer) can share a single set of layout
+    // constraints with consistent inner padding.
     _bubble = [[NSView alloc] init];
     _bubble.wantsLayer            = YES;
-    _bubble.layer.cornerRadius    = kCornerRadius;
     _bubble.translatesAutoresizingMaskIntoConstraints = NO;
     [self addSubview:_bubble];
 
@@ -200,25 +208,14 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
           mediaImage:(NSImage*)mediaImage
         chipIcons:(NSDictionary<NSString*, NSImage*>*)chipIcons
        chipTarget:(id)chipTarget {
-    BOOL own = msg.is_own;
     NSString* sender = @(msg.sender_name.empty()
                            ? msg.sender.c_str()
                            : msg.sender_name.c_str());
 
-    // Stickers are borderless; other types get a bubble background.
-    BOOL borderless = (msg.type == tesseract::EventType::Sticker);
-    if (borderless) {
-        _bubble.layer.backgroundColor = [NSColor clearColor].CGColor;
-        _bodyLabel.textColor = [NSColor labelColor];
-    } else if (own) {
-        _bubble.layer.backgroundColor = [NSColor systemBlueColor].CGColor;
-        _bodyLabel.textColor          = [NSColor whiteColor];
-    } else {
-        NSColor* bg = [NSColor colorNamed:@"BubbleGray"]
-            ?: [NSColor colorWithRed:0.91 green:0.91 blue:0.91 alpha:1];
-        _bubble.layer.backgroundColor = bg.CGColor;
-        _bodyLabel.textColor = [NSColor labelColor];
-    }
+    // Flat-text rendering — no bubble background, body uses the ambient
+    // label colour for both own and incoming messages.
+    _bubble.layer.backgroundColor = [NSColor clearColor].CGColor;
+    _bodyLabel.textColor = [NSColor labelColor];
 
     // Body text per event type.
     NSString* bodyText = nil;
@@ -242,9 +239,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     _bodyLabel.stringValue   = bodyText ?: @"";
     _bodyLabel.hidden        = (bodyText == nil) || bodyText.length == 0;
-    _senderLabel.stringValue = own ? @"" : sender;
-    _senderLabel.hidden      = own;
-    _avatarView.hidden       = own;
+    _senderLabel.stringValue = sender;
+    _senderLabel.hidden      = NO;
+    _avatarView.hidden       = NO;
 
     // Media: image or sticker
     BOOL hasMedia = (msg.type == tesseract::EventType::Image ||
@@ -255,13 +252,11 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     NSString* ts = formatTimestamp(msg.timestamp);
     _timestampLabel.stringValue = ts ?: @"";
     _timestampLabel.hidden = (ts.length == 0);
-    if (borderless) _timestampLabel.hidden = YES;  // no timestamp under stickers
 
-    // Rebuild the reaction chip row. Stickers omit chips too (matches
-    // borderless rule for the timestamp).
+    // Rebuild the reaction chip row.
     for (NSView* v in _chipStack.arrangedSubviews.copy)
         [_chipStack removeArrangedSubview:v], [v removeFromSuperview];
-    _chipStack.hidden = (borderless || msg.reactions.empty());
+    _chipStack.hidden = msg.reactions.empty();
     if (!_chipStack.hidden) {
         for (const auto& r : msg.reactions) {
             NSButton* chip = [[NSButton alloc] init];
@@ -322,7 +317,7 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         }
     }
 
-    if (!own) {
+    {
         NSString* name = sender;
         NSString* key  = msg.sender_avatar_url.empty()
                            ? @(msg.sender.c_str())
@@ -368,9 +363,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     if (hasMedia) {
         [bubbleC addObjectsFromArray:@[
             [_mediaView.leadingAnchor  constraintEqualToAnchor:_bubble.leadingAnchor
-                                                      constant:borderless ? 0 : kBubblePadH],
+                                                      constant:kBubblePadH],
             [_mediaView.topAnchor      constraintEqualToAnchor:_bubble.topAnchor
-                                                      constant:borderless ? 0 : kBubblePadV],
+                                                      constant:kBubblePadV],
             [_mediaView.widthAnchor    constraintEqualToConstant:mediaSize.width],
             [_mediaView.heightAnchor   constraintEqualToConstant:mediaSize.height],
         ]];
@@ -430,50 +425,37 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
             // Media-only — match media bottom
             [bubbleC addObject:[_bubble.bottomAnchor
                 constraintEqualToAnchor:topAnchor.bottomAnchor
-                               constant:borderless ? 0 : kBubblePadV]];
+                               constant:kBubblePadV]];
         }
     }
 
     [_bubble addConstraints:bubbleC];
 
-    // Outer layout: own messages right-align without avatar; others get avatar+sender.
-    if (own) {
-        [NSLayoutConstraint activateConstraints:@[
-            [_avatarView.widthAnchor  constraintEqualToConstant:0],
-            [_avatarView.heightAnchor constraintEqualToConstant:0],
+    // Outer layout — same for own and other (see docs/UI-PARITY.md):
+    // 32 px avatar on the left, sender name above the body, content
+    // expands rightward up to maxBubbleW. No right-align branch.
+    [NSLayoutConstraint activateConstraints:@[
+        [_avatarView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
+                                                  constant:12],
+        [_avatarView.bottomAnchor  constraintEqualToAnchor:self.bottomAnchor
+                                                  constant:-kRowPadV],
+        [_avatarView.widthAnchor   constraintEqualToConstant:kAvatarSize],
+        [_avatarView.heightAnchor  constraintEqualToConstant:kAvatarSize],
 
-            [_bubble.trailingAnchor constraintEqualToAnchor:self.trailingAnchor
-                                                   constant:-12],
-            [_bubble.topAnchor      constraintEqualToAnchor:self.topAnchor
-                                                   constant:kRowPadV],
-            [_bubble.bottomAnchor   constraintEqualToAnchor:self.bottomAnchor
-                                                   constant:-kRowPadV],
-            [_bubble.widthAnchor    constraintLessThanOrEqualToConstant:maxBubbleW],
-        ]];
-    } else {
-        [NSLayoutConstraint activateConstraints:@[
-            [_avatarView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
-                                                      constant:12],
-            [_avatarView.bottomAnchor  constraintEqualToAnchor:self.bottomAnchor
-                                                      constant:-kRowPadV],
-            [_avatarView.widthAnchor   constraintEqualToConstant:kAvatarSize],
-            [_avatarView.heightAnchor  constraintEqualToConstant:kAvatarSize],
-
-            [_senderLabel.leadingAnchor constraintEqualToAnchor:_avatarView.trailingAnchor
-                                                       constant:kAvatarGap],
-            [_senderLabel.topAnchor     constraintEqualToAnchor:self.topAnchor
-                                                       constant:kRowPadV],
-            [_senderLabel.heightAnchor  constraintEqualToConstant:kSenderH],
-
-            [_bubble.leadingAnchor  constraintEqualToAnchor:_avatarView.trailingAnchor
+        [_senderLabel.leadingAnchor constraintEqualToAnchor:_avatarView.trailingAnchor
                                                    constant:kAvatarGap],
-            [_bubble.topAnchor      constraintEqualToAnchor:_senderLabel.bottomAnchor
-                                                   constant:2],
-            [_bubble.bottomAnchor   constraintEqualToAnchor:self.bottomAnchor
-                                                   constant:-kRowPadV],
-            [_bubble.widthAnchor    constraintLessThanOrEqualToConstant:maxBubbleW],
-        ]];
-    }
+        [_senderLabel.topAnchor     constraintEqualToAnchor:self.topAnchor
+                                                   constant:kRowPadV],
+        [_senderLabel.heightAnchor  constraintEqualToConstant:kSenderH],
+
+        [_bubble.leadingAnchor  constraintEqualToAnchor:_avatarView.trailingAnchor
+                                               constant:kAvatarGap],
+        [_bubble.topAnchor      constraintEqualToAnchor:_senderLabel.bottomAnchor
+                                               constant:2],
+        [_bubble.bottomAnchor   constraintEqualToAnchor:self.bottomAnchor
+                                               constant:-kRowPadV],
+        [_bubble.widthAnchor    constraintLessThanOrEqualToConstant:maxBubbleW],
+    ]];
 }
 
 @end
@@ -770,7 +752,6 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
 - (CGFloat)tableView:(NSTableView*)tv heightOfRow:(NSInteger)row {
     const MessageData& msg = _messages[row];
-    BOOL own = msg.is_own;
 
     CGFloat tableW = tv.bounds.size.width;
     CGFloat maxBubbleW = MIN(kMaxBubbleW, tableW - kAvatarSize - kAvatarGap - 32);
@@ -828,21 +809,20 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         mediaH = sz.height;
     }
 
-    BOOL borderless = (msg.type == tesseract::EventType::Sticker);
-
-    CGFloat bubblePadV = borderless ? 0 : 2 * kBubblePadV;
+    CGFloat bubblePadV = 2 * kBubblePadV;       // inner content padding
     CGFloat innerSpacing = (mediaH > 0 && bodyH > 0) ? 4 : 0;
-    BOOL hasChips = !borderless && !msg.reactions.empty();
-    // Footer row replaces the standalone timestamp; chip row height
-    // dominates the timestamp height when both are present.
+    BOOL hasChips = !msg.reactions.empty();
+    // Footer row holds chips on the left and timestamp on the right;
+    // chip row height dominates the timestamp height when both are
+    // present.
     CGFloat footerInnerH = 0;
     if (hasChips) {
         footerInnerH = MAX(kChipH, kTsH);
-    } else if (!borderless && msg.timestamp > 0) {
+    } else if (msg.timestamp > 0) {
         footerInnerH = kTsH;
     }
     CGFloat footerH = footerInnerH > 0 ? footerInnerH + 4 : 0;
-    CGFloat senderH = own ? 0 : kSenderH + 2;
+    CGFloat senderH = kSenderH + 2;             // always shown — see UI-PARITY.md
 
     CGFloat bubbleContentH = mediaH + innerSpacing + bodyH + footerH;
     if (bubbleContentH == 0) bubbleContentH = 18;  // minimum

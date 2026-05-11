@@ -6,6 +6,7 @@
 #include <tesseract/session_store.h>
 
 #include <algorithm>
+#include <cctype>
 #include <ctime>
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -209,6 +210,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         .timestamp {
             font-size: 10px;
             color: rgba(0,0,0,0.45);
+        }
+        .avatar-initial {
+            background-color: #8E8E93;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            border-radius: 16px;
+            min-width: 32px;
+            min-height: 32px;
+            padding: 0;
         }
         .unread-badge {
             background-color: #0084FF;
@@ -1098,8 +1109,23 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         }
     }
     if (!av_widget) {
-        av_widget = gtk_label_new(nullptr);
+        // Initials disc fallback (matches Qt's makeInitialsPixmap style:
+        // grey #8E8E93 circle, bold white capital letter).
+        std::string initial = "?";
+        if (!name.empty()) {
+            unsigned char c = static_cast<unsigned char>(name[0]);
+            if (c < 0x80) {
+                initial = std::string(1, static_cast<char>(std::toupper(c)));
+            } else {
+                // Keep the whole first UTF-8 codepoint intact.
+                int len = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : (c >= 0xC0) ? 2 : 1;
+                initial = name.substr(0, std::min<size_t>(len, name.size()));
+            }
+        }
+        av_widget = gtk_label_new(initial.c_str());
+        gtk_widget_add_css_class(av_widget, "avatar-initial");
         gtk_widget_set_size_request(av_widget, kMsgAvatarSize, kMsgAvatarSize);
+        gtk_widget_set_valign(av_widget, GTK_ALIGN_START);
     }
     gtk_box_append(GTK_BOX(row), av_widget);
     g_object_set_data(G_OBJECT(row), "avatar", av_widget);

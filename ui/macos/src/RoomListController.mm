@@ -2,9 +2,10 @@
 #import "AvatarCache.h"
 
 #include <tesseract/client.h>
+#include <tesseract/visual.h>
 
-static const CGFloat kRowHeight   = 64;
-static const CGFloat kAvatarSize  = 36;
+static const CGFloat kRowHeight   = tesseract::visual::kRoomRowHeight;
+static const CGFloat kAvatarSize  = tesseract::visual::kRoomAvatarSize;
 static const CGFloat kPadH        = 10;
 static const CGFloat kPadV        = 6;
 static NSString* const kCellId    = @"RoomCell";
