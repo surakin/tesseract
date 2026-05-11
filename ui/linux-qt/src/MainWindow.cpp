@@ -481,6 +481,7 @@ void MainWindow::onRoomSelectionChanged(
         return;
     }
     client_.paginate_back(currentRoomId_, 50);
+    client_.start_background_backfill();
 }
 
 void MainWindow::onEventReceived(tesseract::Event* ev) {

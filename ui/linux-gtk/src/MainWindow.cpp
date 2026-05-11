@@ -587,8 +587,10 @@ void MainWindow::on_room_row_activated(
         if (r.id == new_id) { self->update_room_header(r); break; }
 
     auto res = self->client_.subscribe_room(self->current_room_id_);
-    if (res)
+    if (res) {
         self->client_.paginate_back(self->current_room_id_, 50);
+        self->client_.start_background_backfill();
+    }
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {

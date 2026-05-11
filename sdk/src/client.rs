@@ -146,6 +146,11 @@ pub struct ClientFfi {
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
     timelines:    HashMap<OwnedRoomId, TimelineHandle>,
+    /// Background backfill orchestrator handle. Aborting it tears down both
+    /// the orchestrator and every per-room silent backfill it spawned (the
+    /// children live inside a `JoinSet` owned by the orchestrator future).
+    #[cfg(not(test))]
+    backfill_task: Option<tokio::task::AbortHandle>,
     /// Latest known backup state code (see BACKUP_STATE_* constants).
     /// Updated by the backup watcher task and read by `backup_state()`.
     #[cfg(not(test))]
@@ -162,6 +167,8 @@ pub struct ClientFfi {
 impl Drop for ClientFfi {
     fn drop(&mut self) {
         self.stop_sync();
+        #[cfg(not(test))]
+        if let Some(h) = self.backfill_task.take() { h.abort(); }
         #[cfg(not(test))]
         for (_, th) in self.timelines.drain() {
             for h in th.abort_tasks { h.abort(); }
@@ -189,6 +196,8 @@ impl ClientFfi {
             sync_service: None,
             #[cfg(not(test))]
             timelines:    HashMap::new(),
+            #[cfg(not(test))]
+            backfill_task: None,
             #[cfg(not(test))]
             backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
             #[cfg(not(test))]
@@ -603,6 +612,10 @@ impl ClientFfi {
             let _ = tx.send(true);
         }
         #[cfg(not(test))]
+        if let Some(h) = self.backfill_task.take() {
+            h.abort();
+        }
+        #[cfg(not(test))]
         if let Some(svc) = self.sync_service.take() {
             self.rt.block_on(async move { let _ = svc.stop().await; });
         }
@@ -700,6 +713,84 @@ impl ClientFfi {
         match self.rt.block_on(tl.paginate_backwards(count)) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Background backfill of non-active rooms
+    // -----------------------------------------------------------------------
+    //
+    // Warms the SDK's sqlite event cache for every joined room the user has
+    // not opened yet, so the second time they click any room its history is
+    // already present locally. The active room (whichever is currently in
+    // `self.timelines`) is skipped — its foreground subscribe + paginate
+    // path always finishes first because UIs only call this after their
+    // own paginate_back returns.
+    //
+    // Bounded concurrency (3 in flight) keeps the homeserver happy on
+    // accounts with hundreds of rooms. Per-room timelines are dropped after
+    // the loop completes; only the persistent event-cache rows remain.
+
+    #[cfg(not(test))]
+    pub fn start_background_backfill(&mut self) -> OpResult {
+        // Idempotent: if a previous orchestrator is still running, leave it
+        // alone. Finished/aborted handles can be replaced.
+        if let Some(h) = self.backfill_task.as_ref() {
+            if !h.is_finished() {
+                return ok("");
+            }
+        }
+        self.backfill_task = None;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        // Snapshot the work set up-front so the orchestrator owns no
+        // borrows of `self`. Skip rooms that already have a foreground
+        // Timeline (the user-active one).
+        let skip: std::collections::HashSet<OwnedRoomId> =
+            self.timelines.keys().cloned().collect();
+
+        let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
+        for room in client.joined_rooms() {
+            if room.is_tombstoned() { continue; }
+            let id = room.room_id().to_owned();
+            if skip.contains(&id) { continue; }
+            to_backfill.push(id);
+        }
+
+        if to_backfill.is_empty() {
+            return ok("");
+        }
+
+        let abort = self.rt.spawn(async move {
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
+            let mut joinset = tokio::task::JoinSet::new();
+
+            for rid in to_backfill {
+                let client = client.clone();
+                let sem    = semaphore.clone();
+                joinset.spawn(async move {
+                    let _permit = match sem.acquire_owned().await {
+                        Ok(p)  => p,
+                        Err(_) => return,
+                    };
+                    let _ = backfill_room_silent(&client, &rid, 50).await;
+                });
+            }
+
+            while joinset.join_next().await.is_some() {}
+        }).abort_handle();
+
+        self.backfill_task = Some(abort);
+        ok("")
+    }
+
+    #[cfg(not(test))]
+    pub fn stop_background_backfill(&mut self) {
+        if let Some(h) = self.backfill_task.take() {
+            h.abort();
         }
     }
 
@@ -984,6 +1075,49 @@ self.rt
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Warm the SDK's event-cache for one room without surfacing anything to
+/// the UI. Builds a temporary `Timeline`, drops the live diff stream, and
+/// paginates backwards in 50-event batches until either the room has at
+/// least `target_events` event items locally or matrix-sdk reports that
+/// we've reached the start of the timeline.
+///
+/// The `Timeline` is dropped on return; rows committed to the SDK's sqlite
+/// event cache during pagination persist, so the next foreground
+/// `subscribe_room` for this room paints from cache without a /messages
+/// round-trip.
+#[cfg(not(test))]
+async fn backfill_room_silent(
+    client:        &Client,
+    room_id:       &OwnedRoomId,
+    target_events: usize,
+) -> anyhow::Result<()> {
+    let Some(room) = client.get_room(room_id) else {
+        return Ok(());
+    };
+
+    let timeline = room.timeline().await?;
+
+    // We don't propagate items to the UI, so subscribe + drop the stream.
+    // The initial snapshot tells us how much history is already cached.
+    let (initial, _stream) = timeline.subscribe().await;
+    let mut have = initial.iter()
+        .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
+        .count();
+
+    while have < target_events {
+        match timeline.paginate_backwards(50).await {
+            Ok(true)  => break,           // reached the start
+            Ok(false) => {}
+            Err(_)    => break,           // soft-fail: no point spinning
+        }
+        have = timeline.items().await.iter()
+            .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
+            .count();
+    }
+
+    Ok(())
+}
 
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();

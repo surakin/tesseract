@@ -526,6 +526,7 @@ static std::string nsstr(NSString* s) {
         return;
     }
     _impl->client.paginate_back(nsstr(roomId), 50);
+    _impl->client.start_background_backfill();
 }
 
 - (void)roomListDidSelectSpaceId:(NSString*)spaceId {

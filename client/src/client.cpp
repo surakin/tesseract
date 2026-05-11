@@ -132,6 +132,14 @@ Result Client::paginate_back(const std::string& room_id, std::uint16_t count) {
     return from_ffi(impl_->ffi->paginate_back(room_id, count));
 }
 
+Result Client::start_background_backfill() {
+    return from_ffi(impl_->ffi->start_background_backfill());
+}
+
+void Client::stop_background_backfill() {
+    impl_->ffi->stop_background_backfill();
+}
+
 Result Client::send_message(const std::string& room_id, const std::string& body) {
     return from_ffi(impl_->ffi->send_message(room_id, body));
 }

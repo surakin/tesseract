@@ -179,6 +179,18 @@ pub mod ffi {
         /// arrive via on_message_event callbacks in oldest-first order.
         fn paginate_back(self: &mut ClientFfi, room_id: &str, count: u16) -> OpResult;
 
+        /// Kick off a background pass that paginates every joined room not
+        /// currently subscribed, up to ~50 events each, with bounded
+        /// concurrency. Idempotent — safe to call from every room-open
+        /// path. Silent: emits no `on_message_event` / `on_timeline_reset`
+        /// callbacks for the rooms it visits. The persistent SDK event
+        /// cache is what gets warmed.
+        fn start_background_backfill(self: &mut ClientFfi) -> OpResult;
+
+        /// Cancel an in-progress background backfill. No-op if none is
+        /// running. Also called automatically from `stop_sync` and `Drop`.
+        fn stop_background_backfill(self: &mut ClientFfi);
+
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;

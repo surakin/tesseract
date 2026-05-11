@@ -910,7 +910,10 @@ void MainWindow::on_room_selected(int index) {
     current_room_info_ = rooms_[index];
     update_room_header(current_room_info_);
     auto res = client_.subscribe_room(current_room_id_);
-    if (res) client_.paginate_back(current_room_id_, 50);
+    if (res) {
+        client_.paginate_back(current_room_id_, 50);
+        client_.start_background_backfill();
+    }
 }
 
 void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
