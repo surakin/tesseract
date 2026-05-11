@@ -21,6 +21,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
         .avatar_url        = std::string(r.avatar_url),
         .last_message_body = std::string(r.last_message_body),
         .last_activity_ts  = r.last_activity_ts,
+        .is_space          = r.is_space,
     };
 }
 
@@ -41,6 +42,22 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
 
     if (msg_type == "m.image") {
         auto ev = std::make_unique<ImageEvent>();
+        ev->event_id = std::string(e.event_id);
+        ev->room_id = std::string(e.room_id);
+        ev->sender = std::string(e.sender);
+        ev->sender_name = std::string(e.sender_name);
+        ev->sender_avatar_url = std::string(e.sender_avatar_url);
+        ev->body = std::string(e.body);
+        ev->timestamp = e.timestamp;
+        ev->image_url = std::string(e.source_json);
+        ev->width = e.width;
+        ev->height = e.height;
+        ev->filename = std::string(e.image_filename);
+        return ev;
+    }
+
+    if (msg_type == "m.sticker") {
+        auto ev = std::make_unique<StickerEvent>();
         ev->event_id = std::string(e.event_id);
         ev->room_id = std::string(e.room_id);
         ev->sender = std::string(e.sender);

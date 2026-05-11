@@ -527,6 +527,43 @@ impl ClientFfi {
         self.rt.block_on(build_room_infos(&client))
     }
 
+    pub fn space_children(&self, space_id: &str) -> Vec<String> {
+        let Some(client) = self.client.as_ref() else { return vec![]; };
+        let Ok(room_id) = OwnedRoomId::try_from(space_id) else { return vec![]; };
+        let Some(space_room) = client.get_room(&room_id) else { return vec![]; };
+        let client = client.clone();
+
+        self.rt.block_on(async move {
+            use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+            use matrix_sdk::ruma::events::SyncStateEvent;
+            use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+
+            let Ok(events) = space_room
+                .get_state_events_static::<SpaceChildEventContent>()
+                .await
+            else {
+                return vec![];
+            };
+
+            // Mirror the pattern used by Room::parent_spaces() in matrix-sdk.
+            // SpaceChildEventContent has state_key_type = OwnedRoomId, so
+            // e.state_key is already typed — no JSON access needed.
+            events
+                .into_iter()
+                .filter_map(|ev| match ev.deserialize() {
+                    Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
+                        Some(e.state_key.to_owned())
+                    }
+                    Ok(SyncOrStrippedState::Sync(SyncStateEvent::Redacted(_))) => None,
+                    Ok(SyncOrStrippedState::Stripped(e)) => Some(e.state_key.to_owned()),
+                    Err(_) => None,
+                })
+                .filter(|child_id| client.get_room(child_id).is_some())
+                .map(|id| id.to_string())
+                .collect()
+        })
+    }
+
     pub fn fetch_avatar_bytes(&mut self, room_id: &str) -> Vec<u8> {
         use matrix_sdk::media::MediaFormat;
         let Some(client) = self.client.clone() else { return Vec::new() };
@@ -625,6 +662,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .await
             .map(|n| n.to_string())
             .unwrap_or_else(|_| room.room_id().to_string());
+        let is_space = room.is_space();
         result.push(crate::ffi::RoomInfo {
             id:                room.room_id().to_string(),
             name,
@@ -636,6 +674,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
                                    .unwrap_or_default(),
             last_message_body: String::new(),
             last_activity_ts:  0,
+            is_space,
         });
     }
     result
@@ -653,12 +692,52 @@ fn timeline_item_to_ffi(
         _ => return None,
     };
 
+    // Sticker events are MsgLikeKind::Sticker, not MsgLikeKind::Message.
+    // Handle them before falling through to the message-only path.
+    if let TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Sticker(s), .. }) =
+        event_item.content()
+    {
+        let c = s.content();
+        let src = match &c.source {
+            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) => uri.to_string(),
+            _ => String::new(),
+        };
+        let w = c.info.width.map(u64::from).unwrap_or(0);
+        let h = c.info.height.map(u64::from).unwrap_or(0);
+        let (sender_name, sender_avatar_url) =
+            if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                (
+                    p.display_name.clone().unwrap_or_default(),
+                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+        return Some(TimelineEvent {
+            event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
+            room_id:           room_id.to_owned(),
+            sender:            event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            body:              c.body.clone(),
+            timestamp:         event_item.timestamp().get().into(),
+            msg_type:          "m.sticker".to_owned(),
+            source_json:       src,
+            width:             w,
+            height:            h,
+            file_json:         String::new(),
+            file_name:         String::new(),
+            file_size:         0u64,
+            image_filename:    String::new(),
+        });
+    }
+
     let msg_content = match event_item.content() {
         TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Message(msg), .. }) => msg,
         _ => return None,
     };
 
-    let (body, msg_type, source_json, width, height, file_json, file_name, file_size) =
+    let (body, msg_type, source_json, width, height, file_json, file_name, file_size, image_filename) =
         match msg_content.msgtype() {
             MessageType::Text(t) => (
                 t.body.clone(),
@@ -669,6 +748,7 @@ fn timeline_item_to_ffi(
                 String::new(),
                 String::new(),
                 0u64,
+                String::new(),
             ),
             MessageType::Image(i) => {
                 let source_str = match &i.source {
@@ -678,14 +758,15 @@ fn timeline_item_to_ffi(
                 let (w, h) = i
                     .info
                     .as_ref()
-                    .map(|info| {
-                        (
-                            info.width.map(|v| u64::from(v)).unwrap_or(0u64),
-                            info.height.map(|v| u64::from(v)).unwrap_or(0u64),
-                        )
-                    })
+                    .map(|info| (
+                        info.width.map(|v| u64::from(v)).unwrap_or(0u64),
+                        info.height.map(|v| u64::from(v)).unwrap_or(0u64),
+                    ))
                     .unwrap_or((0u64, 0u64));
-                (i.body.clone(), "m.image".to_owned(), source_str, w, h, String::new(), String::new(), 0u64)
+                // MSC2530: filename field signals that body is a user caption.
+                let img_filename = i.filename.clone().unwrap_or_default();
+                (i.body.clone(), "m.image".to_owned(), source_str, w, h,
+                 String::new(), String::new(), 0u64, img_filename)
             }
             MessageType::File(f) => {
                 let file_str = match &f.source {
@@ -699,7 +780,8 @@ fn timeline_item_to_ffi(
                     .and_then(|info| info.size)
                     .map(|v| u64::from(v))
                     .unwrap_or(0u64);
-                (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64, file_str, name, size)
+                (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
+                 file_str, name, size, String::new())
             }
             _ => return None,
         };
@@ -731,6 +813,7 @@ fn timeline_item_to_ffi(
         file_json,
         file_name,
         file_size,
+        image_filename,
     })
 }
 

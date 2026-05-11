@@ -23,12 +23,17 @@ pub mod ffi {
         last_message_body: String,
         /// Unix timestamp in milliseconds of the most recent activity, or 0.
         last_activity_ts:  u64,
+        /// True when this room's type is "m.space".
+        is_space:          bool,
     }
 
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
-    /// For `m.image` → source_json, width, height are populated.
-    /// For `m.file`  → file_json, file_name, file_size are populated.
+    /// For `m.image`   → source_json, width, height are populated.
+    ///                   image_filename is non-empty only when the sender supplied
+    ///                   an explicit MSC2530 filename; in that case `body` is a caption.
+    /// For `m.file`    → file_json, file_name, file_size are populated.
+    /// For `m.sticker` → source_json, width, height are populated (same as m.image).
     struct TimelineEvent {
         event_id:          String,
         room_id:           String,
@@ -38,9 +43,9 @@ pub mod ffi {
         body:              String,
         /// Unix timestamp in milliseconds.
         timestamp:         u64,
-        /// "m.text" | "m.image" | "m.file" | …
+        /// "m.text" | "m.image" | "m.file" | "m.sticker" | …
         msg_type:          String,
-        /// mxc:// URI of the image (valid when msg_type is "m.image").
+        /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
         source_json:       String,
         width:             u64,
         height:            u64,
@@ -49,6 +54,10 @@ pub mod ffi {
         file_json:         String,
         file_name:         String,
         file_size:         u64,
+        /// Non-empty when msg_type is "m.image" and the sender provided an explicit
+        /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
+        /// user-written caption and should be displayed below the image.
+        image_filename:    String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -152,6 +161,13 @@ pub mod ffi {
         /// encrypted `EncryptedFile`). Returns raw bytes on success or an
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
+
+        // ----- Spaces -----
+
+        /// Returns the room IDs of all direct children declared by a space
+        /// (via `m.space.child` state events). Only returns IDs of rooms the
+        /// client is a member of (i.e. present in the room list).
+        fn space_children(self: &ClientFfi, space_id: &str) -> Vec<String>;
 
         // ----- Session teardown -----
 

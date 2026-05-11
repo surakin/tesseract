@@ -4,7 +4,7 @@
 
 namespace tesseract {
 
-enum class EventType { Text, Image, File, Unhandled };
+enum class EventType { Text, Image, File, Sticker, Unhandled };
 
 struct Event {
     std::string event_id;
@@ -23,11 +23,22 @@ struct TextEvent : public Event {
 };
 
 struct ImageEvent : public Event {
-    std::string image_url;  // mxc:// URI
-    uint64_t    width = 0;
+    std::string image_url;   // mxc:// URI
+    uint64_t    width  = 0;
     uint64_t    height = 0;
+    /// Non-empty only when the sender supplied an MSC2530 `filename` field.
+    /// When set, `body` is a user caption and should be displayed below the image.
+    std::string filename;
 
     ImageEvent() { type = EventType::Image; }
+};
+
+struct StickerEvent : public Event {
+    std::string image_url;   // mxc:// URI
+    uint64_t    width  = 0;
+    uint64_t    height = 0;
+
+    StickerEvent() { type = EventType::Sticker; }
 };
 
 struct FileEvent : public Event {
@@ -38,7 +49,7 @@ struct FileEvent : public Event {
     FileEvent() { type = EventType::File; }
 };
 
-/// Fallback for message types we don't handle yet (stickers, reactions, etc.)
+/// Fallback for message types we don't handle yet (reactions, polls, etc.)
 struct UnhandledEvent : public Event {
     std::string msg_type;
 
@@ -55,6 +66,7 @@ struct RoomInfo {
     std::string avatar_url;
     std::string last_message_body;
     uint64_t    last_activity_ts   = 0;
+    bool        is_space           = false;
 };
 
 } // namespace tesseract

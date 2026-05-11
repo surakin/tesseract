@@ -150,4 +150,13 @@ std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url) {
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<std::string> Client::space_children(const std::string& space_id) const {
+    auto raw = impl_->ffi->space_children(space_id);
+    std::vector<std::string> result;
+    result.reserve(raw.size());
+    for (const auto& s : raw)
+        result.push_back(std::string(s));
+    return result;
+}
+
 } // namespace tesseract

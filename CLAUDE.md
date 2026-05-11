@@ -117,16 +117,16 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 - **Step 3 done** — Room avatar polish: `kRoomAvatarSize = 36` constant; explicit `setIconSize` on the room list widget so all cells have a uniform slot.
 - **Step 4 done** — Message sender identity + media infrastructure: `sender_name` + `sender_avatar_url` fields in `TimelineEvent`; `ImageEvent` / `FileEvent` C++ types with `source_json` / `file_json`, dimensions, and file-size fields; `fetch_media_bytes(mxc_url)` and `fetch_source_bytes(source_json)` FFI (the latter handles encrypted `EncryptedFile` transparently); 21 C++ tests covering all event subtypes and `EventType` enum values; Qt UI shows 24 × 24 inline sender avatar per message row.
 - **Stability hardening done** — `soft_logout` flag threaded from `SessionChange::UnknownToken` through `on_error` to all UIs (soft logout retries restore without clearing the store); tombstoned (upgraded) rooms filtered out of the room list; `Drop` impl on `ClientFfi` calls `stop_sync()` for graceful shutdown; `matrix-sdk` upgraded to 0.16.1.
+- **Step 5, in progress** — Inline image rendering done: GTK4 now renders `m.image` as a `GtkPicture` (max 320×200) via `GdkPixbufLoader`; Qt6 inline pixmap was already in place. MSC2530 caption rule applied: `body` is shown beneath the image only when the sender supplies a distinct `filename` field. Sticker events (`m.sticker`) done end-to-end: new `StickerEvent` C++ type + `EventType::Sticker`, Rust `MsgLikeKind::Sticker` FFI arm (`StickerMediaSource` matched), borderless 256×256 thumbnail in both Qt6 and GTK4. Scroll-to-bottom timing fixed: Qt6 uses `QScrollBar::rangeChanged`, GTK4 uses `notify::upper` on the vadjustment (both fire after layout, not before). 24 C++ tests pass. Remaining Step 5 items: message bubbles/cards, thread support, emoji reactions/picker, compose bar polish, sidebar.
 
-**Step 5 — UI redesign (WhatsApp / Telegram / Discord-inspired)**
+**Step 5 — UI redesign**
 
 Goal: a visually polished, modern chat layout that forms the shell for threads, stickers, and emoji in later steps.
 
-- **Message bubbles / cards** — right-aligned own messages, left-aligned others, with sender avatar and display name inline (infrastructure already in `TimelineEvent`). Compact timestamp on each bubble.
-- **Thread support** — reply-to indicator on each bubble (show quoted snippet + sender); threaded reply panel slides in from the right when a thread is opened; new FFI `send_reply(room_id, event_id, body)` wrapping `Timeline::send_reply`.
-- **Emoji reactions** — reaction bar below each bubble showing emoji + count; tap to toggle; new FFI `send_reaction(room_id, event_id, key)` / `redact_reaction`; reactions carried in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
+- **Thread support** — reply-to indicator on each message row (show quoted snippet + sender); threaded reply panel slides in from the right when a thread is opened; new FFI `send_reply(room_id, event_id, body)` wrapping `Timeline::send_reply`.
+- **Emoji reactions** — reaction bar below each message showing emoji + count; tap to toggle; new FFI `send_reaction(room_id, event_id, key)` / `redact_reaction`; reactions carried in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Emoji picker** — bottom-bar button opens a floating picker (tabbed: frequently-used + Unicode categories). Inserts into the compose field. Separate from sticker packs (MSC2545, Step 9).
-- **Inline image / file rendering** — use `ImageEvent` / `FileEvent` already in place: images render as thumbnails (max 320 × 240) via `fetch_source_bytes`; files render as a card with icon, name, and size.
+- **Inline image / file rendering** ✓ — `m.image` renders as a thumbnail (max 320×200) in Qt6 and GTK4; MSC2530 caption rule applied (`body` shown only when sender supplies a distinct `filename` field). `m.sticker` pulled forward from Step 8: borderless 256×256 inline thumbnail, no caption. Files still render as a card with icon, name, and size.
 - **Compose bar polish** — multi-line expanding input, send-on-Enter (Shift+Enter for newline), `/` command hint, typing indicator sent to the room.
 - **Sidebar** — room list gets unread badge, last-message preview, and last-activity sort; DM rooms show the other user's avatar; spaces/groups deferred to Step 7.
 
@@ -136,16 +136,17 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 - New `RecoveryDialog` per platform, parallel to `LoginDialog`.
 - Launch flow: after login completes, if `needs_recovery()` is true, run `RecoveryDialog`. Skip and Verify both close it; Verify blocks until the SDK reports completion.
 
-**Step 7 — Spaces (room-list hierarchy)**
-- Recognise rooms with `type: m.space`; consume `m.space.child` / `m.space.parent` to build a tree.
-- New FFI surface returning the space tree (parent → children → leaf rooms) alongside the flat room list.
-- UI: sidebar shifts from a flat list to a tree (or two-pane: spaces / rooms within selected space). Defaults to "All rooms" when no space is selected. Plumbing follows directly from sliding sync — `RoomListService` already exposes spaces; the UI just needs to learn them.
+**Step 7 — Spaces (room-list drill-in navigation)**
+- `is_space: bool` added to `RoomInfo` (Rust FFI + C++ type). Spaces appear at the **bottom** of the room list with a `#` prefix in Qt6/GTK4.
+- New FFI `space_children(space_id) -> Vec<String>`: returns direct children of a space (rooms/sub-spaces the client is joined to) via `m.space.child` state events.
+- UI: stack-based drill-in model — selecting a space replaces the room list with that space's children; a **Back** button (`←`) + space name appear at the top of the sidebar; back pops one level (returns to "All rooms" when stack is empty). Sub-spaces can be drilled into recursively.
+- `onRoomsUpdated` / `push_rooms` now call `refreshRoomList()` / `refresh_room_list()` to preserve the current navigation level on live updates.
 - Space creation / management UI is a follow-up.
 
 **Step 8 — MSC2545 phase A: receive (encrypted-aware)**
 - New `sdk/src/image_packs.rs` aggregating `im.ponies.user_emotes`, `im.ponies.emote_rooms`, and per-room `im.ponies.room_emotes` events; live updates via `add_event_handler`.
 - FFI carries `MediaSource` as an opaque JSON token (`source_json`) — handles both plain `mxc` and encrypted `EncryptedFile`. `fetch_source_bytes` (already in place) is the download path.
-- Render stickers (`m.sticker`) inline in the timeline; render inline emoticons in HTML body via Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, and (Win32 decision pending) RichEdit or text-only fallback.
+- Render stickers (`m.sticker`) inline in the timeline ✓ done (pulled forward to Step 5; see status above); render inline emoticons in HTML body via Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, and (Win32 decision pending) RichEdit or text-only fallback.
 
 **Step 9 — MSC2545 phase B: send**
 - `send_emoticon_message(room_id, plain_body, html_body)` and `send_sticker(room_id, shortcode)`.

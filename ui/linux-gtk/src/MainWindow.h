@@ -50,8 +50,11 @@ private:
                                    GdkModifierType state, gpointer user_data);
     static void    on_room_row_activated(GtkListBox*, GtkListBoxRow*, gpointer user_data);
     static void    on_login_clicked(GtkButton*, gpointer user_data);
+    static void    on_adj_upper_changed_(GObject* obj, GParamSpec*, gpointer user_data);
+    static void    on_back_clicked_(GtkButton*, gpointer user_data);
 
-    void populate_rooms(const std::vector<tesseract::RoomInfo>& rooms);
+    void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
+    void refresh_room_list();
     void append_event(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
@@ -62,6 +65,9 @@ private:
 
     GtkApplication* app_              = nullptr;
     GtkWidget*      window_             = nullptr;
+    GtkWidget*      room_nav_bar_       = nullptr;
+    GtkWidget*      back_button_        = nullptr;
+    GtkWidget*      space_name_lbl_     = nullptr;
     GtkWidget*      room_list_          = nullptr;
     GtkWidget*      room_header_        = nullptr;
     GtkWidget*      room_header_avatar_ = nullptr;
@@ -82,6 +88,8 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> user_avatar_cache_;
     std::unordered_map<std::string, std::vector<uint8_t>> image_cache_;
     std::unordered_map<std::string, GtkWidget*>           msg_event_widgets_;
+    bool                                                   auto_scroll_pending_ = false;
+    std::vector<std::string>                               space_stack_;
 };
 
 } // namespace gtk4

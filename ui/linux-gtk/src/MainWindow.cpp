@@ -3,10 +3,49 @@
 
 #include <tesseract/session_store.h>
 
+#include <algorithm>
 #include <ctime>
 #include <string>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 namespace gtk4 {
+
+// ---------------------------------------------------------------------------
+// Image helpers
+// ---------------------------------------------------------------------------
+
+// Decode raw image bytes, scale down to fit within max_w×max_h (preserving
+// aspect ratio), and return a new GdkTexture owned by the caller.
+// Returns nullptr on decode failure.
+static GdkTexture* make_scaled_texture(const std::vector<uint8_t>& data,
+                                        int max_w, int max_h) {
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    GError* err = nullptr;
+    gdk_pixbuf_loader_write(loader,
+        reinterpret_cast<const guchar*>(data.data()),
+        static_cast<gsize>(data.size()), &err);
+    if (err) { g_error_free(err); g_object_unref(loader); return nullptr; }
+    gdk_pixbuf_loader_close(loader, nullptr);
+    GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
+    if (!pb) { g_object_unref(loader); return nullptr; }
+
+    int w = gdk_pixbuf_get_width(pb);
+    int h = gdk_pixbuf_get_height(pb);
+    GdkTexture* tex = nullptr;
+    if (w > max_w || h > max_h) {
+        double scale = std::min(static_cast<double>(max_w) / w,
+                                static_cast<double>(max_h) / h);
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
+            pb, static_cast<int>(w * scale), static_cast<int>(h * scale),
+            GDK_INTERP_BILINEAR);
+        tex = gdk_texture_new_for_pixbuf(scaled);
+        g_object_unref(scaled);
+    } else {
+        tex = gdk_texture_new_for_pixbuf(pb);
+    }
+    g_object_unref(loader);
+    return tex;
+}
 
 // ---------------------------------------------------------------------------
 // g_idle_add helpers
@@ -136,21 +175,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             background-color: #F0F2F5;
             border-right: 1px solid #D0D3D8;
         }
-        .bubble-own {
-            background-color: #0084FF;
-            border-radius: 18px;
-            padding: 10px 14px;
-        }
-        .bubble-own label {
-            color: white;
-        }
-        .bubble-other {
-            background-color: #E4E6EB;
-            border-radius: 18px;
-            padding: 10px 14px;
-        }
-        .bubble-other label {
-            color: #1C1E21;
+        .message-body {
+            padding: 2px 0px;
         }
         .sender-name {
             font-weight: bold;
@@ -160,10 +186,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         .timestamp {
             font-size: 10px;
             color: rgba(0,0,0,0.45);
-        }
-        .timestamp-own {
-            font-size: 10px;
-            color: rgba(255,255,255,0.7);
         }
         .unread-badge {
             background-color: #0084FF;
@@ -196,14 +218,34 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_window_set_child(GTK_WINDOW(window_), hbox);
 
-    // Sidebar
+    // Sidebar (nav bar + room list, wrapped in a vertical box)
+    GtkWidget* side_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(side_vbox, 260, -1);
+    gtk_widget_add_css_class(side_vbox, "sidebar");
+    gtk_box_append(GTK_BOX(hbox), side_vbox);
+
+    // Nav bar (hidden at root, shown when inside a space)
+    room_nav_bar_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_margin_start(room_nav_bar_, 4);
+    gtk_widget_set_margin_end(room_nav_bar_, 4);
+    gtk_widget_set_margin_top(room_nav_bar_, 4);
+    gtk_widget_set_margin_bottom(room_nav_bar_, 4);
+    back_button_ = gtk_button_new_with_label("←");
+    space_name_lbl_ = gtk_label_new("");
+    gtk_label_set_ellipsize(GTK_LABEL(space_name_lbl_), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(space_name_lbl_, TRUE);
+    gtk_box_append(GTK_BOX(room_nav_bar_), back_button_);
+    gtk_box_append(GTK_BOX(room_nav_bar_), space_name_lbl_);
+    gtk_widget_set_visible(room_nav_bar_, FALSE);
+    g_signal_connect(back_button_, "clicked", G_CALLBACK(on_back_clicked_), this);
+    gtk_box_append(GTK_BOX(side_vbox), room_nav_bar_);
+
     GtkWidget* room_scroll = gtk_scrolled_window_new();
-    gtk_widget_set_size_request(room_scroll, 260, -1);
-    gtk_widget_add_css_class(room_scroll, "sidebar");
+    gtk_widget_set_vexpand(room_scroll, TRUE);
     room_list_ = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(room_list_), GTK_SELECTION_SINGLE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(room_scroll), room_list_);
-    gtk_box_append(GTK_BOX(hbox), room_scroll);
+    gtk_box_append(GTK_BOX(side_vbox), room_scroll);
     g_signal_connect(room_list_, "row-activated",
                      G_CALLBACK(on_room_row_activated), this);
 
@@ -258,6 +300,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_margin_top(msg_box_, 12);
     gtk_widget_set_margin_bottom(msg_box_, 12);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(msg_scroll_), msg_box_);
+    g_signal_connect(
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(msg_scroll_)),
+        "notify::upper",
+        G_CALLBACK(MainWindow::on_adj_upper_changed_), this);
     gtk_box_append(GTK_BOX(vbox), msg_scroll_);
 
     // Compose row
@@ -385,16 +431,28 @@ gboolean MainWindow::on_key_pressed(
 void MainWindow::on_room_row_activated(
     GtkListBox*, GtkListBoxRow* row, gpointer user_data)
 {
-    auto* self  = static_cast<MainWindow*>(user_data);
-    int   index = gtk_list_box_row_get_index(row);
-    if (index < 0 || index >= static_cast<int>(self->rooms_.size())) return;
+    auto* self = static_cast<MainWindow*>(user_data);
+    const char* room_id = static_cast<const char*>(
+        g_object_get_data(G_OBJECT(row), "room_id"));
+    if (!room_id) return;
 
-    const std::string new_id = self->rooms_[index].id;
+    gboolean is_space = static_cast<gboolean>(GPOINTER_TO_INT(
+        g_object_get_data(G_OBJECT(row), "is_space")));
+
+    if (is_space) {
+        self->space_stack_.push_back(std::string(room_id));
+        self->refresh_room_list();
+        return;
+    }
+
+    const std::string new_id(room_id);
     if (!self->current_room_id_.empty() && self->current_room_id_ != new_id)
         self->client_.unsubscribe_room(self->current_room_id_);
 
     self->current_room_id_ = new_id;
-    self->update_room_header(self->rooms_[index]);
+    for (const auto& r : self->rooms_)
+        if (r.id == new_id) { self->update_room_header(r); break; }
+
     auto res = self->client_.subscribe_room(self->current_room_id_);
     if (res)
         self->client_.paginate_back(self->current_room_id_, 50);
@@ -413,7 +471,7 @@ void MainWindow::push_event(std::unique_ptr<tesseract::Event> ev) {
 
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
-    populate_rooms(rooms_);
+    refresh_room_list();
     if (!current_room_id_.empty())
         for (const auto& r : rooms_)
             if (r.id == current_room_id_) { update_room_header(r); break; }
@@ -457,6 +515,7 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 
     if (!info.topic.empty()) {
         gtk_label_set_text(GTK_LABEL(room_header_topic_), info.topic.c_str());
+        gtk_widget_set_tooltip_text(room_header_topic_, info.topic.c_str());
         gtk_widget_set_visible(room_header_topic_, TRUE);
     } else {
         gtk_widget_set_visible(room_header_topic_, FALSE);
@@ -495,12 +554,19 @@ void MainWindow::clear_messages() {
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
+void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
     // Remove all existing rows.
     while (GtkWidget* child = gtk_widget_get_first_child(room_list_))
         gtk_list_box_remove(GTK_LIST_BOX(room_list_), child);
 
-    for (const auto& r : rooms) {
+    // Sort: regular rooms first, spaces at the bottom.
+    std::vector<const tesseract::RoomInfo*> sorted;
+    for (const auto& r : rooms) if (!r.is_space) sorted.push_back(&r);
+    for (const auto& r : rooms) if ( r.is_space) sorted.push_back(&r);
+
+    for (const tesseract::RoomInfo* rp : sorted) {
+        const auto& r = *rp;
+
         // Fetch avatar on first sight.
         if (!r.avatar_url.empty() &&
             avatar_cache_.find(r.avatar_url) == avatar_cache_.end())
@@ -508,7 +574,7 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
             avatar_cache_[r.avatar_url] = client_.fetch_avatar_bytes(r.id);
         }
 
-        // Row: hbox with avatar + vbox(name + last_msg) + optional badge
+        // Row content box
         GtkWidget* row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_set_margin_start(row_box, 8);
         gtk_widget_set_margin_end(row_box, 8);
@@ -546,7 +612,9 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
         gtk_widget_set_hexpand(text_box, TRUE);
         gtk_widget_set_valign(text_box, GTK_ALIGN_CENTER);
 
-        GtkWidget* name_lbl = gtk_label_new(r.name.c_str());
+        // Spaces get a "# " prefix to distinguish them visually.
+        std::string display_name = r.is_space ? "# " + r.name : r.name;
+        GtkWidget* name_lbl = gtk_label_new(display_name.c_str());
         gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
         gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
         gtk_widget_add_css_class(name_lbl, "sender-name");
@@ -572,8 +640,53 @@ void MainWindow::populate_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
             gtk_box_append(GTK_BOX(row_box), badge);
         }
 
-        gtk_list_box_append(GTK_LIST_BOX(room_list_), row_box);
+        // Wrap in an explicit GtkListBoxRow so we can attach room_id / is_space.
+        GtkWidget* lbrow = gtk_list_box_row_new();
+        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(lbrow), row_box);
+        g_object_set_data_full(G_OBJECT(lbrow), "room_id",
+                               g_strdup(r.id.c_str()), g_free);
+        g_object_set_data(G_OBJECT(lbrow), "is_space",
+                          GINT_TO_POINTER(r.is_space ? 1 : 0));
+        gtk_list_box_append(GTK_LIST_BOX(room_list_), lbrow);
     }
+}
+
+void MainWindow::refresh_room_list() {
+    if (space_stack_.empty()) {
+        show_rooms(rooms_);
+        gtk_widget_set_visible(room_nav_bar_, FALSE);
+    } else {
+        const std::string& space_id = space_stack_.back();
+        auto child_ids = client_.space_children(space_id);
+        std::vector<tesseract::RoomInfo> filtered;
+        for (const auto& r : rooms_)
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) != child_ids.end())
+                filtered.push_back(r);
+        show_rooms(filtered);
+        for (const auto& r : rooms_)
+            if (r.id == space_id) {
+                gtk_label_set_text(GTK_LABEL(space_name_lbl_), r.name.c_str());
+                break;
+            }
+        gtk_widget_set_visible(room_nav_bar_, TRUE);
+    }
+}
+
+void MainWindow::on_back_clicked_(GtkButton*, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (!self->space_stack_.empty()) self->space_stack_.pop_back();
+    self->refresh_room_list();
+}
+
+// ---------------------------------------------------------------------------
+
+void MainWindow::on_adj_upper_changed_(GObject* obj, GParamSpec*, gpointer user_data) {
+    MainWindow* self = static_cast<MainWindow*>(user_data);
+    if (!self->auto_scroll_pending_) return;
+    self->auto_scroll_pending_ = false;
+    GtkAdjustment* a = GTK_ADJUSTMENT(obj);
+    gtk_adjustment_set_value(a,
+        gtk_adjustment_get_upper(a) - gtk_adjustment_get_page_size(a));
 }
 
 // ---------------------------------------------------------------------------
@@ -591,6 +704,8 @@ void MainWindow::append_event(const tesseract::Event& ev) {
                 g_object_get_data(G_OBJECT(row), "name_lbl"));
             if (name_lbl)
                 gtk_label_set_text(GTK_LABEL(name_lbl), name.c_str());
+            // For image/sticker events, body_lbl is the caption label (may be
+            // nullptr if no caption exists) — only update text-bearing labels.
             std::string body_text;
             if (ev.type == tesseract::EventType::File) {
                 const auto& file = static_cast<const tesseract::FileEvent&>(ev);
@@ -605,14 +720,17 @@ void MainWindow::append_event(const tesseract::Event& ev) {
                     body_text += size_buf;
                 }
             } else if (ev.type == tesseract::EventType::Image) {
+                // MSC2530: only update if a caption label was stored.
                 const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-                body_text = img.body.empty() ? "🖼 Image" : img.body;
+                if (!img.filename.empty()) body_text = img.body;
+            } else if (ev.type == tesseract::EventType::Sticker) {
+                // No text label for stickers.
             } else {
                 body_text = ev.body;
             }
             auto* body_lbl = static_cast<GtkWidget*>(
                 g_object_get_data(G_OBJECT(row), "body_lbl"));
-            if (body_lbl)
+            if (body_lbl && !body_text.empty())
                 gtk_label_set_text(GTK_LABEL(body_lbl), body_text.c_str());
             if (!ev.sender_avatar_url.empty()) {
                 if (user_avatar_cache_.find(ev.sender_avatar_url) == user_avatar_cache_.end())
@@ -659,6 +777,16 @@ void MainWindow::append_event(const tesseract::Event& ev) {
             client_.fetch_media_bytes(ev.sender_avatar_url);
     }
 
+    // Fetch/cache image bytes for image and sticker events.
+    auto fetch_if_missing = [&](const std::string& url) {
+        if (!url.empty() && image_cache_.find(url) == image_cache_.end())
+            image_cache_[url] = client_.fetch_media_bytes(url);
+    };
+    if (ev.type == tesseract::EventType::Image)
+        fetch_if_missing(static_cast<const tesseract::ImageEvent&>(ev).image_url);
+    else if (ev.type == tesseract::EventType::Sticker)
+        fetch_if_missing(static_cast<const tesseract::StickerEvent&>(ev).image_url);
+
     // Timestamp string (HH:MM).
     std::string ts_str;
     if (ev.timestamp > 0) {
@@ -677,55 +805,53 @@ void MainWindow::append_event(const tesseract::Event& ev) {
     gtk_widget_set_margin_top(row, 2);
     gtk_widget_set_margin_bottom(row, 2);
 
-    if (!is_own) {
-        // ---- Sender avatar ----
-        GtkWidget* av_widget = nullptr;
-        auto avit = !ev.sender_avatar_url.empty() ?
-                    user_avatar_cache_.find(ev.sender_avatar_url) :
-                    user_avatar_cache_.end();
-        if (avit != user_avatar_cache_.end() && !avit->second.empty()) {
-            GBytes*     gb  = g_bytes_new(avit->second.data(), avit->second.size());
-            GError*     err = nullptr;
-            GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
-            g_bytes_unref(gb);
-            if (tex) {
-                av_widget = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
-                gtk_image_set_pixel_size(GTK_IMAGE(av_widget), kMsgAvatarSize);
-                gtk_widget_set_valign(av_widget, GTK_ALIGN_START);
-                g_object_unref(tex);
-            } else {
-                if (err) g_error_free(err);
-            }
+    // ---- Sender avatar ----
+    GtkWidget* av_widget = nullptr;
+    auto avit = !ev.sender_avatar_url.empty() ?
+                user_avatar_cache_.find(ev.sender_avatar_url) :
+                user_avatar_cache_.end();
+    if (avit != user_avatar_cache_.end() && !avit->second.empty()) {
+        GBytes*     gb  = g_bytes_new(avit->second.data(), avit->second.size());
+        GError*     err = nullptr;
+        GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
+        g_bytes_unref(gb);
+        if (tex) {
+            av_widget = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+            gtk_image_set_pixel_size(GTK_IMAGE(av_widget), kMsgAvatarSize);
+            gtk_widget_set_valign(av_widget, GTK_ALIGN_START);
+            g_object_unref(tex);
+        } else {
+            if (err) g_error_free(err);
         }
-        if (!av_widget) {
-            av_widget = gtk_label_new(nullptr);
-            gtk_widget_set_size_request(av_widget, kMsgAvatarSize, kMsgAvatarSize);
-        }
-        gtk_box_append(GTK_BOX(row), av_widget);
-        g_object_set_data(G_OBJECT(row), "avatar", av_widget);
     }
+    if (!av_widget) {
+        av_widget = gtk_label_new(nullptr);
+        gtk_widget_set_size_request(av_widget, kMsgAvatarSize, kMsgAvatarSize);
+    }
+    gtk_box_append(GTK_BOX(row), av_widget);
+    g_object_set_data(G_OBJECT(row), "avatar", av_widget);
 
     // ---- Content vbox (name + bubble) ----
     GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
 
-    if (!is_own) {
-        GtkWidget* name_lbl = gtk_label_new(name.c_str());
-        gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
-        gtk_widget_add_css_class(name_lbl, "sender-name");
-        gtk_box_append(GTK_BOX(content), name_lbl);
-        g_object_set_data(G_OBJECT(row), "name_lbl", name_lbl);
-    }
+    GtkWidget* name_lbl = gtk_label_new(name.c_str());
+    gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
+    gtk_widget_add_css_class(name_lbl, "sender-name");
+    gtk_box_append(GTK_BOX(content), name_lbl);
+    g_object_set_data(G_OBJECT(row), "name_lbl", name_lbl);
 
-    // ---- Bubble ----
+    // ---- Message content ----
     GtkWidget* bubble = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_add_css_class(bubble, is_own ? "bubble-own" : "bubble-other");
-    gtk_widget_set_halign(bubble, is_own ? GTK_ALIGN_END : GTK_ALIGN_START);
+    // Stickers are borderless; all other types get the chat-bubble style.
+    if (ev.type != tesseract::EventType::Sticker)
+        gtk_widget_add_css_class(bubble, "message-body");
+    gtk_widget_set_halign(bubble, GTK_ALIGN_START);
 
-    // Body text
-    std::string body_text;
+    // Build bubble content depending on event type.
+    GtkWidget* body_lbl = nullptr;
     if (ev.type == tesseract::EventType::File) {
         const auto& file = static_cast<const tesseract::FileEvent&>(ev);
-        body_text = "📎 " + file.file_name;
+        std::string body_text = "📎 " + file.file_name;
         if (file.file_size > 0) {
             double kb = file.file_size / 1024.0;
             char size_buf[32];
@@ -735,59 +861,78 @@ void MainWindow::append_event(const tesseract::Event& ev) {
                 snprintf(size_buf, sizeof(size_buf), " (%.1f MB)", kb / 1024.0);
             body_text += size_buf;
         }
+        body_lbl = gtk_label_new(body_text.c_str());
+        gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
+        gtk_label_set_wrap_mode(GTK_LABEL(body_lbl), PANGO_WRAP_WORD_CHAR);
+        gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
+        gtk_label_set_max_width_chars(GTK_LABEL(body_lbl), 55);
+        gtk_box_append(GTK_BOX(bubble), body_lbl);
     } else if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        body_text = img.body.empty() ? "🖼 Image" : img.body;
+        auto it = image_cache_.find(img.image_url);
+        if (it != image_cache_.end() && !it->second.empty()) {
+            GdkTexture* tex = make_scaled_texture(it->second,
+                                                   320, 200);
+            if (tex) {
+                GtkWidget* picture = gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
+                gtk_widget_set_halign(picture, GTK_ALIGN_START);
+                gtk_box_append(GTK_BOX(bubble), picture);
+                g_object_unref(tex);
+            }
+        }
+        // MSC2530: show body as caption only when a distinct filename was supplied.
+        if (!img.filename.empty() && !img.body.empty()) {
+            body_lbl = gtk_label_new(img.body.c_str());
+            gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
+            gtk_label_set_wrap_mode(GTK_LABEL(body_lbl), PANGO_WRAP_WORD_CHAR);
+            gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
+            gtk_label_set_max_width_chars(GTK_LABEL(body_lbl), 55);
+            gtk_box_append(GTK_BOX(bubble), body_lbl);
+        }
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        auto it = image_cache_.find(s.image_url);
+        if (it != image_cache_.end() && !it->second.empty()) {
+            GdkTexture* tex = make_scaled_texture(it->second, 256, 256);
+            if (tex) {
+                GtkWidget* picture = gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
+                gtk_widget_set_halign(picture, GTK_ALIGN_START);
+                gtk_box_append(GTK_BOX(bubble), picture);
+                g_object_unref(tex);
+            }
+        }
+        // Sticker body is alt-text only; never displayed.
     } else {
-        body_text = ev.body;
+        body_lbl = gtk_label_new(ev.body.c_str());
+        gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
+        gtk_label_set_wrap_mode(GTK_LABEL(body_lbl), PANGO_WRAP_WORD_CHAR);
+        gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
+        gtk_label_set_max_width_chars(GTK_LABEL(body_lbl), 55);
+        gtk_box_append(GTK_BOX(bubble), body_lbl);
     }
-
-    GtkWidget* body_lbl = gtk_label_new(body_text.c_str());
-    gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
-    gtk_label_set_wrap_mode(GTK_LABEL(body_lbl), PANGO_WRAP_WORD_CHAR);
-    gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
-    gtk_label_set_max_width_chars(GTK_LABEL(body_lbl), 55);
-    gtk_box_append(GTK_BOX(bubble), body_lbl);
-    g_object_set_data(G_OBJECT(row), "body_lbl", body_lbl);
+    g_object_set_data(G_OBJECT(row), "body_lbl", body_lbl); // may be nullptr for images/stickers
 
     // Timestamp
     if (!ts_str.empty()) {
         GtkWidget* ts_lbl = gtk_label_new(ts_str.c_str());
         gtk_label_set_xalign(GTK_LABEL(ts_lbl), 1.0f);
-        gtk_widget_add_css_class(ts_lbl, is_own ? "timestamp-own" : "timestamp");
+        gtk_widget_add_css_class(ts_lbl, "timestamp");
         gtk_box_append(GTK_BOX(bubble), ts_lbl);
     }
 
     gtk_box_append(GTK_BOX(content), bubble);
-    gtk_widget_set_halign(content, is_own ? GTK_ALIGN_END : GTK_ALIGN_START);
+    gtk_widget_set_halign(content, GTK_ALIGN_START);
 
-    if (is_own) {
-        // Spacer on the left, content on the right
-        GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        gtk_widget_set_hexpand(spacer, TRUE);
-        gtk_box_append(GTK_BOX(row), spacer);
-        gtk_box_append(GTK_BOX(row), content);
-    } else {
-        gtk_box_append(GTK_BOX(row), content);
-        GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        gtk_widget_set_hexpand(spacer, TRUE);
-        gtk_box_append(GTK_BOX(row), spacer);
-    }
+    gtk_box_append(GTK_BOX(row), content);
+    GtkWidget* spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(row), spacer);
 
     if (!ev.event_id.empty())
         msg_event_widgets_[ev.event_id] = row;
+    auto_scroll_pending_ = true;
     gtk_box_append(GTK_BOX(msg_box_), row);
     gtk_widget_set_visible(row, TRUE);
-
-    // Scroll to bottom after layout.
-    GtkAdjustment* adj =
-        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(msg_scroll_));
-    g_idle_add([](gpointer data) -> gboolean {
-        GtkAdjustment* a = static_cast<GtkAdjustment*>(data);
-        gtk_adjustment_set_value(a,
-            gtk_adjustment_get_upper(a) - gtk_adjustment_get_page_size(a));
-        return G_SOURCE_REMOVE;
-    }, adj);
 }
 
 } // namespace gtk4

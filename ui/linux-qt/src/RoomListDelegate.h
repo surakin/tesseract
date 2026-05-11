@@ -7,6 +7,7 @@ enum RoomItemRole {
     LastMessageRole = Qt::UserRole + 1,
     UnreadCountRole = Qt::UserRole + 2,
     RoomIdRole      = Qt::UserRole + 3,
+    IsSpaceRole     = Qt::UserRole + 4,
 };
 
 class RoomListDelegate final : public QStyledItemDelegate {

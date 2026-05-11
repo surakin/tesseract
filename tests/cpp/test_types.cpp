@@ -60,6 +60,7 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]") {
     CHECK(r.topic.empty());
     CHECK(r.unread_count == 0u);
     CHECK_FALSE(r.is_direct);
+    CHECK_FALSE(r.is_space);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ TEST_CASE("ImageEvent default-initialised fields", "[types]") {
     CHECK(ev.image_url.empty());
     CHECK(ev.width == 0u);
     CHECK(ev.height == 0u);
+    CHECK(ev.filename.empty());
 }
 
 TEST_CASE("ImageEvent fields are settable", "[types]") {
@@ -117,6 +119,7 @@ TEST_CASE("ImageEvent fields are settable", "[types]") {
     ev.image_url = "mxc://example.org/image";
     ev.width = 1920;
     ev.height = 1080;
+    ev.filename = "";  // no MSC2530 filename → body is not a caption
 
     CHECK(ev.event_id == "evt123");
     CHECK(ev.room_id == "!room:example.org");
@@ -126,6 +129,18 @@ TEST_CASE("ImageEvent fields are settable", "[types]") {
     CHECK(ev.image_url == "mxc://example.org/image");
     CHECK(ev.width == 1920);
     CHECK(ev.height == 1080);
+    CHECK(ev.filename.empty());
+}
+
+TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]") {
+    tesseract::ImageEvent ev{};
+    ev.image_url = "mxc://example.org/photo.jpg";
+    ev.body = "My holiday photo";
+    ev.filename = "photo.jpg";  // distinct filename → body is a caption
+
+    CHECK_FALSE(ev.filename.empty());
+    CHECK(ev.body == "My holiday photo");
+    CHECK(ev.filename == "photo.jpg");
 }
 
 // ---------------------------------------------------------------------------
@@ -182,9 +197,48 @@ TEST_CASE("UnhandledEvent default-initialised fields", "[types]") {
 }
 
 TEST_CASE("UnhandledEvent constructed with msg_type", "[types]") {
-    tesseract::UnhandledEvent ev("m.sticker");
+    tesseract::UnhandledEvent ev("m.unknown");
     CHECK(ev.type == tesseract::EventType::Unhandled);
-    CHECK(ev.msg_type == "m.sticker");
+    CHECK(ev.msg_type == "m.unknown");
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::StickerEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("StickerEvent default-initialised fields", "[types]") {
+    tesseract::StickerEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Sticker);
+    CHECK(ev.image_url.empty());
+    CHECK(ev.width == 0u);
+    CHECK(ev.height == 0u);
+}
+
+TEST_CASE("StickerEvent fields are settable", "[types]") {
+    tesseract::StickerEvent ev{};
+    ev.event_id = "sticker1";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@user:example.org";
+    ev.body = "wave";
+    ev.timestamp = 1234567890;
+    ev.image_url = "mxc://example.org/sticker.png";
+    ev.width = 512;
+    ev.height = 512;
+
+    CHECK(ev.event_id == "sticker1");
+    CHECK(ev.room_id == "!room:example.org");
+    CHECK(ev.sender == "@user:example.org");
+    CHECK(ev.body == "wave");
+    CHECK(ev.timestamp == 1234567890);
+    CHECK(ev.image_url == "mxc://example.org/sticker.png");
+    CHECK(ev.width == 512);
+    CHECK(ev.height == 512);
+    CHECK(ev.type == tesseract::EventType::Sticker);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +246,9 @@ TEST_CASE("UnhandledEvent constructed with msg_type", "[types]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("EventType enum values are correct", "[types]") {
-    CHECK(static_cast<int>(tesseract::EventType::Text) == 0);
-    CHECK(static_cast<int>(tesseract::EventType::Image) == 1);
-    CHECK(static_cast<int>(tesseract::EventType::File) == 2);
-    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 3);
+    CHECK(static_cast<int>(tesseract::EventType::Text)      == 0);
+    CHECK(static_cast<int>(tesseract::EventType::Image)     == 1);
+    CHECK(static_cast<int>(tesseract::EventType::File)      == 2);
+    CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 4);
 }

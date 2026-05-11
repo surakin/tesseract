@@ -59,14 +59,17 @@ private slots:
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString context, QString description, bool soft_logout);
     void onTimelineReset(QString roomId);
+    void onSpaceBack();
 
 private:
     void     doLogin();
-    void     populateRooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void     appendMessageBubble(const tesseract::Event& ev);
+    void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
+    void     refreshRoomList();
+    void     appendMessage(const tesseract::Event& ev);
     void     clearMessages();
     void     updateRoomHeader(const tesseract::RoomInfo& info);
-    QWidget* createBubbleRow(const tesseract::Event& ev);
+    void     updateTopicElision();
+    QWidget* createMessageRow(const tesseract::Event& ev);
     QPixmap  makeCirclePixmap(const QPixmap& src, int size);
     QPixmap  makeInitialsPixmap(const QString& name, int size);
 
@@ -74,10 +77,14 @@ private:
     static constexpr int kMsgAvatarSize   = 32;
     static constexpr int kMaxImageWidth   = 320;
     static constexpr int kMaxImageHeight  = 200;
-    static constexpr int kBubbleMaxWidth  = 520;
+    static constexpr int kMaxStickerSize  = 256;
+    static constexpr int kMsgMaxWidth     = 520;
 
     QListView*           roomList_        = nullptr;
     QStandardItemModel*  roomModel_       = nullptr;
+    QWidget*             roomNavBar_      = nullptr;
+    QPushButton*         backButton_      = nullptr;
+    QLabel*              spaceNameLabel_  = nullptr;
     QWidget*             roomHeader_      = nullptr;
     QLabel*              roomHeaderAvatar_= nullptr;
     QLabel*              roomHeaderName_  = nullptr;
@@ -97,6 +104,9 @@ private:
     QHash<QString, QPixmap>       userAvatarCache_;
     QHash<QString, QPixmap>       imageCache_;
     QHash<QString, QWidget*>      msgEventWidgets_;
+    QString                       currentTopicText_;
+    bool                          autoScrollPending_ = false;
+    std::vector<std::string>      spaceStack_;
 };
 
 } // namespace qt6

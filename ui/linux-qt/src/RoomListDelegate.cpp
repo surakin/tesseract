@@ -78,16 +78,19 @@ void RoomListDelegate::paint(QPainter* painter,
     int textRight = option.rect.right() - kMargin - badgeW - (badgeW ? 4 : 0);
 
     // ---- Room name ----
+    bool isSpace = index.data(IsSpaceRole).toBool();
     QFont nameFont = painter->font();
     nameFont.setPixelSize(13);
     nameFont.setBold(true);
+    nameFont.setItalic(isSpace);
     painter->setFont(nameFont);
     painter->setPen(option.state & QStyle::State_Selected
                     ? option.palette.highlightedText().color()
                     : option.palette.text().color());
     QRect nameRect(textLeft, cy + 10, textRight - textLeft, 18);
-    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      index.data(Qt::DisplayRole).toString());
+    QString displayName = index.data(Qt::DisplayRole).toString();
+    if (isSpace) displayName = "# " + displayName;
+    painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, displayName);
 
     // ---- Last-message preview ----
     QString preview = index.data(LastMessageRole).toString();

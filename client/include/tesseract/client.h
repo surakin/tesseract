@@ -118,6 +118,16 @@ public:
     /// first, so repeat calls for the same URL are instant.
     std::vector<uint8_t> fetch_media_bytes(const std::string& mxc_url);
 
+    // ------------------------------------------------------------------
+    // Spaces
+    // ------------------------------------------------------------------
+
+    /// Returns the room IDs of all direct children of a space (via
+    /// `m.space.child` state events). Only returns IDs of rooms the
+    /// client is a member of. Returns an empty vector when not logged in
+    /// or when `space_id` is not a known space.
+    std::vector<std::string> space_children(const std::string& space_id) const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

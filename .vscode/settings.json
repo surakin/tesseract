@@ -1,7 +1,8 @@
 {
     "cSpell.words": [
         "gboolean",
-        "tesseract"
+        "tesseract",
+        "tombstoned"
     ],
     "C_Cpp.errorSquiggles": "enabled"
 }
