@@ -3,6 +3,7 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleIconFile</key>         <string>Tesseract</string>
     <key>CFBundleName</key>             <string>Tesseract</string>
     <key>CFBundleDisplayName</key>      <string>Tesseract</string>
     <key>CFBundleIdentifier</key>       <string>im.gnomos.tesseract</string>
