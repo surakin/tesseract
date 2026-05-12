@@ -41,13 +41,20 @@ public:
     explicit EventBridge(MainWindowController* controller)
         : controller_(controller) {}
 
-    void on_message(tesseract::Event* ev) override;
-    void on_message_prepended(tesseract::Event* ev) override;
+    void on_timeline_reset(const std::string& room_id,
+                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void on_message_inserted(const std::string& room_id,
+                              std::size_t index,
+                              std::unique_ptr<tesseract::Event> event) override;
+    void on_message_updated(const std::string& room_id,
+                             std::size_t index,
+                             std::unique_ptr<tesseract::Event> event) override;
+    void on_message_removed(const std::string& room_id,
+                             std::size_t index) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;
-    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
@@ -73,8 +80,16 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 // ─────────────────────────────────────────────────────────────────────────
 
 @interface MainWindowController () <LoginViewDelegate>
-- (void)pushEvent:(tesseract::Event*)ev;
-- (void)pushPrependedEvent:(tesseract::Event*)ev;
+- (void)handleTimelineReset:(NSString*)roomId
+                    snapshot:(std::vector<tesseract::Event*>)snapshot;
+- (void)handleMessageInserted:(NSString*)roomId
+                         index:(std::size_t)index
+                         event:(tesseract::Event*)event;
+- (void)handleMessageUpdated:(NSString*)roomId
+                        index:(std::size_t)index
+                        event:(tesseract::Event*)event;
+- (void)handleMessageRemoved:(NSString*)roomId
+                        index:(std::size_t)index;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
@@ -82,7 +97,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleSyncErrorContext:(NSString*)ctx
                     description:(NSString*)desc
                     softLogout:(BOOL)soft;
-- (void)handleTimelineReset:(NSString*)roomId;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
 
 - (void)onRoomSelected:(std::string)roomId;
@@ -98,20 +112,60 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 namespace {
 
-void EventBridge::on_message(tesseract::Event* ev) {
+void EventBridge::on_timeline_reset(
+    const std::string& room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
     MainWindowController* c = controller_;
-    if (!c || !ev) { delete ev; return; }
-    // Hand ownership of the heap event to the main-thread block.
+    if (!c) return;
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    // Release ownership of every Event into the block. The main-thread
+    // method takes ownership of the raw pointers.
+    std::vector<tesseract::Event*> raw;
+    raw.reserve(snapshot.size());
+    for (auto& p : snapshot) raw.push_back(p.release());
     dispatch_async(dispatch_get_main_queue(), ^{
-        [c pushEvent:ev];
+        [c handleTimelineReset:rid snapshot:raw];
     });
 }
 
-void EventBridge::on_message_prepended(tesseract::Event* ev) {
+void EventBridge::on_message_inserted(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> event)
+{
     MainWindowController* c = controller_;
-    if (!c || !ev) { delete ev; return; }
+    if (!c || !event) return;
+    NSString*         rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    tesseract::Event* raw = event.release();
     dispatch_async(dispatch_get_main_queue(), ^{
-        [c pushPrependedEvent:ev];
+        [c handleMessageInserted:rid index:index event:raw];
+    });
+}
+
+void EventBridge::on_message_updated(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> event)
+{
+    MainWindowController* c = controller_;
+    if (!c || !event) return;
+    NSString*         rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    tesseract::Event* raw = event.release();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c handleMessageUpdated:rid index:index event:raw];
+    });
+}
+
+void EventBridge::on_message_removed(
+    const std::string& room_id,
+    std::size_t index)
+{
+    MainWindowController* c = controller_;
+    if (!c) return;
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c handleMessageRemoved:rid index:index];
     });
 }
 
@@ -136,15 +190,6 @@ void EventBridge::on_sync_error(const std::string& context,
     BOOL      soft = soft_logout;
     dispatch_async(dispatch_get_main_queue(), ^{
         [c handleSyncErrorContext:ctx description:desc softLogout:soft];
-    });
-}
-
-void EventBridge::on_timeline_reset(const std::string& room_id) {
-    MainWindowController* c = controller_;
-    if (!c) return;
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleTimelineReset:rid];
     });
 }
 
@@ -714,20 +759,38 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
 //  Event-bridge callbacks (main thread)
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)pushEvent:(tesseract::Event*)ev {
-    if (!ev) return;
-    std::unique_ptr<tesseract::Event> guard(ev);
-    if (ev->room_id != _currentRoomId) return;
-    if (ev->type == tesseract::EventType::Unhandled) return;
-    [self _appendMessage:*ev];
+- (void)handleMessageInserted:(NSString*)roomId
+                         index:(std::size_t)index
+                         event:(tesseract::Event*)event
+{
+    std::unique_ptr<tesseract::Event> guard(event);
+    if (!event) return;
+    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    if (event->type == tesseract::EventType::Unhandled) return;
+    [self _ensureRowMedia:*event];
+    _messageListView->insert_message(index, [self _toRowData:*event]);
+    _msgSurface->relayout();
 }
 
-- (void)pushPrependedEvent:(tesseract::Event*)ev {
-    if (!ev) return;
-    std::unique_ptr<tesseract::Event> guard(ev);
-    if (ev->room_id != _currentRoomId) return;
-    if (ev->type == tesseract::EventType::Unhandled) return;
-    [self _prependMessage:*ev];
+- (void)handleMessageUpdated:(NSString*)roomId
+                        index:(std::size_t)index
+                        event:(tesseract::Event*)event
+{
+    std::unique_ptr<tesseract::Event> guard(event);
+    if (!event) return;
+    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    if (event->type == tesseract::EventType::Unhandled) return;
+    [self _ensureRowMedia:*event];
+    _messageListView->update_message(index, [self _toRowData:*event]);
+    _msgSurface->relayout();
+}
+
+- (void)handleMessageRemoved:(NSString*)roomId
+                        index:(std::size_t)index
+{
+    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    _messageListView->remove_message(index);
+    _msgSurface->relayout();
 }
 
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms {
@@ -763,11 +826,23 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     }
 }
 
-- (void)handleTimelineReset:(NSString*)roomId {
-    if (roomId.UTF8String && std::string(roomId.UTF8String) == _currentRoomId) {
-        _messageListView->set_messages({});
+- (void)handleTimelineReset:(NSString*)roomId
+                    snapshot:(std::vector<tesseract::Event*>)snapshot
+{
+    const bool current =
+        roomId.UTF8String && std::string(roomId.UTF8String) == _currentRoomId;
+    if (current) {
+        std::vector<tesseract::views::MessageRowData> rows;
+        rows.reserve(snapshot.size());
+        for (auto* ev : snapshot) {
+            if (!ev) continue;
+            [self _ensureRowMedia:*ev];
+            rows.push_back([self _toRowData:*ev]);
+        }
+        _messageListView->set_messages(std::move(rows));
         _msgSurface->relayout();
     }
+    for (auto* ev : snapshot) delete ev;
 }
 
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress {
@@ -1002,7 +1077,7 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     return row;
 }
 
-- (void)_appendMessage:(const tesseract::Event&)ev {
+- (void)_ensureRowMedia:(const tesseract::Event&)ev {
     [self _ensureUserAvatar:ev.sender_avatar_url];
 
     if (ev.type == tesseract::EventType::Image) {
@@ -1019,61 +1094,6 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
             [self _ensureMediaImage:r.source_json cap:20];
         }
     }
-
-    auto row = [self _toRowData:ev];
-
-    // Live re-emit (reactions, edit, sender-profile resolution): replace
-    // the existing row with the same event_id rather than appending.
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        _messageListView->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        _messageListView->invalidate_data();
-        _msgSurface->relayout();
-        return;
-    }
-    _messageListView->append_message(std::move(row));
-    _msgSurface->relayout();
-}
-
-- (void)_prependMessage:(const tesseract::Event&)ev {
-    [self _ensureUserAvatar:ev.sender_avatar_url];
-
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        [self _ensureMediaImage:img.image_url
-                            cap:tesseract::visual::kMaxInlineImageWidth];
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        [self _ensureMediaImage:s.image_url
-                            cap:tesseract::visual::kStickerSize];
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty()) {
-            [self _ensureMediaImage:r.source_json cap:20];
-        }
-    }
-
-    auto row = [self _toRowData:ev];
-
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        _messageListView->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        _messageListView->invalidate_data();
-        _msgSurface->relayout();
-        return;
-    }
-    _messageListView->prepend_message(std::move(row));
-    _msgSurface->relayout();
 }
 
 @end

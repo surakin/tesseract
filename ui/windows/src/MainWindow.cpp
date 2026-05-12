@@ -351,14 +351,47 @@ void MainWindow::paint_main_background(HDC hdc, const RECT& rc) {
 // EventHandler
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(tesseract::Event* ev) {
-    auto* p = ev;
-    PostMessage(hwnd_, WM_TESSERACT_MESSAGE, 0, reinterpret_cast<LPARAM>(p));
+void EventHandler::on_timeline_reset(
+    const std::string& room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
+    auto* p = new MainWindow::PostedTimelineReset{ room_id, std::move(snapshot) };
+    PostMessage(hwnd_, WM_TESSERACT_TIMELINE_RESET, 0,
+                reinterpret_cast<LPARAM>(p));
 }
 
-void EventHandler::on_message_prepended(tesseract::Event* ev) {
-    auto* p = ev;
-    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_PREPEND, 0,
+void EventHandler::on_message_inserted(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    auto* p = new MainWindow::PostedMessageEvent{
+        room_id, index, std::move(ev),
+    };
+    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_INSERTED, 0,
+                reinterpret_cast<LPARAM>(p));
+}
+
+void EventHandler::on_message_updated(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    auto* p = new MainWindow::PostedMessageEvent{
+        room_id, index, std::move(ev),
+    };
+    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_UPDATED, 0,
+                reinterpret_cast<LPARAM>(p));
+}
+
+void EventHandler::on_message_removed(
+    const std::string& room_id,
+    std::size_t index)
+{
+    auto* p = new MainWindow::PostedMessageEvent{
+        room_id, index, nullptr,
+    };
+    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_REMOVED, 0,
                 reinterpret_cast<LPARAM>(p));
 }
 
@@ -380,11 +413,6 @@ void EventHandler::on_sync_error(const std::string& context,
         auto* p = new std::string(description);
         PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
     }
-}
-
-void EventHandler::on_timeline_reset(const std::string& room_id) {
-    auto* p = new std::string(room_id);
-    PostMessage(hwnd_, WM_TESSERACT_TIMELINE_RESET, 0, reinterpret_cast<LPARAM>(p));
 }
 
 void EventHandler::on_session_saved(const std::string& session_json) {
@@ -571,15 +599,21 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         win32::text::on_dpi_changed(LOWORD(wParam));
         return 0;
 
-    case WM_TESSERACT_MESSAGE: {
-        auto* p = reinterpret_cast<tesseract::Event*>(lParam);
-        self->on_tesseract_message(p);
+    case WM_TESSERACT_MESSAGE_INSERTED: {
+        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
+        self->on_tesseract_message_inserted(p);
         delete p;
         return 0;
     }
-    case WM_TESSERACT_MESSAGE_PREPEND: {
-        auto* p = reinterpret_cast<tesseract::Event*>(lParam);
-        self->on_tesseract_message_prepend(p);
+    case WM_TESSERACT_MESSAGE_UPDATED: {
+        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
+        self->on_tesseract_message_updated(p);
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_MESSAGE_REMOVED: {
+        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
+        self->on_tesseract_message_removed(p);
         delete p;
         return 0;
     }
@@ -602,7 +636,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
     }
     case WM_TESSERACT_TIMELINE_RESET: {
-        auto* p = reinterpret_cast<std::string*>(lParam);
+        auto* p = reinterpret_cast<MainWindow::PostedTimelineReset*>(lParam);
         self->on_tesseract_timeline_reset(p);
         delete p;
         return 0;
@@ -1264,14 +1298,52 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 // Event callbacks
 // ---------------------------------------------------------------------------
 
-void MainWindow::on_tesseract_message(tesseract::Event* ev) {
-    if (ev && ev->room_id == current_room_id_)
-        append_message(*ev);
+void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
+    if (!payload) return;
+    if (payload->room_id != current_room_id_) return;
+    if (!message_list_view_) return;
+
+    std::vector<tesseract::views::MessageRowData> rows;
+    rows.reserve(payload->snapshot.size());
+    for (auto& ev : payload->snapshot) {
+        if (!ev) continue;
+        ensure_row_media(*ev);
+        rows.push_back(to_row_data(*ev));
+    }
+    message_list_view_->set_messages(std::move(rows));
+    if (msg_surface_) msg_surface_->relayout();
 }
 
-void MainWindow::on_tesseract_message_prepend(tesseract::Event* ev) {
-    if (ev && ev->room_id == current_room_id_)
-        prepend_message(*ev);
+void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
+    if (!payload || !payload->event) return;
+    if (payload->room_id != current_room_id_) return;
+    if (payload->event->type == tesseract::EventType::Unhandled) return;
+    if (!message_list_view_) return;
+
+    ensure_row_media(*payload->event);
+    message_list_view_->insert_message(payload->index,
+                                         to_row_data(*payload->event));
+    if (msg_surface_) msg_surface_->relayout();
+}
+
+void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
+    if (!payload || !payload->event) return;
+    if (payload->room_id != current_room_id_) return;
+    if (payload->event->type == tesseract::EventType::Unhandled) return;
+    if (!message_list_view_) return;
+
+    ensure_row_media(*payload->event);
+    message_list_view_->update_message(payload->index,
+                                         to_row_data(*payload->event));
+    if (msg_surface_) msg_surface_->relayout();
+}
+
+void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
+    if (!payload) return;
+    if (payload->room_id != current_room_id_) return;
+    if (!message_list_view_) return;
+    message_list_view_->remove_message(payload->index);
+    if (msg_surface_) msg_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
@@ -1282,11 +1354,6 @@ void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
             if (r.id == current_room_id_) { update_room_header(r); break; }
         }
     }
-}
-
-void MainWindow::on_tesseract_timeline_reset(std::string* room_id) {
-    if (room_id && *room_id == current_room_id_)
-        clear_messages();
 }
 
 void MainWindow::refresh_room_list() {
@@ -1395,10 +1462,7 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
     return row;
 }
 
-void MainWindow::append_message(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-    if (!message_list_view_) return;
-
+void MainWindow::ensure_row_media(const tesseract::Event& ev) {
     ensure_user_avatar_tk(ev.sender_avatar_url);
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
@@ -1415,62 +1479,6 @@ void MainWindow::append_message(const tesseract::Event& ev) {
         if (!r.source_json.empty())
             ensure_media_image(r.source_json, 20, 20);
     }
-
-    auto row = to_row_data(ev);
-
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        message_list_view_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        message_list_view_->invalidate_data();
-        if (msg_surface_) msg_surface_->relayout();
-        return;
-    }
-    message_list_view_->append_message(std::move(row));
-    if (msg_surface_) msg_surface_->relayout();
-}
-
-void MainWindow::prepend_message(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-    if (!message_list_view_) return;
-
-    ensure_user_avatar_tk(ev.sender_avatar_url);
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensure_media_image(img.image_url,
-                            tesseract::visual::kMaxInlineImageWidth,
-                            tesseract::visual::kMaxInlineImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensure_media_image(s.image_url,
-                            tesseract::visual::kStickerSize,
-                            tesseract::visual::kStickerSize);
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            ensure_media_image(r.source_json, 20, 20);
-    }
-
-    auto row = to_row_data(ev);
-
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        message_list_view_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        message_list_view_->invalidate_data();
-        if (msg_surface_) msg_surface_->relayout();
-        return;
-    }
-    message_list_view_->prepend_message(std::move(row));
-    if (msg_surface_) msg_surface_->relayout();
 }
 
 void MainWindow::clear_messages() {

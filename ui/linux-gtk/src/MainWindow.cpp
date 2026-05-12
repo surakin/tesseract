@@ -60,11 +60,6 @@ static GdkTexture* make_scaled_texture(const std::vector<uint8_t>& data,
 // g_idle_add helpers
 // ---------------------------------------------------------------------------
 
-struct IdleMessage {
-    MainWindow*                        window;
-    std::unique_ptr<tesseract::Event> ev;
-};
-
 struct IdleRooms {
     MainWindow*                  window;
     std::vector<tesseract::RoomInfo> rooms;
@@ -80,11 +75,14 @@ struct IdleError {
 struct IdleTimelineReset {
     MainWindow* window;
     std::string room_id;
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot;
 };
 
-struct IdlePrepend {
-    MainWindow*                        window;
-    std::unique_ptr<tesseract::Event> ev;
+struct IdleMessageOp {
+    MainWindow*                       window;
+    std::string                       room_id;
+    std::size_t                       index;
+    std::unique_ptr<tesseract::Event> ev;   // null for remove
 };
 
 struct IdlePaginateResult {
@@ -97,29 +95,73 @@ struct IdlePaginateResult {
 // EventHandler
 // ---------------------------------------------------------------------------
 
-void EventHandler::on_message(tesseract::Event* ev) {
-    auto* p = new IdleMessage{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        std::unique_ptr<tesseract::Event>(ev)
+static MainWindow* cpp_window_for(GtkWindow* w) {
+    return reinterpret_cast<MainWindow*>(
+        g_object_get_data(G_OBJECT(w), "cpp_window"));
+}
+
+void EventHandler::on_timeline_reset(
+    const std::string& room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
+    auto* p = new IdleTimelineReset{
+        cpp_window_for(window_),
+        room_id,
+        std::move(snapshot),
     };
     g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleMessage*>(data);
-        d->window->push_event(std::move(d->ev));
+        auto* d = static_cast<IdleTimelineReset*>(data);
+        d->window->push_timeline_reset(std::move(d->room_id),
+                                         std::move(d->snapshot));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
 }
 
-void EventHandler::on_message_prepended(tesseract::Event* ev) {
-    auto* p = new IdlePrepend{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        std::unique_ptr<tesseract::Event>(ev)
+void EventHandler::on_message_inserted(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    auto* p = new IdleMessageOp{
+        cpp_window_for(window_), room_id, index, std::move(ev),
     };
     g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdlePrepend*>(data);
-        d->window->push_prepended_event(std::move(d->ev));
+        auto* d = static_cast<IdleMessageOp*>(data);
+        d->window->push_message_inserted(std::move(d->room_id),
+                                           d->index, std::move(d->ev));
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
+void EventHandler::on_message_updated(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    auto* p = new IdleMessageOp{
+        cpp_window_for(window_), room_id, index, std::move(ev),
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleMessageOp*>(data);
+        d->window->push_message_updated(std::move(d->room_id),
+                                          d->index, std::move(d->ev));
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
+void EventHandler::on_message_removed(
+    const std::string& room_id,
+    std::size_t index)
+{
+    auto* p = new IdleMessageOp{
+        cpp_window_for(window_), room_id, index, nullptr,
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleMessageOp*>(data);
+        d->window->push_message_removed(std::move(d->room_id), d->index);
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -161,20 +203,6 @@ void EventHandler::on_sync_error(
             d->window->handle_auth_error(d->soft_logout);
         else
             d->window->push_error(std::move(d->description));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
-}
-
-void EventHandler::on_timeline_reset(const std::string& room_id) {
-    auto* p = new IdleTimelineReset{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        room_id
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleTimelineReset*>(data);
-        d->window->push_timeline_reset(std::move(d->room_id));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -718,11 +746,6 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
 }
 
-void MainWindow::push_prepended_event(std::unique_ptr<tesseract::Event> ev) {
-    if (ev->room_id == current_room_id_)
-        prepend_event(*ev);
-}
-
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
     auto it = pagination_.find(room_id);
     if (it == pagination_.end()) return;
@@ -761,9 +784,36 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::push_event(std::unique_ptr<tesseract::Event> ev) {
-    if (ev->room_id == current_room_id_)
-        append_event(*ev);
+void MainWindow::push_message_inserted(
+    std::string room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    if (!ev) return;
+    if (room_id != current_room_id_) return;
+    if (ev->type == tesseract::EventType::Unhandled) return;
+    ensure_row_media(*ev);
+    message_list_view_->insert_message(index, to_row_data(*ev));
+    msg_surface_->relayout();
+}
+
+void MainWindow::push_message_updated(
+    std::string room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    if (!ev) return;
+    if (room_id != current_room_id_) return;
+    if (ev->type == tesseract::EventType::Unhandled) return;
+    ensure_row_media(*ev);
+    message_list_view_->update_message(index, to_row_data(*ev));
+    msg_surface_->relayout();
+}
+
+void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
+    if (room_id != current_room_id_) return;
+    message_list_view_->remove_message(index);
+    msg_surface_->relayout();
 }
 
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
@@ -806,9 +856,20 @@ void MainWindow::push_error(std::string description) {
     gtk_label_set_text(GTK_LABEL(status_bar_), description.c_str());
 }
 
-void MainWindow::push_timeline_reset(std::string room_id) {
+void MainWindow::push_timeline_reset(
+    std::string room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
     if (room_id != current_room_id_) return;
-    clear_messages();
+    std::vector<tesseract::views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (auto& ev : snapshot) {
+        if (!ev) continue;
+        ensure_row_media(*ev);
+        rows.push_back(to_row_data(*ev));
+    }
+    message_list_view_->set_messages(std::move(rows));
+    msg_surface_->relayout();
 }
 
 void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
@@ -1051,9 +1112,7 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
     return row;
 }
 
-void MainWindow::append_event(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-
+void MainWindow::ensure_row_media(const tesseract::Event& ev) {
     // Pre-fetch any media this row will reference. The shared view's
     // provider lambdas look up tk_avatars_ / tk_images_ on each paint.
     ensure_user_avatar(ev.sender_avatar_url);
@@ -1072,63 +1131,6 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         if (!r.source_json.empty())
             ensure_media_image(r.source_json, 20, 20);
     }
-
-    auto row = to_row_data(ev);
-
-    // Live re-emit (reactions, edits, sender-profile resolution): replace
-    // an existing row with the same event_id rather than appending.
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        message_list_view_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        message_list_view_->invalidate_data();
-        msg_surface_->relayout();
-        return;
-    }
-    message_list_view_->append_message(std::move(row));
-    msg_surface_->relayout();
-}
-
-void MainWindow::prepend_event(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-
-    ensure_user_avatar(ev.sender_avatar_url);
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensure_media_image(img.image_url,
-                            tesseract::visual::kMaxInlineImageWidth,
-                            tesseract::visual::kMaxInlineImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensure_media_image(s.image_url,
-                            tesseract::visual::kStickerSize,
-                            tesseract::visual::kStickerSize);
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            ensure_media_image(r.source_json, 20, 20);
-    }
-
-    auto row = to_row_data(ev);
-
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        message_list_view_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        message_list_view_->invalidate_data();
-        msg_surface_->relayout();
-        return;
-    }
-    message_list_view_->prepend_message(std::move(row));
-    msg_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------

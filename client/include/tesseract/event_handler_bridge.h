@@ -6,6 +6,7 @@
 #include "rust/cxx.h"
 #include "event_handler.h"
 #include "types.h"
+#include <cstdint>
 #include <memory>
 
 // Forward declarations for cxx-generated types.
@@ -24,21 +25,31 @@ public:
     explicit EventHandlerBridge(tesseract::IEventHandler* handler)
         : handler_(handler) {}
 
-    void on_message_event(const TimelineEvent& event) const;
-    /// Older event delivered via back-pagination. The UI should prepend
-    /// this to the top of the message view (oldest-at-front).
-    void on_message_prepended(const TimelineEvent& event) const;
+    /// Atomically reset the room's timeline to `snapshot` (oldest-first).
+    void on_timeline_reset(rust::Str room_id,
+                            const rust::Vec<TimelineEvent>& snapshot) const;
+
+    /// Insert `event` at visible-index `index` in `room_id`'s timeline.
+    void on_message_inserted(rust::Str room_id,
+                              std::uint64_t index,
+                              const TimelineEvent& event) const;
+
+    /// Replace the event currently at visible-index `index` with `event`.
+    void on_message_updated(rust::Str room_id,
+                             std::uint64_t index,
+                             const TimelineEvent& event) const;
+
+    /// Remove the event at visible-index `index`.
+    void on_message_removed(rust::Str room_id,
+                             std::uint64_t index) const;
+
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
-    /// Signals the UI to clear the message view for room_id before the
-    /// initial cached timeline items arrive via on_message_event.
-    void on_timeline_reset(rust::Str room_id) const;
     void on_backup_progress(const BackupProgress& progress) const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning
-    mutable std::unique_ptr<tesseract::Event> last_event_;
 };
 
 } // namespace tesseract_ffi

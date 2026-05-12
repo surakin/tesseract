@@ -62,21 +62,26 @@ public:
     void set_messages(std::vector<MessageRowData> msgs);
     const std::vector<MessageRowData>& messages() const { return messages_; }
 
+    // Insert `msg` at visible index `index` (0 = front, == size() = append).
+    // The single entry point that mirrors `VectorDiff::Insert` /
+    // `PushBack` / `PushFront`. Preserves the user's visual scroll
+    // position when `index` lands above the viewport, and follows the
+    // live tail when `index == size()` and the user was already pinned
+    // to the bottom.
+    void insert_message(std::size_t index, MessageRowData msg);
+
+    // Replace the row at visible `index` with `msg`. Used for edits,
+    // redactions, reaction changes, and sender-profile resolution.
+    void update_message(std::size_t index, MessageRowData msg);
+
+    // Remove the row at visible `index`. Preserves the user's scroll
+    // position when the removed row was above the viewport.
+    void remove_message(std::size_t index);
+
     // Append a single message (typical live-update path) and scroll to
-    // the bottom if the user was already pinned there.
+    // the bottom if the user was already pinned there. Thin wrapper over
+    // `insert_message(size(), msg)`.
     void append_message(MessageRowData msg);
-
-    // Prepend a single older message (typical back-pagination path) and
-    // preserve the user's visual scroll position so the row they were
-    // looking at stays under their cursor. The host should marshal each
-    // `IEventHandler::on_message_prepended` call to the UI thread and
-    // forward it here.
-    void prepend_message(MessageRowData msg);
-
-    // Prepend a batch of older messages in oldest-first order. Equivalent
-    // to calling `prepend_message` for each but with a single re-measure
-    // and one scroll-anchor adjustment.
-    void prepend_messages(std::vector<MessageRowData> older);
 
     // Avatar bytes come from the host-side media cache. Returning null
     // falls back to an initials disc.

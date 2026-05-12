@@ -3,20 +3,50 @@
 
 namespace tesseract_ffi {
 
-void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
+void EventHandlerBridge::on_timeline_reset(
+    rust::Str room_id,
+    const rust::Vec<TimelineEvent>& snapshot) const
+{
     if (!handler_) return;
-    last_event_ = tesseract::make_event(ev);
-    auto* raw = last_event_.get();
-    handler_->on_message(raw);
-    last_event_.release();
+    std::vector<std::unique_ptr<tesseract::Event>> events;
+    events.reserve(snapshot.size());
+    for (const auto& ev : snapshot)
+        events.push_back(tesseract::make_event(ev));
+    handler_->on_timeline_reset(std::string(room_id), std::move(events));
 }
 
-void EventHandlerBridge::on_message_prepended(const TimelineEvent& ev) const {
+void EventHandlerBridge::on_message_inserted(
+    rust::Str room_id,
+    std::uint64_t index,
+    const TimelineEvent& ev) const
+{
     if (!handler_) return;
-    last_event_ = tesseract::make_event(ev);
-    auto* raw = last_event_.get();
-    handler_->on_message_prepended(raw);
-    last_event_.release();
+    handler_->on_message_inserted(
+        std::string(room_id),
+        static_cast<std::size_t>(index),
+        tesseract::make_event(ev));
+}
+
+void EventHandlerBridge::on_message_updated(
+    rust::Str room_id,
+    std::uint64_t index,
+    const TimelineEvent& ev) const
+{
+    if (!handler_) return;
+    handler_->on_message_updated(
+        std::string(room_id),
+        static_cast<std::size_t>(index),
+        tesseract::make_event(ev));
+}
+
+void EventHandlerBridge::on_message_removed(
+    rust::Str room_id,
+    std::uint64_t index) const
+{
+    if (!handler_) return;
+    handler_->on_message_removed(
+        std::string(room_id),
+        static_cast<std::size_t>(index));
 }
 
 void EventHandlerBridge::on_rooms_updated(
@@ -41,11 +71,6 @@ void EventHandlerBridge::on_error(
 void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const {
     if (!handler_) return;
     handler_->on_session_saved(std::string(session_json));
-}
-
-void EventHandlerBridge::on_timeline_reset(rust::Str room_id) const {
-    if (!handler_) return;
-    handler_->on_timeline_reset(std::string(room_id));
 }
 
 void EventHandlerBridge::on_backup_progress(const BackupProgress& progress) const {

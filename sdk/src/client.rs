@@ -666,9 +666,14 @@ impl ClientFfi {
 
         let room_id_str = room_id.to_string();
 
-        // Notify the UI to clear the message view for this room.
+        // Synchronously clear the UI for this room. The follow-up snapshot
+        // reset (with the initial cached items) arrives from the spawned
+        // task below. Both go through the UI's post-to-UI queue so they
+        // serialize in order and no live diffs can land between them —
+        // diffs only flow once the task starts pumping `stream`.
         if let Ok(guard) = handler.lock() {
-            guard.on_timeline_reset(&room_id_str);
+            let empty: Vec<TimelineEvent> = Vec::new();
+            guard.on_timeline_reset(&room_id_str, &empty);
         }
 
         // Spawn a task that streams timeline items to the UI.
@@ -681,19 +686,29 @@ impl ClientFfi {
         let abort = self.rt.spawn(async move {
             let (initial_items, mut stream) = tl.subscribe().await;
 
+            // Build the visibility mirror + initial snapshot in one pass.
+            // The mirror is `true` for every matrix-sdk-ui timeline slot
+            // whose `timeline_item_to_ffi` yields Some (i.e. is an event,
+            // not a virtual day-divider). It lets `handle_timeline_diff`
+            // translate raw matrix-sdk-ui indices to the visible indices
+            // that the C++ side mirrors.
+            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
+            let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in initial_items.iter() {
-                if let Some(ev) = timeline_item_to_ffi(
-                    item, &rid, &room, me.as_deref()).await
-                {
-                    if let Ok(guard) = h.lock() {
-                        guard.on_message_event(&ev);
-                    }
-                }
+                let ev = timeline_item_to_ffi(
+                    item, &rid, &room, me.as_deref()).await;
+                visible.push(ev.is_some());
+                if let Some(ev) = ev { snapshot.push(ev); }
             }
+            if let Ok(guard) = h.lock() {
+                guard.on_timeline_reset(&rid, &snapshot);
+            }
+            drop(snapshot);
 
             while let Some(diffs) = stream.next().await {
                 for diff in diffs {
-                    handle_timeline_diff(diff, &h, &rid, &room, me.as_deref()).await;
+                    handle_timeline_diff(
+                        diff, &mut visible, &h, &rid, &room, me.as_deref()).await;
                 }
             }
         }).abort_handle();
@@ -1585,54 +1600,175 @@ async fn timeline_item_to_ffi(
     })
 }
 
-#[cfg(not(test))]
-enum DiffKind {
-    Append,
-    Prepend,
-    Reset,
+// Count visible (event) items strictly before `raw_index` in the
+// visibility mirror — this is the visible index that maps to the C++
+// row vector for an op at matrix-sdk-ui slot `raw_index`.
+fn visible_index_of(visible: &[bool], raw_index: usize) -> u64 {
+    visible[..raw_index].iter().filter(|b| **b).count() as u64
+}
+
+fn visible_len(visible: &[bool]) -> u64 {
+    visible.iter().filter(|b| **b).count() as u64
 }
 
 #[cfg(not(test))]
 async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
+    visible: &mut Vec<bool>,
     handler: &Arc<Mutex<SendHandler>>,
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
 ) {
-    let (kind, items): (DiffKind, Vec<Arc<TimelineItem>>) = match diff {
-        VectorDiff::Append    { values }    => (DiffKind::Append,  values.into_iter().collect()),
-        VectorDiff::PushBack  { value }     => (DiffKind::Append,  vec![value]),
-        VectorDiff::PushFront { value }     => (DiffKind::Prepend, vec![value]),
-        // Insert at index 0 is a front-of-vector insertion (older event).
-        // Any other index is treated as an append: rare in practice, and the
-        // C++ side de-duplicates by event_id so an out-of-order arrival
-        // still resolves to the right row.
-        VectorDiff::Insert    { index: 0, value } => (DiffKind::Prepend, vec![value]),
-        VectorDiff::Insert    { value, .. } => (DiffKind::Append,  vec![value]),
-        // `Set` is an update to an existing item (edit, redaction, reaction
-        // change); the C++ side resolves it by event_id on either path, so
-        // route through the live `on_message_event` callback.
-        VectorDiff::Set       { value, .. } => (DiffKind::Append,  vec![value]),
-        // Reset rebuilds the full timeline; clear the UI first to avoid
-        // appending to the already-displayed items.
-        VectorDiff::Reset     { values }    => (DiffKind::Reset,   values.into_iter().collect()),
-        _ => return,
-    };
-
-    if matches!(kind, DiffKind::Reset) {
-        if let Ok(guard) = handler.lock() {
-            guard.on_timeline_reset(room_id);
-        }
-    }
-
-    for item in &items {
-        if let Some(ev) = timeline_item_to_ffi(item, room_id, room, me).await {
-            if let Ok(guard) = handler.lock() {
-                match kind {
-                    DiffKind::Prepend           => guard.on_message_prepended(&ev),
-                    DiffKind::Append | DiffKind::Reset => guard.on_message_event(&ev),
+    match diff {
+        VectorDiff::Append { values } => {
+            for item in values {
+                let ev = timeline_item_to_ffi(&item, room_id, room, me).await;
+                if let Some(ev) = ev {
+                    let idx = visible_len(visible);
+                    visible.push(true);
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_inserted(room_id, idx, &ev);
+                    }
+                } else {
+                    visible.push(false);
                 }
+            }
+        }
+        VectorDiff::PushBack { value } => {
+            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            if let Some(ev) = ev {
+                let idx = visible_len(visible);
+                visible.push(true);
+                if let Ok(g) = handler.lock() {
+                    g.on_message_inserted(room_id, idx, &ev);
+                }
+            } else {
+                visible.push(false);
+            }
+        }
+        VectorDiff::PushFront { value } => {
+            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            if let Some(ev) = ev {
+                visible.insert(0, true);
+                if let Ok(g) = handler.lock() {
+                    g.on_message_inserted(room_id, 0, &ev);
+                }
+            } else {
+                visible.insert(0, false);
+            }
+        }
+        VectorDiff::Insert { index, value } => {
+            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            if let Some(ev) = ev {
+                let v_idx = visible_index_of(visible, index);
+                visible.insert(index, true);
+                if let Ok(g) = handler.lock() {
+                    g.on_message_inserted(room_id, v_idx, &ev);
+                }
+            } else {
+                visible.insert(index, false);
+            }
+        }
+        VectorDiff::Set { index, value } => {
+            // `Set` can change the visibility of the slot in either
+            // direction: a virtual item can be replaced by an event item
+            // (decryption completes, day-divider repositions), or vice
+            // versa. Map the four transitions explicitly.
+            let new_ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            let was_visible = visible.get(index).copied().unwrap_or(false);
+            match (was_visible, new_ev) {
+                (true, Some(ev)) => {
+                    let v_idx = visible_index_of(visible, index);
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_updated(room_id, v_idx, &ev);
+                    }
+                }
+                (false, Some(ev)) => {
+                    let v_idx = visible_index_of(visible, index);
+                    if let Some(slot) = visible.get_mut(index) { *slot = true; }
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_inserted(room_id, v_idx, &ev);
+                    }
+                }
+                (true, None) => {
+                    let v_idx = visible_index_of(visible, index);
+                    if let Some(slot) = visible.get_mut(index) { *slot = false; }
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_removed(room_id, v_idx);
+                    }
+                }
+                (false, None) => {}
+            }
+        }
+        VectorDiff::Remove { index } => {
+            let was_visible = visible.get(index).copied().unwrap_or(false);
+            if was_visible {
+                let v_idx = visible_index_of(visible, index);
+                visible.remove(index);
+                if let Ok(g) = handler.lock() {
+                    g.on_message_removed(room_id, v_idx);
+                }
+            } else if index < visible.len() {
+                visible.remove(index);
+            }
+        }
+        VectorDiff::Truncate { length } => {
+            // Drop highest indices first so each visible-index we report
+            // is still valid when the C++ side applies it.
+            while visible.len() > length {
+                let raw = visible.len() - 1;
+                let was = visible[raw];
+                visible.pop();
+                if was {
+                    let v_idx = visible_len(visible);
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_removed(room_id, v_idx);
+                    }
+                }
+            }
+        }
+        VectorDiff::PopBack => {
+            if let Some(was) = visible.pop() {
+                if was {
+                    let v_idx = visible_len(visible);
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_removed(room_id, v_idx);
+                    }
+                }
+            }
+        }
+        VectorDiff::PopFront => {
+            if !visible.is_empty() {
+                let was = visible.remove(0);
+                if was {
+                    if let Ok(g) = handler.lock() {
+                        g.on_message_removed(room_id, 0);
+                    }
+                }
+            }
+        }
+        VectorDiff::Clear => {
+            visible.clear();
+            if let Ok(g) = handler.lock() {
+                let empty: Vec<TimelineEvent> = Vec::new();
+                g.on_timeline_reset(room_id, &empty);
+            }
+        }
+        VectorDiff::Reset { values } => {
+            // Atomic snapshot replace. Build the new visibility mirror +
+            // snapshot in one pass before the single `on_timeline_reset`
+            // call so the UI rebuilds in one shot.
+            visible.clear();
+            visible.reserve(values.len());
+            let mut snapshot: Vec<TimelineEvent> = Vec::new();
+            for item in &values {
+                let ev = timeline_item_to_ffi(item, room_id, room, me).await;
+                visible.push(ev.is_some());
+                if let Some(ev) = ev { snapshot.push(ev); }
+            }
+            if let Ok(g) = handler.lock() {
+                g.on_timeline_reset(room_id, &snapshot);
             }
         }
     }
@@ -1759,5 +1895,50 @@ mod tests {
             s.ends_with("tesseract/matrix-store"),
             "unexpected data_dir: {s}"
         );
+    }
+
+    // -- visibility-mirror translator (the heart of the index-aware FFI) --
+
+    #[test]
+    fn visible_index_of_skips_invisible_slots() {
+        // raw:     [E, V, E, V, E]
+        // visible: [0, _, 1, _, 2]
+        let mirror = [true, false, true, false, true];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+        assert_eq!(visible_index_of(&mirror, 1), 1);
+        assert_eq!(visible_index_of(&mirror, 2), 1);
+        assert_eq!(visible_index_of(&mirror, 3), 2);
+        assert_eq!(visible_index_of(&mirror, 4), 2);
+        assert_eq!(visible_index_of(&mirror, 5), 3);
+    }
+
+    #[test]
+    fn visible_index_of_empty() {
+        let mirror: [bool; 0] = [];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+    }
+
+    #[test]
+    fn visible_index_of_all_virtual() {
+        let mirror = [false, false, false];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+        assert_eq!(visible_index_of(&mirror, 1), 0);
+        assert_eq!(visible_index_of(&mirror, 3), 0);
+    }
+
+    #[test]
+    fn visible_index_of_all_events() {
+        let mirror = [true, true, true, true];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+        assert_eq!(visible_index_of(&mirror, 2), 2);
+        assert_eq!(visible_index_of(&mirror, 4), 4);
+    }
+
+    #[test]
+    fn visible_len_counts_events_only() {
+        assert_eq!(visible_len(&[]), 0);
+        assert_eq!(visible_len(&[false, false]), 0);
+        assert_eq!(visible_len(&[true, false, true, false, true]), 3);
+        assert_eq!(visible_len(&[true, true, true]), 3);
     }
 }

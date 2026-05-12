@@ -433,29 +433,48 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     scroll_to_bottom();
 }
 
-void MessageListView::append_message(MessageRowData msg) {
-    bool at_bottom =
-        scroll_y() + bounds().h + 1.0f >= content_height();
-    messages_.push_back(std::move(msg));
+void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
+    if (index > messages_.size()) index = messages_.size();
+
+    // Insertion at (or past) the end is an append: follow the live tail
+    // when the user is already pinned there.
+    if (index == messages_.size()) {
+        bool at_bottom =
+            scroll_y() + bounds().h + 1.0f >= content_height();
+        messages_.push_back(std::move(msg));
+        invalidate_data();
+        if (at_bottom) scroll_to_bottom();
+        return;
+    }
+
+    // Insertion above (or at) the viewport's first visible row: anchor
+    // the existing rows so the user's visual position stays put. For
+    // mid-viewport inserts the same preserve-top math is a benign no-op
+    // (the row the user is looking at stays under their cursor because
+    // its row offset shifts by the new row's height, which is what
+    // preserve_top_through compensates for).
+    preserve_top_through([&]{
+        messages_.insert(messages_.begin() + index, std::move(msg));
+        invalidate_data();
+    });
+}
+
+void MessageListView::update_message(std::size_t index, MessageRowData msg) {
+    if (index >= messages_.size()) return;
+    messages_[index] = std::move(msg);
     invalidate_data();
-    if (at_bottom) scroll_to_bottom();
 }
 
-void MessageListView::prepend_message(MessageRowData msg) {
+void MessageListView::remove_message(std::size_t index) {
+    if (index >= messages_.size()) return;
     preserve_top_through([&]{
-        messages_.insert(messages_.begin(), std::move(msg));
+        messages_.erase(messages_.begin() + index);
         invalidate_data();
     });
 }
 
-void MessageListView::prepend_messages(std::vector<MessageRowData> older) {
-    if (older.empty()) return;
-    preserve_top_through([&]{
-        messages_.insert(messages_.begin(),
-                          std::make_move_iterator(older.begin()),
-                          std::make_move_iterator(older.end()));
-        invalidate_data();
-    });
+void MessageListView::append_message(MessageRowData msg) {
+    insert_message(messages_.size(), std::move(msg));
 }
 
 void MessageListView::set_avatar_provider(ImageProvider p) {

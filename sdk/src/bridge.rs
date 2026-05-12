@@ -131,23 +131,46 @@ pub mod ffi {
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
+    //
+    // The four timeline callbacks below mirror matrix-sdk-ui's
+    // `VectorDiff<TimelineItem>` semantics so that the C++ message vector is
+    // a faithful, index-aligned mirror of the visible (non-virtual) prefix
+    // of the SDK's timeline. Every operation carries the *visible* index
+    // (virtual items such as day-dividers are filtered out on the Rust
+    // side; the Rust dispatcher maintains a `Vec<bool>` visibility mirror
+    // to translate raw indices into visible ones).
     unsafe extern "C++" {
         include!("tesseract/event_handler_bridge.h");
 
         type EventHandlerBridge;
 
-        fn on_message_event(self: &EventHandlerBridge, event: &TimelineEvent);
-        /// Like `on_message_event` but for older events delivered via
-        /// back-pagination (or any `VectorDiff::PushFront` / front
-        /// `VectorDiff::Insert`). UIs should prepend these to the top of
-        /// the message view instead of appending.
-        fn on_message_prepended(self: &EventHandlerBridge, event: &TimelineEvent);
+        /// Atomically reset a room's timeline to `snapshot` (oldest-first).
+        /// The callee clears its model for `room_id` and rebuilds it from
+        /// the snapshot in a single update.
+        fn on_timeline_reset(self: &EventHandlerBridge,
+                              room_id: &str,
+                              snapshot: &Vec<TimelineEvent>);
+        /// Insert `event` at visible-index `index` in `room_id`'s
+        /// timeline. `index == current_length` means "append at the end".
+        fn on_message_inserted(self: &EventHandlerBridge,
+                                room_id: &str,
+                                index: u64,
+                                event: &TimelineEvent);
+        /// Replace the event currently at visible-index `index` with
+        /// `event` (edit, redaction, reaction change, sender-profile
+        /// resolution).
+        fn on_message_updated(self: &EventHandlerBridge,
+                               room_id: &str,
+                               index: u64,
+                               event: &TimelineEvent);
+        /// Remove the event at visible-index `index`.
+        fn on_message_removed(self: &EventHandlerBridge,
+                               room_id: &str,
+                               index: u64);
+
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
-        /// Fired when a room's timeline is reset (room selected / subscribed).
-        /// The UI should clear its message view for this room_id.
-        fn on_timeline_reset(self: &EventHandlerBridge, room_id: &str);
         /// Fired when the key-backup state changes or when imported-key
         /// counters advance during a recover() call.
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
@@ -183,16 +206,21 @@ pub mod ffi {
 
         // ----- Timeline subscription (Step 2) -----
 
-        /// Subscribe to a room's timeline. Emits on_timeline_reset then
-        /// on_message_event for each cached item, and on_message_event for
-        /// every subsequent live update. Call paginate_back to load history.
+        /// Subscribe to a room's timeline. Fires an immediate empty
+        /// `on_timeline_reset` so the UI clears prior content, then a
+        /// follow-up `on_timeline_reset` carrying the initial cached
+        /// snapshot once it has been converted. Subsequent live changes
+        /// arrive as positional `on_message_inserted` /
+        /// `on_message_updated` / `on_message_removed` callbacks. Call
+        /// `paginate_back` to load older history.
         fn subscribe_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
         /// Unsubscribe from a room's timeline and cancel its background task.
         fn unsubscribe_room(self: &mut ClientFfi, room_id: &str);
 
         /// Paginate backwards in a subscribed room's timeline. Older items
-        /// arrive via on_message_prepended callbacks.
+        /// arrive as `on_message_inserted` callbacks at the front of the
+        /// timeline (index 0, or wherever the cache grafts them in).
         fn paginate_back(self: &mut ClientFfi, room_id: &str, count: u16) -> OpResult;
 
         /// Like `paginate_back` but also reports whether the timeline has

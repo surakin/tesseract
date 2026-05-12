@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -7,31 +8,49 @@
 namespace tesseract {
 
 /// Interface the UI layer implements to receive async events from the sync loop.
-/// All callbacks are delivered on a background thread – implementations must
+/// All callbacks are delivered on a background thread — implementations must
 /// marshal work to the UI thread if needed.
+///
+/// The four timeline callbacks mirror matrix-sdk-ui's `VectorDiff` semantics
+/// so that the UI's message vector is a faithful, index-aligned mirror of
+/// the visible (non-virtual) prefix of the SDK's timeline. The `index`
+/// arguments are *visible* indices — virtual items such as day-dividers are
+/// filtered out on the Rust side and the index always refers to the
+/// position in the UI's row vector.
 class IEventHandler {
 public:
     virtual ~IEventHandler() = default;
 
-    virtual void on_message(Event* ev) = 0;
+    /// Atomically reset a room's timeline to `snapshot` (oldest-first).
+    /// Implementations should clear their model for `room_id` and rebuild
+    /// it from the snapshot in a single update. Fires:
+    ///   - Once with an empty snapshot when a room is first subscribed
+    ///     (synchronous clear so the UI doesn't flash the previous room).
+    ///   - Once with the cached snapshot once it has been converted.
+    ///   - On any `VectorDiff::Reset` / `Clear` from matrix-sdk-ui.
+    virtual void on_timeline_reset(const std::string& room_id,
+                                    std::vector<std::unique_ptr<Event>> snapshot) = 0;
 
-    /// Fired for an older event delivered via `paginate_back` (or any
-    /// matrix-sdk `VectorDiff::PushFront` / front `Insert`). The UI should
-    /// prepend `ev` to the top of the message view instead of appending.
-    /// Default-forwards to `on_message` so existing handlers that have not
-    /// migrated still receive the event (just at the wrong end of the list).
-    /// Implementations take ownership of `ev` and must delete it.
-    virtual void on_message_prepended(Event* ev) { on_message(ev); }
+    /// Insert `event` at visible-index `index` in `room_id`'s timeline.
+    /// `index == current_length` means "append at the end".
+    virtual void on_message_inserted(const std::string& room_id,
+                                      std::size_t index,
+                                      std::unique_ptr<Event> event) = 0;
+
+    /// Replace the event currently at visible-index `index` with `event`
+    /// (edit, redaction, reaction change, sender-profile resolution).
+    virtual void on_message_updated(const std::string& room_id,
+                                     std::size_t index,
+                                     std::unique_ptr<Event> event) = 0;
+
+    /// Remove the event at visible-index `index`.
+    virtual void on_message_removed(const std::string& room_id,
+                                     std::size_t index) = 0;
 
     virtual void on_rooms_updated(const std::vector<RoomInfo>& rooms) = 0;
     virtual void on_sync_error(const std::string& context,
                                 const std::string& description,
                                 bool soft_logout) = 0;
-
-    /// Fired when a room's timeline subscription is reset (room selected).
-    /// The UI should clear its message view for this room and await fresh
-    /// on_message callbacks for the initial cached items.
-    virtual void on_timeline_reset(const std::string& /*room_id*/) {}
 
     /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the next
     /// launch can call restore_session().

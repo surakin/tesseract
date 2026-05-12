@@ -537,8 +537,8 @@ TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",
     CHECK(fires == 2);
 }
 
-TEST_CASE("MessageListView::prepend_message inserts at front and preserves scroll",
-          "[tk][view][messagelist][prepend]") {
+TEST_CASE("MessageListView::insert_message(0) inserts at front and preserves scroll",
+          "[tk][view][messagelist][insert]") {
     Stage st;
     MessageListView view;
 
@@ -560,7 +560,7 @@ TEST_CASE("MessageListView::prepend_message inserts at front and preserves scrol
     older.event_id    = "$older";
     older.sender_name = "Older";
     older.body        = "from history";
-    view.prepend_message(std::move(older));
+    view.insert_message(0, std::move(older));
     st.run(view, { 0, 0, 320, 400 });
 
     REQUIRE(view.messages().size() == 6);
@@ -569,8 +569,8 @@ TEST_CASE("MessageListView::prepend_message inserts at front and preserves scrol
     CHECK(view.messages()[5].event_id == "$seed4");
 }
 
-TEST_CASE("MessageListView::prepend_messages preserves visual top when scrolled",
-          "[tk][view][messagelist][prepend]") {
+TEST_CASE("MessageListView::insert_message at head preserves visual top when scrolled",
+          "[tk][view][messagelist][insert]") {
     Stage st;
     MessageListView view;
 
@@ -607,7 +607,11 @@ TEST_CASE("MessageListView::prepend_messages preserves visual top when scrolled"
         m.body        = "old " + std::to_string(i);
         older.push_back(std::move(m));
     }
-    view.prepend_messages(std::move(older));
+    // Each matrix-sdk-ui `PushFront` is a separate diff that lands at
+    // index 0, shifting earlier prepends down. Reverse-iterate so the
+    // final order matches the natural pagination outcome (oldest-first).
+    for (auto it = older.rbegin(); it != older.rend(); ++it)
+        view.insert_message(0, std::move(*it));
     st.run(view, { 0, 0, 320, 200 });
 
     REQUIRE(view.messages().size() == 34);
@@ -620,6 +624,113 @@ TEST_CASE("MessageListView::prepend_messages preserves visual top when scrolled"
     float delta = view.content_height() - pre_height;
     CHECK(delta > 0.0f);
     CHECK(view.scroll_y() == pre_scroll + delta);
+}
+
+TEST_CASE("MessageListView::insert_message(mid) lands at the requested index",
+          "[tk][view][messagelist][insert]") {
+    Stage st;
+    MessageListView view;
+
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 5; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$s" + std::to_string(i);
+        m.sender_name = "S";
+        m.body        = "row " + std::to_string(i);
+        seed.push_back(std::move(m));
+    }
+    view.set_messages(std::move(seed));
+    st.run(view, { 0, 0, 320, 400 });
+    REQUIRE(view.messages().size() == 5);
+
+    // Insert a row between $s2 and $s3 — proves we honor the position
+    // instead of falling back to append-with-dedup.
+    MessageRowData mid{}; mid.kind = MessageRowData::Kind::Text;
+    mid.event_id    = "$mid";
+    mid.sender_name = "Mid";
+    mid.body        = "between 2 and 3";
+    view.insert_message(3, std::move(mid));
+    st.run(view, { 0, 0, 320, 400 });
+
+    REQUIRE(view.messages().size() == 6);
+    CHECK(view.messages()[2].event_id == "$s2");
+    CHECK(view.messages()[3].event_id == "$mid");
+    CHECK(view.messages()[4].event_id == "$s3");
+    CHECK(view.messages()[5].event_id == "$s4");
+}
+
+TEST_CASE("MessageListView::update_message replaces the row in place",
+          "[tk][view][messagelist][update]") {
+    Stage st;
+    MessageListView view;
+
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 3; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$s" + std::to_string(i);
+        m.sender_name = "S";
+        m.body        = "row " + std::to_string(i);
+        seed.push_back(std::move(m));
+    }
+    view.set_messages(std::move(seed));
+    st.run(view, { 0, 0, 320, 400 });
+
+    MessageRowData edited{}; edited.kind = MessageRowData::Kind::Text;
+    edited.event_id    = "$s1-edited";   // different event_id is fine —
+                                          // the index is what binds the row
+    edited.sender_name = "S";
+    edited.body        = "row 1 (edited)";
+    view.update_message(1, std::move(edited));
+    st.run(view, { 0, 0, 320, 400 });
+
+    REQUIRE(view.messages().size() == 3);
+    CHECK(view.messages()[0].event_id == "$s0");
+    CHECK(view.messages()[1].event_id == "$s1-edited");
+    CHECK(view.messages()[1].body     == "row 1 (edited)");
+    CHECK(view.messages()[2].event_id == "$s2");
+}
+
+TEST_CASE("MessageListView::remove_message drops the row at the index",
+          "[tk][view][messagelist][remove]") {
+    Stage st;
+    MessageListView view;
+
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 4; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$s" + std::to_string(i);
+        m.sender_name = "S";
+        m.body        = "row " + std::to_string(i);
+        seed.push_back(std::move(m));
+    }
+    view.set_messages(std::move(seed));
+    st.run(view, { 0, 0, 320, 400 });
+
+    view.remove_message(1);
+    st.run(view, { 0, 0, 320, 400 });
+
+    REQUIRE(view.messages().size() == 3);
+    CHECK(view.messages()[0].event_id == "$s0");
+    CHECK(view.messages()[1].event_id == "$s2");
+    CHECK(view.messages()[2].event_id == "$s3");
+}
+
+TEST_CASE("MessageListView::remove_message out-of-range is a no-op",
+          "[tk][view][messagelist][remove]") {
+    Stage st;
+    MessageListView view;
+
+    MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+    m.event_id    = "$only";
+    m.sender_name = "S";
+    m.body        = "row";
+    view.set_messages({ std::move(m) });
+    st.run(view, { 0, 0, 320, 400 });
+
+    view.remove_message(5);   // out of range
+    st.run(view, { 0, 0, 320, 400 });
+    REQUIRE(view.messages().size() == 1);
+    CHECK(view.messages()[0].event_id == "$only");
 }
 
 TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "

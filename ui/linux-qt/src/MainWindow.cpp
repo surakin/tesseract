@@ -44,12 +44,40 @@ namespace qt6 {
 // EventBridge
 // ---------------------------------------------------------------------------
 
-void EventBridge::on_message(tesseract::Event* ev) {
-    emit eventReceived(ev);
+void EventBridge::on_timeline_reset(
+    const std::string& room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
+    // Release ownership of each Event into a raw-pointer vector so it
+    // can ride a Qt queued connection (`unique_ptr` is not Q_DECLARE_METATYPE-
+    // friendly). The slot is responsible for `delete`-ing every entry.
+    std::vector<tesseract::Event*> raw;
+    raw.reserve(snapshot.size());
+    for (auto& p : snapshot) raw.push_back(p.release());
+    emit timelineReset(QString::fromStdString(room_id), std::move(raw));
 }
 
-void EventBridge::on_message_prepended(tesseract::Event* ev) {
-    emit eventPrepended(ev);
+void EventBridge::on_message_inserted(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> event)
+{
+    emit messageInserted(QString::fromStdString(room_id), index, event.release());
+}
+
+void EventBridge::on_message_updated(
+    const std::string& room_id,
+    std::size_t index,
+    std::unique_ptr<tesseract::Event> event)
+{
+    emit messageUpdated(QString::fromStdString(room_id), index, event.release());
+}
+
+void EventBridge::on_message_removed(
+    const std::string& room_id,
+    std::size_t index)
+{
+    emit messageRemoved(QString::fromStdString(room_id), index);
 }
 
 void EventBridge::on_rooms_updated(
@@ -66,10 +94,6 @@ void EventBridge::on_sync_error(
     emit syncError(QString::fromStdString(context),
                    QString::fromStdString(description),
                    soft_logout);
-}
-
-void EventBridge::on_timeline_reset(const std::string& room_id) {
-    emit timelineReset(QString::fromStdString(room_id));
 }
 
 void EventBridge::on_session_saved(const std::string& session_json) {
@@ -122,6 +146,8 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     qRegisterMetaType<tesseract::Event*>();
+    qRegisterMetaType<std::vector<tesseract::Event*>>();
+    qRegisterMetaType<std::size_t>("std::size_t");
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
 
@@ -469,16 +495,18 @@ MainWindow::MainWindow(QWidget* parent)
     // callback wired in the surface-construction block above.
 
     bridge_ = std::make_unique<EventBridge>(this);
-    connect(bridge_.get(), &EventBridge::eventReceived,
-            this,          &MainWindow::onEventReceived);
-    connect(bridge_.get(), &EventBridge::eventPrepended,
-            this,          &MainWindow::onEventPrepended);
+    connect(bridge_.get(), &EventBridge::timelineReset,
+            this,          &MainWindow::onTimelineReset);
+    connect(bridge_.get(), &EventBridge::messageInserted,
+            this,          &MainWindow::onMessageInserted);
+    connect(bridge_.get(), &EventBridge::messageUpdated,
+            this,          &MainWindow::onMessageUpdated);
+    connect(bridge_.get(), &EventBridge::messageRemoved,
+            this,          &MainWindow::onMessageRemoved);
     connect(bridge_.get(), &EventBridge::roomsUpdated,
             this,          &MainWindow::onRoomsUpdated);
     connect(bridge_.get(), &EventBridge::syncError,
             this,          &MainWindow::onSyncError);
-    connect(bridge_.get(), &EventBridge::timelineReset,
-            this,          &MainWindow::onTimelineReset);
     connect(bridge_.get(), &EventBridge::backupProgress,
             this,          &MainWindow::onBackupProgress);
 
@@ -600,16 +628,54 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     client_.start_background_backfill();
 }
 
-void MainWindow::onEventReceived(tesseract::Event* ev) {
-    if (ev && ev->room_id == currentRoomId_)
-        appendMessage(*ev);
+void MainWindow::onTimelineReset(
+    QString roomId, std::vector<tesseract::Event*> snapshot)
+{
+    const bool current = roomId.toStdString() == currentRoomId_;
+    if (current) {
+        std::vector<tesseract::views::MessageRowData> rows;
+        rows.reserve(snapshot.size());
+        for (auto* ev : snapshot) {
+            if (!ev) continue;
+            ensureRowMedia(*ev);
+            rows.push_back(toRowData(*ev));
+        }
+        messageListView_->set_messages(std::move(rows));
+        msgSurface_->relayout();
+    }
+    for (auto* ev : snapshot) delete ev;
+}
+
+void MainWindow::onMessageInserted(
+    QString roomId, std::size_t index, tesseract::Event* ev)
+{
+    if (ev && roomId.toStdString() == currentRoomId_
+        && ev->type != tesseract::EventType::Unhandled)
+    {
+        ensureRowMedia(*ev);
+        messageListView_->insert_message(index, toRowData(*ev));
+        msgSurface_->relayout();
+    }
     delete ev;
 }
 
-void MainWindow::onEventPrepended(tesseract::Event* ev) {
-    if (ev && ev->room_id == currentRoomId_)
-        prependMessage(*ev);
+void MainWindow::onMessageUpdated(
+    QString roomId, std::size_t index, tesseract::Event* ev)
+{
+    if (ev && roomId.toStdString() == currentRoomId_
+        && ev->type != tesseract::EventType::Unhandled)
+    {
+        ensureRowMedia(*ev);
+        messageListView_->update_message(index, toRowData(*ev));
+        msgSurface_->relayout();
+    }
     delete ev;
+}
+
+void MainWindow::onMessageRemoved(QString roomId, std::size_t index) {
+    if (roomId.toStdString() != currentRoomId_) return;
+    messageListView_->remove_message(index);
+    msgSurface_->relayout();
 }
 
 void MainWindow::requestMoreHistory(const std::string& room_id) {
@@ -684,11 +750,6 @@ void MainWindow::onSyncError(
     } else {
         statusBar()->showMessage("Sync error: " + description, 8000);
     }
-}
-
-void MainWindow::onTimelineReset(QString roomId) {
-    if (roomId.toStdString() == currentRoomId_)
-        clearMessages();
 }
 
 // ---------------------------------------------------------------------------
@@ -892,10 +953,8 @@ tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& e
     return row;
 }
 
-void MainWindow::appendMessage(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-
-    // Fetch + decode any media the row will reference. The shared
+void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
+    // Fetch + decode any media the row references. The shared
     // MessageListView reads from tk_avatars_ / tk_images_ via provider
     // lambdas wired in the constructor.
     ensureUserAvatar(ev.sender_avatar_url);
@@ -910,64 +969,6 @@ void MainWindow::appendMessage(const tesseract::Event& ev) {
         if (!r.source_json.empty())
             ensureMediaImage(r.source_json, 20, 20);
     }
-
-    auto row = toRowData(ev);
-
-    // Replace any existing row for the same event_id (live re-emit after
-    // reaction change, edit, or sender-profile resolution).
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        messageListView_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        messageListView_->invalidate_data();
-        msgSurface_->relayout();
-        return;
-    }
-
-    messageListView_->append_message(std::move(row));
-    msgSurface_->relayout();
-}
-
-void MainWindow::prependMessage(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
-
-    ensureUserAvatar(ev.sender_avatar_url);
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensureMediaImage(img.image_url, kMaxImageWidth, kMaxImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensureMediaImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            ensureMediaImage(r.source_json, 20, 20);
-    }
-
-    auto row = toRowData(ev);
-
-    // Deduplicate by event_id. Older history can overlap with rows the
-    // initial subscribe already delivered — when that happens we update
-    // the existing row in place rather than inserting a duplicate.
-    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
-        messageListView_->messages());
-    auto it = std::find_if(msgs.begin(), msgs.end(),
-        [&](const tesseract::views::MessageRowData& m) {
-            return m.event_id == row.event_id;
-        });
-    if (it != msgs.end()) {
-        *it = std::move(row);
-        messageListView_->invalidate_data();
-        msgSurface_->relayout();
-        return;
-    }
-
-    messageListView_->prepend_message(std::move(row));
-    msgSurface_->relayout();
 }
 
 

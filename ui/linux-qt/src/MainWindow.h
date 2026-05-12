@@ -40,23 +40,37 @@ class EventBridge final : public QObject, public tesseract::IEventHandler {
 public:
     explicit EventBridge(QObject* parent = nullptr) : QObject(parent) {}
 
-    // IEventHandler – called on the sync thread
-    void on_message(tesseract::Event* ev) override;
-    void on_message_prepended(tesseract::Event* ev) override;
+    // IEventHandler – called on the sync thread.
+    // We marshal each callback to the UI thread via a queued connection
+    // by emitting a signal whose payload is a raw `Event*` (ownership
+    // transferred to the slot) — Qt's meta-object system can't carry
+    // `std::unique_ptr<Event>` through signals without bespoke metatype
+    // wiring, so we release the pointer into the queue and `delete` it
+    // in the slot.
+    void on_timeline_reset(const std::string& room_id,
+                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void on_message_inserted(const std::string& room_id,
+                              std::size_t index,
+                              std::unique_ptr<tesseract::Event> event) override;
+    void on_message_updated(const std::string& room_id,
+                             std::size_t index,
+                             std::unique_ptr<tesseract::Event> event) override;
+    void on_message_removed(const std::string& room_id,
+                             std::size_t index) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;
-    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
 signals:
-    void eventReceived(tesseract::Event* ev);
-    void eventPrepended(tesseract::Event* ev);
+    void timelineReset(QString roomId, std::vector<tesseract::Event*> snapshot);
+    void messageInserted(QString roomId, std::size_t index, tesseract::Event* event);
+    void messageUpdated(QString roomId, std::size_t index, tesseract::Event* event);
+    void messageRemoved(QString roomId, std::size_t index);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString context, QString description, bool soft_logout);
-    void timelineReset(QString roomId);
     void backupProgress(tesseract::BackupProgress progress);
 };
 
@@ -74,11 +88,12 @@ protected:
 private slots:
     void onLoginSucceeded();
     void onSendClicked();
-    void onEventReceived(tesseract::Event* ev);
-    void onEventPrepended(tesseract::Event* ev);
+    void onTimelineReset(QString roomId, std::vector<tesseract::Event*> snapshot);
+    void onMessageInserted(QString roomId, std::size_t index, tesseract::Event* event);
+    void onMessageUpdated(QString roomId, std::size_t index, tesseract::Event* event);
+    void onMessageRemoved(QString roomId, std::size_t index);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString context, QString description, bool soft_logout);
-    void onTimelineReset(QString roomId);
     void onSpaceBack();
     void onBackupProgress(tesseract::BackupProgress progress);
     void onRecoveryVerifyClicked();
@@ -98,8 +113,10 @@ private:
     void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void     refreshRoomList();
     void     onRoomSelected(const std::string& room_id);
-    void     appendMessage(const tesseract::Event& ev);
-    void     prependMessage(const tesseract::Event& ev);
+    // Resolve any media bytes the row references and decode them into
+    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
+    // positional-callback path (insert / update / reset).
+    void     ensureRowMedia(const tesseract::Event& ev);
     void     clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history

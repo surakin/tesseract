@@ -28,13 +28,20 @@ class EventHandler final : public tesseract::IEventHandler {
 public:
     explicit EventHandler(GtkWindow* window) : window_(window) {}
 
-    void on_message(tesseract::Event* ev) override;
-    void on_message_prepended(tesseract::Event* ev) override;
+    void on_timeline_reset(const std::string& room_id,
+                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void on_message_inserted(const std::string& room_id,
+                              std::size_t index,
+                              std::unique_ptr<tesseract::Event> event) override;
+    void on_message_updated(const std::string& room_id,
+                             std::size_t index,
+                             std::unique_ptr<tesseract::Event> event) override;
+    void on_message_removed(const std::string& room_id,
+                             std::size_t index) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;
-    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
@@ -50,14 +57,20 @@ public:
 
     GtkWidget* widget() const { return window_; }
 
-    void push_event(std::unique_ptr<tesseract::Event> ev);
-    void push_prepended_event(std::unique_ptr<tesseract::Event> ev);
+    void push_timeline_reset(std::string room_id,
+                              std::vector<std::unique_ptr<tesseract::Event>> snapshot);
+    void push_message_inserted(std::string room_id,
+                                std::size_t index,
+                                std::unique_ptr<tesseract::Event> ev);
+    void push_message_updated(std::string room_id,
+                               std::size_t index,
+                               std::unique_ptr<tesseract::Event> ev);
+    void push_message_removed(std::string room_id, std::size_t index);
     void push_paginate_result(std::string room_id, bool reached_start);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
     void handle_reconnect();
     void handle_auth_error(bool soft_logout);
-    void push_timeline_reset(std::string room_id);
     void push_backup_progress(tesseract::BackupProgress progress);
 
 private:
@@ -84,8 +97,10 @@ private:
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
     void on_room_selected(const std::string& room_id);
-    void append_event(const tesseract::Event& ev);
-    void prepend_event(const tesseract::Event& ev);
+    // Resolve any media bytes the row references and decode them into
+    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
+    // positional-callback path (insert / update / reset).
+    void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     /// Kick off back-pagination for `room_id` on a worker thread. Hooked
     /// to `MessageListView::on_near_top`; guarded by `pagination_` state.

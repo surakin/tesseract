@@ -86,9 +86,10 @@ pub mod ffi {
 
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
-        pub fn on_timeline_reset(&self, _room_id: &str) {}
-        pub fn on_message_event(&self, _event: &TimelineEvent) {}
-        pub fn on_message_prepended(&self, _event: &TimelineEvent) {}
+        pub fn on_timeline_reset(&self, _room_id: &str, _snapshot: &Vec<TimelineEvent>) {}
+        pub fn on_message_inserted(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
+        pub fn on_message_updated(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
+        pub fn on_message_removed(&self, _room_id: &str, _index: u64) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}

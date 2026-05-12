@@ -30,16 +30,17 @@
 #include <vector>
 
 // Custom window messages
-constexpr UINT WM_TESSERACT_MESSAGE        = WM_APP + 1;
-constexpr UINT WM_TESSERACT_ROOMS          = WM_APP + 2;
-constexpr UINT WM_TESSERACT_SYNC_ERROR     = WM_APP + 3;
-constexpr UINT WM_TESSERACT_TIMELINE_RESET = WM_APP + 4;
-constexpr UINT WM_TESSERACT_RECONNECT      = WM_APP + 5;
-constexpr UINT WM_TESSERACT_AUTH_ERROR     = WM_APP + 6;
-constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
-constexpr UINT WM_TESSERACT_RECOVER_DONE    = WM_APP + 8;
-constexpr UINT WM_TESSERACT_MESSAGE_PREPEND = WM_APP + 9;
-constexpr UINT WM_TESSERACT_PAGINATE_DONE   = WM_APP + 10;
+constexpr UINT WM_TESSERACT_MESSAGE_INSERTED = WM_APP + 1;
+constexpr UINT WM_TESSERACT_ROOMS            = WM_APP + 2;
+constexpr UINT WM_TESSERACT_SYNC_ERROR       = WM_APP + 3;
+constexpr UINT WM_TESSERACT_TIMELINE_RESET   = WM_APP + 4;
+constexpr UINT WM_TESSERACT_RECONNECT        = WM_APP + 5;
+constexpr UINT WM_TESSERACT_AUTH_ERROR       = WM_APP + 6;
+constexpr UINT WM_TESSERACT_BACKUP_PROGRESS  = WM_APP + 7;
+constexpr UINT WM_TESSERACT_RECOVER_DONE     = WM_APP + 8;
+constexpr UINT WM_TESSERACT_MESSAGE_UPDATED  = WM_APP + 9;
+constexpr UINT WM_TESSERACT_PAGINATE_DONE    = WM_APP + 10;
+constexpr UINT WM_TESSERACT_MESSAGE_REMOVED  = WM_APP + 11;
 
 namespace win32 {
 
@@ -50,13 +51,20 @@ class EventHandler final : public tesseract::IEventHandler {
 public:
     explicit EventHandler(HWND hwnd) : hwnd_(hwnd) {}
 
-    void on_message(tesseract::Event* ev) override;
-    void on_message_prepended(tesseract::Event* ev) override;
+    void on_timeline_reset(const std::string& room_id,
+                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void on_message_inserted(const std::string& room_id,
+                              std::size_t index,
+                              std::unique_ptr<tesseract::Event> event) override;
+    void on_message_updated(const std::string& room_id,
+                             std::size_t index,
+                             std::unique_ptr<tesseract::Event> event) override;
+    void on_message_removed(const std::string& room_id,
+                             std::size_t index) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;
-    void on_timeline_reset(const std::string& room_id) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
 
@@ -89,11 +97,25 @@ private:
     void show_main_content();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
-    void on_tesseract_message(tesseract::Event* ev);
-    void on_tesseract_message_prepend(tesseract::Event* ev);
+    // Posted-message payloads — see WM_TESSERACT_* constants above. The
+    // posting code transfers ownership of each heap-allocated payload to
+    // the receiving handler.
+    struct PostedTimelineReset {
+        std::string                                     room_id;
+        std::vector<std::unique_ptr<tesseract::Event>>  snapshot;
+    };
+    struct PostedMessageEvent {
+        std::string                       room_id;
+        std::size_t                       index;
+        std::unique_ptr<tesseract::Event> event;   // null for "removed"
+    };
+
+    void on_tesseract_timeline_reset(PostedTimelineReset* payload);
+    void on_tesseract_message_inserted(PostedMessageEvent* payload);
+    void on_tesseract_message_updated(PostedMessageEvent* payload);
+    void on_tesseract_message_removed(PostedMessageEvent* payload);
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
-    void on_tesseract_timeline_reset(std::string* room_id);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.
     void request_more_history(const std::string& room_id);
@@ -114,8 +136,10 @@ private:
     void on_recover_done(bool ok, std::wstring msg);
     void populate_user_strip();
     void do_logout();
-    void append_message(const tesseract::Event& ev);
-    void prepend_message(const tesseract::Event& ev);
+    // Resolve any media bytes the row references and decode them into
+    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
+    // positional-callback path (insert / update / reset).
+    void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
 
