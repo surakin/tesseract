@@ -8,6 +8,7 @@
 // message carrying a heap-allocated std::function.
 
 #include "canvas.h"
+#include "canvas_d2d.h"
 #include "host.h"
 #include "theme.h"
 #include "widget.h"
@@ -20,8 +21,11 @@
 #endif
 #include <windows.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
+#include <vector>
 
 namespace tk::win32 {
 
@@ -73,5 +77,12 @@ public:
 private:
     std::unique_ptr<Host> host_;
 };
+
+// Wrapper around tk::d2d::decode_animation that uses the per-process
+// backend singleton owned by host_win32.cpp. Hosts call this to detect
+// + decode animated GIF / APNG / animated WebP without needing to plumb
+// a backend reference into application code.
+std::vector<tk::d2d::AnimatedFrame> decode_animation(
+    std::span<const std::uint8_t> bytes);
 
 } // namespace tk::win32

@@ -20,6 +20,9 @@
 #include <windows.h>
 
 #include <memory>
+#include <span>
+#include <vector>
+#include <cstdint>
 
 struct ID2D1Factory1;
 struct ID2D1RenderTarget;
@@ -91,5 +94,22 @@ struct Factories {
     IWICImagingFactory* wic;
 };
 Factories factories(Backend&);
+
+// One frame of a decoded multi-frame image. `delay_ms` is the trailing
+// delay (how long to show this frame before advancing to the next),
+// clamped to >= 20 ms so old GIFs encoded with 0 ms don't burn CPU.
+struct AnimatedFrame {
+    std::unique_ptr<Image> image;
+    int                    delay_ms;
+};
+
+// Decode a multi-frame image (GIF natively, APNG on Win10 1809+,
+// animated WebP if the Microsoft Store WebP Image Extension is
+// installed) into a list of frames + per-frame delays. Returns an
+// empty vector when the bytes contain a single-frame image, the codec
+// is not present, or decoding fails. Frames are fully decoded into
+// in-memory IWICBitmaps so the result survives the input span.
+std::vector<AnimatedFrame> decode_animation(
+    Backend&, std::span<const std::uint8_t> bytes);
 
 } // namespace tk::d2d

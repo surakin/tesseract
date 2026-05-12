@@ -66,6 +66,19 @@ Gdiplus::Bitmap* bitmap_from_bytes(const std::vector<uint8_t>& data) {
 namespace win32 {
 
 // ---------------------------------------------------------------------------
+// Posted-payload types — shared between worker threads and the UI wnd_proc.
+// Lives near the top of the TU so wnd_proc's WM_* cases can reinterpret_cast
+// from LPARAM without forward declarations.
+// ---------------------------------------------------------------------------
+
+namespace {
+struct StickerBytesPayload {
+    std::string                 cache_key;
+    std::vector<std::uint8_t>   bytes;
+};
+} // namespace
+
+// ---------------------------------------------------------------------------
 // Room header WndProc
 // ---------------------------------------------------------------------------
 
@@ -425,6 +438,10 @@ void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress)
                 reinterpret_cast<LPARAM>(p));
 }
 
+void EventHandler::on_image_packs_updated() {
+    PostMessage(hwnd_, WM_TESSERACT_IMAGE_PACKS, 0, 0);
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -659,6 +676,38 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_IMAGE_PACKS:
+        self->refresh_sticker_picker();
+        return 0;
+    case WM_TESSERACT_STICKER_BYTES: {
+        auto* p = reinterpret_cast<StickerBytesPayload*>(lParam);
+        self->sticker_fetches_in_flight_.erase(p->cache_key);
+        if (!p->bytes.empty()) {
+            // Animated takes priority over static. try_load_animation is
+            // a no-op when the buffer is single-frame; in that case fall
+            // through to the static-decode path.
+            self->try_load_animation(p->cache_key, p->bytes);
+            if (!self->tk_anim_images_.count(p->cache_key) &&
+                self->msg_surface_)
+            {
+                if (auto img = self->msg_surface_->factory().decode_image(p->bytes))
+                    self->tk_images_.emplace(p->cache_key, std::move(img));
+            }
+            if (self->sticker_picker_shared_)
+                self->sticker_picker_shared_->invalidate_image_cache();
+            if (self->sticker_picker_surface_ &&
+                self->sticker_picker_surface_->hwnd())
+            {
+                InvalidateRect(self->sticker_picker_surface_->hwnd(),
+                                nullptr, FALSE);
+            }
+        }
+        delete p;
+        return 0;
+    }
+    case WM_TIMER:
+        if (wParam == kAnimTimerId) { self->on_anim_tick(); return 0; }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -816,6 +865,11 @@ void MainWindow::on_create(HWND hwnd) {
             });
         message_list_view_->set_image_provider(
             [this](const std::string& mxc) -> const tk::Image* {
+                // Animated entries take priority — `on_anim_tick` keeps
+                // `current` valid; static cache is the second hop.
+                auto ait = tk_anim_images_.find(mxc);
+                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                    return ait->second.frames[ait->second.current].get();
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
@@ -888,7 +942,8 @@ void MainWindow::on_create(HWND hwnd) {
             RECT rc; GetClientRect(hwnd_, &rc);
             on_size(rc.right, rc.bottom);
         };
-        compose_shared_->on_emoji = [this] { toggle_emoji_picker(); };
+        compose_shared_->on_emoji   = [this] { toggle_emoji_picker(); };
+        compose_shared_->on_sticker = [this] { toggle_sticker_picker(); };
         compose_surface_->set_root(std::move(bar));
 
         compose_text_area_ = compose_surface_->host().make_text_area();
@@ -1015,6 +1070,10 @@ void MainWindow::on_create(HWND hwnd) {
 }
 
 void MainWindow::on_destroy() {
+    if (anim_timer_running_ && hwnd_) {
+        KillTimer(hwnd_, kAnimTimerId);
+        anim_timer_running_ = false;
+    }
     client_.stop_sync();
 }
 
@@ -1064,8 +1123,15 @@ void MainWindow::on_size(int w, int h) {
         msg_area_h -= BANNER_H;
     }
 
+    // Sidebar fills the full content height (status bar excluded): the
+    // user strip sits flush against the bottom, with the room list above.
+    // `msg_h` already subtracts the compose-bar envelope on the right —
+    // but the compose bar lives at x=CHAT_X, so the left sidebar must
+    // continue all the way down to content_h to avoid an empty band
+    // beneath the user strip.
     bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
-    int room_list_h = user_strip_visible ? msg_h - kUserStripH : msg_h;
+    int sidebar_h  = content_h;
+    int room_list_h = user_strip_visible ? sidebar_h - kUserStripH : sidebar_h;
 
     if (room_surface_ && room_surface_->hwnd()) {
         SetWindowPos(room_surface_->hwnd(), nullptr,
@@ -1077,7 +1143,7 @@ void MainWindow::on_size(int w, int h) {
                      0, room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
     }
     if (hSideSep_) {
-        SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, msg_h, SWP_NOZORDER);
+        SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, sidebar_h, SWP_NOZORDER);
     }
     SetWindowPos(hRoomHeader_, nullptr, CHAT_X, 0, w - CHAT_X, kRoomHeaderH, SWP_NOZORDER);
     if (msg_surface_ && msg_surface_->hwnd()) {
@@ -1432,11 +1498,107 @@ void MainWindow::ensure_user_avatar_tk(const std::string& mxc) {
 
 void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
-    if (url.empty() || tk_images_.count(url) || !msg_surface_) return;
+    if (url.empty() || tk_images_.count(url) ||
+        tk_anim_images_.count(url) || !msg_surface_) return;
     auto bytes = client_.fetch_media_bytes(url);
     if (bytes.empty()) return;
+
+    // Probe via WIC for multi-frame content (GIF / APNG / animated
+    // WebP). Animated entries route into `tk_anim_images_` and start the
+    // frame-tick timer; everything else falls through to the static
+    // path.
+    try_load_animation(url, bytes);
+    if (tk_anim_images_.count(url)) return;
+
     if (auto img = msg_surface_->factory().decode_image(bytes))
         tk_images_.emplace(url, std::move(img));
+}
+
+// ---------------------------------------------------------------------------
+// Animated media — multi-frame WIC decode + 60 Hz WM_TIMER tick
+// ---------------------------------------------------------------------------
+
+void MainWindow::try_load_animation(const std::string& url,
+                                      std::span<const std::uint8_t> bytes)
+{
+    if (url.empty() || bytes.empty()) return;
+    if (tk_anim_images_.count(url))   return;
+    auto frames = tk::win32::decode_animation(bytes);
+    if (frames.size() < 2) return;
+
+    AnimatedImage entry;
+    entry.frames.reserve(frames.size());
+    entry.delays_ms.reserve(frames.size());
+    for (auto& af : frames) {
+        entry.frames.push_back(std::move(af.image));
+        entry.delays_ms.push_back(af.delay_ms);
+    }
+    entry.current = 0;
+    entry.next_advance_ms =
+        static_cast<std::int64_t>(GetTickCount64()) + entry.delays_ms[0];
+
+    tk_anim_images_.emplace(url, std::move(entry));
+    // Drop any static-cache leftover from a prior probe to keep providers
+    // from racing with two caches for the same URL.
+    tk_images_.erase(url);
+
+    if (!anim_timer_running_ && hwnd_) {
+        SetTimer(hwnd_, kAnimTimerId, kAnimTimerHz, nullptr);
+        anim_timer_running_ = true;
+    }
+}
+
+void MainWindow::on_anim_tick() {
+    if (tk_anim_images_.empty()) {
+        if (anim_timer_running_ && hwnd_) {
+            KillTimer(hwnd_, kAnimTimerId);
+            anim_timer_running_ = false;
+        }
+        return;
+    }
+    const std::int64_t now = static_cast<std::int64_t>(GetTickCount64());
+    bool any_changed = false;
+    for (auto& [_, entry] : tk_anim_images_) {
+        if (entry.frames.size() <= 1) continue;
+        // Walk forward through every elapsed delay so we don't drift on
+        // slow ticks (e.g. dragging the window). Cap at one full loop so
+        // long pauses don't spin in catch-up.
+        std::size_t steps = 0;
+        while (now >= entry.next_advance_ms &&
+                steps < entry.frames.size())
+        {
+            entry.current = (entry.current + 1) % entry.frames.size();
+            entry.next_advance_ms += entry.delays_ms[entry.current];
+            ++steps;
+        }
+        if (steps > 0) any_changed = true;
+    }
+    if (!any_changed) return;
+    if (msg_surface_ && msg_surface_->hwnd())
+        InvalidateRect(msg_surface_->hwnd(), nullptr, FALSE);
+    if (sticker_picker_surface_ && sticker_picker_surface_->hwnd() &&
+        hStickerPicker_ && IsWindowVisible(hStickerPicker_))
+    {
+        if (sticker_picker_shared_) sticker_picker_shared_->invalidate_image_cache();
+        InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
+    }
+}
+
+void MainWindow::request_sticker_image(const std::string& cache_key) {
+    if (cache_key.empty()) return;
+    if (tk_images_.count(cache_key) || tk_anim_images_.count(cache_key)) return;
+    if (!sticker_fetches_in_flight_.insert(cache_key).second) return;
+
+    HWND target = hwnd_;
+    std::thread([this, target, cache_key]() {
+        auto bytes = client_.fetch_source_bytes(cache_key);
+        auto* p    = new StickerBytesPayload{ cache_key, std::move(bytes) };
+        if (!PostMessageW(target, WM_TESSERACT_STICKER_BYTES, 0,
+                          reinterpret_cast<LPARAM>(p)))
+        {
+            delete p;   // window already gone; drop the payload.
+        }
+    }).detach();
 }
 
 // ---------------------------------------------------------------------------
@@ -1884,6 +2046,150 @@ void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
     compose_text_area_->set_focused(true);
     // The shared picker already called recent_emoji_bump before invoking
     // this callback — no need to re-bump here.
+}
+
+// ---------------------------------------------------------------------------
+// Sticker picker — WS_POPUP HWND hosting a tk::win32::Surface that paints
+// the shared tesseract::views::StickerPicker. Mirrors the emoji picker.
+// Selection routes through Client::send_sticker. The image_provider reuses
+// the per-window tk_images_ cache populated by ensure_media_image; cells
+// for entries the cache hasn't seen yet render a placeholder shimmer.
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr const wchar_t* kStickerPickerClass = L"TesseractStickerPicker";
+} // namespace
+
+void MainWindow::ensure_sticker_picker_created() {
+    if (hStickerPicker_) return;
+
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = DefWindowProcW;
+        wc.hInstance     = hInst_;
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;   // tk::win32::Surface paints the body
+        wc.lpszClassName = kStickerPickerClass;
+        RegisterClassExW(&wc);
+        registered = true;
+    }
+
+    hStickerPicker_ = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        kStickerPickerClass, L"",
+        WS_POPUP | WS_BORDER,
+        0, 0, kStickerPickW, kStickerPickH,
+        hwnd_, nullptr, hInst_, nullptr);
+    if (!hStickerPicker_) return;
+
+    sticker_picker_surface_ =
+        std::make_unique<tk::win32::Surface>(hInst_, hStickerPicker_,
+                                              tk::Theme::light());
+
+    auto shared = std::make_unique<tesseract::views::StickerPicker>();
+    sticker_picker_shared_ = shared.get();
+    sticker_picker_shared_->set_client(&client_);
+    sticker_picker_shared_->on_selected =
+        [this](const tesseract::ImagePackImage& img) {
+            if (!current_room_id_.empty()) {
+                const std::string body =
+                    img.body.empty() ? img.shortcode : img.body;
+                client_.send_sticker(current_room_id_, body,
+                                      img.url, img.info_json);
+            }
+            if (hStickerPicker_) ShowWindow(hStickerPicker_, SW_HIDE);
+        };
+    // Image provider: synchronous best-effort lookup against the
+    // animated + static caches populated by message-list rendering. On
+    // miss, kick off an async fetch via `request_sticker_image` so the
+    // picker fills in stickers that haven't appeared in any message
+    // yet. Decoded bytes land back via WM_TESSERACT_STICKER_BYTES.
+    sticker_picker_shared_->set_image_provider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            auto ait = tk_anim_images_.find(cache_key);
+            if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                return ait->second.frames[ait->second.current].get();
+            auto sit = tk_images_.find(cache_key);
+            if (sit != tk_images_.end()) return sit->second.get();
+            const_cast<MainWindow*>(this)->request_sticker_image(cache_key);
+            return nullptr;
+        });
+    sticker_picker_surface_->set_root(std::move(shared));
+
+    if (HWND s = sticker_picker_surface_->hwnd()) {
+        SetWindowPos(s, nullptr, 0, 0, kStickerPickW, kStickerPickH,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    sticker_picker_search_field_ =
+        sticker_picker_surface_->host().make_text_field();
+    sticker_picker_search_field_->set_placeholder("Search stickers");
+    sticker_picker_search_field_->set_on_changed(
+        [this](const std::string& q) {
+            if (sticker_picker_shared_) sticker_picker_shared_->set_search_query(q);
+            if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+        });
+    sticker_picker_surface_->set_on_layout([this] {
+        if (sticker_picker_search_field_ && sticker_picker_shared_) {
+            sticker_picker_search_field_->set_rect(
+                sticker_picker_shared_->search_field_rect());
+        }
+    });
+}
+
+void MainWindow::toggle_sticker_picker() {
+    ensure_sticker_picker_created();
+    if (!hStickerPicker_) return;
+
+    if (IsWindowVisible(hStickerPicker_)) {
+        ShowWindow(hStickerPicker_, SW_HIDE);
+        return;
+    }
+
+    // Anchor above the compose bar, clamped to the work area.
+    RECT btn_rc{};
+    if (compose_surface_ && compose_surface_->hwnd())
+        GetWindowRect(compose_surface_->hwnd(), &btn_rc);
+    else
+        GetWindowRect(hwnd_, &btn_rc);
+    int x = btn_rc.right - kStickerPickW - 8;
+    int y = btn_rc.top   - kStickerPickH - 4;
+
+    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(mon, &mi)) {
+        if (x < mi.rcWork.left)
+            x = mi.rcWork.left + 4;
+        if (x + kStickerPickW > mi.rcWork.right)
+            x = mi.rcWork.right - kStickerPickW - 4;
+        if (y < mi.rcWork.top)
+            y = btn_rc.bottom + 4;
+        if (y + kStickerPickH > mi.rcWork.bottom)
+            y = mi.rcWork.bottom - kStickerPickH - 4;
+    }
+
+    SetWindowPos(hStickerPicker_, HWND_TOPMOST,
+                  x, y, kStickerPickW, kStickerPickH,
+                  SWP_NOACTIVATE);
+
+    if (sticker_picker_shared_)       sticker_picker_shared_->refresh_packs();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_text("");
+    if (sticker_picker_shared_)       sticker_picker_shared_->set_search_query("");
+
+    ShowWindow(hStickerPicker_, SW_SHOWNOACTIVATE);
+    if (sticker_picker_surface_)      sticker_picker_surface_->relayout();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_focused(true);
+}
+
+void MainWindow::refresh_sticker_picker() {
+    if (sticker_picker_shared_) {
+        sticker_picker_shared_->refresh_packs();
+        sticker_picker_shared_->invalidate_image_cache();
+    }
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
 }
 
 } // namespace win32

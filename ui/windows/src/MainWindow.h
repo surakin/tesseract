@@ -24,10 +24,14 @@
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/StickerPicker.h"
 
+#include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Custom window messages
@@ -42,6 +46,8 @@ constexpr UINT WM_TESSERACT_RECOVER_DONE     = WM_APP + 8;
 constexpr UINT WM_TESSERACT_MESSAGE_UPDATED  = WM_APP + 9;
 constexpr UINT WM_TESSERACT_PAGINATE_DONE    = WM_APP + 10;
 constexpr UINT WM_TESSERACT_MESSAGE_REMOVED  = WM_APP + 11;
+constexpr UINT WM_TESSERACT_IMAGE_PACKS      = WM_APP + 12;
+constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
 
 namespace win32 {
 
@@ -68,6 +74,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_image_packs_updated() override;
 
 private:
     HWND hwnd_;
@@ -79,6 +86,8 @@ class MainWindow {
     // Owner-drawn sidebar widgets need access to MainWindow state for paint.
     friend LRESULT CALLBACK room_header_wnd_proc(HWND, UINT, WPARAM, LPARAM);
     friend LRESULT CALLBACK user_strip_wnd_proc (HWND, UINT, WPARAM, LPARAM);
+    // EventHandler posts payloads typed as MainWindow's private structs.
+    friend class EventHandler;
 
 public:
     static bool register_class(HINSTANCE hInst);
@@ -159,6 +168,15 @@ private:
     void   popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect);
     void   insert_emoji_at_cursor(const std::string& glyph);
 
+    // ── Sticker picker ───────────────────────────────────────────────────
+    // Parallel to the emoji picker. A floating WS_POPUP HWND parents a
+    // tk::win32::Surface that paints the shared
+    // tesseract::views::StickerPicker; selection routes through
+    // Client::send_sticker.
+    void   ensure_sticker_picker_created();
+    void   toggle_sticker_picker();
+    void   refresh_sticker_picker();
+
     // When non-empty, the next emoji selection routes through
     // `Client::send_reaction` for this event_id rather than into compose.
     std::string                      pending_reaction_event_id_;
@@ -171,6 +189,9 @@ private:
     static constexpr int kEmojiCols  = 8;
     static constexpr int kEmojiPickW = kEmojiCellW * kEmojiCols + 16;  // ~304
     static constexpr int kEmojiPickH = 320;
+
+    static constexpr int kStickerPickW = 360;
+    static constexpr int kStickerPickH = 420;
 
     Gdiplus::Bitmap* get_room_avatar(const std::string& room_id);
     Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
@@ -208,6 +229,10 @@ private:
     std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
+    HWND      hStickerPicker_ = nullptr;     // floating WS_POPUP host
+    std::unique_ptr<tk::win32::Surface>     sticker_picker_surface_;
+    tesseract::views::StickerPicker*         sticker_picker_shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
     HWND      hStatus_     = nullptr;
 
     // Recovery banner — shared widget on a tk::win32::Surface. Key
@@ -248,6 +273,43 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
+    // Animated inline-media entries (GIF / APNG / animated WebP). Frames
+    // are eager-decoded by tk::d2d::decode_animation; `next_advance_ms`
+    // is a monotonic wall-clock deadline driven by a 60 Hz WM_TIMER on
+    // the main window. The image providers for the message list AND the
+    // sticker picker both consult this map before falling back to the
+    // single-frame `tk_images_` cache.
+    struct AnimatedImage {
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int>                         delays_ms;
+        std::size_t                              current        = 0;
+        std::int64_t                             next_advance_ms = 0;
+    };
+    std::unordered_map<std::string, AnimatedImage> tk_anim_images_;
+
+    /// Promote `url`'s entry in `tk_images_` to an animated cache if the
+    /// bytes turn out to be multi-frame; otherwise leave the static entry
+    /// in place. Idempotent + safe to call after either cache already has
+    /// the URL. Starts the frame-tick timer when the first animated
+    /// entry lands.
+    void try_load_animation(const std::string& url,
+                              std::span<const std::uint8_t> bytes);
+    /// WM_TIMER handler — advances every entry whose `next_advance_ms`
+    /// has passed and triggers a single repaint of the message surface +
+    /// sticker picker when at least one frame changed.
+    void on_anim_tick();
+    /// Async fetch path used by the sticker picker for stickers that
+    /// haven't been seen in any message yet. Deduplicates against
+    /// `sticker_fetches_in_flight_`; on landing, posts
+    /// WM_TESSERACT_STICKER_BYTES to the UI thread which decodes
+    /// (animated or static), caches, and invalidates the picker.
+    void request_sticker_image(const std::string& cache_key);
+
+    static constexpr UINT_PTR kAnimTimerId   = 0xA01u;
+    static constexpr UINT     kAnimTimerHz   = 16;     // ~60 fps
+    bool anim_timer_running_ = false;
+    std::unordered_set<std::string> sticker_fetches_in_flight_;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;

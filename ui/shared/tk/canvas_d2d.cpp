@@ -187,16 +187,17 @@ Backend::~Backend() {
 
 class D2DImage : public Image {
 public:
-    D2DImage(ComPtr<IWICFormatConverter> source, int w, int h)
+    D2DImage(ComPtr<IWICBitmap> source, int w, int h)
         : source_(std::move(source)), width_(w), height_(h) {}
 
     int width()  const override { return width_; }
     int height() const override { return height_; }
 
     // ID2D1Bitmap is bound to a particular ID2D1RenderTarget. We keep the
-    // WIC-decoded frame as the source of truth and lazily construct the
-    // D2D bitmap for the render target that draws us. The cache is
-    // invalidated when the render target is recreated (lost device).
+    // decoded pixels as the source of truth (in an in-memory IWICBitmap)
+    // and lazily construct the D2D bitmap for the render target that
+    // draws us. The cache is invalidated when the render target is
+    // recreated (lost device).
     ID2D1Bitmap* bitmap_for(ID2D1RenderTarget* rt) {
         if (bitmap_ && rt_cached_ == rt) return bitmap_.Get();
         bitmap_.Reset();
@@ -214,7 +215,12 @@ public:
     }
 
 private:
-    ComPtr<IWICFormatConverter> source_;
+    // IWICBitmap owns its pixel buffer, so the image survives the input
+    // byte span used at decode time. IWICStream::InitializeFromMemory
+    // does NOT copy its input — keeping a format-converter / frame-decode
+    // chain as the source would leave WIC dereferencing freed memory at
+    // paint time, which is what crashed the Win32 build previously.
+    ComPtr<IWICBitmap>          source_;
     int                         width_;
     int                         height_;
     ComPtr<ID2D1Bitmap>         bitmap_;
@@ -562,9 +568,19 @@ public:
                 WICBitmapPaletteTypeMedianCut)))
             return nullptr;
 
+        // Force an eager decode into an in-memory IWICBitmap. The
+        // decoder/converter chain otherwise reads pixels lazily from the
+        // IWICStream, which was initialised from caller-owned memory that
+        // does not outlive this call.
+        ComPtr<IWICBitmap> cached;
+        if (FAILED(backend_.wic->CreateBitmapFromSource(
+                converter.Get(), WICBitmapCacheOnLoad,
+                cached.GetAddressOf())))
+            return nullptr;
+
         UINT w = 0, h = 0;
-        converter->GetSize(&w, &h);
-        return std::make_unique<D2DImage>(std::move(converter),
+        cached->GetSize(&w, &h);
+        return std::make_unique<D2DImage>(std::move(cached),
                                           static_cast<int>(w),
                                           static_cast<int>(h));
     }
@@ -630,6 +646,141 @@ std::unique_ptr<Canvas> make_canvas(Backend& b, ID2D1RenderTarget* rt) {
 Factories factories(Backend& b) {
     Backend::Impl& impl = b.impl();
     return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get() };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  decode_animation — multi-frame WIC decode (GIF/APNG/animated WebP)
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Pull a per-frame delay (in ms) from the WIC metadata query reader.
+// Falls back to 100 ms when no codec-specific delay is found. The 20 ms
+// floor matches what browsers use to keep tight-loop GIFs from burning
+// CPU on encoders that wrote 0 ms.
+int read_frame_delay_ms(IWICBitmapFrameDecode* frame) {
+    int delay_ms = 100;
+
+    ComPtr<IWICMetadataQueryReader> reader;
+    if (FAILED(frame->GetMetadataQueryReader(reader.GetAddressOf())) || !reader)
+        return delay_ms;
+
+    auto read_uint = [&](const wchar_t* path, UINT& out) -> bool {
+        PROPVARIANT var;
+        PropVariantInit(&var);
+        bool ok = false;
+        if (SUCCEEDED(reader->GetMetadataByName(path, &var))) {
+            switch (var.vt) {
+                case VT_UI2: out = var.uiVal;    ok = true; break;
+                case VT_UI4: out = var.uintVal;  ok = true; break;
+                case VT_I2:  out = static_cast<UINT>(var.iVal);   ok = true; break;
+                case VT_I4:  out = static_cast<UINT>(var.intVal); ok = true; break;
+                default: break;
+            }
+        }
+        PropVariantClear(&var);
+        return ok;
+    };
+
+    // GIF: graphics-control extension's Delay is in 1/100 s.
+    UINT gif_delay = 0;
+    if (read_uint(L"/grctlext/Delay", gif_delay) && gif_delay > 0) {
+        delay_ms = static_cast<int>(gif_delay) * 10;
+    } else {
+        // APNG: fcTL chunk carries DelayNumerator / DelayDenominator. WIC
+        // exposes them on Windows 10 1809+. Denominator 0 means 1/100 s
+        // per the PNG spec.
+        UINT num = 0, denom = 100;
+        if (read_uint(L"/fcTL/delay_num", num)) {
+            (void)read_uint(L"/fcTL/delay_den", denom);
+            if (denom == 0) denom = 100;
+            if (num > 0) delay_ms = static_cast<int>(num * 1000u / denom);
+        }
+        // WebP: ANMF chunk's Duration is in ms directly. The path varies
+        // across codec versions; both are tried best-effort.
+        UINT webp_ms = 0;
+        if (delay_ms == 100 &&
+            (read_uint(L"/ANMF/FrameDuration", webp_ms) ||
+             read_uint(L"/ANMF/Duration",      webp_ms)) &&
+            webp_ms > 0)
+        {
+            delay_ms = static_cast<int>(webp_ms);
+        }
+    }
+
+    if (delay_ms <= 0) delay_ms = 100;
+    if (delay_ms < 20) delay_ms = 20;   // browsers' floor
+    return delay_ms;
+}
+
+} // namespace
+
+std::vector<AnimatedFrame> decode_animation(
+    Backend& b, std::span<const std::uint8_t> bytes)
+{
+    std::vector<AnimatedFrame> result;
+    if (bytes.empty()) return result;
+
+    Backend::Impl& impl = b.impl();
+
+    ComPtr<IWICStream> stream;
+    if (FAILED(impl.wic->CreateStream(stream.GetAddressOf())))
+        return result;
+    if (FAILED(stream->InitializeFromMemory(
+            const_cast<BYTE*>(bytes.data()),
+            static_cast<DWORD>(bytes.size()))))
+        return result;
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(impl.wic->CreateDecoderFromStream(
+            stream.Get(), nullptr,
+            WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf())))
+        return result;
+
+    UINT frame_count = 0;
+    if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
+        return result;   // single-frame; caller falls back to decode_image
+
+    result.reserve(frame_count);
+    for (UINT i = 0; i < frame_count; ++i) {
+        ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+            continue;
+
+        ComPtr<IWICFormatConverter> converter;
+        if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+            continue;
+        if (FAILED(converter->Initialize(
+                frame.Get(),
+                GUID_WICPixelFormat32bppPBGRA,
+                WICBitmapDitherTypeNone, nullptr, 0.0f,
+                WICBitmapPaletteTypeMedianCut)))
+            continue;
+
+        // Eager decode into an in-memory bitmap so each frame survives
+        // the caller-owned byte span (same lifetime fix as decode_image).
+        ComPtr<IWICBitmap> cached;
+        if (FAILED(impl.wic->CreateBitmapFromSource(
+                converter.Get(), WICBitmapCacheOnLoad,
+                cached.GetAddressOf())))
+            continue;
+
+        UINT w = 0, h = 0;
+        cached->GetSize(&w, &h);
+
+        AnimatedFrame af;
+        af.image = std::make_unique<D2DImage>(std::move(cached),
+                                                static_cast<int>(w),
+                                                static_cast<int>(h));
+        af.delay_ms = read_frame_delay_ms(frame.Get());
+        result.push_back(std::move(af));
+    }
+
+    // If every frame decode failed, treat as single-frame so the caller
+    // falls back to the static path.
+    if (result.size() < 2) result.clear();
+    return result;
 }
 
 } // namespace tk::d2d

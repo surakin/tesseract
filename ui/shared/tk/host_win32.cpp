@@ -1168,4 +1168,10 @@ void Surface::set_on_file_drop(FileDropHandler cb) {
     host_->set_on_file_drop(std::move(cb));
 }
 
+std::vector<tk::d2d::AnimatedFrame> decode_animation(
+    std::span<const std::uint8_t> bytes)
+{
+    return tk::d2d::decode_animation(backend_singleton(), bytes);
+}
+
 } // namespace tk::win32
