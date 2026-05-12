@@ -7,6 +7,17 @@ int WINAPI wWinMain(
     LPWSTR    /*lpCmdLine*/,
     int       nCmdShow)
 {
+    // Opt into per-monitor v2 DPI awareness so DWM hands us crisp pixels on
+    // mixed-DPI setups. Dynamic-loaded: the call only exists on Win10 1703+,
+    // and falls back silently to the manifested awareness (or none).
+    using SetCtxFn = BOOL (WINAPI*)(DPI_AWARENESS_CONTEXT);
+    if (HMODULE u32 = GetModuleHandleW(L"user32.dll")) {
+        if (auto setCtx = reinterpret_cast<SetCtxFn>(
+                GetProcAddress(u32, "SetProcessDpiAwarenessContext"))) {
+            setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+    }
+
     // Enable common controls (status bar, etc.)
     INITCOMMONCONTROLSEX icce{ sizeof(icce), ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES };
     InitCommonControlsEx(&icce);

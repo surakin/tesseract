@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "Theme.h"
 #include "resource.h"
 
 #include <thread>
@@ -7,6 +8,8 @@
 #include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
 
+#include <dwmapi.h>
+#include <uxtheme.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -69,6 +72,8 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;  // Painted in WM_PAINT.
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
@@ -76,17 +81,19 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
 
+        const auto& pal = theme::palette();
+
         RECT rc;
         GetClientRect(hwnd, &rc);
         int x0 = rc.left, y0 = rc.top;
         int w = rc.right - rc.left, h = rc.bottom - rc.top;
 
         // Background
-        Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFFFFFFF));
+        Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
         g.FillRectangle(&bg, x0, y0, w, h);
 
         // Bottom border
-        Gdiplus::Pen border(Gdiplus::Color(0xFFD0D3D8), 1.0f);
+        Gdiplus::Pen border(theme::gpc(pal.separator), 1.0f);
         g.DrawLine(&border, (float)x0, (float)(rc.bottom - 1), (float)rc.right, (float)(rc.bottom - 1));
 
         const auto& info = self->current_room_info_;
@@ -106,8 +113,8 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 
         // Name
         Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font nameFont(&ff, 15.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF111111));
+        Gdiplus::Font nameFont(&ff, 13.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_primary));
         Gdiplus::StringFormat sf;
         sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
         sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
@@ -117,13 +124,13 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 
         auto wname = utf8_to_wstr(info.name);
         g.DrawString(wname.c_str(), -1, &nameFont,
-                     Gdiplus::RectF((float)tx, (float)(y0 + 14), (float)text_w, 22.0f),
+                     Gdiplus::RectF((float)tx, (float)(y0 + 12), (float)text_w, 22.0f),
                      &sf, &nameBrush);
 
         // Topic
         if (!info.topic.empty()) {
-            Gdiplus::Font topicFont(&ff, 12.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-            Gdiplus::SolidBrush topicBrush(Gdiplus::Color(0xFF65676B));
+            Gdiplus::Font topicFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+            Gdiplus::SolidBrush topicBrush(theme::gpc(pal.text_secondary));
             auto wtopic = utf8_to_wstr(info.topic);
             g.DrawString(wtopic.c_str(), -1, &topicFont,
                          Gdiplus::RectF((float)tx, (float)(y0 + 34), (float)text_w, 18.0f),
@@ -147,6 +154,8 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
@@ -154,17 +163,19 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
 
+        const auto& pal = theme::palette();
+
         RECT rc;
         GetClientRect(hwnd, &rc);
         int x0 = rc.left, y0 = rc.top;
         int w = rc.right - rc.left, h = rc.bottom - rc.top;
 
         // Background
-        Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFE8EAEE));
+        Gdiplus::SolidBrush bg(theme::gpc(pal.sidebar_bg));
         g.FillRectangle(&bg, x0, y0, w, h);
 
         // Top border
-        Gdiplus::Pen border(Gdiplus::Color(0xFFD0D3D8), 1.0f);
+        Gdiplus::Pen border(theme::gpc(pal.separator), 1.0f);
         g.DrawLine(&border, (float)x0, (float)y0, (float)rc.right, (float)y0);
 
         const std::string& shown = self->my_display_name_.empty()
@@ -184,8 +195,8 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             self->draw_initials_circle(g, shown, ax, ay, AVATAR);
 
         Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font nameFont(&ff, 11.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF111111));
+        Gdiplus::Font nameFont(&ff, 10.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
+        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_primary));
         Gdiplus::StringFormat sf;
         sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
         sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
@@ -227,6 +238,113 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Status-bar WndProc — flat custom-painted strip replacing the comctl32
+// STATUSCLASSNAMEW (which carries a 9x-style size grip and chunky borders).
+// Stores the latest text via WM_SETTEXT / SB_SETTEXTW so existing callers
+// using either message continue to work.
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr UINT_PTR kStatusTextProp = 0xDEADBEEFu;
+}
+
+LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_NCCREATE:
+        SetPropW(hwnd, L"TesseractStatusText", nullptr);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    case WM_NCDESTROY: {
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        delete p;
+        RemovePropW(hwnd, L"TesseractStatusText");
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    case WM_SETTEXT:
+    case SB_SETTEXTW:
+    case SB_SETTEXTA: {
+        // Accept both SetWindowText and the comctl SB_SETTEXT messages so
+        // existing callers ported from STATUSCLASSNAMEW continue to work.
+        const wchar_t* txt = reinterpret_cast<const wchar_t*>(lParam);
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        if (!p) { p = new std::wstring; SetPropW(hwnd, L"TesseractStatusText", p); }
+        p->assign(txt ? txt : L"");
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return TRUE;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        const auto& pal = theme::palette();
+        RECT rc; GetClientRect(hwnd, &rc);
+
+        // Solid background + 1px top separator.
+        HBRUSH bg = theme::brush(pal.chrome_bg);
+        FillRect(hdc, &rc, bg);
+        RECT top = { rc.left, rc.top, rc.right, rc.top + 1 };
+        FillRect(hdc, &top, theme::brush(pal.separator));
+
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        if (p && !p->empty()) {
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, pal.text_secondary);
+            HFONT old = (HFONT)SelectObject(hdc, theme::font(theme::FontRole::Small));
+            RECT text_rc = { rc.left + 10, rc.top, rc.right - 10, rc.bottom };
+            DrawTextW(hdc, p->c_str(), -1, &text_rc,
+                      DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+            SelectObject(hdc, old);
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void register_status_bar_class(HINSTANCE hInst) {
+    static bool registered = false;
+    if (registered) return;
+    WNDCLASSEXW wc{};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = status_bar_wnd_proc;
+    wc.hInstance     = hInst;
+    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    wc.lpszClassName = L"TesseractStatusBar";
+    RegisterClassExW(&wc);
+    registered = true;
+}
+
+void MainWindow::apply_default_font(HWND h) {
+    if (h) SendMessageW(h, WM_SETFONT,
+                       reinterpret_cast<WPARAM>(theme::font(theme::FontRole::Ui)),
+                       TRUE);
+}
+
+void MainWindow::on_system_theme_changed() {
+    if (!theme::refresh_from_system()) return;
+    theme::apply_window_attributes(hwnd_);
+    // Re-apply DarkMode_Explorer scrollbar theming on listboxes / edits.
+    theme::apply_control_theme(hRoomList_);
+    theme::apply_control_theme(hMsgList_);
+    theme::apply_control_theme(hInput_);
+    theme::apply_control_theme(hRecoveryKeyEdit_);
+    theme::apply_control_theme(hEmojiSearch_);
+    theme::apply_control_theme(hEmojiGrid_);
+    InvalidateRect(hwnd_, nullptr, TRUE);
+    if (hRoomList_)   InvalidateRect(hRoomList_,   nullptr, TRUE);
+    if (hMsgList_)    InvalidateRect(hMsgList_,    nullptr, TRUE);
+    if (hRoomHeader_) InvalidateRect(hRoomHeader_, nullptr, TRUE);
+    if (hUserStrip_)  InvalidateRect(hUserStrip_,  nullptr, TRUE);
+    if (hStatus_)     InvalidateRect(hStatus_,     nullptr, TRUE);
+}
+
+void MainWindow::paint_main_background(HDC hdc, const RECT& rc) {
+    const auto& pal = theme::palette();
+    FillRect(hdc, &rc, theme::brush(pal.window_bg));
 }
 
 // ---------------------------------------------------------------------------
@@ -417,11 +535,65 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         else if (dis->CtlID == IDC_EMOJI_PICKER_TABS)
             self->draw_emoji_tab_item(dis);
         else if (dis->CtlID == IDC_SIDE_SEPARATOR) {
-            HBRUSH br = CreateSolidBrush(RGB(0xD0, 0xD3, 0xD8));
-            FillRect(dis->hDC, &dis->rcItem, br);
-            DeleteObject(br);
+            FillRect(dis->hDC, &dis->rcItem,
+                     theme::brush(theme::palette().separator));
+        }
+        else if (dis->CtlType == ODT_BUTTON) {
+            theme::draw_button(dis);
         }
         return TRUE;
+    }
+
+    case WM_ERASEBKGND: {
+        // The parent paints behind any pixel a child doesn't cover. Use the
+        // themed window background — also keeps Mica fade-in clean during
+        // resize, since the OS lerps from our colour to the new layout.
+        RECT rc; GetClientRect(hwnd, &rc);
+        self->paint_main_background(reinterpret_cast<HDC>(wParam), rc);
+        return 1;
+    }
+
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORLISTBOX: {
+        // Theme any flat children that don't owner-draw themselves: status
+        // colours on the EDIT controls + recovery STATIC labels.
+        const auto& pal = theme::palette();
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        HWND ctl = reinterpret_cast<HWND>(lParam);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, pal.text_primary);
+        if (ctl == self->hRecoveryBanner_ || ctl == self->hRecoveryLabel_) {
+            // Faint accent tint for the warning banner, regardless of mode.
+            COLORREF banner = (theme::current_mode() == theme::Mode::Dark)
+                ? RGB(0x32, 0x2E, 0x1A) : RGB(0xFF, 0xF7, 0xE0);
+            SetBkColor(dc, banner);
+            return reinterpret_cast<LRESULT>(theme::brush(banner));
+        }
+        // EDIT controls (compose, recovery key, emoji search) → compose-card bg.
+        if (msg == WM_CTLCOLOREDIT) {
+            SetBkColor(dc, pal.compose_card_bg);
+            return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
+        }
+        // Owner-drawn LB empty-area brush: sidebar-tinted for the room list.
+        if (msg == WM_CTLCOLORLISTBOX && ctl == self->hRoomList_) {
+            SetBkColor(dc, pal.sidebar_bg);
+            return reinterpret_cast<LRESULT>(theme::brush(pal.sidebar_bg));
+        }
+        SetBkColor(dc, pal.window_bg);
+        return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
+    }
+
+    case WM_SETTINGCHANGE: {
+        // Watch for OS dark/light flip. lParam carries the changed area name
+        // as a wide string when it originated in Personalize.
+        if (lParam) {
+            auto* name = reinterpret_cast<const wchar_t*>(lParam);
+            if (name && wcscmp(name, L"ImmersiveColorSet") == 0) {
+                self->on_system_theme_changed();
+            }
+        }
+        return 0;
     }
 
     case WM_TESSERACT_MESSAGE: {
@@ -576,7 +748,11 @@ bool MainWindow::register_class(HINSTANCE hInst) {
     wc.lpfnWndProc   = MainWindow::wnd_proc;
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    // No class brush: WM_ERASEBKGND handler fills with the themed window_bg.
+    // This lets DWM Mica show through during the brief moments where a child
+    // control hasn't yet repainted (resize) and avoids a stale-white flash on
+    // dark-mode startup.
+    wc.hbrBackground = nullptr;
     wc.lpszClassName = CLASS_NAME;
     // Big icon: Alt+Tab, taskbar. Small icon: titlebar, system menu.
     // LoadImage picks the best-matching frame from the multi-resolution .ico.
@@ -603,6 +779,7 @@ MainWindow::~MainWindow() {
     login_view_.reset();
     for (auto& [k, v] : avatar_cache_)      delete v;
     for (auto& [k, v] : user_avatar_cache_) delete v;
+    theme::shutdown();
     if (gdiplus_token_)
         Gdiplus::GdiplusShutdown(gdiplus_token_);
 }
@@ -623,6 +800,12 @@ void MainWindow::on_create(HWND hwnd) {
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
 
+    // Initialise theme + DWM attributes for the caption + Mica backdrop
+    // before any child controls are created so the first paint already
+    // reflects dark / light mode.
+    theme::register_main_window(hwnd);
+    theme::apply_window_attributes(hwnd);
+
     // Room list — fixed-height owner-drawn
     hRoomList_ = CreateWindowExW(
         0, L"LISTBOX", nullptr,
@@ -630,6 +813,8 @@ void MainWindow::on_create(HWND hwnd) {
         LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
         0, 0, 240, 600,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ROOMLIST)), hInst_, nullptr);
+    theme::apply_control_theme(hRoomList_);
+    apply_default_font(hRoomList_);
 
     // 1px vertical separator between the sidebar and the chat area.
     hSideSep_ = CreateWindowExW(
@@ -671,42 +856,52 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, nullptr, hInst_, nullptr);
     SetWindowLongPtrW(hUserStrip_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
-    // Message list — variable-height owner-drawn, not selectable
+    // Message list — variable-height owner-drawn, not selectable.
+    // No CLIENTEDGE: flat surface that blends with the chat area.
     hMsgList_ = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"LISTBOX", nullptr,
+        0, L"LISTBOX", nullptr,
         WS_CHILD | WS_VISIBLE | WS_VSCROLL |
         LBS_OWNERDRAWVARIABLE | LBS_HASSTRINGS | LBS_NOSEL,
         240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_MSGLIST)), hInst_, nullptr);
+    theme::apply_control_theme(hMsgList_);
+    apply_default_font(hMsgList_);
 
-    // Multi-line compose input. Width is shrunk by 44 px to free room for
-    // the emoji button to the right of the EDIT control.
+    // Multi-line compose input. Width is shrunk to leave room for the emoji +
+    // send buttons that sit inside the compose card to its right.
     hInput_ = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        0, L"EDIT", nullptr,
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
         240, 700, 640, 60,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_INPUT)), hInst_, nullptr);
+    theme::apply_control_theme(hInput_);
+    apply_default_font(hInput_);
 
     hEmoji_ = CreateWindowExW(
         0, L"BUTTON", L"\xD83D\xDE00",  // 😀 (UTF-16 surrogate pair)
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         884, 700, 36, 60,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI)), hInst_, nullptr);
+    theme::register_button(hEmoji_, theme::ButtonStyle::Icon);
 
     hSend_ = CreateWindowExW(
         0, L"BUTTON", L"Send",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         924, 700, 100, 60,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SEND)), hInst_, nullptr);
+    theme::register_button(hSend_, theme::ButtonStyle::Primary);
 
     // Picker creation is deferred until first toggle so the cold-start
     // path stays cheap. Recents live in account-data (io.element.recent_emoji),
     // read on demand via client_.recent_emoji_top(...).
     register_emoji_class();
 
+    // Custom flat status strip. Replaces STATUSCLASSNAMEW which carries a 9x
+    // size-grip and chunky inset borders.
+    register_status_bar_class(hInst_);
     hStatus_ = CreateWindowExW(
-        0, STATUSCLASSNAMEW, L"Not logged in",
-        WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
+        0, L"TesseractStatusBar", L"Not logged in",
+        WS_CHILD | WS_VISIBLE,
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
 
@@ -723,24 +918,29 @@ void MainWindow::on_create(HWND hwnd) {
         WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP,
         252, kRoomHeaderH + 8, 140, 18,
         hwnd, nullptr, hInst_, nullptr);
+    apply_default_font(hRecoveryLabel_);
     hRecoveryKeyEdit_ = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
+        0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
         400, kRoomHeaderH + 4, 480, 22,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_KEY)),
         hInst_, nullptr);
+    theme::apply_control_theme(hRecoveryKeyEdit_);
+    apply_default_font(hRecoveryKeyEdit_);
     hRecoveryVerify_ = CreateWindowExW(
         0, L"BUTTON", L"Verify",
-        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
         900, kRoomHeaderH + 4, 80, 22,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_VERIFY)),
         hInst_, nullptr);
+    theme::register_button(hRecoveryVerify_, theme::ButtonStyle::Primary);
     hRecoveryDismiss_ = CreateWindowExW(
-        0, L"BUTTON", L"X",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, L"BUTTON", L"✕",  // ✕ — cross / cancel glyph
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         985, kRoomHeaderH + 4, 24, 22,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_DISMISS)),
         hInst_, nullptr);
+    theme::register_button(hRecoveryDismiss_, theme::ButtonStyle::Icon);
     ShowWindow(hRecoveryBanner_,  SW_HIDE);
     ShowWindow(hRecoveryLabel_,   SW_HIDE);
     ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
@@ -775,10 +975,13 @@ void MainWindow::on_size(int w, int h) {
     constexpr int CHAT_X   = ROOM_W + SEP_W;
     constexpr int SEND_W   = 100;
     constexpr int INPUT_H  = 60;
-    constexpr int STATUS_H = 22;
+    constexpr int STATUS_H = 24;
 
-    // Status bar always sized.
-    SendMessageW(hStatus_, WM_SIZE, 0, 0);
+    // Custom status bar is anchored to the bottom. Position it explicitly.
+    if (hStatus_) {
+        SetWindowPos(hStatus_, nullptr,
+                     0, h - STATUS_H, w, STATUS_H, SWP_NOZORDER);
+    }
 
     if (login_visible_ && login_view_ && login_view_->hwnd()) {
         SetWindowPos(login_view_->hwnd(), nullptr,
@@ -1162,6 +1365,7 @@ int MainWindow::compute_message_height(size_t idx) {
 void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
     if (dis->itemID >= rooms_.size()) return;
     const auto& room = rooms_[dis->itemID];
+    const auto& pal  = theme::palette();
 
     Gdiplus::Graphics g(dis->hDC);
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -1172,10 +1376,16 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
     int w  = rc.right  - rc.left;
     int h  = rc.bottom - rc.top;
 
-    // Background
+    // Background — sidebar tint normally, accent pill when selected.
     bool sel = (dis->itemState & ODS_SELECTED) != 0;
-    Gdiplus::SolidBrush bgBrush(sel ? Gdiplus::Color(0xFFDCEAFF) : Gdiplus::Color(0xFFFFFFFF));
+    Gdiplus::SolidBrush bgBrush(theme::gpc(pal.sidebar_bg));
     g.FillRectangle(&bgBrush, x0, y0, w, h);
+    if (sel) {
+        Gdiplus::SolidBrush selBrush(theme::gpc(pal.sidebar_sel_bg));
+        fill_rounded_rect(g, selBrush,
+                          (float)x0 + 4.0f, (float)y0 + 2.0f,
+                          (float)w - 8.0f, (float)h - 4.0f, 6.0f);
+    }
 
     // Avatar
     int ax = x0 + 8;
@@ -1206,8 +1416,8 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
     Gdiplus::FontFamily ff(L"Segoe UI");
     Gdiplus::Font nameFont   (&ff, 10.0f, Gdiplus::FontStyleBold,    Gdiplus::UnitPoint);
     Gdiplus::Font previewFont(&ff,  9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-    Gdiplus::SolidBrush nameBrush   (Gdiplus::Color(0xFF1A1A2E));
-    Gdiplus::SolidBrush previewBrush(Gdiplus::Color(0xFF888888));
+    Gdiplus::SolidBrush nameBrush   (theme::gpc(pal.text_primary));
+    Gdiplus::SolidBrush previewBrush(theme::gpc(pal.text_muted));
 
     Gdiplus::StringFormat sf;
     sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
@@ -1229,21 +1439,17 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
         float pill_x = (float)(rc.right - 8) - pill_w;
         float pill_y = (float)(y0 + (h - (int)pill_h) / 2);
 
-        Gdiplus::SolidBrush badgeBrush(Gdiplus::Color(0xFF0084FF));
+        Gdiplus::SolidBrush badgeBrush(theme::gpc(pal.unread_badge_bg));
         fill_rounded_rect(g, badgeBrush, pill_x, pill_y, pill_w, pill_h, 9.0f);
 
         Gdiplus::Font badgeFont(&ff, 8.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush wBrush(Gdiplus::Color(0xFFFFFFFF));
+        Gdiplus::SolidBrush wBrush(theme::gpc(pal.unread_badge_text));
         Gdiplus::StringFormat center;
         center.SetAlignment(Gdiplus::StringAlignmentCenter);
         center.SetLineAlignment(Gdiplus::StringAlignmentCenter);
         g.DrawString(wcount.c_str(), -1, &badgeFont,
                      Gdiplus::RectF(pill_x, pill_y, pill_w, pill_h), &center, &wBrush);
     }
-
-    // Separator line
-    Gdiplus::Pen sep(Gdiplus::Color(0xFFEEEEEE), 1.0f);
-    g.DrawLine(&sep, (float)x0, (float)(rc.bottom - 1), (float)rc.right, (float)(rc.bottom - 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,6 +1459,7 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
 void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     if (dis->itemID >= messages_.size()) return;
     const auto& msg = messages_[dis->itemID];
+    const auto& pal = theme::palette();
     // Reset chip rects every paint — coordinates are row-relative and
     // become stale on resize / reorder.
     msg.chip_rects.clear();
@@ -1266,7 +1473,7 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     int w  = rc.right  - rc.left;
     int h  = rc.bottom - rc.top;
 
-    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(0xFFF5F5F5));
+    Gdiplus::SolidBrush bgBrush(theme::gpc(pal.window_bg));
     g.FillRectangle(&bgBrush, x0, y0, w, h);
 
     Gdiplus::FontFamily ff(L"Segoe UI");
@@ -1309,7 +1516,7 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     {
         Gdiplus::Font nameFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontSenderName,
                                 Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(Gdiplus::Color(0xFF555555));
+        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_secondary));
         Gdiplus::StringFormat sfNoWrap;
         sfNoWrap.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
         sfNoWrap.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
@@ -1326,8 +1533,8 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     int body_top  = y_cur;
     {
         Gdiplus::SolidBrush textBrush(redacted
-            ? Gdiplus::Color(0xFF888888)
-            : Gdiplus::Color(0xFF111111));
+            ? theme::gpc(pal.text_muted)
+            : theme::gpc(pal.text_primary));
         g.DrawString(wbody.c_str(), -1, &bodyFont,
                      Gdiplus::RectF((float)body_left, (float)body_top,
                                     (float)body_max_w, (float)body_h),
@@ -1360,14 +1567,14 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
             float pill_h = (float)kReactionH;
 
             Gdiplus::Color fill = r.reacted_by_me
-                ? Gdiplus::Color(0xFFD6E4FF)
-                : Gdiplus::Color(0xFFEDEFF1);
+                ? theme::gpc(pal.reaction_chip_bg_me)
+                : theme::gpc(pal.reaction_chip_bg);
             Gdiplus::Color border = r.reacted_by_me
-                ? Gdiplus::Color(0xFF3578E5)
-                : Gdiplus::Color(0xFFD0D4D9);
+                ? theme::gpc(pal.reaction_chip_border_me)
+                : theme::gpc(pal.reaction_chip_border);
             Gdiplus::Color textc = r.reacted_by_me
-                ? Gdiplus::Color(0xFF0B3AA1)
-                : Gdiplus::Color(0xFF1A1A2E);
+                ? theme::gpc(pal.reaction_chip_text_me)
+                : theme::gpc(pal.reaction_chip_text);
 
             Gdiplus::SolidBrush fillBrush(fill);
             fill_rounded_rect(g, fillBrush, chip_x, chip_y,
@@ -1416,7 +1623,7 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
 
         Gdiplus::Font tsFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontTimestamp,
                               Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush tsBrush(Gdiplus::Color(0xFF8E8E93));
+        Gdiplus::SolidBrush tsBrush(theme::gpc(pal.text_muted));
         Gdiplus::StringFormat tsFmt;
         tsFmt.SetAlignment(Gdiplus::StringAlignmentFar);
         tsFmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
@@ -1632,10 +1839,11 @@ void MainWindow::register_emoji_class() {
     if (registered) return;
     WNDCLASSEXW wc{};
     wc.cbSize        = sizeof(wc);
+    wc.style         = CS_DROPSHADOW;  // soft system drop shadow on the popup
     wc.lpfnWndProc   = MainWindow::emoji_picker_wnd_proc;
     wc.hInstance     = hInst_;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hbrBackground = nullptr;        // painted in WM_ERASEBKGND via theme
     wc.lpszClassName = kEmojiPickerClass;
     RegisterClassExW(&wc);
     registered = true;
@@ -1659,6 +1867,21 @@ LRESULT CALLBACK MainWindow::emoji_picker_wnd_proc(
     // we declared on the picker live as children of this popup, but their
     // CtlIDs are unique so the main wnd_proc dispatches correctly).
     switch (msg) {
+    case WM_ERASEBKGND: {
+        RECT rc; GetClientRect(hwnd, &rc);
+        FillRect(reinterpret_cast<HDC>(wParam), &rc,
+                 theme::brush(theme::palette().chrome_bg));
+        return 1;
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
+        const auto& pal = theme::palette();
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, pal.text_primary);
+        SetBkColor(dc, pal.chrome_bg);
+        return reinterpret_cast<LRESULT>(theme::brush(pal.chrome_bg));
+    }
     case WM_MEASUREITEM:
         return SendMessageW(self->hwnd_, msg, wParam, lParam);
     case WM_DRAWITEM:
@@ -1703,18 +1926,26 @@ void MainWindow::ensure_emoji_picker_created() {
     hEmojiPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kEmojiPickerClass, L"",
-        WS_POPUP | WS_BORDER,
+        WS_POPUP,
         0, 0, kEmojiPickW, kEmojiPickH,
         hwnd_, nullptr, hInst_, this);
 
+    // Round the popup corners on Win11; silently no-ops on older Windows.
+    {
+        constexpr DWORD kDwmaCorner = 33;
+        int corner = 3;  // DWMWCP_ROUNDSMALL
+        DwmSetWindowAttribute(hEmojiPicker_, kDwmaCorner, &corner, sizeof(corner));
+    }
+
     // Search box at the top.
     hEmojiSearch_ = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        0, L"EDIT", nullptr,
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         4, 4, kEmojiPickW - 8, 22,
         hEmojiPicker_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_SEARCH)),
         hInst_, nullptr);
+    theme::apply_control_theme(hEmojiSearch_);
 
     // Owner-drawn grid in the middle.
     hEmojiGrid_ = CreateWindowExW(
@@ -1725,6 +1956,7 @@ void MainWindow::ensure_emoji_picker_created() {
         hEmojiPicker_,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_GRID)),
         hInst_, nullptr);
+    theme::apply_control_theme(hEmojiGrid_);
 
     // Tab strip at the bottom (owner-drawn LISTBOX with horizontal flow).
     hEmojiTabs_ = CreateWindowExW(
@@ -1869,18 +2101,19 @@ void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
 void MainWindow::draw_emoji_grid_item(DRAWITEMSTRUCT* dis) {
     if (dis->itemAction == ODA_FOCUS) return;
     int row = static_cast<int>(dis->itemID);
+    const auto& pal = theme::palette();
 
     Gdiplus::Graphics g(dis->hDC);
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
-    Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFFFFFFF));
+    Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
     g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
                     (INT)(dis->rcItem.right - dis->rcItem.left),
                     (INT)(dis->rcItem.bottom - dis->rcItem.top));
 
     Gdiplus::FontFamily ff(L"Segoe UI Emoji");
     Gdiplus::Font font(&ff, 18.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush fg(Gdiplus::Color(0xFF111111));
+    Gdiplus::SolidBrush fg(theme::gpc(pal.text_primary));
     Gdiplus::StringFormat sf;
     sf.SetAlignment(Gdiplus::StringAlignmentCenter);
     sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
@@ -1915,11 +2148,12 @@ void MainWindow::draw_emoji_tab_item(DRAWITEMSTRUCT* dis) {
         MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
                             w.data(), n);
 
+    const auto& pal = theme::palette();
     Gdiplus::Graphics g(dis->hDC);
     g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
-    Gdiplus::Color bgc =
-        (dis->itemState & ODS_SELECTED) ? Gdiplus::Color(0xFFD0E4FF)
-                                         : Gdiplus::Color(0xFFFFFFFF);
+    Gdiplus::Color bgc = (dis->itemState & ODS_SELECTED)
+        ? theme::gpc(pal.sidebar_sel_bg)
+        : theme::gpc(pal.chrome_bg);
     Gdiplus::SolidBrush bg(bgc);
     g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
                     (INT)(dis->rcItem.right - dis->rcItem.left),
@@ -1927,7 +2161,7 @@ void MainWindow::draw_emoji_tab_item(DRAWITEMSTRUCT* dis) {
 
     Gdiplus::FontFamily ff(L"Segoe UI Emoji");
     Gdiplus::Font font(&ff, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush fg(Gdiplus::Color(0xFF111111));
+    Gdiplus::SolidBrush fg(theme::gpc(pal.text_primary));
     Gdiplus::StringFormat sf;
     sf.SetAlignment(Gdiplus::StringAlignmentCenter);
     sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);

@@ -140,6 +140,10 @@ private:
     void   draw_emoji_tab_item (DRAWITEMSTRUCT* dis);
     void   insert_emoji_at_cursor(const std::string& glyph);
 
+    void   apply_default_font(HWND);     // SegoeUI / SegoeUI Variable
+    void   on_system_theme_changed();    // re-apply DWM + invalidate
+    void   paint_main_background(HDC, const RECT&);  // compose card etc.
+
     static constexpr int kEmojiCellW = 36;
     static constexpr int kEmojiCols  = 8;
     static constexpr int kEmojiPickW = kEmojiCellW * kEmojiCols + 16;  // ~304

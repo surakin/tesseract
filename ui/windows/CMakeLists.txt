@@ -37,6 +37,7 @@ add_executable(tesseract_win32 WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/LoginView.cpp
+    src/Theme.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
 
@@ -54,6 +55,8 @@ target_link_libraries(tesseract_win32 PRIVATE
     comctl32
     gdiplus
     ole32
+    dwmapi
+    uxtheme
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE

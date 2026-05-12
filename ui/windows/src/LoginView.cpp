@@ -1,5 +1,7 @@
 #include "LoginView.h"
+#include "Theme.h"
 
+#include <uxtheme.h>
 #include <windowsx.h>
 
 namespace win32 {
@@ -39,20 +41,8 @@ std::string narrow_wstr(const std::wstring& w) {
     return out;
 }
 
-HFONT default_ui_font() {
-    NONCLIENTMETRICSW ncm{ sizeof(ncm) };
-    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    return CreateFontIndirectW(&ncm.lfMessageFont);
-}
-
-HFONT title_font() {
-    NONCLIENTMETRICSW ncm{ sizeof(ncm) };
-    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
-    LOGFONTW lf = ncm.lfMessageFont;
-    lf.lfHeight  = lf.lfHeight - 4;  // slightly larger
-    lf.lfWeight  = FW_BOLD;
-    return CreateFontIndirectW(&lf);
-}
+HFONT default_ui_font() { return theme::font(theme::FontRole::Ui); }
+HFONT title_font()      { return theme::font(theme::FontRole::Title); }
 
 } // namespace
 
@@ -67,7 +57,7 @@ bool LoginView::register_class(HINSTANCE hInst) {
     wc.lpfnWndProc   = LoginView::wnd_proc;
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.hbrBackground = nullptr;  // WM_ERASEBKGND fills via theme palette
     wc.lpszClassName = CLASS_NAME;
     if (!RegisterClassExW(&wc)) return false;
     registered = true;
@@ -123,6 +113,35 @@ LRESULT CALLBACK LoginView::wnd_proc(
         self->on_command(wParam);
         return 0;
 
+    case WM_ERASEBKGND: {
+        RECT rc; GetClientRect(hwnd, &rc);
+        FillRect(reinterpret_cast<HDC>(wParam), &rc,
+                 theme::brush(theme::palette().window_bg));
+        return 1;
+    }
+    case WM_DRAWITEM: {
+        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (dis->CtlType == ODT_BUTTON) theme::draw_button(dis);
+        return TRUE;
+    }
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT: {
+        const auto& pal = theme::palette();
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(dc, TRANSPARENT);
+        if (msg == WM_CTLCOLOREDIT) {
+            SetTextColor(dc, pal.text_primary);
+            SetBkColor  (dc, pal.compose_card_bg);
+            return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
+        }
+        // STATIC controls — use text_secondary for the error/status lines.
+        HWND ctl = reinterpret_cast<HWND>(lParam);
+        bool is_emphatic = (ctl == self->hCardTitle_);
+        SetTextColor(dc, is_emphatic ? pal.text_primary : pal.text_secondary);
+        SetBkColor  (dc, pal.window_bg);
+        return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
+    }
+
     case WM_LOGIN_BEGIN_DONE: {
         auto* p = reinterpret_cast<std::wstring*>(lParam);
         self->on_begin_completed(wParam != 0, std::move(*p));
@@ -164,7 +183,8 @@ void LoginView::on_create() {
 
     hHsLabel_   = add(L"STATIC", L"Homeserver:", 0,                    0, font);
     hHsEdit_    = add(L"EDIT", L"matrix.org",
-                      WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,         IDC_HS, font);
+                      WS_TABSTOP | ES_AUTOHSCROLL,                     IDC_HS, font);
+    theme::apply_control_theme(hHsEdit_);
 
     hError_     = add(L"STATIC", L"", SS_LEFT,                         0, font);
     hWaitLbl_   = add(L"STATIC", L"Waiting for sign-in in your browser…",
@@ -172,9 +192,11 @@ void LoginView::on_create() {
     ShowWindow(hWaitLbl_, SW_HIDE);
 
     hSignIn_    = add(L"BUTTON", L"Sign in",
-                      BS_DEFPUSHBUTTON | WS_TABSTOP,                   IDC_SIGNIN, font);
+                      BS_OWNERDRAW | WS_TABSTOP,                       IDC_SIGNIN, font);
+    theme::register_button(hSignIn_, theme::ButtonStyle::Primary);
     hCancel_    = add(L"BUTTON", L"Cancel",
-                      BS_PUSHBUTTON | WS_TABSTOP,                      IDC_CANCEL, font);
+                      BS_OWNERDRAW | WS_TABSTOP,                       IDC_CANCEL, font);
+    theme::register_button(hCancel_, theme::ButtonStyle::Subtle);
     ShowWindow(hCancel_, SW_HIDE);
 
     show_form();
