@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 project(Tesseract VERSION 0.1.0 LANGUAGES CXX)
 
+# OBJCXX must be enabled at root scope; enabling it from a subdirectory leaves
+# CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------

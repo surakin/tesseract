@@ -1,7 +1,3 @@
-cmake_minimum_required(VERSION 3.25)
-
-enable_language(OBJCXX)
-
 # Generate Tesseract.icns from the shared SVG at build time.
 set(_svg  "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg")
 set(_set  "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.iconset")

@@ -21,6 +21,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 

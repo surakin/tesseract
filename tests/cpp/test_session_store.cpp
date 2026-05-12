@@ -13,6 +13,9 @@ namespace fs = std::filesystem;
 // ---------------------------------------------------------------------------
 struct SessionFixture {
     std::string dir;
+#if defined(__APPLE__)
+    std::string saved_home;
+#endif
 
     SessionFixture() {
         static std::atomic<int> counter{0};
@@ -22,6 +25,10 @@ struct SessionFixture {
         fs::create_directories(dir);
 #if defined(_WIN32)
         _putenv_s("APPDATA", dir.c_str());
+#elif defined(__APPLE__)
+        // macOS config_dir() uses $HOME/Library/Application Support — redirect HOME.
+        if (const char* h = std::getenv("HOME")) saved_home = h;
+        setenv("HOME", dir.c_str(), 1);
 #else
         setenv("XDG_CONFIG_HOME", dir.c_str(), 1);
 #endif
@@ -30,6 +37,11 @@ struct SessionFixture {
     ~SessionFixture() {
 #if defined(_WIN32)
         _putenv_s("APPDATA", "");
+#elif defined(__APPLE__)
+        if (saved_home.empty())
+            unsetenv("HOME");
+        else
+            setenv("HOME", saved_home.c_str(), 1);
 #else
         unsetenv("XDG_CONFIG_HOME");
 #endif

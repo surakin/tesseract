@@ -50,13 +50,9 @@
       "Bash(cmake --preset windows-debug)",
       "Bash(cmake --build build/windows-debug)",
       "Bash(cmake --build build/windows-debug --target tesseract_win32)",
-      "Bash(ctest --test-dir build/linux-qt6-debug --output-on-failure -R \"tk.*widget|dispatch|hit_test\")",
-      "Bash(ctest --test-dir build/linux-qt6-debug --output-on-failure -R \"Button paints\")",
-      "Bash(ctest --test-dir build/linux-qt6-debug)",
-      "Bash(cmake --build build/linux-qt6-debug --target tesseract_ui_shared)",
-      "Bash(ctest --test-dir build/linux-qt6-debug --output-on-failure -R MessageListView)",
-      "Bash(ctest --test-dir /home/rayden/src/tesseract/build/linux-qt6-debug --output-on-failure)",
-      "Bash(ctest --test-dir /home/rayden/src/tesseract/build/linux-qt6-debug)"
+      "Bash(cmake *)",
+      "Bash(ctest *)",
+      "Bash(git stash *)"
     ]
   }
 }

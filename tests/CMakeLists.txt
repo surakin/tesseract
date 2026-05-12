@@ -37,9 +37,10 @@ elseif(TESSERACT_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
 elseif(TESSERACT_UI STREQUAL "win32")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
+elseif(TESSERACT_UI STREQUAL "macos")
+    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_cg.cpp)
+    target_link_libraries(tesseract_tests PRIVATE "-framework CoreGraphics")
 endif()
-# macOS (CGBitmapContext) test surface is TODO; the test cases compile
-# but TestSurface::create is undefined on that platform until added.
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
 
