@@ -339,6 +339,6 @@ TEST_CASE("Settings has expected defaults", "[settings]") {
     CHECK(s.font_ui_semibold     == 10);
 
     // Reaction chip.
-    CHECK(s.reaction_chip_height == 22);
-    CHECK(s.reaction_chip_gap    ==  4);
+    CHECK(s.reaction_chip_height == 28);
+    CHECK(s.reaction_chip_gap    ==  6);
 }

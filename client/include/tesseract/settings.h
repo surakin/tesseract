@@ -34,8 +34,8 @@ public:
     int font_ui_semibold     = 10;
 
     // ── Reaction chip ────────────────────────────────────────────────
-    int reaction_chip_height = 22;
-    int reaction_chip_gap    =  4;
+    int reaction_chip_height = 28;
+    int reaction_chip_gap    =  6;
 
 private:
     Settings() = default;

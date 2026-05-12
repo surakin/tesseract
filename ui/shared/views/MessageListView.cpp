@@ -19,7 +19,7 @@ constexpr float kAvatarSize  = tesseract::visual::kMsgAvatarSize;    // 32
 constexpr float kAvatarGap   = tesseract::visual::kMsgAvatarGap;     // 8
 constexpr float kSenderH     = tesseract::visual::kMsgSenderNameHeight; // 16
 constexpr float kTimestampH  = tesseract::visual::kMsgTimestampHeight;  // 14
-constexpr float kChipPadX    = 8.0f;
+constexpr float kChipPadX    = 10.0f;
 
 inline float chip_h()      { return static_cast<float>(tesseract::Settings::instance().reaction_chip_height); }
 inline float chip_gap()    { return static_cast<float>(tesseract::Settings::instance().reaction_chip_gap); }
@@ -158,15 +158,23 @@ public:
             float chip_x = col_x;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
                 const auto& r = m.reactions[ri];
-                std::string chip_text = r.key + " " + std::to_string(r.count);
-                tk::TextStyle st{};
-                st.role = tk::FontRole::Small;
-                auto layout = ctx.factory.build_text(chip_text, st);
-                if (!layout) {
+                tk::TextStyle est{};
+                est.role = tk::FontRole::Title;
+                auto emoji_layout = ctx.factory.build_text(r.key, est);
+                tk::TextStyle cst{};
+                cst.role = tk::FontRole::UiSemibold;
+                auto count_layout =
+                    ctx.factory.build_text(std::to_string(r.count), cst);
+                if (!emoji_layout || !count_layout) {
                     if (hovered) owner_.hovered_row_geom_.chips.push_back({});
                     continue;
                 }
-                float w = std::max(layout->measure().w + kChipPadX * 2, 28.0f);
+                tk::Size esz = emoji_layout->measure();
+                tk::Size csz = count_layout->measure();
+                constexpr float kChipInnerGap = 4.0f;
+                float content_w = esz.w + kChipInnerGap + csz.w;
+                float w = std::max(content_w + kChipPadX * 2,
+                                    chip_h() + 8.0f);
                 tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                 bool chip_hovered = hovered
                     && owner_.hover_target_ == HoverTarget::Chip
@@ -183,10 +191,20 @@ public:
                 ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
                 ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
                                                 chip_hovered ? 1.5f : 1.0f);
+                // Centre the emoji by its *ascent* (top of layout box to
+                // baseline), not its full line-height: colour-emoji glyphs
+                // fill the ascent region and leave the descender empty, so
+                // box-centring leaves them visually high in the chip.
+                constexpr float kAscentRatio = 0.78f;
+                float emoji_y = pill.y
+                              + (pill.h - esz.h * kAscentRatio) * 0.5f;
+                float count_y = pill.y + (pill.h - csz.h) * 0.5f;
+                float emoji_x = pill.x + kChipPadX;
                 ctx.canvas.draw_text(
-                    *layout,
-                    { pill.x + kChipPadX,
-                      pill.y + (pill.h - layout->measure().h) * 0.5f },
+                    *emoji_layout, { emoji_x, emoji_y }, text);
+                ctx.canvas.draw_text(
+                    *count_layout,
+                    { emoji_x + esz.w + kChipInnerGap, count_y },
                     text);
                 if (hovered) owner_.hovered_row_geom_.chips.push_back(pill);
                 chip_x += w + chip_gap();
@@ -197,10 +215,11 @@ public:
             // reaction — muted background, subtle border.
             if (hovered) {
                 tk::TextStyle st{};
-                st.role = tk::FontRole::Small;
+                st.role = tk::FontRole::Title;
                 auto layout = ctx.factory.build_text("+", st);
                 if (layout) {
-                    float w = std::max(layout->measure().w + kChipPadX * 2, 28.0f);
+                    float w = std::max(layout->measure().w + kChipPadX * 2,
+                                        chip_h() + 8.0f);
                     tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                     bool add_hovered =
                         owner_.hover_target_ == HoverTarget::AddButton;
@@ -573,27 +592,46 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     const auto& r = reactions[hover_chip_idx_];
     if (r.senders.empty()) return;
 
-    std::string body;
-    body.reserve(r.senders.size() * 16 + 32);
-    body += "Reacted with ";
-    body += r.key;
-    body += ":";
-    for (const auto& s : r.senders) {
-        body += "\n";
-        body += s;
+    // Build one TextLayout per line. Canvas backends measure single-line
+    // text via advance width / font height; a multi-line string returns
+    // single-line dimensions even though draw renders the newlines, which
+    // would clip the panel. Stacking per-line layouts gives the panel an
+    // accurate height and correct max width across all backends.
+    std::vector<std::string> lines;
+    lines.reserve(r.senders.size() + 1);
+    {
+        std::string header = "Reacted with ";
+        header += r.key;
+        header += ":";
+        lines.push_back(std::move(header));
     }
+    for (const auto& s : r.senders) lines.push_back(s);
 
     tk::TextStyle st{};
     st.role = tk::FontRole::Small;
     st.wrap = false;
-    auto layout = ctx.factory.build_text(body, st);
-    if (!layout) return;
+
+    struct LineLayout {
+        std::unique_ptr<tk::TextLayout> layout;
+        tk::Size size{};
+    };
+    std::vector<LineLayout> ls;
+    ls.reserve(lines.size());
+    float max_w = 0.0f;
+    float total_h = 0.0f;
+    for (const auto& line : lines) {
+        auto layout = ctx.factory.build_text(line, st);
+        if (!layout) return;
+        tk::Size sz = layout->measure();
+        max_w = std::max(max_w, sz.w);
+        total_h += sz.h;
+        ls.push_back({ std::move(layout), sz });
+    }
 
     constexpr float kTipPadX = 8.0f;
     constexpr float kTipPadY = 6.0f;
-    tk::Size text_sz = layout->measure();
-    float panel_w = text_sz.w + kTipPadX * 2;
-    float panel_h = text_sz.h + kTipPadY * 2;
+    float panel_w = max_w + kTipPadX * 2;
+    float panel_h = total_h + kTipPadY * 2;
 
     tk::Rect chip = hovered_row_geom_.chips[hover_chip_idx_];
     tk::Rect view = bounds();
@@ -614,9 +652,14 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     tk::Rect panel{ panel_x, panel_y, panel_w, panel_h };
     ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(panel, 6.0f, ctx.theme.palette.border, 1.0f);
-    ctx.canvas.draw_text(*layout,
-                          { panel.x + kTipPadX, panel.y + kTipPadY },
-                          ctx.theme.palette.text_primary);
+
+    float y = panel.y + kTipPadY;
+    for (const auto& line : ls) {
+        ctx.canvas.draw_text(*line.layout,
+                              { panel.x + kTipPadX, y },
+                              ctx.theme.palette.text_primary);
+        y += line.size.h;
+    }
 }
 
 } // namespace tesseract::views
