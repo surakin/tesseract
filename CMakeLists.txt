@@ -23,37 +23,22 @@ FetchContent_MakeAvailable(Corrosion)
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 
-# macOS: Homebrew ships OpenSSL as a keg-only formula (not on the default
-# search path). Auto-detect the prefix for Apple Silicon and Intel.
-if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
-    foreach(_ossl_dir
-            "/opt/homebrew/opt/openssl@3"
-            "/usr/local/opt/openssl@3")
-        if(IS_DIRECTORY "${_ossl_dir}")
-            set(OPENSSL_ROOT_DIR "${_ossl_dir}" CACHE PATH "Homebrew OpenSSL root")
-            break()
-        endif()
-    endforeach()
-endif()
-
-# Native C deps pulled in by the Rust crate (openssl-sys).
-# SQLite is no longer needed here: matrix-sdk is built with the bundled-sqlite
-# feature, so rusqlite compiles its own copy of SQLite internally.
+# matrix-sdk 0.17 is rustls-only (native-tls feature removed), so no system
+# OpenSSL is required. SQLite is bundled via the `bundled-sqlite` feature, so
+# rusqlite compiles its own copy of SQLite internally.
 #
-# Windows is the odd one out: native-tls uses SChannel (Windows SSPI) on
-# Windows targets, so openssl-sys is never pulled into the Rust dependency
-# graph. Skip find_package(OpenSSL) there to support MinGW cross-builds that
-# don't ship a Windows OpenSSL.
-if(NOT WIN32)
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(tesseract_sdk_ffi-static INTERFACE
-        OpenSSL::SSL OpenSSL::Crypto
-    )
-endif()
+# rustls pulls in aws-lc-sys (via aws-lc-rs) as its crypto provider. The
+# cc-based builder in aws-lc-sys 0.40.0 has a bug: its Linux x86_64 source list
+# omits `crypto/hrss/asm/poly_rq_mul.S`, while `hrss.c` still emits a call to
+# `poly_Rq_mul` (POLY_RQ_MUL_ASM is auto-defined for x86_64 Linux). This leaves
+# the symbol undefined at link time. Force the full CMake-based aws-lc build,
+# which compiles every asm source aws-lc lists. Requires go, perl, and cmake
+# (already in the prereqs).
+corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_CMAKE_BUILDER=1)
 
-# Apple system frameworks required by Rust crates (security-framework,
-# core-foundation, native-tls). Attached to the Rust archive's interface so
-# both the UI executable and the test executable pick them up.
+# Apple system frameworks required by Rust crates' platform integrations
+# (DNS resolver, proxy lookup, keychain). Attached to the Rust archive's
+# interface so both the UI executable and the test executable pick them up.
 if(APPLE)
     target_link_libraries(tesseract_sdk_ffi-static INTERFACE
         "-framework Security"

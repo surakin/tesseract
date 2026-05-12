@@ -29,9 +29,10 @@ use matrix_sdk::{
         registration::{
             ApplicationType, ClientMetadata, Localized, OAuthGrantType,
         },
-        ClientRegistrationData, UrlOrQuery
+        ClientRegistrationData,
     },
-    Client
+    utils::UrlOrQuery,
+    Client,
 };
 use tiny_http::{Method, Response, Server};
 use url::Url;

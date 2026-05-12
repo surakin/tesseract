@@ -340,7 +340,7 @@ impl ClientFfi {
                                 guard.on_session_refreshed(&json);
                             }
                         }
-                        Ok(SessionChange::UnknownToken { soft_logout }) => {
+                        Ok(SessionChange::UnknownToken(data)) => {
                             // Stop SyncService before it can reach State::Error and
                             // wipe the SQLite data directory while a fresh login is
                             // already in progress.
@@ -349,7 +349,7 @@ impl ClientFfi {
                                 guard.on_error(
                                     "sync_auth_error",
                                     "Session token is no longer valid; please log in again.",
-                                    soft_logout,
+                                    data.soft_logout,
                                 );
                             }
                             break;

@@ -11,16 +11,18 @@ Tesseract is a cross-platform desktop Matrix/chat client. The core networking is
 **Prerequisites (Linux/Qt6):**
 
 ```bash
-sudo apt install qt6-base-dev ninja-build cmake libssl-dev sqlite3 libsqlite3-dev
+sudo apt install qt6-base-dev ninja-build cmake sqlite3 libsqlite3-dev golang perl
 # also requires a Rust toolchain: rustup
+# (golang + perl are build-only deps for aws-lc-sys's CMake builder.)
 ```
 
 **Prerequisites (macOS/AppKit):**
 
 ```bash
-brew install openssl@3 ninja cmake
+brew install ninja cmake go
 xcode-select --install   # Xcode Command Line Tools
 # also requires a Rust toolchain: rustup
+# (go is a build-only dep for aws-lc-sys's CMake builder; perl ships with macOS.)
 ```
 
 **Configure and build:**
@@ -40,7 +42,7 @@ open build/macos-native-debug/ui/macos/Tesseract.app
 
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
 
-Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` — no global install needed. OpenSSL and SQLite are found via `find_package()`.
+Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` — no global install needed. SQLite is compiled in-tree via matrix-sdk's `bundled-sqlite` feature; TLS uses rustls (no system OpenSSL).
 
 ## Architecture
 
