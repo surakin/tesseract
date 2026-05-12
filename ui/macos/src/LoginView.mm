@@ -1,348 +1,212 @@
 #import "LoginView.h"
 
+#include "tk/host.h"
+#include "tk/host_macos.h"
+#include "tk/theme.h"
+#include "views/LoginView.h"
+
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 
 std::string nsstr(NSString* s) {
-    return s ? std::string(s.UTF8String) : std::string{};
+    return s ? std::string(s.UTF8String ? s.UTF8String : "") : std::string{};
+}
+
+std::string trim(std::string s) {
+    auto a = s.find_first_not_of(" \t\n\r");
+    auto b = s.find_last_not_of (" \t\n\r");
+    if (a == std::string::npos) return {};
+    return s.substr(a, b - a + 1);
 }
 
 } // namespace
 
-@interface LoginView () <UITextFieldDelegate>
-@end
-
 @implementation LoginView {
-    tesseract::Client* _client;  // non-owning
+    tesseract::Client*                              _client;
+    std::unique_ptr<tk::macos::Surface>             _surface;
+    tesseract::views::LoginView*                    _shared;       // borrowed
+    std::unique_ptr<tk::NativeTextField>            _hsField;
 
-    UIView*       _card;
-    UILabel*      _titleLabel;
-    UILabel*      _statusLabel;
-
-    // Form subviews
-    UIView*       _formView;
-    UITextField*  _hsField;
-    UILabel*      _errorLabel;
-    UIButton*     _signInBtn;
-
-    // Waiting subviews
-    UIView*               _waitingView;
-    UIActivityIndicatorView* _spinner;
-    UILabel*              _waitingLabel;
-    UIButton*             _cancelBtn;
-
-    std::thread       _worker;
-    std::atomic<bool> _cancelled;
+    std::thread                                     _worker;
+    std::atomic<bool>                               _cancelled;
 }
 
 - (instancetype)initWithClient:(tesseract::Client*)client {
-    if (!(self = [super initWithFrame:CGRectZero])) return nil;
-    _client = client;
-    _cancelled.store(false);
+    self = [super initWithFrame:NSZeroRect];
+    if (!self) return nil;
+    _client    = client;
+    _cancelled = false;
 
-    self.translatesAutoresizingMaskIntoConstraints = NO;
-    self.backgroundColor =
-        [UIColor colorWithWhite:0.94 alpha:1.0];
+    _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
-    [self _buildCard];
-    [self _buildFormView];
-    [self _buildWaitingView];
-    [self _showFormView];
+    auto shared = std::make_unique<tesseract::views::LoginView>();
+    _shared     = shared.get();
+    __weak LoginView* weakSelf = self;
+    _shared->on_sign_in = [weakSelf] {
+        LoginView* s = weakSelf;
+        if (s) [s _onSignIn];
+    };
+    _shared->on_cancel = [weakSelf] {
+        LoginView* s = weakSelf;
+        if (s) [s _onCancel];
+    };
+    _surface->set_root(std::move(shared));
+
+    NSView* surfaceView = (__bridge NSView*)_surface->view_handle();
+    surfaceView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:surfaceView];
+    [NSLayoutConstraint activateConstraints:@[
+        [surfaceView.topAnchor      constraintEqualToAnchor:self.topAnchor],
+        [surfaceView.leadingAnchor  constraintEqualToAnchor:self.leadingAnchor],
+        [surfaceView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [surfaceView.bottomAnchor   constraintEqualToAnchor:self.bottomAnchor],
+    ]];
+
+    _hsField = _surface->host().make_text_field();
+    _hsField->set_placeholder("e.g. matrix.org");
+    _hsField->set_text("matrix.org");
+    _hsField->set_on_submit([weakSelf] {
+        LoginView* s = weakSelf;
+        if (s) [s _onSignIn];
+    });
+
+    _surface->set_on_layout([weakSelf] {
+        LoginView* s = weakSelf;
+        if (s) [s _positionOverlay];
+    });
+
     return self;
 }
 
 - (void)dealloc {
-    _cancelled.store(true);
+    _cancelled = true;
     if (_client) _client->cancel_oauth();
     if (_worker.joinable()) _worker.join();
 }
 
-// ── Card / title / status ─────────────────────────────────────────────────────
+- (BOOL)isFlipped { return YES; }
 
-- (void)_buildCard {
-    _card = [[UIView alloc] init];
-    _card.translatesAutoresizingMaskIntoConstraints = NO;
-    _card.backgroundColor = [UIColor systemBackgroundColor];
-    _card.layer.cornerRadius = 8;
-    _card.layer.borderWidth  = 1;
-    _card.layer.borderColor  = [UIColor colorWithWhite:0.82 alpha:1.0].CGColor;
-    [self addSubview:_card];
-
-    _titleLabel = [[UILabel alloc] init];
-    _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _titleLabel.text = @"Sign in to Tesseract";
-    _titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    [_card addSubview:_titleLabel];
-
-    _statusLabel = [[UILabel alloc] init];
-    _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _statusLabel.textColor = [UIColor secondaryLabelColor];
-    _statusLabel.font      = [UIFont systemFontOfSize:11];
-    _statusLabel.hidden    = YES;
-    _statusLabel.numberOfLines = 0;
-    [_card addSubview:_statusLabel];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [_card.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-        [_card.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
-        [_card.widthAnchor   constraintEqualToConstant:420],
-
-        [_titleLabel.topAnchor      constraintEqualToAnchor:_card.topAnchor constant:24],
-        [_titleLabel.leadingAnchor  constraintEqualToAnchor:_card.leadingAnchor constant:24],
-        [_titleLabel.trailingAnchor constraintEqualToAnchor:_card.trailingAnchor constant:-24],
-
-        [_statusLabel.topAnchor      constraintEqualToAnchor:_titleLabel.bottomAnchor constant:8],
-        [_statusLabel.leadingAnchor  constraintEqualToAnchor:_card.leadingAnchor constant:24],
-        [_statusLabel.trailingAnchor constraintEqualToAnchor:_card.trailingAnchor constant:-24],
-    ]];
+- (void)_positionOverlay {
+    if (!_shared || !_hsField) return;
+    _hsField->set_rect(_shared->homeserver_field_rect());
 }
 
-// ── View building ─────────────────────────────────────────────────────────────
-
-- (void)_buildFormView {
-    _formView = [[UIView alloc] init];
-    _formView.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UILabel* label = [[UILabel alloc] init];
-    label.text = @"Homeserver URL:";
-    label.translatesAutoresizingMaskIntoConstraints = NO;
-
-    _hsField = [[UITextField alloc] init];
-    _hsField.translatesAutoresizingMaskIntoConstraints = NO;
-    _hsField.text             = @"https://matrix.org";
-    _hsField.placeholder      = @"https://matrix.org";
-    _hsField.borderStyle      = UITextBorderStyleRoundedRect;
-    _hsField.keyboardType     = UIKeyboardTypeURL;
-    _hsField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    _hsField.autocorrectionType     = UITextAutocorrectionTypeNo;
-    _hsField.returnKeyType    = UIReturnKeyGo;
-    _hsField.delegate         = self;
-
-    _errorLabel = [[UILabel alloc] init];
-    _errorLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _errorLabel.textColor = [UIColor systemRedColor];
-    _errorLabel.font      = [UIFont systemFontOfSize:11];
-    _errorLabel.hidden    = YES;
-    _errorLabel.numberOfLines = 0;
-
-    _signInBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    _signInBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [_signInBtn setTitle:@"Sign In" forState:UIControlStateNormal];
-    [_signInBtn addTarget:self
-                   action:@selector(_signInClicked)
-         forControlEvents:UIControlEventTouchUpInside];
-
-    [_formView addSubview:label];
-    [_formView addSubview:_hsField];
-    [_formView addSubview:_errorLabel];
-    [_formView addSubview:_signInBtn];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [label.topAnchor      constraintEqualToAnchor:_formView.topAnchor],
-        [label.leadingAnchor  constraintEqualToAnchor:_formView.leadingAnchor],
-
-        [_hsField.topAnchor      constraintEqualToAnchor:label.bottomAnchor constant:6],
-        [_hsField.leadingAnchor  constraintEqualToAnchor:_formView.leadingAnchor],
-        [_hsField.trailingAnchor constraintEqualToAnchor:_formView.trailingAnchor],
-
-        [_errorLabel.topAnchor      constraintEqualToAnchor:_hsField.bottomAnchor constant:6],
-        [_errorLabel.leadingAnchor  constraintEqualToAnchor:_formView.leadingAnchor],
-        [_errorLabel.trailingAnchor constraintEqualToAnchor:_formView.trailingAnchor],
-
-        [_signInBtn.topAnchor      constraintEqualToAnchor:_errorLabel.bottomAnchor constant:16],
-        [_signInBtn.trailingAnchor constraintEqualToAnchor:_formView.trailingAnchor],
-
-        [_formView.bottomAnchor constraintEqualToAnchor:_signInBtn.bottomAnchor],
-    ]];
-}
-
-- (void)_buildWaitingView {
-    _waitingView = [[UIView alloc] init];
-    _waitingView.translatesAutoresizingMaskIntoConstraints = NO;
-
-    _spinner = [[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
-    _spinner.translatesAutoresizingMaskIntoConstraints = NO;
-    _spinner.hidesWhenStopped = NO;
-
-    _waitingLabel = [[UILabel alloc] init];
-    _waitingLabel.text = @"Complete sign-in in your browser…";
-    _waitingLabel.translatesAutoresizingMaskIntoConstraints = NO;
-
-    _cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    _cancelBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [_cancelBtn setTitle:@"Cancel" forState:UIControlStateNormal];
-    [_cancelBtn addTarget:self
-                   action:@selector(_cancelClicked)
-         forControlEvents:UIControlEventTouchUpInside];
-
-    [_waitingView addSubview:_spinner];
-    [_waitingView addSubview:_waitingLabel];
-    [_waitingView addSubview:_cancelBtn];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [_spinner.centerXAnchor constraintEqualToAnchor:_waitingView.centerXAnchor],
-        [_spinner.topAnchor     constraintEqualToAnchor:_waitingView.topAnchor],
-
-        [_waitingLabel.topAnchor     constraintEqualToAnchor:_spinner.bottomAnchor constant:16],
-        [_waitingLabel.centerXAnchor constraintEqualToAnchor:_waitingView.centerXAnchor],
-
-        [_cancelBtn.topAnchor     constraintEqualToAnchor:_waitingLabel.bottomAnchor constant:20],
-        [_cancelBtn.centerXAnchor constraintEqualToAnchor:_waitingView.centerXAnchor],
-
-        [_waitingView.bottomAnchor constraintEqualToAnchor:_cancelBtn.bottomAnchor],
-    ]];
-}
-
-// ── View switching ────────────────────────────────────────────────────────────
-
-- (void)_showFormView {
-    [_waitingView removeFromSuperview];
-    [_spinner stopAnimating];
-
-    if (_formView.superview != _card) {
-        [_card addSubview:_formView];
-        [NSLayoutConstraint activateConstraints:@[
-            [_formView.topAnchor      constraintEqualToAnchor:_statusLabel.bottomAnchor constant:12],
-            [_formView.leadingAnchor  constraintEqualToAnchor:_card.leadingAnchor constant:24],
-            [_formView.trailingAnchor constraintEqualToAnchor:_card.trailingAnchor constant:-24],
-            [_formView.bottomAnchor   constraintEqualToAnchor:_card.bottomAnchor constant:-24],
-        ]];
-    }
-    _signInBtn.enabled = YES;
-    _hsField.enabled   = YES;
-    [_hsField becomeFirstResponder];
-}
-
-- (void)_showWaitingView {
-    [_formView removeFromSuperview];
-
-    [_card addSubview:_waitingView];
-    [NSLayoutConstraint activateConstraints:@[
-        [_waitingView.topAnchor      constraintEqualToAnchor:_statusLabel.bottomAnchor constant:12],
-        [_waitingView.leadingAnchor  constraintEqualToAnchor:_card.leadingAnchor constant:24],
-        [_waitingView.trailingAnchor constraintEqualToAnchor:_card.trailingAnchor constant:-24],
-        [_waitingView.bottomAnchor   constraintEqualToAnchor:_card.bottomAnchor constant:-24],
-    ]];
-    [_spinner startAnimating];
-    _cancelBtn.enabled = YES;
-    _waitingLabel.text = @"Complete sign-in in your browser…";
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 
 - (void)reset {
-    _cancelled.store(true);
+    _cancelled = true;
     if (_client) _client->cancel_oauth();
     if (_worker.joinable()) _worker.join();
-    _cancelled.store(false);
-    _errorLabel.hidden = YES;
-    [self _showFormView];
+    _cancelled = false;
+
+    _shared->set_status("");
+    _shared->set_state(tesseract::views::LoginView::State::Form);
+    _hsField->set_enabled(true);
+    _hsField->set_visible(true);
+    _hsField->set_focused(true);
+    _surface->relayout();
 }
 
 - (void)setStatusMessage:(NSString*)message {
-    if (message.length == 0) {
-        _statusLabel.hidden = YES;
-        _statusLabel.text   = @"";
+    if (!_shared) return;
+    if (!message || message.length == 0) {
+        _shared->set_status("");
     } else {
-        _statusLabel.text   = message;
-        _statusLabel.hidden = NO;
+        _shared->set_status(nsstr(message));
     }
+    _surface->relayout();
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-
-- (BOOL)textFieldShouldReturn:(UITextField*)textField {
-    if (textField == _hsField) {
-        [self _signInClicked];
-        return YES;
-    }
-    return YES;
-}
-
-- (void)_signInClicked {
-    NSString* hs = [_hsField.text
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-    if (hs.length == 0) {
-        [self _showError:@"Please enter a homeserver URL."];
+- (void)_onSignIn {
+    std::string hs = trim(_hsField->text());
+    if (hs.empty()) {
+        _shared->set_status("Please enter a homeserver.",
+                             tk::Color::rgb(0xB00020));
+        _surface->relayout();
         return;
     }
-    _errorLabel.hidden = YES;
-    _signInBtn.enabled = NO;
-    _hsField.enabled   = NO;
-    [_hsField resignFirstResponder];
-    [self _showWaitingView];
-    [self _startPhase1:nsstr(hs)];
-}
+    _shared->set_status("");
+    _hsField->set_enabled(false);
+    _shared->set_state(tesseract::views::LoginView::State::Waiting);
+    _surface->relayout();
 
-- (void)_cancelClicked {
-    _cancelled.store(true);
-    if (_client) _client->cancel_oauth();
-    _waitingLabel.text = @"Cancelling…";
-    _cancelBtn.enabled = NO;
-}
-
-// ── OAuth two-phase flow ──────────────────────────────────────────────────────
-
-- (void)_startPhase1:(std::string)hs {
     if (_worker.joinable()) _worker.join();
-    _cancelled.store(false);
-
-    _worker = std::thread([self, hs]() {
-        auto flow = _client->begin_oauth(hs);
-        if (_cancelled.load()) return;
-        bool ok          = flow.ok;
-        std::string data = ok ? flow.auth_url : flow.message;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self _onPhase1Done:ok data:@(data.c_str())];
-        });
+    _cancelled = false;
+    __weak LoginView* weakSelf = self;
+    _worker = std::thread([weakSelf, hs] {
+        LoginView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        auto flow = strongSelf->_client->begin_oauth(hs);
+        if (strongSelf->_cancelled.load()) return;
+        bool        ok      = static_cast<bool>(flow);
+        std::string payload = ok ? flow.auth_url : flow.message;
+        strongSelf->_surface->host().post_to_ui(
+            [weakSelf, ok, payload = std::move(payload)] {
+                LoginView* s = weakSelf;
+                if (s) [s _onBeginCompleted:ok payload:payload];
+            });
     });
 }
 
-- (void)_onPhase1Done:(BOOL)ok data:(NSString*)data {
+- (void)_onBeginCompleted:(bool)ok payload:(std::string)payload {
     if (_worker.joinable()) _worker.join();
-
     if (!ok) {
-        [self _showError:[@"Sign-in failed: " stringByAppendingString:data]];
-        [self _showFormView];
+        _shared->set_status("Sign-in failed: " + payload,
+                             tk::Color::rgb(0xB00020));
+        _shared->set_state(tesseract::views::LoginView::State::Form);
+        _hsField->set_enabled(true);
+        _surface->relayout();
         return;
     }
+    tesseract::Client::open_in_browser(payload);
 
-    tesseract::Client::open_in_browser(nsstr(data));
-    [self _startPhase2];
-}
-
-- (void)_startPhase2 {
-    if (_worker.joinable()) _worker.join();
-    _cancelled.store(false);
-
-    _worker = std::thread([self]() {
-        auto res = _client->await_oauth();
-        if (_cancelled.load()) return;
-        bool ok         = res.ok;
+    _cancelled = false;
+    __weak LoginView* weakSelf = self;
+    _worker = std::thread([weakSelf] {
+        LoginView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        auto res = strongSelf->_client->await_oauth();
+        if (strongSelf->_cancelled.load()) return;
+        bool        ok  = static_cast<bool>(res);
         std::string msg = res.message;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self _onPhase2Done:ok message:@(msg.c_str())];
-        });
+        strongSelf->_surface->host().post_to_ui(
+            [weakSelf, ok, msg = std::move(msg)] {
+                LoginView* s = weakSelf;
+                if (s) [s _onAwaitCompleted:ok message:msg];
+            });
     });
 }
 
-- (void)_onPhase2Done:(BOOL)ok message:(NSString*)msg {
+- (void)_onAwaitCompleted:(bool)ok message:(std::string)err {
     if (_worker.joinable()) _worker.join();
     if (ok) {
-        [self.delegate loginViewDidSucceed:self];
+        if ([self.delegate respondsToSelector:@selector(loginViewDidSucceed:)]) {
+            [self.delegate loginViewDidSucceed:self];
+        }
         return;
     }
-    [self _showError:[@"Sign-in failed: " stringByAppendingString:msg]];
-    [self _showFormView];
+    _shared->set_status("Sign-in failed: " + err,
+                         tk::Color::rgb(0xB00020));
+    _shared->set_state(tesseract::views::LoginView::State::Form);
+    _hsField->set_enabled(true);
+    _surface->relayout();
 }
 
-- (void)_showError:(NSString*)msg {
-    _errorLabel.text   = msg;
-    _errorLabel.hidden = NO;
+- (void)_onCancel {
+    _cancelled = true;
+    if (_client) _client->cancel_oauth();
+    _shared->set_status("Cancelling…");
+    _surface->relayout();
+    if (_worker.joinable()) _worker.join();
+    _shared->set_status("");
+    _shared->set_state(tesseract::views::LoginView::State::Form);
+    _hsField->set_enabled(true);
+    _surface->relayout();
 }
 
 @end

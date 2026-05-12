@@ -1,5 +1,5 @@
 #pragma once
-#import <UIKit/UIKit.h>
+#import <AppKit/AppKit.h>
 
 #include <tesseract/client.h>
 
@@ -10,17 +10,16 @@
 @end
 
 /// Inline sign-in view shown inside the main window when the user is not
-/// logged in. Drives the same two-phase OAuth / MAS flow as before
-/// (form → worker → browser → worker → done) but is a plain UIView the
-/// main view controller swaps in instead of presenting modally.
-@interface LoginView : UIView
+/// logged in. Visuals come from the shared `tesseract::views::LoginView`
+/// rendered through a `tk::macos::Surface` NSView; the OAuth state
+/// machine + worker thread + native NSTextField overlay live here.
+@interface LoginView : NSView
 
 - (instancetype)initWithClient:(tesseract::Client*)client;
 
 @property (nonatomic, weak) id<LoginViewDelegate> delegate;
 
-/// Return the view to its initial "form" state. Cancels any in-flight
-/// OAuth and clears errors. Call before showing the view again.
+/// Return the view to its initial "form" state.
 - (void)reset;
 
 /// Display a status message above the form (e.g. "Saved session expired").

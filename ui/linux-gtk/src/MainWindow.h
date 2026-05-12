@@ -5,6 +5,15 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/visual.h>
 
+#include "tk/canvas.h"
+#include "tk/host.h"
+#include "tk/host_gtk.h"
+#include "views/ComposeBar.h"
+#include "views/EmojiPicker.h"
+#include "views/MessageListView.h"
+#include "views/RecoveryBanner.h"
+#include "views/RoomListView.h"
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -49,23 +58,15 @@ public:
     void push_backup_progress(tesseract::BackupProgress progress);
 
 private:
-    static void    on_send_clicked(GtkButton*, gpointer user_data);
-    static gboolean on_key_pressed(GtkEventControllerKey* controller,
-                                   guint keyval, guint keycode,
-                                   GdkModifierType state, gpointer user_data);
-    static void    on_room_row_activated(GtkListBox*, GtkListBoxRow*, gpointer user_data);
     static void    on_login_clicked(GtkButton*, gpointer user_data);
-    static void    on_adj_upper_changed_(GObject* obj, GParamSpec*, gpointer user_data);
     static void    on_back_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
-    static void    on_emoji_btn_clicked_(GtkButton*, gpointer user_data);
-    static void    on_emoji_search_changed_(GtkSearchEntry*, gpointer user_data);
+    void           on_send_clicked();
+    void           toggle_emoji_picker();
     void           build_emoji_popover();
-    void           refresh_emoji_frequents();
-    void           rebuild_emoji_search_results(const std::string& query);
 public:
-    // Reached from the anonymous-namespace click handler in MainWindow.cpp.
+    // Reached from the shared EmojiPicker's on_selected callback.
     void emoji_selected(const std::string& glyph);
 private:
     static void    on_user_strip_right_click_(GtkGestureClick* gesture,
@@ -73,26 +74,10 @@ private:
                                               gpointer user_data);
     static void    on_logout_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
-    static void    on_reaction_clicked_(GtkButton* btn, gpointer user_data);
-    static void    on_message_right_click_(GtkGestureClick* gesture,
-                                           int n_press, double x, double y,
-                                           gpointer user_data);
-    static void    on_message_delete_clicked_(GtkButton* btn, gpointer user_data);
-    static void    on_message_delete_confirm_(GObject* source,
-                                              GAsyncResult* result,
-                                              gpointer user_data);
-    void           perform_redact(const std::string& room_id,
-                                  const std::string& event_id);
-
-    /// Build a footer GtkBox (horizontal) holding reaction chips on the left
-    /// and the timestamp anchored to the right. Always returned non-null; an
-    /// event with no reactions and no timestamp still yields an empty footer
-    /// so the in-place rebuild path has a uniform widget to swap in.
-    GtkWidget* build_message_footer(const tesseract::Event& ev,
-                                    const std::string& ts_str);
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
+    void on_room_selected(const std::string& room_id);
     void append_event(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
@@ -101,6 +86,14 @@ private:
     void on_login_succeeded();
     void populate_user_strip();
     void maybe_show_recovery_banner();
+
+    // Convert a polymorphic SDK Event into the flat MessageRowData the
+    // shared MessageListView consumes; downloads referenced media bytes
+    // on demand and stashes decoded tk::Images in tk_images_.
+    tesseract::views::MessageRowData to_row_data(const tesseract::Event& ev);
+    void ensure_room_avatar(const tesseract::RoomInfo& r);
+    void ensure_user_avatar(const std::string& mxc);
+    void ensure_media_image(const std::string& url, int max_w, int max_h);
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
@@ -113,26 +106,32 @@ private:
     GtkWidget*      room_nav_bar_       = nullptr;
     GtkWidget*      back_button_        = nullptr;
     GtkWidget*      space_name_lbl_     = nullptr;
-    GtkWidget*      room_list_          = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>            room_surface_;
+    tesseract::views::RoomListView*               room_list_view_   = nullptr;  // borrowed
     GtkWidget*      room_header_        = nullptr;
     GtkWidget*      room_header_avatar_ = nullptr;
     GtkWidget*      room_header_name_   = nullptr;
     GtkWidget*      room_header_topic_  = nullptr;
-    GtkWidget*      msg_scroll_         = nullptr;
-    GtkWidget*      msg_box_            = nullptr;
-    GtkWidget*      input_text_view_    = nullptr;
-    GtkWidget*      send_btn_           = nullptr;
-    GtkWidget*      emoji_btn_          = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>            msg_surface_;
+    tesseract::views::MessageListView*            message_list_view_ = nullptr; // borrowed
+    // Compose bar — tk::gtk4::Surface hosting the shared ComposeBar; the
+    // text input is a NativeTextArea overlaid on the bar's text_area_rect.
+    std::unique_ptr<tk::gtk4::Surface>            compose_surface_;
+    tesseract::views::ComposeBar*                  compose_shared_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextArea>            compose_text_area_;
     GtkWidget*      emoji_popover_      = nullptr;
-    GtkWidget*      emoji_search_       = nullptr;
-    GtkWidget*      emoji_stack_        = nullptr;
-    GtkWidget*      emoji_freq_grid_    = nullptr;  // flowbox for the Frequents tab
-    GtkWidget*      emoji_search_grid_  = nullptr;  // flowbox for search results
-    GtkWidget*      status_bar_         = nullptr;    GtkWidget*      recovery_banner_       = nullptr;
-    GtkWidget*      recovery_label_        = nullptr;
-    GtkWidget*      recovery_key_entry_    = nullptr;
-    GtkWidget*      recovery_verify_btn_   = nullptr;
-    bool            recovery_banner_dismissed_ = false;
+    std::unique_ptr<tk::gtk4::Surface>      emoji_picker_surface_;
+    tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
+    GtkWidget*      status_bar_         = nullptr;
+
+    // Recovery banner — shared widget hosted in a tk::gtk4::Surface.
+    // Visibility is toggled at the Surface widget level; the password
+    // field is a NativeTextField overlay (GtkEntry under the hood).
+    std::unique_ptr<tk::gtk4::Surface>      recovery_surface_;
+    tesseract::views::RecoveryBanner*       recovery_shared_   = nullptr;
+    std::unique_ptr<tk::NativeTextField>    recovery_key_field_;
+    bool                                    recovery_banner_dismissed_ = false;
 
     GtkWidget*      user_strip_       = nullptr;
     GtkWidget*      user_avatar_img_  = nullptr;
@@ -146,11 +145,17 @@ private:
     std::vector<tesseract::RoomInfo>  rooms_;
     std::string                    current_room_id_;
     std::string                    my_user_id_;
+    // Raw bytes-cache for the room-header avatar (still painted via
+    // GdkPixbuf into a GtkImage). Sidebar + message-list avatars and
+    // inline media go through tk_avatars_ / tk_images_ below.
     std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
-    std::unordered_map<std::string, std::vector<uint8_t>> user_avatar_cache_;
-    std::unordered_map<std::string, std::vector<uint8_t>> image_cache_;
-    std::unordered_map<std::string, GtkWidget*>           msg_event_widgets_;
-    bool                                                   auto_scroll_pending_ = false;
+
+    // tk::Image caches mirror the QPixmap pattern from the Qt6 port —
+    // populated alongside SDK fetch_*_bytes calls, read back by the
+    // shared RoomListView / MessageListView provider lambdas.
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
     std::vector<std::string>                               space_stack_;
 };
 

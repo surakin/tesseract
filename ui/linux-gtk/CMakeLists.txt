@@ -25,6 +25,7 @@ target_link_libraries(tesseract_gtk PRIVATE
     # Link them as whole-archive so every symbol is unconditionally present,
     # removing all ordering constraints between them. Mirrors ui/linux-qt.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
+    tesseract_tk
     ${GTK4_LIBRARIES}
 )
 

@@ -1,113 +1,50 @@
 #include "LoginView.h"
 
 #include <QDesktopServices>
-#include <QFormLayout>
-#include <QFrame>
-#include <QHBoxLayout>
+#include <QResizeEvent>
 #include <QUrl>
-#include <QVBoxLayout>
+
+#include "tk/theme.h"
 
 namespace qt6 {
 
 LoginView::LoginView(tesseract::Client& client, QWidget* parent)
-    : QWidget(parent)
-    , client_(client)
+    : QWidget(parent),
+      client_(client),
+      surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
-    setObjectName("loginView");
-    setStyleSheet("#loginView { background-color: #F0F2F5; }");
+    // Build the shared widget tree and mount it as Surface's root.
+    auto shared_view = std::make_unique<tesseract::views::LoginView>();
+    shared_ = shared_view.get();
+    shared_->on_sign_in = [this] { on_sign_in(); };
+    shared_->on_cancel  = [this] { on_cancel();  };
+    surface_->set_root(std::move(shared_view));
 
-    // ---- Centered card hosting the form / waiting pages ----
-    auto* card = new QFrame(this);
-    card->setObjectName("loginCard");
-    card->setStyleSheet(
-        "#loginCard { background-color:#FFFFFF; border:1px solid #D0D3D8; "
-        "border-radius:8px; }");
-    card->setMinimumWidth(420);
-    card->setMaximumWidth(480);
-
-    auto* cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(24, 24, 24, 24);
-    cardLayout->setSpacing(12);
-
-    auto* title = new QLabel(tr("Sign in to Tesseract"), card);
-    title->setStyleSheet("font-size:18px; font-weight:bold; color:#111111;");
-    cardLayout->addWidget(title);
-
-    // ---- Form page ----
-    auto* formPage   = new QWidget(card);
-    auto* formLayout = new QFormLayout(formPage);
-    formLayout->setContentsMargins(0, 0, 0, 0);
-
-    hsEdit_ = new QLineEdit("matrix.org", formPage);
-    hsEdit_->setPlaceholderText(tr("e.g. matrix.org"));
-    formLayout->addRow(tr("Homeserver:"), hsEdit_);
-
-    formError_ = new QLabel(formPage);
-    formError_->setWordWrap(true);
-    formError_->setStyleSheet("color: palette(dark);");
-    formError_->setVisible(false);
-    formLayout->addRow(formError_);
-
-    auto* formButtons = new QHBoxLayout;
-    formButtons->addStretch(1);
-    signInBtn_ = new QPushButton(tr("Sign in"), formPage);
-    signInBtn_->setDefault(true);
-    signInBtn_->setStyleSheet(
-        "QPushButton { background-color:#0084FF; color:white; border:none; "
-        "border-radius:4px; padding:6px 16px; font-weight:bold; }"
-        "QPushButton:hover { background-color:#0077E5; }"
-        "QPushButton:disabled { background-color:#A0C4E8; }");
-    formButtons->addWidget(signInBtn_);
-    formLayout->addRow(formButtons);
-
-    // ---- Waiting page ----
-    auto* waitPage   = new QWidget(card);
-    auto* waitLayout = new QVBoxLayout(waitPage);
-    waitLayout->setContentsMargins(0, 0, 0, 0);
-
-    waitingLbl_ = new QLabel(tr("Waiting for sign-in in your browser…"), waitPage);
-    waitingLbl_->setWordWrap(true);
-    waitLayout->addWidget(waitingLbl_);
-
-    auto* waitButtons = new QHBoxLayout;
-    waitButtons->addStretch(1);
-    cancelBtn_ = new QPushButton(tr("Cancel"), waitPage);
-    waitButtons->addWidget(cancelBtn_);
-    waitLayout->addLayout(waitButtons);
-
-    // ---- Stack ----
-    stack_ = new QStackedWidget(card);
-    stack_->addWidget(formPage);   // index 0
-    stack_->addWidget(waitPage);   // index 1
-    cardLayout->addWidget(stack_);
-
-    // ---- Outer layout: center the card horizontally and vertically ----
-    auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(0, 0, 0, 0);
-    outer->addStretch(1);
-    auto* hCenter = new QHBoxLayout;
-    hCenter->addStretch(1);
-    hCenter->addWidget(card);
-    hCenter->addStretch(1);
-    outer->addLayout(hCenter);
-    outer->addStretch(2);
-
-    // ---- Connections ----
-    connect(signInBtn_, &QPushButton::clicked, this, &LoginView::onSignIn);
-    connect(cancelBtn_, &QPushButton::clicked, this, &LoginView::onCancel);
-
-    connect(this, &LoginView::beginCompleted,
-            this, &LoginView::onBeginCompleted, Qt::QueuedConnection);
-    connect(this, &LoginView::awaitCompleted,
-            this, &LoginView::onAwaitCompleted, Qt::QueuedConnection);
-
-    showForm();
+    // Native QLineEdit overlay for the homeserver input. The shared
+    // view paints a styled box behind it; we position the real control
+    // on top in layout_overlays().
+    hs_field_ = surface_->host().make_text_field();
+    hs_field_->set_placeholder("e.g. matrix.org");
+    hs_field_->set_text("matrix.org");
+    hs_field_->set_on_submit([this] { on_sign_in(); });
 }
 
 LoginView::~LoginView() {
     cancelled_.store(true);
     client_.cancel_oauth();
-    joinWorker();
+    join_worker();
+}
+
+void LoginView::resizeEvent(QResizeEvent* e) {
+    QWidget::resizeEvent(e);
+    if (surface_) surface_->setGeometry(0, 0, width(), height());
+    layout_overlays();
+}
+
+void LoginView::layout_overlays() {
+    if (!shared_ || !hs_field_) return;
+    tk::Rect fr = shared_->homeserver_field_rect();
+    hs_field_->set_rect(fr);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,100 +52,111 @@ LoginView::~LoginView() {
 void LoginView::reset() {
     cancelled_.store(true);
     client_.cancel_oauth();
-    joinWorker();
+    join_worker();
     cancelled_.store(false);
-    formError_->setVisible(false);
-    showForm();
+
+    shared_->set_status("");
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    hs_field_->set_visible(true);
+    hs_field_->set_focused(true);
+    surface_->relayout();
+    layout_overlays();
 }
 
-void LoginView::showForm() {
-    stack_->setCurrentIndex(0);
-    signInBtn_->setEnabled(true);
-    hsEdit_->setEnabled(true);
-    cancelBtn_->setEnabled(true);
-    waitingLbl_->setText(tr("Waiting for sign-in in your browser…"));
-    hsEdit_->setFocus();
-}
-
-void LoginView::showWaiting() {
-    stack_->setCurrentIndex(1);
-}
-
-// ---------------------------------------------------------------------------
-
-void LoginView::onSignIn() {
-    QString hs = hsEdit_->text().trimmed();
-    if (hs.isEmpty()) {
-        formError_->setText(tr("Please enter a homeserver."));
-        formError_->setVisible(true);
+void LoginView::on_sign_in() {
+    std::string hs = trim(hs_field_->text());
+    if (hs.empty()) {
+        shared_->set_status("Please enter a homeserver.",
+                             tk::Color::rgb(0xB00020));
+        surface_->update();
         return;
     }
-    formError_->setVisible(false);
-    signInBtn_->setEnabled(false);
-    hsEdit_->setEnabled(false);
+    shared_->set_status("");
+    hs_field_->set_enabled(false);
+    shared_->set_state(tesseract::views::LoginView::State::Waiting);
+    surface_->relayout();
+    layout_overlays();
 
-    // Phase 1 on a worker thread: discovery + listener bind + URL build.
-    joinWorker();
+    join_worker();
     cancelled_.store(false);
-    worker_ = std::thread([this, hs = hs.toStdString()]() {
+    worker_ = std::thread([this, hs] {
         auto flow = client_.begin_oauth(hs);
         if (cancelled_.load()) return;
-        if (!flow) {
-            emit beginCompleted(false, QString::fromStdString(flow.message));
-            return;
-        }
-        emit beginCompleted(true, QString::fromStdString(flow.auth_url));
+        bool        ok      = static_cast<bool>(flow);
+        std::string payload = ok ? flow.auth_url : flow.message;
+        surface_->host().post_to_ui(
+            [this, ok, payload = std::move(payload)] {
+                on_begin_completed(ok, payload);
+            });
     });
 }
 
-void LoginView::onBeginCompleted(bool ok, QString errorOrAuthUrl) {
-    joinWorker();
-
+void LoginView::on_begin_completed(bool ok, std::string err_or_url) {
+    join_worker();
     if (!ok) {
-        formError_->setText(tr("Sign-in failed: %1").arg(errorOrAuthUrl));
-        formError_->setVisible(true);
-        showForm();
+        shared_->set_status("Sign-in failed: " + err_or_url,
+                             tk::Color::rgb(0xB00020));
+        shared_->set_state(tesseract::views::LoginView::State::Form);
+        hs_field_->set_enabled(true);
+        layout_overlays();
+        surface_->update();
         return;
     }
 
-    if (!QDesktopServices::openUrl(QUrl(errorOrAuthUrl))) {
-        tesseract::Client::open_in_browser(errorOrAuthUrl.toStdString());
+    if (!QDesktopServices::openUrl(QUrl(QString::fromStdString(err_or_url)))) {
+        tesseract::Client::open_in_browser(err_or_url);
     }
 
-    showWaiting();
-
-    // Phase 2 on a worker thread: block on the loopback listener.
     cancelled_.store(false);
-    worker_ = std::thread([this]() {
+    worker_ = std::thread([this] {
         auto res = client_.await_oauth();
         if (cancelled_.load()) return;
-        emit awaitCompleted(res.ok, QString::fromStdString(res.message));
+        bool        ok  = static_cast<bool>(res);
+        std::string msg = res.message;
+        surface_->host().post_to_ui(
+            [this, ok, msg = std::move(msg)] {
+                on_await_completed(ok, msg);
+            });
     });
 }
 
-void LoginView::onAwaitCompleted(bool ok, QString error) {
-    joinWorker();
-
+void LoginView::on_await_completed(bool ok, std::string err) {
+    join_worker();
     if (ok) {
         emit loginSucceeded();
-    } else {
-        formError_->setText(tr("Sign-in failed: %1").arg(error));
-        formError_->setVisible(true);
-        showForm();
+        return;
     }
+    shared_->set_status("Sign-in failed: " + err,
+                         tk::Color::rgb(0xB00020));
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    surface_->relayout();
+    layout_overlays();
 }
 
-void LoginView::onCancel() {
+void LoginView::on_cancel() {
     cancelled_.store(true);
     client_.cancel_oauth();
-    waitingLbl_->setText(tr("Cancelling…"));
-    cancelBtn_->setEnabled(false);
-    joinWorker();
-    showForm();
+    shared_->set_status("Cancelling…");
+    surface_->update();
+    join_worker();
+    shared_->set_status("");
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    surface_->relayout();
+    layout_overlays();
 }
 
-void LoginView::joinWorker() {
+void LoginView::join_worker() {
     if (worker_.joinable()) worker_.join();
+}
+
+std::string LoginView::trim(std::string s) {
+    auto a = s.find_first_not_of(" \t\n\r");
+    auto b = s.find_last_not_of (" \t\n\r");
+    if (a == std::string::npos) return {};
+    return s.substr(a, b - a + 1);
 }
 
 } // namespace qt6

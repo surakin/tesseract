@@ -1,6 +1,5 @@
 #pragma once
-#import <UIKit/UIKit.h>
+#import <AppKit/AppKit.h>
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
-@property (nonatomic, strong) UIWindow* window;
+@interface AppDelegate : NSObject <NSApplicationDelegate>
 @end

@@ -14,20 +14,11 @@
     <key>CFBundleExecutable</key>       <string>Tesseract</string>
     <key>CFBundleIconFile</key>         <string>Tesseract</string>
 
-    <!-- Mac Catalyst markers. LSRequiresIPhoneOS=false is mandatory on Mac
-         (Catalyst defaults to true otherwise). UIDeviceFamily=[6] pins us
-         to the "Optimized for Mac" idiom; UIKit reports
-         userInterfaceIdiom == .mac at runtime. -->
-    <key>LSRequiresIPhoneOS</key>       <false/>
-    <key>UIDeviceFamily</key>
-    <array>
-        <integer>6</integer>
-    </array>
-    <key>UILaunchScreen</key>           <dict/>
+    <!-- AppKit principal class. With NSPrincipalClass set, calling
+         NSApplicationMain() in main.mm is sufficient — no nib required. -->
+    <key>NSPrincipalClass</key>         <string>NSApplication</string>
 
-    <!-- Min macOS 13 ↔ min Catalyst iOS 16. -->
-    <key>LSMinimumSystemVersion</key>   <string>13.0</string>
-    <key>MinimumOSVersion</key>         <string>16.0</string>
+    <key>LSMinimumSystemVersion</key>   <string>11.0</string>
 
     <!-- Display niceties. -->
     <key>NSHighResolutionCapable</key>  <true/>

@@ -11,15 +11,22 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
+
+#include "tk/host.h"
+#include "tk/host_win32.h"
+#include "views/LoginView.h"
 
 namespace win32 {
 
 /// Inline sign-in view shown inside the main window when the user is not
-/// logged in. Drives the same two-phase OAuth / MAS flow as the previous
-/// modal LoginDialog (form → worker → browser → worker → done), but is a
-/// plain child HWND the main window can show/hide instead of running modally.
+/// logged in. Visuals come from the shared `tesseract::views::LoginView`
+/// rendered through `tk::win32::Surface`; the OAuth state machine +
+/// worker threads + native EDIT overlay live in this shell. The
+/// homeserver field stays native until tk::TextField + IME passthrough
+/// lands.
 class LoginView {
 public:
     LoginView(HINSTANCE hInst, HWND hParent, tesseract::Client& client);
@@ -28,66 +35,40 @@ public:
     LoginView(const LoginView&)            = delete;
     LoginView& operator=(const LoginView&) = delete;
 
-    HWND hwnd() const { return hwnd_; }
+    HWND hwnd() const;
 
-    /// Lay the inner controls out within the given client rect.
+    /// Lay the surface out at (0, 0, w, h) inside the parent client area.
     void layout(int w, int h);
 
-    /// Return the view to its initial "form" state. Cancels any in-flight
-    /// OAuth and clears errors.
+    /// Return the view to its initial "form" state.
     void reset();
 
-    /// Display a status message above the form (e.g. "Saved session expired").
+    /// Display a message above the form (e.g. "Saved session expired").
     void set_status_message(const std::wstring& msg);
 
     /// Called on the UI thread when the OAuth flow completes successfully.
     void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
 
 private:
-    static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
-    static bool register_class(HINSTANCE);
-
-    void on_create();
-    void on_command(WPARAM wParam);
-    void on_begin_completed(bool ok, std::wstring text);
-    void on_await_completed(bool ok, std::wstring text);
-
-    void show_form();
-    void show_waiting();
-    void set_error(const std::wstring& msg);
-    void start_phase1();
-    void start_phase2();
+    void on_sign_in();
+    void on_cancel();
+    void on_begin_completed(bool ok, std::string err_or_url);
+    void on_await_completed(bool ok, std::string err);
+    void position_overlay();
     void join_worker();
 
-    HINSTANCE hInst_   = nullptr;
-    HWND      hParent_ = nullptr;
-    HWND      hwnd_    = nullptr;
+    static std::string  trim         (std::string s);
+    static std::string  wstring_to_utf8(const std::wstring& s);
 
-    HWND      hCardTitle_ = nullptr;
-    HWND      hStatusMsg_ = nullptr;
-    HWND      hHsLabel_   = nullptr;
-    HWND      hHsEdit_    = nullptr;
-    HWND      hError_     = nullptr;
-    HWND      hWaitLbl_   = nullptr;
-    HWND      hSignIn_    = nullptr;
-    HWND      hCancel_    = nullptr;
+    tesseract::Client&                     client_;
+    std::function<void()>                  on_success_;
 
-    tesseract::Client&    client_;
-    std::function<void()> on_success_;
+    std::unique_ptr<tk::win32::Surface>    surface_;
+    tesseract::views::LoginView*           shared_   = nullptr;
+    std::unique_ptr<tk::NativeTextField>   hs_field_;
 
     std::thread       worker_;
-    std::atomic<bool> cancelled_ { false };
-    bool              showing_form_ = true;
-
-    static constexpr const wchar_t* CLASS_NAME = L"TesseractLoginView";
-    static constexpr int IDC_HS      = 201;
-    static constexpr int IDC_SIGNIN  = 202;
-    static constexpr int IDC_CANCEL  = 204;
+    std::atomic<bool> cancelled_{ false };
 };
-
-// Custom WM_APP messages routed to the LoginView's HWND. Kept distinct from
-// the MainWindow's WM_APP range so a stale message can't leak across.
-constexpr UINT WM_LOGIN_BEGIN_DONE = WM_APP + 100;
-constexpr UINT WM_LOGIN_AWAIT_DONE = WM_APP + 101;
 
 } // namespace win32

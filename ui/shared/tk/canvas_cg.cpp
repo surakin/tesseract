@@ -1,0 +1,593 @@
+#include "canvas_cg.h"
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <CoreText/CoreText.h>
+#include <ImageIO/ImageIO.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <utility>
+
+namespace tk::cg {
+
+namespace {
+
+// RAII helpers for the CF object families. CGImageRef, CGPathRef,
+// CTFontRef, CTFramesetterRef, CTFrameRef, CTLineRef, CFAttributedString,
+// CFData, CFString, CFDictionary, CFNumber — all CFTypeRef-compatible.
+template <class T>
+struct CFRetained {
+    T ref = nullptr;
+    CFRetained() = default;
+    explicit CFRetained(T r) : ref(r) {}
+    ~CFRetained() { if (ref) CFRelease(ref); }
+    CFRetained(const CFRetained&)            = delete;
+    CFRetained& operator=(const CFRetained&) = delete;
+    CFRetained(CFRetained&& other) noexcept : ref(other.ref) { other.ref = nullptr; }
+    CFRetained& operator=(CFRetained&& other) noexcept {
+        if (this != &other) {
+            if (ref) CFRelease(ref);
+            ref = other.ref;
+            other.ref = nullptr;
+        }
+        return *this;
+    }
+    T get() const { return ref; }
+    operator T() const { return ref; }
+};
+
+CGRect to_cgrect(Rect r) {
+    return CGRectMake(r.x, r.y, r.w, r.h);
+}
+
+void set_fill(CGContextRef ctx, Color c) {
+    CGContextSetRGBFillColor(ctx,
+        c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0);
+}
+
+void set_stroke(CGContextRef ctx, Color c) {
+    CGContextSetRGBStrokeColor(ctx,
+        c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0);
+}
+
+// Build a CGPath for an axis-aligned rounded rect (no native primitive
+// in CoreGraphics — we trace four arcs).
+CGPathRef rounded_rect_path(Rect r, float radius) {
+    float rr = std::min(radius, std::min(r.w, r.h) * 0.5f);
+    CGMutablePathRef p = CGPathCreateMutable();
+    CGPathMoveToPoint(p, nullptr, r.x + rr, r.y);
+    CGPathAddArcToPoint(p, nullptr, r.x + r.w, r.y,
+                         r.x + r.w, r.y + r.h, rr);
+    CGPathAddArcToPoint(p, nullptr, r.x + r.w, r.y + r.h,
+                         r.x,       r.y + r.h, rr);
+    CGPathAddArcToPoint(p, nullptr, r.x,       r.y + r.h,
+                         r.x,       r.y,       rr);
+    CGPathAddArcToPoint(p, nullptr, r.x,       r.y,
+                         r.x + r.w, r.y,       rr);
+    CGPathCloseSubpath(p);
+    return p;
+}
+
+struct FontDesc {
+    CGFloat size_pt;
+    bool    bold;     // semibold/bold use the emphasized UI font
+};
+
+FontDesc desc_for(FontRole role) {
+    switch (role) {
+        case FontRole::Small:           return {  9, false };
+        case FontRole::Body:            return { 13, false };
+        case FontRole::SenderName:      return { 12, true  };
+        case FontRole::Timestamp:       return { 10, false };
+        case FontRole::SidebarName:     return { 13, true  };
+        case FontRole::SidebarPreview:  return { 11, false };
+        case FontRole::UnreadBadge:     return { 11, true  };
+        case FontRole::Title:           return { 15, true  };
+        case FontRole::UiSemibold:      return { 11, true  };
+    }
+    return { 13, false };
+}
+
+CTFontRef create_font(FontRole role) {
+    FontDesc d = desc_for(role);
+    CTFontUIFontType ui = d.bold ? kCTFontUIFontEmphasizedSystem
+                                  : kCTFontUIFontSystem;
+    return CTFontCreateUIFontForLanguage(ui, d.size_pt, nullptr);
+}
+
+CFStringRef cfstr_from_utf8(std::string_view s) {
+    return CFStringCreateWithBytes(
+        kCFAllocatorDefault,
+        reinterpret_cast<const UInt8*>(s.data()),
+        s.size(),
+        kCFStringEncodingUTF8,
+        false);
+}
+
+// Build a CFAttributedString from a UTF-8 string + a CT font + a
+// (optional) paragraph-style alignment + a (placeholder) text colour.
+// The colour can be overridden per draw call via CGContextSetFillColor.
+CFAttributedStringRef build_attr_string(std::string_view utf8,
+                                        CTFontRef font,
+                                        CTTextAlignment align) {
+    CFRetained<CFStringRef> text{ cfstr_from_utf8(utf8) };
+    if (!text.get()) return nullptr;
+
+    CTParagraphStyleSetting settings[] = {
+        { kCTParagraphStyleSpecifierAlignment,
+          sizeof(CTTextAlignment), &align },
+    };
+    CFRetained<CTParagraphStyleRef> style{
+        CTParagraphStyleCreate(settings,
+                                sizeof(settings) / sizeof(settings[0]))
+    };
+
+    // kCTForegroundColorFromContextAttributeName = kCFBooleanTrue lets
+    // CTFrameDraw / CTLineDraw pick up the CGContext's fill colour, so
+    // the caller controls the colour at draw time rather than baking it
+    // into the attributed string at build time.
+    CFTypeRef keys[]   = { kCTFontAttributeName,
+                            kCTParagraphStyleAttributeName,
+                            kCTForegroundColorFromContextAttributeName };
+    CFTypeRef values[] = { font, style.get(), kCFBooleanTrue };
+    CFRetained<CFDictionaryRef> attrs{
+        CFDictionaryCreate(kCFAllocatorDefault, keys, values, 3,
+                           &kCFTypeDictionaryKeyCallBacks,
+                           &kCFTypeDictionaryValueCallBacks)
+    };
+
+    return CFAttributedStringCreate(kCFAllocatorDefault,
+                                     text.get(), attrs.get());
+}
+
+std::string initials_of(std::string_view name) {
+    CFRetained<CFStringRef> s{ cfstr_from_utf8(name) };
+    if (!s.get()) return "?";
+
+    CFIndex len = CFStringGetLength(s.get());
+    std::string out;
+    bool at_word = true;
+    CFIndex i = 0;
+    while (i < len) {
+        // Walk one composed character at a time — CFStringGetRangeOfComposedCharactersAtIndex
+        // returns a UTF-16 range covering surrogate pairs + combining marks.
+        CFRange range = CFStringGetRangeOfComposedCharactersAtIndex(
+            s.get(), i);
+        if (range.length <= 0) break;
+
+        // Extract the substring and check whether the first char is whitespace.
+        CFRetained<CFStringRef> sub{
+            CFStringCreateWithSubstring(kCFAllocatorDefault, s.get(), range)
+        };
+        UniChar first = CFStringGetCharacterAtIndex(sub.get(), 0);
+        if (first == ' ' || first == '\t' || first == '\n') {
+            at_word = true;
+            i += range.length;
+            continue;
+        }
+        if (at_word) {
+            CFRetained<CFMutableStringRef> upper{
+                CFStringCreateMutableCopy(kCFAllocatorDefault, 0, sub.get())
+            };
+            CFStringUppercase(upper.get(), nullptr);
+
+            CFIndex used = 0;
+            UInt8 buf[16];
+            CFStringGetBytes(upper.get(),
+                              CFRangeMake(0, CFStringGetLength(upper.get())),
+                              kCFStringEncodingUTF8, 0, false,
+                              buf, sizeof(buf), &used);
+            out.append(reinterpret_cast<const char*>(buf),
+                       static_cast<size_t>(used));
+            at_word = false;
+            // Stop once we have two grapheme starts (≤ 8 UTF-8 bytes each is plenty).
+            // Counting CFString length of `out` is fiddly; this byte bound
+            // is generous and only matters for unusually wide emoji clusters.
+            if (out.size() >= 8) break;
+        }
+        i += range.length;
+    }
+    if (out.empty()) out = "?";
+    return out;
+}
+
+} // namespace
+
+// ─────────────────────────────────────────────────────────────────────────
+//  CGImageWrapper — tk::Image
+// ─────────────────────────────────────────────────────────────────────────
+
+class CGImageWrapper : public Image {
+public:
+    explicit CGImageWrapper(CGImageRef img)
+        : img_(img),
+          width_(static_cast<int>(CGImageGetWidth(img))),
+          height_(static_cast<int>(CGImageGetHeight(img))) {}
+    ~CGImageWrapper() override { if (img_) CGImageRelease(img_); }
+    CGImageWrapper(const CGImageWrapper&) = delete;
+    CGImageWrapper& operator=(const CGImageWrapper&) = delete;
+
+    int width()  const override { return width_; }
+    int height() const override { return height_; }
+    CGImageRef image() const    { return img_; }
+
+private:
+    CGImageRef img_;
+    int        width_;
+    int        height_;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+//  CTLayout — tk::TextLayout
+// ─────────────────────────────────────────────────────────────────────────
+
+class CTLayout : public TextLayout {
+public:
+    CTLayout(CFAttributedStringRef attr, CGFloat max_width, CGFloat max_height,
+             bool elide_single_line)
+        : attr_(attr),
+          max_width_(max_width),
+          max_height_(max_height),
+          elide_single_line_(elide_single_line)
+    {
+        framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
+        if (framesetter_) {
+            CFRange fit_range = CFRangeMake(0, 0);
+            CGSize size = CTFramesetterSuggestFrameSizeWithConstraints(
+                framesetter_, CFRangeMake(0, 0), nullptr,
+                CGSizeMake(max_width_ > 0 ? max_width_ : CGFLOAT_MAX,
+                            max_height_ > 0 ? max_height_ : CGFLOAT_MAX),
+                &fit_range);
+            measured_ = Size{ static_cast<float>(size.width),
+                              static_cast<float>(size.height) };
+            // Approximate line count by dividing height by font height —
+            // CTFramesetter doesn't expose a direct line count, and we
+            // don't need a CTFrame just for measure().
+            CGFloat lh = font_line_height();
+            if (lh < 1) lh = 1;
+            line_count_ = elide_single_line_
+                ? 1
+                : std::max(1, static_cast<int>(std::ceil(size.height / lh)));
+        }
+    }
+
+    ~CTLayout() override {
+        if (framesetter_) CFRelease(framesetter_);
+        if (attr_)        CFRelease(attr_);
+    }
+    CTLayout(const CTLayout&) = delete;
+    CTLayout& operator=(const CTLayout&) = delete;
+
+    Size measure()    const override { return measured_; }
+    int  line_count() const override { return line_count_; }
+
+    void draw(CGContextRef ctx, Point origin, Color c) const {
+        if (!framesetter_) return;
+
+        if (elide_single_line_) {
+            draw_elided_line(ctx, origin, c);
+            return;
+        }
+
+        // The CTFrame draws at origin = bottom-left of its frame rect, and
+        // CoreText assumes the context has a bottom-up coordinate system.
+        // The host NSView reports isFlipped=YES so we get a top-left
+        // context; we flip locally around the frame so CT lays glyphs out
+        // right-side-up against that flipped CTM.
+        CGFloat h = measured_.h;
+        CGRect frame_rect = CGRectMake(origin.x, origin.y,
+                                        max_width_ > 0 ? max_width_ : measured_.w,
+                                        h);
+        CFRetained<CGMutablePathRef> path{ CGPathCreateMutable() };
+        CGPathAddRect(path.get(), nullptr, CGRectMake(0, 0,
+                                                       frame_rect.size.width,
+                                                       frame_rect.size.height));
+        CFRetained<CTFrameRef> frame{
+            CTFramesetterCreateFrame(framesetter_, CFRangeMake(0, 0),
+                                      path.get(), nullptr)
+        };
+        if (!frame.get()) return;
+
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, frame_rect.origin.x,
+                                    frame_rect.origin.y + h);
+        CGContextScaleCTM(ctx, 1, -1);
+        set_fill(ctx, c);
+        // Pick up the fill colour for the run; CT respects the context fill.
+        CTFrameDraw(frame.get(), ctx);
+        CGContextRestoreGState(ctx);
+    }
+
+    CGFloat font_line_height() const {
+        if (!attr_ || CFAttributedStringGetLength(attr_) == 0) return 13.0f;
+        CFDictionaryRef d = CFAttributedStringGetAttributes(attr_, 0, nullptr);
+        if (!d) return 13.0f;
+        CTFontRef f = static_cast<CTFontRef>(
+            CFDictionaryGetValue(d, kCTFontAttributeName));
+        if (!f) return 13.0f;
+        return CTFontGetAscent(f) + CTFontGetDescent(f) + CTFontGetLeading(f);
+    }
+
+private:
+    void draw_elided_line(CGContextRef ctx, Point origin, Color c) const {
+        CFRetained<CTLineRef> raw{ CTLineCreateWithAttributedString(attr_) };
+        if (!raw.get()) return;
+
+        // Build a truncation token using the same attributes as the string.
+        CFDictionaryRef attrs0 = CFAttributedStringGetAttributes(attr_, 0, nullptr);
+        CFRetained<CFAttributedStringRef> token_attr;
+        {
+            CFStringRef ell = CFSTR("…");
+            token_attr = CFRetained<CFAttributedStringRef>{
+                CFAttributedStringCreate(kCFAllocatorDefault, ell, attrs0)
+            };
+        }
+        CFRetained<CTLineRef> token{
+            token_attr.get()
+                ? CTLineCreateWithAttributedString(token_attr.get())
+                : nullptr
+        };
+        CFRetained<CTLineRef> elided{
+            CTLineCreateTruncatedLine(raw.get(),
+                                       max_width_ > 0 ? max_width_ : measured_.w,
+                                       kCTLineTruncationEnd,
+                                       token.get())
+        };
+
+        CTLineRef out = elided.get() ? elided.get() : raw.get();
+
+        CGContextSaveGState(ctx);
+        // Move to the text baseline. We measured measured_.h from the
+        // framesetter (line height); ascent positions baseline within that.
+        CGFloat ascent  = 0;
+        CGFloat descent = 0;
+        CGFloat leading = 0;
+        CTLineGetTypographicBounds(out, &ascent, &descent, &leading);
+        CGContextTranslateCTM(ctx, origin.x, origin.y + ascent);
+        CGContextScaleCTM(ctx, 1, -1);
+        CGContextSetTextPosition(ctx, 0, 0);
+        set_fill(ctx, c);
+        CTLineDraw(out, ctx);
+        CGContextRestoreGState(ctx);
+    }
+
+    CFAttributedStringRef attr_        = nullptr;
+    CTFramesetterRef      framesetter_ = nullptr;
+    Size                  measured_{};
+    int                   line_count_  = 0;
+    CGFloat               max_width_   = -1;
+    CGFloat               max_height_  = -1;
+    bool                  elide_single_line_ = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+//  CGCanvas — tk::Canvas
+// ─────────────────────────────────────────────────────────────────────────
+
+class CGCanvas : public Canvas {
+public:
+    explicit CGCanvas(CGContextRef ctx) : ctx_(ctx) {
+        CGContextSetShouldAntialias(ctx_, true);
+        CGContextSetAllowsAntialiasing(ctx_, true);
+    }
+
+    void clear(Color c) override {
+        // No direct "clear" — fill the clip bounding box. Caller normally
+        // clears via the platform host before invoking the widget tree.
+        CGRect bbox = CGContextGetClipBoundingBox(ctx_);
+        set_fill(ctx_, c);
+        CGContextFillRect(ctx_, bbox);
+    }
+
+    void fill_rect(Rect r, Color c) override {
+        set_fill(ctx_, c);
+        CGContextFillRect(ctx_, to_cgrect(r));
+    }
+
+    void fill_rounded_rect(Rect r, float radius, Color c) override {
+        CFRetained<CGPathRef> path{ rounded_rect_path(r, radius) };
+        set_fill(ctx_, c);
+        CGContextAddPath(ctx_, path.get());
+        CGContextFillPath(ctx_);
+    }
+
+    void stroke_rect(Rect r, Color c, float width) override {
+        set_stroke(ctx_, c);
+        CGContextSetLineWidth(ctx_, width);
+        float h = width * 0.5f;
+        CGContextStrokeRect(ctx_, CGRectMake(r.x + h, r.y + h,
+                                              r.w - width, r.h - width));
+    }
+
+    void stroke_rounded_rect(Rect r, float radius, Color c,
+                              float width) override {
+        float h = width * 0.5f;
+        CFRetained<CGPathRef> path{
+            rounded_rect_path({ r.x + h, r.y + h, r.w - width, r.h - width },
+                               radius)
+        };
+        set_stroke(ctx_, c);
+        CGContextSetLineWidth(ctx_, width);
+        CGContextAddPath(ctx_, path.get());
+        CGContextStrokePath(ctx_);
+    }
+
+    void draw_image(const Image& image, Rect dst) override {
+        const auto& wi = static_cast<const CGImageWrapper&>(image);
+        draw_cg_image(wi.image(), dst);
+    }
+
+    void draw_image_subregion(const Image& image, Rect src,
+                               Rect dst) override {
+        const auto& wi = static_cast<const CGImageWrapper&>(image);
+        CFRetained<CGImageRef> sub{
+            CGImageCreateWithImageInRect(
+                wi.image(),
+                CGRectMake(src.x, src.y, src.w, src.h))
+        };
+        if (!sub.get()) return;
+        draw_cg_image(sub.get(), dst);
+    }
+
+    void draw_circle_image(const Image& image, Point centre,
+                            float diameter) override {
+        const auto& wi = static_cast<const CGImageWrapper&>(image);
+        CGContextSaveGState(ctx_);
+        CGContextAddEllipseInRect(ctx_,
+            CGRectMake(centre.x - diameter * 0.5f,
+                        centre.y - diameter * 0.5f,
+                        diameter, diameter));
+        CGContextClip(ctx_);
+        draw_cg_image(wi.image(),
+                       { centre.x - diameter * 0.5f,
+                         centre.y - diameter * 0.5f,
+                         diameter, diameter });
+        CGContextRestoreGState(ctx_);
+    }
+
+    void draw_initials_circle(std::string_view name, Point centre,
+                               float diameter, Color bg,
+                               Color fg) override {
+        set_fill(ctx_, bg);
+        CGContextFillEllipseInRect(ctx_,
+            CGRectMake(centre.x - diameter * 0.5f,
+                        centre.y - diameter * 0.5f,
+                        diameter, diameter));
+
+        std::string initials = initials_of(name);
+        CFRetained<CTFontRef> font{
+            CTFontCreateUIFontForLanguage(kCTFontUIFontEmphasizedSystem,
+                                           diameter * 0.42, nullptr)
+        };
+        CFRetained<CFAttributedStringRef> attr{
+            build_attr_string(initials, font.get(), kCTTextAlignmentCenter)
+        };
+        if (!attr.get()) return;
+        CFRetained<CTLineRef> line{
+            CTLineCreateWithAttributedString(attr.get())
+        };
+
+        CGFloat ascent  = 0;
+        CGFloat descent = 0;
+        CGFloat leading = 0;
+        double w = CTLineGetTypographicBounds(line.get(),
+                                                &ascent, &descent, &leading);
+        double tx = centre.x - w * 0.5;
+        // Baseline lands halfway between centre and descent.
+        double baseline = centre.y + (ascent - descent) * 0.5;
+
+        CGContextSaveGState(ctx_);
+        CGContextTranslateCTM(ctx_, tx, baseline);
+        CGContextScaleCTM(ctx_, 1, -1);
+        CGContextSetTextPosition(ctx_, 0, 0);
+        set_fill(ctx_, fg);
+        CTLineDraw(line.get(), ctx_);
+        CGContextRestoreGState(ctx_);
+    }
+
+    void draw_text(const TextLayout& layout, Point origin,
+                    Color c) override {
+        static_cast<const CTLayout&>(layout).draw(ctx_, origin, c);
+    }
+
+    void push_clip_rect(Rect r) override {
+        CGContextSaveGState(ctx_);
+        CGContextClipToRect(ctx_, to_cgrect(r));
+    }
+
+    void push_clip_rounded_rect(Rect r, float radius) override {
+        CGContextSaveGState(ctx_);
+        CFRetained<CGPathRef> path{ rounded_rect_path(r, radius) };
+        CGContextAddPath(ctx_, path.get());
+        CGContextClip(ctx_);
+    }
+
+    void pop_clip() override { CGContextRestoreGState(ctx_); }
+
+    float scale_factor() const override {
+        // The CTM scales logical → device. Read it back and assume the
+        // x/y scales are equal (true under AppKit isFlipped=YES views).
+        CGAffineTransform t = CGContextGetCTM(ctx_);
+        return static_cast<float>(std::fabs(t.a));
+    }
+
+private:
+    void draw_cg_image(CGImageRef img, Rect dst) {
+        // CoreText framesetters need a bottom-up context; CGImage drawing
+        // is the same — CGContextDrawImage paints with origin at the
+        // bottom-left of the destination rect, then the host NSView's
+        // isFlipped=YES inverts it. We mirror locally so the toolkit's
+        // top-left semantics hold either way.
+        CGContextSaveGState(ctx_);
+        CGContextTranslateCTM(ctx_, dst.x, dst.y + dst.h);
+        CGContextScaleCTM(ctx_, 1, -1);
+        CGContextDrawImage(ctx_, CGRectMake(0, 0, dst.w, dst.h), img);
+        CGContextRestoreGState(ctx_);
+    }
+
+    CGContextRef ctx_;
+};
+
+std::unique_ptr<Canvas> make_canvas(CGContextRef ctx) {
+    return std::make_unique<CGCanvas>(ctx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  CGFactory — tk::CanvasFactory
+// ─────────────────────────────────────────────────────────────────────────
+
+class CGFactory : public CanvasFactory {
+public:
+    std::unique_ptr<Image>
+    decode_image(std::span<const std::uint8_t> bytes) override {
+        if (bytes.empty()) return nullptr;
+        CFRetained<CFDataRef> data{
+            CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                         static_cast<CFIndex>(bytes.size()))
+        };
+        if (!data.get()) return nullptr;
+        CFRetained<CGImageSourceRef> src{
+            CGImageSourceCreateWithData(data.get(), nullptr)
+        };
+        if (!src.get()) return nullptr;
+        CGImageRef img =
+            CGImageSourceCreateImageAtIndex(src.get(), 0, nullptr);
+        if (!img) return nullptr;
+        return std::make_unique<CGImageWrapper>(img);
+    }
+
+    std::unique_ptr<TextLayout>
+    build_text(std::string_view utf8, const TextStyle& s) override {
+        CFRetained<CTFontRef> font{ create_font(s.role) };
+        if (!font.get()) return nullptr;
+
+        CTTextAlignment align = kCTTextAlignmentLeft;
+        switch (s.halign) {
+            case TextHAlign::Leading:  align = kCTTextAlignmentLeft;   break;
+            case TextHAlign::Center:   align = kCTTextAlignmentCenter; break;
+            case TextHAlign::Trailing: align = kCTTextAlignmentRight;  break;
+        }
+        CFAttributedStringRef attr =
+            build_attr_string(utf8, font.get(), align);
+        if (!attr) return nullptr;
+
+        bool elide = (s.trim == TextTrim::Ellipsis);
+        CGFloat max_w = s.max_width  > 0 ? s.max_width  : -1;
+        CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
+        return std::make_unique<CTLayout>(attr, max_w, max_h, elide);
+    }
+};
+
+std::unique_ptr<CanvasFactory> make_factory() {
+    return std::make_unique<CGFactory>();
+}
+
+std::unique_ptr<Image> make_image(CGImageRef img) {
+    if (!img) return nullptr;
+    CGImageRetain(img);   // CGImageWrapper releases in its destructor
+    return std::make_unique<CGImageWrapper>(img);
+}
+
+} // namespace tk::cg

@@ -2,22 +2,30 @@
 #include <QMainWindow>
 #include <QHash>
 #include <QLabel>
-#include <QListView>
+#include <QLineEdit>
 #include <QPixmap>
-#include <QScrollArea>
 #include <QStackedWidget>
 #include <QTextEdit>
 #include <QToolButton>
 #include <QPushButton>
 #include <QStatusBar>
-#include <QStandardItemModel>
 #include <QVBoxLayout>
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/visual.h>
 
+#include "tk/canvas.h"
+#include "tk/host.h"
+#include "tk/host_qt.h"
+#include "views/ComposeBar.h"
+#include "views/MessageListView.h"
+#include "views/RecoveryBanner.h"
+#include "views/RoomListView.h"
+
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 class EmojiPicker;
@@ -64,7 +72,6 @@ protected:
 private slots:
     void onLoginSucceeded();
     void onSendClicked();
-    void onRoomSelectionChanged(const QModelIndex& current, const QModelIndex& previous);
     void onEventReceived(tesseract::Event* ev);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString context, QString description, bool soft_logout);
@@ -75,7 +82,6 @@ private slots:
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
-    void onReactionChipClicked();
 
 signals:
     void recoverFinished(bool ok, QString error);
@@ -87,13 +93,22 @@ private:
     void     maybeShowRecoveryBanner();
     void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
     void     refreshRoomList();
+    void     onRoomSelected(const std::string& room_id);
     void     appendMessage(const tesseract::Event& ev);
     void     clearMessages();
     void     updateRoomHeader(const tesseract::RoomInfo& info);
     void     updateTopicElision();
-    QWidget* createMessageRow(const tesseract::Event& ev);
     QPixmap  makeCirclePixmap(const QPixmap& src, int size);
     QPixmap  makeInitialsPixmap(const QString& name, int size);
+
+    // Convert a polymorphic SDK Event into the flat MessageRowData the
+    // shared MessageListView consumes; downloads referenced media bytes
+    // on demand and stashes decoded tk::Images in tk_images_.
+    tesseract::views::MessageRowData toRowData(const tesseract::Event& ev);
+    void                              ensureUserAvatar(const std::string& mxc);
+    void                              ensureRoomAvatar(const tesseract::RoomInfo& r);
+    void                              ensureMediaImage(const std::string& url,
+                                                         int max_w, int max_h);
 
     static constexpr int kRoomAvatarSize  = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize   = tesseract::visual::kMsgAvatarSize;
@@ -102,11 +117,13 @@ private:
     static constexpr int kMaxStickerSize  = tesseract::visual::kStickerSize;
     static constexpr int kMsgMaxWidth     = 520;
 
-    QWidget*             recoveryBanner_     = nullptr;
-    QLabel*              recoveryLabel_      = nullptr;
-    QLineEdit*           recoveryKeyEdit_    = nullptr;
-    QPushButton*         recoveryVerifyBtn_  = nullptr;
-    bool                 recoveryBannerDismissed_ = false;
+    // Recovery banner — replaces the legacy QFrame + QLineEdit + buttons
+    // with a tk::qt6::Surface hosting the shared widget. The password
+    // field is a NativeTextField overlay.
+    tk::qt6::Surface*                       recoverySurface_   = nullptr;
+    tesseract::views::RecoveryBanner*       recoveryShared_    = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField>    recoveryKeyField_;
+    bool                                    recoveryBannerDismissed_ = false;
 
     QWidget*             userStrip_       = nullptr;
     QLabel*              userAvatarLabel_ = nullptr;
@@ -114,8 +131,8 @@ private:
     std::string          myDisplayName_;
     std::string          myAvatarUrl_;
 
-    QListView*           roomList_        = nullptr;
-    QStandardItemModel*  roomModel_       = nullptr;
+    tk::qt6::Surface*               roomSurface_    = nullptr;
+    tesseract::views::RoomListView* roomListView_   = nullptr;  // borrowed
     QWidget*             roomNavBar_      = nullptr;
     QPushButton*         backButton_      = nullptr;
     QLabel*              spaceNameLabel_  = nullptr;
@@ -123,13 +140,14 @@ private:
     QLabel*              roomHeaderAvatar_= nullptr;
     QLabel*              roomHeaderName_  = nullptr;
     QLabel*              roomHeaderTopic_ = nullptr;
-    QScrollArea*         msgScrollArea_   = nullptr;
-    QWidget*             msgContainer_    = nullptr;
-    QVBoxLayout*         msgLayout_       = nullptr;
-    QTextEdit*           composeEdit_     = nullptr;
-    QPushButton*         sendButton_      = nullptr;
-    QToolButton*         emojiButton_     = nullptr;
-    EmojiPicker*         emojiPicker_     = nullptr;
+    tk::qt6::Surface*                  msgSurface_      = nullptr;
+    tesseract::views::MessageListView* messageListView_ = nullptr;  // borrowed
+    // Compose bar — tk::qt6::Surface hosting the shared ComposeBar widget
+    // with a NativeTextArea overlaid on its text_area_rect.
+    tk::qt6::Surface*                       composeSurface_  = nullptr;
+    tesseract::views::ComposeBar*           composeShared_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextArea>     composeTextArea_;
+    EmojiPicker*                            emojiPicker_     = nullptr;
 
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;
@@ -140,12 +158,15 @@ private:
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
     std::string                   myUserId_;
+    // Room-header avatar (the 40 px disc shown above the message list)
+    // still uses QPixmap because the header itself remains a QLabel-
+    // based widget for now. The shared RoomListView / MessageListView
+    // read avatars and inline media from the tk_* maps below.
     QHash<QString, QPixmap>       avatarCache_;
-    QHash<QString, QPixmap>       userAvatarCache_;
-    QHash<QString, QPixmap>       imageCache_;
-    QHash<QString, QWidget*>      msgEventWidgets_;
+
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
     QString                       currentTopicText_;
-    bool                          autoScrollPending_ = false;
     std::vector<std::string>      spaceStack_;
 };
 

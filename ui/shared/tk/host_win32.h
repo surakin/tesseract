@@ -1,0 +1,67 @@
+#pragma once
+
+// Win32 host. The Surface owns a child HWND that paints into a D2D
+// HwndRenderTarget (managed by tk::d2d::Surface) and creates native EDIT
+// child windows for NativeTextField overlays. Mouse events are dispatched
+// from the surface's WndProc; off-thread completions land on the UI
+// thread through PostMessage with a process-wide registered window
+// message carrying a heap-allocated std::function.
+
+#include "canvas.h"
+#include "host.h"
+#include "theme.h"
+#include "widget.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#  define NOMINMAX
+#endif
+#include <windows.h>
+
+#include <functional>
+#include <memory>
+
+namespace tk::win32 {
+
+class Host;
+
+// Embed `hwnd()` (a child HWND) into your normal Win32 layout, then
+// SetWindowPos / MoveWindow it as the parent resizes.
+class Surface {
+public:
+    Surface(HINSTANCE inst, HWND parent,
+            const Theme& theme = Theme::light());
+    ~Surface();
+    Surface(const Surface&)            = delete;
+    Surface& operator=(const Surface&) = delete;
+
+    HWND        hwnd() const;
+    tk::Host&   host();
+    const Theme& theme() const;
+
+    void set_root(std::unique_ptr<Widget> root);
+    Widget* root() const;
+
+    // Re-run measure + arrange + repaint on the existing root. WM_SIZE
+    // calls this automatically.
+    void relayout();
+
+    // Callback fired at the tail of every relayout — use this from
+    // integration code to keep native overlays aligned with the widget
+    // tree (e.g. SetWindowPos on a child EDIT).
+    void set_on_layout(std::function<void()> cb);
+
+    // Borrowed reference to the per-process D2D + DWrite + WIC canvas
+    // factory the Surface paints through. Integration code can call
+    // factory().decode_image(bytes) to decode media on demand and hand
+    // the resulting tk::Image to the shared views' provider lambdas
+    // without re-decoding through GDI+.
+    CanvasFactory& factory();
+
+private:
+    std::unique_ptr<Host> host_;
+};
+
+} // namespace tk::win32

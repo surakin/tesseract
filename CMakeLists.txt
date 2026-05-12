@@ -8,8 +8,8 @@ set(TESSERACT_UI "auto" CACHE STRING
     "UI backend to build: auto | win32 | gtk | qt6 | macos")
 
 # ---------------------------------------------------------------------------
-# UI auto-detection (must run before Corrosion so Apple → Catalyst can
-# steer Rust_CARGO_TARGET before the Cargo workspace is imported).
+# UI auto-detection. Runs before Corrosion so a preset's Rust_CARGO_TARGET
+# is in place before the Cargo workspace is imported.
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "auto")
     if(WIN32)
@@ -28,40 +28,21 @@ if(TESSERACT_UI STREQUAL "auto")
 endif()
 
 # ---------------------------------------------------------------------------
-# Mac Catalyst: build UIKit-against-macOS via the ios-macabi target triple.
-#
-# We're a UIKit (Catalyst) app on Mac — not AppKit — so every C/C++/ObjC
-# translation unit and every Rust crate has to target ios-macabi. Applied
-# project-wide via add_compile_options / add_link_options + Rust_CARGO_TARGET.
-# Min macOS 13 ↔ min Catalyst iOS 16.
+# macOS / AppKit deployment target. CMakePresets.json picks the architecture
+# (arm64 or x86_64) and the matching Rust target triple via
+# CMAKE_OSX_ARCHITECTURES + Rust_CARGO_TARGET. Both targets compile against
+# the standard macOS SDK — no iOSSupport / Catalyst plumbing.
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "macos")
     if(NOT APPLE)
         message(FATAL_ERROR "macos UI only available on macOS")
     endif()
-    set(CATALYST_TRIPLE "arm64-apple-ios16.0-macabi"
-        CACHE STRING "Mac Catalyst target triple for C/C++/ObjC")
-    add_compile_options("--target=${CATALYST_TRIPLE}")
-    add_link_options(   "--target=${CATALYST_TRIPLE}")
-
-    # Catalyst UIKit headers live under iOSSupport/ inside the macOS SDK.
-    execute_process(
-        COMMAND xcrun --sdk macosx --show-sdk-path
-        OUTPUT_VARIABLE _macsdk_path
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
-    add_compile_options(
-        "-iframework" "${_macsdk_path}/System/iOSSupport/System/Library/Frameworks"
-        "-isystem"    "${_macsdk_path}/System/iOSSupport/usr/include"
-    )
-    add_link_options(
-        "-L${_macsdk_path}/System/iOSSupport/usr/lib"
-        "-F${_macsdk_path}/System/iOSSupport/System/Library/Frameworks"
-    )
-
-    # Tell Corrosion to build the Rust SDK for the matching Rust target triple.
-    # (Note: Rust uses `aarch64-apple-ios-macabi`, no version suffix.)
-    set(Rust_CARGO_TARGET "aarch64-apple-ios-macabi"
-        CACHE STRING "" FORCE)
+    # 11.0 = Big Sur. Earliest macOS that ships every Apple Silicon
+    # frameworks we use (NSTrackingArea modes, NSTextField improvements,
+    # CGImageSource APIs as we call them). Override at preset level.
+    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "" FORCE)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -233,14 +214,21 @@ target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
 add_subdirectory(client)
 
 # ---------------------------------------------------------------------------
+# Shared UI toolkit (tesseract_tk) — widget tree, theme, abstract Canvas,
+# and the per-platform Canvas/TextLayout backend implementations selected
+# by TESSERACT_UI. Always compiled; each platform UI links against it.
+# ---------------------------------------------------------------------------
+add_subdirectory(ui/shared)
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 enable_testing()
 add_subdirectory(tests)
 
 # ---------------------------------------------------------------------------
-# UI backend dispatch (TESSERACT_UI was already resolved up top — auto
-# detection and Catalyst flags ran before Corrosion).
+# UI backend dispatch (TESSERACT_UI was already resolved up top — auto-
+# detection and any preset overrides ran before Corrosion).
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "win32")
     if(NOT WIN32)

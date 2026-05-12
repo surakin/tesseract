@@ -5,16 +5,22 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
+
+#include "tk/host.h"
+#include "tk/host_gtk.h"
+#include "views/LoginView.h"
 
 namespace gtk4 {
 
 /// Inline sign-in view shown inside the main window when the user is not
-/// logged in. Drives the same two-phase OAuth / MAS flow as the previous
-/// modal LoginDialog (form → worker → browser → worker → done), but is a
-/// plain GtkWidget the main window can swap into a GtkStack instead of
-/// running modally.
+/// logged in. Visuals come from the shared `tesseract::views::LoginView`
+/// rendered through a `tk::gtk4::Surface`; the OAuth state machine +
+/// worker threads + native GtkEntry overlay live in this shell. The
+/// homeserver field stays native until tk::TextField + IME passthrough
+/// lands.
 class LoginView {
 public:
     explicit LoginView(tesseract::Client& client);
@@ -24,53 +30,36 @@ public:
     LoginView& operator=(const LoginView&) = delete;
 
     /// Root widget — add to a container / GtkStack.
-    GtkWidget* widget() const { return root_; }
+    GtkWidget* widget() const;
 
     /// Called on the main thread when the OAuth flow completes successfully.
     void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
 
-    /// Return the view to its initial "form" state (cancel any in-flight
-    /// OAuth and clear errors). Call before showing the view again.
+    /// Return the view to its initial "form" state.
     void reset();
 
-    /// Display a message above the form (e.g. "Saved session expired").
+    /// Show a message above the form (e.g. "Saved session expired").
     void set_status_message(const std::string& msg);
 
 private:
-    static void on_signin_clicked(GtkButton*, gpointer);
-    static void on_cancel_clicked(GtkButton*, gpointer);
-
-    static gboolean on_begin_done(gpointer);
-    static gboolean on_await_done(gpointer);
-
-    void show_form();
-    void show_waiting();
-    void set_error(const std::string& msg);
-    void start_phase1();
-    void start_phase2();
+    void on_sign_in();
+    void on_cancel();
+    void on_begin_completed(bool ok, std::string err_or_url);
+    void on_await_completed(bool ok, std::string err);
+    void position_overlay();
     void join_worker();
 
-    tesseract::Client& client_;
-    std::function<void()> on_success_;
+    static std::string trim(std::string s);
 
-    GtkWidget* root_        = nullptr;
-    GtkWidget* stack_       = nullptr;
-    GtkWidget* hs_entry_    = nullptr;
-    GtkWidget* status_lbl_  = nullptr;
-    GtkWidget* error_lbl_   = nullptr;
-    GtkWidget* wait_lbl_    = nullptr;
-    GtkWidget* signin_btn_  = nullptr;
-    GtkWidget* cancel_btn_  = nullptr;
+    tesseract::Client&                     client_;
+    std::function<void()>                  on_success_;
+
+    std::unique_ptr<tk::gtk4::Surface>     surface_;
+    tesseract::views::LoginView*           shared_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField>   hs_field_;
 
     std::thread       worker_;
-    std::atomic<bool> cancelled_ { false };
-};
-
-// Heap payload for cross-thread messages (deleted by the idle callback).
-struct LoginViewIdle {
-    LoginView*  view;
-    bool        ok;
-    std::string text;
+    std::atomic<bool> cancelled_{ false };
 };
 
 } // namespace gtk4

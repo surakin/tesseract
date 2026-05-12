@@ -55,30 +55,53 @@
       }
     },
     {
-      "name": "macos-native-debug",
-      "displayName": "macOS – UIKit Catalyst (Debug)",
+      "name": "macos-appkit-arm64-debug",
+      "displayName": "macOS – AppKit arm64 (Debug)",
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
       "cacheVariables": {
-        "TESSERACT_UI": "macos"
+        "TESSERACT_UI": "macos",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "Rust_CARGO_TARGET": "aarch64-apple-darwin"
       }
     },
     {
-      "name": "macos-native-release",
-      "displayName": "macOS – UIKit Catalyst (Release)",
-      "inherits": "macos-native-debug",
+      "name": "macos-appkit-arm64-release",
+      "displayName": "macOS – AppKit arm64 (Release)",
+      "inherits": "macos-appkit-arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos-appkit-x86_64-debug",
+      "displayName": "macOS – AppKit x86_64 (Debug)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "TESSERACT_UI": "macos",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "Rust_CARGO_TARGET": "x86_64-apple-darwin"
+      }
+    },
+    {
+      "name": "macos-appkit-x86_64-release",
+      "displayName": "macOS – AppKit x86_64 (Release)",
+      "inherits": "macos-appkit-x86_64-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
   "buildPresets": [
-    { "name": "windows-debug",       "configurePreset": "windows-debug"      },
-    { "name": "windows-release",     "configurePreset": "windows-release"    },
-    { "name": "linux-gtk-debug",     "configurePreset": "linux-gtk-debug"    },
-    { "name": "linux-qt6-debug",     "configurePreset": "linux-qt6-debug"    },
-    { "name": "linux-qt6-release",   "configurePreset": "linux-qt6-release"  },
-    { "name": "macos-native-debug",  "configurePreset": "macos-native-debug" },
-    { "name": "macos-native-release","configurePreset": "macos-native-release"}
+    { "name": "windows-debug",              "configurePreset": "windows-debug"              },
+    { "name": "windows-release",            "configurePreset": "windows-release"            },
+    { "name": "linux-gtk-debug",            "configurePreset": "linux-gtk-debug"            },
+    { "name": "linux-qt6-debug",            "configurePreset": "linux-qt6-debug"            },
+    { "name": "linux-qt6-release",          "configurePreset": "linux-qt6-release"          },
+    { "name": "macos-appkit-arm64-debug",   "configurePreset": "macos-appkit-arm64-debug"   },
+    { "name": "macos-appkit-arm64-release", "configurePreset": "macos-appkit-arm64-release" },
+    { "name": "macos-appkit-x86_64-debug",  "configurePreset": "macos-appkit-x86_64-debug"  },
+    { "name": "macos-appkit-x86_64-release","configurePreset": "macos-appkit-x86_64-release"}
   ]
 }

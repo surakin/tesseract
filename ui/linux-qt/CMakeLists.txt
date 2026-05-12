@@ -9,8 +9,6 @@ qt_add_executable(tesseract_qt
     src/MainWindow.h          # MOC input
     src/LoginView.cpp
     src/LoginView.h           # MOC input
-    src/RoomListDelegate.cpp
-    src/RoomListDelegate.h    # MOC input
     src/EmojiPicker.cpp
     src/EmojiPicker.h         # MOC input
 )
@@ -24,6 +22,7 @@ target_link_libraries(tesseract_qt PRIVATE
     # Link them as whole-archive so every symbol is unconditionally present,
     # removing all ordering constraints between them.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
+    tesseract_tk
     Qt6::Core
     Qt6::Widgets
 )

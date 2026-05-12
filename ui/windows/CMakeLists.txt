@@ -53,6 +53,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     # import-descriptor stubs (__IMPORT_DESCRIPTOR_kernel32, etc.) across crates.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
     tesseract_sdk_ffi-static
+    tesseract_tk
     comctl32
     gdiplus
     ole32

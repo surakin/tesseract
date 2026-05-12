@@ -15,6 +15,15 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/visual.h>
 
+#include "tk/canvas.h"
+#include "tk/host.h"
+#include "tk/host_win32.h"
+#include "views/ComposeBar.h"
+#include "views/EmojiPicker.h"
+#include "views/MessageListView.h"
+#include "views/RecoveryBanner.h"
+#include "views/RoomListView.h"
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -54,27 +63,6 @@ private:
 
 // ---------------------------------------------------------------------------
 
-struct MessageData {
-    std::string          event_id;
-    std::string          room_id;
-    std::string          body;
-    std::string          sender;
-    std::string          sender_name;
-    std::string          sender_avatar_url;
-    uint64_t             timestamp  = 0;
-    bool                 is_own     = false;
-    tesseract::EventType type       = tesseract::EventType::Text;
-    std::vector<tesseract::Reaction> reactions;
-    /// Populated during `draw_message_item`, consumed by the WM_LBUTTONDOWN
-    /// hit-test on the message list. Coordinates are relative to the row's
-    /// top-left and become stale on the next paint of the same item — that's
-    /// fine: every reaction click happens after a paint that has already
-    /// recorded the chip rects for that row.
-    mutable std::vector<std::pair<RECT, std::string>> chip_rects;
-};
-
-// ---------------------------------------------------------------------------
-
 class MainWindow {
     // Owner-drawn sidebar widgets need access to MainWindow state for paint.
     friend LRESULT CALLBACK room_header_wnd_proc(HWND, UINT, WPARAM, LPARAM);
@@ -83,11 +71,6 @@ class MainWindow {
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
-    static LRESULT CALLBACK input_subclass_proc(HWND, UINT, WPARAM, LPARAM,
-                                                 UINT_PTR, DWORD_PTR);
-    static LRESULT CALLBACK msg_list_subclass_proc(HWND, UINT, WPARAM, LPARAM,
-                                                    UINT_PTR, DWORD_PTR);
-
     explicit MainWindow(HINSTANCE hInst);
     ~MainWindow();
 
@@ -102,10 +85,18 @@ private:
     void show_login_view();
     void show_main_content();
     void on_send_clicked();
-    void on_room_selected(int index);
+    void on_room_selected(const std::string& room_id);
     void on_tesseract_message(tesseract::Event* ev);
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
     void on_tesseract_timeline_reset(std::string* room_id);
+    void refresh_room_list();
+
+    // Convert a polymorphic SDK Event into MessageRowData for the shared
+    // MessageListView; pre-fetch any referenced media into tk_images_.
+    tesseract::views::MessageRowData to_row_data(const tesseract::Event& ev);
+    void ensure_room_avatar(const tesseract::RoomInfo& r);
+    void ensure_user_avatar_tk(const std::string& mxc);
+    void ensure_media_image(const std::string& url, int max_w, int max_h);
 
     void on_reconnect();
     void on_auth_error(bool soft_logout);
@@ -114,30 +105,22 @@ private:
     void on_recovery_verify_clicked();
     void on_recovery_dismiss_clicked();
     void on_recover_done(bool ok, std::wstring msg);
-    void layout_recovery_banner(int w);
     void populate_user_strip();
     void do_logout();
     void append_message(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
 
-    int  compute_message_height(size_t idx);
-    void draw_room_item(DRAWITEMSTRUCT* dis);
-    void draw_message_item(DRAWITEMSTRUCT* dis);
+    // Room and message rendering are owned by the shared widget tree —
+    // see RoomListView / MessageListView. The legacy DRAWITEM hooks
+    // are gone.
 
     // ── Emoji picker ────────────────────────────────────────────────────
-    static LRESULT CALLBACK emoji_picker_wnd_proc(HWND, UINT, WPARAM, LPARAM);
-    void   register_emoji_class();
+    // A floating WS_POPUP HWND parents a tk::win32::Surface that paints
+    // the shared tesseract::views::EmojiPicker; selection routes back to
+    // insert_emoji_at_cursor.
     void   ensure_emoji_picker_created();
     void   toggle_emoji_picker();
-    void   on_emoji_search_changed();
-    void   refresh_emoji_grid();              // rebuild from category or search
-    void   show_emoji_category(int tab_idx);
-    void   show_emoji_search_results(const std::string& query);
-    void   pick_emoji_at(int row, int col);   // grid hit-test target
-    void   pick_emoji_tab(int idx);
-    void   draw_emoji_grid_item(DRAWITEMSTRUCT* dis);
-    void   draw_emoji_tab_item (DRAWITEMSTRUCT* dis);
     void   insert_emoji_at_cursor(const std::string& glyph);
 
     void   apply_default_font(HWND);     // SegoeUI / SegoeUI Variable
@@ -172,26 +155,28 @@ private:
     HWND      hwnd_       = nullptr;
     std::unique_ptr<LoginView> login_view_;
     bool      login_visible_ = false;
-    HWND      hRoomList_   = nullptr;
+    std::unique_ptr<tk::win32::Surface>            room_surface_;
+    tesseract::views::RoomListView*                room_list_view_   = nullptr; // borrowed
     HWND      hSideSep_    = nullptr;   // 1px vertical separator at x=ROOM_W
     HWND      hRoomHeader_ = nullptr;
-    HWND      hMsgList_    = nullptr;
-    HWND      hInput_      = nullptr;
-    HWND      hSend_       = nullptr;
-    HWND      hEmoji_      = nullptr;
-    HWND      hEmojiPicker_ = nullptr;   // floating WS_POPUP window
-    HWND      hEmojiSearch_ = nullptr;   // EDIT inside the picker
-    HWND      hEmojiGrid_   = nullptr;   // owner-drawn LISTBOX inside the picker
-    HWND      hEmojiTabs_   = nullptr;   // owner-drawn LISTBOX bottom strip
-    std::vector<std::string>          emoji_view_;   // current grid contents (UTF-8)
-    std::vector<std::string>          emoji_tabs_;   // tab strip glyphs
-    int                               emoji_tab_idx_ = 1;  // default: Smileys & People
+    std::unique_ptr<tk::win32::Surface>            msg_surface_;
+    tesseract::views::MessageListView*             message_list_view_ = nullptr; // borrowed
+    // Compose bar — tk::win32::Surface hosting the shared ComposeBar
+    // with a NativeTextArea overlay (multi-line EDIT under the hood).
+    std::unique_ptr<tk::win32::Surface>            compose_surface_;
+    tesseract::views::ComposeBar*                   compose_shared_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextArea>             compose_text_area_;
+    HWND      hEmojiPicker_ = nullptr;       // floating WS_POPUP host
+    std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;
+    tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
     HWND      hStatus_     = nullptr;
-    HWND      hRecoveryBanner_ = nullptr;
-    HWND      hRecoveryLabel_  = nullptr;
-    HWND      hRecoveryKeyEdit_ = nullptr;
-    HWND      hRecoveryVerify_ = nullptr;
-    HWND      hRecoveryDismiss_ = nullptr;
+
+    // Recovery banner — shared widget on a tk::win32::Surface. Key
+    // input is a NativeTextField overlay (Win32 EDIT under the hood).
+    std::unique_ptr<tk::win32::Surface>      recovery_surface_;
+    tesseract::views::RecoveryBanner*         recovery_shared_   = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>     recovery_key_field_;
     bool      recovery_banner_visible_   = false;
     bool      recovery_banner_dismissed_ = false;
     bool      recovery_in_flight_        = false;
@@ -204,27 +189,24 @@ private:
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
     std::vector<tesseract::RoomInfo> rooms_;
-    std::vector<MessageData>         messages_;
     tesseract::RoomInfo              current_room_info_;
     std::string                      current_room_id_;
     std::string                      my_user_id_;
+    std::vector<std::string>         space_stack_;
 
     ULONG_PTR  gdiplus_token_ = 0;
+    // GDI+ bitmap caches for the legacy native paint paths that the
+    // migration still relies on: the room-header avatar (drawn in
+    // room_header_wnd_proc) and the user-strip avatar (drawn in
+    // user_strip_wnd_proc). Room-list + message-list avatars and
+    // inline media flow through the tk::Image caches below.
     std::unordered_map<std::string, Gdiplus::Bitmap*> avatar_cache_;
     std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
 
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
-    static constexpr int            IDC_ROOMLIST = 101;
-    static constexpr int            IDC_MSGLIST  = 102;
-    static constexpr int            IDC_INPUT    = 103;
-    static constexpr int            IDC_SEND     = 104;
-    static constexpr int            IDC_EMOJI    = 105;
-    static constexpr int            IDC_EMOJI_PICKER_SEARCH = 106;
-    static constexpr int            IDC_EMOJI_PICKER_GRID   = 107;
-    static constexpr int            IDC_EMOJI_PICKER_TABS   = 108;
-    static constexpr int            IDC_RECOVERY_KEY     = 109;
-    static constexpr int            IDC_RECOVERY_VERIFY  = 110;
-    static constexpr int            IDC_RECOVERY_DISMISS = 111;
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;
     static constexpr int            IDM_LOGOUT           = 120;
 };

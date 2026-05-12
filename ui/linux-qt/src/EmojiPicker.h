@@ -1,41 +1,33 @@
 #pragma once
-#include "tesseract/emoji.h"
-
 #include <QFrame>
 #include <QString>
 
 #include <functional>
-#include <vector>
+#include <memory>
 
-class QLineEdit;
-class QStackedWidget;
-class QToolButton;
-class QGridLayout;
-class QScrollArea;
+#include "tk/host.h"
+#include "tk/host_qt.h"
+#include "views/EmojiPicker.h"
 
 namespace tesseract { class Client; }
 
-/// Floating emoji picker, mobile-keyboard style: search bar at top, a grid
-/// of emoji buttons in the middle, and a category tab strip at the bottom
-/// (Frequently Used + 8 Unicode categories).
+/// Floating emoji picker. Hosts the shared tesseract::views::EmojiPicker
+/// inside a tk::qt6::Surface, with a native QLineEdit overlaid on the
+/// shared widget's search-field rect.
 ///
-/// The picker carries no ownership of the recents store; the caller passes
-/// a pointer and the picker only reads `top()` from it. When the user
-/// clicks an emoji, `onSelected` fires with the UTF-8 glyph — the caller
-/// is responsible for inserting it and calling `bump()` on its recents.
+/// Public API preserved verbatim from the legacy native picker so
+/// MainWindow.cpp doesn't need to change.
 class EmojiPicker : public QFrame {
     Q_OBJECT
 public:
     explicit EmojiPicker(QWidget* parent = nullptr);
 
     /// Borrowed pointer to the SDK client; must outlive the picker. The
-    /// picker calls `recent_emoji_top` to populate the Frequents tab and
-    /// `recent_emoji_bump` when the user picks an emoji.
-    void setClient(tesseract::Client* c) { client_ = c; }
+    /// shared picker reads recent_emoji_top + writes recent_emoji_bump.
+    void setClient(tesseract::Client* c);
 
     /// Position the picker so its bottom-right corner lines up just above
-    /// the given anchor widget (typically the emoji button in the compose
-    /// bar), then show it.
+    /// the given anchor widget, then show it.
     void popupAt(QWidget* anchor);
 
     /// Fired when the user picks an emoji; the QString carries the glyph
@@ -43,30 +35,13 @@ public:
     std::function<void(const QString&)> onSelected;
 
 protected:
-    bool event(QEvent* e) override;
-
-private slots:
-    void onSearchChanged(const QString& text);
-    void onTabChanged(int idx);
+    void showEvent(QShowEvent* e) override;
+    void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void  buildUi();
-    void  refreshFrequents();
-    void  showCategory(tesseract::emoji::Category c);
-    void  showSearchResults(const QString& query);
-    void  populateGrid(QGridLayout* grid,
-                       const std::vector<const tesseract::emoji::Entry*>& items);
-    QToolButton* makeEmojiButton(const QString& glyph);
+    void layout_overlay();
 
-    tesseract::Client* client_ = nullptr;
-
-    QLineEdit*       search_      = nullptr;
-    QStackedWidget*  pages_       = nullptr;   // 0 = frequents, 1..N = categories, last = search
-    QWidget*         freqPage_    = nullptr;
-    QGridLayout*     freqGrid_    = nullptr;
-    QWidget*         searchPage_  = nullptr;
-    QGridLayout*     searchGrid_  = nullptr;
-    QWidget*         tabStrip_    = nullptr;
-    std::vector<QToolButton*> tabButtons_;     // [0]=frequents, [1..8]=categories
-    int              currentTabIdx_ = 1;       // default: Smileys & People
+    tk::qt6::Surface*                       surface_      = nullptr;
+    tesseract::views::EmojiPicker*          shared_       = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField>    search_field_;
 };

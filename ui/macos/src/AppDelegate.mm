@@ -1,26 +1,92 @@
 #import "AppDelegate.h"
-#import "MainViewController.h"
+#import "MainWindowController.h"
 
 @implementation AppDelegate {
-    MainViewController* _root;
+    MainWindowController* _windowController;
 }
 
-- (BOOL)application:(UIApplication*)application
-    didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-    _root = [[MainViewController alloc] init];
-    self.window.rootViewController = _root;
-    [self.window makeKeyAndVisible];
+- (void)applicationDidFinishLaunching:(NSNotification*)note {
+    _windowController = [[MainWindowController alloc] init];
+    [_windowController showWindow:self];
+    [_windowController.window makeKeyAndOrderFront:self];
+    [NSApp activateIgnoringOtherApps:YES];
 
-    // Run after the window is on-screen so the modal sheet attaches properly.
+    [self _installMenuBar];
+
+    // Start the login flow after the window is on screen so the
+    // browser-redirect prompt doesn't open behind a still-loading shell.
     dispatch_async(dispatch_get_main_queue(), ^{
-        [_root doLogin];
+        [_windowController beginLogin];
     });
+}
+
+- (void)_installMenuBar {
+    NSMenu* mainMenu = [[NSMenu alloc] initWithTitle:@""];
+
+    // ── Application menu ──────────────────────────────────────────────
+    NSMenuItem* appItem  = [[NSMenuItem alloc] init];
+    NSMenu*     appMenu  = [[NSMenu alloc] initWithTitle:@"Tesseract"];
+    [appMenu addItemWithTitle:@"About Tesseract"
+                        action:@selector(orderFrontStandardAboutPanel:)
+                 keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:@"Hide Tesseract"
+                        action:@selector(hide:)
+                 keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Quit Tesseract"
+                        action:@selector(terminate:)
+                 keyEquivalent:@"q"];
+    appItem.submenu = appMenu;
+    [mainMenu addItem:appItem];
+
+    // ── Edit menu ─────────────────────────────────────────────────────
+    NSMenuItem* editItem = [[NSMenuItem alloc] init];
+    NSMenu*     editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [editMenu addItemWithTitle:@"Undo"   action:@selector(undo:)   keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:@"Redo"   action:@selector(redo:)   keyEquivalent:@"Z"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Cut"    action:@selector(cut:)    keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"Copy"   action:@selector(copy:)   keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"Paste"  action:@selector(paste:)  keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"Select All"
+                         action:@selector(selectAll:)
+                  keyEquivalent:@"a"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* emojiItem = [editMenu addItemWithTitle:@"Insert Emoji…"
+                                                 action:@selector(showEmojiPicker:)
+                                          keyEquivalent:@"e"];
+    emojiItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+    editItem.submenu = editMenu;
+    [mainMenu addItem:editItem];
+
+    // ── Window menu ───────────────────────────────────────────────────
+    NSMenuItem* winItem = [[NSMenuItem alloc] init];
+    NSMenu*     winMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+    [winMenu addItemWithTitle:@"Minimize"
+                         action:@selector(performMiniaturize:)
+                  keyEquivalent:@"m"];
+    [winMenu addItemWithTitle:@"Zoom"
+                         action:@selector(performZoom:)
+                  keyEquivalent:@""];
+    winItem.submenu = winMenu;
+    [mainMenu addItem:winItem];
+    NSApp.windowsMenu = winMenu;
+
+    NSApp.mainMenu = mainMenu;
+}
+
+- (void)applicationWillTerminate:(NSNotification*)note {
+    [_windowController stopSync];
+}
+
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
     return YES;
 }
 
-- (void)applicationWillTerminate:(UIApplication*)application {
-    [_root stopSync];
+// First-responder pass-through: when no other responder handles
+// Cmd-E (Insert Emoji), route it to the active window controller.
+- (void)showEmojiPicker:(id)sender {
+    [_windowController showEmojiPicker:sender];
 }
 
 @end

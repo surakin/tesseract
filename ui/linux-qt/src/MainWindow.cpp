@@ -1,7 +1,9 @@
 #include "MainWindow.h"
 #include "LoginView.h"
-#include "RoomListDelegate.h"
 #include "EmojiPicker.h"
+
+#include "tk/canvas_qpainter.h"
+#include "tk/theme.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -15,6 +17,7 @@
 #include <QMetaType>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QFrame>
 #include <QIcon>
 #include <QScrollBar>
@@ -159,16 +162,21 @@ MainWindow::MainWindow(QWidget* parent)
     connect(backButton_, &QPushButton::clicked, this, &MainWindow::onSpaceBack);
     sideLayout->addWidget(roomNavBar_);
 
-    roomModel_ = new QStandardItemModel(this);
-    roomList_  = new QListView(sidePanel);
-    roomList_->setModel(roomModel_);
-    roomList_->setItemDelegate(new RoomListDelegate(roomList_));
-    roomList_->setFrameShape(QFrame::NoFrame);
-    roomList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    roomList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    roomList_->setUniformItemSizes(true);
-    roomList_->setMouseTracking(true);
-    sideLayout->addWidget(roomList_);
+    // Shared-toolkit room list. The Surface is a QWidget that hosts a
+    // tk::Widget tree painted via QPainter; the RoomListView inside
+    // owns the actual layout + paint + selection state.
+    roomSurface_ = new tk::qt6::Surface(tk::Theme::light(), sidePanel);
+    auto room_view_owner = std::make_unique<tesseract::views::RoomListView>();
+    roomListView_ = room_view_owner.get();
+    roomListView_->set_avatar_provider(
+        [this](const std::string& mxc) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc);
+            return it == tk_avatars_.end() ? nullptr : it->second.get();
+        });
+    roomListView_->on_room_selected =
+        [this](const std::string& room_id) { onRoomSelected(room_id); };
+    roomSurface_->set_root(std::move(room_view_owner));
+    sideLayout->addWidget(roomSurface_, 1);
 
     // ---- User identity strip (footer) ----
     userStrip_ = new QWidget(sidePanel);
@@ -251,116 +259,94 @@ MainWindow::MainWindow(QWidget* parent)
     headerLayout->addWidget(nameBlock, 1);
     vLayout->addWidget(roomHeader_);
 
-    // Recovery banner (Step 6) — hidden until needs_recovery() is true.
-    // Inline recovery: the key-entry field + Verify button live in the banner
-    // itself; no modal dialog.
-    recoveryBanner_ = new QWidget(chatPanel);
-    recoveryBanner_->setObjectName("recoveryBanner");
-    recoveryBanner_->setStyleSheet(
-        "#recoveryBanner { background-color:#FFF4D6; border-bottom:1px solid #E0C97A; }");
-    recoveryBanner_->setVisible(false);
+    // Recovery banner — shared widget hosted in a tk::qt6::Surface.
+    recoverySurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
+    recoverySurface_->setFixedHeight(48);
+    recoverySurface_->setVisible(false);
     {
-        auto* bannerLayout = new QHBoxLayout(recoveryBanner_);
-        bannerLayout->setContentsMargins(12, 6, 6, 6);
-        bannerLayout->setSpacing(8);
+        auto banner = std::make_unique<tesseract::views::RecoveryBanner>();
+        recoveryShared_ = banner.get();
+        recoveryShared_->on_verify =
+            [this](const std::string& key) { (void)key; onRecoveryVerifyClicked(); };
+        recoveryShared_->on_dismiss =
+            [this] { onDismissRecoveryBanner(); };
+        recoverySurface_->set_root(std::move(banner));
 
-        recoveryLabel_ = new QLabel(tr("Verify this device:"), recoveryBanner_);
-        recoveryLabel_->setStyleSheet("color:#5C4500;");
-        bannerLayout->addWidget(recoveryLabel_);
+        recoveryKeyField_ = recoverySurface_->host().make_text_field();
+        recoveryKeyField_->set_placeholder("Recovery key or passphrase");
+        recoveryKeyField_->set_password(true);
+        recoveryKeyField_->set_on_changed([this](const std::string& k) {
+            if (recoveryShared_) recoveryShared_->set_current_key(k);
+        });
+        recoveryKeyField_->set_on_submit([this] { onRecoveryVerifyClicked(); });
 
-        recoveryKeyEdit_ = new QLineEdit(recoveryBanner_);
-        recoveryKeyEdit_->setEchoMode(QLineEdit::Password);
-        recoveryKeyEdit_->setPlaceholderText(tr("Recovery key or passphrase"));
-        recoveryKeyEdit_->setMinimumWidth(220);
-        bannerLayout->addWidget(recoveryKeyEdit_, 1);
-
-        recoveryVerifyBtn_ = new QPushButton(tr("Verify"), recoveryBanner_);
-        recoveryVerifyBtn_->setDefault(true);
-        recoveryVerifyBtn_->setStyleSheet(
-            "QPushButton { background-color:#E0A800; color:white; border:none; "
-            "border-radius:4px; padding:4px 10px; font-weight:bold; }"
-            "QPushButton:hover { background-color:#C99100; }");
-        bannerLayout->addWidget(recoveryVerifyBtn_);
-
-        auto* dismissBtn = new QPushButton("✕", recoveryBanner_);
-        dismissBtn->setFlat(true);
-        dismissBtn->setFixedSize(24, 24);
-        dismissBtn->setStyleSheet("QPushButton { color:#5C4500; }");
-        bannerLayout->addWidget(dismissBtn);
-
-        connect(recoveryVerifyBtn_, &QPushButton::clicked,
-                this,               &MainWindow::onRecoveryVerifyClicked);
-        connect(recoveryKeyEdit_,   &QLineEdit::returnPressed,
-                this,               &MainWindow::onRecoveryVerifyClicked);
-        connect(dismissBtn,         &QPushButton::clicked,
-                this,               &MainWindow::onDismissRecoveryBanner);
-        connect(this, &MainWindow::recoverFinished,
-                this, &MainWindow::onRecoverFinished, Qt::QueuedConnection);
+        recoverySurface_->set_on_layout([this] {
+            if (!recoveryShared_ || !recoveryKeyField_) return;
+            recoveryKeyField_->set_visible(
+                recoveryShared_->recovery_key_field_visible());
+            recoveryKeyField_->set_rect(
+                recoveryShared_->recovery_key_field_rect());
+        });
     }
-    vLayout->addWidget(recoveryBanner_);
+    connect(this, &MainWindow::recoverFinished,
+            this, &MainWindow::onRecoverFinished, Qt::QueuedConnection);
+    vLayout->addWidget(recoverySurface_);
 
-    // Message scroll area
-    msgScrollArea_ = new QScrollArea(chatPanel);
-    msgScrollArea_->setWidgetResizable(true);
-    msgScrollArea_->setFrameShape(QFrame::NoFrame);
-    msgScrollArea_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    msgScrollArea_->setStyleSheet("QScrollArea { background-color: #FFFFFF; }");
+    // Shared-toolkit message list. Each row is paint-only — no per-row
+    // QWidget — and the surface owns scrolling, hit-testing, and
+    // viewport virtualisation.
+    msgSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
+    auto msg_view_owner = std::make_unique<tesseract::views::MessageListView>();
+    messageListView_ = msg_view_owner.get();
+    messageListView_->set_avatar_provider(
+        [this](const std::string& mxc) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc);
+            return it == tk_avatars_.end() ? nullptr : it->second.get();
+        });
+    messageListView_->set_image_provider(
+        [this](const std::string& mxc) -> const tk::Image* {
+            auto it = tk_images_.find(mxc);
+            return it == tk_images_.end() ? nullptr : it->second.get();
+        });
+    msgSurface_->set_root(std::move(msg_view_owner));
+    vLayout->addWidget(msgSurface_, 1);
 
-    msgContainer_ = new QWidget(msgScrollArea_);
-    msgContainer_->setStyleSheet("background-color: #FFFFFF;");
-    msgLayout_    = new QVBoxLayout(msgContainer_);
-    msgLayout_->setAlignment(Qt::AlignTop);
-    msgLayout_->setSpacing(2);
-    msgLayout_->setContentsMargins(12, 12, 12, 12);
-    msgScrollArea_->setWidget(msgContainer_);
-    connect(msgScrollArea_->verticalScrollBar(), &QScrollBar::rangeChanged,
-            this, [this](int, int max) {
-        if (autoScrollPending_) {
-            autoScrollPending_ = false;
-            msgScrollArea_->verticalScrollBar()->setValue(max);
-        }
+    // Compose bar — shared widget on a tk::qt6::Surface. The text input
+    // is a NativeTextArea overlaid on the shared ComposeBar's
+    // text_area_rect; the emoji + send buttons paint into the toolkit.
+    composeSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
+    composeSurface_->setFixedHeight(
+        static_cast<int>(tesseract::views::ComposeBar::kMinHeight));
+    auto compose_owner = std::make_unique<tesseract::views::ComposeBar>();
+    composeShared_ = compose_owner.get();
+    composeSurface_->set_root(std::move(compose_owner));
+
+    composeTextArea_ = composeSurface_->host().make_text_area();
+    composeTextArea_->set_placeholder("Message…");
+    composeTextArea_->set_on_changed([this](const std::string& s) {
+        if (composeShared_) composeShared_->set_current_text(s);
     });
-    vLayout->addWidget(msgScrollArea_, 1);
+    composeTextArea_->set_on_submit([this] { onSendClicked(); });
+    composeTextArea_->set_on_height_changed([this](float h) {
+        if (!composeShared_ || !composeSurface_) return;
+        composeShared_->set_text_area_natural_height(h);
+        composeSurface_->setFixedHeight(
+            static_cast<int>(composeShared_->natural_height()));
+        composeSurface_->relayout();
+    });
+    composeSurface_->set_on_layout([this] {
+        if (composeShared_ && composeTextArea_)
+            composeTextArea_->set_rect(composeShared_->text_area_rect());
+    });
 
-    // Compose bar
-    auto* composeBar = new QWidget(chatPanel);
-    composeBar->setStyleSheet("background-color: #F0F2F5; border-top: 1px solid #D0D3D8;");
-    auto* composeLayout = new QHBoxLayout(composeBar);
-    composeLayout->setContentsMargins(12, 8, 12, 8);
-    composeLayout->setSpacing(8);
+    composeShared_->on_send  = [this](const std::string&) { onSendClicked(); };
+    composeShared_->on_emoji = [this] {
+        if (!emojiPicker_) return;
+        if (emojiPicker_->isVisible()) emojiPicker_->hide();
+        else                            emojiPicker_->popupAt(composeSurface_);
+    };
 
-    composeEdit_ = new QTextEdit(composeBar);
-    composeEdit_->setPlaceholderText("Message…");
-    composeEdit_->setFixedHeight(40);
-    composeEdit_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    composeEdit_->setStyleSheet(
-        "QTextEdit { border: 1px solid #CED0D4; border-radius: 20px; "
-        "padding: 8px 14px; background-color: #FFFFFF; font-size: 14px; }");
-    composeEdit_->installEventFilter(this);
-
-    emojiButton_ = new QToolButton(composeBar);
-    emojiButton_->setText(QString::fromUtf8("\xF0\x9F\x98\x80"));  // 😀
-    emojiButton_->setFixedSize(40, 40);
-    emojiButton_->setFocusPolicy(Qt::NoFocus);
-    emojiButton_->setToolTip(tr("Insert emoji"));
-    emojiButton_->setStyleSheet(
-        "QToolButton { background-color: #FFFFFF; border: 1px solid #CED0D4; "
-        "border-radius: 20px; font-size: 18px; }"
-        "QToolButton:hover  { background-color: #F0F2F5; }"
-        "QToolButton:pressed{ background-color: #E4E6EB; }");
-
-    sendButton_ = new QPushButton("Send", composeBar);
-    sendButton_->setFixedSize(64, 40);
-    sendButton_->setStyleSheet(
-        "QPushButton { background-color: #0084FF; color: white; border: none; "
-        "border-radius: 20px; font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background-color: #0077E5; }"
-        "QPushButton:pressed { background-color: #006BD6; }");
-
-    composeLayout->addWidget(composeEdit_, 1);
-    composeLayout->addWidget(emojiButton_);
-    composeLayout->addWidget(sendButton_);
-    vLayout->addWidget(composeBar);
+    vLayout->addWidget(composeSurface_);
 
     // Emoji picker: build the floating panel, wire selection → cursor
     // insert + account-data bump. Recents live in the SDK now (synced via
@@ -368,30 +354,18 @@ MainWindow::MainWindow(QWidget* parent)
     emojiPicker_ = new EmojiPicker(this);
     emojiPicker_->setClient(&client_);
     emojiPicker_->onSelected = [this](const QString& glyph) {
-        composeEdit_->textCursor().insertText(glyph);
-        composeEdit_->setFocus();
+        if (!composeTextArea_) return;
+        std::string cur = composeTextArea_->text();
+        cur += glyph.toStdString();
+        composeTextArea_->set_text(cur);
+        if (composeShared_) composeShared_->set_current_text(cur);
+        composeTextArea_->set_focused(true);
         client_.recent_emoji_bump(glyph.toStdString());
     };
-    connect(emojiButton_, &QToolButton::clicked, this, [this]() {
-        if (emojiPicker_->isVisible()) emojiPicker_->hide();
-        else                            emojiPicker_->popupAt(emojiButton_);
-    });
 
     statusBar()->showMessage("Not logged in");
-
-    // ---- Auto-grow compose field (max 5 lines) ----
-    connect(composeEdit_->document(), &QTextDocument::contentsChanged,
-            this, [this]() {
-        int docH = static_cast<int>(composeEdit_->document()->size().height());
-        QFontMetrics fm(composeEdit_->font());
-        int maxH  = fm.lineSpacing() * 5 + 20;
-        composeEdit_->setFixedHeight(std::clamp(docH + 16, 40, maxH));
-    });
-
-    // ---- Signals ----
-    connect(sendButton_, &QPushButton::clicked, this, &MainWindow::onSendClicked);
-    connect(roomList_->selectionModel(), &QItemSelectionModel::currentRowChanged,
-            this, &MainWindow::onRoomSelectionChanged);
+    // Room selection is delivered through RoomListView's on_room_selected
+    // callback wired in the surface-construction block above.
 
     bridge_ = std::make_unique<EventBridge>(this);
     connect(bridge_.get(), &EventBridge::eventReceived,
@@ -423,15 +397,6 @@ MainWindow::~MainWindow() {
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
     if (obj == roomHeaderTopic_ && event->type() == QEvent::Resize) {
         updateTopicElision();
-    }
-    if (obj == composeEdit_ && event->type() == QEvent::KeyPress) {
-        auto* ke = static_cast<QKeyEvent*>(event);
-        if (ke->key() == Qt::Key_Return
-            && !(ke->modifiers() & Qt::ShiftModifier))
-        {
-            onSendClicked();
-            return true;
-        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
@@ -477,38 +442,36 @@ void MainWindow::onLoginSucceeded() {
 }
 
 void MainWindow::onSendClicked() {
-    if (currentRoomId_.empty()) return;
+    if (currentRoomId_.empty() || !composeTextArea_) return;
 
-    QString text = composeEdit_->toPlainText().trimmed();
+    QString text = QString::fromStdString(composeTextArea_->text()).trimmed();
     if (text.isEmpty()) return;
 
     auto res = client_.send_message(currentRoomId_, text.toStdString());
-    if (res)
-        composeEdit_->clear();
-    else
+    if (res) {
+        composeTextArea_->set_text("");
+        if (composeShared_) composeShared_->set_current_text({});
+    } else {
         statusBar()->showMessage(QString::fromStdString(res.message), 4000);
+    }
 }
 
-void MainWindow::onRoomSelectionChanged(
-    const QModelIndex& current, const QModelIndex& /*previous*/)
-{
-    if (!current.isValid()) return;
+void MainWindow::onRoomSelected(const std::string& room_id) {
+    if (room_id.empty()) return;
 
-    QString roomId = roomModel_->data(current, RoomIdRole).toString();
-    if (roomId.isEmpty()) return;
-
-    // If the selected item is a space, drill into it instead of opening a timeline.
-    if (roomModel_->data(current, IsSpaceRole).toBool()) {
-        spaceStack_.push_back(roomId.toStdString());
-        refreshRoomList();
-        return;
+    // Drill into a space if the clicked row is one.
+    for (const auto& r : rooms_) {
+        if (r.id == room_id && r.is_space) {
+            spaceStack_.push_back(room_id);
+            refreshRoomList();
+            return;
+        }
     }
 
-    const std::string newId = roomId.toStdString();
-    if (!currentRoomId_.empty() && currentRoomId_ != newId)
+    if (!currentRoomId_.empty() && currentRoomId_ != room_id)
         client_.unsubscribe_room(currentRoomId_);
 
-    currentRoomId_ = newId;
+    currentRoomId_ = room_id;
 
     for (const auto& r : rooms_)
         if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
@@ -629,59 +592,71 @@ void MainWindow::updateTopicElision() {
 }
 
 void MainWindow::clearMessages() {
-    msgEventWidgets_.clear();
-    while (msgLayout_->count() > 0) {
-        QLayoutItem* item = msgLayout_->takeAt(0);
-        if (item->widget())
-            item->widget()->deleteLater();
-        delete item;
-    }
+    messageListView_->set_messages({});
+    msgSurface_->relayout();
+}
+
+void MainWindow::ensureRoomAvatar(const tesseract::RoomInfo& r) {
+    if (r.avatar_url.empty()) return;
+    const std::string& mxc = r.avatar_url;
+    if (tk_avatars_.count(mxc)) return;
+
+    auto bytes = client_.fetch_avatar_bytes(r.id);
+    if (bytes.empty()) return;
+
+    QImage img;
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                          static_cast<int>(bytes.size())))
+        return;
+    QImage scaled = img.scaled(kRoomAvatarSize, kRoomAvatarSize,
+                                Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation);
+    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+}
+
+void MainWindow::ensureUserAvatar(const std::string& mxc) {
+    if (mxc.empty() || tk_avatars_.count(mxc)) return;
+    auto bytes = client_.fetch_media_bytes(mxc);
+    if (bytes.empty()) return;
+    QImage img;
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                          static_cast<int>(bytes.size())))
+        return;
+    QImage scaled = img.scaled(kMsgAvatarSize, kMsgAvatarSize,
+                                Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation);
+    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+}
+
+void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) {
+    if (url.empty() || tk_images_.count(url)) return;
+    auto bytes = client_.fetch_media_bytes(url);
+    if (bytes.empty()) return;
+    QImage img;
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                          static_cast<int>(bytes.size())))
+        return;
+    QImage scaled = img.scaled(max_w, max_h,
+                                Qt::KeepAspectRatio,
+                                Qt::SmoothTransformation);
+    tk_images_.emplace(url, tk::qt6::make_image(std::move(scaled)));
 }
 
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
     // Sort: regular rooms first, spaces at the bottom.
-    std::vector<const tesseract::RoomInfo*> sorted;
-    for (const auto& r : rooms) if (!r.is_space) sorted.push_back(&r);
-    for (const auto& r : rooms) if ( r.is_space) sorted.push_back(&r);
+    std::vector<tesseract::RoomInfo> sorted;
+    sorted.reserve(rooms.size());
+    for (const auto& r : rooms) if (!r.is_space) sorted.push_back(r);
+    for (const auto& r : rooms) if ( r.is_space) sorted.push_back(r);
 
-    roomModel_->clear();
+    // Eagerly fetch avatars for the new room set so the first paint has
+    // them ready. Bytes-already-cached is a no-op via tk_avatars_.count.
+    for (const auto& r : sorted) ensureRoomAvatar(r);
 
-    for (const auto* rp : sorted) {
-        const auto& r = *rp;
-
-        // Fetch and cache avatar on first sight.
-        if (!r.avatar_url.empty()) {
-            QString qurl = QString::fromStdString(r.avatar_url);
-            if (!avatarCache_.contains(qurl)) {
-                auto bytes = client_.fetch_avatar_bytes(r.id);
-                if (!bytes.empty()) {
-                    QPixmap pm;
-                    pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                                    static_cast<uint>(bytes.size()));
-                    if (!pm.isNull())
-                        avatarCache_[qurl] = pm.scaled(
-                            kRoomAvatarSize, kRoomAvatarSize,
-                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                }
-            }
-        }
-
-        auto* item = new QStandardItem;
-        item->setData(QString::fromStdString(r.name), Qt::DisplayRole);
-        item->setData(QString::fromStdString(r.last_message_body), LastMessageRole);
-        item->setData(static_cast<int>(r.unread_count), UnreadCountRole);
-        item->setData(QString::fromStdString(r.id), RoomIdRole);
-        item->setData(r.is_space, IsSpaceRole);
-        item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-
-        if (!r.avatar_url.empty()) {
-            QString qurl = QString::fromStdString(r.avatar_url);
-            if (avatarCache_.contains(qurl))
-                item->setData(avatarCache_[qurl], Qt::DecorationRole);
-        }
-
-        roomModel_->appendRow(item);
-    }
+    roomListView_->set_rooms(std::move(sorted));
+    if (!currentRoomId_.empty())
+        roomListView_->set_selected_room(currentRoomId_);
+    roomSurface_->relayout();
 }
 
 void MainWindow::refreshRoomList() {
@@ -712,294 +687,97 @@ void MainWindow::onSpaceBack() {
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::appendMessage(const tesseract::Event& ev) {
-    if (ev.type == tesseract::EventType::Unhandled) return;
+tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& ev) {
+    using Kind = tesseract::views::MessageRowData::Kind;
+    tesseract::views::MessageRowData row;
+    row.event_id          = ev.event_id;
+    row.sender            = ev.sender;
+    row.sender_name       = ev.sender_name;
+    row.sender_avatar_url = ev.sender_avatar_url;
+    row.body              = ev.body;
+    row.timestamp_ms      = ev.timestamp;
+    row.is_own            = (ev.sender == myUserId_);
+    row.reactions         = ev.reactions;
 
-    QString qid = QString::fromStdString(ev.event_id);
-
-    // Fetch/cache sender avatar.
-    QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
-    if (!avatarUrl.isEmpty() && !userAvatarCache_.contains(avatarUrl)) {
-        auto bytes = client_.fetch_media_bytes(ev.sender_avatar_url);
-        if (!bytes.empty()) {
-            QPixmap pm;
-            pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                            static_cast<uint>(bytes.size()));
-            if (!pm.isNull())
-                userAvatarCache_[avatarUrl] = makeCirclePixmap(pm, kMsgAvatarSize);
+    switch (ev.type) {
+        case tesseract::EventType::Text:
+            row.kind = Kind::Text;
+            break;
+        case tesseract::EventType::Image: {
+            row.kind = Kind::Image;
+            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+            row.media_url            = img.image_url;
+            row.media_w              = static_cast<int>(img.width);
+            row.media_h              = static_cast<int>(img.height);
+            row.has_filename_caption = !img.filename.empty();
+            break;
         }
-    }
-
-    // Fetch/cache image for image and sticker events.
-    auto fetchAndCacheImage = [&](const std::string& url, int maxW, int maxH) {
-        QString qurl = QString::fromStdString(url);
-        if (qurl.isEmpty() || imageCache_.contains(qurl)) return;
-        auto bytes = client_.fetch_media_bytes(url);
-        if (bytes.empty()) return;
-        QPixmap pm;
-        pm.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                        static_cast<uint>(bytes.size()));
-        if (!pm.isNull())
-            imageCache_[qurl] = pm.scaled(maxW, maxH,
-                Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    };
-
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        fetchAndCacheImage(img.image_url, kMaxImageWidth, kMaxImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        fetchAndCacheImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
-    }
-
-    // Pre-fetch chip icons for MSC 4027 custom-image reactions so the chip
-    // can render with the image instead of falling back to the shortcode.
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            fetchAndCacheImage(r.source_json, 20, 20);
-    }
-
-    QWidget* row = createMessageRow(ev);
-
-    // Replace any existing row for this event_id (live re-emit after reaction
-    // change, edit, or sender-profile resolution) in place, preserving its
-    // position in the layout. Otherwise append.
-    if (!qid.isEmpty() && msgEventWidgets_.contains(qid)) {
-        QWidget* existing = msgEventWidgets_.value(qid);
-        const int index = msgLayout_->indexOf(existing);
-        if (index >= 0) {
-            msgLayout_->removeWidget(existing);
-            msgLayout_->insertWidget(index, row);
-            existing->deleteLater();
-            msgEventWidgets_[qid] = row;
-            return;
+        case tesseract::EventType::Sticker: {
+            row.kind = Kind::Sticker;
+            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+            row.media_url = s.image_url;
+            row.media_w   = static_cast<int>(s.width);
+            row.media_h   = static_cast<int>(s.height);
+            break;
         }
-    }
-
-    if (!qid.isEmpty())
-        msgEventWidgets_[qid] = row;
-    autoScrollPending_ = true;
-    msgLayout_->addWidget(row);
-}
-
-QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
-    QString sender    = QString::fromStdString(ev.sender);
-    QString name      = QString::fromStdString(ev.sender_name);
-    if (name.isEmpty()) name = sender;
-    QString avatarUrl = QString::fromStdString(ev.sender_avatar_url);
-
-    QString tsStr;
-    if (ev.timestamp > 0) {
-        QDateTime dt = QDateTime::fromMSecsSinceEpoch(
-            static_cast<qint64>(ev.timestamp));
-        tsStr = dt.toString("hh:mm");
-    }
-
-    auto* row = new QWidget(msgContainer_);
-    auto* rowLayout = new QHBoxLayout(row);
-    rowLayout->setContentsMargins(0, 3, 0, 3);
-    rowLayout->setSpacing(8);
-
-    auto* avatarLabel = new QLabel(row);
-    avatarLabel->setObjectName("avatar");
-    avatarLabel->setFixedSize(kMsgAvatarSize, kMsgAvatarSize);
-    if (!avatarUrl.isEmpty() && userAvatarCache_.contains(avatarUrl))
-        avatarLabel->setPixmap(userAvatarCache_[avatarUrl]);
-    else
-        avatarLabel->setPixmap(makeInitialsPixmap(name, kMsgAvatarSize));
-
-    auto* contentBox    = new QWidget(row);
-    auto* contentLayout = new QVBoxLayout(contentBox);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(2);
-    contentBox->setMaximumWidth(kMsgMaxWidth);
-
-    auto* nameLabel = new QLabel(name, contentBox);
-    nameLabel->setObjectName("senderName");
-    nameLabel->setStyleSheet(
-        "font-weight: bold; font-size: 12px; color: #555; background: transparent;");
-    contentLayout->addWidget(nameLabel);
-
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        QString imgUrl = QString::fromStdString(img.image_url);
-        if (!imgUrl.isEmpty() && imageCache_.contains(imgUrl)) {
-            auto* imgLabel = new QLabel(contentBox);
-            imgLabel->setPixmap(imageCache_[imgUrl]);
-            imgLabel->setScaledContents(false);
-            contentLayout->addWidget(imgLabel);
+        case tesseract::EventType::File: {
+            row.kind = Kind::File;
+            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
+            row.file_name = f.file_name;
+            row.file_size = f.file_size;
+            row.media_url = f.file_url;
+            break;
         }
-        // MSC2530: show body as caption only when a distinct filename was supplied.
-        if (!img.filename.empty() && !img.body.empty()) {
-            auto* bodyLabel = new QLabel(
-                QString::fromStdString(img.body).toHtmlEscaped(), contentBox);
-            bodyLabel->setWordWrap(true);
-            bodyLabel->setStyleSheet("color: #1C1E21; background: transparent;");
-            contentLayout->addWidget(bodyLabel);
-        }
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        QString stickerUrl = QString::fromStdString(s.image_url);
-        if (!stickerUrl.isEmpty() && imageCache_.contains(stickerUrl)) {
-            auto* imgLabel = new QLabel(contentBox);
-            imgLabel->setPixmap(imageCache_[stickerUrl]);
-            imgLabel->setScaledContents(false);
-            contentLayout->addWidget(imgLabel);
-        }
-        // Sticker body is alt-text only; never displayed.
-    } else if (ev.type == tesseract::EventType::File) {
-        const auto& file = static_cast<const tesseract::FileEvent&>(ev);
-        QString fileText = QString("📎 %1").arg(
-            QString::fromStdString(file.file_name));
-        if (file.file_size > 0) {
-            double kb = file.file_size / 1024.0;
-            if (kb < 1024)
-                fileText += QString(" (%1 KB)").arg(kb, 0, 'f', 1);
-            else
-                fileText += QString(" (%1 MB)").arg(kb / 1024.0, 0, 'f', 1);
-        }
-        auto* fileLabel = new QLabel(fileText, contentBox);
-        fileLabel->setWordWrap(true);
-        fileLabel->setStyleSheet("color: #1C1E21; background: transparent;");
-        contentLayout->addWidget(fileLabel);
-    } else if (ev.type == tesseract::EventType::Redacted) {
-        auto* tomb = new QLabel(QStringLiteral("Message deleted"), contentBox);
-        tomb->setObjectName("redacted");
-        tomb->setStyleSheet(
-            "color: #888; font-style: italic; background: transparent;");
-        contentLayout->addWidget(tomb);
-    } else {
-        auto* bodyLabel = new QLabel(
-            QString::fromStdString(ev.body).toHtmlEscaped(), contentBox);
-        bodyLabel->setObjectName("body");
-        bodyLabel->setWordWrap(true);
-        bodyLabel->setStyleSheet("color: #1C1E21; background: transparent;");
-        bodyLabel->setTextFormat(Qt::PlainText);
-        contentLayout->addWidget(bodyLabel);
-    }
-
-    // Footer row: reaction chips (flow from the left) + timestamp anchored
-    // to the right of the content box.
-    auto* footer = new QWidget(contentBox);
-    auto* footerLayout = new QHBoxLayout(footer);
-    footerLayout->setContentsMargins(0, 2, 0, 0);
-    footerLayout->setSpacing(4);
-
-    for (const auto& r : ev.reactions) {
-        auto* chip = new QToolButton(footer);
-        chip->setCheckable(true);
-        chip->setChecked(r.reacted_by_me);
-        chip->setAutoRaise(false);
-        chip->setFocusPolicy(Qt::NoFocus);
-        chip->setProperty("eventId",    QString::fromStdString(ev.event_id));
-        chip->setProperty("roomId",     QString::fromStdString(ev.room_id));
-        chip->setProperty("reactionKey", QString::fromStdString(r.key));
-
-        QString qsrc = QString::fromStdString(r.source_json);
-        bool hasIcon = !qsrc.isEmpty() && imageCache_.contains(qsrc);
-        if (hasIcon) {
-            // MSC 4027 custom-image reaction.
-            chip->setIcon(QIcon(imageCache_[qsrc]));
-            chip->setIconSize(QSize(20, 20));
-            chip->setText(QString::number(r.count));
-            chip->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        } else {
-            chip->setText(QString("%1 %2")
-                .arg(QString::fromStdString(r.key))
-                .arg(r.count));
-        }
-
-        chip->setStyleSheet(
-            "QToolButton {"
-            "  border: 1px solid #d0d4d9;"
-            "  border-radius: 10px;"
-            "  padding: 1px 8px;"
-            "  background: #f3f4f6;"
-            "  color: #1C1E21;"
-            "  font-size: 11px;"
-            "}"
-            "QToolButton:hover { background: #e6e9ec; }"
-            "QToolButton:checked {"
-            "  background: #d6e4ff;"
-            "  border-color: #3578E5;"
-            "  color: #0b3aa1;"
-            "}");
-
-        QStringList names;
-        names.reserve(static_cast<int>(r.senders.size()));
-        for (const auto& s : r.senders)
-            names << QString::fromStdString(s);
-        if (!names.isEmpty())
-            chip->setToolTip(tr("Reacted by:\n  %1").arg(names.join("\n  ")));
-
-        connect(chip, &QToolButton::clicked,
-                this, &MainWindow::onReactionChipClicked);
-        footerLayout->addWidget(chip);
-    }
-    footerLayout->addStretch();
-    if (!tsStr.isEmpty()) {
-        auto* tsLabel = new QLabel(tsStr, footer);
-        tsLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
-        tsLabel->setStyleSheet("color: #999; font-size: 10px; background: transparent;");
-        footerLayout->addWidget(tsLabel, 0, Qt::AlignRight | Qt::AlignBottom);
-    }
-    contentLayout->addWidget(footer);
-
-    rowLayout->addWidget(avatarLabel, 0, Qt::AlignTop);
-    rowLayout->addWidget(contentBox);
-    rowLayout->addStretch();
-
-    // Right-click → "Delete message" (own, non-redacted messages only).
-    // The action confirms then calls Client::redact_event; on success the
-    // homeserver re-emits the timeline item as a Redacted tombstone and the
-    // existing event_id replace-in-place path swaps this row out.
-    const bool isOwn = !ev.sender.empty() && ev.sender == myUserId_;
-    const bool isRedacted = (ev.type == tesseract::EventType::Redacted);
-    if (isOwn && !isRedacted && !ev.event_id.empty()) {
-        row->setContextMenuPolicy(Qt::CustomContextMenu);
-        QString roomId  = QString::fromStdString(ev.room_id);
-        QString eventId = QString::fromStdString(ev.event_id);
-        connect(row, &QWidget::customContextMenuRequested,
-                this, [this, row, roomId, eventId](const QPoint& pos) {
-            QMenu menu(row);
-            QAction* del = menu.addAction(tr("Delete message"));
-            if (menu.exec(row->mapToGlobal(pos)) != del) return;
-            if (QMessageBox::question(this, tr("Delete message"),
-                    tr("Delete this message? This cannot be undone."),
-                    QMessageBox::Yes | QMessageBox::No,
-                    QMessageBox::No) != QMessageBox::Yes)
-                return;
-            auto res = client_.redact_event(
-                roomId.toStdString(), eventId.toStdString(), "");
-            if (!res.ok) {
-                QMessageBox::warning(this, tr("Delete failed"),
-                    QString::fromStdString(res.message));
-            }
-        });
+        case tesseract::EventType::Redacted:
+            row.kind = Kind::Redacted;
+            break;
+        case tesseract::EventType::Unhandled:
+            row.kind = Kind::Unhandled;
+            break;
     }
     return row;
 }
 
-void MainWindow::onReactionChipClicked() {
-    auto* sender = qobject_cast<QToolButton*>(QObject::sender());
-    if (!sender) return;
-    const QString roomId  = sender->property("roomId").toString();
-    const QString eventId = sender->property("eventId").toString();
-    const QString key     = sender->property("reactionKey").toString();
-    if (roomId.isEmpty() || eventId.isEmpty() || key.isEmpty()) return;
+void MainWindow::appendMessage(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) return;
 
-    auto result = client_.send_reaction(
-        roomId.toStdString(), eventId.toStdString(), key.toStdString());
-    if (!result.ok) {
-        statusBar()->showMessage(
-            tr("Failed to toggle reaction: %1")
-                .arg(QString::fromStdString(result.message)),
-            5000);
-        // Revert the optimistic check state — the timeline will re-emit on
-        // success and put us back in the right place.
-        sender->setChecked(!sender->isChecked());
+    // Fetch + decode any media the row will reference. The shared
+    // MessageListView reads from tk_avatars_ / tk_images_ via provider
+    // lambdas wired in the constructor.
+    ensureUserAvatar(ev.sender_avatar_url);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        ensureMediaImage(img.image_url, kMaxImageWidth, kMaxImageHeight);
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        ensureMediaImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
     }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            ensureMediaImage(r.source_json, 20, 20);
+    }
+
+    auto row = toRowData(ev);
+
+    // Replace any existing row for the same event_id (live re-emit after
+    // reaction change, edit, or sender-profile resolution).
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        messageListView_->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        messageListView_->invalidate_data();
+        msgSurface_->relayout();
+        return;
+    }
+
+    messageListView_->append_message(std::move(row));
+    msgSurface_->relayout();
 }
+
 
 // ---------------------------------------------------------------------------
 // Recovery banner + dialog (Step 6)
@@ -1008,32 +786,46 @@ void MainWindow::onReactionChipClicked() {
 void MainWindow::maybeShowRecoveryBanner() {
     if (recoveryBannerDismissed_) return;
     if (!client_.needs_recovery()) return;
-    if (!recoveryBanner_->isVisible()) {
-        // Fresh prompt — show the input row.
-        recoveryLabel_->setText(tr("Verify this device:"));
-        recoveryKeyEdit_->setVisible(true);
-        recoveryKeyEdit_->setEnabled(true);
-        recoveryKeyEdit_->clear();
-        recoveryVerifyBtn_->setVisible(true);
-        recoveryVerifyBtn_->setEnabled(true);
-        recoveryBanner_->setVisible(true);
+    if (!recoverySurface_->isVisible()) {
+        if (recoveryShared_) {
+            recoveryShared_->set_state(
+                tesseract::views::RecoveryBanner::State::Form);
+            recoveryShared_->set_current_key("");
+        }
+        if (recoveryKeyField_) {
+            recoveryKeyField_->set_text("");
+            recoveryKeyField_->set_enabled(true);
+        }
+        recoverySurface_->setVisible(true);
+        recoverySurface_->relayout();
     }
 }
 
 void MainWindow::onRecoveryVerifyClicked() {
-    QString key = recoveryKeyEdit_->text().trimmed();
-    if (key.isEmpty()) {
-        recoveryLabel_->setText(tr("Please enter a recovery key or passphrase."));
+    std::string key;
+    if (recoveryKeyField_) key = recoveryKeyField_->text();
+    // Trim whitespace.
+    auto a = key.find_first_not_of(" \t\r\n");
+    auto b = key.find_last_not_of (" \t\r\n");
+    if (a == std::string::npos) {
+        if (recoveryShared_) {
+            recoveryShared_->set_state(
+                tesseract::views::RecoveryBanner::State::Failed);
+            recoveryShared_->set_failure_message(
+                "Please enter a recovery key or passphrase.");
+        }
+        recoverySurface_->relayout();
         return;
     }
-    recoveryKeyEdit_->setEnabled(false);
-    recoveryVerifyBtn_->setEnabled(false);
-    recoveryKeyEdit_->setVisible(false);
-    recoveryVerifyBtn_->setVisible(false);
-    recoveryLabel_->setText(tr("Verifying…"));
+    key = key.substr(a, b - a + 1);
 
-    // Worker thread; result marshalled back via queued signal.
-    auto* runner = QRunnable::create([this, k = key.toStdString()]() {
+    if (recoveryShared_)
+        recoveryShared_->set_state(
+            tesseract::views::RecoveryBanner::State::Verifying);
+    if (recoveryKeyField_) recoveryKeyField_->set_enabled(false);
+    recoverySurface_->relayout();
+
+    auto* runner = QRunnable::create([this, k = key]() {
         auto res = client_.recover(k);
         emit recoverFinished(res.ok, QString::fromStdString(res.message));
     });
@@ -1042,47 +834,47 @@ void MainWindow::onRecoveryVerifyClicked() {
 
 void MainWindow::onRecoverFinished(bool ok, QString error) {
     if (ok) {
-        // The backup watcher will repaint into "Importing keys…" and then hide
-        // the banner once state reaches Enabled. Nothing more to do here.
-        recoveryLabel_->setText(tr("Downloading historical keys…"));
+        if (recoveryShared_) {
+            recoveryShared_->set_state(
+                tesseract::views::RecoveryBanner::State::Importing);
+        }
+        recoverySurface_->relayout();
         return;
     }
-    // Retry: re-show the input field.
-    recoveryLabel_->setText(tr("Recovery failed: %1").arg(error));
-    recoveryKeyEdit_->setVisible(true);
-    recoveryKeyEdit_->setEnabled(true);
-    recoveryKeyEdit_->selectAll();
-    recoveryKeyEdit_->setFocus();
-    recoveryVerifyBtn_->setVisible(true);
-    recoveryVerifyBtn_->setEnabled(true);
+    if (recoveryShared_) {
+        recoveryShared_->set_state(
+            tesseract::views::RecoveryBanner::State::Failed);
+        recoveryShared_->set_failure_message(error.toStdString());
+    }
+    if (recoveryKeyField_) {
+        recoveryKeyField_->set_enabled(true);
+        recoveryKeyField_->set_focused(true);
+    }
+    recoverySurface_->relayout();
 }
 
 void MainWindow::onDismissRecoveryBanner() {
     recoveryBannerDismissed_ = true;
-    recoveryBanner_->setVisible(false);
+    if (recoverySurface_) recoverySurface_->setVisible(false);
 }
 
 void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
-    // Recovery state is populated asynchronously by the first sync cycle, so
-    // re-evaluate the banner each time the SDK pings us.
     maybeShowRecoveryBanner();
 
-    // Live progress while the SDK pulls keys from the backup. Only update when
-    // the input field is hidden (i.e. recovery is in flight or finished) so we
-    // don't clobber the "Verify this device:" prompt while the user is typing.
-    if (recoveryBanner_->isVisible()
-        && !recoveryKeyEdit_->isVisible()
+    if (recoverySurface_ && recoverySurface_->isVisible()
+        && recoveryShared_
+        && recoveryShared_->state() ==
+            tesseract::views::RecoveryBanner::State::Importing
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
-        recoveryLabel_->setText(
-            tr("Importing keys from backup… %1 imported.")
-                .arg(static_cast<qulonglong>(progress.imported_keys)));
+        recoveryShared_->set_import_progress(progress.imported_keys);
+        recoverySurface_->relayout();
     }
     if (progress.state == tesseract::BackupState::Enabled
         && !client_.needs_recovery())
     {
-        recoveryBanner_->setVisible(false);
+        if (recoverySurface_) recoverySurface_->setVisible(false);
     }
 }
 
@@ -1140,7 +932,7 @@ void MainWindow::doLogout() {
     refreshRoomList();
     clearMessages();
     userStrip_->setVisible(false);
-    recoveryBanner_->setVisible(false);
+    if (recoverySurface_) recoverySurface_->setVisible(false);
     recoveryBannerDismissed_ = false;
     roomHeader_->setVisible(false);
 

@@ -1,8 +1,11 @@
-#import <UIKit/UIKit.h>
+#import <AppKit/AppKit.h>
 #import "AppDelegate.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, const char* argv[]) {
     @autoreleasepool {
-        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+        NSApplication* app = NSApplication.sharedApplication;
+        AppDelegate*   del = [[AppDelegate alloc] init];
+        app.delegate = del;
+        return NSApplicationMain(argc, argv);
     }
 }

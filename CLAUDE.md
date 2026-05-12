@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), UIKit / Mac Catalyst (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
+Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
 
 ## Build Commands
 
@@ -16,14 +16,15 @@ sudo apt install qt6-base-dev ninja-build cmake sqlite3 libsqlite3-dev golang pe
 # (golang + perl are build-only deps for aws-lc-sys's CMake builder.)
 ```
 
-**Prerequisites (macOS / UIKit Catalyst):**
+**Prerequisites (macOS / AppKit):**
 
 ```bash
 brew install ninja cmake go
 xcode-select --install   # Xcode Command Line Tools
-# Rust toolchain + Catalyst target:
+# Rust toolchain + native macOS targets (pick the one matching the preset):
 #   rustup toolchain install stable
-#   rustup target add aarch64-apple-ios-macabi
+#   rustup target add aarch64-apple-darwin   # Apple Silicon
+#   rustup target add x86_64-apple-darwin    # Intel
 # (go is a build-only dep for aws-lc-sys's CMake builder; perl ships with macOS.)
 ```
 
@@ -34,13 +35,13 @@ cmake --preset linux-qt6-debug          # or windows-debug, linux-gtk-debug, lin
 cmake --build build/linux-qt6-debug
 ./build/linux-qt6-debug/ui/linux-qt/tesseract
 
-# macOS:
-cmake --preset macos-native-debug
-cmake --build build/macos-native-debug
-open build/macos-native-debug/ui/macos/Tesseract.app
+# macOS (pick the preset matching your CPU):
+cmake --preset macos-appkit-arm64-debug         # or macos-appkit-x86_64-debug
+cmake --build build/macos-appkit-arm64-debug
+open build/macos-appkit-arm64-debug/ui/macos/Tesseract.app
 ```
 
-**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`, `macos-native-debug`, `macos-native-release`.
+**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
 
@@ -52,10 +53,14 @@ Corrosion (CMake↔Cargo bridge) is fetched automatically via `FetchContent` —
 sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
 client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
-  windows/   ← Win32 executable
-  macos/     ← UIKit Catalyst / Objective-C++ executable (.app bundle)
-  linux-qt/  ← Qt6 Widgets executable
-  linux-gtk/ ← GTK4 executable
+  shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
+    tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
+    views/     ← LoginView, RoomListView, MessageListView, EmojiPicker,
+                  RecoveryBanner, ComposeBar
+  windows/   ← Win32 executable (thin shell)
+  macos/     ← AppKit executable (.app bundle, thin shell)
+  linux-qt/  ← Qt6 Widgets executable (thin shell)
+  linux-gtk/ ← GTK4 executable (thin shell)
 ```
 
 ### Layer responsibilities
@@ -64,7 +69,9 @@ ui/
 
 **`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON (`%APPDATA%/Tesseract/` on Windows, `~/.config/tesseract/` on Linux).
 
-**`ui/*/` (C++)** — Each target implements `IEventHandler`. Because Rust callbacks arrive on worker threads, Qt UI must use `QueuedConnection` signals; GTK UI must marshal via glib; the macOS Catalyst UI uses `dispatch_async(dispatch_get_main_queue(), …)` (see `ui/macos/src/EventBridge.mm`). The macOS port is built as a UIKit Mac Catalyst app — same SDK binding, but UIView/UIViewController instead of NSView/NSWindowController.
+**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views (LoginView, RoomListView, MessageListView, EmojiPicker, RecoveryBanner, ComposeBar) live under `views/`. Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
+
+**`ui/*/` (C++)** — Each platform target is a thin native shell that owns the window/menu/AX surface and mounts one or more `tk::*::Surface`s hosting shared views. Each shell implements `IEventHandler`. Because Rust callbacks arrive on worker threads, the shells route through `tk::Host::post_to_ui`, which is backed by `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), and `dispatch_async(dispatch_get_main_queue())` (macOS).
 
 ### Key API surface (`client/include/tesseract/`)
 
@@ -108,7 +115,12 @@ Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ct
 | `sdk/src/client.rs` | Matrix SDK wrapper (sync, rooms, messaging) |
 | `sdk/src/oauth.rs` | RFC 8252 loopback OAuth implementation |
 | `client/include/tesseract/*.h` | C++ public API headers |
-| `ui/linux-qt/src/MainWindow.h` | Qt UI with EventBridge pattern for thread marshaling |
+| `ui/shared/tk/canvas.h` | Abstract 2D backend interface (Color/Rect/Point/Image/TextLayout) |
+| `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` overlays |
+| `ui/shared/tk/widget.h` | Widget tree base: measure → arrange → paint + pointer dispatch |
+| `ui/shared/views/*.h` | Cross-platform views mounted by every native shell |
+| `ui/linux-qt/src/MainWindow.h` | Qt6 shell with `EventBridge` for thread marshaling |
+| `ui/macos/src/MainWindowController.mm` | AppKit shell (`NSWindowController` + `NSSplitView`) |
 
 ## Roadmap
 
@@ -121,7 +133,9 @@ The OAuth scaffolding is in place. This is the agreed plan for everything after.
 - **Step 3 done** — Room avatar polish: `kRoomAvatarSize = 36` constant; explicit `setIconSize` on the room list widget so all cells have a uniform slot.
 - **Step 4 done** — Message sender identity + media infrastructure: `sender_name` + `sender_avatar_url` fields in `TimelineEvent`; `ImageEvent` / `FileEvent` C++ types with `source_json` / `file_json`, dimensions, and file-size fields; `fetch_media_bytes(mxc_url)` and `fetch_source_bytes(source_json)` FFI (the latter handles encrypted `EncryptedFile` transparently); 21 C++ tests covering all event subtypes and `EventType` enum values; Qt UI shows 24 × 24 inline sender avatar per message row.
 - **Stability hardening done** — `soft_logout` flag threaded from `SessionChange::UnknownToken` through `on_error` to all UIs (soft logout retries restore without clearing the store); tombstoned (upgraded) rooms filtered out of the room list; `Drop` impl on `ClientFfi` calls `stop_sync()` for graceful shutdown; `matrix-sdk` upgraded to 0.16.1.
-- **Step 5, in progress** — Inline image rendering done: GTK4 now renders `m.image` as a `GtkPicture` (max 320×200) via `GdkPixbufLoader`; Qt6 inline pixmap was already in place. MSC2530 caption rule applied: `body` is shown beneath the image only when the sender supplies a distinct `filename` field. Sticker events (`m.sticker`) done end-to-end: new `StickerEvent` C++ type + `EventType::Sticker`, Rust `MsgLikeKind::Sticker` FFI arm (`StickerMediaSource` matched), borderless 256×256 thumbnail in both Qt6 and GTK4. Scroll-to-bottom timing fixed: Qt6 uses `QScrollBar::rangeChanged`, GTK4 uses `notify::upper` on the vadjustment (both fire after layout, not before). 24 C++ tests pass. Remaining Step 5 items: message bubbles/cards, thread support, emoji reactions/picker, compose bar polish, sidebar.
+- **Step 5, in progress** — Inline image rendering done: GTK4 now renders `m.image` as a `GtkPicture` (max 320×200) via `GdkPixbufLoader`; Qt6 inline pixmap was already in place. MSC2530 caption rule applied: `body` is shown beneath the image only when the sender supplies a distinct `filename` field. Sticker events (`m.sticker`) done end-to-end: new `StickerEvent` C++ type + `EventType::Sticker`, Rust `MsgLikeKind::Sticker` FFI arm (`StickerMediaSource` matched), borderless 256×256 thumbnail in both Qt6 and GTK4. Scroll-to-bottom timing fixed: Qt6 uses `QScrollBar::rangeChanged`, GTK4 uses `notify::upper` on the vadjustment (both fire after layout, not before). Remaining Step 5 items: message bubbles/cards, thread support, emoji reactions, sidebar polish.
+- **Step 5a done — shared UI toolkit (`tesseract_tk`)** — Introduced `ui/shared/` as a cross-platform widget toolkit. `tk::Canvas` is the abstract 2D backend with four concrete impls (`canvas_d2d`, `canvas_qpainter`, `canvas_cairo`, `canvas_cg`). `tk::Widget` provides measure/arrange/paint + pointer/wheel dispatch with `dispatch_pointer_down` + `world_to_local` capture semantics. `tk::Host` integrates each platform's window, repaint loop, and post-to-UI channel; native text input stays native via `NativeTextField` (single-line: `QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (multi-line: `QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`). All four platforms now mount the same shared views — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `RecoveryBanner`, `ComposeBar` — through a `tk::Surface` parented inside the native shell. 98 C++ tests cover canvas, widget tree, list-view virtualisation, EmojiPicker, RecoveryBanner, and ComposeBar.
+- **macOS migration done** — Port moved off Mac Catalyst (UIKit on `aarch64-apple-ios-macabi`) onto native AppKit (`NSWindow` / `NSWindowController` / `NSView`). Two architecture-specific presets (`macos-appkit-arm64-*`, `macos-appkit-x86_64-*`) replace the Catalyst preset. `tk::macos::Surface` is an `NSView` subclass with `isFlipped == YES` so the CG context matches the top-left convention the rest of `canvas_cg.cpp` expects. The legacy `RoomListController` / `MessageListController` / `AvatarCache` / `EventBridge` Obj-C classes were deleted; their behaviour moved into `MainWindowController` + the shared views. The native `ComposeBar.{h,mm}` was also deleted once the shared `ComposeBar` + `NativeTextArea` landed.
 
 **Step 5 — UI redesign**
 
@@ -131,7 +145,7 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 - **Emoji reactions** — reaction bar below each message showing emoji + count; tap to toggle; new FFI `send_reaction(room_id, event_id, key)` / `redact_reaction`; reactions carried in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Emoji picker** — bottom-bar button opens a floating picker (tabbed: frequently-used + Unicode categories). Inserts into the compose field. Separate from sticker packs (MSC2545, Step 9).
 - **Inline image / file rendering** ✓ — `m.image` renders as a thumbnail (max 320×200) in Qt6 and GTK4; MSC2530 caption rule applied (`body` shown only when sender supplies a distinct `filename` field). `m.sticker` pulled forward from Step 8: borderless 256×256 inline thumbnail, no caption. Files still render as a card with icon, name, and size.
-- **Compose bar polish** — multi-line expanding input, send-on-Enter (Shift+Enter for newline), `/` command hint, typing indicator sent to the room.
+- **Compose bar polish** ✓ — Shared `tesseract::views::ComposeBar` mounted on every platform via `tk::*::Surface`. Multi-line expanding input through `tk::NativeTextArea` (auto-grows 56→160 px clamped); send-on-Enter, Shift+Enter inserts a newline; emoji + send buttons paint in the toolkit; send button gates on trimmed non-empty content. Still TODO: `/` command hints, typing indicator sent to the room, placeholder painting for GTK4 / macOS `NativeTextArea` (`GtkTextView` and `NSTextView` lack built-in placeholders — see Known gaps).
 - **Sidebar** — room list gets unread badge, last-message preview, and last-activity sort; DM rooms show the other user's avatar; spaces/groups deferred to Step 7.
 
 **Step 6 — Device verification + key backup (recovery key)**
@@ -170,6 +184,15 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 - Linux: UnifiedPush via D-Bus `org.unifiedpush.Connector1`.
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
+
+### Known gaps from the shared-toolkit migration
+
+- **macOS build is unverified end-to-end** — `MainWindowController.mm` was rewritten on a Linux dev box and `ComposeBar.{h,mm}` deleted. The AppKit shell + `tk::macos::NSTextViewNative` need a real macOS toolchain pass.
+- **Win32 binary can't currently link on MinGW** — pre-existing gaps in MinGW's DirectWrite headers (`DWRITE_FONT_WEIGHT_SEMIBOLD`, `GetDpiForWindow`) block `canvas_d2d.cpp`. The MSVC build is the supported path; MinGW needs header shims if we want to cross-compile from Linux.
+- **`NativeTextArea` placeholder is a no-op on GTK4 + macOS** — `GtkTextView` and `NSTextView` ship without built-in placeholders. The shared `ComposeBar` paints the input outline but the empty-state hint is missing. Fix: paint a `current_text().empty()`-gated label in the shared widget instead of pushing it through `NativeTextArea`.
+- **`set_password` is a no-op on macOS** — toggling password mode on `NSTextField` requires swapping for `NSSecureTextField`. The recovery-key field on macOS still shows the secret in plaintext.
+- **Win32 `NativeTextArea::natural_height()` undercounts wrapped lines** — heuristic is `EM_GETLINECOUNT × tmHeight`, which ignores the EDIT control's soft-wrap. Auto-grow lags by one keystroke when wrapping in.
+- **`TestSurface` only covers QPainter + Cairo** — Catch2 backend tests don't exercise D2D or CoreGraphics. `tests/CMakeLists.txt` flags both as TODO.
 
 ### Decisions still open
 

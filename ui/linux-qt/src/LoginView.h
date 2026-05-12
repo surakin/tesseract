@@ -1,62 +1,59 @@
 #pragma once
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QStackedWidget>
 #include <QString>
 #include <QWidget>
 
 #include <tesseract/client.h>
 
 #include <atomic>
+#include <memory>
 #include <thread>
+
+#include "tk/host.h"
+#include "tk/host_qt.h"
+#include "views/LoginView.h"
 
 namespace qt6 {
 
-/// Inline sign-in view shown inside the main window when the user is not
-/// logged in. Drives the same two-phase OAuth / MAS flow as the previous
-/// modal LoginDialog (form → worker → browser → worker → done), but is a
-/// plain QWidget the main window can swap into a QStackedWidget instead of
-/// running modally.
+/// Sign-in view shown inside the main window when the user is not logged
+/// in. The OAuth state machine + worker threads live in this shell; the
+/// actual visuals are rendered by the shared `tesseract::views::LoginView`
+/// mounted inside a `tk::qt6::Surface` child. The homeserver text input
+/// is a native QLineEdit overlaid on the surface via NativeTextField —
+/// IME / selection stay native until tk::TextField lands.
 class LoginView final : public QWidget {
     Q_OBJECT
 public:
     explicit LoginView(tesseract::Client& client, QWidget* parent = nullptr);
     ~LoginView() override;
 
-    /// Return the view to its initial "form" state. Call before showing the
-    /// view again after a successful sign-in or logout.
+    /// Return the view to its initial "form" state. Call before showing
+    /// the view again after a successful sign-in or logout.
     void reset();
 
 signals:
     void loginSucceeded();
 
-    /// Worker → UI thread completion notifications.
-    void beginCompleted(bool ok, QString errorOrAuthUrl);
-    void awaitCompleted(bool ok, QString error);
-
-private slots:
-    void onSignIn();
-    void onCancel();
-    void onBeginCompleted(bool ok, QString errorOrAuthUrl);
-    void onAwaitCompleted(bool ok, QString error);
+protected:
+    void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void showForm();
-    void showWaiting();
-    void joinWorker();
+    void layout_overlays();
+    void on_sign_in();
+    void on_cancel();
+    void on_begin_completed(bool ok, std::string err_or_url);
+    void on_await_completed(bool ok, std::string err);
+    void join_worker();
+
+    static std::string trim(std::string s);
 
     tesseract::Client& client_;
 
-    QStackedWidget* stack_       = nullptr;
-    QLineEdit*      hsEdit_      = nullptr;
-    QPushButton*    signInBtn_   = nullptr;
-    QLabel*         formError_   = nullptr;
-    QLabel*         waitingLbl_  = nullptr;
-    QPushButton*    cancelBtn_   = nullptr;
+    tk::qt6::Surface*                       surface_  = nullptr;
+    tesseract::views::LoginView*            shared_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField>    hs_field_;
 
     std::thread       worker_;
-    std::atomic<bool> cancelled_ { false };
+    std::atomic<bool> cancelled_{ false };
 };
 
 } // namespace qt6

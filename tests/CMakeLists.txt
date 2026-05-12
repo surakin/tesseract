@@ -20,15 +20,36 @@ add_executable(tesseract_tests
     cpp/test_paths.cpp
     cpp/test_emoji.cpp
     cpp/test_client_recent.cpp
+    cpp/test_tk_canvas.cpp
+    cpp/test_tk_widgets.cpp
+    cpp/test_tk_lists.cpp
+    cpp/test_tk_emoji_picker.cpp
+    cpp/test_tk_recovery_banner.cpp
+    cpp/test_tk_compose_bar.cpp
 )
 
+# tk_test_surface implementation is per-backend; only the one matching
+# the active TESSERACT_UI is compiled in so the test binary has exactly
+# one TestSurface::create symbol.
+if(TESSERACT_UI STREQUAL "qt6")
+    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_qt.cpp)
+elseif(TESSERACT_UI STREQUAL "gtk")
+    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
+endif()
+# Win32 (D2D WIC bitmap target) + macOS (CGBitmapContext) test surfaces
+# are TODO; the test cases compile but TestSurface::create is undefined
+# on those platforms until added.
+
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
+
+target_include_directories(tesseract_tests PRIVATE cpp)
 
 # All three archives are mutually dependent (same WHOLE_ARCHIVE pattern used
 # by the UI executables) so every symbol is present regardless of link order.
 target_link_libraries(tesseract_tests PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
     tesseract_sdk_ffi-static
+    tesseract_tk
     Catch2::Catch2WithMain
 )
 

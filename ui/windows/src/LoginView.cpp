@@ -1,404 +1,176 @@
 #include "LoginView.h"
-#include "Theme.h"
 
-#include <uxtheme.h>
-#include <windowsx.h>
+#include "tk/theme.h"
 
 namespace win32 {
 
-namespace {
-
-std::wstring widen(const std::string& s) {
-    if (s.empty()) return {};
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                static_cast<int>(s.size()), nullptr, 0);
-    std::wstring out(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                        static_cast<int>(s.size()), out.data(), n);
-    return out;
-}
-
-std::string narrow_hwnd(HWND hEdit) {
-    int len = GetWindowTextLengthW(hEdit);
-    if (len <= 0) return {};
-    std::wstring buf(static_cast<size_t>(len), L'\0');
-    GetWindowTextW(hEdit, buf.data(), len + 1);
-    int n = WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
-                                nullptr, 0, nullptr, nullptr);
-    std::string out(static_cast<size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
-                        out.data(), n, nullptr, nullptr);
-    return out;
-}
-
-std::string narrow_wstr(const std::wstring& w) {
-    if (w.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                                nullptr, 0, nullptr, nullptr);
-    std::string out(static_cast<size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                        out.data(), n, nullptr, nullptr);
-    return out;
-}
-
-HFONT default_ui_font() { return theme::font(theme::FontRole::Ui); }
-HFONT title_font()      { return theme::font(theme::FontRole::Title); }
-
-} // namespace
-
-// ---------------------------------------------------------------------------
-
-bool LoginView::register_class(HINSTANCE hInst) {
-    static bool registered = false;
-    if (registered) return true;
-
-    WNDCLASSEXW wc{};
-    wc.cbSize        = sizeof(wc);
-    wc.lpfnWndProc   = LoginView::wnd_proc;
-    wc.hInstance     = hInst;
-    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = nullptr;  // WM_ERASEBKGND fills via theme palette
-    wc.lpszClassName = CLASS_NAME;
-    if (!RegisterClassExW(&wc)) return false;
-    registered = true;
-    return true;
-}
-
 LoginView::LoginView(HINSTANCE hInst, HWND hParent, tesseract::Client& client)
-    : hInst_(hInst), hParent_(hParent), client_(client)
+    : client_(client),
+      surface_(std::make_unique<tk::win32::Surface>(hInst, hParent,
+                                                      tk::Theme::light()))
 {
-    if (!register_class(hInst_)) return;
+    auto shared_view = std::make_unique<tesseract::views::LoginView>();
+    shared_ = shared_view.get();
+    shared_->on_sign_in = [this] { on_sign_in(); };
+    shared_->on_cancel  = [this] { on_cancel();  };
+    surface_->set_root(std::move(shared_view));
 
-    hwnd_ = CreateWindowExW(
-        0, CLASS_NAME, L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
-        0, 0, 0, 0,
-        hParent_, nullptr, hInst_, this);
+    hs_field_ = surface_->host().make_text_field();
+    hs_field_->set_placeholder("e.g. matrix.org");
+    hs_field_->set_text("matrix.org");
+    hs_field_->set_on_submit([this] { on_sign_in(); });
+
+    surface_->set_on_layout([this] { position_overlay(); });
 }
 
 LoginView::~LoginView() {
     cancelled_.store(true);
     client_.cancel_oauth();
     join_worker();
-    if (hwnd_) {
-        DestroyWindow(hwnd_);
-        hwnd_ = nullptr;
-    }
 }
 
-// ---------------------------------------------------------------------------
-
-LRESULT CALLBACK LoginView::wnd_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    LoginView* self = nullptr;
-    if (msg == WM_NCCREATE) {
-        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        self     = static_cast<LoginView*>(cs->lpCreateParams);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(self));
-        self->hwnd_ = hwnd;
-    } else {
-        self = reinterpret_cast<LoginView*>(
-            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-    }
-    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    switch (msg) {
-    case WM_CREATE:
-        self->on_create();
-        return 0;
-
-    case WM_COMMAND:
-        self->on_command(wParam);
-        return 0;
-
-    case WM_ERASEBKGND: {
-        RECT rc; GetClientRect(hwnd, &rc);
-        FillRect(reinterpret_cast<HDC>(wParam), &rc,
-                 theme::brush(theme::palette().window_bg));
-        return 1;
-    }
-    case WM_DRAWITEM: {
-        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (dis->CtlType == ODT_BUTTON) theme::draw_button(dis);
-        return TRUE;
-    }
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLOREDIT: {
-        const auto& pal = theme::palette();
-        HDC dc = reinterpret_cast<HDC>(wParam);
-        SetBkMode(dc, TRANSPARENT);
-        if (msg == WM_CTLCOLOREDIT) {
-            SetTextColor(dc, pal.text_primary);
-            SetBkColor  (dc, pal.compose_card_bg);
-            return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
-        }
-        // STATIC controls — use text_secondary for the error/status lines.
-        HWND ctl = reinterpret_cast<HWND>(lParam);
-        bool is_emphatic = (ctl == self->hCardTitle_);
-        SetTextColor(dc, is_emphatic ? pal.text_primary : pal.text_secondary);
-        SetBkColor  (dc, pal.window_bg);
-        return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
-    }
-
-    case WM_LOGIN_BEGIN_DONE: {
-        auto* p = reinterpret_cast<std::wstring*>(lParam);
-        self->on_begin_completed(wParam != 0, std::move(*p));
-        delete p;
-        return 0;
-    }
-    case WM_LOGIN_AWAIT_DONE: {
-        auto* p = reinterpret_cast<std::wstring*>(lParam);
-        self->on_await_completed(wParam != 0, std::move(*p));
-        delete p;
-        return 0;
-    }
-
-    default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-}
-
-// ---------------------------------------------------------------------------
-
-void LoginView::on_create() {
-    HFONT font  = default_ui_font();
-    HFONT tfont = title_font();
-    auto add = [&](const wchar_t* cls, const wchar_t* text, DWORD style,
-                   int id, HFONT f) -> HWND
-    {
-        HWND ctl = CreateWindowExW(0, cls, text,
-                                  WS_CHILD | WS_VISIBLE | style,
-                                  0, 0, 0, 0,
-                                  hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-                                  hInst_, nullptr);
-        SendMessageW(ctl, WM_SETFONT, reinterpret_cast<WPARAM>(f), TRUE);
-        return ctl;
-    };
-
-    hCardTitle_ = add(L"STATIC", L"Sign in to Tesseract", 0,           0, tfont);
-    hStatusMsg_ = add(L"STATIC", L"", SS_LEFT,                         0, font);
-    ShowWindow(hStatusMsg_, SW_HIDE);
-
-    hHsLabel_   = add(L"STATIC", L"Homeserver:", 0,                    0, font);
-    hHsEdit_    = add(L"EDIT", L"matrix.org",
-                      WS_TABSTOP | ES_AUTOHSCROLL,                     IDC_HS, font);
-    theme::apply_control_theme(hHsEdit_);
-
-    hError_     = add(L"STATIC", L"", SS_LEFT,                         0, font);
-    hWaitLbl_   = add(L"STATIC", L"Waiting for sign-in in your browser…",
-                      SS_LEFT,                                         0, font);
-    ShowWindow(hWaitLbl_, SW_HIDE);
-
-    hSignIn_    = add(L"BUTTON", L"Sign in",
-                      BS_OWNERDRAW | WS_TABSTOP,                       IDC_SIGNIN, font);
-    theme::register_button(hSignIn_, theme::ButtonStyle::Primary);
-    hCancel_    = add(L"BUTTON", L"Cancel",
-                      BS_OWNERDRAW | WS_TABSTOP,                       IDC_CANCEL, font);
-    theme::register_button(hCancel_, theme::ButtonStyle::Subtle);
-    ShowWindow(hCancel_, SW_HIDE);
-
-    show_form();
+HWND LoginView::hwnd() const {
+    return surface_ ? surface_->hwnd() : nullptr;
 }
 
 void LoginView::layout(int w, int h) {
-    constexpr int CARD_W   = 420;
-    constexpr int CARD_H   = 260;
-    constexpr int PAD      = 24;
-    const int card_x = (w - CARD_W) / 2;
-    const int card_y = (h - CARD_H) / 2;
-
-    // Title
-    SetWindowPos(hCardTitle_, nullptr,
-                 card_x + PAD, card_y + PAD,
-                 CARD_W - 2 * PAD, 24, SWP_NOZORDER);
-
-    int y = card_y + PAD + 28;
-
-    // Status message (e.g. saved session expired)
-    if (IsWindowVisible(hStatusMsg_)) {
-        SetWindowPos(hStatusMsg_, nullptr,
-                     card_x + PAD, y,
-                     CARD_W - 2 * PAD, 36, SWP_NOZORDER);
-        y += 40;
-    }
-
-    // Form vs waiting
-    if (showing_form_) {
-        SetWindowPos(hHsLabel_, nullptr,
-                     card_x + PAD, y + 4,
-                     90, 20, SWP_NOZORDER);
-        SetWindowPos(hHsEdit_, nullptr,
-                     card_x + PAD + 96, y,
-                     CARD_W - 2 * PAD - 96, 24, SWP_NOZORDER);
-        y += 36;
-
-        SetWindowPos(hError_, nullptr,
-                     card_x + PAD, y,
-                     CARD_W - 2 * PAD, 36, SWP_NOZORDER);
-        y += 44;
-
-        SetWindowPos(hSignIn_, nullptr,
-                     card_x + CARD_W - PAD - 100, y,
-                     100, 28, SWP_NOZORDER);
-    } else {
-        SetWindowPos(hWaitLbl_, nullptr,
-                     card_x + PAD, y,
-                     CARD_W - 2 * PAD, 40, SWP_NOZORDER);
-        y += 56;
-        SetWindowPos(hCancel_, nullptr,
-                     card_x + CARD_W - PAD - 100, y,
-                     100, 28, SWP_NOZORDER);
-    }
+    if (!surface_) return;
+    SetWindowPos(surface_->hwnd(), nullptr, 0, 0, w, h,
+                  SWP_NOZORDER | SWP_NOACTIVATE);
+    // WM_SIZE inside the Surface drives relayout; the EDIT is
+    // repositioned via the on_layout callback set in the constructor.
 }
 
-void LoginView::on_command(WPARAM wParam) {
-    if (HIWORD(wParam) != BN_CLICKED) return;
-    switch (LOWORD(wParam)) {
-    case IDC_SIGNIN: start_phase1(); break;
-    case IDC_CANCEL:
-        cancelled_.store(true);
-        client_.cancel_oauth();
-        SetWindowTextW(hWaitLbl_, L"Cancelling…");
-        EnableWindow(hCancel_, FALSE);
-        break;
-    default: break;
-    }
+void LoginView::position_overlay() {
+    if (!shared_ || !hs_field_) return;
+    hs_field_->set_rect(shared_->homeserver_field_rect());
 }
 
 // ---------------------------------------------------------------------------
-
-void LoginView::show_form() {
-    showing_form_ = true;
-    ShowWindow(hHsLabel_, SW_SHOW); EnableWindow(hHsEdit_, TRUE);
-    ShowWindow(hHsEdit_,  SW_SHOW);
-    ShowWindow(hError_,   SW_SHOW);
-    ShowWindow(hWaitLbl_, SW_HIDE);
-    ShowWindow(hSignIn_,  SW_SHOW); EnableWindow(hSignIn_, TRUE);
-    ShowWindow(hCancel_,  SW_HIDE);
-    SetFocus(hHsEdit_);
-
-    RECT rc;
-    GetClientRect(hwnd_, &rc);
-    layout(rc.right, rc.bottom);
-}
-
-void LoginView::show_waiting() {
-    showing_form_ = false;
-    ShowWindow(hHsLabel_, SW_HIDE);
-    ShowWindow(hHsEdit_,  SW_HIDE);
-    ShowWindow(hError_,   SW_HIDE);
-    ShowWindow(hWaitLbl_, SW_SHOW);
-    ShowWindow(hSignIn_,  SW_HIDE);
-    ShowWindow(hCancel_,  SW_SHOW); EnableWindow(hCancel_, TRUE);
-    SetWindowTextW(hWaitLbl_, L"Waiting for sign-in in your browser…");
-
-    RECT rc;
-    GetClientRect(hwnd_, &rc);
-    layout(rc.right, rc.bottom);
-}
-
-void LoginView::set_error(const std::wstring& msg) {
-    SetWindowTextW(hError_, msg.c_str());
-}
-
-void LoginView::set_status_message(const std::wstring& msg) {
-    if (msg.empty()) {
-        ShowWindow(hStatusMsg_, SW_HIDE);
-    } else {
-        SetWindowTextW(hStatusMsg_, msg.c_str());
-        ShowWindow(hStatusMsg_, SW_SHOW);
-    }
-    RECT rc;
-    GetClientRect(hwnd_, &rc);
-    layout(rc.right, rc.bottom);
-}
 
 void LoginView::reset() {
     cancelled_.store(true);
     client_.cancel_oauth();
     join_worker();
     cancelled_.store(false);
-    set_error(L"");
-    show_form();
+
+    shared_->set_status("");
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    hs_field_->set_visible(true);
+    hs_field_->set_focused(true);
+    surface_->relayout();
 }
 
-// ---------------------------------------------------------------------------
+void LoginView::set_status_message(const std::wstring& msg) {
+    if (!shared_) return;
+    if (msg.empty()) {
+        shared_->set_status("");
+    } else {
+        shared_->set_status(wstring_to_utf8(msg));
+    }
+    surface_->relayout();
+}
 
-void LoginView::start_phase1() {
-    std::string hs = narrow_hwnd(hHsEdit_);
+void LoginView::on_sign_in() {
+    std::string hs = trim(hs_field_->text());
     if (hs.empty()) {
-        set_error(L"Please enter a homeserver.");
+        shared_->set_status("Please enter a homeserver.",
+                             tk::Color::rgb(0xB00020));
+        surface_->relayout();
         return;
     }
-    set_error(L"");
-    EnableWindow(hSignIn_, FALSE);
-    EnableWindow(hHsEdit_, FALSE);
+    shared_->set_status("");
+    hs_field_->set_enabled(false);
+    shared_->set_state(tesseract::views::LoginView::State::Waiting);
+    surface_->relayout();
 
     join_worker();
     cancelled_.store(false);
-
-    HWND target = hwnd_;
-    worker_ = std::thread([this, target, hs]() {
+    worker_ = std::thread([this, hs] {
         auto flow = client_.begin_oauth(hs);
         if (cancelled_.load()) return;
-
-        WPARAM ok = flow.ok ? 1 : 0;
-        auto*  p  = new std::wstring(
-            flow.ok ? widen(flow.auth_url) : widen(flow.message));
-        PostMessageW(target, WM_LOGIN_BEGIN_DONE,
-                     ok, reinterpret_cast<LPARAM>(p));
+        bool        ok      = static_cast<bool>(flow);
+        std::string payload = ok ? flow.auth_url : flow.message;
+        surface_->host().post_to_ui(
+            [this, ok, payload = std::move(payload)] {
+                on_begin_completed(ok, payload);
+            });
     });
 }
 
-void LoginView::on_begin_completed(bool ok, std::wstring text) {
+void LoginView::on_begin_completed(bool ok, std::string err_or_url) {
     join_worker();
-
     if (!ok) {
-        std::wstring msg = L"Sign-in failed: ";
-        msg += text;
-        set_error(msg);
-        EnableWindow(hSignIn_, TRUE);
-        EnableWindow(hHsEdit_, TRUE);
+        shared_->set_status("Sign-in failed: " + err_or_url,
+                             tk::Color::rgb(0xB00020));
+        shared_->set_state(tesseract::views::LoginView::State::Form);
+        hs_field_->set_enabled(true);
+        surface_->relayout();
         return;
     }
 
-    tesseract::Client::open_in_browser(narrow_wstr(text));
-    show_waiting();
-    start_phase2();
-}
+    tesseract::Client::open_in_browser(err_or_url);
 
-void LoginView::start_phase2() {
-    join_worker();
     cancelled_.store(false);
-
-    HWND target = hwnd_;
-    worker_ = std::thread([this, target]() {
+    worker_ = std::thread([this] {
         auto res = client_.await_oauth();
         if (cancelled_.load()) return;
-        WPARAM ok = res.ok ? 1 : 0;
-        auto*  p  = new std::wstring(widen(res.message));
-        PostMessageW(target, WM_LOGIN_AWAIT_DONE,
-                     ok, reinterpret_cast<LPARAM>(p));
+        bool        ok  = static_cast<bool>(res);
+        std::string msg = res.message;
+        surface_->host().post_to_ui(
+            [this, ok, msg = std::move(msg)] {
+                on_await_completed(ok, msg);
+            });
     });
 }
 
-void LoginView::on_await_completed(bool ok, std::wstring text) {
+void LoginView::on_await_completed(bool ok, std::string err) {
     join_worker();
-
     if (ok) {
         if (on_success_) on_success_();
         return;
     }
-    std::wstring msg = L"Sign-in failed: ";
-    msg += text;
-    set_error(msg);
-    show_form();
+    shared_->set_status("Sign-in failed: " + err,
+                         tk::Color::rgb(0xB00020));
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    surface_->relayout();
+}
+
+void LoginView::on_cancel() {
+    cancelled_.store(true);
+    client_.cancel_oauth();
+    shared_->set_status("Cancelling…");
+    surface_->relayout();
+    join_worker();
+    shared_->set_status("");
+    shared_->set_state(tesseract::views::LoginView::State::Form);
+    hs_field_->set_enabled(true);
+    surface_->relayout();
 }
 
 void LoginView::join_worker() {
     if (worker_.joinable()) worker_.join();
+}
+
+std::string LoginView::trim(std::string s) {
+    auto a = s.find_first_not_of(" \t\n\r");
+    auto b = s.find_last_not_of (" \t\n\r");
+    if (a == std::string::npos) return {};
+    return s.substr(a, b - a + 1);
+}
+
+std::string LoginView::wstring_to_utf8(const std::wstring& s) {
+    if (s.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, s.data(),
+                                 static_cast<int>(s.size()),
+                                 nullptr, 0, nullptr, nullptr);
+    std::string out(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, s.data(),
+                         static_cast<int>(s.size()),
+                         out.data(), n, nullptr, nullptr);
+    return out;
 }
 
 } // namespace win32

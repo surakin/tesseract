@@ -330,18 +330,14 @@ void MainWindow::apply_default_font(HWND h) {
 void MainWindow::on_system_theme_changed() {
     if (!theme::refresh_from_system()) return;
     theme::apply_window_attributes(hwnd_);
-    // Re-apply DarkMode_Explorer scrollbar theming on listboxes / edits.
-    theme::apply_control_theme(hRoomList_);
-    theme::apply_control_theme(hMsgList_);
-    theme::apply_control_theme(hInput_);
-    theme::apply_control_theme(hRecoveryKeyEdit_);
-    theme::apply_control_theme(hEmojiSearch_);
-    theme::apply_control_theme(hEmojiGrid_);
+    // The room / message / compose lists are tk Surfaces; they paint
+    // themselves on theme change via relayout.
     InvalidateRect(hwnd_, nullptr, TRUE);
-    if (hRoomList_)   InvalidateRect(hRoomList_,   nullptr, TRUE);
-    if (hMsgList_)    InvalidateRect(hMsgList_,    nullptr, TRUE);
-    if (hRoomHeader_) InvalidateRect(hRoomHeader_, nullptr, TRUE);
-    if (hUserStrip_)  InvalidateRect(hUserStrip_,  nullptr, TRUE);
+    if (room_surface_)    room_surface_->relayout();
+    if (msg_surface_)     msg_surface_->relayout();
+    if (compose_surface_) compose_surface_->relayout();
+    if (hRoomHeader_)  InvalidateRect(hRoomHeader_, nullptr, TRUE);
+    if (hUserStrip_)   InvalidateRect(hUserStrip_,  nullptr, TRUE);
     if (hStatus_)     InvalidateRect(hStatus_,     nullptr, TRUE);
 }
 
@@ -502,51 +498,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
 
     case WM_COMMAND:
-        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_SEND)
-            self->on_send_clicked();
-        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_EMOJI)
-            self->toggle_emoji_picker();
-        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_VERIFY)
-            self->on_recovery_verify_clicked();
-        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_DISMISS)
-            self->on_recovery_dismiss_clicked();
+        // Compose bar Send / Emoji + recovery banner clicks go through
+        // the shared widgets' callbacks now — no WM_COMMAND wiring. The
+        // emoji-picker search field is a NativeTextField overlay handled
+        // by its set_on_changed lambda. Only the logout menu remains.
         if (LOWORD(wParam) == IDM_LOGOUT)
             self->do_logout();
-        if (HIWORD(wParam) == LBN_SELCHANGE && LOWORD(wParam) == IDC_ROOMLIST) {
-            int idx = (int)SendMessageW(self->hRoomList_, LB_GETCURSEL, 0, 0);
-            if (idx != LB_ERR) self->on_room_selected(idx);
-        }
-        if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == IDC_EMOJI_PICKER_SEARCH)
-            self->on_emoji_search_changed();
         return 0;
-
-    case WM_MEASUREITEM: {
-        auto* mis = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
-        if (mis->CtlID == IDC_ROOMLIST) {
-            mis->itemHeight = kRoomRowH;
-        } else if (mis->CtlID == IDC_MSGLIST) {
-            mis->itemHeight = mis->itemID < self->messages_.size()
-                ? self->compute_message_height(mis->itemID) : 80;
-        } else if (mis->CtlID == IDC_EMOJI_PICKER_GRID) {
-            mis->itemHeight = 36;        // one row of glyphs
-        } else if (mis->CtlID == IDC_EMOJI_PICKER_TABS) {
-            mis->itemHeight = 32;        // tab strip is single-row
-            mis->itemWidth  = 32;
-        }
-        return TRUE;
-    }
 
     case WM_DRAWITEM: {
         auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (dis->CtlID == IDC_ROOMLIST)
-            self->draw_room_item(dis);
-        else if (dis->CtlID == IDC_MSGLIST)
-            self->draw_message_item(dis);
-        else if (dis->CtlID == IDC_EMOJI_PICKER_GRID)
-            self->draw_emoji_grid_item(dis);
-        else if (dis->CtlID == IDC_EMOJI_PICKER_TABS)
-            self->draw_emoji_tab_item(dis);
-        else if (dis->CtlID == IDC_SIDE_SEPARATOR) {
+        if (dis->CtlID == IDC_SIDE_SEPARATOR) {
             FillRect(dis->hDC, &dis->rcItem,
                      theme::brush(theme::palette().separator));
         }
@@ -575,22 +537,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         HWND ctl = reinterpret_cast<HWND>(lParam);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, pal.text_primary);
-        if (ctl == self->hRecoveryBanner_ || ctl == self->hRecoveryLabel_) {
-            // Faint accent tint for the warning banner, regardless of mode.
-            COLORREF banner = (theme::current_mode() == theme::Mode::Dark)
-                ? RGB(0x32, 0x2E, 0x1A) : RGB(0xFF, 0xF7, 0xE0);
-            SetBkColor(dc, banner);
-            return reinterpret_cast<LRESULT>(theme::brush(banner));
-        }
-        // EDIT controls (compose, recovery key, emoji search) → compose-card bg.
+        // The recovery banner is now a tk::win32::Surface — it paints
+        // its own background; no WM_CTLCOLOR tinting needed.
+        // EDIT controls (compose) → compose-card bg.
         if (msg == WM_CTLCOLOREDIT) {
             SetBkColor(dc, pal.compose_card_bg);
             return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
-        }
-        // Owner-drawn LB empty-area brush: sidebar-tinted for the room list.
-        if (msg == WM_CTLCOLORLISTBOX && ctl == self->hRoomList_) {
-            SetBkColor(dc, pal.sidebar_bg);
-            return reinterpret_cast<LRESULT>(theme::brush(pal.sidebar_bg));
         }
         SetBkColor(dc, pal.window_bg);
         return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
@@ -660,99 +612,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     }
 }
 
-// ---------------------------------------------------------------------------
-// Input subclass: Enter sends, Shift+Enter inserts newline
-// ---------------------------------------------------------------------------
-
-LRESULT CALLBACK MainWindow::input_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData)
-{
-    if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-        if (!(GetKeyState(VK_SHIFT) & 0x8000)) {
-            reinterpret_cast<MainWindow*>(dwRefData)->on_send_clicked();
-            return 0;
-        }
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-// Intercepts WM_LBUTTONDOWN on the owner-drawn message list so a click on a
-// reaction chip toggles the reaction instead of just selecting the row.
-// Owner-drawn LISTBOX has no widget tree, so we hit-test against the
-// per-message `chip_rects` recorded during the last paint of the row.
-LRESULT CALLBACK MainWindow::msg_list_subclass_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData)
-{
-    if (msg == WM_LBUTTONDOWN) {
-        auto* self = reinterpret_cast<MainWindow*>(dwRefData);
-        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        int idx = LBItemFromPt(hwnd, pt, FALSE);
-        if (idx >= 0 && (size_t)idx < self->messages_.size()) {
-            const auto& m = self->messages_[(size_t)idx];
-            RECT item_rc;
-            if (SendMessageW(hwnd, LB_GETITEMRECT, (WPARAM)idx,
-                             (LPARAM)&item_rc) != LB_ERR)
-            {
-                POINT local{ pt.x - item_rc.left, pt.y - item_rc.top };
-                for (const auto& entry : m.chip_rects) {
-                    const RECT& chip_rc = entry.first;
-                    if (PtInRect(&chip_rc, local)) {
-                        auto result = self->client_.send_reaction(
-                            m.room_id, m.event_id, entry.second);
-                        if (!result.ok && self->hStatus_) {
-                            SetWindowTextW(self->hStatus_,
-                                utf8_to_wstr("Failed to toggle reaction: "
-                                             + result.message).c_str());
-                        }
-                        return 0; // consume — don't change list selection
-                    }
-                }
-            }
-        }
-    }
-    // Right-click on an own, non-redacted message → "Delete message" popup.
-    // We treat WM_RBUTTONUP rather than WM_CONTEXTMENU because the latter
-    // arrives in screen coords and we want the hit-test in client coords;
-    // either works, but RBUTTONUP keeps the math symmetric with LBUTTONDOWN.
-    if (msg == WM_RBUTTONUP) {
-        auto* self = reinterpret_cast<MainWindow*>(dwRefData);
-        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        int idx = LBItemFromPt(hwnd, pt, FALSE);
-        if (idx >= 0 && (size_t)idx < self->messages_.size()) {
-            const auto& m = self->messages_[(size_t)idx];
-            const bool is_redacted = (m.type == tesseract::EventType::Redacted);
-            if (m.is_own && !is_redacted && !m.event_id.empty()) {
-                POINT screen_pt = pt;
-                ClientToScreen(hwnd, &screen_pt);
-                HMENU menu = CreatePopupMenu();
-                constexpr UINT kDeleteId = 1;
-                AppendMenuW(menu, MF_STRING, kDeleteId, L"Delete message");
-                UINT choice = TrackPopupMenu(menu,
-                    TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
-                    screen_pt.x, screen_pt.y, 0, hwnd, nullptr);
-                DestroyMenu(menu);
-                if (choice == kDeleteId) {
-                    int confirm = MessageBoxW(self->hwnd_,
-                        L"Delete this message? This cannot be undone.",
-                        L"Delete message", MB_YESNO | MB_ICONQUESTION);
-                    if (confirm == IDYES) {
-                        auto res = self->client_.redact_event(
-                            m.room_id, m.event_id, "");
-                        if (!res.ok) {
-                            MessageBoxW(self->hwnd_,
-                                utf8_to_wstr(res.message).c_str(),
-                                L"Delete failed", MB_ICONWARNING);
-                        }
-                    }
-                }
-                return 0;
-            }
-        }
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
+// Enter-to-send is handled by the NativeTextArea overlay inside the
+// shared ComposeBar — the legacy `input_subclass_proc` is no longer
+// needed.
 
 // ---------------------------------------------------------------------------
 // Lifetime
@@ -828,15 +690,25 @@ void MainWindow::on_create(HWND hwnd) {
     theme::register_main_window(hwnd);
     theme::apply_window_attributes(hwnd);
 
-    // Room list — fixed-height owner-drawn
-    hRoomList_ = CreateWindowExW(
-        0, L"LISTBOX", nullptr,
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL |
-        LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
-        0, 0, 240, 600,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ROOMLIST)), hInst_, nullptr);
-    theme::apply_control_theme(hRoomList_);
-    apply_default_font(hRoomList_);
+    // Room list — shared toolkit Surface hosting tesseract::views::RoomListView.
+    room_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto view = std::make_unique<tesseract::views::RoomListView>();
+        room_list_view_ = view.get();
+        room_list_view_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        room_list_view_->on_room_selected =
+            [this](const std::string& room_id) { on_room_selected(room_id); };
+        room_surface_->set_root(std::move(view));
+    }
+    if (HWND rs = room_surface_->hwnd()) {
+        SetWindowPos(rs, nullptr, 0, 0, 240, 600,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     // 1px vertical separator between the sidebar and the chat area.
     hSideSep_ = CreateWindowExW(
@@ -878,45 +750,64 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, nullptr, hInst_, nullptr);
     SetWindowLongPtrW(hUserStrip_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
-    // Message list — variable-height owner-drawn, not selectable.
-    // No CLIENTEDGE: flat surface that blends with the chat area.
-    hMsgList_ = CreateWindowExW(
-        0, L"LISTBOX", nullptr,
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL |
-        LBS_OWNERDRAWVARIABLE | LBS_HASSTRINGS | LBS_NOSEL,
-        240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_MSGLIST)), hInst_, nullptr);
-    theme::apply_control_theme(hMsgList_);
-    apply_default_font(hMsgList_);
+    // Message list — shared toolkit Surface hosting MessageListView.
+    msg_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto view = std::make_unique<tesseract::views::MessageListView>();
+        message_list_view_ = view.get();
+        message_list_view_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        message_list_view_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_images_.find(mxc);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        msg_surface_->set_root(std::move(view));
+    }
+    if (HWND ms = msg_surface_->hwnd()) {
+        SetWindowPos(ms, nullptr, 240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
-    // Multi-line compose input. Width is shrunk to leave room for the emoji +
-    // send buttons that sit inside the compose card to its right.
-    hInput_ = CreateWindowExW(
-        0, L"EDIT", nullptr,
-        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
-        240, 700, 640, 60,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_INPUT)), hInst_, nullptr);
-    theme::apply_control_theme(hInput_);
-    apply_default_font(hInput_);
+    // Compose bar — shared widget on a tk::win32::Surface. The text input
+    // is a NativeTextArea overlay on the bar's text_area_rect; emoji and
+    // send buttons paint into the toolkit.
+    compose_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto bar = std::make_unique<tesseract::views::ComposeBar>();
+        compose_shared_ = bar.get();
+        compose_shared_->on_send  = [this](const std::string&) { on_send_clicked(); };
+        compose_shared_->on_emoji = [this] { toggle_emoji_picker(); };
+        compose_surface_->set_root(std::move(bar));
 
-    hEmoji_ = CreateWindowExW(
-        0, L"BUTTON", L"\xD83D\xDE00",  // 😀 (UTF-16 surrogate pair)
-        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        884, 700, 36, 60,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI)), hInst_, nullptr);
-    theme::register_button(hEmoji_, theme::ButtonStyle::Icon);
+        compose_text_area_ = compose_surface_->host().make_text_area();
+        compose_text_area_->set_placeholder("Message…");
+        compose_text_area_->set_on_changed([this](const std::string& s) {
+            if (compose_shared_) compose_shared_->set_current_text(s);
+        });
+        compose_text_area_->set_on_submit([this] { on_send_clicked(); });
+        compose_text_area_->set_on_height_changed([this](float h) {
+            if (!compose_shared_) return;
+            compose_shared_->set_text_area_natural_height(h);
+            // Re-run the host layout to reposition the compose surface
+            // (its height tracks the shared widget's natural_height()).
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
+        });
+        compose_surface_->set_on_layout([this] {
+            if (compose_shared_ && compose_text_area_)
+                compose_text_area_->set_rect(compose_shared_->text_area_rect());
+        });
+    }
 
-    hSend_ = CreateWindowExW(
-        0, L"BUTTON", L"Send",
-        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        924, 700, 100, 60,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SEND)), hInst_, nullptr);
-    theme::register_button(hSend_, theme::ButtonStyle::Primary);
-
-    // Picker creation is deferred until first toggle so the cold-start
-    // path stays cheap. Recents live in account-data (io.element.recent_emoji),
-    // read on demand via client_.recent_emoji_top(...).
-    register_emoji_class();
+    // Emoji picker creation is deferred until first toggle so the cold-
+    // start path stays cheap. Recents live in account-data
+    // (io.element.recent_emoji), read on demand by the shared picker.
 
     // Custom flat status strip. Replaces STATUSCLASSNAMEW which carries a 9x
     // size-grip and chunky inset borders.
@@ -927,52 +818,39 @@ void MainWindow::on_create(HWND hwnd) {
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
 
-    // Recovery banner (Step 6) — initially hidden; toggled by
-    // maybe_show_recovery_banner() after start_sync. Inline recovery: the
-    // key edit + Verify button live in the banner itself; no modal dialog.
-    hRecoveryBanner_ = CreateWindowExW(
-        0, L"STATIC", nullptr,
-        WS_CHILD | SS_NOTIFY,
-        240, kRoomHeaderH, 784, 30,
-        hwnd, nullptr, hInst_, nullptr);
-    hRecoveryLabel_ = CreateWindowExW(
-        0, L"STATIC", L"Verify this device:",
-        WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP,
-        252, kRoomHeaderH + 8, 140, 18,
-        hwnd, nullptr, hInst_, nullptr);
-    apply_default_font(hRecoveryLabel_);
-    hRecoveryKeyEdit_ = CreateWindowExW(
-        0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD,
-        400, kRoomHeaderH + 4, 480, 22,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_KEY)),
-        hInst_, nullptr);
-    theme::apply_control_theme(hRecoveryKeyEdit_);
-    apply_default_font(hRecoveryKeyEdit_);
-    hRecoveryVerify_ = CreateWindowExW(
-        0, L"BUTTON", L"Verify",
-        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
-        900, kRoomHeaderH + 4, 80, 22,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_VERIFY)),
-        hInst_, nullptr);
-    theme::register_button(hRecoveryVerify_, theme::ButtonStyle::Primary);
-    hRecoveryDismiss_ = CreateWindowExW(
-        0, L"BUTTON", L"✕",  // ✕ — cross / cancel glyph
-        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        985, kRoomHeaderH + 4, 24, 22,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RECOVERY_DISMISS)),
-        hInst_, nullptr);
-    theme::register_button(hRecoveryDismiss_, theme::ButtonStyle::Icon);
-    ShowWindow(hRecoveryBanner_,  SW_HIDE);
-    ShowWindow(hRecoveryLabel_,   SW_HIDE);
-    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-    ShowWindow(hRecoveryVerify_,  SW_HIDE);
-    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    // Recovery banner — shared widget on a tk::win32::Surface. Initially
+    // hidden; toggled by maybe_show_recovery_banner() after start_sync.
+    recovery_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto banner = std::make_unique<tesseract::views::RecoveryBanner>();
+        recovery_shared_ = banner.get();
+        recovery_shared_->on_verify =
+            [this](const std::string& /*key*/) { on_recovery_verify_clicked(); };
+        recovery_shared_->on_dismiss =
+            [this] { on_recovery_dismiss_clicked(); };
+        recovery_surface_->set_root(std::move(banner));
 
-    SetWindowSubclass(hInput_, input_subclass_proc, 0,
-                      reinterpret_cast<DWORD_PTR>(this));
-    SetWindowSubclass(hMsgList_, msg_list_subclass_proc, 0,
-                      reinterpret_cast<DWORD_PTR>(this));
+        recovery_key_field_ = recovery_surface_->host().make_text_field();
+        recovery_key_field_->set_placeholder("Recovery key or passphrase");
+        recovery_key_field_->set_password(true);
+        recovery_key_field_->set_on_changed([this](const std::string& k) {
+            if (recovery_shared_) recovery_shared_->set_current_key(k);
+        });
+        recovery_key_field_->set_on_submit([this] { on_recovery_verify_clicked(); });
+        recovery_surface_->set_on_layout([this] {
+            if (!recovery_shared_ || !recovery_key_field_) return;
+            recovery_key_field_->set_visible(
+                recovery_shared_->recovery_key_field_visible());
+            recovery_key_field_->set_rect(
+                recovery_shared_->recovery_key_field_rect());
+        });
+    }
+    if (HWND rb = recovery_surface_->hwnd()) {
+        SetWindowPos(rb, nullptr, 240, kRoomHeaderH, 784, 48,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(rb, SW_HIDE);
+    }
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
@@ -982,8 +860,6 @@ void MainWindow::on_create(HWND hwnd) {
 }
 
 void MainWindow::on_destroy() {
-    if (hInput_)   RemoveWindowSubclass(hInput_,   input_subclass_proc,    0);
-    if (hMsgList_) RemoveWindowSubclass(hMsgList_, msg_list_subclass_proc, 0);
     client_.stop_sync();
 }
 
@@ -1015,7 +891,7 @@ void MainWindow::on_size(int w, int h) {
     int content_h = h - STATUS_H;
     int msg_h     = content_h - INPUT_H;
 
-    constexpr int BANNER_H = 30;
+    constexpr int BANNER_H = 48;
 
     int msg_area_y = 0;
     int msg_area_h = msg_h;
@@ -1023,21 +899,12 @@ void MainWindow::on_size(int w, int h) {
         msg_area_y = kRoomHeaderH;
         msg_area_h -= kRoomHeaderH;
     }
-    if (recovery_banner_visible_) {
-        constexpr int LABEL_W = 140;
-        SetWindowPos(hRecoveryBanner_, nullptr,
-                     CHAT_X, msg_area_y, w - CHAT_X, BANNER_H, SWP_NOZORDER);
-        SetWindowPos(hRecoveryLabel_, nullptr,
-                     CHAT_X + 12, msg_area_y + 8, LABEL_W, 18, SWP_NOZORDER);
-        // Edit fills the gap between label and the right-anchored buttons.
-        int edit_x = CHAT_X + 12 + LABEL_W + 8;
-        int edit_w = std::max(40, w - edit_x - 124 - 8);
-        SetWindowPos(hRecoveryKeyEdit_, nullptr,
-                     edit_x, msg_area_y + 4, edit_w, 22, SWP_NOZORDER);
-        SetWindowPos(hRecoveryVerify_, nullptr,
-                     w - 124, msg_area_y + 4, 80, 22, SWP_NOZORDER);
-        SetWindowPos(hRecoveryDismiss_, nullptr,
-                     w - 39,  msg_area_y + 4, 24, 22, SWP_NOZORDER);
+    if (recovery_banner_visible_ && recovery_surface_
+        && recovery_surface_->hwnd())
+    {
+        SetWindowPos(recovery_surface_->hwnd(), nullptr,
+                      CHAT_X, msg_area_y, w - CHAT_X, BANNER_H,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
         msg_area_y += BANNER_H;
         msg_area_h -= BANNER_H;
     }
@@ -1045,7 +912,11 @@ void MainWindow::on_size(int w, int h) {
     bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
     int room_list_h = user_strip_visible ? msg_h - kUserStripH : msg_h;
 
-    SetWindowPos(hRoomList_, nullptr, 0, 0, ROOM_W, room_list_h, SWP_NOZORDER);
+    if (room_surface_ && room_surface_->hwnd()) {
+        SetWindowPos(room_surface_->hwnd(), nullptr,
+                      0, 0, ROOM_W, room_list_h,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     if (hUserStrip_) {
         SetWindowPos(hUserStrip_, nullptr,
                      0, room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
@@ -1054,13 +925,19 @@ void MainWindow::on_size(int w, int h) {
         SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, msg_h, SWP_NOZORDER);
     }
     SetWindowPos(hRoomHeader_, nullptr, CHAT_X, 0, w - CHAT_X, kRoomHeaderH, SWP_NOZORDER);
-    SetWindowPos(hMsgList_,  nullptr, CHAT_X, msg_area_y, w - CHAT_X, msg_area_h, SWP_NOZORDER);
-    constexpr int EMOJI_W = 40;
-    SetWindowPos(hInput_,    nullptr, CHAT_X, msg_h,
-                 w - CHAT_X - SEND_W - EMOJI_W, INPUT_H, SWP_NOZORDER);
-    SetWindowPos(hEmoji_,    nullptr, w - SEND_W - EMOJI_W, msg_h,
-                 EMOJI_W, INPUT_H, SWP_NOZORDER);
-    SetWindowPos(hSend_,     nullptr, w - SEND_W, msg_h, SEND_W, INPUT_H, SWP_NOZORDER);
+    if (msg_surface_ && msg_surface_->hwnd()) {
+        SetWindowPos(msg_surface_->hwnd(), nullptr,
+                      CHAT_X, msg_area_y, w - CHAT_X, msg_area_h,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    if (compose_surface_ && compose_surface_->hwnd()) {
+        int compose_h = compose_shared_
+            ? static_cast<int>(compose_shared_->natural_height())
+            : static_cast<int>(tesseract::views::ComposeBar::kMinHeight);
+        SetWindowPos(compose_surface_->hwnd(), nullptr,
+                      CHAT_X, msg_h, w - CHAT_X, compose_h,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
 
@@ -1120,19 +997,17 @@ void MainWindow::show_login_view() {
         ShowWindow(login_view_->hwnd(), SW_SHOW);
     }
     // Hide all main-content widgets.
-    ShowWindow(hRoomList_,        SW_HIDE);
+    if (room_surface_ && room_surface_->hwnd())
+        ShowWindow(room_surface_->hwnd(), SW_HIDE);
     ShowWindow(hSideSep_,         SW_HIDE);
     ShowWindow(hRoomHeader_,      SW_HIDE);
     ShowWindow(hUserStrip_,       SW_HIDE);
-    ShowWindow(hMsgList_,         SW_HIDE);
-    ShowWindow(hInput_,           SW_HIDE);
-    ShowWindow(hSend_,            SW_HIDE);
-    ShowWindow(hEmoji_,           SW_HIDE);
-    ShowWindow(hRecoveryBanner_,  SW_HIDE);
-    ShowWindow(hRecoveryLabel_,   SW_HIDE);
-    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-    ShowWindow(hRecoveryVerify_,  SW_HIDE);
-    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    if (msg_surface_ && msg_surface_->hwnd())
+        ShowWindow(msg_surface_->hwnd(), SW_HIDE);
+    if (compose_surface_ && compose_surface_->hwnd())
+        ShowWindow(compose_surface_->hwnd(), SW_HIDE);
+    if (recovery_surface_ && recovery_surface_->hwnd())
+        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -1147,12 +1022,13 @@ void MainWindow::show_main_content() {
     // Unconditional main-content widgets. Conditional widgets
     // (hRoomHeader_, hUserStrip_, recovery banner) are shown by their own
     // code paths once their state is set.
-    ShowWindow(hRoomList_, SW_SHOW);
+    if (room_surface_ && room_surface_->hwnd())
+        ShowWindow(room_surface_->hwnd(), SW_SHOW);
     ShowWindow(hSideSep_,  SW_SHOW);
-    ShowWindow(hMsgList_,  SW_SHOW);
-    ShowWindow(hInput_,    SW_SHOW);
-    ShowWindow(hSend_,     SW_SHOW);
-    ShowWindow(hEmoji_,    SW_SHOW);
+    if (msg_surface_ && msg_surface_->hwnd())
+        ShowWindow(msg_surface_->hwnd(), SW_SHOW);
+    if (compose_surface_ && compose_surface_->hwnd())
+        ShowWindow(compose_surface_->hwnd(), SW_SHOW);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -1197,31 +1073,24 @@ void MainWindow::on_auth_error(bool soft_logout) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::on_send_clicked() {
-    if (current_room_id_.empty()) return;
+    if (current_room_id_.empty() || !compose_text_area_) return;
 
-    int len = GetWindowTextLengthW(hInput_);
-    if (len <= 0) return;
-    std::wstring wbuf(len, L'\0');
-    GetWindowTextW(hInput_, &wbuf[0], len + 1);
+    std::string body = compose_text_area_->text();
 
-    // Strip \r, trim trailing whitespace
-    std::wstring trimmed;
-    trimmed.reserve(wbuf.size());
-    for (wchar_t c : wbuf) {
-        if (c != L'\r') trimmed += c;
-    }
-    while (!trimmed.empty() && (trimmed.back() == L'\n' || trimmed.back() == L' '))
-        trimmed.pop_back();
-    if (trimmed.empty()) return;
-
-    std::string body = wstr_to_utf8(trimmed.c_str());
+    // Trim leading/trailing whitespace.
+    auto l = body.find_first_not_of(" \t\n\r");
+    auto r = body.find_last_not_of(" \t\n\r");
+    if (l == std::string::npos) return;
+    body = body.substr(l, r - l + 1);
     if (body.empty()) return;
 
     auto res = client_.send_message(current_room_id_, body);
     if (res) {
-        SetWindowTextW(hInput_, L"");
+        compose_text_area_->set_text("");
+        if (compose_shared_) compose_shared_->set_current_text({});
     } else {
-        MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(), L"Send failed", MB_ICONWARNING);
+        MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
+                     L"Send failed", MB_ICONWARNING);
     }
 }
 
@@ -1229,16 +1098,28 @@ void MainWindow::on_send_clicked() {
 // Room selection
 // ---------------------------------------------------------------------------
 
-void MainWindow::on_room_selected(int index) {
-    if (index < 0 || index >= (int)rooms_.size()) return;
+void MainWindow::on_room_selected(const std::string& room_id) {
+    if (room_id.empty()) return;
 
-    const std::string new_id = rooms_[index].id;
-    if (!current_room_id_.empty() && current_room_id_ != new_id)
+    for (const auto& r : rooms_) {
+        if (r.id == room_id && r.is_space) {
+            space_stack_.push_back(room_id);
+            refresh_room_list();
+            return;
+        }
+    }
+
+    if (!current_room_id_.empty() && current_room_id_ != room_id)
         client_.unsubscribe_room(current_room_id_);
 
-    current_room_id_ = new_id;
-    current_room_info_ = rooms_[index];
-    update_room_header(current_room_info_);
+    current_room_id_ = room_id;
+    for (const auto& r : rooms_) {
+        if (r.id == current_room_id_) {
+            current_room_info_ = r;
+            update_room_header(r);
+            break;
+        }
+    }
     auto res = client_.subscribe_room(current_room_id_);
     if (res) {
         client_.paginate_back(current_room_id_, 50);
@@ -1260,407 +1141,174 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::on_tesseract_message(tesseract::Event* ev) {
-    if (ev->room_id == current_room_id_)
+    if (ev && ev->room_id == current_room_id_)
         append_message(*ev);
 }
 
 void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
-    rooms_ = *rooms;
-    SendMessageW(hRoomList_, LB_RESETCONTENT, 0, 0);
-    for (const auto& r : rooms_) {
-        auto wname = utf8_to_wstr(r.name);
-        SendMessageW(hRoomList_, LB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(wname.c_str()));
+    rooms_ = std::move(*rooms);
+    refresh_room_list();
+    if (!current_room_id_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == current_room_id_) { update_room_header(r); break; }
+        }
     }
 }
 
 void MainWindow::on_tesseract_timeline_reset(std::string* room_id) {
-    if (*room_id == current_room_id_)
+    if (room_id && *room_id == current_room_id_)
         clear_messages();
+}
+
+void MainWindow::refresh_room_list() {
+    if (!room_list_view_) return;
+
+    std::vector<tesseract::RoomInfo> filtered;
+    if (space_stack_.empty()) {
+        filtered.reserve(rooms_.size());
+        for (const auto& r : rooms_) if (!r.is_space) filtered.push_back(r);
+        for (const auto& r : rooms_) if ( r.is_space) filtered.push_back(r);
+    } else {
+        auto child_ids = client_.space_children(space_stack_.back());
+        for (const auto& r : rooms_) {
+            if (std::find(child_ids.begin(), child_ids.end(), r.id)
+                != child_ids.end()) {
+                filtered.push_back(r);
+            }
+        }
+    }
+    for (const auto& r : filtered) ensure_room_avatar(r);
+
+    room_list_view_->set_rooms(filtered);
+    if (!current_room_id_.empty())
+        room_list_view_->set_selected_room(current_room_id_);
+    if (room_surface_) room_surface_->relayout();
+}
+
+// ---------------------------------------------------------------------------
+//  Avatar / inline-media decode into tk::Image
+// ---------------------------------------------------------------------------
+
+void MainWindow::ensure_room_avatar(const tesseract::RoomInfo& r) {
+    if (r.avatar_url.empty() || tk_avatars_.count(r.avatar_url) ||
+        !room_surface_) return;
+    auto bytes = client_.fetch_avatar_bytes(r.id);
+    if (bytes.empty()) return;
+    if (auto img = room_surface_->factory().decode_image(bytes))
+        tk_avatars_.emplace(r.avatar_url, std::move(img));
+}
+
+void MainWindow::ensure_user_avatar_tk(const std::string& mxc) {
+    if (mxc.empty() || tk_avatars_.count(mxc) || !msg_surface_) return;
+    auto bytes = client_.fetch_media_bytes(mxc);
+    if (bytes.empty()) return;
+    if (auto img = msg_surface_->factory().decode_image(bytes))
+        tk_avatars_.emplace(mxc, std::move(img));
+}
+
+void MainWindow::ensure_media_image(const std::string& url,
+                                      int /*max_w*/, int /*max_h*/) {
+    if (url.empty() || tk_images_.count(url) || !msg_surface_) return;
+    auto bytes = client_.fetch_media_bytes(url);
+    if (bytes.empty()) return;
+    if (auto img = msg_surface_->factory().decode_image(bytes))
+        tk_images_.emplace(url, std::move(img));
+}
+
+// ---------------------------------------------------------------------------
+//  Event → MessageRowData + append into the shared MessageListView
+// ---------------------------------------------------------------------------
+
+tesseract::views::MessageRowData MainWindow::to_row_data(
+    const tesseract::Event& ev)
+{
+    using Kind = tesseract::views::MessageRowData::Kind;
+    tesseract::views::MessageRowData row;
+    row.event_id          = ev.event_id;
+    row.sender            = ev.sender;
+    row.sender_name       = ev.sender_name;
+    row.sender_avatar_url = ev.sender_avatar_url;
+    row.body              = ev.body;
+    row.timestamp_ms      = ev.timestamp;
+    row.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
+    row.reactions         = ev.reactions;
+
+    switch (ev.type) {
+        case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
+        case tesseract::EventType::Image: {
+            row.kind = Kind::Image;
+            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+            row.media_url            = img.image_url;
+            row.media_w              = static_cast<int>(img.width);
+            row.media_h              = static_cast<int>(img.height);
+            row.has_filename_caption = !img.filename.empty();
+            break;
+        }
+        case tesseract::EventType::Sticker: {
+            row.kind = Kind::Sticker;
+            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+            row.media_url = s.image_url;
+            row.media_w   = static_cast<int>(s.width);
+            row.media_h   = static_cast<int>(s.height);
+            break;
+        }
+        case tesseract::EventType::File: {
+            row.kind = Kind::File;
+            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
+            row.file_name = f.file_name;
+            row.file_size = f.file_size;
+            row.media_url = f.file_url;
+            break;
+        }
+        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
+        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
+    }
+    return row;
 }
 
 void MainWindow::append_message(const tesseract::Event& ev) {
     if (ev.type == tesseract::EventType::Unhandled) return;
+    if (!message_list_view_) return;
 
-    // If we already have this event (e.g. sender profile resolved via a Set
-    // diff, a message edit, or a reaction change), update it in place
-    // instead of duplicating. Reactions update on every toggle, so we
-    // refresh the full reaction set + invalidate the row to repaint.
-    if (!ev.event_id.empty()) {
-        for (size_t i = 0; i < messages_.size(); ++i) {
-            if (messages_[i].event_id == ev.event_id) {
-                messages_[i].body              = ev.body;
-                messages_[i].sender_name       = ev.sender_name;
-                messages_[i].sender_avatar_url = ev.sender_avatar_url;
-                messages_[i].reactions         = ev.reactions;
-                messages_[i].chip_rects.clear();
-                // Reaction count can change the row height. Re-measure by
-                // forcing the listbox to refresh item heights for this row.
-                SendMessageW(hMsgList_, LB_SETITEMHEIGHT, (WPARAM)i,
-                             MAKELPARAM(compute_message_height(i), 0));
-                RECT rc;
-                if (SendMessageW(hMsgList_, LB_GETITEMRECT, (WPARAM)i, (LPARAM)&rc) != LB_ERR)
-                    InvalidateRect(hMsgList_, &rc, FALSE);
-                return;
-            }
-        }
+    ensure_user_avatar_tk(ev.sender_avatar_url);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        ensure_media_image(img.image_url,
+                            tesseract::visual::kMaxInlineImageWidth,
+                            tesseract::visual::kMaxInlineImageHeight);
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        ensure_media_image(s.image_url,
+                            tesseract::visual::kStickerSize,
+                            tesseract::visual::kStickerSize);
+    }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            ensure_media_image(r.source_json, 20, 20);
     }
 
-    MessageData msg;
-    msg.event_id          = ev.event_id;
-    msg.room_id           = ev.room_id;
-    msg.body              = ev.body;
-    msg.sender            = ev.sender;
-    msg.sender_name       = ev.sender_name;
-    msg.sender_avatar_url = ev.sender_avatar_url;
-    msg.timestamp         = ev.timestamp;
-    msg.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
-    msg.type              = ev.type;
-    msg.reactions         = ev.reactions;
-    messages_.push_back(std::move(msg));
+    auto row = to_row_data(ev);
 
-    // LB_ADDSTRING triggers WM_MEASUREITEM for the variable-height list
-    SendMessageW(hMsgList_, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L""));
-
-    // Scroll so the new message is visible
-    int count = (int)SendMessageW(hMsgList_, LB_GETCOUNT, 0, 0);
-    if (count > 0)
-        SendMessageW(hMsgList_, LB_SETTOPINDEX, count - 1, 0);
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        message_list_view_->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        message_list_view_->invalidate_data();
+        if (msg_surface_) msg_surface_->relayout();
+        return;
+    }
+    message_list_view_->append_message(std::move(row));
+    if (msg_surface_) msg_surface_->relayout();
 }
 
 void MainWindow::clear_messages() {
-    messages_.clear();
-    SendMessageW(hMsgList_, LB_RESETCONTENT, 0, 0);
-}
-
-// ---------------------------------------------------------------------------
-// Height computation (called from WM_MEASUREITEM)
-// ---------------------------------------------------------------------------
-
-int MainWindow::compute_message_height(size_t idx) {
-    if (idx >= messages_.size()) return 80;
-    const auto& msg = messages_[idx];
-
-    RECT rc{};
-    GetClientRect(hMsgList_, &rc);
-    int avail_w = rc.right - rc.left;
-    if (avail_w < 60) avail_w = 600;
-
-    // Flat-text layout (see docs/UI-PARITY.md): avatar on the left, name +
-    // body + footer to the right. No bubble padding.
-    int body_max_w = std::min(kMsgMaxWidth,
-                              avail_w - kMsgAvatarSize - 3 * tesseract::visual::kMsgAvatarGap);
-    if (body_max_w < 60) body_max_w = 60;
-
-    bool redacted = (msg.type == tesseract::EventType::Redacted);
-    std::wstring wbody = redacted
-        ? std::wstring(L"Message deleted")
-        : utf8_to_wstr(msg.body);
-    auto body_m = win32::text::measure(wbody.c_str(), -1,
-        win32::text::Style{
-            .family = L"Segoe UI",
-            .size   = 10.0f,
-            .slant  = redacted ? win32::text::Slant::Italic
-                                : win32::text::Slant::Roman,
-            .wrap   = win32::text::Wrap::Word,
-        },
-        body_max_w);
-
-    int name_h      = tesseract::visual::kMsgSenderNameHeight + 2;   // +2 gap
-    int body_h      = body_m.height;
-    int reactions_h = msg.reactions.empty() ? 0 : (kReactionH + kReactionPad);
-    int ts_h        = tesseract::visual::kMsgTimestampHeight + 2;
-    int content_h   = name_h + body_h + reactions_h + ts_h;
-
-    int row_h = kMsgRowPad + std::max(content_h, kMsgAvatarSize) + kMsgRowPad;
-    return std::max(row_h, 48);
-}
-
-// ---------------------------------------------------------------------------
-// Drawing: room list
-// ---------------------------------------------------------------------------
-
-void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
-    if (dis->itemID >= rooms_.size()) return;
-    const auto& room = rooms_[dis->itemID];
-    const auto& pal  = theme::palette();
-
-    Gdiplus::Graphics g(dis->hDC);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
-
-    const RECT& rc = dis->rcItem;
-    int x0 = rc.left, y0 = rc.top;
-    int w  = rc.right  - rc.left;
-    int h  = rc.bottom - rc.top;
-
-    // Background — sidebar tint normally, accent pill when selected.
-    bool sel = (dis->itemState & ODS_SELECTED) != 0;
-    Gdiplus::SolidBrush bgBrush(theme::gpc(pal.sidebar_bg));
-    g.FillRectangle(&bgBrush, x0, y0, w, h);
-    if (sel) {
-        Gdiplus::SolidBrush selBrush(theme::gpc(pal.sidebar_sel_bg));
-        fill_rounded_rect(g, selBrush,
-                          (float)x0 + 4.0f, (float)y0 + 2.0f,
-                          (float)w - 8.0f, (float)h - 4.0f, 6.0f);
-    }
-
-    // Avatar
-    int ax = x0 + 8;
-    int ay = y0 + (h - kRoomAvatarSize) / 2;
-    Gdiplus::Bitmap* bmp = get_room_avatar(room.id);
-    if (bmp)
-        draw_circle_bitmap(g, bmp, ax, ay, kRoomAvatarSize);
-    else
-        draw_initials_circle(g, room.name, ax, ay, kRoomAvatarSize);
-
-    // Measure unread badge to know text area width
-    float pill_w = 0.0f;
-    std::wstring wcount;
-    win32::text::Style badge_style{
-        .family = L"Segoe UI",
-        .size   = 8.0f,
-        .weight = win32::text::Weight::Bold,
-        .color  = pal.unread_badge_text,
-        .halign = win32::text::HAlign::Center,
-        .valign = win32::text::VAlign::Center,
-    };
-    if (room.unread_count > 0) {
-        wcount = std::to_wstring(room.unread_count);
-        auto bm = win32::text::measure(wcount.c_str(), -1, badge_style);
-        pill_w = std::max(20.0f, (float)bm.width + 12.0f);
-    }
-
-    // Room name + preview text
-    int tx     = ax + kRoomAvatarSize + 10;
-    int text_w = rc.right - tx - (int)pill_w - 10;
-
-    auto wname    = utf8_to_wstr(room.name);
-    auto wpreview = utf8_to_wstr(room.last_message_body);
-
-    RECT name_rc{ tx, y0 + 10, tx + text_w, y0 + 10 + 20 };
-    win32::text::draw(dis->hDC, name_rc, wname.c_str(), -1,
-        win32::text::Style{
-            .family = L"Segoe UI",
-            .size   = 10.0f,
-            .weight = win32::text::Weight::Bold,
-            .color  = pal.text_primary,
-            .trim   = win32::text::Trim::EllipsisChar,
-        });
-
-    RECT preview_rc{ tx, y0 + 33, tx + text_w, y0 + 33 + 18 };
-    win32::text::draw(dis->hDC, preview_rc, wpreview.c_str(), -1,
-        win32::text::Style{
-            .family = L"Segoe UI",
-            .size   = 9.0f,
-            .color  = pal.text_muted,
-            .trim   = win32::text::Trim::EllipsisChar,
-        });
-
-    // Unread badge pill
-    if (pill_w > 0.0f) {
-        constexpr float pill_h = 18.0f;
-        float pill_x = (float)(rc.right - 8) - pill_w;
-        float pill_y = (float)(y0 + (h - (int)pill_h) / 2);
-
-        Gdiplus::SolidBrush badgeBrush(theme::gpc(pal.unread_badge_bg));
-        fill_rounded_rect(g, badgeBrush, pill_x, pill_y, pill_w, pill_h, 9.0f);
-
-        RECT badge_rc{
-            (LONG)pill_x, (LONG)pill_y,
-            (LONG)(pill_x + pill_w), (LONG)(pill_y + pill_h),
-        };
-        win32::text::draw(dis->hDC, badge_rc, wcount.c_str(), -1, badge_style);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Drawing: message bubbles
-// ---------------------------------------------------------------------------
-
-void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
-    if (dis->itemID >= messages_.size()) return;
-    const auto& msg = messages_[dis->itemID];
-    const auto& pal = theme::palette();
-    // Reset chip rects every paint — coordinates are row-relative and
-    // become stale on resize / reorder.
-    msg.chip_rects.clear();
-
-    Gdiplus::Graphics g(dis->hDC);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
-
-    const RECT& rc = dis->rcItem;
-    int x0 = rc.left, y0 = rc.top;
-    int w  = rc.right  - rc.left;
-    int h  = rc.bottom - rc.top;
-
-    Gdiplus::SolidBrush bgBrush(theme::gpc(pal.window_bg));
-    g.FillRectangle(&bgBrush, x0, y0, w, h);
-
-    bool redacted = (msg.type == tesseract::EventType::Redacted);
-
-    // Flat-text layout — same anatomy on every platform (see UI-PARITY.md):
-    // 32 px avatar on the left for everyone, sender name above body, body
-    // wraps at kMsgMaxWidth, footer with timestamp on the right.
-    int ax = x0 + tesseract::visual::kMsgAvatarGap;
-    int bx = ax + kMsgAvatarSize + tesseract::visual::kMsgAvatarGap;
-    int body_max_w = std::min(kMsgMaxWidth,
-                              w - (bx - x0) - tesseract::visual::kMsgAvatarGap);
-    if (body_max_w < 60) body_max_w = 60;
-
-    std::wstring wbody = redacted
-        ? std::wstring(L"Message deleted")
-        : utf8_to_wstr(msg.body);
-    win32::text::Style body_style{
-        .family = L"Segoe UI",
-        .size   = 10.0f,
-        .slant  = redacted ? win32::text::Slant::Italic
-                            : win32::text::Slant::Roman,
-        .color  = redacted ? pal.text_muted : pal.text_primary,
-        .wrap   = win32::text::Wrap::Word,
-    };
-    auto body_m = win32::text::measure(wbody.c_str(), -1, body_style, body_max_w);
-    int body_h = body_m.height;
-
-    int y_cur = y0 + kMsgRowPad;
-
-    // Avatar (always — own messages too).
-    const std::string& disp = msg.sender_name.empty() ? msg.sender : msg.sender_name;
-    {
-        Gdiplus::Bitmap* bmp = get_user_avatar(msg.sender_avatar_url);
-        if (bmp)
-            draw_circle_bitmap(g, bmp, ax, y_cur, kMsgAvatarSize);
-        else
-            draw_initials_circle(g, disp, ax, y_cur, kMsgAvatarSize);
-    }
-
-    // Sender name (always — both own and other).
-    {
-        auto wdisp = utf8_to_wstr(disp);
-        RECT name_rc{
-            bx, y_cur,
-            bx + body_max_w,
-            y_cur + tesseract::visual::kMsgSenderNameHeight,
-        };
-        win32::text::draw(dis->hDC, name_rc, wdisp.c_str(), -1,
-            win32::text::Style{
-                .family = L"Segoe UI",
-                .size   = (float)tesseract::visual::kFontSenderName,
-                .weight = win32::text::Weight::Bold,
-                .color  = pal.text_secondary,
-                .trim   = win32::text::Trim::EllipsisChar,
-            });
-        y_cur += tesseract::visual::kMsgSenderNameHeight + 2;
-    }
-
-    // Body text — flat, no bubble. Redacted tombstone uses a dim grey.
-    int body_left = bx;
-    int body_top  = y_cur;
-    {
-        RECT body_rc{
-            body_left, body_top,
-            body_left + body_max_w,
-            body_top + body_h,
-        };
-        win32::text::draw(dis->hDC, body_rc, wbody.c_str(), -1, body_style);
-    }
-    y_cur += body_h;
-
-    // bubble_x / bubble_bottom retained for the reaction-chip block below.
-    int bubble_x = body_left;
-    int bubble_bottom = y_cur;
-
-    // Reaction chips: rounded pills beneath the body, aligned with the
-    // body's leading edge. Record each chip's screen-space RECT relative
-    // to the row origin so WM_LBUTTONDOWN can hit-test against it.
-    if (!msg.reactions.empty()) {
-        float chip_x = (float)bubble_x;
-        float chip_y = (float)(bubble_bottom + kReactionPad);
-        for (const auto& r : msg.reactions) {
-            std::wstring label = utf8_to_wstr(r.key) + L" " +
-                                 std::to_wstring(r.count);
-            COLORREF textc = r.reacted_by_me
-                ? pal.reaction_chip_text_me
-                : pal.reaction_chip_text;
-            win32::text::Style chip_style{
-                .family = L"Segoe UI",
-                .size   = 8.5f,
-                .color  = textc,
-                .halign = win32::text::HAlign::Center,
-                .valign = win32::text::VAlign::Center,
-            };
-            auto chip_m = win32::text::measure(label.c_str(), -1, chip_style);
-            float pill_w = (float)chip_m.width + 14.0f;
-            float pill_h = (float)kReactionH;
-
-            Gdiplus::Color fill = r.reacted_by_me
-                ? theme::gpc(pal.reaction_chip_bg_me)
-                : theme::gpc(pal.reaction_chip_bg);
-            Gdiplus::Color border = r.reacted_by_me
-                ? theme::gpc(pal.reaction_chip_border_me)
-                : theme::gpc(pal.reaction_chip_border);
-
-            Gdiplus::SolidBrush fillBrush(fill);
-            fill_rounded_rect(g, fillBrush, chip_x, chip_y,
-                              pill_w, pill_h, pill_h / 2.0f);
-            Gdiplus::Pen borderPen(border, 1.0f);
-            Gdiplus::GraphicsPath path;
-            path.AddArc(chip_x,                   chip_y, pill_h, pill_h,  90, 180);
-            path.AddArc(chip_x + pill_w - pill_h, chip_y, pill_h, pill_h, 270, 180);
-            path.CloseFigure();
-            g.DrawPath(&borderPen, &path);
-
-            RECT chip_text_rc{
-                (LONG)chip_x, (LONG)chip_y,
-                (LONG)(chip_x + pill_w), (LONG)(chip_y + pill_h),
-            };
-            win32::text::draw(dis->hDC, chip_text_rc, label.c_str(), -1, chip_style);
-
-            // Store row-relative rect for hit-testing.
-            RECT chip_rc{
-                (LONG)(chip_x         - x0),
-                (LONG)(chip_y         - y0),
-                (LONG)(chip_x + pill_w - x0),
-                (LONG)(chip_y + pill_h - y0),
-            };
-            msg.chip_rects.emplace_back(chip_rc, r.key);
-
-            chip_x += pill_w + (float)kReactionPad;
-        }
-    }
-
-    // Timestamp footer: HH:MM, secondary colour, right-aligned beneath the
-    // body / reactions row. Matches the Qt and GTK footer style.
-    if (msg.timestamp != 0) {
-        int footer_y = msg.reactions.empty()
-            ? bubble_bottom + 2
-            : bubble_bottom + kReactionPad + kReactionH + 2;
-
-        time_t t = static_cast<time_t>(msg.timestamp / 1000);
-        struct tm tm_local;
-#if defined(_WIN32)
-        localtime_s(&tm_local, &t);
-#else
-        localtime_r(&t, &tm_local);
-#endif
-        wchar_t ts_buf[8] = {0};
-        wcsftime(ts_buf, 8, L"%H:%M", &tm_local);
-
-        int ts_right = body_left + body_max_w;
-        RECT ts_rc{
-            body_left, footer_y,
-            ts_right,
-            footer_y + tesseract::visual::kMsgTimestampHeight,
-        };
-        win32::text::draw(dis->hDC, ts_rc, ts_buf, -1,
-            win32::text::Style{
-                .family = L"Segoe UI",
-                .size   = (float)tesseract::visual::kFontTimestamp,
-                .color  = pal.text_muted,
-                .halign = win32::text::HAlign::Trailing,
-            });
-    }
+    if (!message_list_view_) return;
+    message_list_view_->set_messages({});
+    if (msg_surface_) msg_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1695,48 +1343,48 @@ std::string narrow_edit_utf8(HWND hEdit) {
 void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_.needs_recovery())  return;
-    if (!recovery_banner_visible_) {
-        // Fresh prompt — restore the input row.
-        SetWindowTextW(hRecoveryLabel_, L"Verify this device:");
-        SetWindowTextW(hRecoveryKeyEdit_, L"");
-        EnableWindow(hRecoveryKeyEdit_, TRUE);
-        EnableWindow(hRecoveryVerify_,  TRUE);
-        ShowWindow(hRecoveryBanner_,   SW_SHOW);
-        ShowWindow(hRecoveryLabel_,    SW_SHOW);
-        ShowWindow(hRecoveryKeyEdit_,  SW_SHOW);
-        ShowWindow(hRecoveryVerify_,   SW_SHOW);
-        ShowWindow(hRecoveryDismiss_,  SW_SHOW);
-        // The LoginView is created last (highest z-order) and is normally
-        // hidden by show_main_content() before we run, but if its 0×0 →
-        // full-rect resize race ever leaves it on top of these controls
-        // they become un-hittable. Hoist the interactive banner widgets
-        // above every sibling explicitly. Banner STATIC must move first
-        // so the edit/buttons end up on top of it.
-        constexpr UINT kZFlags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        SetWindowPos(hRecoveryBanner_,   HWND_TOP, 0, 0, 0, 0, kZFlags);
-        SetWindowPos(hRecoveryLabel_,    HWND_TOP, 0, 0, 0, 0, kZFlags);
-        SetWindowPos(hRecoveryKeyEdit_,  HWND_TOP, 0, 0, 0, 0, kZFlags);
-        SetWindowPos(hRecoveryVerify_,   HWND_TOP, 0, 0, 0, 0, kZFlags);
-        SetWindowPos(hRecoveryDismiss_,  HWND_TOP, 0, 0, 0, 0, kZFlags);
-        recovery_banner_visible_ = true;
-        recovery_in_flight_      = false;
-        RECT rc; GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
+    if (recovery_banner_visible_) return;
+    if (!recovery_surface_ || !recovery_surface_->hwnd()) return;
+
+    if (recovery_shared_) {
+        recovery_shared_->set_state(
+            tesseract::views::RecoveryBanner::State::Form);
+        recovery_shared_->set_current_key("");
     }
+    if (recovery_key_field_) {
+        recovery_key_field_->set_text("");
+        recovery_key_field_->set_enabled(true);
+    }
+    ShowWindow(recovery_surface_->hwnd(), SW_SHOW);
+    recovery_surface_->relayout();
+    recovery_banner_visible_ = true;
+    recovery_in_flight_      = false;
+    RECT rc; GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
 }
 
 void MainWindow::on_recovery_verify_clicked() {
-    std::string key = narrow_edit_utf8(hRecoveryKeyEdit_);
-    if (key.empty()) {
-        SetWindowTextW(hRecoveryLabel_,
-                       L"Please enter a recovery key or passphrase.");
+    std::string key;
+    if (recovery_key_field_) key = recovery_key_field_->text();
+    auto a = key.find_first_not_of(" \t\r\n");
+    auto b = key.find_last_not_of (" \t\r\n");
+    if (a == std::string::npos) {
+        if (recovery_shared_) {
+            recovery_shared_->set_state(
+                tesseract::views::RecoveryBanner::State::Failed);
+            recovery_shared_->set_failure_message(
+                "Please enter a recovery key or passphrase.");
+            if (recovery_surface_) recovery_surface_->relayout();
+        }
         return;
     }
-    EnableWindow(hRecoveryKeyEdit_, FALSE);
-    EnableWindow(hRecoveryVerify_,  FALSE);
-    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-    ShowWindow(hRecoveryVerify_,  SW_HIDE);
-    SetWindowTextW(hRecoveryLabel_, L"Verifying…");
+    key = key.substr(a, b - a + 1);
+
+    if (recovery_shared_)
+        recovery_shared_->set_state(
+            tesseract::views::RecoveryBanner::State::Verifying);
+    if (recovery_key_field_) recovery_key_field_->set_enabled(false);
+    if (recovery_surface_) recovery_surface_->relayout();
     recovery_in_flight_ = true;
 
     HWND target = hwnd_;
@@ -1751,59 +1399,61 @@ void MainWindow::on_recovery_verify_clicked() {
 
 void MainWindow::on_recover_done(bool ok, std::wstring msg) {
     if (ok) {
-        // The backup watcher will repaint into "Importing keys…" and hide
-        // the banner once state reaches Enabled.
-        SetWindowTextW(hRecoveryLabel_, L"Downloading historical keys…");
+        if (recovery_shared_) {
+            recovery_shared_->set_state(
+                tesseract::views::RecoveryBanner::State::Importing);
+        }
+        if (recovery_surface_) recovery_surface_->relayout();
         return;
     }
-    std::wstring txt = L"Recovery failed: ";
-    txt += msg;
-    SetWindowTextW(hRecoveryLabel_, txt.c_str());
-    EnableWindow(hRecoveryKeyEdit_, TRUE);
-    EnableWindow(hRecoveryVerify_,  TRUE);
-    ShowWindow(hRecoveryKeyEdit_, SW_SHOW);
-    ShowWindow(hRecoveryVerify_,  SW_SHOW);
-    SetFocus(hRecoveryKeyEdit_);
-    SendMessageW(hRecoveryKeyEdit_, EM_SETSEL, 0, -1);
+    if (recovery_shared_) {
+        recovery_shared_->set_state(
+            tesseract::views::RecoveryBanner::State::Failed);
+        // wstring → utf8 for the failure detail.
+        int n = WideCharToMultiByte(CP_UTF8, 0, msg.data(),
+                                     static_cast<int>(msg.size()),
+                                     nullptr, 0, nullptr, nullptr);
+        std::string utf8(static_cast<size_t>(n), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, msg.data(),
+                             static_cast<int>(msg.size()),
+                             utf8.data(), n, nullptr, nullptr);
+        recovery_shared_->set_failure_message(utf8);
+    }
+    if (recovery_key_field_) {
+        recovery_key_field_->set_enabled(true);
+        recovery_key_field_->set_focused(true);
+    }
+    if (recovery_surface_) recovery_surface_->relayout();
     recovery_in_flight_ = false;
 }
 
 void MainWindow::on_recovery_dismiss_clicked() {
     recovery_banner_dismissed_ = true;
-    ShowWindow(hRecoveryBanner_,  SW_HIDE);
-    ShowWindow(hRecoveryLabel_,   SW_HIDE);
-    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-    ShowWindow(hRecoveryVerify_,  SW_HIDE);
-    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    if (recovery_surface_ && recovery_surface_->hwnd())
+        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
     recovery_banner_visible_ = false;
     RECT rc; GetClientRect(hwnd_, &rc);
     on_size(rc.right, rc.bottom);
 }
 
 void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
-    // Recovery state is populated asynchronously by the first sync cycle, so
-    // re-evaluate the banner each time the SDK pings us.
     maybe_show_recovery_banner();
 
-    // Live progress only when the input field is hidden, so we don't clobber
-    // "Verify this device:" while the user is typing.
     if (recovery_banner_visible_
-        && !IsWindowVisible(hRecoveryKeyEdit_)
+        && recovery_shared_
+        && recovery_shared_->state()
+            == tesseract::views::RecoveryBanner::State::Importing
         && progress->state == tesseract::BackupState::Downloading
         && progress->imported_keys > 0)
     {
-        std::wstring txt = L"Importing keys from backup… "
-            + std::to_wstring(progress->imported_keys) + L" imported.";
-        SetWindowTextW(hRecoveryLabel_, txt.c_str());
+        recovery_shared_->set_import_progress(progress->imported_keys);
+        if (recovery_surface_) recovery_surface_->relayout();
     }
     if (progress->state == tesseract::BackupState::Enabled
         && !client_.needs_recovery())
     {
-        ShowWindow(hRecoveryBanner_,  SW_HIDE);
-        ShowWindow(hRecoveryLabel_,   SW_HIDE);
-        ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-        ShowWindow(hRecoveryVerify_,  SW_HIDE);
-        ShowWindow(hRecoveryDismiss_, SW_HIDE);
+        if (recovery_surface_ && recovery_surface_->hwnd())
+            ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
         recovery_banner_visible_ = false;
         RECT rc; GetClientRect(hwnd_, &rc);
         on_size(rc.right, rc.bottom);
@@ -1843,16 +1493,14 @@ void MainWindow::do_logout() {
     my_avatar_url_.clear();
     if (user_avatar_bmp_) { delete user_avatar_bmp_; user_avatar_bmp_ = nullptr; }
     rooms_.clear();
-    messages_.clear();
-    SendMessageW(hRoomList_, LB_RESETCONTENT, 0, 0);
-    SendMessageW(hMsgList_,  LB_RESETCONTENT, 0, 0);
+    if (room_list_view_)    room_list_view_->set_rooms({});
+    if (message_list_view_) message_list_view_->set_messages({});
+    if (room_surface_) room_surface_->relayout();
+    if (msg_surface_)  msg_surface_->relayout();
     ShowWindow(hRoomHeader_, SW_HIDE);
     ShowWindow(hUserStrip_,  SW_HIDE);
-    ShowWindow(hRecoveryBanner_,  SW_HIDE);
-    ShowWindow(hRecoveryLabel_,   SW_HIDE);
-    ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
-    ShowWindow(hRecoveryVerify_,  SW_HIDE);
-    ShowWindow(hRecoveryDismiss_, SW_HIDE);
+    if (recovery_surface_ && recovery_surface_->hwnd())
+        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
     recovery_banner_visible_   = false;
     recovery_banner_dismissed_ = false;
     RECT rc; GetClientRect(hwnd_, &rc);
@@ -1865,353 +1513,120 @@ void MainWindow::do_logout() {
 }
 
 // ---------------------------------------------------------------------------
-// Emoji picker
+// Emoji picker — WS_POPUP HWND hosting a tk::win32::Surface that paints
+// the shared tesseract::views::EmojiPicker. The search field is a
+// NativeTextField overlay (EDIT child); selection routes through
+// insert_emoji_at_cursor below.
 // ---------------------------------------------------------------------------
 
 namespace {
 constexpr const wchar_t* kEmojiPickerClass = L"TesseractEmojiPicker";
 } // namespace
 
-void MainWindow::register_emoji_class() {
-    static bool registered = false;
-    if (registered) return;
-    WNDCLASSEXW wc{};
-    wc.cbSize        = sizeof(wc);
-    wc.style         = CS_DROPSHADOW;  // soft system drop shadow on the popup
-    wc.lpfnWndProc   = MainWindow::emoji_picker_wnd_proc;
-    wc.hInstance     = hInst_;
-    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = nullptr;        // painted in WM_ERASEBKGND via theme
-    wc.lpszClassName = kEmojiPickerClass;
-    RegisterClassExW(&wc);
-    registered = true;
-}
-
-LRESULT CALLBACK MainWindow::emoji_picker_wnd_proc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    auto* self = reinterpret_cast<MainWindow*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-
-    if (msg == WM_NCCREATE) {
-        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-            reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    // Forward owner-draw + measure to the parent's handlers (same controls
-    // we declared on the picker live as children of this popup, but their
-    // CtlIDs are unique so the main wnd_proc dispatches correctly).
-    switch (msg) {
-    case WM_ERASEBKGND: {
-        RECT rc; GetClientRect(hwnd, &rc);
-        FillRect(reinterpret_cast<HDC>(wParam), &rc,
-                 theme::brush(theme::palette().chrome_bg));
-        return 1;
-    }
-    case WM_CTLCOLOREDIT:
-    case WM_CTLCOLORLISTBOX: {
-        const auto& pal = theme::palette();
-        HDC dc = reinterpret_cast<HDC>(wParam);
-        SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, pal.text_primary);
-        SetBkColor(dc, pal.chrome_bg);
-        return reinterpret_cast<LRESULT>(theme::brush(pal.chrome_bg));
-    }
-    case WM_MEASUREITEM:
-        return SendMessageW(self->hwnd_, msg, wParam, lParam);
-    case WM_DRAWITEM:
-        return SendMessageW(self->hwnd_, msg, wParam, lParam);
-
-    case WM_COMMAND: {
-        const WORD id   = LOWORD(wParam);
-        const WORD code = HIWORD(wParam);
-        if (id == IDC_EMOJI_PICKER_SEARCH && code == EN_CHANGE) {
-            self->on_emoji_search_changed();
-            return 0;
-        }
-        if (id == IDC_EMOJI_PICKER_GRID && code == LBN_SELCHANGE) {
-            int row = (int)SendMessageW(self->hEmojiGrid_, LB_GETCURSEL, 0, 0);
-            // Hit-test against last click x to derive the column (kept in
-            // a window long via WM_LBUTTONDOWN handler below). Approximate
-            // column from a stashed value.
-            int col = (int)GetWindowLongPtrW(self->hEmojiGrid_, GWLP_USERDATA);
-            self->pick_emoji_at(row, col);
-            // Clear the selection so consecutive clicks on the same item refire.
-            SendMessageW(self->hEmojiGrid_, LB_SETCURSEL, (WPARAM)-1, 0);
-            return 0;
-        }
-        if (id == IDC_EMOJI_PICKER_TABS && code == LBN_SELCHANGE) {
-            int idx = (int)SendMessageW(self->hEmojiTabs_, LB_GETCURSEL, 0, 0);
-            if (idx != LB_ERR) self->pick_emoji_tab(idx);
-            return 0;
-        }
-        break;
-    }
-
-    case WM_ACTIVATE:
-        if (LOWORD(wParam) == WA_INACTIVE) ShowWindow(hwnd, SW_HIDE);
-        return 0;
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
 void MainWindow::ensure_emoji_picker_created() {
     if (hEmojiPicker_) return;
+
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = DefWindowProcW;
+        wc.hInstance     = hInst_;
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;   // tk::win32::Surface paints the body
+        wc.lpszClassName = kEmojiPickerClass;
+        RegisterClassExW(&wc);
+        registered = true;
+    }
 
     hEmojiPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kEmojiPickerClass, L"",
-        WS_POPUP,
-        0, 0, kEmojiPickW, kEmojiPickH,
-        hwnd_, nullptr, hInst_, this);
+        WS_POPUP | WS_BORDER,
+        0, 0, 320, 360,
+        hwnd_, nullptr, hInst_, nullptr);
+    if (!hEmojiPicker_) return;
 
-    // Round the popup corners on Win11; silently no-ops on older Windows.
-    {
-        constexpr DWORD kDwmaCorner = 33;
-        int corner = 3;  // DWMWCP_ROUNDSMALL
-        DwmSetWindowAttribute(hEmojiPicker_, kDwmaCorner, &corner, sizeof(corner));
+    emoji_picker_surface_ =
+        std::make_unique<tk::win32::Surface>(hInst_, hEmojiPicker_,
+                                              tk::Theme::light());
+
+    auto shared = std::make_unique<tesseract::views::EmojiPicker>();
+    emoji_picker_shared_ = shared.get();
+    emoji_picker_shared_->set_client(&client_);
+    emoji_picker_shared_->on_selected =
+        [this](const std::string& glyph) { insert_emoji_at_cursor(glyph); };
+    emoji_picker_surface_->set_root(std::move(shared));
+
+    if (HWND s = emoji_picker_surface_->hwnd()) {
+        SetWindowPos(s, nullptr, 0, 0, 320, 360,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
-    // Search box at the top.
-    hEmojiSearch_ = CreateWindowExW(
-        0, L"EDIT", nullptr,
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        4, 4, kEmojiPickW - 8, 22,
-        hEmojiPicker_,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_SEARCH)),
-        hInst_, nullptr);
-    theme::apply_control_theme(hEmojiSearch_);
-
-    // Owner-drawn grid in the middle.
-    hEmojiGrid_ = CreateWindowExW(
-        0, L"LISTBOX", nullptr,
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL |
-        LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
-        4, 30, kEmojiPickW - 8, kEmojiPickH - 30 - 36,
-        hEmojiPicker_,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_GRID)),
-        hInst_, nullptr);
-    theme::apply_control_theme(hEmojiGrid_);
-
-    // Tab strip at the bottom (owner-drawn LISTBOX with horizontal flow).
-    hEmojiTabs_ = CreateWindowExW(
-        0, L"LISTBOX", nullptr,
-        WS_CHILD | WS_VISIBLE |
-        LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_MULTICOLUMN,
-        4, kEmojiPickH - 34, kEmojiPickW - 8, 32,
-        hEmojiPicker_,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_TABS)),
-        hInst_, nullptr);
-    SendMessageW(hEmojiTabs_, LB_SETCOLUMNWIDTH, 32, 0);
-
-    // Subclass the grid so we can capture the click x-coordinate (needed
-    // to derive the grid column under WM_LBUTTONDOWN).
-    SetWindowSubclass(hEmojiGrid_,
-        [](HWND h, UINT m, WPARAM w, LPARAM lp, UINT_PTR, DWORD_PTR) -> LRESULT {
-            if (m == WM_LBUTTONDOWN) {
-                int x = GET_X_LPARAM(lp);
-                int col = std::min(x / kEmojiCellW, kEmojiCols - 1);
-                SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)col);
-            }
-            return DefSubclassProc(h, m, w, lp);
-        }, 0, 0);
-
-    // Set Segoe UI Emoji 14pt on the search + grid for proper color rendering.
-    HFONT font = CreateFontW(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI Emoji");
-    if (font) {
-        SendMessageW(hEmojiSearch_, WM_SETFONT, (WPARAM)font, TRUE);
-    }
-
-    // Seed the tab strip: ★ + the 8 category glyphs.
-    emoji_tabs_.clear();
-    emoji_tabs_.push_back(std::string("\xE2\x98\x85"));  // ★
-    for (auto c : tesseract::emoji::kCategories)
-        emoji_tabs_.push_back(tesseract::emoji::category_tab_glyph(c));
-    for (size_t i = 0; i < emoji_tabs_.size(); ++i)
-        SendMessageW(hEmojiTabs_, LB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L""));
+    emoji_picker_search_field_ = emoji_picker_surface_->host().make_text_field();
+    emoji_picker_search_field_->set_placeholder("Search emoji");
+    emoji_picker_search_field_->set_on_changed(
+        [this](const std::string& q) {
+            if (emoji_picker_shared_) emoji_picker_shared_->set_search_query(q);
+            if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+        });
+    emoji_picker_surface_->set_on_layout([this] {
+        if (emoji_picker_search_field_ && emoji_picker_shared_) {
+            emoji_picker_search_field_->set_rect(
+                emoji_picker_shared_->search_field_rect());
+        }
+    });
 }
 
 void MainWindow::toggle_emoji_picker() {
     ensure_emoji_picker_created();
+    if (!hEmojiPicker_) return;
+
     if (IsWindowVisible(hEmojiPicker_)) {
         ShowWindow(hEmojiPicker_, SW_HIDE);
         return;
     }
-    // Default to Smileys & People when frequents are empty.
-    auto top = client_.recent_emoji_top(1);
-    int start_tab = top.empty() ? 1 : 0;
-    SetWindowTextW(hEmojiSearch_, L"");
-    pick_emoji_tab(start_tab);
 
-    // Position above the emoji button.
-    RECT rc{};
-    GetWindowRect(hEmoji_, &rc);
-    int x = rc.right - kEmojiPickW;
-    int y = rc.top - kEmojiPickH - 4;
+    // Anchor the picker above the compose bar, clamped to the screen.
+    // (With the shared ComposeBar there's no standalone emoji-button HWND
+    // — the bar's surface is the closest available anchor.)
+    RECT btn_rc{};
+    if (compose_surface_ && compose_surface_->hwnd())
+        GetWindowRect(compose_surface_->hwnd(), &btn_rc);
+    else
+        GetWindowRect(hwnd_, &btn_rc);
+    int x = btn_rc.left + 8;
+    int y = btn_rc.top - kEmojiPickH - 4;
+
+    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(mon, &mi)) {
+        if (x < mi.rcWork.left) x = mi.rcWork.left + 4;
+        if (y < mi.rcWork.top)  y = btn_rc.bottom + 4;
+    }
+
     SetWindowPos(hEmojiPicker_, HWND_TOPMOST,
-                 x, y, kEmojiPickW, kEmojiPickH, SWP_SHOWWINDOW);
-    SetFocus(hEmojiSearch_);
-}
+                  x, y, kEmojiPickW, kEmojiPickH,
+                  SWP_NOACTIVATE);
 
-void MainWindow::on_emoji_search_changed() {
-    wchar_t buf[256] = {};
-    GetWindowTextW(hEmojiSearch_, buf, 255);
-    int n = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
-    std::string q;
-    if (n > 1) {
-        q.resize(n - 1);
-        WideCharToMultiByte(CP_UTF8, 0, buf, -1, q.data(), n, nullptr, nullptr);
-    }
-    // Trim whitespace.
-    auto first = q.find_first_not_of(" \t\r\n");
-    auto last  = q.find_last_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        // Empty → restore last category tab.
-        pick_emoji_tab(emoji_tab_idx_);
-        return;
-    }
-    q = q.substr(first, last - first + 1);
-    show_emoji_search_results(q);
-}
+    if (emoji_picker_shared_) emoji_picker_shared_->refresh_frequents();
+    if (emoji_picker_search_field_) emoji_picker_search_field_->set_text("");
+    if (emoji_picker_shared_) emoji_picker_shared_->set_search_query("");
 
-void MainWindow::pick_emoji_tab(int idx) {
-    emoji_tab_idx_ = idx;
-    SendMessageW(hEmojiTabs_, LB_SETCURSEL, (WPARAM)idx, 0);
-    if (idx == 0) {
-        // Frequents — pulled from the SDK's local account-data cache.
-        emoji_view_ = client_.recent_emoji_top(24);
-    } else if (idx >= 1 && idx <= 8) {
-        auto entries = tesseract::emoji::by_category(
-            tesseract::emoji::kCategories[idx - 1]);
-        emoji_view_.clear();
-        emoji_view_.reserve(entries.size());
-        for (const auto* e : entries) emoji_view_.emplace_back(e->glyph);
-    }
-    refresh_emoji_grid();
-}
-
-void MainWindow::show_emoji_search_results(const std::string& query) {
-    auto results = tesseract::emoji::filter(query);
-    emoji_view_.clear();
-    emoji_view_.reserve(results.size());
-    for (const auto* e : results) emoji_view_.emplace_back(e->glyph);
-    SendMessageW(hEmojiTabs_, LB_SETCURSEL, (WPARAM)-1, 0);
-    refresh_emoji_grid();
-}
-
-void MainWindow::refresh_emoji_grid() {
-    SendMessageW(hEmojiGrid_, LB_RESETCONTENT, 0, 0);
-    int rows = (static_cast<int>(emoji_view_.size()) + kEmojiCols - 1) / kEmojiCols;
-    for (int i = 0; i < rows; ++i) {
-        SendMessageW(hEmojiGrid_, LB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L""));
-    }
-}
-
-void MainWindow::pick_emoji_at(int row, int col) {
-    if (row < 0) return;
-    size_t idx = static_cast<size_t>(row) * kEmojiCols + col;
-    if (idx >= emoji_view_.size()) return;
-    insert_emoji_at_cursor(emoji_view_[idx]);
+    ShowWindow(hEmojiPicker_, SW_SHOWNOACTIVATE);
+    if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+    if (emoji_picker_search_field_) emoji_picker_search_field_->set_focused(true);
 }
 
 void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
-    if (glyph.empty()) return;
-    // Convert UTF-8 → UTF-16 then EM_REPLACESEL.
-    int n = MultiByteToWideChar(CP_UTF8, 0, glyph.c_str(),
-                                static_cast<int>(glyph.size()),
-                                nullptr, 0);
-    if (n <= 0) return;
-    std::wstring w(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, glyph.c_str(),
-                        static_cast<int>(glyph.size()), w.data(), n);
-    SendMessageW(hInput_, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(w.c_str()));
-    client_.recent_emoji_bump(glyph);
-    SetFocus(hInput_);
-}
-
-void MainWindow::draw_emoji_grid_item(DRAWITEMSTRUCT* dis) {
-    if (dis->itemAction == ODA_FOCUS) return;
-    int row = static_cast<int>(dis->itemID);
-    const auto& pal = theme::palette();
-
-    {
-        Gdiplus::Graphics g(dis->hDC);
-        Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
-        g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
-                        (INT)(dis->rcItem.right - dis->rcItem.left),
-                        (INT)(dis->rcItem.bottom - dis->rcItem.top));
-    }
-
-    // Emoji rendered through DirectWrite + D2D with ENABLE_COLOR_FONT so
-    // Segoe UI Emoji's COLR layers paint in full color (GDI+ DrawString
-    // could only see the monochrome outline glyphs).
-    win32::text::Style style{
-        .family = L"Segoe UI Emoji",
-        .size   = 18.0f,
-        .unit   = win32::text::SizeUnit::Pixel,
-        .color  = pal.text_primary,
-        .halign = win32::text::HAlign::Center,
-        .valign = win32::text::VAlign::Center,
-    };
-    for (int col = 0; col < kEmojiCols; ++col) {
-        size_t idx = static_cast<size_t>(row) * kEmojiCols + col;
-        if (idx >= emoji_view_.size()) break;
-        const std::string& utf8 = emoji_view_[idx];
-        int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(),
-                                    (int)utf8.size(), nullptr, 0);
-        if (n <= 0) continue;
-        std::wstring w(n, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
-                            w.data(), n);
-        RECT rc{
-            dis->rcItem.left + col * kEmojiCellW,
-            dis->rcItem.top,
-            dis->rcItem.left + (col + 1) * kEmojiCellW,
-            dis->rcItem.bottom,
-        };
-        win32::text::draw(dis->hDC, rc, w.c_str(), (int)w.size(), style);
-    }
-}
-
-void MainWindow::draw_emoji_tab_item(DRAWITEMSTRUCT* dis) {
-    if (dis->itemAction == ODA_FOCUS) return;
-    if (dis->itemID >= emoji_tabs_.size()) return;
-    const std::string& utf8 = emoji_tabs_[dis->itemID];
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
-                                nullptr, 0);
-    std::wstring w(n, L'\0');
-    if (n > 0)
-        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
-                            w.data(), n);
-
-    const auto& pal = theme::palette();
-    {
-        Gdiplus::Graphics g(dis->hDC);
-        Gdiplus::Color bgc = (dis->itemState & ODS_SELECTED)
-            ? theme::gpc(pal.sidebar_sel_bg)
-            : theme::gpc(pal.chrome_bg);
-        Gdiplus::SolidBrush bg(bgc);
-        g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
-                        (INT)(dis->rcItem.right - dis->rcItem.left),
-                        (INT)(dis->rcItem.bottom - dis->rcItem.top));
-    }
-
-    win32::text::draw(dis->hDC, dis->rcItem, w.c_str(), (int)w.size(),
-        win32::text::Style{
-            .family = L"Segoe UI Emoji",
-            .size   = 16.0f,
-            .unit   = win32::text::SizeUnit::Pixel,
-            .color  = pal.text_primary,
-            .halign = win32::text::HAlign::Center,
-            .valign = win32::text::VAlign::Center,
-        });
+    if (!compose_text_area_ || glyph.empty()) return;
+    std::string cur = compose_text_area_->text();
+    cur += glyph;
+    compose_text_area_->set_text(cur);
+    if (compose_shared_) compose_shared_->set_current_text(cur);
+    compose_text_area_->set_focused(true);
+    // The shared picker already called recent_emoji_bump before invoking
+    // this callback — no need to re-bump here.
 }
 
 } // namespace win32
