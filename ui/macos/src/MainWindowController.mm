@@ -83,6 +83,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onRecoveryVerify;
 - (void)_onRecoveryDismiss;
 - (void)_maybeShowRecoveryBanner;
+- (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 @end
 
 namespace {
@@ -290,12 +291,15 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
                 s->_client.send_reaction(s->_currentRoomId, event_id, key);
             };
         _messageListView->on_add_reaction_requested =
-            [weakSelf](const std::string& event_id, tk::Rect /*anchor*/) {
+            [weakSelf](const std::string& event_id, tk::Rect anchor) {
                 MainWindowController* s = weakSelf;
                 if (!s) return;
                 if (s->_currentRoomId.empty()) return;
                 s->_pendingReactionEventId = event_id;
-                [s showEmojiPicker:nil];
+                // anchor is in MessageListView-local coords; the view is
+                // the root of _msgSurface, whose backing NSView is
+                // flipped so the rect maps directly to view-local.
+                [s showEmojiPickerAtRect:anchor];
             };
     }
     _msgSurface->set_root(std::move(msg_view));
@@ -484,6 +488,35 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     };
     NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();
     [panel popupAboveView:anchor];
+}
+
+- (void)showEmojiPickerAtRect:(tk::Rect)anchor {
+    if (!_msgSurface) return;
+    EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
+    panel.client = &_client;
+    __weak MainWindowController* weakSelf = self;
+    panel.onSelect = ^(NSString* glyph) {
+        MainWindowController* s = weakSelf;
+        if (!s || glyph.length == 0) return;
+        if (!s->_pendingReactionEventId.empty()) {
+            std::string ev = std::move(s->_pendingReactionEventId);
+            s->_pendingReactionEventId.clear();
+            if (!s->_currentRoomId.empty()) {
+                s->_client.send_reaction(s->_currentRoomId, ev,
+                                          std::string(glyph.UTF8String ?: ""));
+            }
+            [panel close];
+            return;
+        }
+        if (!s->_composeTextArea) return;
+        std::string cur = s->_composeTextArea->text();
+        cur += glyph.UTF8String ?: "";
+        s->_composeTextArea->set_text(cur);
+        if (s->_composeShared) s->_composeShared->set_current_text(cur);
+        s->_composeTextArea->set_focused(true);
+    };
+    NSView* anchorView = (__bridge NSView*)_msgSurface->view_handle();
+    [panel popupAtRect:anchor inView:anchorView];
 }
 
 - (void)_onComposeSend {

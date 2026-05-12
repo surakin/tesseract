@@ -78,6 +78,37 @@ void EmojiPicker::popupAt(QWidget* anchor) {
     if (search_field_) search_field_->set_focused(true);
 }
 
+void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect) {
+    if (!anchor) return;
+    shared_->refresh_frequents();
+    if (search_field_) search_field_->set_text("");
+    shared_->set_search_query("");
+
+    // Map the anchor-local rect to global screen coordinates. tk::Rect
+    // coords are widget-logical-pixels (no DPI scale on the Qt surface),
+    // so they map directly to QWidget coords.
+    QPoint topLeftGlobal = anchor->mapToGlobal(
+        QPoint(static_cast<int>(localRect.x),
+               static_cast<int>(localRect.y)));
+    int rectW = static_cast<int>(localRect.w);
+    int rectH = static_cast<int>(localRect.h);
+
+    QRect screen = QApplication::primaryScreen()->availableGeometry();
+
+    // Prefer popping above the rect, left-aligned with it. Fall back to
+    // below if there isn't room above. Clamp to the screen on x.
+    int x = topLeftGlobal.x();
+    int y = topLeftGlobal.y() - height() - 4;
+    if (y < screen.top()) y = topLeftGlobal.y() + rectH + 4;
+    if (x + width() > screen.right()) x = screen.right() - width() - 4;
+    if (x < screen.left())            x = screen.left() + 4;
+    if (y + height() > screen.bottom()) y = screen.bottom() - height() - 4;
+    (void)rectW;
+    move(x, y);
+    show();
+    if (search_field_) search_field_->set_focused(true);
+}
+
 void EmojiPicker::showEvent(QShowEvent* e) {
     QFrame::showEvent(e);
     layout_overlay();

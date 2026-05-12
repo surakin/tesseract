@@ -131,4 +131,43 @@ constexpr CGFloat kPanelHeight = 360;
     if (_surface) _surface->relayout();
 }
 
+- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor {
+    if (!anchor || !anchor.window) return;
+
+    if (_shared) {
+        _shared->refresh_frequents();
+        _shared->set_search_query("");
+    }
+    if (_searchField) _searchField->set_text("");
+
+    // tk::Rect lives in the surface's flipped (top-left origin) widget
+    // coordinates. The shared message-list view is the root of a
+    // tk::macos::Surface whose backing NSView has isFlipped == YES, so
+    // the rect maps directly into the anchor view's local rect.
+    NSRect anchorRectLocal = NSMakeRect(localRect.x, localRect.y,
+                                         localRect.w, localRect.h);
+    NSRect anchorRectInWindow = [anchor convertRect:anchorRectLocal toView:nil];
+    NSRect anchorRectScreen   = [anchor.window convertRectToScreen:anchorRectInWindow];
+
+    NSScreen* screen = anchor.window.screen ?: NSScreen.mainScreen;
+    NSRect visible   = screen.visibleFrame;
+
+    NSRect frame = self.frame;
+    // Prefer popping above the rect, left-aligned with it. In NSWindow
+    // (non-flipped) coordinates, "above" means a larger y.
+    frame.origin.x = anchorRectScreen.origin.x;
+    frame.origin.y = NSMaxY(anchorRectScreen) + 4;
+    if (frame.origin.y + frame.size.height > NSMaxY(visible))
+        frame.origin.y = anchorRectScreen.origin.y - frame.size.height - 4;
+    if (frame.origin.x < visible.origin.x) frame.origin.x = visible.origin.x + 4;
+    if (frame.origin.x + frame.size.width > NSMaxX(visible))
+        frame.origin.x = NSMaxX(visible) - frame.size.width - 4;
+    if (frame.origin.y < visible.origin.y) frame.origin.y = visible.origin.y + 4;
+
+    [self setFrame:frame display:NO];
+    [self orderFront:nil];
+    if (_searchField) _searchField->set_focused(true);
+    if (_surface) _surface->relayout();
+}
+
 @end

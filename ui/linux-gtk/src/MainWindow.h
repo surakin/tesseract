@@ -64,6 +64,9 @@ private:
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
     void           on_send_clicked();
     void           toggle_emoji_picker();
+    /// Open the emoji popover anchored to a sub-rect of `parent` (rect is
+    /// in `parent`'s local widget coords). Used for the reaction "+" chip.
+    void           popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect);
     void           build_emoji_popover();
 public:
     // Reached from the shared EmojiPicker's on_selected callback.

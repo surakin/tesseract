@@ -386,12 +386,13 @@ MainWindow::MainWindow(QWidget* parent)
 
     // "+" pseudo-chip click: open the emoji picker in reaction mode.
     messageListView_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect /*anchor*/) {
+        [this](const std::string& event_id, tk::Rect anchor) {
             if (!emojiPicker_ || currentRoomId_.empty()) return;
             pendingReactionEventId_ = event_id;
-            // We don't have a chip-precise QWidget anchor; popup over
-            // the message surface, which is close enough for v1.
-            emojiPicker_->popupAt(msgSurface_);
+            // anchor is in MessageListView-local coords; the view is the
+            // root of msgSurface_, so the rect maps directly to surface
+            // widget coords.
+            emojiPicker_->popupAtRect(msgSurface_, anchor);
         };
 
     statusBar()->showMessage("Not logged in");

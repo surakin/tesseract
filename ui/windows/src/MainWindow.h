@@ -121,6 +121,9 @@ private:
     // insert_emoji_at_cursor.
     void   ensure_emoji_picker_created();
     void   toggle_emoji_picker();
+    /// Open the emoji picker anchored to a sub-rect inside `parent_hwnd`
+    /// (rect is in parent client coords). Used for the reaction "+" chip.
+    void   popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect);
     void   insert_emoji_at_cursor(const std::string& glyph);
 
     // When non-empty, the next emoji selection routes through

@@ -772,10 +772,16 @@ void MainWindow::on_create(HWND hwnd) {
                 client_.send_reaction(current_room_id_, event_id, key);
             };
         message_list_view_->on_add_reaction_requested =
-            [this](const std::string& event_id, tk::Rect /*anchor*/) {
+            [this](const std::string& event_id, tk::Rect anchor) {
                 if (current_room_id_.empty()) return;
                 pending_reaction_event_id_ = event_id;
-                toggle_emoji_picker();
+                // anchor is in MessageListView-local coords; the view is
+                // the root of msg_surface_, so the rect maps directly to
+                // surface client coords.
+                if (msg_surface_ && msg_surface_->hwnd())
+                    popup_emoji_at_rect(msg_surface_->hwnd(), anchor);
+                else
+                    toggle_emoji_picker();
             };
         msg_surface_->set_root(std::move(view));
     }
@@ -1615,6 +1621,46 @@ void MainWindow::toggle_emoji_picker() {
         if (x < mi.rcWork.left) x = mi.rcWork.left + 4;
         if (y < mi.rcWork.top)  y = btn_rc.bottom + 4;
     }
+
+    SetWindowPos(hEmojiPicker_, HWND_TOPMOST,
+                  x, y, kEmojiPickW, kEmojiPickH,
+                  SWP_NOACTIVATE);
+
+    if (emoji_picker_shared_) emoji_picker_shared_->refresh_frequents();
+    if (emoji_picker_search_field_) emoji_picker_search_field_->set_text("");
+    if (emoji_picker_shared_) emoji_picker_shared_->set_search_query("");
+
+    ShowWindow(hEmojiPicker_, SW_SHOWNOACTIVATE);
+    if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+    if (emoji_picker_search_field_) emoji_picker_search_field_->set_focused(true);
+}
+
+void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
+    ensure_emoji_picker_created();
+    if (!hEmojiPicker_ || !parent_hwnd) return;
+
+    // Map the local rect into screen coordinates.
+    POINT pt{ static_cast<LONG>(local_rect.x),
+              static_cast<LONG>(local_rect.y) };
+    ClientToScreen(parent_hwnd, &pt);
+    LONG rectW = static_cast<LONG>(local_rect.w);
+    LONG rectH = static_cast<LONG>(local_rect.h);
+
+    // Prefer above, left-aligned with the rect; fall back to below if the
+    // monitor doesn't have room. Clamp to the work area horizontally.
+    int x = pt.x;
+    int y = pt.y - kEmojiPickH - 4;
+    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(mon, &mi)) {
+        if (y < mi.rcWork.top) y = pt.y + rectH + 4;
+        if (x + kEmojiPickW > mi.rcWork.right)
+            x = mi.rcWork.right - kEmojiPickW - 4;
+        if (x < mi.rcWork.left) x = mi.rcWork.left + 4;
+        if (y + kEmojiPickH > mi.rcWork.bottom)
+            y = mi.rcWork.bottom - kEmojiPickH - 4;
+    }
+    (void)rectW;
 
     SetWindowPos(hEmojiPicker_, HWND_TOPMOST,
                   x, y, kEmojiPickW, kEmojiPickH,

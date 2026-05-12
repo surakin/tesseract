@@ -1,6 +1,8 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
+#include "tk/canvas.h"
+
 namespace tesseract { class Client; }
 
 /// Floating emoji picker presented as a utility panel. The panel hosts a
@@ -24,5 +26,10 @@ namespace tesseract { class Client; }
 /// then show it. The anchor's window becomes the panel's parent so the
 /// panel hides automatically when the window loses key.
 - (void)popupAboveView:(NSView*)anchorView;
+
+/// Position the panel anchored to a sub-rect of `anchorView` (rect is in
+/// the view's local coordinates, matching the view's flipped y-axis when
+/// applicable). Used for the reaction "+" chip in the message list.
+- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchorView;
 
 @end

@@ -30,6 +30,12 @@ public:
     /// the given anchor widget, then show it.
     void popupAt(QWidget* anchor);
 
+    /// Position the picker so it lines up against a specific rect inside
+    /// `anchor` (the rect is in `anchor`'s local widget coordinates). Used
+    /// for the reaction "+" chip, where the anchor is the message surface
+    /// but the visual target is a small rect within it.
+    void popupAtRect(QWidget* anchor, const tk::Rect& localRect);
+
     /// Fired when the user picks an emoji; the QString carries the glyph
     /// as UTF-8.
     std::function<void(const QString&)> onSelected;

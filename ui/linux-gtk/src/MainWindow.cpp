@@ -505,13 +505,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             client_.send_reaction(current_room_id_, event_id, key);
         };
     message_list_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect /*anchor*/) {
+        [this](const std::string& event_id, tk::Rect anchor) {
             if (!emoji_popover_ || current_room_id_.empty()) return;
             pending_reaction_event_id_ = event_id;
-            // GtkPopover is parented to the compose widget at build
-            // time; chip-precise anchoring is a follow-up. v1: open
-            // the same popover from the existing anchor.
-            toggle_emoji_picker();
+            // anchor is in MessageListView-local coords; the view is the
+            // root of msg_surface_, so the rect maps directly to its
+            // widget coords.
+            popup_emoji_at_rect(msg_surface_->widget(), anchor);
         };
 
     // Lazily build the picker — the popover is parented to the compose
@@ -1207,6 +1207,38 @@ void MainWindow::toggle_emoji_picker() {
         gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
         return;
     }
+    // Compose-bar path: ensure the popover is parented to the compose
+    // surface and clear any prior `pointing_to` from a reaction popup.
+    GtkWidget* desired_parent =
+        compose_surface_ ? compose_surface_->widget() : nullptr;
+    if (desired_parent && gtk_widget_get_parent(emoji_popover_) != desired_parent) {
+        gtk_widget_unparent(emoji_popover_);
+        gtk_widget_set_parent(emoji_popover_, desired_parent);
+    }
+    gtk_popover_set_pointing_to(GTK_POPOVER(emoji_popover_), nullptr);
+    if (emoji_picker_shared_) emoji_picker_shared_->refresh_frequents();
+    if (emoji_picker_search_field_) emoji_picker_search_field_->set_text("");
+    if (emoji_picker_shared_) emoji_picker_shared_->set_search_query("");
+    gtk_popover_popup(GTK_POPOVER(emoji_popover_));
+    if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+}
+
+void MainWindow::popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect) {
+    if (!emoji_popover_ || !parent) return;
+    // Reparent the popover to the target widget so `pointing_to` is
+    // interpreted in that widget's coordinate space.
+    if (gtk_widget_get_parent(emoji_popover_) != parent) {
+        gtk_widget_unparent(emoji_popover_);
+        gtk_widget_set_parent(emoji_popover_, parent);
+    }
+    GdkRectangle r{
+        .x      = static_cast<int>(local_rect.x),
+        .y      = static_cast<int>(local_rect.y),
+        .width  = static_cast<int>(local_rect.w),
+        .height = static_cast<int>(local_rect.h),
+    };
+    gtk_popover_set_pointing_to(GTK_POPOVER(emoji_popover_), &r);
+    gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
     if (emoji_picker_shared_) emoji_picker_shared_->refresh_frequents();
     if (emoji_picker_search_field_) emoji_picker_search_field_->set_text("");
     if (emoji_picker_shared_) emoji_picker_shared_->set_search_query("");
