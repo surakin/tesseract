@@ -46,7 +46,10 @@
       "Bash(cmake --build build/linux-gtk-debug --target tesseract)",
       "Bash(cmake --preset linux-gtk-debug -B build/linux-gtk-debug)",
       "Bash(ctest --test-dir build/linux-qt6-debug --output-on-failure)",
-      "Bash(cmake --build build/linux-qt6-debug --target tesseract_tests)"
+      "Bash(cmake --build build/linux-qt6-debug --target tesseract_tests)",
+      "Bash(cmake --preset windows-debug)",
+      "Bash(cmake --build build/windows-debug)",
+      "Bash(cmake --build build/windows-debug --target tesseract_win32)"
     ]
   }
 }

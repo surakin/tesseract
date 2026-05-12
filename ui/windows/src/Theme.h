@@ -6,6 +6,10 @@
 #  define NOMINMAX
 #endif
 #include <windows.h>
+// GDI+ headers reference IUnknown / IStream / PROPID / byte / MIDL_INTERFACE,
+// which WIN32_LEAN_AND_MEAN strips out of <windows.h>. Pull them back in.
+#include <objidl.h>
+#include <propidl.h>
 #include <algorithm>
 #include <gdiplus.h>
 
