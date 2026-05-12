@@ -126,6 +126,24 @@ public:
                         const std::string& reason = "");
 
     // ------------------------------------------------------------------
+    // Recent emoji ("io.element.recent_emoji" global account-data)
+    // ------------------------------------------------------------------
+
+    /// Top-N glyphs from the user's `io.element.recent_emoji` account-data,
+    /// most-used first. Reads the SDK's local sync cache; cheap, no
+    /// network roundtrip. Returns an empty vector when not logged in or
+    /// when the user has never picked an emoji on any device.
+    ///
+    /// Not const: the underlying SDK call drives the tokio runtime via
+    /// `block_on`, mirroring `send_reaction` and `redact_event`.
+    std::vector<std::string> recent_emoji_top(std::uint32_t n);
+
+    /// Record one use of `glyph`. Fire-and-forget — the SDK's
+    /// `add_recent_emoji` does a GET-modify-PUT against the homeserver,
+    /// so we run it on the background runtime and return immediately.
+    void recent_emoji_bump(const std::string& glyph);
+
+    // ------------------------------------------------------------------
     // Identity
     // ------------------------------------------------------------------
 

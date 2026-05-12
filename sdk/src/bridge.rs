@@ -215,6 +215,18 @@ pub mod ffi {
                         event_id: &str,
                         reason: &str) -> OpResult;
 
+        // ----- Recent emoji (io.element.recent_emoji global account-data) -----
+
+        /// Top-N glyphs from the user's `io.element.recent_emoji`
+        /// account-data, most-used first. Reads the SDK's local sync cache;
+        /// no network roundtrip. Returns an empty vector when not logged in
+        /// or before the first sync has populated the cache.
+        fn recent_emoji_top(self: &mut ClientFfi, n: u32) -> Vec<String>;
+
+        /// Record one use of `glyph`. Fire-and-forget against the homeserver
+        /// (the SDK call is GET-modify-PUT and would otherwise stall the UI).
+        fn recent_emoji_bump(self: &mut ClientFfi, glyph: &str);
+
         // ----- Identity -----
 
         /// Returns the current user's Matrix ID (e.g. @alice:example.org), or

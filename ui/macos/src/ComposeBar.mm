@@ -1,20 +1,26 @@
 #import "ComposeBar.h"
+#import "EmojiPicker.h"
 
+#include <tesseract/client.h>
 #include <tesseract/visual.h>
 
 static const CGFloat kMinHeight = tesseract::visual::kComposeMinHeight;
 static const CGFloat kMaxHeight = tesseract::visual::kComposeMaxHeight;
 static const CGFloat kPad       = 8;
 static const CGFloat kBtnW      = 64;
+static const CGFloat kEmojiBtnW = 36;
 
 @interface ComposeBar () <NSTextViewDelegate>
 @end
 
 @implementation ComposeBar {
-    NSScrollView* _scroll;
-    NSTextView*   _tv;
-    NSButton*     _sendBtn;
-    NSLayoutConstraint* _heightConstraint;
+    NSScrollView*           _scroll;
+    NSTextView*             _tv;
+    NSButton*               _sendBtn;
+    NSButton*               _emojiBtn;
+    NSPopover*              _emojiPopover;
+    EmojiPickerController*  _emojiController;
+    NSLayoutConstraint*     _heightConstraint;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -64,6 +70,14 @@ static const CGFloat kBtnW      = 64;
     _scroll.documentView = _tv;
     [self addSubview:_scroll];
 
+    // Emoji button (opens NSPopover anchored to itself).
+    _emojiBtn = [NSButton buttonWithTitle:@"\xF0\x9F\x98\x80"  // 😀
+                                   target:self
+                                   action:@selector(_emojiClicked)];
+    _emojiBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    _emojiBtn.bezelStyle = NSBezelStyleRounded;
+    [self addSubview:_emojiBtn];
+
     // Send button
     _sendBtn = [NSButton buttonWithTitle:@"Send"
                                   target:self
@@ -89,10 +103,16 @@ static const CGFloat kBtnW      = 64;
                                               constant:kPad],
         [_scroll.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
                                               constant:kPad],
-        [_scroll.trailingAnchor constraintEqualToAnchor:_sendBtn.leadingAnchor
+        [_scroll.trailingAnchor constraintEqualToAnchor:_emojiBtn.leadingAnchor
                                                constant:-kPad],
         [_scroll.bottomAnchor  constraintEqualToAnchor:self.bottomAnchor
                                               constant:-kPad],
+
+        // Emoji button (between the text view and Send).
+        [_emojiBtn.trailingAnchor constraintEqualToAnchor:_sendBtn.leadingAnchor
+                                                 constant:-kPad],
+        [_emojiBtn.centerYAnchor  constraintEqualToAnchor:self.centerYAnchor],
+        [_emojiBtn.widthAnchor    constraintEqualToConstant:kEmojiBtnW],
 
         // Send button
         [_sendBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor
@@ -100,6 +120,44 @@ static const CGFloat kBtnW      = 64;
         [_sendBtn.centerYAnchor  constraintEqualToAnchor:self.centerYAnchor],
         [_sendBtn.widthAnchor    constraintEqualToConstant:kBtnW],
     ]];
+}
+
+- (void)setClient:(tesseract::Client*)client {
+    _client = client;
+    if (_emojiController) _emojiController.client = client;
+}
+
+- (void)_emojiClicked {
+    if (!_emojiPopover) {
+        _emojiController = [[EmojiPickerController alloc] init];
+        _emojiController.client = _client;
+        __weak typeof(self) weakSelf = self;
+        _emojiController.onSelect = ^(NSString* glyph) {
+            [weakSelf insertEmoji:glyph];
+        };
+        _emojiPopover = [[NSPopover alloc] init];
+        _emojiPopover.behavior = NSPopoverBehaviorTransient;
+        _emojiPopover.contentViewController = _emojiController;
+    }
+    if (_emojiPopover.shown) {
+        [_emojiPopover close];
+        return;
+    }
+    [_emojiController refreshFrequents];
+    [_emojiPopover showRelativeToRect:_emojiBtn.bounds
+                                ofView:_emojiBtn
+                         preferredEdge:NSRectEdgeMinY];
+}
+
+- (void)insertEmoji:(NSString*)glyph {
+    if (glyph.length == 0) return;
+    if (![_tv shouldChangeTextInRange:_tv.selectedRange
+                    replacementString:glyph]) {
+        return;
+    }
+    [_tv replaceCharactersInRange:_tv.selectedRange withString:glyph];
+    [_tv didChangeText];
+    if (_client) _client->recent_emoji_bump(std::string(glyph.UTF8String));
 }
 
 - (void)textDidChange:(NSNotification*)n {

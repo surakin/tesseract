@@ -20,6 +20,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MessageListController.mm
     src/ComposeBar.h
     src/ComposeBar.mm
+    src/EmojiPicker.h
+    src/EmojiPicker.mm
 )
 
 target_compile_features(tesseract_macos PRIVATE cxx_std_20)

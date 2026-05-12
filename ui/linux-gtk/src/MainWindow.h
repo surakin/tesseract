@@ -59,6 +59,15 @@ private:
     static void    on_back_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
+    static void    on_emoji_btn_clicked_(GtkButton*, gpointer user_data);
+    static void    on_emoji_search_changed_(GtkSearchEntry*, gpointer user_data);
+    void           build_emoji_popover();
+    void           refresh_emoji_frequents();
+    void           rebuild_emoji_search_results(const std::string& query);
+public:
+    // Reached from the anonymous-namespace click handler in MainWindow.cpp.
+    void emoji_selected(const std::string& glyph);
+private:
     static void    on_user_strip_right_click_(GtkGestureClick* gesture,
                                               int n_press, double x, double y,
                                               gpointer user_data);
@@ -113,6 +122,12 @@ private:
     GtkWidget*      msg_box_            = nullptr;
     GtkWidget*      input_text_view_    = nullptr;
     GtkWidget*      send_btn_           = nullptr;
+    GtkWidget*      emoji_btn_          = nullptr;
+    GtkWidget*      emoji_popover_      = nullptr;
+    GtkWidget*      emoji_search_       = nullptr;
+    GtkWidget*      emoji_stack_        = nullptr;
+    GtkWidget*      emoji_freq_grid_    = nullptr;  // flowbox for the Frequents tab
+    GtkWidget*      emoji_search_grid_  = nullptr;  // flowbox for search results
     GtkWidget*      status_bar_         = nullptr;    GtkWidget*      recovery_banner_       = nullptr;
     GtkWidget*      recovery_label_        = nullptr;
     GtkWidget*      recovery_key_entry_    = nullptr;

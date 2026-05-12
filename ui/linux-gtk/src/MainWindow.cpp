@@ -3,6 +3,7 @@
 
 #include <thread>
 
+#include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
 
 #include <algorithm>
@@ -462,12 +463,25 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_add_controller(input_text_view_, key_ctrl);
     g_signal_connect(key_ctrl, "key-pressed", G_CALLBACK(on_key_pressed), this);
 
+    // Emoji button: opens a GtkPopover-based picker anchored to this button.
+    emoji_btn_ = gtk_button_new_with_label("\xF0\x9F\x98\x80");  // 😀
+    gtk_widget_set_valign(emoji_btn_, GTK_ALIGN_END);
+    gtk_widget_set_tooltip_text(emoji_btn_, "Insert emoji");
+    gtk_box_append(GTK_BOX(compose_bar), emoji_btn_);
+    g_signal_connect(emoji_btn_, "clicked",
+                     G_CALLBACK(on_emoji_btn_clicked_), this);
+
     send_btn_ = gtk_button_new_with_label("Send");
     gtk_widget_set_valign(send_btn_, GTK_ALIGN_END);
     gtk_box_append(GTK_BOX(compose_bar), send_btn_);
     g_signal_connect(send_btn_, "clicked", G_CALLBACK(on_send_clicked), this);
 
     gtk_box_append(GTK_BOX(vbox), compose_bar);
+
+    // Lazily build the picker — the popover is parented to emoji_btn_.
+    // Recents live in account-data now (io.element.recent_emoji); no
+    // local-disk load.
+    build_emoji_popover();
 
     status_bar_ = gtk_label_new("Not logged in");
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
@@ -1533,6 +1547,188 @@ void MainWindow::do_logout() {
     login_view_->reset();
     login_view_->set_status_message("");
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+}
+
+// ---------------------------------------------------------------------------
+// Emoji picker
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Each emoji button stows (window pointer, glyph) so the single callback
+// can dispatch back into the right MainWindow's insert path.
+struct EmojiClick {
+    MainWindow* window;
+    std::string glyph;
+};
+
+void emoji_button_clicked(GtkButton* btn, gpointer /*user_data*/) {
+    auto* ctx = static_cast<EmojiClick*>(
+        g_object_get_data(G_OBJECT(btn), "tess-emoji-click"));
+    if (ctx) ctx->window->emoji_selected(ctx->glyph);
+}
+
+GtkWidget* make_emoji_button(MainWindow* w, const std::string& glyph) {
+    GtkWidget* b = gtk_button_new_with_label(glyph.c_str());
+    gtk_widget_add_css_class(b, "flat");
+    gtk_widget_set_size_request(b, 32, 32);
+    auto* ctx = new EmojiClick{w, glyph};
+    g_object_set_data_full(G_OBJECT(b), "tess-emoji-click", ctx,
+                           [](gpointer p) { delete static_cast<EmojiClick*>(p); });
+    g_signal_connect(b, "clicked", G_CALLBACK(emoji_button_clicked), nullptr);
+    return b;
+}
+
+// Replace every child of `flowbox` with buttons for `glyphs`.
+void populate_flowbox_from_glyphs(GtkWidget* flowbox,
+                                   MainWindow* w,
+                                   const std::vector<std::string>& glyphs)
+{
+    GtkWidget* child;
+    while ((child = gtk_widget_get_first_child(flowbox)))
+        gtk_flow_box_remove(GTK_FLOW_BOX(flowbox), child);
+    for (const auto& g : glyphs)
+        gtk_flow_box_append(GTK_FLOW_BOX(flowbox), make_emoji_button(w, g));
+}
+
+void populate_flowbox_from_entries(GtkWidget* flowbox,
+                                    MainWindow* w,
+                                    const std::vector<const tesseract::emoji::Entry*>& es)
+{
+    GtkWidget* child;
+    while ((child = gtk_widget_get_first_child(flowbox)))
+        gtk_flow_box_remove(GTK_FLOW_BOX(flowbox), child);
+    for (const auto* e : es) {
+        gtk_flow_box_append(GTK_FLOW_BOX(flowbox),
+                            make_emoji_button(w, std::string(e->glyph)));
+    }
+}
+
+GtkWidget* make_emoji_scroll_page(GtkWidget* flowbox_out) {
+    GtkWidget* sw = gtk_scrolled_window_new();
+    gtk_widget_set_size_request(sw, 320, 240);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), flowbox_out);
+    return sw;
+}
+
+} // namespace
+
+void MainWindow::build_emoji_popover() {
+    emoji_popover_ = gtk_popover_new();
+    gtk_widget_set_parent(emoji_popover_, emoji_btn_);
+    gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
+    gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
+
+    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_start(vbox, 6);
+    gtk_widget_set_margin_end(vbox, 6);
+    gtk_widget_set_margin_top(vbox, 6);
+    gtk_widget_set_margin_bottom(vbox, 6);
+
+    // Search bar
+    emoji_search_ = gtk_search_entry_new();
+    gtk_widget_set_size_request(emoji_search_, 320, -1);
+    g_signal_connect(emoji_search_, "search-changed",
+                     G_CALLBACK(on_emoji_search_changed_), this);
+    gtk_box_append(GTK_BOX(vbox), emoji_search_);
+
+    // Stack of category pages (+ frequents and search).
+    emoji_stack_ = gtk_stack_new();
+    gtk_stack_set_transition_type(GTK_STACK(emoji_stack_),
+                                  GTK_STACK_TRANSITION_TYPE_NONE);
+
+    // Frequents page (title prefixed with ★).
+    emoji_freq_grid_ = gtk_flow_box_new();
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(emoji_freq_grid_), 8);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(emoji_freq_grid_),
+                                    GTK_SELECTION_NONE);
+    gtk_stack_add_titled(GTK_STACK(emoji_stack_),
+                         make_emoji_scroll_page(emoji_freq_grid_),
+                         "freq", "\xE2\x98\x85");
+
+    // One page per category.
+    for (auto c : tesseract::emoji::kCategories) {
+        GtkWidget* fb = gtk_flow_box_new();
+        gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(fb), 8);
+        gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(fb), GTK_SELECTION_NONE);
+        populate_flowbox_from_entries(fb, this, tesseract::emoji::by_category(c));
+        char name[16]; std::snprintf(name, sizeof(name), "cat%d",
+                                     static_cast<int>(c));
+        gtk_stack_add_titled(GTK_STACK(emoji_stack_),
+                             make_emoji_scroll_page(fb),
+                             name, tesseract::emoji::category_tab_glyph(c));
+    }
+
+    // Hidden search-results page.
+    emoji_search_grid_ = gtk_flow_box_new();
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(emoji_search_grid_), 8);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(emoji_search_grid_),
+                                    GTK_SELECTION_NONE);
+    gtk_stack_add_named(GTK_STACK(emoji_stack_),
+                        make_emoji_scroll_page(emoji_search_grid_),
+                        "search");
+
+    gtk_box_append(GTK_BOX(vbox), emoji_stack_);
+
+    // Tab strip at the bottom uses the stack's titles (one icon per page).
+    GtkWidget* switcher = gtk_stack_switcher_new();
+    gtk_stack_switcher_set_stack(GTK_STACK_SWITCHER(switcher),
+                                 GTK_STACK(emoji_stack_));
+    gtk_box_append(GTK_BOX(vbox), switcher);
+
+    gtk_popover_set_child(GTK_POPOVER(emoji_popover_), vbox);
+}
+
+void MainWindow::refresh_emoji_frequents() {
+    if (!emoji_freq_grid_) return;
+    populate_flowbox_from_glyphs(emoji_freq_grid_, this,
+                                  client_.recent_emoji_top(24));
+}
+
+void MainWindow::rebuild_emoji_search_results(const std::string& query) {
+    if (!emoji_search_grid_) return;
+    populate_flowbox_from_entries(emoji_search_grid_, this,
+                                   tesseract::emoji::filter(query));
+}
+
+void MainWindow::on_emoji_btn_clicked_(GtkButton* /*btn*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->refresh_emoji_frequents();
+    // Default to Smileys & People when frequents are empty.
+    const char* start_page = (self->client_.recent_emoji_top(1).empty())
+                              ? "cat0" : "freq";
+    gtk_stack_set_visible_child_name(GTK_STACK(self->emoji_stack_), start_page);
+    gtk_editable_set_text(GTK_EDITABLE(self->emoji_search_), "");
+    gtk_popover_popup(GTK_POPOVER(self->emoji_popover_));
+}
+
+void MainWindow::on_emoji_search_changed_(GtkSearchEntry* entry,
+                                          gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    const char* q = gtk_editable_get_text(GTK_EDITABLE(entry));
+    std::string query = q ? q : "";
+    // Trim leading/trailing whitespace; if empty go back to the default tab.
+    auto first = query.find_first_not_of(" \t\n\r");
+    auto last  = query.find_last_not_of(" \t\n\r");
+    if (first == std::string::npos) {
+        gtk_stack_set_visible_child_name(GTK_STACK(self->emoji_stack_),
+            self->client_.recent_emoji_top(1).empty() ? "cat0" : "freq");
+        return;
+    }
+    query = query.substr(first, last - first + 1);
+    self->rebuild_emoji_search_results(query);
+    gtk_stack_set_visible_child_name(GTK_STACK(self->emoji_stack_), "search");
+}
+
+void MainWindow::emoji_selected(const std::string& glyph) {
+    GtkTextBuffer* buf =
+        gtk_text_view_get_buffer(GTK_TEXT_VIEW(input_text_view_));
+    gtk_text_buffer_insert_at_cursor(buf, glyph.c_str(),
+                                     static_cast<int>(glyph.size()));
+    client_.recent_emoji_bump(glyph);
+    // Keep the popover open so users can pick several in a row.
 }
 
 } // namespace gtk4

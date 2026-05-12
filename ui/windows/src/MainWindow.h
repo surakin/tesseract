@@ -125,6 +125,26 @@ private:
     void draw_room_item(DRAWITEMSTRUCT* dis);
     void draw_message_item(DRAWITEMSTRUCT* dis);
 
+    // ── Emoji picker ────────────────────────────────────────────────────
+    static LRESULT CALLBACK emoji_picker_wnd_proc(HWND, UINT, WPARAM, LPARAM);
+    void   register_emoji_class();
+    void   ensure_emoji_picker_created();
+    void   toggle_emoji_picker();
+    void   on_emoji_search_changed();
+    void   refresh_emoji_grid();              // rebuild from category or search
+    void   show_emoji_category(int tab_idx);
+    void   show_emoji_search_results(const std::string& query);
+    void   pick_emoji_at(int row, int col);   // grid hit-test target
+    void   pick_emoji_tab(int idx);
+    void   draw_emoji_grid_item(DRAWITEMSTRUCT* dis);
+    void   draw_emoji_tab_item (DRAWITEMSTRUCT* dis);
+    void   insert_emoji_at_cursor(const std::string& glyph);
+
+    static constexpr int kEmojiCellW = 36;
+    static constexpr int kEmojiCols  = 8;
+    static constexpr int kEmojiPickW = kEmojiCellW * kEmojiCols + 16;  // ~304
+    static constexpr int kEmojiPickH = 320;
+
     Gdiplus::Bitmap* get_room_avatar(const std::string& room_id);
     Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
     void draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
@@ -153,6 +173,14 @@ private:
     HWND      hMsgList_    = nullptr;
     HWND      hInput_      = nullptr;
     HWND      hSend_       = nullptr;
+    HWND      hEmoji_      = nullptr;
+    HWND      hEmojiPicker_ = nullptr;   // floating WS_POPUP window
+    HWND      hEmojiSearch_ = nullptr;   // EDIT inside the picker
+    HWND      hEmojiGrid_   = nullptr;   // owner-drawn LISTBOX inside the picker
+    HWND      hEmojiTabs_   = nullptr;   // owner-drawn LISTBOX bottom strip
+    std::vector<std::string>          emoji_view_;   // current grid contents (UTF-8)
+    std::vector<std::string>          emoji_tabs_;   // tab strip glyphs
+    int                               emoji_tab_idx_ = 1;  // default: Smileys & People
     HWND      hStatus_     = nullptr;
     HWND      hRecoveryBanner_ = nullptr;
     HWND      hRecoveryLabel_  = nullptr;
@@ -185,6 +213,10 @@ private:
     static constexpr int            IDC_MSGLIST  = 102;
     static constexpr int            IDC_INPUT    = 103;
     static constexpr int            IDC_SEND     = 104;
+    static constexpr int            IDC_EMOJI    = 105;
+    static constexpr int            IDC_EMOJI_PICKER_SEARCH = 106;
+    static constexpr int            IDC_EMOJI_PICKER_GRID   = 107;
+    static constexpr int            IDC_EMOJI_PICKER_TABS   = 108;
     static constexpr int            IDC_RECOVERY_KEY     = 109;
     static constexpr int            IDC_RECOVERY_VERIFY  = 110;
     static constexpr int            IDC_RECOVERY_DISMISS = 111;

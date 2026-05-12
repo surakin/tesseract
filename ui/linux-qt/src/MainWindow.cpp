@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginView.h"
 #include "RoomListDelegate.h"
+#include "EmojiPicker.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -326,6 +327,17 @@ MainWindow::MainWindow(QWidget* parent)
         "padding: 8px 14px; background-color: #FFFFFF; font-size: 14px; }");
     composeEdit_->installEventFilter(this);
 
+    emojiButton_ = new QToolButton(composeBar);
+    emojiButton_->setText(QString::fromUtf8("\xF0\x9F\x98\x80"));  // 😀
+    emojiButton_->setFixedSize(40, 40);
+    emojiButton_->setFocusPolicy(Qt::NoFocus);
+    emojiButton_->setToolTip(tr("Insert emoji"));
+    emojiButton_->setStyleSheet(
+        "QToolButton { background-color: #FFFFFF; border: 1px solid #CED0D4; "
+        "border-radius: 20px; font-size: 18px; }"
+        "QToolButton:hover  { background-color: #F0F2F5; }"
+        "QToolButton:pressed{ background-color: #E4E6EB; }");
+
     sendButton_ = new QPushButton("Send", composeBar);
     sendButton_->setFixedSize(64, 40);
     sendButton_->setStyleSheet(
@@ -335,8 +347,24 @@ MainWindow::MainWindow(QWidget* parent)
         "QPushButton:pressed { background-color: #006BD6; }");
 
     composeLayout->addWidget(composeEdit_, 1);
+    composeLayout->addWidget(emojiButton_);
     composeLayout->addWidget(sendButton_);
     vLayout->addWidget(composeBar);
+
+    // Emoji picker: build the floating panel, wire selection → cursor
+    // insert + account-data bump. Recents live in the SDK now (synced via
+    // `io.element.recent_emoji`), so no local-disk load is needed.
+    emojiPicker_ = new EmojiPicker(this);
+    emojiPicker_->setClient(&client_);
+    emojiPicker_->onSelected = [this](const QString& glyph) {
+        composeEdit_->textCursor().insertText(glyph);
+        composeEdit_->setFocus();
+        client_.recent_emoji_bump(glyph.toStdString());
+    };
+    connect(emojiButton_, &QToolButton::clicked, this, [this]() {
+        if (emojiPicker_->isVisible()) emojiPicker_->hide();
+        else                            emojiPicker_->popupAt(emojiButton_);
+    });
 
     statusBar()->showMessage("Not logged in");
 

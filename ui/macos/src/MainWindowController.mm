@@ -136,6 +136,7 @@ static std::string nsstr(NSString* s) {
     // ── Compose bar ───────────────────────────────────────────────────────────
     _compose = [[ComposeBar alloc] initWithFrame:NSZeroRect];
     _compose.translatesAutoresizingMaskIntoConstraints = NO;
+    _compose.client = &_impl->client;
     __weak typeof(self) weakSelf = self;
     _compose.onSend = ^(NSString* body) {
         [weakSelf _sendMessage:body];

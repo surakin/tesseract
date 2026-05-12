@@ -7,6 +7,7 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QTextEdit>
+#include <QToolButton>
 #include <QPushButton>
 #include <QStatusBar>
 #include <QStandardItemModel>
@@ -18,6 +19,8 @@
 
 #include <memory>
 #include <vector>
+
+class EmojiPicker;
 
 namespace qt6 {
 
@@ -125,6 +128,8 @@ private:
     QVBoxLayout*         msgLayout_       = nullptr;
     QTextEdit*           composeEdit_     = nullptr;
     QPushButton*         sendButton_      = nullptr;
+    QToolButton*         emojiButton_     = nullptr;
+    EmojiPicker*         emojiPicker_     = nullptr;
 
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;

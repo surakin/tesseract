@@ -888,6 +888,48 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Top-N glyphs from the user's `io.element.recent_emoji` account-data,
+    /// ordered by count desc (Element Web's format; matrix-sdk-base ships
+    /// `RecentEmojisContent` and sorts by count for us). Reads the local
+    /// sync cache only — no network roundtrip. Returns an empty vec when
+    /// not logged in, when account-data has never been written for this
+    /// user, or on any deserialization error: a broken blob should never
+    /// stall the picker.
+    #[cfg(not(test))]
+    pub fn recent_emoji_top(&mut self, n: u32) -> Vec<String> {
+        let Some(client) = self.client.clone() else { return Vec::new(); };
+        let result = self.rt.block_on(async move {
+            client.account().get_recent_emojis(false).await
+        });
+        match result {
+            Ok(list) => list.into_iter().take(n as usize).map(|(g, _)| g).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn recent_emoji_top(&mut self, _n: u32) -> Vec<String> { Vec::new() }
+
+    /// Record one use of `glyph` in the user's account-data. Fire-and-forget
+    /// against the homeserver: `Account::add_recent_emoji` does a
+    /// GET-modify-PUT (account.rs:1329), so blocking the UI would charge
+    /// the click two round-trips. We spawn onto the runtime instead and
+    /// let the SDK's local cache update via the normal sync path. Matrix's
+    /// last-write-wins account-data semantics make a few dropped bumps on
+    /// rapid clicks acceptable.
+    #[cfg(not(test))]
+    pub fn recent_emoji_bump(&mut self, glyph: &str) {
+        if glyph.is_empty() { return; }
+        let Some(client) = self.client.clone() else { return; };
+        let glyph = glyph.to_owned();
+        self.rt.spawn(async move {
+            let _ = client.account().add_recent_emoji(&glyph).await;
+        });
+    }
+
+    #[cfg(test)]
+    pub fn recent_emoji_bump(&mut self, _glyph: &str) {}
+
     pub fn user_id(&self) -> String {
         self.client
             .as_ref()

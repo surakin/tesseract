@@ -1,0 +1,44 @@
+#include "tesseract/paths.h"
+
+#include <cstdlib>
+
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#  include <shlobj.h>
+#endif
+
+namespace tesseract {
+
+namespace fs = std::filesystem;
+
+fs::path config_dir() {
+#if defined(_WIN32)
+    // %APPDATA% is Roaming — the right place for per-user app data.
+    if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata) {
+        return fs::path(appdata) / "Tesseract";
+    }
+    // Fallback via SHGetFolderPath if the env var is missing.
+    wchar_t buf[MAX_PATH] = {};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, buf))) {
+        return fs::path(buf) / L"Tesseract";
+    }
+    return fs::temp_directory_path() / "Tesseract";
+#elif defined(__APPLE__)
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return fs::path(home) / "Library" / "Application Support" / "Tesseract";
+    }
+    return fs::temp_directory_path() / "Tesseract";
+#else  // Linux / *BSD: XDG basedir
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
+        return fs::path(xdg) / "tesseract";
+    }
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return fs::path(home) / ".config" / "tesseract";
+    }
+    return fs::temp_directory_path() / "tesseract";
+#endif
+}
+
+} // namespace tesseract

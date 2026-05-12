@@ -156,6 +156,20 @@ Result Client::redact_event(const std::string& room_id,
     return from_ffi(impl_->ffi->redact_event(room_id, event_id, reason));
 }
 
+std::vector<std::string> Client::recent_emoji_top(std::uint32_t n) {
+    // cxx returns rust::Vec<rust::String>; copy each into std::string so
+    // callers don't have to know about the cxx types.
+    auto raw = impl_->ffi->recent_emoji_top(n);
+    std::vector<std::string> out;
+    out.reserve(raw.size());
+    for (const auto& s : raw) out.emplace_back(std::string(s));
+    return out;
+}
+
+void Client::recent_emoji_bump(const std::string& glyph) {
+    impl_->ffi->recent_emoji_bump(glyph);
+}
+
 std::string Client::get_user_id() const {
     return std::string(impl_->ffi->user_id());
 }

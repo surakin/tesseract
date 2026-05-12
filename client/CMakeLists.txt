@@ -7,6 +7,8 @@ add_library(tesseract_client STATIC
     src/client.cpp
     src/event_handler_bridge.cpp
     src/session_store.cpp
+    src/paths.cpp
+    src/emoji.cpp
 )
 
 target_compile_features(tesseract_client PUBLIC cxx_std_20)

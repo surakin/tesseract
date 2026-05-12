@@ -3,6 +3,7 @@
 
 #include <thread>
 
+#include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
 
 #include <windowsx.h>
@@ -372,6 +373,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_COMMAND:
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_SEND)
             self->on_send_clicked();
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_EMOJI)
+            self->toggle_emoji_picker();
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_VERIFY)
             self->on_recovery_verify_clicked();
         if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == IDC_RECOVERY_DISMISS)
@@ -382,6 +385,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             int idx = (int)SendMessageW(self->hRoomList_, LB_GETCURSEL, 0, 0);
             if (idx != LB_ERR) self->on_room_selected(idx);
         }
+        if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == IDC_EMOJI_PICKER_SEARCH)
+            self->on_emoji_search_changed();
         return 0;
 
     case WM_MEASUREITEM: {
@@ -391,6 +396,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         } else if (mis->CtlID == IDC_MSGLIST) {
             mis->itemHeight = mis->itemID < self->messages_.size()
                 ? self->compute_message_height(mis->itemID) : 80;
+        } else if (mis->CtlID == IDC_EMOJI_PICKER_GRID) {
+            mis->itemHeight = 36;        // one row of glyphs
+        } else if (mis->CtlID == IDC_EMOJI_PICKER_TABS) {
+            mis->itemHeight = 32;        // tab strip is single-row
+            mis->itemWidth  = 32;
         }
         return TRUE;
     }
@@ -401,6 +411,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->draw_room_item(dis);
         else if (dis->CtlID == IDC_MSGLIST)
             self->draw_message_item(dis);
+        else if (dis->CtlID == IDC_EMOJI_PICKER_GRID)
+            self->draw_emoji_grid_item(dis);
+        else if (dis->CtlID == IDC_EMOJI_PICKER_TABS)
+            self->draw_emoji_tab_item(dis);
         return TRUE;
     }
 
@@ -640,18 +654,30 @@ void MainWindow::on_create(HWND hwnd) {
         240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_MSGLIST)), hInst_, nullptr);
 
-    // Multi-line compose input
+    // Multi-line compose input. Width is shrunk by 44 px to free room for
+    // the emoji button to the right of the EDIT control.
     hInput_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, L"EDIT", nullptr,
         WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
-        240, 700, 684, 60,
+        240, 700, 640, 60,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_INPUT)), hInst_, nullptr);
+
+    hEmoji_ = CreateWindowExW(
+        0, L"BUTTON", L"\xD83D\xDE00",  // 😀 (UTF-16 surrogate pair)
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        884, 700, 36, 60,
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI)), hInst_, nullptr);
 
     hSend_ = CreateWindowExW(
         0, L"BUTTON", L"Send",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         924, 700, 100, 60,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SEND)), hInst_, nullptr);
+
+    // Picker creation is deferred until first toggle so the cold-start
+    // path stays cheap. Recents live in account-data (io.element.recent_emoji),
+    // read on demand via client_.recent_emoji_top(...).
+    register_emoji_class();
 
     hStatus_ = CreateWindowExW(
         0, STATUSCLASSNAMEW, L"Not logged in",
@@ -774,7 +800,11 @@ void MainWindow::on_size(int w, int h) {
     }
     SetWindowPos(hRoomHeader_, nullptr, ROOM_W, 0, w - ROOM_W, kRoomHeaderH, SWP_NOZORDER);
     SetWindowPos(hMsgList_,  nullptr, ROOM_W, msg_area_y, w - ROOM_W, msg_area_h, SWP_NOZORDER);
-    SetWindowPos(hInput_,    nullptr, ROOM_W, msg_h, w - ROOM_W - SEND_W, INPUT_H, SWP_NOZORDER);
+    constexpr int EMOJI_W = 40;
+    SetWindowPos(hInput_,    nullptr, ROOM_W, msg_h,
+                 w - ROOM_W - SEND_W - EMOJI_W, INPUT_H, SWP_NOZORDER);
+    SetWindowPos(hEmoji_,    nullptr, w - SEND_W - EMOJI_W, msg_h,
+                 EMOJI_W, INPUT_H, SWP_NOZORDER);
     SetWindowPos(hSend_,     nullptr, w - SEND_W, msg_h, SEND_W, INPUT_H, SWP_NOZORDER);
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
@@ -841,6 +871,7 @@ void MainWindow::show_login_view() {
     ShowWindow(hMsgList_,         SW_HIDE);
     ShowWindow(hInput_,           SW_HIDE);
     ShowWindow(hSend_,            SW_HIDE);
+    ShowWindow(hEmoji_,           SW_HIDE);
     ShowWindow(hRecoveryBanner_,  SW_HIDE);
     ShowWindow(hRecoveryLabel_,   SW_HIDE);
     ShowWindow(hRecoveryKeyEdit_, SW_HIDE);
@@ -864,6 +895,7 @@ void MainWindow::show_main_content() {
     ShowWindow(hMsgList_,  SW_SHOW);
     ShowWindow(hInput_,    SW_SHOW);
     ShowWindow(hSend_,     SW_SHOW);
+    ShowWindow(hEmoji_,    SW_SHOW);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -1553,6 +1585,324 @@ void MainWindow::do_logout() {
         reinterpret_cast<LPARAM>(res ? L"Signed out" : L"Sign out failed"));
 
     start_login();
+}
+
+// ---------------------------------------------------------------------------
+// Emoji picker
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr const wchar_t* kEmojiPickerClass = L"TesseractEmojiPicker";
+} // namespace
+
+void MainWindow::register_emoji_class() {
+    static bool registered = false;
+    if (registered) return;
+    WNDCLASSEXW wc{};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = MainWindow::emoji_picker_wnd_proc;
+    wc.hInstance     = hInst_;
+    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.lpszClassName = kEmojiPickerClass;
+    RegisterClassExW(&wc);
+    registered = true;
+}
+
+LRESULT CALLBACK MainWindow::emoji_picker_wnd_proc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    auto* self = reinterpret_cast<MainWindow*>(
+        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    // Forward owner-draw + measure to the parent's handlers (same controls
+    // we declared on the picker live as children of this popup, but their
+    // CtlIDs are unique so the main wnd_proc dispatches correctly).
+    switch (msg) {
+    case WM_MEASUREITEM:
+        return SendMessageW(self->hwnd_, msg, wParam, lParam);
+    case WM_DRAWITEM:
+        return SendMessageW(self->hwnd_, msg, wParam, lParam);
+
+    case WM_COMMAND: {
+        const WORD id   = LOWORD(wParam);
+        const WORD code = HIWORD(wParam);
+        if (id == IDC_EMOJI_PICKER_SEARCH && code == EN_CHANGE) {
+            self->on_emoji_search_changed();
+            return 0;
+        }
+        if (id == IDC_EMOJI_PICKER_GRID && code == LBN_SELCHANGE) {
+            int row = (int)SendMessageW(self->hEmojiGrid_, LB_GETCURSEL, 0, 0);
+            // Hit-test against last click x to derive the column (kept in
+            // a window long via WM_LBUTTONDOWN handler below). Approximate
+            // column from a stashed value.
+            int col = (int)GetWindowLongPtrW(self->hEmojiGrid_, GWLP_USERDATA);
+            self->pick_emoji_at(row, col);
+            // Clear the selection so consecutive clicks on the same item refire.
+            SendMessageW(self->hEmojiGrid_, LB_SETCURSEL, (WPARAM)-1, 0);
+            return 0;
+        }
+        if (id == IDC_EMOJI_PICKER_TABS && code == LBN_SELCHANGE) {
+            int idx = (int)SendMessageW(self->hEmojiTabs_, LB_GETCURSEL, 0, 0);
+            if (idx != LB_ERR) self->pick_emoji_tab(idx);
+            return 0;
+        }
+        break;
+    }
+
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) ShowWindow(hwnd, SW_HIDE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void MainWindow::ensure_emoji_picker_created() {
+    if (hEmojiPicker_) return;
+
+    hEmojiPicker_ = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        kEmojiPickerClass, L"",
+        WS_POPUP | WS_BORDER,
+        0, 0, kEmojiPickW, kEmojiPickH,
+        hwnd_, nullptr, hInst_, this);
+
+    // Search box at the top.
+    hEmojiSearch_ = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        4, 4, kEmojiPickW - 8, 22,
+        hEmojiPicker_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_SEARCH)),
+        hInst_, nullptr);
+
+    // Owner-drawn grid in the middle.
+    hEmojiGrid_ = CreateWindowExW(
+        0, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+        LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS,
+        4, 30, kEmojiPickW - 8, kEmojiPickH - 30 - 36,
+        hEmojiPicker_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_GRID)),
+        hInst_, nullptr);
+
+    // Tab strip at the bottom (owner-drawn LISTBOX with horizontal flow).
+    hEmojiTabs_ = CreateWindowExW(
+        0, L"LISTBOX", nullptr,
+        WS_CHILD | WS_VISIBLE |
+        LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_MULTICOLUMN,
+        4, kEmojiPickH - 34, kEmojiPickW - 8, 32,
+        hEmojiPicker_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EMOJI_PICKER_TABS)),
+        hInst_, nullptr);
+    SendMessageW(hEmojiTabs_, LB_SETCOLUMNWIDTH, 32, 0);
+
+    // Subclass the grid so we can capture the click x-coordinate (needed
+    // to derive the grid column under WM_LBUTTONDOWN).
+    SetWindowSubclass(hEmojiGrid_,
+        [](HWND h, UINT m, WPARAM w, LPARAM lp, UINT_PTR, DWORD_PTR) -> LRESULT {
+            if (m == WM_LBUTTONDOWN) {
+                int x = GET_X_LPARAM(lp);
+                int col = std::min(x / kEmojiCellW, kEmojiCols - 1);
+                SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)col);
+            }
+            return DefSubclassProc(h, m, w, lp);
+        }, 0, 0);
+
+    // Set Segoe UI Emoji 14pt on the search + grid for proper color rendering.
+    HFONT font = CreateFontW(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI Emoji");
+    if (font) {
+        SendMessageW(hEmojiSearch_, WM_SETFONT, (WPARAM)font, TRUE);
+    }
+
+    // Seed the tab strip: ★ + the 8 category glyphs.
+    emoji_tabs_.clear();
+    emoji_tabs_.push_back(std::string("\xE2\x98\x85"));  // ★
+    for (auto c : tesseract::emoji::kCategories)
+        emoji_tabs_.push_back(tesseract::emoji::category_tab_glyph(c));
+    for (size_t i = 0; i < emoji_tabs_.size(); ++i)
+        SendMessageW(hEmojiTabs_, LB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L""));
+}
+
+void MainWindow::toggle_emoji_picker() {
+    ensure_emoji_picker_created();
+    if (IsWindowVisible(hEmojiPicker_)) {
+        ShowWindow(hEmojiPicker_, SW_HIDE);
+        return;
+    }
+    // Default to Smileys & People when frequents are empty.
+    auto top = client_.recent_emoji_top(1);
+    int start_tab = top.empty() ? 1 : 0;
+    SetWindowTextW(hEmojiSearch_, L"");
+    pick_emoji_tab(start_tab);
+
+    // Position above the emoji button.
+    RECT rc{};
+    GetWindowRect(hEmoji_, &rc);
+    int x = rc.right - kEmojiPickW;
+    int y = rc.top - kEmojiPickH - 4;
+    SetWindowPos(hEmojiPicker_, HWND_TOPMOST,
+                 x, y, kEmojiPickW, kEmojiPickH, SWP_SHOWWINDOW);
+    SetFocus(hEmojiSearch_);
+}
+
+void MainWindow::on_emoji_search_changed() {
+    wchar_t buf[256] = {};
+    GetWindowTextW(hEmojiSearch_, buf, 255);
+    int n = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
+    std::string q;
+    if (n > 1) {
+        q.resize(n - 1);
+        WideCharToMultiByte(CP_UTF8, 0, buf, -1, q.data(), n, nullptr, nullptr);
+    }
+    // Trim whitespace.
+    auto first = q.find_first_not_of(" \t\r\n");
+    auto last  = q.find_last_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        // Empty → restore last category tab.
+        pick_emoji_tab(emoji_tab_idx_);
+        return;
+    }
+    q = q.substr(first, last - first + 1);
+    show_emoji_search_results(q);
+}
+
+void MainWindow::pick_emoji_tab(int idx) {
+    emoji_tab_idx_ = idx;
+    SendMessageW(hEmojiTabs_, LB_SETCURSEL, (WPARAM)idx, 0);
+    if (idx == 0) {
+        // Frequents — pulled from the SDK's local account-data cache.
+        emoji_view_ = client_.recent_emoji_top(24);
+    } else if (idx >= 1 && idx <= 8) {
+        auto entries = tesseract::emoji::by_category(
+            tesseract::emoji::kCategories[idx - 1]);
+        emoji_view_.clear();
+        emoji_view_.reserve(entries.size());
+        for (const auto* e : entries) emoji_view_.emplace_back(e->glyph);
+    }
+    refresh_emoji_grid();
+}
+
+void MainWindow::show_emoji_search_results(const std::string& query) {
+    auto results = tesseract::emoji::filter(query);
+    emoji_view_.clear();
+    emoji_view_.reserve(results.size());
+    for (const auto* e : results) emoji_view_.emplace_back(e->glyph);
+    SendMessageW(hEmojiTabs_, LB_SETCURSEL, (WPARAM)-1, 0);
+    refresh_emoji_grid();
+}
+
+void MainWindow::refresh_emoji_grid() {
+    SendMessageW(hEmojiGrid_, LB_RESETCONTENT, 0, 0);
+    int rows = (static_cast<int>(emoji_view_.size()) + kEmojiCols - 1) / kEmojiCols;
+    for (int i = 0; i < rows; ++i) {
+        SendMessageW(hEmojiGrid_, LB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L""));
+    }
+}
+
+void MainWindow::pick_emoji_at(int row, int col) {
+    if (row < 0) return;
+    size_t idx = static_cast<size_t>(row) * kEmojiCols + col;
+    if (idx >= emoji_view_.size()) return;
+    insert_emoji_at_cursor(emoji_view_[idx]);
+}
+
+void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
+    if (glyph.empty()) return;
+    // Convert UTF-8 → UTF-16 then EM_REPLACESEL.
+    int n = MultiByteToWideChar(CP_UTF8, 0, glyph.c_str(),
+                                static_cast<int>(glyph.size()),
+                                nullptr, 0);
+    if (n <= 0) return;
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, glyph.c_str(),
+                        static_cast<int>(glyph.size()), w.data(), n);
+    SendMessageW(hInput_, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(w.c_str()));
+    client_.recent_emoji_bump(glyph);
+    SetFocus(hInput_);
+}
+
+void MainWindow::draw_emoji_grid_item(DRAWITEMSTRUCT* dis) {
+    if (dis->itemAction == ODA_FOCUS) return;
+    int row = static_cast<int>(dis->itemID);
+
+    Gdiplus::Graphics g(dis->hDC);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
+    Gdiplus::SolidBrush bg(Gdiplus::Color(0xFFFFFFFF));
+    g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
+                    (INT)(dis->rcItem.right - dis->rcItem.left),
+                    (INT)(dis->rcItem.bottom - dis->rcItem.top));
+
+    Gdiplus::FontFamily ff(L"Segoe UI Emoji");
+    Gdiplus::Font font(&ff, 18.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush fg(Gdiplus::Color(0xFF111111));
+    Gdiplus::StringFormat sf;
+    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
+    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    for (int col = 0; col < kEmojiCols; ++col) {
+        size_t idx = static_cast<size_t>(row) * kEmojiCols + col;
+        if (idx >= emoji_view_.size()) break;
+        const std::string& utf8 = emoji_view_[idx];
+        int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(),
+                                    (int)utf8.size(), nullptr, 0);
+        if (n <= 0) continue;
+        std::wstring w(n, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
+                            w.data(), n);
+        Gdiplus::RectF rc(
+            (float)(dis->rcItem.left + col * kEmojiCellW),
+            (float)dis->rcItem.top,
+            (float)kEmojiCellW,
+            (float)(dis->rcItem.bottom - dis->rcItem.top));
+        g.DrawString(w.c_str(), (int)w.size(), &font, rc, &sf, &fg);
+    }
+}
+
+void MainWindow::draw_emoji_tab_item(DRAWITEMSTRUCT* dis) {
+    if (dis->itemAction == ODA_FOCUS) return;
+    if (dis->itemID >= emoji_tabs_.size()) return;
+    const std::string& utf8 = emoji_tabs_[dis->itemID];
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
+                                nullptr, 0);
+    std::wstring w(n, L'\0');
+    if (n > 0)
+        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
+                            w.data(), n);
+
+    Gdiplus::Graphics g(dis->hDC);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
+    Gdiplus::Color bgc =
+        (dis->itemState & ODS_SELECTED) ? Gdiplus::Color(0xFFD0E4FF)
+                                         : Gdiplus::Color(0xFFFFFFFF);
+    Gdiplus::SolidBrush bg(bgc);
+    g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
+                    (INT)(dis->rcItem.right - dis->rcItem.left),
+                    (INT)(dis->rcItem.bottom - dis->rcItem.top));
+
+    Gdiplus::FontFamily ff(L"Segoe UI Emoji");
+    Gdiplus::Font font(&ff, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush fg(Gdiplus::Color(0xFF111111));
+    Gdiplus::StringFormat sf;
+    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
+    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    Gdiplus::RectF rc((float)dis->rcItem.left, (float)dis->rcItem.top,
+                      (float)(dis->rcItem.right - dis->rcItem.left),
+                      (float)(dis->rcItem.bottom - dis->rcItem.top));
+    g.DrawString(w.c_str(), (int)w.size(), &font, rc, &sf, &fg);
 }
 
 } // namespace win32
