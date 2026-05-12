@@ -37,6 +37,15 @@ public:
     int reaction_chip_height = 28;
     int reaction_chip_gap    =  6;
 
+    // ── Image send ───────────────────────────────────────────────────
+    // Image-sending quality. Read by the per-platform shell on each
+    // image send to decide whether to re-encode before upload.
+    //   Compressed → cap to 1600×1200 (keep aspect ratio), re-encode
+    //                as image/jpeg quality 75.
+    //   Unmodified → pass clipboard bytes through unchanged.
+    enum class ImageQuality { Compressed, Unmodified };
+    ImageQuality image_quality = ImageQuality::Compressed;
+
 private:
     Settings() = default;
 };

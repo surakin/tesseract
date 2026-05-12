@@ -13,9 +13,12 @@
 
 #include "canvas.h"
 
+#include <cstdint>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tk {
 
@@ -70,6 +73,25 @@ public:
     virtual void set_on_changed       (std::function<void(const std::string&)>) = 0;
     virtual void set_on_submit        (std::function<void()>)                    = 0;
     virtual void set_on_height_changed(std::function<void(float)>)               = 0;
+
+    // Hook for clipboard image pastes. When set, and the user pastes a
+    // payload that includes image MIME types, the host invokes the handler
+    // with the raw image bytes + mime ("image/png", "image/jpeg", …) and
+    // suppresses the default (text) paste path for that paste cycle.
+    // Non-image pastes fall through to the platform's normal text handling.
+    using ImagePasteHandler =
+        std::function<void(std::vector<std::uint8_t> bytes, std::string mime)>;
+    virtual void set_on_image_paste(ImagePasteHandler) = 0;
+};
+
+// Result of `Host::encode_for_send`. Bytes are owned; `mime` is e.g.
+// "image/png" or "image/jpeg". `width` and `height` are 0 only when the
+// decoder couldn't recover them.
+struct EncodedImage {
+    std::vector<std::uint8_t> bytes;
+    std::string               mime;
+    std::uint32_t             width  = 0;
+    std::uint32_t             height = 0;
 };
 
 class Host {
@@ -93,6 +115,16 @@ public:
     // Multi-line variant — IME-friendly, expanding inside the host's
     // clamp. Used by the shared ComposeBar for the message-input row.
     virtual std::unique_ptr<NativeTextArea>  make_text_area()  = 0;
+
+    // Decode `data[0..len)` and produce a payload ready to upload to the
+    // homeserver. `compress=true` caps the image at 1600×1200 (preserving
+    // aspect ratio) and re-encodes it as image/jpeg quality 75.
+    // `compress=false` returns the input bytes unchanged with the original
+    // mime sniffed by the decoder. Returns an `EncodedImage` with an empty
+    // `bytes` vector if the input can't be decoded.
+    virtual EncodedImage encode_for_send(const std::uint8_t* data,
+                                         std::size_t         len,
+                                         bool                compress) = 0;
 };
 
 } // namespace tk

@@ -196,6 +196,25 @@ pub mod ffi {
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
 
+        /// Send an image to `room_id`. `bytes` are the already-encoded image
+        /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK
+        /// uploads them via the homeserver's media repository and posts an
+        /// `m.image` event. `filename` is the user-visible file name (e.g.
+        /// `clipboard-20260512-141503.png`). When `caption` is non-empty the
+        /// event follows MSC2530 framing: `body` is set to the caption and
+        /// the dedicated `filename` field carries the file name. When
+        /// `caption` is empty, `body` is set to the filename and the
+        /// MSC2530 `filename` field is omitted (legacy fallback). `width`
+        /// and `height` populate `info.{w,h}`; pass 0 when unknown.
+        fn send_image(self: &mut ClientFfi,
+                      room_id: &str,
+                      bytes: &[u8],
+                      mime_type: &str,
+                      filename: &str,
+                      caption: &str,
+                      width: u32,
+                      height: u32) -> OpResult;
+
         /// Toggle the current user's `key` reaction on `event_id` in
         /// `room_id`. Adds the reaction when the user has not yet reacted
         /// with this key; redacts it when they have. Wraps matrix-sdk-ui's

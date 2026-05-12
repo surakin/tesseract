@@ -16,6 +16,12 @@
 #include <QtGui/QTextDocument>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QImage>
+#include <QtGui/QImageReader>
+#include <QtGui/QImageWriter>
+#include <QtCore/QBuffer>
+#include <QtCore/QByteArray>
+#include <QtCore/QMimeData>
 
 namespace tk::qt6 {
 
@@ -105,6 +111,13 @@ class ComposeTextEdit : public QTextEdit {
 public:
     explicit ComposeTextEdit(QWidget* parent) : QTextEdit(parent) {}
     std::function<void()> on_return_;
+    NativeTextArea::ImagePasteHandler on_image_paste_;
+
+    bool canInsertFromMimeData(const QMimeData* source) const override {
+        if (on_image_paste_ && source && source->hasImage()) return true;
+        return QTextEdit::canInsertFromMimeData(source);
+    }
+
 protected:
     void keyPressEvent(QKeyEvent* e) override {
         if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
@@ -114,6 +127,48 @@ protected:
             return;
         }
         QTextEdit::keyPressEvent(e);
+    }
+
+    void insertFromMimeData(const QMimeData* source) override {
+        // Clipboard image route — bypasses default text/HTML paste so the
+        // image lands as an attachment instead of an inline character or
+        // garbled HTML.
+        if (on_image_paste_ && source && source->hasImage()) {
+            // Prefer a pre-encoded PNG/JPEG payload from the clipboard
+            // if one is present (avoids a decode/re-encode round-trip on
+            // raw screenshots from apps that share both).
+            const char* image_mimes[] = {
+                "image/png", "image/jpeg", "image/webp", "image/bmp",
+            };
+            for (const char* m : image_mimes) {
+                if (source->hasFormat(QLatin1String(m))) {
+                    QByteArray ba = source->data(QLatin1String(m));
+                    if (!ba.isEmpty()) {
+                        std::vector<std::uint8_t> bytes(
+                            reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                            reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
+                        on_image_paste_(std::move(bytes), std::string(m));
+                        return;
+                    }
+                }
+            }
+            // Fallback — re-encode the QImage variant as PNG.
+            QImage img = qvariant_cast<QImage>(source->imageData());
+            if (!img.isNull()) {
+                QByteArray ba;
+                QBuffer buf(&ba);
+                buf.open(QIODevice::WriteOnly);
+                if (img.save(&buf, "PNG")) {
+                    std::vector<std::uint8_t> bytes(
+                        reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                        reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
+                    on_image_paste_(std::move(bytes), "image/png");
+                    return;
+                }
+            }
+            // Fall through to default behaviour if image extraction failed.
+        }
+        QTextEdit::insertFromMimeData(source);
     }
 };
 
@@ -188,6 +243,9 @@ public:
     void set_on_height_changed(std::function<void(float)> cb) override {
         on_height_changed_ = std::move(cb);
     }
+    void set_on_image_paste(ImagePasteHandler cb) override {
+        if (edit_) edit_->on_image_paste_ = std::move(cb);
+    }
 
 private:
     QPointer<ComposeTextEdit>                edit_;
@@ -228,6 +286,69 @@ public:
     std::unique_ptr<NativeTextArea> make_text_area() override {
         if (!surface_) return nullptr;
         return std::make_unique<QtNativeTextArea>(surface_);
+    }
+
+    EncodedImage encode_for_send(const std::uint8_t* data,
+                                 std::size_t         len,
+                                 bool                compress) override {
+        EncodedImage out{};
+        if (!data || len == 0) return out;
+
+        // Decode once so we can read the size + mime even on the
+        // pass-through path. QImageReader sniffs format from the bytes.
+        QByteArray src(reinterpret_cast<const char*>(data),
+                       static_cast<int>(len));
+        QBuffer src_buf(&src);
+        src_buf.open(QIODevice::ReadOnly);
+        QImageReader reader(&src_buf);
+        QImage img = reader.read();
+        if (img.isNull()) return out;
+
+        const int src_w = img.width();
+        const int src_h = img.height();
+        QByteArray fmt = reader.format();
+
+        if (!compress) {
+            out.bytes.assign(
+                reinterpret_cast<const std::uint8_t*>(src.constData()),
+                reinterpret_cast<const std::uint8_t*>(src.constData()) + src.size());
+            if (fmt == "png")        out.mime = "image/png";
+            else if (fmt == "jpeg" ||
+                     fmt == "jpg")   out.mime = "image/jpeg";
+            else if (fmt == "webp")  out.mime = "image/webp";
+            else if (fmt == "bmp")   out.mime = "image/bmp";
+            else if (fmt == "gif")   out.mime = "image/gif";
+            else                     out.mime = "image/" +
+                                                 std::string(fmt.constData(),
+                                                             static_cast<std::size_t>(fmt.size()));
+            out.width  = static_cast<std::uint32_t>(src_w);
+            out.height = static_cast<std::uint32_t>(src_h);
+            return out;
+        }
+
+        // Cap to 1600×1200, preserving aspect ratio.
+        constexpr int kMaxW = 1600;
+        constexpr int kMaxH = 1200;
+        if (src_w > kMaxW || src_h > kMaxH) {
+            img = img.scaled(kMaxW, kMaxH,
+                             Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+        }
+
+        QByteArray dst;
+        QBuffer dst_buf(&dst);
+        dst_buf.open(QIODevice::WriteOnly);
+        QImageWriter writer(&dst_buf, "JPEG");
+        writer.setQuality(75);
+        if (!writer.write(img)) return EncodedImage{};
+
+        out.bytes.assign(
+            reinterpret_cast<const std::uint8_t*>(dst.constData()),
+            reinterpret_cast<const std::uint8_t*>(dst.constData()) + dst.size());
+        out.mime   = "image/jpeg";
+        out.width  = static_cast<std::uint32_t>(img.width());
+        out.height = static_cast<std::uint32_t>(img.height());
+        return out;
     }
 
     // ── Internal accessors used by Surface ────────────────────────────

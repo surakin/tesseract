@@ -144,6 +144,18 @@ Result Client::send_message(const std::string& room_id, const std::string& body)
     return from_ffi(impl_->ffi->send_message(room_id, body));
 }
 
+Result Client::send_image(const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint32_t width,
+                          std::uint32_t height) {
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    return from_ffi(impl_->ffi->send_image(
+        room_id, slice, mime_type, filename, caption, width, height));
+}
+
 Result Client::send_reaction(const std::string& room_id,
                              const std::string& event_id,
                              const std::string& key) {

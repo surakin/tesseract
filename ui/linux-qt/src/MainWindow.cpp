@@ -10,6 +10,7 @@
 #include <QAction>
 
 #include <tesseract/session_store.h>
+#include <tesseract/settings.h>
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -334,12 +335,60 @@ MainWindow::MainWindow(QWidget* parent)
             static_cast<int>(composeShared_->natural_height()));
         composeSurface_->relayout();
     });
+    composeTextArea_->set_on_image_paste(
+        [this](std::vector<std::uint8_t> bytes, std::string mime) {
+            if (composeShared_)
+                composeShared_->set_pending_image(std::move(bytes),
+                                                    std::move(mime));
+        });
     composeSurface_->set_on_layout([this] {
         if (composeShared_ && composeTextArea_)
             composeTextArea_->set_rect(composeShared_->text_area_rect());
     });
 
     composeShared_->on_send  = [this](const std::string&) { onSendClicked(); };
+    composeShared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
+                                             std::string mime,
+                                             std::string filename,
+                                             std::string caption,
+                                             std::uint32_t /*src_w*/,
+                                             std::uint32_t /*src_h*/) {
+        if (currentRoomId_.empty()) return;
+        const bool compress =
+            tesseract::Settings::instance().image_quality
+            == tesseract::Settings::ImageQuality::Compressed;
+        auto enc = composeSurface_->host().encode_for_send(
+            bytes.data(), bytes.size(), compress);
+        if (enc.bytes.empty()) {
+            statusBar()->showMessage("Image decode failed", 4000);
+            return;
+        }
+        // After compression mime/extension may have changed to JPEG.
+        std::string out_name = filename;
+        if (enc.mime == "image/jpeg") {
+            auto dot = out_name.find_last_of('.');
+            if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+            out_name += ".jpg";
+        }
+        auto res = client_.send_image(currentRoomId_, enc.bytes, enc.mime,
+                                        out_name, caption,
+                                        enc.width, enc.height);
+        if (!res) {
+            statusBar()->showMessage(
+                "Send image failed: " + QString::fromStdString(res.message),
+                4000);
+            return;
+        }
+        // Clear the caption now that the image went out.
+        if (composeTextArea_) composeTextArea_->set_text("");
+        if (composeShared_)   composeShared_->set_current_text({});
+    };
+    composeShared_->on_size_changed = [this] {
+        if (!composeShared_ || !composeSurface_) return;
+        composeSurface_->setFixedHeight(
+            static_cast<int>(composeShared_->natural_height()));
+        composeSurface_->relayout();
+    };
     composeShared_->on_emoji = [this] {
         if (!emojiPicker_) return;
         if (emojiPicker_->isVisible()) emojiPicker_->hide();

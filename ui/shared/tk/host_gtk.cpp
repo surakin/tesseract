@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <utility>
 
@@ -157,10 +158,18 @@ public:
                           G_CALLBACK(&GtkNativeTextArea::on_key_pressed_cb),
                           this);
         gtk_widget_add_controller(view_, key);
+
+        // Image-paste interception. The "paste-clipboard" action runs before
+        // the default text-paste, so we can check for image content,
+        // suppress the default, and fire our handler instead.
+        paste_id_ = g_signal_connect(view_, "paste-clipboard",
+                                      G_CALLBACK(&GtkNativeTextArea::on_paste_cb),
+                                      this);
     }
 
     ~GtkNativeTextArea() override {
         if (changed_id_ && buffer_) g_signal_handler_disconnect(buffer_, changed_id_);
+        if (paste_id_ && view_)     g_signal_handler_disconnect(view_, paste_id_);
         if (scroll_) gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), scroll_);
     }
 
@@ -219,6 +228,9 @@ public:
     void set_on_height_changed(std::function<void(float)> cb) override {
         on_height_changed_ = std::move(cb);
     }
+    void set_on_image_paste(ImagePasteHandler cb) override {
+        on_image_paste_ = std::move(cb);
+    }
 
 private:
     static void on_changed_cb(GtkTextBuffer*, gpointer p) {
@@ -246,16 +258,84 @@ private:
         return FALSE;
     }
 
+    // ── Clipboard image paste ────────────────────────────────────────────
+    //
+    // GtkTextView emits "paste-clipboard" before its built-in handler runs
+    // the text paste. We probe the clipboard's content formats; if there's
+    // image data, stop the signal so the text path is skipped, then async-
+    // read a GdkTexture and PNG-encode it into a byte buffer.
+    static void on_paste_cb(GtkWidget* view, gpointer p) {
+        auto* self = static_cast<GtkNativeTextArea*>(p);
+        if (!self->on_image_paste_) return;
+
+        GdkClipboard* clip = gtk_widget_get_clipboard(view);
+        if (!clip) return;
+        GdkContentFormats* fmts = gdk_clipboard_get_formats(clip);
+        if (!fmts) return;
+
+        // GTK4 already exposes a unified "image" content type via texture.
+        gboolean has_image =
+            gdk_content_formats_contain_gtype(fmts, GDK_TYPE_TEXTURE);
+        if (!has_image) {
+            // Some sources advertise mime types only.
+            const char* image_mimes[] = {
+                "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif",
+            };
+            for (const char* m : image_mimes) {
+                if (gdk_content_formats_contain_mime_type(fmts, m)) {
+                    has_image = TRUE;
+                    break;
+                }
+            }
+        }
+        if (!has_image) return;
+
+        // Suppress the default text-paste; the texture-read landing in the
+        // async callback will deliver bytes via on_image_paste_.
+        g_signal_stop_emission_by_name(view, "paste-clipboard");
+
+        gdk_clipboard_read_texture_async(
+            clip, nullptr,
+            &GtkNativeTextArea::on_texture_ready_cb,
+            new ImagePasteHandler(self->on_image_paste_));
+    }
+
+    static void on_texture_ready_cb(GObject* source,
+                                     GAsyncResult* res,
+                                     gpointer p) {
+        std::unique_ptr<ImagePasteHandler> handler(
+            static_cast<ImagePasteHandler*>(p));
+        GError* err = nullptr;
+        GdkTexture* tex = gdk_clipboard_read_texture_finish(
+            GDK_CLIPBOARD(source), res, &err);
+        if (err) { g_error_free(err); return; }
+        if (!tex) return;
+
+        // gdk_texture_save_to_png_bytes(GdkTexture*) → GBytes* (GTK 4.6+).
+        GBytes* gb = gdk_texture_save_to_png_bytes(tex);
+        if (gb) {
+            gsize len = 0;
+            const guint8* raw = static_cast<const guint8*>(
+                g_bytes_get_data(gb, &len));
+            std::vector<std::uint8_t> bytes(raw, raw + len);
+            (*handler)(std::move(bytes), "image/png");
+            g_bytes_unref(gb);
+        }
+        g_object_unref(tex);
+    }
+
     GtkWidget*       overlay_;
     GtkWidget*       scroll_;
     GtkWidget*       view_;
     GtkWidget*       placeholder_label_ = nullptr;
     GtkTextBuffer*   buffer_     = nullptr;
     gulong           changed_id_ = 0;
+    gulong           paste_id_   = 0;
     float            last_height_ = 0.f;
     std::function<void(const std::string&)>  on_changed_;
     std::function<void()>                    on_submit_;
     std::function<void(float)>               on_height_changed_;
+    ImagePasteHandler                        on_image_paste_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -295,6 +375,90 @@ public:
     }
     std::unique_ptr<NativeTextArea> make_text_area() override {
         return std::make_unique<GtkNativeTextArea>(overlay_);
+    }
+
+    EncodedImage encode_for_send(const std::uint8_t* data,
+                                 std::size_t         len,
+                                 bool                compress) override {
+        EncodedImage out{};
+        if (!data || len == 0) return out;
+
+        // Decode once via GdkPixbufLoader (incremental, format-sniffing).
+        GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+        GError* err = nullptr;
+        gboolean ok = gdk_pixbuf_loader_write(
+            loader, data, len, &err);
+        if (err) { g_error_free(err); err = nullptr; }
+        if (ok) gdk_pixbuf_loader_close(loader, &err);
+        if (err) { g_error_free(err); err = nullptr; }
+
+        GdkPixbufFormat* fmt   = gdk_pixbuf_loader_get_format(loader);
+        GdkPixbuf*       pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
+        if (!pixbuf) { g_object_unref(loader); return out; }
+        g_object_ref(pixbuf);   // outlive the loader
+        g_object_unref(loader);
+
+        const int src_w = gdk_pixbuf_get_width (pixbuf);
+        const int src_h = gdk_pixbuf_get_height(pixbuf);
+
+        if (!compress) {
+            out.bytes.assign(data, data + len);
+            std::string mime = "image/png";
+            if (fmt) {
+                gchar* fmt_name = gdk_pixbuf_format_get_name(fmt);
+                if (fmt_name) {
+                    if (std::strcmp(fmt_name, "jpeg") == 0)
+                        mime = "image/jpeg";
+                    else
+                        mime = std::string("image/") + fmt_name;
+                    g_free(fmt_name);
+                }
+            }
+            out.mime   = mime;
+            out.width  = static_cast<std::uint32_t>(src_w);
+            out.height = static_cast<std::uint32_t>(src_h);
+            g_object_unref(pixbuf);
+            return out;
+        }
+
+        // Cap to 1600×1200 preserving AR.
+        constexpr int kMaxW = 1600;
+        constexpr int kMaxH = 1200;
+        GdkPixbuf* scaled = pixbuf;
+        if (src_w > kMaxW || src_h > kMaxH) {
+            double s = std::min({1.0,
+                                  static_cast<double>(kMaxW) / src_w,
+                                  static_cast<double>(kMaxH) / src_h});
+            int dst_w = std::max(1, static_cast<int>(std::round(src_w * s)));
+            int dst_h = std::max(1, static_cast<int>(std::round(src_h * s)));
+            scaled = gdk_pixbuf_scale_simple(pixbuf, dst_w, dst_h,
+                                              GDK_INTERP_BILINEAR);
+            g_object_unref(pixbuf);
+            if (!scaled) return EncodedImage{};
+        }
+
+        gchar* buffer = nullptr;
+        gsize  buf_size = 0;
+        err = nullptr;
+        gboolean saved = gdk_pixbuf_save_to_buffer(
+            scaled, &buffer, &buf_size,
+            "jpeg", &err,
+            "quality", "75",
+            NULL);
+        if (!saved) {
+            if (err) g_error_free(err);
+            g_object_unref(scaled);
+            return EncodedImage{};
+        }
+
+        out.bytes.assign(reinterpret_cast<const std::uint8_t*>(buffer),
+                          reinterpret_cast<const std::uint8_t*>(buffer) + buf_size);
+        out.mime   = "image/jpeg";
+        out.width  = static_cast<std::uint32_t>(gdk_pixbuf_get_width (scaled));
+        out.height = static_cast<std::uint32_t>(gdk_pixbuf_get_height(scaled));
+        g_free(buffer);
+        g_object_unref(scaled);
+        return out;
     }
 
     // ── Internal ──────────────────────────────────────────────────────

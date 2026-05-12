@@ -4,13 +4,19 @@
 
 #include <commctrl.h>
 #include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM
+#include <wincodec.h>
+#include <objidl.h>
+#include <shlwapi.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace tk::win32 {
 
@@ -54,6 +60,103 @@ inline std::string wide_to_utf8(const std::wstring& s) {
                          static_cast<int>(s.size()),
                          out.data(), n, nullptr, nullptr);
     return out;
+}
+
+// ── Clipboard image extraction ────────────────────────────────────────────
+//
+// Read CF_DIBV5 or CF_DIB from the Windows clipboard, decode through WIC,
+// and re-encode as PNG so the shared layer doesn't need to understand DIB
+// memory layouts. The output mime is always "image/png" because we lose
+// the source identity when transcoding from a DIB.
+inline bool clipboard_image_to_png(IWICImagingFactory* wic,
+                                    HWND owner,
+                                    std::vector<std::uint8_t>& out) {
+    if (!OpenClipboard(owner)) return false;
+    struct CloseGuard { ~CloseGuard() { CloseClipboard(); } } guard;
+
+    UINT fmt = 0;
+    if (IsClipboardFormatAvailable(CF_DIBV5)) fmt = CF_DIBV5;
+    else if (IsClipboardFormatAvailable(CF_DIB)) fmt = CF_DIB;
+    else return false;
+
+    HGLOBAL hg = GetClipboardData(fmt);
+    if (!hg) return false;
+    SIZE_T sz = GlobalSize(hg);
+    void*  data = GlobalLock(hg);
+    if (!data || sz == 0) { if (data) GlobalUnlock(hg); return false; }
+
+    // A CF_DIB/CF_DIBV5 payload starts with a BITMAPINFOHEADER (or V5
+    // header) followed by colour table + pixel data. WIC's
+    // CreateDecoderFromStream needs a full BMP file (with file header).
+    // Synthesize a 14-byte BITMAPFILEHEADER in front of the DIB.
+    std::vector<std::uint8_t> bmp;
+    bmp.resize(sizeof(BITMAPFILEHEADER) + sz);
+    BITMAPFILEHEADER* bfh = reinterpret_cast<BITMAPFILEHEADER*>(bmp.data());
+    bfh->bfType    = 0x4D42;   // 'BM'
+    bfh->bfSize    = static_cast<DWORD>(bmp.size());
+    bfh->bfReserved1 = 0;
+    bfh->bfReserved2 = 0;
+
+    const BITMAPINFOHEADER* bih =
+        reinterpret_cast<const BITMAPINFOHEADER*>(data);
+    DWORD header_size = bih->biSize;
+    // Colour table for paletted / bitfields formats.
+    DWORD palette_bytes = 0;
+    if (bih->biBitCount <= 8) {
+        DWORD entries = bih->biClrUsed ? bih->biClrUsed
+                                       : (1u << bih->biBitCount);
+        palette_bytes = entries * sizeof(RGBQUAD);
+    } else if (bih->biCompression == BI_BITFIELDS) {
+        palette_bytes = 3 * sizeof(DWORD);
+    }
+    bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + header_size + palette_bytes;
+    std::memcpy(bmp.data() + sizeof(BITMAPFILEHEADER), data, sz);
+    GlobalUnlock(hg);
+
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IWICStream> stream;
+    if (FAILED(wic->CreateStream(stream.GetAddressOf()))) return false;
+    if (FAILED(stream->InitializeFromMemory(
+            bmp.data(), static_cast<DWORD>(bmp.size())))) return false;
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(wic->CreateDecoderFromStream(
+            stream.Get(), nullptr,
+            WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf()))) return false;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return false;
+
+    // Encode to PNG into an in-memory IStream.
+    ComPtr<IStream> mem_stream;
+    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE,
+                                       mem_stream.GetAddressOf())))
+        return false;
+    ComPtr<IWICBitmapEncoder> encoder;
+    if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr,
+                                    encoder.GetAddressOf()))) return false;
+    if (FAILED(encoder->Initialize(mem_stream.Get(),
+                                     WICBitmapEncoderNoCache))) return false;
+    ComPtr<IWICBitmapFrameEncode> out_frame;
+    ComPtr<IPropertyBag2>         props;
+    if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
+                                         props.GetAddressOf()))) return false;
+    if (FAILED(out_frame->Initialize(nullptr))) return false;
+    if (FAILED(out_frame->WriteSource(frame.Get(), nullptr))) return false;
+    if (FAILED(out_frame->Commit())) return false;
+    if (FAILED(encoder->Commit())) return false;
+
+    // Read the encoded bytes back from the stream.
+    HGLOBAL h_out = nullptr;
+    if (FAILED(GetHGlobalFromStream(mem_stream.Get(), &h_out)) || !h_out)
+        return false;
+    SIZE_T n = GlobalSize(h_out);
+    void* p = GlobalLock(h_out);
+    if (!p || n == 0) { if (p) GlobalUnlock(h_out); return false; }
+    out.assign(static_cast<const std::uint8_t*>(p),
+                static_cast<const std::uint8_t*>(p) + n);
+    GlobalUnlock(h_out);
+    return true;
 }
 
 } // namespace
@@ -194,8 +297,8 @@ private:
 
 class Win32NativeTextArea : public NativeTextArea {
 public:
-    Win32NativeTextArea(HWND parent, int ctrl_id)
-        : parent_(parent), id_(ctrl_id) {
+    Win32NativeTextArea(HWND parent, int ctrl_id, IWICImagingFactory* wic = nullptr)
+        : parent_(parent), id_(ctrl_id), wic_(wic) {
         hwnd_ = CreateWindowExW(
             WS_EX_CLIENTEDGE,
             L"EDIT", L"",
@@ -284,6 +387,9 @@ public:
     void set_on_height_changed(std::function<void(float)> cb) override {
         on_height_changed_ = std::move(cb);
     }
+    void set_on_image_paste(ImagePasteHandler cb) override {
+        on_image_paste_ = std::move(cb);
+    }
 
     void notify_changed() {
         if (suppress_changed_) return;
@@ -311,6 +417,19 @@ private:
                 return 0;
             }
         }
+        // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
+        // EDIT inserts text. If clipboard holds a DIB and we have an
+        // image-paste handler, route to it and skip the default.
+        if (msg == WM_PASTE && self->on_image_paste_ && self->wic_) {
+            if (IsClipboardFormatAvailable(CF_DIBV5) ||
+                IsClipboardFormatAvailable(CF_DIB)) {
+                std::vector<std::uint8_t> bytes;
+                if (clipboard_image_to_png(self->wic_, hwnd, bytes)) {
+                    self->on_image_paste_(std::move(bytes), "image/png");
+                    return 0;
+                }
+            }
+        }
         if (msg == WM_GETDLGCODE) {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             return r | DLGC_WANTALLKEYS;
@@ -323,9 +442,11 @@ private:
     int  id_         = 0;
     bool  suppress_changed_ = false;
     float last_height_      = 0.f;
+    IWICImagingFactory* wic_ = nullptr;
     std::function<void(const std::string&)>  on_changed_;
     std::function<void()>                    on_submit_;
     std::function<void(float)>               on_height_changed_;
+    ImagePasteHandler                        on_image_paste_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -363,9 +484,119 @@ public:
 
     std::unique_ptr<NativeTextArea> make_text_area() override {
         int id = next_ctrl_id_++;
-        auto area = std::make_unique<Win32NativeTextArea>(hwnd_, id);
+        auto area = std::make_unique<Win32NativeTextArea>(
+            hwnd_, id, d2d::factories(backend_singleton()).wic);
         areas_by_id_.emplace(id, area.get());
         return area;
+    }
+
+    EncodedImage encode_for_send(const std::uint8_t* data,
+                                 std::size_t         len,
+                                 bool                compress) override {
+        EncodedImage out{};
+        if (!data || len == 0) return out;
+
+        using Microsoft::WRL::ComPtr;
+        IWICImagingFactory* wic = d2d::factories(backend_singleton()).wic;
+        if (!wic) return out;
+
+        // Decode to inspect dimensions + source format.
+        ComPtr<IWICStream> stream;
+        if (FAILED(wic->CreateStream(stream.GetAddressOf()))) return out;
+        if (FAILED(stream->InitializeFromMemory(
+                const_cast<BYTE*>(data),
+                static_cast<DWORD>(len)))) return out;
+        ComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(wic->CreateDecoderFromStream(
+                stream.Get(), nullptr,
+                WICDecodeMetadataCacheOnLoad,
+                decoder.GetAddressOf()))) return out;
+        ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return out;
+
+        UINT src_w = 0, src_h = 0;
+        frame->GetSize(&src_w, &src_h);
+
+        if (!compress) {
+            out.bytes.assign(data, data + len);
+            GUID container = {};
+            decoder->GetContainerFormat(&container);
+            if (container == GUID_ContainerFormatPng)       out.mime = "image/png";
+            else if (container == GUID_ContainerFormatJpeg) out.mime = "image/jpeg";
+            else if (container == GUID_ContainerFormatGif)  out.mime = "image/gif";
+            else if (container == GUID_ContainerFormatBmp)  out.mime = "image/bmp";
+            else                                            out.mime = "image/png";
+            out.width  = src_w;
+            out.height = src_h;
+            return out;
+        }
+
+        constexpr UINT kMaxW = 1600;
+        constexpr UINT kMaxH = 1200;
+        UINT dst_w = src_w, dst_h = src_h;
+        if (src_w > kMaxW || src_h > kMaxH) {
+            double s = std::min({1.0,
+                                  static_cast<double>(kMaxW) / src_w,
+                                  static_cast<double>(kMaxH) / src_h});
+            dst_w = std::max<UINT>(1, static_cast<UINT>(std::round(src_w * s)));
+            dst_h = std::max<UINT>(1, static_cast<UINT>(std::round(src_h * s)));
+        }
+
+        ComPtr<IWICBitmapSource> source;
+        if (dst_w != src_w || dst_h != src_h) {
+            ComPtr<IWICBitmapScaler> scaler;
+            if (FAILED(wic->CreateBitmapScaler(scaler.GetAddressOf())))
+                return EncodedImage{};
+            if (FAILED(scaler->Initialize(frame.Get(), dst_w, dst_h,
+                                            WICBitmapInterpolationModeFant)))
+                return EncodedImage{};
+            source = scaler;
+        } else {
+            source = frame;
+        }
+
+        // Encode JPEG into an in-memory IStream.
+        ComPtr<IStream> mem;
+        if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, mem.GetAddressOf())))
+            return EncodedImage{};
+        ComPtr<IWICBitmapEncoder> encoder;
+        if (FAILED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr,
+                                        encoder.GetAddressOf())))
+            return EncodedImage{};
+        if (FAILED(encoder->Initialize(mem.Get(), WICBitmapEncoderNoCache)))
+            return EncodedImage{};
+        ComPtr<IWICBitmapFrameEncode> out_frame;
+        ComPtr<IPropertyBag2>         props;
+        if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
+                                             props.GetAddressOf())))
+            return EncodedImage{};
+        // Quality 0.75.
+        PROPBAG2 opt = {};
+        opt.pstrName = const_cast<LPOLESTR>(L"ImageQuality");
+        VARIANT v;  VariantInit(&v);
+        v.vt = VT_R4; v.fltVal = 0.75f;
+        props->Write(1, &opt, &v);
+        VariantClear(&v);
+        if (FAILED(out_frame->Initialize(props.Get()))) return EncodedImage{};
+        if (FAILED(out_frame->SetSize(dst_w, dst_h)))   return EncodedImage{};
+        if (FAILED(out_frame->WriteSource(source.Get(), nullptr)))
+            return EncodedImage{};
+        if (FAILED(out_frame->Commit())) return EncodedImage{};
+        if (FAILED(encoder->Commit()))   return EncodedImage{};
+
+        HGLOBAL h_out = nullptr;
+        if (FAILED(GetHGlobalFromStream(mem.Get(), &h_out)) || !h_out)
+            return EncodedImage{};
+        SIZE_T n = GlobalSize(h_out);
+        void* p = GlobalLock(h_out);
+        if (!p || n == 0) { if (p) GlobalUnlock(h_out); return EncodedImage{}; }
+        out.bytes.assign(static_cast<const std::uint8_t*>(p),
+                          static_cast<const std::uint8_t*>(p) + n);
+        GlobalUnlock(h_out);
+        out.mime   = "image/jpeg";
+        out.width  = dst_w;
+        out.height = dst_h;
+        return out;
     }
 
     // Look up the NativeTextField owning a child EDIT control by ID.

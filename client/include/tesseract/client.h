@@ -106,6 +106,27 @@ public:
 
     Result send_message(const std::string& room_id, const std::string& body);
 
+    /// Send an image to `room_id`. `bytes` is the already-encoded image
+    /// payload (PNG/JPEG/etc. — identified by `mime_type`, e.g. "image/png"
+    /// or "image/jpeg"). `filename` is the user-visible file name shown in
+    /// the timeline (e.g. "clipboard-20260512-141503.png").
+    ///
+    /// When `caption` is non-empty, the resulting `m.image` event follows
+    /// MSC2530: `body` is the caption and the dedicated `filename` field
+    /// carries the file name. When `caption` is empty, `body` is the
+    /// filename and no MSC2530 `filename` field is emitted (legacy fallback).
+    ///
+    /// `width`/`height` populate `info.{w,h}`; pass 0 when unknown. The
+    /// SDK uploads the bytes via the homeserver media repository (transparent
+    /// encryption in E2EE rooms) before posting the event.
+    Result send_image(const std::string& room_id,
+                      const std::vector<uint8_t>& bytes,
+                      const std::string& mime_type,
+                      const std::string& filename,
+                      const std::string& caption,
+                      std::uint32_t width,
+                      std::uint32_t height);
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a

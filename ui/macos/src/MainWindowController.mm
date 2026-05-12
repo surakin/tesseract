@@ -5,6 +5,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/session_store.h>
+#include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
 #include "tk/canvas_cg.h"
@@ -84,6 +85,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onRecoveryDismiss;
 - (void)_maybeShowRecoveryBanner;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
+- (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
+                       mime:(std::string)mime
+                   filename:(std::string)filename
+                    caption:(std::string)caption;
 @end
 
 namespace {
@@ -358,6 +363,24 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
             MainWindowController* s = weakSelf;
             if (s) [s _onComposeSend];
         };
+        _composeShared->on_send_image =
+            [weakSelf](std::vector<std::uint8_t> bytes,
+                        std::string mime,
+                        std::string filename,
+                        std::string caption,
+                        std::uint32_t /*src_w*/, std::uint32_t /*src_h*/) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                [s _sendComposedImage:std::move(bytes)
+                                   mime:std::move(mime)
+                                filename:std::move(filename)
+                                  caption:std::move(caption)];
+            };
+        _composeShared->on_size_changed = [weakSelf] {
+            MainWindowController* c = weakSelf;
+            if (!c || !c->_composeShared || !c->_composeHeightCon) return;
+            c->_composeHeightCon.constant = c->_composeShared->natural_height();
+        };
         _composeShared->on_emoji = [weakSelf] {
             MainWindowController* s = weakSelf;
             if (s) [s showEmojiPicker:nil];
@@ -381,6 +404,13 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
             if (c->_composeHeightCon)
                 c->_composeHeightCon.constant = c->_composeShared->natural_height();
         });
+        _composeTextArea->set_on_image_paste(
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime) {
+                MainWindowController* c = weakSelf;
+                if (c && c->_composeShared)
+                    c->_composeShared->set_pending_image(std::move(bytes),
+                                                          std::move(mime));
+            });
         _composeSurface->set_on_layout([weakSelf] {
             MainWindowController* c = weakSelf;
             if (!c || !c->_composeShared || !c->_composeTextArea) return;
@@ -527,6 +557,32 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     if (res) {
         _composeTextArea->set_text("");
         if (_composeShared) _composeShared->set_current_text({});
+    }
+}
+
+- (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
+                       mime:(std::string)mime
+                   filename:(std::string)filename
+                    caption:(std::string)caption {
+    if (_currentRoomId.empty() || !_composeSurface) return;
+    const bool compress =
+        tesseract::Settings::instance().image_quality
+        == tesseract::Settings::ImageQuality::Compressed;
+    auto enc = _composeSurface->host().encode_for_send(
+        bytes.data(), bytes.size(), compress);
+    if (enc.bytes.empty()) return;
+    std::string out_name = filename;
+    if (enc.mime == "image/jpeg") {
+        auto dot = out_name.find_last_of('.');
+        if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+        out_name += ".jpg";
+    }
+    auto res = _client.send_image(_currentRoomId, enc.bytes, enc.mime,
+                                    out_name, caption,
+                                    enc.width, enc.height);
+    if (res) {
+        if (_composeTextArea) _composeTextArea->set_text("");
+        if (_composeShared)   _composeShared->set_current_text({});
     }
 }
 

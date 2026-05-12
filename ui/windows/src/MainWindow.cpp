@@ -8,6 +8,7 @@
 
 #include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
+#include <tesseract/settings.h>
 
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -799,6 +800,38 @@ void MainWindow::on_create(HWND hwnd) {
         auto bar = std::make_unique<tesseract::views::ComposeBar>();
         compose_shared_ = bar.get();
         compose_shared_->on_send  = [this](const std::string&) { on_send_clicked(); };
+        compose_shared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
+                                                  std::string mime,
+                                                  std::string filename,
+                                                  std::string caption,
+                                                  std::uint32_t /*src_w*/,
+                                                  std::uint32_t /*src_h*/) {
+            if (current_room_id_.empty() || !compose_surface_) return;
+            const bool compress =
+                tesseract::Settings::instance().image_quality
+                == tesseract::Settings::ImageQuality::Compressed;
+            auto enc = compose_surface_->host().encode_for_send(
+                bytes.data(), bytes.size(), compress);
+            if (enc.bytes.empty()) return;
+            std::string out_name = filename;
+            if (enc.mime == "image/jpeg") {
+                auto dot = out_name.find_last_of('.');
+                if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+                out_name += ".jpg";
+            }
+            auto res = client_.send_image(current_room_id_, enc.bytes, enc.mime,
+                                            out_name, caption,
+                                            enc.width, enc.height);
+            if (res) {
+                if (compose_text_area_) compose_text_area_->set_text("");
+                if (compose_shared_)    compose_shared_->set_current_text({});
+            }
+        };
+        compose_shared_->on_size_changed = [this] {
+            if (!hwnd_) return;
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
+        };
         compose_shared_->on_emoji = [this] { toggle_emoji_picker(); };
         compose_surface_->set_root(std::move(bar));
 
@@ -816,6 +849,12 @@ void MainWindow::on_create(HWND hwnd) {
             RECT rc; GetClientRect(hwnd_, &rc);
             on_size(rc.right, rc.bottom);
         });
+        compose_text_area_->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime) {
+                if (compose_shared_)
+                    compose_shared_->set_pending_image(std::move(bytes),
+                                                        std::move(mime));
+            });
         compose_surface_->set_on_layout([this] {
             if (compose_shared_ && compose_text_area_)
                 compose_text_area_->set_rect(compose_shared_->text_area_rect());

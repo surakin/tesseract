@@ -844,6 +844,74 @@ impl ClientFfi {
         }
     }
 
+    /// Upload `bytes` (already encoded as `mime_type`) and send an `m.image`
+    /// event. Caption/filename handling follows MSC2530 — see the FFI doc
+    /// comment in `bridge.rs`. Returns `OpResult` with `ok=false` for
+    /// invalid IDs, unknown rooms, bad mime strings, upload failures, or
+    /// send failures. `width`/`height` of 0 are passed through unset.
+    #[cfg(not(test))]
+    pub fn send_image(
+        &mut self,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        width: u32,
+        height: u32,
+    ) -> OpResult {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
+        use matrix_sdk::ruma::UInt;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let mime: mime::Mime = match mime_type.parse() {
+            Ok(m) => m,
+            Err(e) => return err(format!("invalid mime: {e}")),
+        };
+
+        let info = BaseImageInfo {
+            width:       if width  != 0 { UInt::new(width  as u64) } else { None },
+            height:      if height != 0 { UInt::new(height as u64) } else { None },
+            size:        UInt::new(bytes.len() as u64),
+            blurhash:    None,
+            is_animated: None,
+        };
+        let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(info));
+        if !caption.is_empty() {
+            config = config.caption(Some(TextMessageEventContent::plain(caption)));
+        }
+
+        let data = bytes.to_vec();
+        let filename = filename.to_owned();
+
+        match self.rt.block_on(async move {
+            room.send_attachment(filename, &mime, data, config).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_image(
+        &mut self,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _width: u32,
+        _height: u32,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that
     /// `room_id` is currently subscribed via `subscribe_room` — we look up
