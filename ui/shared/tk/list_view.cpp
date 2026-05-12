@@ -34,7 +34,16 @@ void ListView::set_selected_index(int idx) {
 }
 
 void ListView::scroll_to_top()    { scroll_y_ = 0; stick_to_bottom_ = false; }
-void ListView::scroll_to_bottom() { stick_to_bottom_ = true; clamp_scroll(); }
+void ListView::scroll_to_bottom() {
+    stick_to_bottom_ = true;
+    // Snap eagerly: hosts repaint without re-running arrange, so deferring
+    // the snap to the next arrange() means the click does nothing visible
+    // until the window is resized or another data mutation triggers a
+    // relayout. `content_height()` is already valid here because the pill
+    // is only ever drawn after a frame that has measured the rows.
+    scroll_y_ = std::max(0.0f, content_height() - bounds_.h);
+    clamp_scroll();
+}
 
 void ListView::scroll_to_index(int idx, bool align_top) {
     if (!adapter_ || idx < 0 ||
@@ -110,6 +119,20 @@ void ListView::preserve_top_through(const std::function<void()>& mutate) {
         // The user is reading the latest message — the top edge is off-
         // screen and irrelevant. Just mutate without anchoring.
         if (mutate) mutate();
+        return;
+    }
+    // When the user is already at the very top of the content (no rows
+    // hidden above the viewport), don't anchor: the natural behaviour is
+    // for the newly-loaded older rows to appear *in* the viewport, not
+    // above it. Without this special case the visual content is unchanged
+    // — the new rows land off-screen above and the only signal is a
+    // shrinking scrollbar thumb, which reads to users as "nothing
+    // happened". Re-arm the near-top latch directly because arrange()
+    // only does so when it applies an anchor delta.
+    constexpr float kAtTopEpsilon = 1.0f;
+    if (scroll_y_ <= kAtTopEpsilon) {
+        if (mutate) mutate();
+        was_near_top_ = false;
         return;
     }
     // Latch the pre-mutation height once; if multiple prepends stack up
