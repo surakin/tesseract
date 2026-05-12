@@ -11,6 +11,10 @@ inline Result from_ffi(const tesseract_ffi::OpResult& r) {
     return { r.ok, std::string(r.message) };
 }
 
+inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r) {
+    return { r.ok, std::string(r.message), r.reached_start };
+}
+
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p) {
     BackupState state;
     switch (p.state) {

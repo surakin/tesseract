@@ -49,6 +49,13 @@ public:
     // — GtkEntry positions etc. — aligned with the shared widget tree.
     void set_on_layout(std::function<void()> cb);
 
+    // Install a drag-and-drop handler. When set, the drawing area
+    // accepts image-file drops (matching the same allowlist as the
+    // clipboard-paste path) and invokes the callback with the file
+    // bytes, MIME, and basename. The shell wires this to the active
+    // ComposeBar's `set_pending_image`. Pass {} to disable.
+    void set_on_image_drop(ImageDropHandler cb);
+
 private:
     std::unique_ptr<Host> host_;
 };

@@ -54,10 +54,13 @@ std::string ComposeBar::make_filename(const std::string& mime) {
 
 ComposeBar::ComposeBar() {
     auto emoji = std::make_unique<tk::Button>(
-        // U+1F600 GRINNING FACE
+        // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
+        // (even though Icon variant doesn't paint it) so test scaffolding
+        // that scans buttons by label can still find it; the glyph itself
+        // is painted in ComposeBar::paint() at Title size — see below.
         std::string("\xF0\x9F\x98\x80"),
         std::function<void()>{},
-        tk::Button::Variant::Subtle);
+        tk::Button::Variant::Icon);
     emoji->set_on_click([this] { if (on_emoji) on_emoji(); });
     emoji->set_min_size({ kButtonSide, kButtonSide });
     emoji_btn_ = add_child(std::move(emoji));
@@ -131,11 +134,13 @@ void ComposeBar::set_enabled(bool e) {
 }
 
 void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
-                                    std::string mime) {
+                                    std::string mime,
+                                    std::string filename) {
     PendingImage pi;
     pi.bytes    = std::move(bytes);
     pi.mime     = std::move(mime);
-    pi.filename = make_filename(pi.mime);
+    pi.filename = filename.empty() ? make_filename(pi.mime)
+                                   : std::move(filename);
     pending_    = std::move(pi);
     // Dimensions + preview are filled in lazily on the next arrange()
     // pass (we don't have a CanvasFactory here).
@@ -286,6 +291,29 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
     if (emoji_btn_) emoji_btn_->paint(ctx);
     if (send_btn_)  send_btn_->paint(ctx);
     if (remove_btn_ && pending_.has_value()) remove_btn_->paint(ctx);
+
+    // Paint the emoji glyph over the Icon-variant emoji button at the same
+    // size and centring as reaction chips so the two emoji surfaces match.
+    if (emoji_btn_ && !emoji_rect_.empty()) {
+        if (!emoji_layout_) {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Title;
+            emoji_layout_ = ctx.factory.build_text(
+                std::string("\xF0\x9F\x98\x80"), st);
+        }
+        if (emoji_layout_) {
+            tk::Size esz = emoji_layout_->measure();
+            // Ascent-centre: colour-emoji glyphs fill the ascent region
+            // and leave the descender empty, so box-centring leaves them
+            // visually high. Matches MessageListView reaction chips.
+            constexpr float kAscentRatio = 0.78f;
+            float ex = emoji_rect_.x + (emoji_rect_.w - esz.w) * 0.5f;
+            float ey = emoji_rect_.y
+                     + (emoji_rect_.h - esz.h * kAscentRatio) * 0.5f;
+            ctx.canvas.draw_text(*emoji_layout_, { ex, ey },
+                                  ctx.theme.palette.text_primary);
+        }
+    }
 }
 
 } // namespace tesseract::views

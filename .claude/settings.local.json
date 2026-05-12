@@ -52,7 +52,9 @@
       "Bash(cmake --build build/windows-debug --target tesseract_win32)",
       "Bash(cmake *)",
       "Bash(ctest *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(./tests/tesseract_tests \"ListView::on_near_top fires on threshold crossing and re-arms\")",
+      "Bash(/home/rayden/src/tesseract/build/linux-qt6-debug/tests/tesseract_tests \"ListView::on_near_top fires on threshold crossing and re-arms\")"
     ]
   }
 }

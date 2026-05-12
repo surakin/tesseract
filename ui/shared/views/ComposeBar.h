@@ -56,13 +56,21 @@ public:
     void  set_enabled(bool e);
     bool  enabled() const { return enabled_; }
 
-    /// Attach a clipboard image as a pending payload. The shared widget
-    /// stores the raw bytes + mime, generates a filename, decodes a
-    /// thumbnail lazily on the next layout pass, and grows
-    /// `natural_height()` to make room for the preview band. Replaces
-    /// any image already attached. Fires `on_size_changed` so the host
-    /// can refresh its fixed-height envelope.
-    void set_pending_image(std::vector<std::uint8_t> bytes, std::string mime);
+    /// Attach an image as a pending payload. The shared widget stores
+    /// the raw bytes + mime, decodes a thumbnail lazily on the next
+    /// layout pass, and grows `natural_height()` to make room for the
+    /// preview band. Replaces any image already attached. Fires
+    /// `on_size_changed` so the host can refresh its fixed-height
+    /// envelope.
+    ///
+    /// `filename` is the basename the homeserver will receive in the
+    /// `m.image` event's MSC2530 `filename` field. Pass an empty string
+    /// for clipboard pastes (the widget synthesises
+    /// `clipboard-YYYYMMDD-HHMMSS.ext`); pass the original filename for
+    /// file drops so the recipient sees the real name.
+    void set_pending_image(std::vector<std::uint8_t> bytes,
+                           std::string               mime,
+                           std::string               filename = {});
 
     /// Drop any attached image. No-op when none is attached.
     void clear_pending_image();
@@ -118,6 +126,10 @@ private:
     tk::Button* emoji_btn_  = nullptr;   // borrowed (owned by Widget tree)
     tk::Button* send_btn_   = nullptr;   // borrowed
     tk::Button* remove_btn_ = nullptr;   // borrowed; hidden when no image
+    // Cached layout for the grinning-face glyph painted *over* the
+    // Icon-variant emoji button — same Title-size + ascent-centring as
+    // reaction chips, so the two emoji surfaces look consistent.
+    std::unique_ptr<tk::TextLayout> emoji_layout_;
     tk::Rect    text_area_rect_{};
     tk::Rect    emoji_rect_{};
     tk::Rect    send_rect_{};

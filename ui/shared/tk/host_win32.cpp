@@ -6,8 +6,13 @@
 #include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM
 #include <wincodec.h>
 #include <objidl.h>
+#include <ole2.h>       // RegisterDragDrop / IDropTarget
+#include <shellapi.h>   // CF_HDROP / DragQueryFileW
 #include <shlwapi.h>
+#include <shlobj.h>
 #include <wrl/client.h>
+
+#include <atomic>
 
 #include <algorithm>
 #include <cmath>
@@ -745,6 +750,24 @@ private:
     int                                  next_ctrl_id_ = 0x4000;
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
     std::unordered_map<int, Win32NativeTextArea*>  areas_by_id_;
+
+public:
+    void set_on_image_drop(ImageDropHandler cb) {
+        on_image_drop_ = std::move(cb);
+    }
+    bool has_image_drop_handler() const {
+        return static_cast<bool>(on_image_drop_);
+    }
+    void fire_image_drop(std::vector<std::uint8_t> bytes,
+                         std::string               mime,
+                         std::string               filename) {
+        if (on_image_drop_)
+            on_image_drop_(std::move(bytes), std::move(mime),
+                            std::move(filename));
+    }
+
+private:
+    ImageDropHandler                     on_image_drop_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -839,6 +862,180 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+// ── DropTarget — OLE IDropTarget that funnels image drops to a Host ──
+//
+// One instance per Surface. The Host is borrowed; the Surface calls
+// RegisterDragDrop in its ctor and RevokeDragDrop + Release in its dtor,
+// so the lifetime of the COM ref overlaps the Host's lifetime safely.
+
+class DropTarget final : public IDropTarget {
+public:
+    explicit DropTarget(Host* host) : host_(host) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IDropTarget)) {
+            *ppv = static_cast<IDropTarget*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef()  override { return ++refs_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG n = --refs_;
+        if (n == 0) delete this;
+        return n;
+    }
+
+    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data,
+                                         DWORD /*grfKeyState*/,
+                                         POINTL /*pt*/,
+                                         DWORD* pdwEffect) override {
+        if (!pdwEffect) return E_POINTER;
+        accept_ = host_ && host_->has_image_drop_handler()
+                && acceptable(data);
+        *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/,
+                                        POINTL /*pt*/,
+                                        DWORD* pdwEffect) override {
+        if (!pdwEffect) return E_POINTER;
+        *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE DragLeave() override { accept_ = false; return S_OK; }
+    HRESULT STDMETHODCALLTYPE Drop(IDataObject* data,
+                                    DWORD /*grfKeyState*/,
+                                    POINTL /*pt*/,
+                                    DWORD* pdwEffect) override {
+        if (pdwEffect) *pdwEffect = DROPEFFECT_NONE;
+        if (!accept_ || !host_) return S_OK;
+
+        FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        STGMEDIUM stg{};
+        if (FAILED(data->GetData(&fe, &stg))) return S_OK;
+        HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
+        bool dispatched = false;
+        if (hdrop) {
+            UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+            for (UINT i = 0; i < n_files && !dispatched; ++i) {
+                UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
+                if (len == 0) continue;
+                std::wstring path(len, L'\0');
+                if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
+                    continue;
+                dispatched = try_dispatch_file(path);
+            }
+            GlobalUnlock(stg.hGlobal);
+        }
+        ReleaseStgMedium(&stg);
+
+        if (dispatched && pdwEffect) *pdwEffect = DROPEFFECT_COPY;
+        return S_OK;
+    }
+
+    void detach_host() { host_ = nullptr; }
+
+private:
+    static const char* mime_from_ext(const std::wstring& ext_lower) {
+        if (ext_lower == L"png")                       return "image/png";
+        if (ext_lower == L"jpg" || ext_lower == L"jpeg") return "image/jpeg";
+        if (ext_lower == L"webp")                      return "image/webp";
+        if (ext_lower == L"bmp")                       return "image/bmp";
+        if (ext_lower == L"gif")                       return "image/gif";
+        return nullptr;
+    }
+
+    static std::wstring path_extension_lower(const std::wstring& p) {
+        size_t slash = p.find_last_of(L"\\/");
+        size_t dot   = p.find_last_of(L'.');
+        if (dot == std::wstring::npos ||
+            (slash != std::wstring::npos && dot < slash)) return {};
+        std::wstring ext = p.substr(dot + 1);
+        for (wchar_t& c : ext) {
+            if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c + (L'a' - L'A'));
+        }
+        return ext;
+    }
+
+    static std::wstring basename(const std::wstring& p) {
+        size_t slash = p.find_last_of(L"\\/");
+        return slash == std::wstring::npos ? p : p.substr(slash + 1);
+    }
+
+    // Returns true when at least one file in the drop has an allowed
+    // extension. Cheap pre-flight for DragEnter / DragOver.
+    static bool acceptable(IDataObject* data) {
+        if (!data) return false;
+        FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        if (data->QueryGetData(&fe) != S_OK) return false;
+        STGMEDIUM stg{};
+        if (FAILED(data->GetData(&fe, &stg))) return false;
+        bool ok = false;
+        HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
+        if (hdrop) {
+            UINT n = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+            for (UINT i = 0; i < n && !ok; ++i) {
+                UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
+                if (len == 0) continue;
+                std::wstring path(len, L'\0');
+                if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
+                    continue;
+                if (mime_from_ext(path_extension_lower(path)) != nullptr)
+                    ok = true;
+            }
+            GlobalUnlock(stg.hGlobal);
+        }
+        ReleaseStgMedium(&stg);
+        return ok;
+    }
+
+    bool try_dispatch_file(const std::wstring& path) {
+        if (!host_) return false;
+        const char* mime = mime_from_ext(path_extension_lower(path));
+        if (!mime) return false;
+
+        // Size guard via GetFileAttributesEx — single syscall, no open.
+        WIN32_FILE_ATTRIBUTE_DATA fa{};
+        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+            return false;
+        ULARGE_INTEGER sz{};
+        sz.LowPart  = fa.nFileSizeLow;
+        sz.HighPart = fa.nFileSizeHigh;
+        if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedImageBytes)
+            return false;
+
+        HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                                nullptr, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+
+        std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+        DWORD read_total = 0;
+        while (read_total < bytes.size()) {
+            DWORD got = 0;
+            BOOL  ok  = ReadFile(h, bytes.data() + read_total,
+                                  static_cast<DWORD>(bytes.size() - read_total),
+                                  &got, nullptr);
+            if (!ok || got == 0) break;
+            read_total += got;
+        }
+        CloseHandle(h);
+        if (read_total != bytes.size()) return false;
+
+        host_->fire_image_drop(std::move(bytes), std::string(mime),
+                                wide_to_utf8(basename(path)));
+        return true;
+    }
+
+    Host*               host_;
+    std::atomic<ULONG>  refs_{1};
+    bool                accept_ = false;
+};
+
 bool ensure_class_registered(HINSTANCE inst) {
     static bool registered = false;
     if (registered) return true;
@@ -859,6 +1056,16 @@ bool ensure_class_registered(HINSTANCE inst) {
 
 } // namespace
 
+// One IDropTarget per Surface, indexed by hwnd so the dtor can find it
+// at teardown. Keeping it out of Host avoids forward-declaration churn
+// (DropTarget is defined later in this TU than Host).
+namespace {
+std::unordered_map<HWND, DropTarget*>& drop_targets_by_hwnd() {
+    static std::unordered_map<HWND, DropTarget*> instance;
+    return instance;
+}
+} // namespace
+
 Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme) {
     if (!ensure_class_registered(inst)) return;
 
@@ -874,11 +1081,30 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme) {
     host_ = std::make_unique<Host>(hwnd, theme);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA,
                        reinterpret_cast<LONG_PTR>(host_.get()));
+
+    // Register an OLE drop target. The handler isn't wired yet — the
+    // target stays a no-op until the shell calls set_on_image_drop.
+    // RegisterDragDrop fails silently when the caller hasn't OleInitialize'd
+    // their thread; the shell is responsible for that (main.cpp).
+    auto* dt = new DropTarget(host_.get());
+    if (SUCCEEDED(RegisterDragDrop(hwnd, dt))) {
+        drop_targets_by_hwnd().emplace(hwnd, dt);
+    } else {
+        dt->Release();
+    }
 }
 
 Surface::~Surface() {
     if (host_ && host_->hwnd()) {
         HWND hwnd = host_->hwnd();
+        auto& map = drop_targets_by_hwnd();
+        auto it = map.find(hwnd);
+        if (it != map.end()) {
+            RevokeDragDrop(hwnd);
+            it->second->detach_host();
+            it->second->Release();
+            map.erase(it);
+        }
         host_->detach();
         DestroyWindow(hwnd);
     }
@@ -904,5 +1130,9 @@ void Surface::set_on_layout(std::function<void()> cb) {
 }
 
 CanvasFactory& Surface::factory() { return host_->factory(); }
+
+void Surface::set_on_image_drop(ImageDropHandler cb) {
+    host_->set_on_image_drop(std::move(cb));
+}
 
 } // namespace tk::win32

@@ -42,6 +42,7 @@ public:
 
     // IEventHandler – called on the sync thread
     void on_message(tesseract::Event* ev) override;
+    void on_message_prepended(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
@@ -52,6 +53,7 @@ public:
 
 signals:
     void eventReceived(tesseract::Event* ev);
+    void eventPrepended(tesseract::Event* ev);
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString context, QString description, bool soft_logout);
     void timelineReset(QString roomId);
@@ -73,6 +75,7 @@ private slots:
     void onLoginSucceeded();
     void onSendClicked();
     void onEventReceived(tesseract::Event* ev);
+    void onEventPrepended(tesseract::Event* ev);
     void onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void onSyncError(QString context, QString description, bool soft_logout);
     void onTimelineReset(QString roomId);
@@ -82,6 +85,7 @@ private slots:
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
+    void onPaginateFinished(QString roomId, bool reached_start);
 
 signals:
     void recoverFinished(bool ok, QString error);
@@ -95,7 +99,12 @@ private:
     void     refreshRoomList();
     void     onRoomSelected(const std::string& room_id);
     void     appendMessage(const tesseract::Event& ev);
+    void     prependMessage(const tesseract::Event& ev);
     void     clearMessages();
+    /// Kick off a back-pagination worker thread for `room_id`. Early-exit
+    /// if a pagination is already in flight for this room or its history
+    /// has been fully fetched. Hooked to `MessageListView::on_near_top`.
+    void     requestMoreHistory(const std::string& room_id);
     void     updateRoomHeader(const tesseract::RoomInfo& info);
     void     updateTopicElision();
     QPixmap  makeCirclePixmap(const QPixmap& src, int size);
@@ -175,6 +184,15 @@ private:
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
     QString                       currentTopicText_;
     std::vector<std::string>      spaceStack_;
+
+    // Per-room back-pagination state — keyed by Matrix room ID.
+    // `in_flight` is true while a worker thread is awaiting the SDK call;
+    // `reached_start` is true once `paginate_back_with_status` reports the
+    // timeline has no further history. Both gate `requestMoreHistory`.
+    struct PaginationState { bool in_flight = false; bool reached_start = false; };
+    std::unordered_map<std::string, PaginationState> pagination_;
+
+    static constexpr std::uint16_t kPaginationBatch = 50;
 };
 
 } // namespace qt6

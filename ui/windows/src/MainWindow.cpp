@@ -356,6 +356,12 @@ void EventHandler::on_message(tesseract::Event* ev) {
     PostMessage(hwnd_, WM_TESSERACT_MESSAGE, 0, reinterpret_cast<LPARAM>(p));
 }
 
+void EventHandler::on_message_prepended(tesseract::Event* ev) {
+    auto* p = ev;
+    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_PREPEND, 0,
+                reinterpret_cast<LPARAM>(p));
+}
+
 void EventHandler::on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) {
     auto* p = new std::vector<tesseract::RoomInfo>(rooms);
     PostMessage(hwnd_, WM_TESSERACT_ROOMS, 0, reinterpret_cast<LPARAM>(p));
@@ -568,6 +574,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_TESSERACT_MESSAGE: {
         auto* p = reinterpret_cast<tesseract::Event*>(lParam);
         self->on_tesseract_message(p);
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_MESSAGE_PREPEND: {
+        auto* p = reinterpret_cast<tesseract::Event*>(lParam);
+        self->on_tesseract_message_prepend(p);
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_PAGINATE_DONE: {
+        auto* p = reinterpret_cast<std::string*>(lParam);
+        self->on_tesseract_paginate_done(p, wParam != 0);
         delete p;
         return 0;
     }
@@ -784,6 +802,10 @@ void MainWindow::on_create(HWND hwnd) {
                 else
                     toggle_emoji_picker();
             };
+        message_list_view_->on_near_top = [this]{
+            if (current_room_id_.empty()) return;
+            request_more_history(current_room_id_);
+        };
         msg_surface_->set_root(std::move(view));
     }
     if (HWND ms = msg_surface_->hwnd()) {
@@ -855,6 +877,21 @@ void MainWindow::on_create(HWND hwnd) {
                     compose_shared_->set_pending_image(std::move(bytes),
                                                         std::move(mime));
             });
+
+        // Drag-and-drop: dropping an image file on either the message
+        // list or the composer parks it in the same pending-image slot
+        // the paste path uses.
+        auto on_image_drop = [this](std::vector<std::uint8_t> bytes,
+                                    std::string mime,
+                                    std::string filename) {
+            if (compose_shared_)
+                compose_shared_->set_pending_image(std::move(bytes),
+                                                   std::move(mime),
+                                                   std::move(filename));
+        };
+        compose_surface_->set_on_image_drop(on_image_drop);
+        if (msg_surface_) msg_surface_->set_on_image_drop(on_image_drop);
+
         compose_surface_->set_on_layout([this] {
             if (compose_shared_ && compose_text_area_)
                 compose_text_area_->set_rect(compose_shared_->text_area_rect());
@@ -1178,9 +1215,40 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
     auto res = client_.subscribe_room(current_room_id_);
     if (res) {
-        client_.paginate_back(current_room_id_, 50);
+        auto& state = pagination_[current_room_id_];
+        state.in_flight = false;
+        auto pr = client_.paginate_back_with_status(current_room_id_,
+                                                     kPaginationBatch);
+        state.reached_start = pr.ok && pr.reached_start;
         client_.start_background_backfill();
     }
+}
+
+void MainWindow::request_more_history(const std::string& room_id) {
+    if (room_id.empty()) return;
+    auto& state = pagination_[room_id];
+    if (state.in_flight || state.reached_start) return;
+    state.in_flight = true;
+
+    HWND hwnd = hwnd_;
+    std::thread([this, room_id, hwnd]{
+        auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
+        auto* p = new std::string(room_id);
+        PostMessageW(hwnd, WM_TESSERACT_PAGINATE_DONE,
+                      static_cast<WPARAM>(pr.ok && pr.reached_start),
+                      reinterpret_cast<LPARAM>(p));
+    }).detach();
+}
+
+void MainWindow::on_tesseract_paginate_done(std::string* room_id,
+                                              bool reached_start) {
+    if (!room_id) return;
+    auto it = pagination_.find(*room_id);
+    if (it == pagination_.end()) return;
+    it->second.in_flight     = false;
+    it->second.reached_start = reached_start;
+    if (*room_id == current_room_id_ && message_list_view_)
+        message_list_view_->reset_near_top_latch();
 }
 
 void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
@@ -1199,6 +1267,11 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 void MainWindow::on_tesseract_message(tesseract::Event* ev) {
     if (ev && ev->room_id == current_room_id_)
         append_message(*ev);
+}
+
+void MainWindow::on_tesseract_message_prepend(tesseract::Event* ev) {
+    if (ev && ev->room_id == current_room_id_)
+        prepend_message(*ev);
 }
 
 void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
@@ -1358,6 +1431,45 @@ void MainWindow::append_message(const tesseract::Event& ev) {
         return;
     }
     message_list_view_->append_message(std::move(row));
+    if (msg_surface_) msg_surface_->relayout();
+}
+
+void MainWindow::prepend_message(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) return;
+    if (!message_list_view_) return;
+
+    ensure_user_avatar_tk(ev.sender_avatar_url);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        ensure_media_image(img.image_url,
+                            tesseract::visual::kMaxInlineImageWidth,
+                            tesseract::visual::kMaxInlineImageHeight);
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        ensure_media_image(s.image_url,
+                            tesseract::visual::kStickerSize,
+                            tesseract::visual::kStickerSize);
+    }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            ensure_media_image(r.source_json, 20, 20);
+    }
+
+    auto row = to_row_data(ev);
+
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        message_list_view_->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        message_list_view_->invalidate_data();
+        if (msg_surface_) msg_surface_->relayout();
+        return;
+    }
+    message_list_view_->prepend_message(std::move(row));
     if (msg_surface_) msg_surface_->relayout();
 }
 

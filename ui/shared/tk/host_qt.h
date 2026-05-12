@@ -47,17 +47,28 @@ public:
     // with the shared widget tree.
     void set_on_layout(std::function<void()> cb);
 
+    // Install a drag-and-drop handler. When set, the Surface accepts
+    // image file drops (matching the same allowlist as the clipboard-
+    // paste path) and invokes the callback with the file bytes, MIME,
+    // and basename. The shell wires this to the active ComposeBar's
+    // `set_pending_image`. Pass {} to disable.
+    void set_on_image_drop(ImageDropHandler cb);
+
 protected:
-    void paintEvent       (QPaintEvent*)  override;
-    void resizeEvent      (QResizeEvent*) override;
-    void mousePressEvent  (QMouseEvent*)  override;
-    void mouseReleaseEvent(QMouseEvent*)  override;
-    void mouseMoveEvent   (QMouseEvent*)  override;
-    void wheelEvent       (QWheelEvent*)  override;
-    void leaveEvent       (QEvent*)       override;
+    void paintEvent       (QPaintEvent*)      override;
+    void resizeEvent      (QResizeEvent*)     override;
+    void mousePressEvent  (QMouseEvent*)      override;
+    void mouseReleaseEvent(QMouseEvent*)      override;
+    void mouseMoveEvent   (QMouseEvent*)      override;
+    void wheelEvent       (QWheelEvent*)      override;
+    void leaveEvent       (QEvent*)           override;
+    void dragEnterEvent   (QDragEnterEvent*)  override;
+    void dragMoveEvent    (QDragMoveEvent*)   override;
+    void dropEvent        (QDropEvent*)       override;
 
 private:
     std::unique_ptr<Host> host_;
+    ImageDropHandler      on_image_drop_;
 };
 
 } // namespace tk::qt6

@@ -440,3 +440,223 @@ TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
 
     CHECK(got_event == "$evt");
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Scroll-anchor + near-top trigger (back-pagination plumbing)
+// ─────────────────────────────────────────────────────────────────────────
+
+TEST_CASE("ListView::preserve_top_through keeps the user's row under cursor",
+          "[tk][listview][prepend]") {
+    Stage st;
+    ListView list;
+    FixedHeightAdapter ad; ad.n = 20; ad.row_h = 25.0f;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, { 0, 0, 200, 100 });
+
+    // Scroll to ~the middle. The user is now looking at row ~5.
+    list.on_wheel({ 50, 50 }, 0, 100);
+    REQUIRE(list.scroll_y() == 100.0f);
+
+    // "Prepend" 5 rows of height 25 → +125 px of content above.
+    list.preserve_top_through([&]{
+        ad.n = 25;
+        list.invalidate_data();
+    });
+    list.arrange(lc, { 0, 0, 200, 100 });
+
+    CHECK(list.content_height() == 25.0f * 25);
+    // Visual position preserved: the row the user was looking at is still
+    // under their cursor. Original scroll_y=100 + 5 * 25 = 225.
+    CHECK(list.scroll_y() == 225.0f);
+}
+
+TEST_CASE("ListView::preserve_top_through is a no-op when stuck to bottom",
+          "[tk][listview][prepend]") {
+    Stage st;
+    ListView list;
+    FixedHeightAdapter ad; ad.n = 10; ad.row_h = 25.0f;
+    list.set_adapter(&ad);
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, { 0, 0, 200, 100 });
+    list.scroll_to_bottom();
+    list.arrange(lc, { 0, 0, 200, 100 });
+    float before = list.scroll_y();
+
+    // Prepend rows while pinned to bottom: scroll should *not* shift up.
+    list.preserve_top_through([&]{
+        ad.n = 15;
+        list.invalidate_data();
+    });
+    list.arrange(lc, { 0, 0, 200, 100 });
+    // The stick-to-bottom logic snapped us to the new bottom.
+    CHECK(list.scroll_y() == list.content_height() - 100.0f);
+    CHECK(list.scroll_y() != before);
+}
+
+TEST_CASE("ListView::on_near_top fires on threshold crossing and re-arms",
+          "[tk][listview][nearTop]") {
+    Stage st;
+    ListView list;
+    FixedHeightAdapter ad; ad.n = 60; ad.row_h = 30.0f;  // 1800 px content
+    list.set_adapter(&ad);
+    list.set_near_top_threshold_px(200.0f);
+
+    int fires = 0;
+    list.on_near_top = [&]{ ++fires; };
+
+    auto lc = st.layout_ctx();
+    list.arrange(lc, { 0, 0, 200, 300 });
+
+    // Start at the top — the trigger should NOT fire until we leave and
+    // come back (the latch is meant for user-driven crossings, not the
+    // initial state). The first wheel down moves us above the threshold.
+    list.on_wheel({ 50, 50 }, 0, 500);   // scroll down 500 → far from top
+    CHECK(fires == 0);
+    REQUIRE(list.scroll_y() > 200.0f);
+
+    // Scroll back up across the threshold — exactly one fire.
+    list.on_wheel({ 50, 50 }, 0, -350);  // now at 150, below 200 threshold
+    CHECK(list.scroll_y() < 200.0f);
+    CHECK(fires == 1);
+
+    // Stay below the threshold: no extra fires while latched.
+    list.on_wheel({ 50, 50 }, 0, -50);
+    CHECK(fires == 1);
+
+    // Scroll back above the threshold (re-arms the latch).
+    list.on_wheel({ 50, 50 }, 0, 500);   // far below
+    CHECK(list.scroll_y() > 200.0f);
+    CHECK(fires == 1);
+
+    // Cross back in — second fire.
+    list.on_wheel({ 50, 50 }, 0, -450);
+    REQUIRE(list.scroll_y() < 200.0f);
+    CHECK(fires == 2);
+}
+
+TEST_CASE("MessageListView::prepend_message inserts at front and preserves scroll",
+          "[tk][view][messagelist][prepend]") {
+    Stage st;
+    MessageListView view;
+
+    // Seed with 5 messages.
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 5; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$seed" + std::to_string(i);
+        m.sender_name = "Seed";
+        m.body        = "seed " + std::to_string(i);
+        seed.push_back(std::move(m));
+    }
+    view.set_messages(std::move(seed));
+    st.run(view, { 0, 0, 320, 400 });
+    REQUIRE(view.messages().size() == 5);
+    REQUIRE(view.messages()[0].event_id == "$seed0");
+
+    MessageRowData older{}; older.kind = MessageRowData::Kind::Text;
+    older.event_id    = "$older";
+    older.sender_name = "Older";
+    older.body        = "from history";
+    view.prepend_message(std::move(older));
+    st.run(view, { 0, 0, 320, 400 });
+
+    REQUIRE(view.messages().size() == 6);
+    CHECK(view.messages()[0].event_id == "$older");
+    CHECK(view.messages()[1].event_id == "$seed0");
+    CHECK(view.messages()[5].event_id == "$seed4");
+}
+
+TEST_CASE("MessageListView::prepend_messages preserves visual top when scrolled",
+          "[tk][view][messagelist][prepend]") {
+    Stage st;
+    MessageListView view;
+
+    // Seed with enough rows to overflow and let us scroll mid-list.
+    std::vector<MessageRowData> seed;
+    for (int i = 0; i < 30; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$s" + std::to_string(i);
+        m.sender_name = "S";
+        m.body        = "row " + std::to_string(i);
+        seed.push_back(std::move(m));
+    }
+    view.set_messages(std::move(seed));
+    st.run(view, { 0, 0, 320, 200 });
+
+    // Scroll up by 80 from the bottom-pinned state so the top edge is
+    // 80px below scroll_max. We need to be off the bottom to prove the
+    // anchor logic kicks in.
+    view.scroll_to_top();
+    st.run(view, { 0, 0, 320, 200 });
+    view.on_wheel({ 50, 50 }, 0, 80);   // scroll down by 80
+    st.run(view, { 0, 0, 320, 200 });
+    REQUIRE(view.scroll_y() > 0.0f);
+
+    float pre_scroll = view.scroll_y();
+    float pre_height = view.content_height();
+
+    // Prepend 4 older rows.
+    std::vector<MessageRowData> older;
+    for (int i = 0; i < 4; ++i) {
+        MessageRowData m{}; m.kind = MessageRowData::Kind::Text;
+        m.event_id    = "$o" + std::to_string(i);
+        m.sender_name = "O";
+        m.body        = "old " + std::to_string(i);
+        older.push_back(std::move(m));
+    }
+    view.prepend_messages(std::move(older));
+    st.run(view, { 0, 0, 320, 200 });
+
+    REQUIRE(view.messages().size() == 34);
+    CHECK(view.messages()[0].event_id == "$o0");
+    CHECK(view.messages()[3].event_id == "$o3");
+    CHECK(view.messages()[4].event_id == "$s0");
+
+    // scroll_y should have been bumped by the new content's height so the
+    // user's visual position is unchanged.
+    float delta = view.content_height() - pre_height;
+    CHECK(delta > 0.0f);
+    CHECK(view.scroll_y() == pre_scroll + delta);
+}
+
+TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
+          "click snaps back",
+          "[tk][view][messagelist][pill]") {
+    Stage st;
+    MessageListView view;
+
+    std::vector<MessageRowData> msgs;
+    for (int i = 0; i < 80; ++i) {
+        MessageRowData m{};
+        m.kind        = MessageRowData::Kind::Text;
+        m.event_id    = "$e" + std::to_string(i);
+        m.sender_name = "User";
+        m.body        = "row " + std::to_string(i);
+        msgs.push_back(std::move(m));
+    }
+
+    view.set_messages(std::move(msgs));      // auto-scrolls to bottom
+    st.run(view, { 0, 0, 320, 200 });
+    REQUIRE(view.content_height() > 200.0f); // content really overflows
+    CHECK_FALSE(view.pill_visible());
+
+    // Scroll to the top → pill should appear on the next paint.
+    view.scroll_to_top();
+    st.run(view, { 0, 0, 320, 200 });
+    REQUIRE(view.pill_visible());
+
+    // Click the pill rect → scroll_to_bottom(), pill disappears.
+    tk::Rect r = view.pill_bounds();
+    REQUIRE(r.w > 0.0f);
+    tk::Point local{
+        r.x + r.w * 0.5f - view.bounds().x,
+        r.y + r.h * 0.5f - view.bounds().y,
+    };
+    REQUIRE(view.on_pointer_down(local));
+    view.on_pointer_up(local, /*inside_self=*/true);
+    st.run(view, { 0, 0, 320, 200 });
+    CHECK_FALSE(view.pill_visible());
+}

@@ -488,6 +488,93 @@ public:
         on_layout_ = std::move(cb);
     }
 
+    void set_on_image_drop(ImageDropHandler cb) {
+        on_image_drop_ = std::move(cb);
+    }
+    bool has_image_drop_handler() const {
+        return static_cast<bool>(on_image_drop_);
+    }
+
+    // Read a dropped GFile, sniff MIME, and forward to the installed
+    // handler. Returns true when the drop was accepted (handler fired);
+    // false otherwise so the drop target can tell GTK the drop failed.
+    bool dispatch_image_drop(GFile* file) {
+        if (!file || !on_image_drop_) return false;
+
+        // Size guard — bail before reading.
+        GError*    err  = nullptr;
+        GFileInfo* info = g_file_query_info(file,
+            G_FILE_ATTRIBUTE_STANDARD_SIZE ","
+            G_FILE_ATTRIBUTE_STANDARD_NAME ","
+            G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+            G_FILE_QUERY_INFO_NONE, nullptr, &err);
+        if (err) { g_error_free(err); err = nullptr; }
+        if (!info) return false;
+        const goffset sz = g_file_info_get_size(info);
+        if (sz <= 0 ||
+            static_cast<std::size_t>(sz) > kMaxDroppedImageBytes) {
+            g_object_unref(info);
+            return false;
+        }
+
+        GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, &err);
+        if (err) { g_error_free(err); err = nullptr; }
+        if (!gb) { g_object_unref(info); return false; }
+
+        gsize len = 0;
+        gconstpointer data = g_bytes_get_data(gb, &len);
+        if (!data || len == 0) {
+            g_bytes_unref(gb);
+            g_object_unref(info);
+            return false;
+        }
+
+        // Prefer file-info-supplied content type; fall back to guessing
+        // from name+content. Reject anything outside the image allowlist.
+        const char* declared = g_file_info_get_content_type(info);
+        gchar*      guessed  = g_content_type_guess(
+            g_file_info_get_name(info), static_cast<const guchar*>(data),
+            len, nullptr);
+        const char* content_type = declared ? declared : guessed;
+
+        gchar* mime_c = content_type
+            ? g_content_type_get_mime_type(content_type) : nullptr;
+
+        auto is_allowed = [](const char* m) {
+            return m && (std::strcmp(m, "image/png")  == 0 ||
+                         std::strcmp(m, "image/jpeg") == 0 ||
+                         std::strcmp(m, "image/webp") == 0 ||
+                         std::strcmp(m, "image/bmp")  == 0 ||
+                         std::strcmp(m, "image/gif")  == 0);
+        };
+
+        if (!is_allowed(mime_c)) {
+            if (mime_c)  g_free(mime_c);
+            if (guessed) g_free(guessed);
+            g_bytes_unref(gb);
+            g_object_unref(info);
+            return false;
+        }
+
+        std::vector<std::uint8_t> bytes(
+            static_cast<const std::uint8_t*>(data),
+            static_cast<const std::uint8_t*>(data) + len);
+
+        // Sanitize: use the GFile basename (already stripped of dirs).
+        char* basename = g_file_get_basename(file);
+        std::string filename = basename ? basename : "";
+        if (basename) g_free(basename);
+
+        std::string mime = mime_c;
+        on_image_drop_(std::move(bytes), std::move(mime), std::move(filename));
+
+        g_free(mime_c);
+        if (guessed) g_free(guessed);
+        g_bytes_unref(gb);
+        g_object_unref(info);
+        return true;
+    }
+
     void on_draw(cairo_t* cr, int /*w*/, int /*h*/) {
         if (!root_) return;
         auto canvas = tk::cairo_pango::make_canvas(cr);
@@ -597,6 +684,7 @@ private:
     Widget*                             hovered_widget_ = nullptr;
     double                              last_pointer_x_ = -1;
     double                              last_pointer_y_ = -1;
+    ImageDropHandler                    on_image_drop_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -643,6 +731,26 @@ gboolean scroll_cb(GtkEventControllerScroll*, double dx, double dy,
     return TRUE;
 }
 
+// GtkDropTarget "drop" signal. Receives a GValue holding either a
+// GdkFileList (multi-file drag from Nautilus) or a single GFile (URI
+// drag from Firefox etc.). We take the first acceptable file, hand it
+// to the host, and ignore the rest.
+gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value,
+                  double /*x*/, double /*y*/, gpointer p) {
+    Host* host = static_cast<Host*>(p);
+    if (!host || !value) return FALSE;
+
+    GFile* file = nullptr;
+    if (G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST)) {
+        GSList* list = static_cast<GSList*>(g_value_get_boxed(value));
+        if (list) file = G_FILE(list->data);
+    } else if (G_VALUE_HOLDS(value, G_TYPE_FILE)) {
+        file = G_FILE(g_value_get_object(value));
+    }
+    if (!file) return FALSE;
+    return host->dispatch_image_drop(file) ? TRUE : FALSE;
+}
+
 } // namespace
 
 Surface::Surface(const Theme& theme) {
@@ -686,6 +794,18 @@ Surface::Surface(const Theme& theme) {
                       G_CALLBACK(&scroll_cb), host_.get());
     gtk_widget_add_controller(drawing_area, scroll);
 
+    // Drop target — accepts both single-file (Firefox URI) and
+    // multi-file (Nautilus) drags. The drop callback hands the first
+    // acceptable image to the host. No-op until the shell calls
+    // set_on_image_drop.
+    GtkDropTarget* drop = gtk_drop_target_new(G_TYPE_INVALID,
+                                                GDK_ACTION_COPY);
+    GType drop_types[] = { GDK_TYPE_FILE_LIST, G_TYPE_FILE };
+    gtk_drop_target_set_gtypes(drop, drop_types, G_N_ELEMENTS(drop_types));
+    g_signal_connect(drop, "drop",
+                      G_CALLBACK(&drop_cb), host_.get());
+    gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(drop));
+
     // The overlay is owned by whoever embeds it. Sink the floating
     // reference here so widget() can hand out a strong-ref to the caller.
     g_object_ref_sink(overlay);
@@ -714,6 +834,10 @@ void Surface::relayout() { host_->relayout(); }
 
 void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::set_on_image_drop(ImageDropHandler cb) {
+    host_->set_on_image_drop(std::move(cb));
 }
 
 } // namespace tk::gtk4

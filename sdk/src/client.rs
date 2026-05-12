@@ -14,7 +14,7 @@ use matrix_sdk::{
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::ffi::{BackupProgress, OAuthBegin, OpResult};
+use crate::ffi::{BackupProgress, OAuthBegin, OpResult, PaginateResult};
 use crate::oauth;
 
 #[cfg(not(test))]
@@ -732,19 +732,48 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn paginate_back(&mut self, room_id: &str, count: u16) -> OpResult {
+        let result = self.paginate_back_with_status(room_id, count);
+        OpResult { ok: result.ok, message: result.message }
+    }
+
+    #[cfg(not(test))]
+    pub fn paginate_back_with_status(
+        &mut self,
+        room_id: &str,
+        count: u16,
+    ) -> PaginateResult {
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
+            Err(e) => return PaginateResult {
+                ok: false,
+                message: format!("invalid room id: {e}"),
+                reached_start: false,
+            },
         };
 
         let Some(handle) = self.timelines.get(&room_id) else {
-            return err("room not subscribed; call subscribe_room first");
+            return PaginateResult {
+                ok: false,
+                message: "room not subscribed; call subscribe_room first".into(),
+                reached_start: false,
+            };
         };
 
         let tl = Arc::clone(&handle.timeline);
+        // `paginate_backwards` returns `Ok(true)` once the timeline reports
+        // that its earliest event has been seen (no further history can be
+        // fetched). UIs latch their scroll-up trigger off this signal.
         match self.rt.block_on(tl.paginate_backwards(count)) {
-            Ok(_)  => ok(""),
-            Err(e) => err(e.to_string()),
+            Ok(reached_start) => PaginateResult {
+                ok: true,
+                message: String::new(),
+                reached_start,
+            },
+            Err(e) => PaginateResult {
+                ok: false,
+                message: e.to_string(),
+                reached_start: false,
+            },
         }
     }
 
@@ -1557,6 +1586,13 @@ async fn timeline_item_to_ffi(
 }
 
 #[cfg(not(test))]
+enum DiffKind {
+    Append,
+    Prepend,
+    Reset,
+}
+
+#[cfg(not(test))]
 async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
     handler: &Arc<Mutex<SendHandler>>,
@@ -1564,19 +1600,27 @@ async fn handle_timeline_diff(
     room: &Room,
     me: Option<&UserId>,
 ) {
-    let (reset, items): (bool, Vec<Arc<TimelineItem>>) = match diff {
-        VectorDiff::Append    { values }    => (false, values.into_iter().collect()),
-        VectorDiff::PushBack  { value }     => (false, vec![value]),
-        VectorDiff::PushFront { value }     => (false, vec![value]),
-        VectorDiff::Insert    { value, .. } => (false, vec![value]),
-        VectorDiff::Set       { value, .. } => (false, vec![value]),
+    let (kind, items): (DiffKind, Vec<Arc<TimelineItem>>) = match diff {
+        VectorDiff::Append    { values }    => (DiffKind::Append,  values.into_iter().collect()),
+        VectorDiff::PushBack  { value }     => (DiffKind::Append,  vec![value]),
+        VectorDiff::PushFront { value }     => (DiffKind::Prepend, vec![value]),
+        // Insert at index 0 is a front-of-vector insertion (older event).
+        // Any other index is treated as an append: rare in practice, and the
+        // C++ side de-duplicates by event_id so an out-of-order arrival
+        // still resolves to the right row.
+        VectorDiff::Insert    { index: 0, value } => (DiffKind::Prepend, vec![value]),
+        VectorDiff::Insert    { value, .. } => (DiffKind::Append,  vec![value]),
+        // `Set` is an update to an existing item (edit, redaction, reaction
+        // change); the C++ side resolves it by event_id on either path, so
+        // route through the live `on_message_event` callback.
+        VectorDiff::Set       { value, .. } => (DiffKind::Append,  vec![value]),
         // Reset rebuilds the full timeline; clear the UI first to avoid
         // appending to the already-displayed items.
-        VectorDiff::Reset     { values }    => (true,  values.into_iter().collect()),
+        VectorDiff::Reset     { values }    => (DiffKind::Reset,   values.into_iter().collect()),
         _ => return,
     };
 
-    if reset {
+    if matches!(kind, DiffKind::Reset) {
         if let Ok(guard) = handler.lock() {
             guard.on_timeline_reset(room_id);
         }
@@ -1585,7 +1629,10 @@ async fn handle_timeline_diff(
     for item in &items {
         if let Some(ev) = timeline_item_to_ffi(item, room_id, room, me).await {
             if let Ok(guard) = handler.lock() {
-                guard.on_message_event(&ev);
+                match kind {
+                    DiffKind::Prepend           => guard.on_message_prepended(&ev),
+                    DiffKind::Append | DiffKind::Reset => guard.on_message_event(&ev),
+                }
             }
         }
     }

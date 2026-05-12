@@ -29,6 +29,7 @@ public:
     explicit EventHandler(GtkWindow* window) : window_(window) {}
 
     void on_message(tesseract::Event* ev) override;
+    void on_message_prepended(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
@@ -50,6 +51,8 @@ public:
     GtkWidget* widget() const { return window_; }
 
     void push_event(std::unique_ptr<tesseract::Event> ev);
+    void push_prepended_event(std::unique_ptr<tesseract::Event> ev);
+    void push_paginate_result(std::string room_id, bool reached_start);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
     void handle_reconnect();
@@ -82,7 +85,11 @@ private:
     void refresh_room_list();
     void on_room_selected(const std::string& room_id);
     void append_event(const tesseract::Event& ev);
+    void prepend_event(const tesseract::Event& ev);
     void clear_messages();
+    /// Kick off back-pagination for `room_id` on a worker thread. Hooked
+    /// to `MessageListView::on_near_top`; guarded by `pagination_` state.
+    void request_more_history(const std::string& room_id);
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
     void do_logout();
@@ -163,6 +170,12 @@ private:
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
 
     std::vector<std::string>                               space_stack_;
+
+    // Per-room back-pagination state, keyed by room ID. See the matching
+    // struct in the Qt shell — same semantics.
+    struct PaginationState { bool in_flight = false; bool reached_start = false; };
+    std::unordered_map<std::string, PaginationState> pagination_;
+    static constexpr std::uint16_t kPaginationBatch = 50;
 };
 
 } // namespace gtk4

@@ -32,6 +32,7 @@
 #include <QTimer>
 #include <QStandardItem>
 #include <algorithm>
+#include <thread>
 
 Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
@@ -45,6 +46,10 @@ namespace qt6 {
 
 void EventBridge::on_message(tesseract::Event* ev) {
     emit eventReceived(ev);
+}
+
+void EventBridge::on_message_prepended(tesseract::Event* ev) {
+    emit eventPrepended(ev);
 }
 
 void EventBridge::on_rooms_updated(
@@ -341,6 +346,21 @@ MainWindow::MainWindow(QWidget* parent)
                 composeShared_->set_pending_image(std::move(bytes),
                                                     std::move(mime));
         });
+
+    // Drag-and-drop: dropping an image file on either the message list
+    // or the composer parks it in the same pending-image slot the paste
+    // path uses. Same handler wired to both surfaces; the sidebar gets
+    // none (drops there show "no drop" by virtue of accepting nothing).
+    auto onImageDrop = [this](std::vector<std::uint8_t> bytes,
+                              std::string mime,
+                              std::string filename) {
+        if (composeShared_)
+            composeShared_->set_pending_image(std::move(bytes),
+                                              std::move(mime),
+                                              std::move(filename));
+    };
+    composeSurface_->set_on_image_drop(onImageDrop);
+    if (msgSurface_) msgSurface_->set_on_image_drop(onImageDrop);
     composeSurface_->set_on_layout([this] {
         if (composeShared_ && composeTextArea_)
             composeTextArea_->set_rect(composeShared_->text_area_rect());
@@ -451,6 +471,8 @@ MainWindow::MainWindow(QWidget* parent)
     bridge_ = std::make_unique<EventBridge>(this);
     connect(bridge_.get(), &EventBridge::eventReceived,
             this,          &MainWindow::onEventReceived);
+    connect(bridge_.get(), &EventBridge::eventPrepended,
+            this,          &MainWindow::onEventPrepended);
     connect(bridge_.get(), &EventBridge::roomsUpdated,
             this,          &MainWindow::onRoomsUpdated);
     connect(bridge_.get(), &EventBridge::syncError,
@@ -459,6 +481,14 @@ MainWindow::MainWindow(QWidget* parent)
             this,          &MainWindow::onTimelineReset);
     connect(bridge_.get(), &EventBridge::backupProgress,
             this,          &MainWindow::onBackupProgress);
+
+    // Back-pagination on scroll-to-top. The shared MessageListView fires
+    // this once per crossing of the near-top threshold; the latch is
+    // re-armed automatically after prepended rows are spliced in.
+    messageListView_->on_near_top = [this]{
+        if (currentRoomId_.empty()) return;
+        requestMoreHistory(currentRoomId_);
+    };
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
 }
@@ -563,7 +593,10 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
             "Subscribe failed: " + QString::fromStdString(res.message), 4000);
         return;
     }
-    client_.paginate_back(currentRoomId_, 50);
+    auto& state = pagination_[currentRoomId_];
+    state.in_flight = false;
+    auto pr = client_.paginate_back_with_status(currentRoomId_, kPaginationBatch);
+    state.reached_start = pr.ok && pr.reached_start;
     client_.start_background_backfill();
 }
 
@@ -571,6 +604,46 @@ void MainWindow::onEventReceived(tesseract::Event* ev) {
     if (ev && ev->room_id == currentRoomId_)
         appendMessage(*ev);
     delete ev;
+}
+
+void MainWindow::onEventPrepended(tesseract::Event* ev) {
+    if (ev && ev->room_id == currentRoomId_)
+        prependMessage(*ev);
+    delete ev;
+}
+
+void MainWindow::requestMoreHistory(const std::string& room_id) {
+    if (room_id.empty()) return;
+    auto& state = pagination_[room_id];
+    if (state.in_flight || state.reached_start) return;
+    state.in_flight = true;
+
+    // Run the blocking SDK call off the UI thread; bounce the result back
+    // via a queued connection. `client_` is thread-safe (Rust runtime
+    // serialises concurrent calls).
+    std::thread([this, room_id]{
+        auto res = client_.paginate_back_with_status(room_id, kPaginationBatch);
+        bool reached = res.ok && res.reached_start;
+        QMetaObject::invokeMethod(
+            this,
+            "onPaginateFinished",
+            Qt::QueuedConnection,
+            Q_ARG(QString, QString::fromStdString(room_id)),
+            Q_ARG(bool, reached));
+    }).detach();
+}
+
+void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
+    auto it = pagination_.find(roomId.toStdString());
+    if (it == pagination_.end()) return;
+    it->second.in_flight     = false;
+    it->second.reached_start = reached_start;
+    // Re-arm the near-top latch so the user's next scroll-up can trigger
+    // another page. If the prepended rows already triggered a relayout,
+    // `arrange()` will have reset the latch too — calling here is cheap
+    // and idempotent.
+    if (roomId.toStdString() == currentRoomId_ && messageListView_)
+        messageListView_->reset_near_top_latch();
 }
 
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
@@ -856,6 +929,44 @@ void MainWindow::appendMessage(const tesseract::Event& ev) {
     }
 
     messageListView_->append_message(std::move(row));
+    msgSurface_->relayout();
+}
+
+void MainWindow::prependMessage(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) return;
+
+    ensureUserAvatar(ev.sender_avatar_url);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        ensureMediaImage(img.image_url, kMaxImageWidth, kMaxImageHeight);
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        ensureMediaImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
+    }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            ensureMediaImage(r.source_json, 20, 20);
+    }
+
+    auto row = toRowData(ev);
+
+    // Deduplicate by event_id. Older history can overlap with rows the
+    // initial subscribe already delivered — when that happens we update
+    // the existing row in place rather than inserting a duplicate.
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        messageListView_->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        messageListView_->invalidate_data();
+        msgSurface_->relayout();
+        return;
+    }
+
+    messageListView_->prepend_message(std::move(row));
     msgSurface_->relayout();
 }
 

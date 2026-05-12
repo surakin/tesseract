@@ -42,6 +42,7 @@ public:
         : controller_(controller) {}
 
     void on_message(tesseract::Event* ev) override;
+    void on_message_prepended(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
@@ -73,6 +74,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 @interface MainWindowController () <LoginViewDelegate>
 - (void)pushEvent:(tesseract::Event*)ev;
+- (void)pushPrependedEvent:(tesseract::Event*)ev;
+- (void)handlePaginateResultForRoom:(std::string)roomId
+                      reached_start:(BOOL)reached;
+- (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms;
 - (void)handleSyncErrorContext:(NSString*)ctx
                     description:(NSString*)desc
@@ -99,6 +104,14 @@ void EventBridge::on_message(tesseract::Event* ev) {
     // Hand ownership of the heap event to the main-thread block.
     dispatch_async(dispatch_get_main_queue(), ^{
         [c pushEvent:ev];
+    });
+}
+
+void EventBridge::on_message_prepended(tesseract::Event* ev) {
+    MainWindowController* c = controller_;
+    if (!c || !ev) { delete ev; return; }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c pushPrependedEvent:ev];
     });
 }
 
@@ -158,6 +171,12 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     std::vector<tesseract::RoomInfo> _rooms;
     std::string                      _currentRoomId;
     std::string                      _myUserId;
+
+    // Per-room back-pagination state (mirrors Qt/GTK). `in_flight` gates
+    // concurrent paginate_back calls; `reached_start` latches the trigger
+    // off when the timeline reports no more history.
+    struct PaginationState { bool in_flight = false; bool reached_start = false; };
+    std::unordered_map<std::string, PaginationState> _pagination;
     // When non-empty, the next emoji selection routes through
     // send_reaction for this event id (set by the "+" reaction chip).
     std::string                      _pendingReactionEventId;
@@ -306,6 +325,12 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
                 // flipped so the rect maps directly to view-local.
                 [s showEmojiPickerAtRect:anchor];
             };
+        _messageListView->on_near_top = [weakSelf]{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            if (s->_currentRoomId.empty()) return;
+            [s requestMoreHistoryForRoom:s->_currentRoomId];
+        };
     }
     _msgSurface->set_root(std::move(msg_view));
     NSView* msgSurfaceView = (__bridge NSView*)_msgSurface->view_handle();
@@ -411,6 +436,22 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
                     c->_composeShared->set_pending_image(std::move(bytes),
                                                           std::move(mime));
             });
+
+        // Drag-and-drop: dropping an image file on either the message
+        // list or the composer parks it in the same pending-image slot
+        // the paste path uses.
+        auto on_image_drop = [weakSelf](std::vector<std::uint8_t> bytes,
+                                         std::string mime,
+                                         std::string filename) {
+            MainWindowController* c = weakSelf;
+            if (c && c->_composeShared)
+                c->_composeShared->set_pending_image(std::move(bytes),
+                                                     std::move(mime),
+                                                     std::move(filename));
+        };
+        _composeSurface->set_on_image_drop(on_image_drop);
+        if (_msgSurface) _msgSurface->set_on_image_drop(on_image_drop);
+
         _composeSurface->set_on_layout([weakSelf] {
             MainWindowController* c = weakSelf;
             if (!c || !c->_composeShared || !c->_composeTextArea) return;
@@ -681,6 +722,14 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     [self _appendMessage:*ev];
 }
 
+- (void)pushPrependedEvent:(tesseract::Event*)ev {
+    if (!ev) return;
+    std::unique_ptr<tesseract::Event> guard(ev);
+    if (ev->room_id != _currentRoomId) return;
+    if (ev->type == tesseract::EventType::Unhandled) return;
+    [self _prependMessage:*ev];
+}
+
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms {
     _rooms = std::move(rooms);
     [self _refreshRoomList];
@@ -874,8 +923,38 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
 
     auto res = _client.subscribe_room(_currentRoomId);
     if (!res) return;
-    _client.paginate_back(_currentRoomId, 50);
+    auto& state = _pagination[_currentRoomId];
+    state.in_flight = false;
+    auto pr = _client.paginate_back_with_status(_currentRoomId, 50);
+    state.reached_start = pr.ok && pr.reached_start;
     _client.start_background_backfill();
+}
+
+- (void)requestMoreHistoryForRoom:(std::string)roomId {
+    if (roomId.empty()) return;
+    auto& state = _pagination[roomId];
+    if (state.in_flight || state.reached_start) return;
+    state.in_flight = true;
+
+    // Run the blocking paginate call on a background queue; marshal the
+    // result back to the main thread.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        auto pr = self->_client.paginate_back_with_status(roomId, 50);
+        BOOL reached = pr.ok && pr.reached_start;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self handlePaginateResultForRoom:roomId reached_start:reached];
+        });
+    });
+}
+
+- (void)handlePaginateResultForRoom:(std::string)roomId
+                      reached_start:(BOOL)reached {
+    auto it = _pagination.find(roomId);
+    if (it == _pagination.end()) return;
+    it->second.in_flight     = false;
+    it->second.reached_start = reached;
+    if (roomId == _currentRoomId && _messageListView)
+        _messageListView->reset_near_top_latch();
 }
 
 - (tesseract::views::MessageRowData)_toRowData:(const tesseract::Event&)ev {
@@ -958,6 +1037,42 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
         return;
     }
     _messageListView->append_message(std::move(row));
+    _msgSurface->relayout();
+}
+
+- (void)_prependMessage:(const tesseract::Event&)ev {
+    [self _ensureUserAvatar:ev.sender_avatar_url];
+
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        [self _ensureMediaImage:img.image_url
+                            cap:tesseract::visual::kMaxInlineImageWidth];
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        [self _ensureMediaImage:s.image_url
+                            cap:tesseract::visual::kStickerSize];
+    }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty()) {
+            [self _ensureMediaImage:r.source_json cap:20];
+        }
+    }
+
+    auto row = [self _toRowData:ev];
+
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        _messageListView->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        _messageListView->invalidate_data();
+        _msgSurface->relayout();
+        return;
+    }
+    _messageListView->prepend_message(std::move(row));
     _msgSurface->relayout();
 }
 

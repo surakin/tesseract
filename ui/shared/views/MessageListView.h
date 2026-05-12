@@ -66,6 +66,18 @@ public:
     // the bottom if the user was already pinned there.
     void append_message(MessageRowData msg);
 
+    // Prepend a single older message (typical back-pagination path) and
+    // preserve the user's visual scroll position so the row they were
+    // looking at stays under their cursor. The host should marshal each
+    // `IEventHandler::on_message_prepended` call to the UI thread and
+    // forward it here.
+    void prepend_message(MessageRowData msg);
+
+    // Prepend a batch of older messages in oldest-first order. Equivalent
+    // to calling `prepend_message` for each but with a single re-measure
+    // and one scroll-anchor adjustment.
+    void prepend_messages(std::vector<MessageRowData> older);
+
     // Avatar bytes come from the host-side media cache. Returning null
     // falls back to an initials disc.
     void set_avatar_provider(ImageProvider p);
@@ -117,6 +129,11 @@ public:
     HoverTarget        hover_target()     const { return hover_target_;   }
     int                hover_chip_index() const { return hover_chip_idx_; }
 
+    // Scroll-to-bottom pill — visible only when the user has scrolled
+    // away from the live tail. World-coord rect, recomputed each paint.
+    bool      pill_visible() const { return pill_visible_; }
+    tk::Rect  pill_bounds()  const { return pill_rect_;    }
+
 private:
     class Adapter;
     friend class Adapter;
@@ -141,6 +158,15 @@ private:
     HoverTarget                    press_target_  = HoverTarget::None;
     int                            press_chip_idx_ = -1;
     std::string                    press_event_id_;
+
+    // Scroll-to-bottom pill. Geometry is recomputed in paint() (after
+    // ListView::paint has updated scroll state), so the rect + visible
+    // flag are mutable — same trick as hovered_row_geom_ above.
+    mutable tk::Rect               pill_rect_{};      // world coords
+    mutable bool                   pill_visible_ = false;
+    bool                           press_pill_   = false;
+
+    bool should_show_pill() const;
 };
 
 } // namespace tesseract::views

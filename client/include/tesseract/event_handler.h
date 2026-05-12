@@ -14,6 +14,15 @@ public:
     virtual ~IEventHandler() = default;
 
     virtual void on_message(Event* ev) = 0;
+
+    /// Fired for an older event delivered via `paginate_back` (or any
+    /// matrix-sdk `VectorDiff::PushFront` / front `Insert`). The UI should
+    /// prepend `ev` to the top of the message view instead of appending.
+    /// Default-forwards to `on_message` so existing handlers that have not
+    /// migrated still receive the event (just at the wrong end of the list).
+    /// Implementations take ownership of `ev` and must delete it.
+    virtual void on_message_prepended(Event* ev) { on_message(ev); }
+
     virtual void on_rooms_updated(const std::vector<RoomInfo>& rooms) = 0;
     virtual void on_sync_error(const std::string& context,
                                 const std::string& description,

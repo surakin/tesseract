@@ -88,6 +88,16 @@ pub mod ffi {
         message: String,
     }
 
+    /// Outcome of a back-pagination call. `reached_start` is `true` when
+    /// matrix-sdk-ui reports the timeline has no further history to load
+    /// (the room's first event has been seen). UIs use this to stop firing
+    /// the "near top" pagination trigger.
+    struct PaginateResult {
+        ok:            bool,
+        message:       String,
+        reached_start: bool,
+    }
+
     /// First-phase result of an OAuth flow.
     struct OAuthBegin {
         ok:           bool,
@@ -127,6 +137,11 @@ pub mod ffi {
         type EventHandlerBridge;
 
         fn on_message_event(self: &EventHandlerBridge, event: &TimelineEvent);
+        /// Like `on_message_event` but for older events delivered via
+        /// back-pagination (or any `VectorDiff::PushFront` / front
+        /// `VectorDiff::Insert`). UIs should prepend these to the top of
+        /// the message view instead of appending.
+        fn on_message_prepended(self: &EventHandlerBridge, event: &TimelineEvent);
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
@@ -176,9 +191,16 @@ pub mod ffi {
         /// Unsubscribe from a room's timeline and cancel its background task.
         fn unsubscribe_room(self: &mut ClientFfi, room_id: &str);
 
-        /// Paginate backwards in a subscribed room's timeline. New items
-        /// arrive via on_message_event callbacks in oldest-first order.
+        /// Paginate backwards in a subscribed room's timeline. Older items
+        /// arrive via on_message_prepended callbacks.
         fn paginate_back(self: &mut ClientFfi, room_id: &str, count: u16) -> OpResult;
+
+        /// Like `paginate_back` but also reports whether the timeline has
+        /// reached its first event (no further pagination possible). UIs use
+        /// `reached_start` to latch their scroll-up trigger off.
+        fn paginate_back_with_status(self: &mut ClientFfi,
+                                     room_id: &str,
+                                     count: u16) -> PaginateResult;
 
         /// Kick off a background pass that paginates every joined room not
         /// currently subscribed, up to ~50 events each, with bounded

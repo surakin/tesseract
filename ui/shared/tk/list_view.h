@@ -130,6 +130,28 @@ public:
     // on_pointer_down/up/move so these fire automatically.
     std::function<void(int /*index*/)> on_row_clicked;
 
+    // Fired exactly once each time the viewport's top edge first enters the
+    // `near_top_threshold_px` zone (default 200px). Re-arms when the user
+    // scrolls back above the threshold, or when new rows are prepended (so
+    // the scroll-up backfill trigger can fire again for the next page).
+    // Not fired while `stick_to_bottom_` is true (initial state after
+    // set_messages); the host must scroll up first.
+    std::function<void()> on_near_top;
+    void  set_near_top_threshold_px(float px) { near_top_threshold_px_ = px; }
+    float near_top_threshold_px() const       { return near_top_threshold_px_; }
+    // Re-arm the `on_near_top` latch. Call after data changes so the next
+    // approach to the top fires again.
+    void  reset_near_top_latch() { was_near_top_ = false; }
+
+    // Run `mutate` (which is expected to change the adapter's row count
+    // and call `invalidate_data`) while preserving the user's visual
+    // position: if rows were added above the current viewport, the
+    // numeric `scroll_y_` is bumped by the height delta so the row the
+    // user is looking at stays under their cursor. No-op when
+    // `stick_to_bottom_` is set (the user is reading the bottom and
+    // doesn't care where the top is).
+    void preserve_top_through(const std::function<void()>& mutate);
+
     // Scroll API. Vertical scrolling only; horizontal scroll is intentional
     // omitted — chat rows wrap their content to the list width.
     void scroll_to_top();
@@ -164,6 +186,7 @@ private:
     void rebuild_heights(LayoutCtx&, float width);
     void clamp_scroll();
     void update_hover(Point local);
+    void maybe_fire_near_top();
 
     // Scrollbar geometry helpers. Return the thumb rect (in widget-local
     // coords) and the visible scroll range, or 0-width thumb when there's
@@ -189,6 +212,17 @@ private:
     float  measured_width_   = 0;
     bool   heights_dirty_    = true;
     bool   stick_to_bottom_  = false;  // re-snap to bottom on heights rebuild
+
+    // `on_near_top` machinery — see public docs.
+    float  near_top_threshold_px_ = 200.0f;
+    bool   was_near_top_          = false;
+
+    // `preserve_top_through` machinery. Sentinel < 0 means "no anchor
+    // pending". Set by `preserve_top_through`, consumed by `arrange` once
+    // heights are rebuilt and a fresh `content_height()` is known. Stays
+    // < 0 across normal arranges so width-driven rebuilds don't shift the
+    // viewport.
+    float  anchor_pre_height_     = -1.0f;
 
     std::vector<float> row_heights_;
     std::vector<float> row_offsets_;   // size = count + 1, last = total height

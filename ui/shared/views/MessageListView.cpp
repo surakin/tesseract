@@ -441,6 +441,23 @@ void MessageListView::append_message(MessageRowData msg) {
     if (at_bottom) scroll_to_bottom();
 }
 
+void MessageListView::prepend_message(MessageRowData msg) {
+    preserve_top_through([&]{
+        messages_.insert(messages_.begin(), std::move(msg));
+        invalidate_data();
+    });
+}
+
+void MessageListView::prepend_messages(std::vector<MessageRowData> older) {
+    if (older.empty()) return;
+    preserve_top_through([&]{
+        messages_.insert(messages_.begin(),
+                          std::make_move_iterator(older.begin()),
+                          std::make_move_iterator(older.end()));
+        invalidate_data();
+    });
+}
+
 void MessageListView::set_avatar_provider(ImageProvider p) {
     avatar_provider_ = std::move(p);
 }
@@ -518,9 +535,23 @@ void MessageListView::on_pointer_leave() {
     hovered_row_geom_.add_visible = false;
     hover_target_   = HoverTarget::None;
     hover_chip_idx_ = -1;
+    press_pill_     = false;
+}
+
+bool MessageListView::should_show_pill() const {
+    if (content_height() <= bounds().h) return false;
+    return scroll_y() + bounds().h + 1.0f < content_height();
 }
 
 bool MessageListView::on_pointer_down(tk::Point local) {
+    if (pill_visible_) {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        if (rect_contains(pill_rect_, world)) {
+            press_pill_ = true;
+            return true;
+        }
+    }
+
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
                                  local, chip_idx);
@@ -538,6 +569,15 @@ bool MessageListView::on_pointer_down(tk::Point local) {
 }
 
 void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_pill_) {
+        bool fire = inside_self;
+        press_pill_ = false;
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            if (rect_contains(pill_rect_, world)) scroll_to_bottom();
+        }
+        return;
+    }
     if (press_target_ == HoverTarget::None) {
         tk::ListView::on_pointer_up(local, inside_self);
         return;
@@ -579,6 +619,36 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 
 void MessageListView::paint(tk::PaintCtx& ctx) {
     tk::ListView::paint(ctx);
+
+    // Scroll-to-bottom pill — overlays the bottom-right corner of the
+    // viewport when the user is not pinned to the live tail. Painted
+    // before the chip tooltip so the tooltip (rare, hover-only) wins on
+    // any geometric overlap. Click handling lives in on_pointer_*.
+    pill_visible_ = should_show_pill();
+    if (pill_visible_) {
+        constexpr float kSz = 36.0f, kInsetR = 12.0f, kInsetB = 16.0f;
+        tk::Rect v = bounds();
+        pill_rect_ = { v.x + v.w - kSz - kInsetR,
+                       v.y + v.h - kSz - kInsetB, kSz, kSz };
+        auto bg = press_pill_ ? ctx.theme.palette.subtle_pressed
+                              : ctx.theme.palette.chrome_bg;
+        ctx.canvas.fill_rounded_rect  (pill_rect_, kSz * 0.5f, bg);
+        ctx.canvas.stroke_rounded_rect(pill_rect_, kSz * 0.5f,
+                                        ctx.theme.palette.border, 1.0f);
+        tk::TextStyle gs{};
+        gs.role = tk::FontRole::UiSemibold;
+        gs.wrap = false;
+        auto glyph = ctx.factory.build_text("\xE2\x86\x93", gs); // U+2193 ↓
+        if (glyph) {
+            tk::Size sz = glyph->measure();
+            ctx.canvas.draw_text(*glyph,
+                { pill_rect_.x + (kSz - sz.w) * 0.5f,
+                  pill_rect_.y + (kSz - sz.h) * 0.5f },
+                ctx.theme.palette.text_primary);
+        }
+    } else {
+        pill_rect_ = {};
+    }
 
     // Tooltip overlay: paint a small panel listing senders of the
     // hovered reaction chip. We paint after rows so the panel sits on

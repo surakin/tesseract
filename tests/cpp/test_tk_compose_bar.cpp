@@ -210,6 +210,35 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears the
     CHECK_FALSE(bar.has_pending_image());
 }
 
+TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
+          "[tk][view][compose]") {
+    Stage st;
+    ComposeBar bar;
+
+    std::string got_filename;
+    bar.on_send_image = [&](std::vector<std::uint8_t> bytes,
+                             std::string /*mime*/,
+                             std::string filename,
+                             std::string /*caption*/,
+                             std::uint32_t, std::uint32_t) {
+        got_filename = std::move(filename);
+        (void)bytes;
+    };
+
+    // Drop path: caller passes the original filename. The widget must
+    // forward it verbatim instead of synthesising a "clipboard-…" name.
+    bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
+                          "image/png",
+                          "my-cat.png");
+
+    st.run(bar, { 0, 0, 640, bar.natural_height() });
+    Button* send = find_button(bar, "Send");
+    REQUIRE(send);
+    send->click();
+
+    CHECK(got_filename == "my-cat.png");
+}
+
 TEST_CASE("ComposeBar second pending image replaces the first",
           "[tk][view][compose]") {
     ComposeBar bar;

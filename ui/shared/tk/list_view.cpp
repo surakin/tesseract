@@ -81,15 +81,56 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
     if (!adapter_) {
         row_heights_.clear();
         row_offsets_.clear();
+        anchor_pre_height_ = -1.0f;
         return;
     }
     if (heights_dirty_ || measured_width_ != bounds.w) {
         rebuild_heights(ctx, bounds.w);
+        if (anchor_pre_height_ >= 0.0f) {
+            // Preserve the user's visual position: if rows were added
+            // (typically prepended via back-pagination), the numeric
+            // scroll offset shifts by the height delta so the row the
+            // user was looking at stays under their cursor.
+            float delta = content_height() - anchor_pre_height_;
+            scroll_y_ += delta;
+            anchor_pre_height_ = -1.0f;
+            // Re-arm the near-top trigger: another page can be requested
+            // the next time the user crosses the threshold.
+            was_near_top_ = false;
+        }
     }
     if (stick_to_bottom_) {
         scroll_y_ = std::max(0.0f, content_height() - bounds.h);
     }
     clamp_scroll();
+}
+
+void ListView::preserve_top_through(const std::function<void()>& mutate) {
+    if (stick_to_bottom_) {
+        // The user is reading the latest message — the top edge is off-
+        // screen and irrelevant. Just mutate without anchoring.
+        if (mutate) mutate();
+        return;
+    }
+    // Latch the pre-mutation height once; if multiple prepends stack up
+    // before the next arrange, they all share this single snapshot so
+    // the total delta is consistent.
+    if (anchor_pre_height_ < 0.0f) {
+        anchor_pre_height_ = content_height();
+    }
+    if (mutate) mutate();
+}
+
+void ListView::maybe_fire_near_top() {
+    if (!adapter_ || adapter_->count() == 0) return;
+    if (stick_to_bottom_) return;
+    bool now_near = scroll_y_ < near_top_threshold_px_;
+    if (now_near && !was_near_top_) {
+        was_near_top_ = true;
+        if (on_near_top) on_near_top();
+    } else if (!now_near && was_near_top_) {
+        was_near_top_ = false;
+    }
 }
 
 void ListView::rebuild_heights(LayoutCtx& ctx, float width) {
@@ -194,6 +235,7 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
     scroll_y_ += dy;
     stick_to_bottom_ = false;
     clamp_scroll();
+    maybe_fire_near_top();
     return scroll_y_ != prev;
 }
 
@@ -227,6 +269,7 @@ void ListView::on_pointer_drag(Point local) {
     if (t > 1) t = 1;
     scroll_y_ = t * (total - bounds_.h);
     clamp_scroll();
+    maybe_fire_near_top();
 }
 
 void ListView::on_pointer_up(Point local, bool inside_self) {

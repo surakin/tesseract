@@ -60,6 +60,14 @@ public:
     // without re-decoding through GDI+.
     CanvasFactory& factory();
 
+    // Install a drag-and-drop handler. When set, the underlying HWND
+    // registers itself as an OLE drop target and forwards image-file
+    // drops (matching the same allowlist as the clipboard-paste path)
+    // to the callback. Pass {} to disable. Requires OleInitialize() to
+    // have been called on the calling (UI) thread before the first
+    // Surface is constructed.
+    void set_on_image_drop(ImageDropHandler cb);
+
 private:
     std::unique_ptr<Host> host_;
 };

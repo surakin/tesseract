@@ -62,6 +62,18 @@ public:
     void on_pointer_leave();
     void on_wheel       (NSPoint p, CGFloat dx, CGFloat dy);
 
+    // Drag-and-drop. `pasteboard_has_image` is consulted from
+    // -draggingEntered: to gate the cursor; `dispatch_image_drop` runs
+    // the actual decode + handler invocation from -performDragOperation:.
+    void set_on_image_drop(ImageDropHandler cb) {
+        on_image_drop_ = std::move(cb);
+    }
+    bool has_image_drop_handler() const {
+        return static_cast<bool>(on_image_drop_);
+    }
+    bool pasteboard_has_image(NSPasteboard* pb) const;
+    bool dispatch_image_drop (NSPasteboard* pb);
+
 private:
     TKSurfaceView*                       view_;
     const Theme*                         theme_;
@@ -71,6 +83,7 @@ private:
     Widget*                              pressed_widget_ = nullptr;
     Button*                              hovered_btn_    = nullptr;
     Widget*                              hovered_widget_ = nullptr;
+    ImageDropHandler                     on_image_drop_;
 };
 
 } // namespace tk::macos
@@ -94,6 +107,20 @@ private:
     self = [super initWithFrame:frame];
     if (self) {
         self.wantsLayer = NO;   // we paint via drawRect: into a fresh CG ctx
+
+        // Drag-and-drop image-file ingest. Accept file URLs (Finder /
+        // Safari / most apps), direct PNG / JPEG / TIFF payloads (in-app
+        // image drags), and the generic public.image UTI (browser image
+        // drags that promise a typed payload). The drop is gated by the
+        // host having a handler installed; -draggingEntered: returns
+        // NSDragOperationNone when no handler is wired.
+        [self registerForDraggedTypes:@[
+            NSPasteboardTypeFileURL,
+            NSPasteboardTypePNG,
+            NSPasteboardTypeTIFF,
+            @"public.jpeg",
+            @"public.image",
+        ]];
     }
     return self;
 }
@@ -177,6 +204,30 @@ private:
         dy = -e.scrollingDeltaY * 10.0;
     }
     self.hostPtr->on_wheel(loc, dx, dy);
+}
+
+// ── Drag-and-drop destination ───────────────────────────────────────────
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    if (!self.hostPtr || !self.hostPtr->has_image_drop_handler())
+        return NSDragOperationNone;
+    if (self.hostPtr->pasteboard_has_image(sender.draggingPasteboard))
+        return NSDragOperationCopy;
+    return NSDragOperationNone;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    return [self draggingEntered:sender];
+}
+
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
+    return self.hostPtr
+        && self.hostPtr->pasteboard_has_image(sender.draggingPasteboard);
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    if (!self.hostPtr) return NO;
+    return self.hostPtr->dispatch_image_drop(sender.draggingPasteboard) ? YES : NO;
 }
 
 @end
@@ -751,6 +802,101 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+//  Host — drag-and-drop helpers (pasteboard inspection + dispatch)
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+const char* mime_from_extension_lower(NSString* ext_lower) {
+    if ([ext_lower isEqualToString:@"png"])  return "image/png";
+    if ([ext_lower isEqualToString:@"jpg"]
+     || [ext_lower isEqualToString:@"jpeg"]) return "image/jpeg";
+    if ([ext_lower isEqualToString:@"webp"]) return "image/webp";
+    if ([ext_lower isEqualToString:@"bmp"])  return "image/bmp";
+    if ([ext_lower isEqualToString:@"gif"])  return "image/gif";
+    return nullptr;
+}
+
+// Walk the dragged file-URL list and return the first one whose extension
+// matches the image allowlist. nil if none qualify.
+NSURL* first_image_url(NSPasteboard* pb) {
+    NSArray<NSURL*>* urls = [pb readObjectsForClasses:@[NSURL.class]
+                                                options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+    for (NSURL* url in urls) {
+        if (!url.isFileURL) continue;
+        NSString* ext = url.pathExtension.lowercaseString;
+        if (mime_from_extension_lower(ext) != nullptr) return url;
+    }
+    return nil;
+}
+
+} // namespace
+
+bool Host::pasteboard_has_image(NSPasteboard* pb) const {
+    if (!pb) return false;
+    if (first_image_url(pb) != nil) return true;
+    // In-app image data — Safari / app drags supply these directly.
+    if ([pb dataForType:NSPasteboardTypePNG] != nil)  return true;
+    if ([pb dataForType:@"public.jpeg"]      != nil)  return true;
+    return false;
+}
+
+bool Host::dispatch_image_drop(NSPasteboard* pb) {
+    if (!pb || !on_image_drop_) return false;
+
+    // 1) File URL — preserve original filename.
+    NSURL* url = first_image_url(pb);
+    if (url) {
+        NSString* path = url.path;
+        NSError* err = nil;
+        NSDictionary<NSFileAttributeKey, id>* attrs =
+            [NSFileManager.defaultManager attributesOfItemAtPath:path error:&err];
+        if (!attrs) return false;
+        unsigned long long sz =
+            [attrs[NSFileSize] unsignedLongLongValue];
+        if (sz == 0 || sz > kMaxDroppedImageBytes) return false;
+
+        NSData* data = [NSData dataWithContentsOfFile:path
+                                                options:0
+                                                  error:&err];
+        if (!data || data.length == 0) return false;
+
+        NSString* ext_lower = path.pathExtension.lowercaseString;
+        const char* mime = mime_from_extension_lower(ext_lower);
+        if (!mime) return false;
+
+        std::vector<std::uint8_t> bytes(
+            static_cast<const std::uint8_t*>(data.bytes),
+            static_cast<const std::uint8_t*>(data.bytes) + data.length);
+        std::string filename = path.lastPathComponent.UTF8String
+            ? std::string(path.lastPathComponent.UTF8String) : std::string{};
+        on_image_drop_(std::move(bytes), std::string(mime),
+                        std::move(filename));
+        return true;
+    }
+
+    // 2) In-app image data — try PNG then JPEG. Drop is unnamed.
+    NSData* png = [pb dataForType:NSPasteboardTypePNG];
+    if (png && png.length > 0 && png.length <= kMaxDroppedImageBytes) {
+        std::vector<std::uint8_t> bytes(
+            static_cast<const std::uint8_t*>(png.bytes),
+            static_cast<const std::uint8_t*>(png.bytes) + png.length);
+        on_image_drop_(std::move(bytes), "image/png", std::string{});
+        return true;
+    }
+    NSData* jpg = [pb dataForType:@"public.jpeg"];
+    if (jpg && jpg.length > 0 && jpg.length <= kMaxDroppedImageBytes) {
+        std::vector<std::uint8_t> bytes(
+            static_cast<const std::uint8_t*>(jpg.bytes),
+            static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
+        on_image_drop_(std::move(bytes), "image/jpeg", std::string{});
+        return true;
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Surface — public glue
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -786,6 +932,10 @@ void Surface::relayout() { host_->relayout(); }
 
 void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));
+}
+
+void Surface::set_on_image_drop(ImageDropHandler cb) {
+    host_->set_on_image_drop(std::move(cb));
 }
 
 } // namespace tk::macos

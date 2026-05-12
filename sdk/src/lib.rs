@@ -63,6 +63,13 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct PaginateResult {
+        pub ok:            bool,
+        pub message:       String,
+        pub reached_start: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct OAuthBegin {
         pub ok:           bool,
         pub message:      String,
@@ -81,6 +88,7 @@ pub mod ffi {
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str) {}
         pub fn on_message_event(&self, _event: &TimelineEvent) {}
+        pub fn on_message_prepended(&self, _event: &TimelineEvent) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}

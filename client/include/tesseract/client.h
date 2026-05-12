@@ -21,6 +21,17 @@ struct Result {
     explicit operator bool() const noexcept { return ok; }
 };
 
+/// Result of `Client::paginate_back_with_status`. `reached_start` is true
+/// when matrix-sdk-ui reports the timeline has no further history to load.
+/// UIs latch their scroll-up trigger off this signal.
+struct PaginateResult {
+    bool        ok            = false;
+    std::string message;
+    bool        reached_start = false;
+
+    explicit operator bool() const noexcept { return ok; }
+};
+
 /// High-level C++ Matrix client.
 ///
 /// Thread-safety: methods may be called from any thread; the underlying Rust
@@ -84,9 +95,15 @@ public:
     /// Unsubscribe from a room's timeline and cancel its background task.
     void   unsubscribe_room(const std::string& room_id);
 
-    /// Paginate backwards in a subscribed room. History arrives via
-    /// on_message callbacks in oldest-first order.
+    /// Paginate backwards in a subscribed room. Older history arrives via
+    /// `IEventHandler::on_message_prepended`.
     Result paginate_back(const std::string& room_id, std::uint16_t count);
+
+    /// Like `paginate_back` but also reports whether the timeline has
+    /// reached its first event. UIs use `reached_start` to disable the
+    /// scroll-up pagination trigger once no more history can be fetched.
+    PaginateResult paginate_back_with_status(const std::string& room_id,
+                                             std::uint16_t count);
 
     /// Kick off a background pass that paginates every joined room not
     /// currently subscribed, up to ~50 events each, with bounded

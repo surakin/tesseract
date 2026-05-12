@@ -25,6 +25,9 @@ public:
         : handler_(handler) {}
 
     void on_message_event(const TimelineEvent& event) const;
+    /// Older event delivered via back-pagination. The UI should prepend
+    /// this to the top of the message view (oldest-at-front).
+    void on_message_prepended(const TimelineEvent& event) const;
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;

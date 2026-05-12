@@ -82,6 +82,17 @@ struct IdleTimelineReset {
     std::string room_id;
 };
 
+struct IdlePrepend {
+    MainWindow*                        window;
+    std::unique_ptr<tesseract::Event> ev;
+};
+
+struct IdlePaginateResult {
+    MainWindow* window;
+    std::string room_id;
+    bool        reached_start;
+};
+
 // ---------------------------------------------------------------------------
 // EventHandler
 // ---------------------------------------------------------------------------
@@ -95,6 +106,20 @@ void EventHandler::on_message(tesseract::Event* ev) {
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleMessage*>(data);
         d->window->push_event(std::move(d->ev));
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
+void EventHandler::on_message_prepended(tesseract::Event* ev) {
+    auto* p = new IdlePrepend{
+        reinterpret_cast<MainWindow*>(
+            g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        std::unique_ptr<tesseract::Event>(ev)
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdlePrepend*>(data);
+        d->window->push_prepended_event(std::move(d->ev));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -498,6 +523,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                 compose_shared_->set_pending_image(std::move(bytes),
                                                     std::move(mime));
         });
+
+    // Drag-and-drop: dropping an image file on either the message list
+    // or the composer parks it in the same pending-image slot the paste
+    // path uses.
+    auto on_image_drop = [this](std::vector<std::uint8_t> bytes,
+                                std::string mime,
+                                std::string filename) {
+        if (compose_shared_)
+            compose_shared_->set_pending_image(std::move(bytes),
+                                               std::move(mime),
+                                               std::move(filename));
+    };
+    compose_surface_->set_on_image_drop(on_image_drop);
+    if (msg_surface_) msg_surface_->set_on_image_drop(on_image_drop);
     compose_surface_->set_on_layout([this] {
         if (compose_shared_ && compose_text_area_)
             compose_text_area_->set_rect(compose_shared_->text_area_rect());
@@ -553,6 +592,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             // widget coords.
             popup_emoji_at_rect(msg_surface_->widget(), anchor);
         };
+
+    // Back-pagination on scroll-to-top. The shared MessageListView fires
+    // this once per crossing of the near-top threshold.
+    message_list_view_->on_near_top = [this]{
+        if (current_room_id_.empty()) return;
+        request_more_history(current_room_id_);
+    };
 
     // Lazily build the picker — the popover is parented to the compose
     // surface widget. Recents live in account-data now
@@ -663,9 +709,50 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     auto res = client_.subscribe_room(current_room_id_);
     if (res) {
-        client_.paginate_back(current_room_id_, 50);
+        auto& state = pagination_[current_room_id_];
+        state.in_flight = false;
+        auto pr = client_.paginate_back_with_status(current_room_id_,
+                                                     kPaginationBatch);
+        state.reached_start = pr.ok && pr.reached_start;
         client_.start_background_backfill();
     }
+}
+
+void MainWindow::push_prepended_event(std::unique_ptr<tesseract::Event> ev) {
+    if (ev->room_id == current_room_id_)
+        prepend_event(*ev);
+}
+
+void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
+    auto it = pagination_.find(room_id);
+    if (it == pagination_.end()) return;
+    it->second.in_flight     = false;
+    it->second.reached_start = reached_start;
+    if (room_id == current_room_id_ && message_list_view_)
+        message_list_view_->reset_near_top_latch();
+}
+
+void MainWindow::request_more_history(const std::string& room_id) {
+    if (room_id.empty()) return;
+    auto& state = pagination_[room_id];
+    if (state.in_flight || state.reached_start) return;
+    state.in_flight = true;
+
+    // Worker thread: invoke the blocking SDK call, marshal the result
+    // back via g_idle_add on the main loop.
+    std::thread([this, room_id]{
+        auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
+        auto* p = new IdlePaginateResult{
+            this, room_id, pr.ok && pr.reached_start
+        };
+        g_idle_add([](gpointer data) -> gboolean {
+            auto* d = static_cast<IdlePaginateResult*>(data);
+            d->window->push_paginate_result(std::move(d->room_id),
+                                              d->reached_start);
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, p);
+    }).detach();
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
@@ -1003,6 +1090,44 @@ void MainWindow::append_event(const tesseract::Event& ev) {
         return;
     }
     message_list_view_->append_message(std::move(row));
+    msg_surface_->relayout();
+}
+
+void MainWindow::prepend_event(const tesseract::Event& ev) {
+    if (ev.type == tesseract::EventType::Unhandled) return;
+
+    ensure_user_avatar(ev.sender_avatar_url);
+    if (ev.type == tesseract::EventType::Image) {
+        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+        ensure_media_image(img.image_url,
+                            tesseract::visual::kMaxInlineImageWidth,
+                            tesseract::visual::kMaxInlineImageHeight);
+    } else if (ev.type == tesseract::EventType::Sticker) {
+        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+        ensure_media_image(s.image_url,
+                            tesseract::visual::kStickerSize,
+                            tesseract::visual::kStickerSize);
+    }
+    for (const auto& r : ev.reactions) {
+        if (!r.source_json.empty())
+            ensure_media_image(r.source_json, 20, 20);
+    }
+
+    auto row = to_row_data(ev);
+
+    auto& msgs = const_cast<std::vector<tesseract::views::MessageRowData>&>(
+        message_list_view_->messages());
+    auto it = std::find_if(msgs.begin(), msgs.end(),
+        [&](const tesseract::views::MessageRowData& m) {
+            return m.event_id == row.event_id;
+        });
+    if (it != msgs.end()) {
+        *it = std::move(row);
+        message_list_view_->invalidate_data();
+        msg_surface_->relayout();
+        return;
+    }
+    message_list_view_->prepend_message(std::move(row));
     msg_surface_->relayout();
 }
 

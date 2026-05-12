@@ -84,6 +84,23 @@ public:
     virtual void set_on_image_paste(ImagePasteHandler) = 0;
 };
 
+// Drag-and-drop handler installed on a per-platform Surface. Fired when
+// the user drops one or more image files (or in-app image data) onto the
+// surface. Only the first acceptable image is forwarded; non-image drops
+// are ignored at the Surface boundary. `filename` is the basename the
+// homeserver should receive — empty for in-app image-data drops where
+// no filename is available (the ComposeBar synthesises one).
+using ImageDropHandler =
+    std::function<void(std::vector<std::uint8_t> bytes,
+                       std::string               mime,
+                       std::string               filename)>;
+
+// Maximum size of a dropped image we'll read into memory. Guards against
+// renamed-extension drops (e.g. `Cat.iso` → `cat.png`) and pathological
+// network-share files. 50 MB is well above any realistic chat image and
+// below the matrix-spec recommended attachment ceiling.
+inline constexpr std::size_t kMaxDroppedImageBytes = 50 * 1024 * 1024;
+
 // Result of `Host::encode_for_send`. Bytes are owned; `mime` is e.g.
 // "image/png" or "image/jpeg". `width` and `height` are 0 only when the
 // decoder couldn't recover them.

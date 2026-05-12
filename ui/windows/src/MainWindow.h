@@ -38,6 +38,8 @@ constexpr UINT WM_TESSERACT_RECONNECT      = WM_APP + 5;
 constexpr UINT WM_TESSERACT_AUTH_ERROR     = WM_APP + 6;
 constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
 constexpr UINT WM_TESSERACT_RECOVER_DONE    = WM_APP + 8;
+constexpr UINT WM_TESSERACT_MESSAGE_PREPEND = WM_APP + 9;
+constexpr UINT WM_TESSERACT_PAGINATE_DONE   = WM_APP + 10;
 
 namespace win32 {
 
@@ -49,6 +51,7 @@ public:
     explicit EventHandler(HWND hwnd) : hwnd_(hwnd) {}
 
     void on_message(tesseract::Event* ev) override;
+    void on_message_prepended(tesseract::Event* ev) override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
@@ -87,9 +90,13 @@ private:
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
     void on_tesseract_message(tesseract::Event* ev);
+    void on_tesseract_message_prepend(tesseract::Event* ev);
+    void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
     void on_tesseract_timeline_reset(std::string* room_id);
     void refresh_room_list();
+    /// Kick off back-pagination on a worker thread.
+    void request_more_history(const std::string& room_id);
 
     // Convert a polymorphic SDK Event into MessageRowData for the shared
     // MessageListView; pre-fetch any referenced media into tk_images_.
@@ -108,6 +115,7 @@ private:
     void populate_user_strip();
     void do_logout();
     void append_message(const tesseract::Event& ev);
+    void prepend_message(const tesseract::Event& ev);
     void clear_messages();
     void update_room_header(const tesseract::RoomInfo& info);
 
@@ -198,6 +206,11 @@ private:
     std::string                      current_room_id_;
     std::string                      my_user_id_;
     std::vector<std::string>         space_stack_;
+
+    // Per-room back-pagination state (mirrors Qt/GTK/macOS).
+    struct PaginationState { bool in_flight = false; bool reached_start = false; };
+    std::unordered_map<std::string, PaginationState> pagination_;
+    static constexpr std::uint16_t kPaginationBatch = 50;
 
     ULONG_PTR  gdiplus_token_ = 0;
     // GDI+ bitmap caches for the legacy native paint paths that the

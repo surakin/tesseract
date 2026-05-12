@@ -197,7 +197,6 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 ### Decisions still open
 
 - **Win32 inline images** — RichEdit 4.1 (with `IRichEditOleCallback`) for inline images/stickers, or text-only emoticons + attachment-card on Win32 in v1?
-- **Disk media cache** — rely on the SDK's sqlite media store, or maintain a separate `<appdata>/tesseract/media-cache/` for faster picker startup?
 - **Cross-pack scope in v1** — pinned packs vs all subscribed packs in the sticker/emoji picker?
 - **Timeline persistence** — opt in to sqlite-backed `Timeline::with_focus(...)`, or memory-only?
 - **Room-list window** — `AllRooms` for desktop (recommended), or windowed?

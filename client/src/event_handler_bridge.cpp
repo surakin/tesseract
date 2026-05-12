@@ -11,6 +11,14 @@ void EventHandlerBridge::on_message_event(const TimelineEvent& ev) const {
     last_event_.release();
 }
 
+void EventHandlerBridge::on_message_prepended(const TimelineEvent& ev) const {
+    if (!handler_) return;
+    last_event_ = tesseract::make_event(ev);
+    auto* raw = last_event_.get();
+    handler_->on_message_prepended(raw);
+    last_event_.release();
+}
+
 void EventHandlerBridge::on_rooms_updated(
     const rust::Vec<RoomInfo>& rooms) const
 {
