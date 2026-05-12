@@ -73,17 +73,74 @@ public:
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
 
-    // Click hooks. on_message_clicked fires on row click. Reaction-chip
-    // hit testing is deferred until per-row sub-widget routing lands.
+    // Click hooks. on_message_clicked fires on row click.
     std::function<void(const std::string& event_id)> on_message_clicked;
+
+    // Reaction-chip clicks. `key` is the emoji (or `:shortcode:`) the
+    // user tapped. The host should call `Client::send_reaction` — the
+    // Rust toggle semantics handle both add-and-remove in one call.
+    std::function<void(const std::string& event_id,
+                        const std::string& key)>      on_reaction_toggled;
+
+    // Add-reaction button (the trailing "+" pseudo-chip that appears on
+    // row hover). The host should open the emoji picker anchored near
+    // `anchor`, then call `send_reaction` with the chosen glyph.
+    std::function<void(const std::string& event_id,
+                        tk::Rect anchor)>             on_add_reaction_requested;
+
+    // Widget overrides — own pointer-move/down/up so we can hit-test
+    // reaction chips before the ListView base sees the event.
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    void on_pointer_move(tk::Point local) override;
+    void on_pointer_leave()                override;
+    void paint          (tk::PaintCtx&)    override;
+
+    // Per-chip geometry for the currently hovered row. Populated by
+    // `Adapter::paint_row` during the row's paint pass (geometry is
+    // recomputed there because chip width depends on text measurement);
+    // consumed by `on_pointer_move` / `on_pointer_down` on subsequent
+    // events. Stored in world coordinates. Public for tests.
+    struct RowChipGeom {
+        std::size_t       row_index = static_cast<std::size_t>(-1);
+        std::vector<tk::Rect> chips;       // one per Reaction in row
+        tk::Rect          add_button{};    // 0-area when not painted
+        bool              add_visible = false;
+        tk::Rect          row_bounds{};
+    };
+
+    enum class HoverTarget { None, Chip, AddButton };
+
+    // Test introspection: the chip geometry recorded by the most
+    // recent paint of the hovered row, and the resolved hover target.
+    const RowChipGeom& hovered_row_geom() const { return hovered_row_geom_; }
+    HoverTarget        hover_target()     const { return hover_target_;   }
+    int                hover_chip_index() const { return hover_chip_idx_; }
 
 private:
     class Adapter;
+    friend class Adapter;
 
     std::vector<MessageRowData>   messages_;
     ImageProvider                  avatar_provider_;
     ImageProvider                  image_provider_;
     std::unique_ptr<Adapter>       adapter_;
+
+    // Per-frame chip geometry for the hovered row. Mutable so paint_row
+    // can write into it from a const-ish paint pass.
+    mutable RowChipGeom            hovered_row_geom_;
+
+    // Which chip (if any) the pointer is currently over within the
+    // hovered row. -1 means "no chip"; HoverTarget chooses between an
+    // existing reaction chip and the trailing add-button.
+    HoverTarget                    hover_target_  = HoverTarget::None;
+    int                            hover_chip_idx_ = -1;
+
+    // Press-state — remember which chip the user pressed so we only
+    // fire the callback on a clean down-up on the same chip.
+    HoverTarget                    press_target_  = HoverTarget::None;
+    int                            press_chip_idx_ = -1;
+    std::string                    press_event_id_;
 };
 
 } // namespace tesseract::views

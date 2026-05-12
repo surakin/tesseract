@@ -98,6 +98,14 @@ public:
 
         if (hovered) {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
+            // Reset the per-row chip cache for the hovered row. We
+            // rebuild it below as the chip strip paints, then the
+            // owner's pointer handlers hit-test against it.
+            owner_.hovered_row_geom_.row_index   = index;
+            owner_.hovered_row_geom_.row_bounds  = bounds;
+            owner_.hovered_row_geom_.chips.clear();
+            owner_.hovered_row_geom_.add_button  = tk::Rect{};
+            owner_.hovered_row_geom_.add_visible = false;
         }
 
         // Avatar (top-left, vertically pinned to the sender row).
@@ -145,31 +153,75 @@ public:
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
 
         // Reactions row + timestamp.
-        if (!m.reactions.empty() || m.timestamp_ms != 0) {
+        if (!m.reactions.empty() || m.timestamp_ms != 0 || hovered) {
             float chip_y = cursor;
             float chip_x = col_x;
-            for (const auto& r : m.reactions) {
+            for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
+                const auto& r = m.reactions[ri];
                 std::string chip_text = r.key + " " + std::to_string(r.count);
                 tk::TextStyle st{};
                 st.role = tk::FontRole::Small;
                 auto layout = ctx.factory.build_text(chip_text, st);
-                if (!layout) continue;
+                if (!layout) {
+                    if (hovered) owner_.hovered_row_geom_.chips.push_back({});
+                    continue;
+                }
                 float w = std::max(layout->measure().w + kChipPadX * 2, 28.0f);
                 tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                bool chip_hovered = hovered
+                    && owner_.hover_target_ == HoverTarget::Chip
+                    && owner_.hover_chip_idx_ == static_cast<int>(ri);
                 tk::Color bg     = r.reacted_by_me ? ctx.theme.palette.chip_bg_me
                                                    : ctx.theme.palette.chip_bg;
                 tk::Color border = r.reacted_by_me ? ctx.theme.palette.chip_border_me
                                                    : ctx.theme.palette.chip_border;
                 tk::Color text   = r.reacted_by_me ? ctx.theme.palette.chip_text_me
                                                    : ctx.theme.palette.chip_text;
+                if (chip_hovered) {
+                    border = ctx.theme.palette.accent;
+                }
                 ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
-                ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border, 1.0f);
+                ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
+                                                chip_hovered ? 1.5f : 1.0f);
                 ctx.canvas.draw_text(
                     *layout,
                     { pill.x + kChipPadX,
                       pill.y + (pill.h - layout->measure().h) * 0.5f },
                     text);
+                if (hovered) owner_.hovered_row_geom_.chips.push_back(pill);
                 chip_x += w + chip_gap();
+            }
+
+            // Trailing "+" pseudo-chip: only painted while the row is
+            // hovered. Reads as a discoverable affordance, not a real
+            // reaction — muted background, subtle border.
+            if (hovered) {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Small;
+                auto layout = ctx.factory.build_text("+", st);
+                if (layout) {
+                    float w = std::max(layout->measure().w + kChipPadX * 2, 28.0f);
+                    tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                    bool add_hovered =
+                        owner_.hover_target_ == HoverTarget::AddButton;
+                    tk::Color bg = add_hovered
+                        ? ctx.theme.palette.subtle_pressed
+                        : ctx.theme.palette.subtle_hover;
+                    tk::Color border = add_hovered
+                        ? ctx.theme.palette.accent
+                        : ctx.theme.palette.border;
+                    ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
+                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
+                                                    add_hovered ? 1.5f : 1.0f);
+                    ctx.canvas.draw_text(
+                        *layout,
+                        { pill.x + kChipPadX,
+                          pill.y + (pill.h - layout->measure().h) * 0.5f },
+                        ctx.theme.palette.text_secondary);
+                    owner_.hovered_row_geom_.add_button  = pill;
+                    owner_.hovered_row_geom_.add_visible = true;
+                    chip_x += w + chip_gap();
+                }
             }
 
             std::string ts = format_hhmm(m.timestamp_ms);
@@ -376,6 +428,195 @@ void MessageListView::set_avatar_provider(ImageProvider p) {
 
 void MessageListView::set_image_provider(ImageProvider p) {
     image_provider_ = std::move(p);
+}
+
+namespace {
+
+bool rect_contains(const tk::Rect& r, tk::Point p) {
+    return p.x >= r.x && p.y >= r.y &&
+           p.x <  r.x + r.w && p.y <  r.y + r.h;
+}
+
+} // namespace
+
+// Resolve which chip (if any) is under a widget-local point. `local`
+// is in widget-local coordinates (relative to MessageListView::bounds_);
+// the cached geometry is in world coordinates, so we add the widget
+// origin back before comparing.
+static MessageListView::HoverTarget chip_hit_at(
+        const MessageListView::RowChipGeom& g,
+        tk::Rect widget_bounds,
+        tk::Point local,
+        int& out_chip_idx) {
+    out_chip_idx = -1;
+    if (g.row_index == static_cast<std::size_t>(-1)) {
+        return MessageListView::HoverTarget::None;
+    }
+    tk::Point world{ local.x + widget_bounds.x,
+                       local.y + widget_bounds.y };
+    if (!rect_contains(g.row_bounds, world)) {
+        return MessageListView::HoverTarget::None;
+    }
+    for (std::size_t i = 0; i < g.chips.size(); ++i) {
+        if (g.chips[i].w <= 0) continue;
+        if (rect_contains(g.chips[i], world)) {
+            out_chip_idx = static_cast<int>(i);
+            return MessageListView::HoverTarget::Chip;
+        }
+    }
+    if (g.add_visible && rect_contains(g.add_button, world)) {
+        return MessageListView::HoverTarget::AddButton;
+    }
+    return MessageListView::HoverTarget::None;
+}
+
+void MessageListView::on_pointer_move(tk::Point local) {
+    tk::ListView::on_pointer_move(local);
+    // Row hover may have changed; if the new hovered row is different
+    // from the one we have geometry for, invalidate so paint_row will
+    // rebuild it. (Paint will populate hovered_row_geom_ on its next
+    // frame; until then chip hit-tests will return None.)
+    int row = hovered_row_index();
+    if (row < 0 ||
+        static_cast<std::size_t>(row) != hovered_row_geom_.row_index) {
+        hovered_row_geom_.row_index   = static_cast<std::size_t>(-1);
+        hovered_row_geom_.chips.clear();
+        hovered_row_geom_.add_visible = false;
+    }
+    int chip_idx = -1;
+    HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
+                                 local, chip_idx);
+    if (t != hover_target_ || chip_idx != hover_chip_idx_) {
+        hover_target_   = t;
+        hover_chip_idx_ = chip_idx;
+    }
+}
+
+void MessageListView::on_pointer_leave() {
+    tk::ListView::on_pointer_leave();
+    hovered_row_geom_.row_index   = static_cast<std::size_t>(-1);
+    hovered_row_geom_.chips.clear();
+    hovered_row_geom_.add_visible = false;
+    hover_target_   = HoverTarget::None;
+    hover_chip_idx_ = -1;
+}
+
+bool MessageListView::on_pointer_down(tk::Point local) {
+    int chip_idx = -1;
+    HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
+                                 local, chip_idx);
+    if (t == HoverTarget::None) {
+        return tk::ListView::on_pointer_down(local);
+    }
+    std::size_t row = hovered_row_geom_.row_index;
+    if (row >= messages_.size()) {
+        return tk::ListView::on_pointer_down(local);
+    }
+    press_target_    = t;
+    press_chip_idx_  = chip_idx;
+    press_event_id_  = messages_[row].event_id;
+    return true;
+}
+
+void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_target_ == HoverTarget::None) {
+        tk::ListView::on_pointer_up(local, inside_self);
+        return;
+    }
+    HoverTarget t = press_target_;
+    int idx       = press_chip_idx_;
+    std::string ev = std::move(press_event_id_);
+    press_target_   = HoverTarget::None;
+    press_chip_idx_ = -1;
+    press_event_id_.clear();
+    if (!inside_self) return;
+
+    if (t == HoverTarget::Chip) {
+        // Confirm the release still lands on the same chip.
+        int now_idx = -1;
+        HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(),
+                                         local, now_idx);
+        if (now_t != HoverTarget::Chip || now_idx != idx) return;
+        // Find the row that geometry was captured for and read the
+        // reaction key directly off the model.
+        std::size_t row = hovered_row_geom_.row_index;
+        if (row >= messages_.size()) return;
+        const auto& reactions = messages_[row].reactions;
+        if (idx < 0 || static_cast<std::size_t>(idx) >= reactions.size())
+            return;
+        if (on_reaction_toggled) {
+            on_reaction_toggled(ev, reactions[idx].key);
+        }
+    } else if (t == HoverTarget::AddButton) {
+        int now_idx = -1;
+        HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(),
+                                         local, now_idx);
+        if (now_t != HoverTarget::AddButton) return;
+        if (on_add_reaction_requested) {
+            on_add_reaction_requested(ev, hovered_row_geom_.add_button);
+        }
+    }
+}
+
+void MessageListView::paint(tk::PaintCtx& ctx) {
+    tk::ListView::paint(ctx);
+
+    // Tooltip overlay: paint a small panel listing senders of the
+    // hovered reaction chip. We paint after rows so the panel sits on
+    // top of subsequent rows when it dips below the chip.
+    if (hover_target_ != HoverTarget::Chip) return;
+    if (hover_chip_idx_ < 0) return;
+    std::size_t row = hovered_row_geom_.row_index;
+    if (row >= messages_.size()) return;
+    const auto& reactions = messages_[row].reactions;
+    if (static_cast<std::size_t>(hover_chip_idx_) >= reactions.size()) return;
+    const auto& r = reactions[hover_chip_idx_];
+    if (r.senders.empty()) return;
+
+    std::string body;
+    body.reserve(r.senders.size() * 16 + 32);
+    body += "Reacted with ";
+    body += r.key;
+    body += ":";
+    for (const auto& s : r.senders) {
+        body += "\n";
+        body += s;
+    }
+
+    tk::TextStyle st{};
+    st.role = tk::FontRole::Small;
+    st.wrap = false;
+    auto layout = ctx.factory.build_text(body, st);
+    if (!layout) return;
+
+    constexpr float kTipPadX = 8.0f;
+    constexpr float kTipPadY = 6.0f;
+    tk::Size text_sz = layout->measure();
+    float panel_w = text_sz.w + kTipPadX * 2;
+    float panel_h = text_sz.h + kTipPadY * 2;
+
+    tk::Rect chip = hovered_row_geom_.chips[hover_chip_idx_];
+    tk::Rect view = bounds();
+
+    // Prefer above the chip; flip below if it would clip the top.
+    float panel_y = chip.y - panel_h - 4.0f;
+    if (panel_y < view.y) {
+        panel_y = chip.y + chip.h + 4.0f;
+    }
+    float panel_x = chip.x;
+    if (panel_x + panel_w > view.x + view.w) {
+        panel_x = view.x + view.w - panel_w - 4.0f;
+    }
+    if (panel_x < view.x + 4.0f) {
+        panel_x = view.x + 4.0f;
+    }
+
+    tk::Rect panel{ panel_x, panel_y, panel_w, panel_h };
+    ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
+    ctx.canvas.stroke_rounded_rect(panel, 6.0f, ctx.theme.palette.border, 1.0f);
+    ctx.canvas.draw_text(*layout,
+                          { panel.x + kTipPadX, panel.y + kTipPadY },
+                          ctx.theme.palette.text_primary);
 }
 
 } // namespace tesseract::views

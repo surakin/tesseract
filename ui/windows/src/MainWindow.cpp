@@ -766,6 +766,17 @@ void MainWindow::on_create(HWND hwnd) {
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
+        message_list_view_->on_reaction_toggled =
+            [this](const std::string& event_id, const std::string& key) {
+                if (current_room_id_.empty()) return;
+                client_.send_reaction(current_room_id_, event_id, key);
+            };
+        message_list_view_->on_add_reaction_requested =
+            [this](const std::string& event_id, tk::Rect /*anchor*/) {
+                if (current_room_id_.empty()) return;
+                pending_reaction_event_id_ = event_id;
+                toggle_emoji_picker();
+            };
         msg_surface_->set_root(std::move(view));
     }
     if (HWND ms = msg_surface_->hwnd()) {
@@ -1619,7 +1630,20 @@ void MainWindow::toggle_emoji_picker() {
 }
 
 void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
-    if (!compose_text_area_ || glyph.empty()) return;
+    if (glyph.empty()) return;
+    // Reaction mode: a "+" chip set pending_reaction_event_id_ before
+    // opening the picker. Toggle the reaction (Rust handles add/remove)
+    // and skip the compose insert.
+    if (!pending_reaction_event_id_.empty()) {
+        std::string ev = std::move(pending_reaction_event_id_);
+        pending_reaction_event_id_.clear();
+        if (!current_room_id_.empty()) {
+            client_.send_reaction(current_room_id_, ev, glyph);
+        }
+        if (hEmojiPicker_) ShowWindow(hEmojiPicker_, SW_HIDE);
+        return;
+    }
+    if (!compose_text_area_) return;
     std::string cur = compose_text_area_->text();
     cur += glyph;
     compose_text_area_->set_text(cur);

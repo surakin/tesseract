@@ -149,6 +149,13 @@ private:
     std::unique_ptr<tk::NativeTextArea>     composeTextArea_;
     EmojiPicker*                            emojiPicker_     = nullptr;
 
+    // When the user opens the emoji picker from a message's "+" chip
+    // (rather than from the compose bar), this holds the target event
+    // id. The picker's `onSelected` checks this — non-empty routes the
+    // glyph to `send_reaction` instead of inserting into compose, then
+    // clears it.
+    std::string                             pendingReactionEventId_;
+
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;
     QWidget*             mainContent_     = nullptr;

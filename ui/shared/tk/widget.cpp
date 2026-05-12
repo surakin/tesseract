@@ -37,6 +37,19 @@ Widget* Widget::dispatch_pointer_down(Point world) {
     return on_pointer_down(local) ? this : nullptr;
 }
 
+Widget* Widget::dispatch_pointer_move(Point world) {
+    if (!visible_ || !contains_world(world)) return nullptr;
+
+    for (auto it = children().rbegin(); it != children().rend(); ++it) {
+        Widget* ch = it->get();
+        if (!ch->visible()) continue;
+        if (Widget* hit = ch->dispatch_pointer_move(world)) return hit;
+    }
+    Point local{ world.x - bounds_.x, world.y - bounds_.y };
+    on_pointer_move(local);
+    return this;
+}
+
 Point Widget::world_to_local(Point world) const {
     return { world.x - bounds_.x, world.y - bounds_.y };
 }

@@ -499,6 +499,21 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_shared_->on_send  = [this](const std::string&) { on_send_clicked(); };
     compose_shared_->on_emoji = [this] { toggle_emoji_picker(); };
 
+    message_list_view_->on_reaction_toggled =
+        [this](const std::string& event_id, const std::string& key) {
+            if (current_room_id_.empty()) return;
+            client_.send_reaction(current_room_id_, event_id, key);
+        };
+    message_list_view_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect /*anchor*/) {
+            if (!emoji_popover_ || current_room_id_.empty()) return;
+            pending_reaction_event_id_ = event_id;
+            // GtkPopover is parented to the compose widget at build
+            // time; chip-precise anchoring is a follow-up. v1: open
+            // the same popover from the existing anchor.
+            toggle_emoji_picker();
+        };
+
     // Lazily build the picker — the popover is parented to the compose
     // surface widget. Recents live in account-data now
     // (io.element.recent_emoji); no local-disk load.
@@ -1200,6 +1215,18 @@ void MainWindow::toggle_emoji_picker() {
 }
 
 void MainWindow::emoji_selected(const std::string& glyph) {
+    // Reaction mode: a "+" chip set pending_reaction_event_id_ before
+    // opening the picker. Route the glyph through send_reaction
+    // (Rust-side toggle) and skip the compose insert.
+    if (!pending_reaction_event_id_.empty()) {
+        std::string ev = std::move(pending_reaction_event_id_);
+        pending_reaction_event_id_.clear();
+        if (!current_room_id_.empty()) {
+            client_.send_reaction(current_room_id_, ev, glyph);
+        }
+        if (emoji_popover_) gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+        return;
+    }
     if (!compose_text_area_) return;
     std::string cur = compose_text_area_->text();
     cur += glyph;

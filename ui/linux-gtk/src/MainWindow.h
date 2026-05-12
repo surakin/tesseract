@@ -123,6 +123,9 @@ private:
     std::unique_ptr<tk::gtk4::Surface>      emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
+    // When set, the next emoji selection routes through send_reaction
+    // for this event_id rather than inserting into the compose bar.
+    std::string                             pending_reaction_event_id_;
     GtkWidget*      status_bar_         = nullptr;
 
     // Recovery banner — shared widget hosted in a tk::gtk4::Surface.

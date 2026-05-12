@@ -103,6 +103,17 @@ public:
     // control. Used by ListView for scrollbar-thumb dragging.
     virtual void on_pointer_drag(Point /*local*/) {}
 
+    // Pointer-move without a press. Called via `dispatch_pointer_move`
+    // on the deepest hit widget so views can update per-element hover
+    // state (reaction chips, row-hover affordances, etc.). Buttons
+    // continue to handle their own hover via the host's Button-hover
+    // bookkeeping — this is the generic widget-level hook.
+    virtual void on_pointer_move(Point /*local*/) {}
+    // Mirrors `on_pointer_leave` semantics from the host so widgets can
+    // clear hover state when the pointer leaves the surface (or the
+    // pointer-move dispatch lands on a different widget).
+    virtual void on_pointer_leave() {}
+
     // Walk into the deepest visible child under `world`, then bubble
     // back up to find a widget whose on_pointer_down returns true.
     // Returns the claiming widget (or nullptr if none did). `world` is
@@ -110,6 +121,13 @@ public:
     // The widget-local Point handed to on_pointer_down is computed by
     // subtracting the claimer's own world origin.
     Widget* dispatch_pointer_down(Point world);
+
+    // Walk into the deepest visible child under `world` and call
+    // `on_pointer_move(local)` on it. Returns the deepest widget that
+    // received the event (or nullptr if `world` was outside). Hosts
+    // call this on the root from their pointer-move handler when no
+    // widget has claimed the press.
+    Widget* dispatch_pointer_move(Point world);
 
     // Walk into the hit widget, then bubble up through parents until
     // someone consumes the wheel event. `world` is in root-surface

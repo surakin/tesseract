@@ -296,10 +296,17 @@ public:
         }
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
-        if (hovered == hovered_btn_) return;
-        if (hovered_btn_) hovered_btn_->set_hovered(false);
-        hovered_btn_ = hovered;
-        if (hovered_btn_) hovered_btn_->set_hovered(true);
+        if (hovered != hovered_btn_) {
+            if (hovered_btn_) hovered_btn_->set_hovered(false);
+            hovered_btn_ = hovered;
+            if (hovered_btn_) hovered_btn_->set_hovered(true);
+        }
+        // Non-Button widget-level hover dispatch (chip hover, etc.).
+        Widget* moved = root_->dispatch_pointer_move(local);
+        if (moved != hovered_widget_) {
+            if (hovered_widget_) hovered_widget_->on_pointer_leave();
+            hovered_widget_ = moved;
+        }
         request_repaint();
     }
 
@@ -307,6 +314,10 @@ public:
         if (hovered_btn_) {
             hovered_btn_->set_hovered(false);
             hovered_btn_ = nullptr;
+        }
+        if (hovered_widget_) {
+            hovered_widget_->on_pointer_leave();
+            hovered_widget_ = nullptr;
         }
         if (pressed_widget_) {
             // Synthetic pointer-up outside any widget so the captured
@@ -332,6 +343,7 @@ private:
     std::function<void()>               on_layout_;
     Widget*                             pressed_widget_ = nullptr;
     Button*                             hovered_btn_    = nullptr;
+    Widget*                             hovered_widget_ = nullptr;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

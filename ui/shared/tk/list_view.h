@@ -154,6 +154,11 @@ public:
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
     void on_pointer_drag(Point local)                      override;
+    void on_pointer_move(Point local)                      override;
+    void on_pointer_leave()                                 override;
+
+protected:
+    int  hovered_row_index() const { return hovered_index_; }
 
 private:
     void rebuild_heights(LayoutCtx&, float width);

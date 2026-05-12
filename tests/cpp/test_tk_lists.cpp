@@ -286,3 +286,157 @@ TEST_CASE("MessageListView click fires on_message_clicked with event_id",
     view.on_pointer_up({ 50, 20 }, true);
     CHECK(clicked == "$only");
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Reaction chips: tooltip data, "+" pseudo-chip, click → callbacks
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+MessageRowData make_row_with_reactions() {
+    MessageRowData m{};
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$evt";
+    m.sender_name = "Alice";
+    m.body = "hi";
+    tesseract::Reaction r1{};
+    r1.key = "👍";
+    r1.count = 2;
+    r1.reacted_by_me = false;
+    r1.senders = { "@alice:example.org", "@bob:example.org" };
+    tesseract::Reaction r2{};
+    r2.key = "🎉";
+    r2.count = 1;
+    r2.reacted_by_me = true;
+    r2.senders = { "@carol:example.org" };
+    m.reactions = { r1, r2 };
+    return m;
+}
+
+// First paint the view as hovered so the chip geometry is captured,
+// then a second paint to make hover state stick. Pointer-move on the
+// hovered row records the chip rects we'll then hit-test against.
+void paint_with_hover(Stage& st, MessageListView& view, Rect bounds,
+                       tk::Point local_in_row) {
+    st.run(view, bounds);
+    // First pointer-move primes ListView's hovered_row_index_, but
+    // hovered_row_geom_ is empty until paint_row runs for the hovered
+    // row. Painting again now picks that row up and records geometry.
+    view.on_pointer_move(local_in_row);
+    auto pc = st.paint_ctx();
+    view.paint(pc);
+    // A second pointer-move now hit-tests against the just-recorded
+    // chip rects.
+    view.on_pointer_move(local_in_row);
+}
+
+} // namespace
+
+TEST_CASE("MessageListView paints + pseudo-chip only on hover",
+          "[tk][view][messagelist][reactions]") {
+    Stage st;
+    MessageListView view;
+    view.set_messages({ make_row_with_reactions() });
+    st.run(view, { 0, 0, 320, 200 });
+
+    // No hover yet: add-button is not visible.
+    CHECK_FALSE(view.hovered_row_geom().add_visible);
+
+    // Move pointer into the row.
+    view.on_pointer_move({ 50, 20 });
+    auto pc = st.paint_ctx();
+    view.paint(pc);
+
+    CHECK(view.hovered_row_geom().add_visible);
+    CHECK(view.hovered_row_geom().chips.size() == 2);
+}
+
+TEST_CASE("MessageListView resolves chip hover target",
+          "[tk][view][messagelist][reactions]") {
+    Stage st;
+    MessageListView view;
+    view.set_messages({ make_row_with_reactions() });
+    paint_with_hover(st, view, { 0, 0, 320, 200 }, { 50, 20 });
+
+    // Aim at the centre of the first reaction chip.
+    auto chips = view.hovered_row_geom().chips;
+    REQUIRE(chips.size() == 2);
+    tk::Point in_chip{
+        chips[0].x + chips[0].w * 0.5f - view.bounds().x,
+        chips[0].y + chips[0].h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_chip);
+    CHECK(view.hover_target() == MessageListView::HoverTarget::Chip);
+    CHECK(view.hover_chip_index() == 0);
+
+    // And then the second chip.
+    tk::Point in_chip2{
+        chips[1].x + chips[1].w * 0.5f - view.bounds().x,
+        chips[1].y + chips[1].h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_chip2);
+    CHECK(view.hover_chip_index() == 1);
+
+    // Aim at the centre of the "+" pseudo-chip.
+    auto add = view.hovered_row_geom().add_button;
+    REQUIRE(add.w > 0);
+    tk::Point in_add{
+        add.x + add.w * 0.5f - view.bounds().x,
+        add.y + add.h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_add);
+    CHECK(view.hover_target() == MessageListView::HoverTarget::AddButton);
+}
+
+TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
+          "[tk][view][messagelist][reactions]") {
+    Stage st;
+    MessageListView view;
+    view.set_messages({ make_row_with_reactions() });
+    paint_with_hover(st, view, { 0, 0, 320, 200 }, { 50, 20 });
+
+    std::string got_event, got_key;
+    view.on_reaction_toggled =
+        [&](const std::string& ev, const std::string& k) {
+            got_event = ev; got_key = k;
+        };
+
+    auto chips = view.hovered_row_geom().chips;
+    REQUIRE(chips.size() == 2);
+    tk::Point in_chip{
+        chips[1].x + chips[1].w * 0.5f - view.bounds().x,
+        chips[1].y + chips[1].h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_chip);
+    REQUIRE(view.on_pointer_down(in_chip));
+    view.on_pointer_up(in_chip, true);
+
+    CHECK(got_event == "$evt");
+    CHECK(got_key   == "🎉");
+}
+
+TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
+          "[tk][view][messagelist][reactions]") {
+    Stage st;
+    MessageListView view;
+    view.set_messages({ make_row_with_reactions() });
+    paint_with_hover(st, view, { 0, 0, 320, 200 }, { 50, 20 });
+
+    std::string got_event;
+    view.on_add_reaction_requested =
+        [&](const std::string& ev, tk::Rect /*anchor*/) {
+            got_event = ev;
+        };
+
+    auto add = view.hovered_row_geom().add_button;
+    REQUIRE(add.w > 0);
+    tk::Point in_add{
+        add.x + add.w * 0.5f - view.bounds().x,
+        add.y + add.h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_add);
+    REQUIRE(view.on_pointer_down(in_add));
+    view.on_pointer_up(in_add, true);
+
+    CHECK(got_event == "$evt");
+}

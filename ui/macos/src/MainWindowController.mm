@@ -151,6 +151,9 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     std::vector<tesseract::RoomInfo> _rooms;
     std::string                      _currentRoomId;
     std::string                      _myUserId;
+    // When non-empty, the next emoji selection routes through
+    // send_reaction for this event id (set by the "+" reaction chip).
+    std::string                      _pendingReactionEventId;
     std::vector<std::string>         _spaceStack;
 
     // Shared widget tree.
@@ -276,6 +279,24 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
             auto it = _tkImages.find(mxc);
             return it == _tkImages.end() ? nullptr : it->second.get();
         });
+    {
+        __weak MainWindowController* weakSelf = self;
+        _messageListView->on_reaction_toggled =
+            [weakSelf](const std::string& event_id, const std::string& key) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                if (s->_currentRoomId.empty()) return;
+                s->_client.send_reaction(s->_currentRoomId, event_id, key);
+            };
+        _messageListView->on_add_reaction_requested =
+            [weakSelf](const std::string& event_id, tk::Rect /*anchor*/) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                if (s->_currentRoomId.empty()) return;
+                s->_pendingReactionEventId = event_id;
+                [s showEmojiPicker:nil];
+            };
+    }
     _msgSurface->set_root(std::move(msg_view));
     NSView* msgSurfaceView = (__bridge NSView*)_msgSurface->view_handle();
     msgSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -441,7 +462,19 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     __weak MainWindowController* weakSelf = self;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
-        if (!s || !s->_composeTextArea || glyph.length == 0) return;
+        if (!s || glyph.length == 0) return;
+        // Reaction mode — "+" chip set _pendingReactionEventId.
+        if (!s->_pendingReactionEventId.empty()) {
+            std::string ev = std::move(s->_pendingReactionEventId);
+            s->_pendingReactionEventId.clear();
+            if (!s->_currentRoomId.empty()) {
+                s->_client.send_reaction(s->_currentRoomId, ev,
+                                          std::string(glyph.UTF8String ?: ""));
+            }
+            [panel close];
+            return;
+        }
+        if (!s->_composeTextArea) return;
         std::string cur = s->_composeTextArea->text();
         cur += glyph.UTF8String ?: "";
         s->_composeTextArea->set_text(cur);

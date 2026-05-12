@@ -354,6 +354,20 @@ MainWindow::MainWindow(QWidget* parent)
     emojiPicker_ = new EmojiPicker(this);
     emojiPicker_->setClient(&client_);
     emojiPicker_->onSelected = [this](const QString& glyph) {
+        // Reaction mode: a message's "+" chip set pendingReactionEventId_
+        // before opening the picker. Route the glyph through
+        // send_reaction (toggle semantics handled Rust-side) and skip
+        // the compose-bar insert.
+        if (!pendingReactionEventId_.empty()) {
+            std::string ev = std::move(pendingReactionEventId_);
+            pendingReactionEventId_.clear();
+            if (!currentRoomId_.empty()) {
+                client_.send_reaction(currentRoomId_, ev, glyph.toStdString());
+            }
+            client_.recent_emoji_bump(glyph.toStdString());
+            emojiPicker_->hide();
+            return;
+        }
         if (!composeTextArea_) return;
         std::string cur = composeTextArea_->text();
         cur += glyph.toStdString();
@@ -362,6 +376,23 @@ MainWindow::MainWindow(QWidget* parent)
         composeTextArea_->set_focused(true);
         client_.recent_emoji_bump(glyph.toStdString());
     };
+
+    // Reaction-chip click: toggle (Rust handles add/remove).
+    messageListView_->on_reaction_toggled =
+        [this](const std::string& event_id, const std::string& key) {
+            if (currentRoomId_.empty()) return;
+            client_.send_reaction(currentRoomId_, event_id, key);
+        };
+
+    // "+" pseudo-chip click: open the emoji picker in reaction mode.
+    messageListView_->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect /*anchor*/) {
+            if (!emojiPicker_ || currentRoomId_.empty()) return;
+            pendingReactionEventId_ = event_id;
+            // We don't have a chip-precise QWidget anchor; popup over
+            // the message surface, which is close enough for v1.
+            emojiPicker_->popupAt(msgSurface_);
+        };
 
     statusBar()->showMessage("Not logged in");
     // Room selection is delivered through RoomListView's on_room_selected

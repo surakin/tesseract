@@ -123,6 +123,10 @@ private:
     void   toggle_emoji_picker();
     void   insert_emoji_at_cursor(const std::string& glyph);
 
+    // When non-empty, the next emoji selection routes through
+    // `Client::send_reaction` for this event_id rather than into compose.
+    std::string                      pending_reaction_event_id_;
+
     void   apply_default_font(HWND);     // SegoeUI / SegoeUI Variable
     void   on_system_theme_changed();    // re-apply DWM + invalidate
     void   paint_main_background(HDC, const RECT&);  // compose card etc.

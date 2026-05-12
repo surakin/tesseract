@@ -399,4 +399,12 @@ void ListView::update_hover(Point local) {
     hovered_index_ = idx;
 }
 
+void ListView::on_pointer_move(Point local) {
+    update_hover(local);
+}
+
+void ListView::on_pointer_leave() {
+    hovered_index_ = kInvalidIndex;
+}
+
 } // namespace tk
