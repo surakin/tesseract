@@ -62,7 +62,8 @@ pub mod ffi {
         body:              String,
         /// Unix timestamp in milliseconds.
         timestamp:         u64,
-        /// "m.text" | "m.image" | "m.file" | "m.sticker" | …
+        /// "m.text" | "m.image" | "m.file" | "m.sticker" | "m.redacted" | …
+        /// "m.redacted" → body is empty; render as a tombstone placeholder.
         msg_type:          String,
         /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
         source_json:       String,
@@ -204,6 +205,15 @@ pub mod ffi {
                          room_id: &str,
                          event_id: &str,
                          key: &str) -> OpResult;
+
+        /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
+        /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
+        /// is currently subscribed via `subscribe_room`. Server-side
+        /// permission errors surface as `OpResult { ok: false, message: ... }`.
+        fn redact_event(self: &mut ClientFfi,
+                        room_id: &str,
+                        event_id: &str,
+                        reason: &str) -> OpResult;
 
         // ----- Identity -----
 

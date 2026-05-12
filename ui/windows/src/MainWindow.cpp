@@ -504,6 +504,45 @@ LRESULT CALLBACK MainWindow::msg_list_subclass_proc(
             }
         }
     }
+    // Right-click on an own, non-redacted message → "Delete message" popup.
+    // We treat WM_RBUTTONUP rather than WM_CONTEXTMENU because the latter
+    // arrives in screen coords and we want the hit-test in client coords;
+    // either works, but RBUTTONUP keeps the math symmetric with LBUTTONDOWN.
+    if (msg == WM_RBUTTONUP) {
+        auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+        POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        int idx = LBItemFromPt(hwnd, pt, FALSE);
+        if (idx >= 0 && (size_t)idx < self->messages_.size()) {
+            const auto& m = self->messages_[(size_t)idx];
+            const bool is_redacted = (m.type == tesseract::EventType::Redacted);
+            if (m.is_own && !is_redacted && !m.event_id.empty()) {
+                POINT screen_pt = pt;
+                ClientToScreen(hwnd, &screen_pt);
+                HMENU menu = CreatePopupMenu();
+                constexpr UINT kDeleteId = 1;
+                AppendMenuW(menu, MF_STRING, kDeleteId, L"Delete message");
+                UINT choice = TrackPopupMenu(menu,
+                    TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                    screen_pt.x, screen_pt.y, 0, hwnd, nullptr);
+                DestroyMenu(menu);
+                if (choice == kDeleteId) {
+                    int confirm = MessageBoxW(self->hwnd_,
+                        L"Delete this message? This cannot be undone.",
+                        L"Delete message", MB_YESNO | MB_ICONQUESTION);
+                    if (confirm == IDYES) {
+                        auto res = self->client_.redact_event(
+                            m.room_id, m.event_id, "");
+                        if (!res.ok) {
+                            MessageBoxW(self->hwnd_,
+                                utf8_to_wstr(res.message).c_str(),
+                                L"Delete failed", MB_ICONWARNING);
+                        }
+                    }
+                }
+                return 0;
+            }
+        }
+    }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
@@ -1029,8 +1068,13 @@ int MainWindow::compute_message_height(size_t idx) {
     {
         Gdiplus::Graphics g(hdc);
         Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font bodyFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-        auto wbody = utf8_to_wstr(msg.body);
+        bool redacted = (msg.type == tesseract::EventType::Redacted);
+        Gdiplus::Font bodyFont(&ff, 10.0f,
+            redacted ? Gdiplus::FontStyleItalic : Gdiplus::FontStyleRegular,
+            Gdiplus::UnitPoint);
+        std::wstring wbody = redacted
+            ? std::wstring(L"Message deleted")
+            : utf8_to_wstr(msg.body);
         Gdiplus::StringFormat sf;
         Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
         g.MeasureString(wbody.c_str(), -1, &bodyFont, layout, &sf, &bound);
@@ -1162,7 +1206,10 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     g.FillRectangle(&bgBrush, x0, y0, w, h);
 
     Gdiplus::FontFamily ff(L"Segoe UI");
-    Gdiplus::Font bodyFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
+    bool redacted = (msg.type == tesseract::EventType::Redacted);
+    Gdiplus::Font bodyFont(&ff, 10.0f,
+        redacted ? Gdiplus::FontStyleItalic : Gdiplus::FontStyleRegular,
+        Gdiplus::UnitPoint);
 
     // Flat-text layout — same anatomy on every platform (see UI-PARITY.md):
     // 32 px avatar on the left for everyone, sender name above body, body
@@ -1173,7 +1220,9 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
                               w - (bx - x0) - tesseract::visual::kMsgAvatarGap);
     if (body_max_w < 60) body_max_w = 60;
 
-    auto wbody = utf8_to_wstr(msg.body);
+    std::wstring wbody = redacted
+        ? std::wstring(L"Message deleted")
+        : utf8_to_wstr(msg.body);
     Gdiplus::StringFormat sfWrap;
     Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
     Gdiplus::RectF bound;
@@ -1208,11 +1257,13 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
         y_cur += tesseract::visual::kMsgSenderNameHeight + 2;
     }
 
-    // Body text — flat, no bubble.
+    // Body text — flat, no bubble. Redacted tombstone uses a dim grey.
     int body_left = bx;
     int body_top  = y_cur;
     {
-        Gdiplus::SolidBrush textBrush(Gdiplus::Color(0xFF111111));
+        Gdiplus::SolidBrush textBrush(redacted
+            ? Gdiplus::Color(0xFF888888)
+            : Gdiplus::Color(0xFF111111));
         g.DrawString(wbody.c_str(), -1, &bodyFont,
                      Gdiplus::RectF((float)body_left, (float)body_top,
                                     (float)body_max_w, (float)body_h),

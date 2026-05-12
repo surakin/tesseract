@@ -850,6 +850,44 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
+    /// Wraps matrix-sdk-ui's `Timeline::redact`. The room must currently
+    /// be subscribed via `subscribe_room`. Server-side permission errors
+    /// (e.g. trying to redact someone else's message without power) surface
+    /// as `OpResult { ok: false, message: ... }`.
+    #[cfg(not(test))]
+    pub fn redact_event(&mut self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
+        if self.client.is_none() { return err("not logged in"); }
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return err("room not subscribed; call subscribe_room first");
+        };
+        let tl = Arc::clone(&handle.timeline);
+        let item_id = TimelineEventItemId::EventId(event_id);
+        let reason_opt = if reason.is_empty() { None } else { Some(reason.to_owned()) };
+
+        match self.rt.block_on(async move {
+            tl.redact(&item_id, reason_opt.as_deref()).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn redact_event(&mut self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
+        err("not logged in")
+    }
+
     pub fn user_id(&self) -> String {
         self.client
             .as_ref()
@@ -1209,6 +1247,42 @@ async fn timeline_item_to_ffi(
         TimelineItemKind::Event(e) => e,
         _ => return None,
     };
+
+    // Redactions: matrix-sdk-ui replaces the original item with
+    // MsgLikeKind::Redacted in place. Surface it as a tombstone (msg_type
+    // "m.redacted") so the UI can swap the existing row to a placeholder
+    // instead of leaving the stale body on screen.
+    if let TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Redacted, .. }) =
+        event_item.content()
+    {
+        let (sender_name, sender_avatar_url) =
+            if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                (
+                    p.display_name.clone().unwrap_or_default(),
+                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+        return Some(TimelineEvent {
+            event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
+            room_id:           room_id.to_owned(),
+            sender:            event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            body:              String::new(),
+            timestamp:         event_item.timestamp().get().into(),
+            msg_type:          "m.redacted".to_owned(),
+            source_json:       String::new(),
+            width:             0u64,
+            height:            0u64,
+            file_json:         String::new(),
+            file_name:         String::new(),
+            file_size:         0u64,
+            image_filename:    String::new(),
+            reactions:         Vec::new(),
+        });
+    }
 
     // Sticker events are MsgLikeKind::Sticker, not MsgLikeKind::Message.
     // Handle them before falling through to the message-only path.

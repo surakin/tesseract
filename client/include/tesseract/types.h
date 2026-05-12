@@ -5,7 +5,7 @@
 
 namespace tesseract {
 
-enum class EventType { Text, Image, File, Sticker, Unhandled };
+enum class EventType { Text, Image, File, Sticker, Redacted, Unhandled };
 
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
@@ -58,6 +58,12 @@ struct StickerEvent : public Event {
     uint64_t    height = 0;
 
     StickerEvent() { type = EventType::Sticker; }
+};
+
+/// Tombstone placeholder for a redacted (deleted) event. `body` is empty;
+/// UIs render an italic "Message deleted" line in its place.
+struct RedactedEvent : public Event {
+    RedactedEvent() { type = EventType::Redacted; }
 };
 
 struct FileEvent : public Event {

@@ -11,6 +11,12 @@ static const void* const kChipRoomIdKey   = &kChipRoomIdKey;
 static const void* const kChipEventIdKey  = &kChipEventIdKey;
 static const void* const kChipKeyKey      = &kChipKeyKey;
 
+// Same scheme, but on a BubbleCellView's NSMenu items — carries the
+// (roomId, eventId) of the message that owns the menu so `deleteMessage:`
+// can call back into the client.
+static const void* const kCellRoomIdKey   = &kCellRoomIdKey;
+static const void* const kCellEventIdKey  = &kCellEventIdKey;
+
 // Sizes/spacing live in client/include/tesseract/visual.h — see
 // docs/UI-PARITY.md for the canonical anatomy. Per-platform constants
 // kept here are limited to inner content padding inside the (now
@@ -219,6 +225,7 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     // Body text per event type.
     NSString* bodyText = nil;
+    BOOL bodyIsRedactedTombstone = NO;
     switch (msg.type) {
         case tesseract::EventType::Image:
             // MSC2530: show body only when sender supplied a distinct filename.
@@ -231,6 +238,10 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         case tesseract::EventType::File:
             bodyText = formatFileBody(msg);
             break;
+        case tesseract::EventType::Redacted:
+            bodyText = @"Message deleted";
+            bodyIsRedactedTombstone = YES;
+            break;
         case tesseract::EventType::Text:
         default:
             bodyText = @(msg.body.c_str());
@@ -239,6 +250,17 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     _bodyLabel.stringValue   = bodyText ?: @"";
     _bodyLabel.hidden        = (bodyText == nil) || bodyText.length == 0;
+    if (bodyIsRedactedTombstone) {
+        NSFont* base = _bodyLabel.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
+        NSFontDescriptor* desc = [base.fontDescriptor
+            fontDescriptorWithSymbolicTraits:NSFontDescriptorTraitItalic];
+        NSFont* italic = [NSFont fontWithDescriptor:desc size:base.pointSize] ?: base;
+        _bodyLabel.font      = italic;
+        _bodyLabel.textColor = [NSColor secondaryLabelColor];
+    } else {
+        _bodyLabel.font      = [NSFont systemFontOfSize:[NSFont systemFontSize]];
+        _bodyLabel.textColor = [NSColor labelColor];
+    }
     _senderLabel.stringValue = sender;
     _senderLabel.hidden      = NO;
     _avatarView.hidden       = NO;
@@ -731,7 +753,50 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
             mediaImage:media
           chipIcons:chipIcons
          chipTarget:self];
+
+    // Right-click → "Delete message" — only on own, non-redacted messages.
+    BOOL isOwn = m.is_own;
+    BOOL isRedacted = (m.type == tesseract::EventType::Redacted);
+    if (isOwn && !isRedacted && !m.event_id.empty()) {
+        NSMenu* menu = [[NSMenu alloc] init];
+        NSMenuItem* item = [menu addItemWithTitle:@"Delete message"
+                                           action:@selector(deleteMessage:)
+                                    keyEquivalent:@""];
+        item.target = self;
+        objc_setAssociatedObject(item, kCellRoomIdKey,
+            @(m.room_id.c_str()),  OBJC_ASSOCIATION_COPY_NONATOMIC);
+        objc_setAssociatedObject(item, kCellEventIdKey,
+            @(m.event_id.c_str()), OBJC_ASSOCIATION_COPY_NONATOMIC);
+        cell.menu = menu;
+    } else {
+        cell.menu = nil;
+    }
     return cell;
+}
+
+- (void)deleteMessage:(NSMenuItem*)sender {
+    if (!_client) return;
+    NSString* roomId  = objc_getAssociatedObject(sender, kCellRoomIdKey);
+    NSString* eventId = objc_getAssociatedObject(sender, kCellEventIdKey);
+    if (roomId.length == 0 || eventId.length == 0) return;
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText     = @"Delete message?";
+    alert.informativeText = @"This cannot be undone.";
+    [alert addButtonWithTitle:@"Delete"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+
+    std::string rid(roomId.UTF8String);
+    std::string eid(eventId.UTF8String);
+    auto res = _client->redact_event(rid, eid, "");
+    if (!res.ok) {
+        NSAlert* err = [[NSAlert alloc] init];
+        err.messageText     = @"Delete failed";
+        err.informativeText = @(res.message.c_str());
+        [err addButtonWithTitle:@"OK"];
+        [err runModal];
+    }
 }
 
 - (void)reactionChipClicked:(NSButton*)sender {
@@ -769,6 +834,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
             break;
         case tesseract::EventType::File:
             bodyText = formatFileBody(msg);
+            break;
+        case tesseract::EventType::Redacted:
+            bodyText = @"Message deleted";
             break;
         case tesseract::EventType::Text:
         default:

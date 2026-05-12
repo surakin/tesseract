@@ -335,7 +335,40 @@ TEST_CASE("EventType enum values are correct", "[types]") {
     CHECK(static_cast<int>(tesseract::EventType::Image)     == 1);
     CHECK(static_cast<int>(tesseract::EventType::File)      == 2);
     CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
-    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 4);
+    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 4);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 5);
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::RedactedEvent
+// ---------------------------------------------------------------------------
+
+TEST_CASE("RedactedEvent default-initialised fields", "[types]") {
+    tesseract::RedactedEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Redacted);
+    CHECK(ev.reactions.empty());
+}
+
+TEST_CASE("RedactedEvent carries sender identity", "[types]") {
+    // The UI surfaces the redacted-event sender so users can tell which
+    // peer's message was deleted; verify the base Event fields round-trip.
+    tesseract::RedactedEvent ev{};
+    ev.event_id = "$redacted-evt";
+    ev.room_id  = "!room:example.org";
+    ev.sender   = "@alice:example.org";
+    ev.sender_name = "Alice";
+    ev.timestamp   = 1700000000000ull;
+
+    CHECK(ev.event_id    == "$redacted-evt");
+    CHECK(ev.sender      == "@alice:example.org");
+    CHECK(ev.sender_name == "Alice");
+    CHECK(ev.timestamp   == 1700000000000ull);
+    CHECK(ev.type        == tesseract::EventType::Redacted);
 }
 
 // ---------------------------------------------------------------------------

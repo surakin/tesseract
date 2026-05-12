@@ -823,6 +823,12 @@ QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
         fileLabel->setWordWrap(true);
         fileLabel->setStyleSheet("color: #1C1E21; background: transparent;");
         contentLayout->addWidget(fileLabel);
+    } else if (ev.type == tesseract::EventType::Redacted) {
+        auto* tomb = new QLabel(QStringLiteral("Message deleted"), contentBox);
+        tomb->setObjectName("redacted");
+        tomb->setStyleSheet(
+            "color: #888; font-style: italic; background: transparent;");
+        contentLayout->addWidget(tomb);
     } else {
         auto* bodyLabel = new QLabel(
             QString::fromStdString(ev.body).toHtmlEscaped(), contentBox);
@@ -903,6 +909,35 @@ QWidget* MainWindow::createMessageRow(const tesseract::Event& ev) {
     rowLayout->addWidget(avatarLabel, 0, Qt::AlignTop);
     rowLayout->addWidget(contentBox);
     rowLayout->addStretch();
+
+    // Right-click → "Delete message" (own, non-redacted messages only).
+    // The action confirms then calls Client::redact_event; on success the
+    // homeserver re-emits the timeline item as a Redacted tombstone and the
+    // existing event_id replace-in-place path swaps this row out.
+    const bool isOwn = !ev.sender.empty() && ev.sender == myUserId_;
+    const bool isRedacted = (ev.type == tesseract::EventType::Redacted);
+    if (isOwn && !isRedacted && !ev.event_id.empty()) {
+        row->setContextMenuPolicy(Qt::CustomContextMenu);
+        QString roomId  = QString::fromStdString(ev.room_id);
+        QString eventId = QString::fromStdString(ev.event_id);
+        connect(row, &QWidget::customContextMenuRequested,
+                this, [this, row, roomId, eventId](const QPoint& pos) {
+            QMenu menu(row);
+            QAction* del = menu.addAction(tr("Delete message"));
+            if (menu.exec(row->mapToGlobal(pos)) != del) return;
+            if (QMessageBox::question(this, tr("Delete message"),
+                    tr("Delete this message? This cannot be undone."),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::No) != QMessageBox::Yes)
+                return;
+            auto res = client_.redact_event(
+                roomId.toStdString(), eventId.toStdString(), "");
+            if (!res.ok) {
+                QMessageBox::warning(this, tr("Delete failed"),
+                    QString::fromStdString(res.message));
+            }
+        });
+    }
     return row;
 }
 

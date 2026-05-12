@@ -115,6 +115,16 @@ public:
                          const std::string& event_id,
                          const std::string& key);
 
+    /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
+    /// Requires that the room is currently subscribed via `subscribe_room`.
+    /// Server-side permission errors (e.g. lacking power to redact someone
+    /// else's event) surface in `Result::message`. On success the SDK
+    /// re-emits the timeline item as a redacted tombstone, which the UI
+    /// receives via the existing `on_message_event` re-render path.
+    Result redact_event(const std::string& room_id,
+                        const std::string& event_id,
+                        const std::string& reason = "");
+
     // ------------------------------------------------------------------
     // Identity
     // ------------------------------------------------------------------

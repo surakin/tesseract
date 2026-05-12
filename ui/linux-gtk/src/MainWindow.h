@@ -65,6 +65,15 @@ private:
     static void    on_logout_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
     static void    on_reaction_clicked_(GtkButton* btn, gpointer user_data);
+    static void    on_message_right_click_(GtkGestureClick* gesture,
+                                           int n_press, double x, double y,
+                                           gpointer user_data);
+    static void    on_message_delete_clicked_(GtkButton* btn, gpointer user_data);
+    static void    on_message_delete_confirm_(GObject* source,
+                                              GAsyncResult* result,
+                                              gpointer user_data);
+    void           perform_redact(const std::string& room_id,
+                                  const std::string& event_id);
 
     /// Build a footer GtkBox (horizontal) holding reaction chips on the left
     /// and the timestamp anchored to the right. Always returned non-null; an

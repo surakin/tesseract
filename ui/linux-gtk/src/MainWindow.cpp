@@ -1201,6 +1201,12 @@ void MainWindow::append_event(const tesseract::Event& ev) {
             }
         }
         // Sticker body is alt-text only; never displayed.
+    } else if (ev.type == tesseract::EventType::Redacted) {
+        body_lbl = gtk_label_new(nullptr);
+        gtk_label_set_markup(GTK_LABEL(body_lbl),
+            "<i><span foreground=\"#888888\">Message deleted</span></i>");
+        gtk_label_set_xalign(GTK_LABEL(body_lbl), 0.0f);
+        gtk_box_append(GTK_BOX(bubble), body_lbl);
     } else {
         body_lbl = gtk_label_new(ev.body.c_str());
         gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
@@ -1230,6 +1236,24 @@ void MainWindow::append_event(const tesseract::Event& ev) {
     auto_scroll_pending_ = true;
     gtk_box_append(GTK_BOX(msg_box_), row);
     gtk_widget_set_visible(row, TRUE);
+
+    // Right-click → "Delete message" popover (own, non-redacted only). On
+    // confirm we call redact_event; the server re-emits the timeline item
+    // as a tombstone, and the existing replace-in-place path above swaps
+    // the row's body.
+    const bool isRedacted = (ev.type == tesseract::EventType::Redacted);
+    if (is_own && !isRedacted && !ev.event_id.empty()) {
+        g_object_set_data_full(G_OBJECT(row), "tess-event-id",
+                               g_strdup(ev.event_id.c_str()), g_free);
+        g_object_set_data_full(G_OBJECT(row), "tess-room-id",
+                               g_strdup(ev.room_id.c_str()), g_free);
+        GtkGesture* gesture = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
+                                      GDK_BUTTON_SECONDARY);
+        g_signal_connect(gesture, "pressed",
+                         G_CALLBACK(on_message_right_click_), this);
+        gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(gesture));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,6 +1393,108 @@ void MainWindow::on_user_strip_right_click_(GtkGestureClick* gesture,
     GdkRectangle r = { static_cast<int>(x), static_cast<int>(y), 1, 1 };
     gtk_popover_set_pointing_to(GTK_POPOVER(self->user_popover_), &r);
     gtk_popover_popup(GTK_POPOVER(self->user_popover_));
+}
+
+namespace {
+// Carries the click context (window + ids) through the async alert-dialog
+// callback so the redact lands on the right event after the user confirms.
+struct RedactRequest {
+    MainWindow* window;
+    std::string room_id;
+    std::string event_id;
+};
+} // namespace
+
+void MainWindow::on_message_right_click_(GtkGestureClick* gesture,
+                                         int /*n_press*/,
+                                         double x, double y,
+                                         gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+
+    GtkEventController* ctrl = GTK_EVENT_CONTROLLER(gesture);
+    GtkWidget* row = gtk_event_controller_get_widget(ctrl);
+    if (!row) return;
+
+    // Build a transient popover with a single "Delete message" button.
+    GtkWidget* popover = gtk_popover_new();
+    gtk_widget_set_parent(popover, row);
+    GtkWidget* btn = gtk_button_new_with_label("Delete message");
+    gtk_widget_add_css_class(btn, "flat");
+    gtk_popover_set_child(GTK_POPOVER(popover), btn);
+    gtk_popover_set_has_arrow(GTK_POPOVER(popover), TRUE);
+    GdkRectangle r = { static_cast<int>(x), static_cast<int>(y), 1, 1 };
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &r);
+
+    // Carry the window + ids to the button click; freed when the popover dies.
+    auto* req = new RedactRequest{
+        self,
+        std::string(static_cast<const char*>(
+            g_object_get_data(G_OBJECT(row), "tess-room-id")) ?: ""),
+        std::string(static_cast<const char*>(
+            g_object_get_data(G_OBJECT(row), "tess-event-id")) ?: ""),
+    };
+    g_object_set_data_full(G_OBJECT(btn), "tess-redact-req", req,
+                           [](gpointer p) { delete static_cast<RedactRequest*>(p); });
+    g_signal_connect(btn, "clicked",
+                     G_CALLBACK(on_message_delete_clicked_), popover);
+    // Auto-destroy the popover when it closes.
+    g_signal_connect(popover, "closed",
+                     G_CALLBACK(+[](GtkPopover* p, gpointer) {
+                         gtk_widget_unparent(GTK_WIDGET(p));
+                     }), nullptr);
+    gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+void MainWindow::on_message_delete_clicked_(GtkButton* btn, gpointer user_data) {
+    auto* popover = GTK_POPOVER(user_data);
+    auto* req = static_cast<RedactRequest*>(
+        g_object_get_data(G_OBJECT(btn), "tess-redact-req"));
+    if (!req || req->event_id.empty()) {
+        gtk_popover_popdown(popover);
+        return;
+    }
+
+    // Copy out before the popover destroys the request payload.
+    auto* persistent = new RedactRequest(*req);
+    gtk_popover_popdown(popover);
+
+    GtkAlertDialog* dlg = gtk_alert_dialog_new(
+        "Delete this message? This cannot be undone.");
+    const char* buttons[] = { "Cancel", "Delete", nullptr };
+    gtk_alert_dialog_set_buttons(dlg, buttons);
+    gtk_alert_dialog_set_cancel_button(dlg, 0);
+    gtk_alert_dialog_set_default_button(dlg, 0);
+    GtkRoot* root = gtk_widget_get_root(persistent->window->window_);
+    gtk_alert_dialog_choose(dlg, GTK_WINDOW(root), nullptr,
+                            on_message_delete_confirm_, persistent);
+    g_object_unref(dlg);
+}
+
+void MainWindow::on_message_delete_confirm_(GObject* source,
+                                            GAsyncResult* result,
+                                            gpointer user_data) {
+    auto* req = static_cast<RedactRequest*>(user_data);
+    GError* err = nullptr;
+    int choice = gtk_alert_dialog_choose_finish(
+        GTK_ALERT_DIALOG(source), result, &err);
+    if (err) { g_error_free(err); delete req; return; }
+    if (choice == 1) {
+        req->window->perform_redact(req->room_id, req->event_id);
+    }
+    delete req;
+}
+
+void MainWindow::perform_redact(const std::string& room_id,
+                                const std::string& event_id) {
+    auto res = client_.redact_event(room_id, event_id, "");
+    if (!res.ok) {
+        GtkAlertDialog* dlg = gtk_alert_dialog_new("%s",
+            ("Delete failed: " + res.message).c_str());
+        GtkRoot* root = gtk_widget_get_root(window_);
+        gtk_alert_dialog_show(dlg, GTK_WINDOW(root));
+        g_object_unref(dlg);
+    }
 }
 
 void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
