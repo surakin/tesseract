@@ -12,6 +12,9 @@ cxx        = "1.0"
 tokio      = { version = "1", features = ["full"] }
 matrix-sdk    = { version = "0.17.0", features = ["e2e-encryption", "bundled-sqlite", "experimental-element-recent-emojis"] }
 matrix-sdk-ui = { version = "0.17.0" }
+# Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
+# implementations that wrap the media source as an `EncryptedFile`).
+ruma          = { version = "0.15", default-features = false, features = ["compat-encrypted-stickers"] }
 futures-util = "0.3"
 anyhow     = "1"
 tracing    = "0.1"

@@ -14,6 +14,7 @@
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/StickerPicker.h"
 
 #include <memory>
 #include <string>
@@ -45,6 +46,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_image_packs_updated() override;
 
     GtkWindow* window_;
 };
@@ -73,6 +75,7 @@ public:
     void handle_reconnect();
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
+    void push_image_packs_updated();
 
 private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);
@@ -85,12 +88,24 @@ private:
     /// in `parent`'s local widget coords). Used for the reaction "+" chip.
     void           popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect);
     void           build_emoji_popover();
+    void           build_sticker_popover();
+    void           toggle_sticker_picker();
+    void           build_sticker_context_menu();
 public:
     // Reached from the shared EmojiPicker's on_selected callback.
     void emoji_selected(const std::string& glyph);
+    // Reached from the EventHandler when the SDK rebuilds the image-pack
+    // cache (sync delivers a relevant event, or a user-pack write lands).
+    void apply_image_packs_updated();
 private:
     static void    on_user_strip_right_click_(GtkGestureClick* gesture,
                                               int n_press, double x, double y,
+                                              gpointer user_data);
+    static void    on_msg_right_click_(GtkGestureClick* gesture,
+                                       int n_press, double x, double y,
+                                       gpointer user_data);
+    static void    on_sticker_save_activate_(GSimpleAction* action,
+                                              GVariant* parameter,
                                               gpointer user_data);
     static void    on_logout_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
@@ -152,6 +167,26 @@ private:
     // When set, the next emoji selection routes through send_reaction
     // for this event_id rather than inserting into the compose bar.
     std::string                             pending_reaction_event_id_;
+
+    // Sticker picker — parallel to the emoji picker. Popup-style
+    // GtkPopover hosting a tk::gtk4::Surface that paints the shared
+    // tesseract::views::StickerPicker.
+    GtkWidget*      sticker_popover_      = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>      sticker_picker_surface_;
+    tesseract::views::StickerPicker*        sticker_picker_shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+
+    // Right-click context menu on the message surface — shown when a
+    // right-click lands on a sticker that isn't yet in the user's
+    // Saved Stickers pack. Built once; pointed_to + activated per-click.
+    GtkWidget*      sticker_ctx_menu_     = nullptr;
+    GSimpleActionGroup* sticker_ctx_actions_ = nullptr;
+    // Captured at right-click time so the action handler can read them
+    // without holding a pointer into MessageListView's per-frame
+    // sticker_geom_ map.
+    std::string     ctx_sticker_event_id_;
+    std::string     ctx_sticker_mxc_url_;
+    std::string     ctx_sticker_body_;
     GtkWidget*      status_bar_         = nullptr;
 
     // Recovery banner — shared widget hosted in a tk::gtk4::Surface.

@@ -328,6 +328,11 @@ private:
                 float side = std::min(kStickerSize, col_w);
                 tk::Rect r{ x, y, side, side };
                 paint_inline_media(m, ctx, r);
+                if (!m.event_id.empty()) {
+                    owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
+                        m.event_id, m.media_url, m.body, r
+                    };
+                }
                 return y + side;
             }
             case MessageRowData::Kind::File: {
@@ -425,6 +430,22 @@ MessageListView::MessageListView()
         if (idx < 0 || static_cast<std::size_t>(idx) >= messages_.size()) return;
         if (on_message_clicked) on_message_clicked(messages_[idx].event_id);
     };
+}
+
+std::optional<MessageListView::StickerHit>
+MessageListView::sticker_hit_at(tk::Point world) const {
+    // Sticker geometry is recorded by paint_row in world coordinates each
+    // paint pass. We linearly search — a sticker viewport rarely exceeds
+    // a handful of visible rows so a hash lookup by point isn't worth it.
+    for (const auto& [event_id, hit] : sticker_geom_) {
+        if (world.x >= hit.world_rect.x &&
+            world.y >= hit.world_rect.y &&
+            world.x <  hit.world_rect.x + hit.world_rect.w &&
+            world.y <  hit.world_rect.y + hit.world_rect.h) {
+            return hit;
+        }
+    }
+    return std::nullopt;
 }
 
 void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
@@ -637,6 +658,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 }
 
 void MessageListView::paint(tk::PaintCtx& ctx) {
+    // Sticker rects are rebuilt per-paint by Adapter::paint_row.
+    // Clear here so entries scrolled offscreen don't linger.
+    sticker_geom_.clear();
     tk::ListView::paint(ctx);
 
     // Scroll-to-bottom pill — overlays the bottom-right corner of the

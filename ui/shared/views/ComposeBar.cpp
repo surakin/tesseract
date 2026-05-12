@@ -66,6 +66,17 @@ ComposeBar::ComposeBar() {
     emoji->set_min_size({ kButtonSide, kButtonSide });
     emoji_btn_ = add_child(std::move(emoji));
 
+    // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
+    // the emoji face so the two icons are visually unambiguous. Same
+    // Icon variant + Title-size glyph painted on top as the emoji button.
+    auto sticker = std::make_unique<tk::Button>(
+        std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"),
+        std::function<void()>{},
+        tk::Button::Variant::Icon);
+    sticker->set_on_click([this] { if (on_sticker) on_sticker(); });
+    sticker->set_min_size({ kButtonSide, kButtonSide });
+    sticker_btn_ = add_child(std::move(sticker));
+
     auto send = std::make_unique<tk::Button>(
         "Send",
         std::function<void()>{},
@@ -147,8 +158,9 @@ void ComposeBar::set_current_text(std::string text) {
 void ComposeBar::set_enabled(bool e) {
     if (enabled_ == e) return;
     enabled_ = e;
-    if (emoji_btn_)  emoji_btn_->set_enabled(e);
-    if (remove_btn_) remove_btn_->set_enabled(e);
+    if (emoji_btn_)   emoji_btn_->set_enabled(e);
+    if (sticker_btn_) sticker_btn_->set_enabled(e);
+    if (remove_btn_)  remove_btn_->set_enabled(e);
     refresh_send_enabled();
 }
 
@@ -320,6 +332,13 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         kButtonSide
     };
 
+    sticker_rect_ = {
+        emoji_rect_.x + emoji_rect_.w + kGap,
+        emoji_rect_.y,
+        kButtonSide,
+        kButtonSide
+    };
+
     send_rect_ = {
         bounds.x + bounds.w - kPadX - kSendWidth,
         text_top + (text_strip_h - kButtonSide) * 0.5f,
@@ -327,7 +346,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         kButtonSide
     };
 
-    float left  = emoji_rect_.x + emoji_rect_.w + kGap;
+    float left  = sticker_rect_.x + sticker_rect_.w + kGap;
     float right = send_rect_.x - kGap;
     text_area_rect_ = {
         left,
@@ -336,8 +355,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         std::max(0.0f, text_strip_h - kPadY * 2)
     };
 
-    if (emoji_btn_) emoji_btn_->arrange(ctx, emoji_rect_);
-    if (send_btn_)  send_btn_->arrange(ctx, send_rect_);
+    if (emoji_btn_)   emoji_btn_->arrange(ctx, emoji_rect_);
+    if (sticker_btn_) sticker_btn_->arrange(ctx, sticker_rect_);
+    if (send_btn_)    send_btn_->arrange(ctx, send_rect_);
     if (remove_btn_ && pending_.has_value())
         remove_btn_->arrange(ctx, remove_btn_rect_);
 }
@@ -395,32 +415,37 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
                                          ctx.theme.palette.border, 1.0f);
     }
 
-    if (emoji_btn_) emoji_btn_->paint(ctx);
-    if (send_btn_)  send_btn_->paint(ctx);
+    if (emoji_btn_)   emoji_btn_->paint(ctx);
+    if (sticker_btn_) sticker_btn_->paint(ctx);
+    if (send_btn_)    send_btn_->paint(ctx);
     if (remove_btn_ && pending_.has_value()) remove_btn_->paint(ctx);
 
-    // Paint the emoji glyph over the Icon-variant emoji button at the same
-    // size and centring as reaction chips so the two emoji surfaces match.
-    if (emoji_btn_ && !emoji_rect_.empty()) {
-        if (!emoji_layout_) {
+    // Paint the icon glyphs over the Icon-variant buttons at the same
+    // size and centring as reaction chips so the icon surfaces match.
+    // Colour-emoji glyphs fill the ascent region and leave the descender
+    // empty, so box-centring leaves them visually high.
+    constexpr float kAscentRatio = 0.78f;
+    auto paint_glyph_over = [&](tk::Rect rect,
+                                 std::unique_ptr<tk::TextLayout>& cache,
+                                 const char* glyph) {
+        if (rect.empty()) return;
+        if (!cache) {
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;
-            emoji_layout_ = ctx.factory.build_text(
-                std::string("\xF0\x9F\x98\x80"), st);
+            cache = ctx.factory.build_text(std::string(glyph), st);
         }
-        if (emoji_layout_) {
-            tk::Size esz = emoji_layout_->measure();
-            // Ascent-centre: colour-emoji glyphs fill the ascent region
-            // and leave the descender empty, so box-centring leaves them
-            // visually high. Matches MessageListView reaction chips.
-            constexpr float kAscentRatio = 0.78f;
-            float ex = emoji_rect_.x + (emoji_rect_.w - esz.w) * 0.5f;
-            float ey = emoji_rect_.y
-                     + (emoji_rect_.h - esz.h * kAscentRatio) * 0.5f;
-            ctx.canvas.draw_text(*emoji_layout_, { ex, ey },
-                                  ctx.theme.palette.text_primary);
-        }
-    }
+        if (!cache) return;
+        tk::Size sz = cache->measure();
+        float x = rect.x + (rect.w - sz.w) * 0.5f;
+        float y = rect.y + (rect.h - sz.h * kAscentRatio) * 0.5f;
+        ctx.canvas.draw_text(*cache, { x, y }, ctx.theme.palette.text_primary);
+    };
+
+    if (emoji_btn_)
+        paint_glyph_over(emoji_rect_, emoji_layout_, "\xF0\x9F\x98\x80");
+    if (sticker_btn_)
+        paint_glyph_over(sticker_rect_, sticker_layout_,
+                         "\xF0\x9F\x96\xBC\xEF\xB8\x8F");
 }
 
 } // namespace tesseract::views

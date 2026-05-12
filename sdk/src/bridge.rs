@@ -128,6 +128,36 @@ pub mod ffi {
         total_keys:    u64,
     }
 
+    /// One MSC2545 image pack surfaced to C++. Three sources:
+    /// `source_kind == "user"` is the per-account pack stored in account_data;
+    /// `source_kind == "room"` is a state event in `source_room` at the given
+    /// `source_state_key`. `usage_mask` is a bitset where 1 = sticker and
+    /// 2 = emoticon; per-image usage may override it. `attribution` is
+    /// optional metadata from the pack author.
+    struct ImagePackFfi {
+        id:                String,
+        display_name:      String,
+        avatar_url:        String,
+        attribution:       String,
+        usage_mask:        u8,
+        source_kind:       String,
+        source_room:       String,
+        source_state_key:  String,
+    }
+
+    /// One image entry inside a pack. `usage_mask` is the per-image usage
+    /// after inheriting from the pack when not set on the image. `info_json`
+    /// is the literal `info` object serialised as JSON (`"{}"` when absent).
+    struct ImageEntryFfi {
+        pack_id:    String,
+        shortcode:  String,
+        url:        String,
+        body:       String,
+        info_json:  String,
+        usage_mask: u8,
+        favorite:   bool,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -174,6 +204,11 @@ pub mod ffi {
         /// Fired when the key-backup state changes or when imported-key
         /// counters advance during a recover() call.
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
+        /// Fired when the cached set of MSC2545 image packs changes
+        /// (user-pack edit, room-pack subscription edit, or live state-event
+        /// update on a referenced room). The UI re-queries via
+        /// `list_image_packs` / `list_pack_images`.
+        fn on_image_packs_updated(self: &EventHandlerBridge);
     }
 
     // -------------------------------------------------------------------------
@@ -304,6 +339,71 @@ pub mod ffi {
                         room_id: &str,
                         event_id: &str,
                         reason: &str) -> OpResult;
+
+        // ----- MSC2545 image packs (Step 8) -----
+
+        /// Snapshot of every MSC2545 image pack the client currently knows
+        /// about. Aggregated from the user's `im.ponies.user_emotes` /
+        /// `m.image_pack` account-data, plus every room pack referenced from
+        /// the user's `im.ponies.emote_rooms` / `m.image_pack.rooms`. Reads
+        /// the local cache only — no network roundtrip. The cache is rebuilt
+        /// when sync delivers a relevant event and `on_image_packs_updated`
+        /// fires; subscribe to that callback before calling this if the UI
+        /// is open before the first sync settles.
+        fn list_image_packs(self: &ClientFfi) -> Vec<ImagePackFfi>;
+
+        /// Return every image entry in `pack_id` whose usage mask matches
+        /// `usage_filter` ("sticker" | "emoticon" | "any"). Order is
+        /// well-defined and stable for a given pack snapshot.
+        fn list_pack_images(
+            self: &ClientFfi,
+            pack_id: &str,
+            usage_filter: &str,
+        ) -> Vec<ImageEntryFfi>;
+
+        /// Return every image flagged as a favourite by the current user
+        /// (across all packs). Backs the StickerPicker "Favorites" tab.
+        fn list_favorite_stickers(self: &ClientFfi) -> Vec<ImageEntryFfi>;
+
+        /// Send `m.sticker` to `room_id`. `body` is the description shown by
+        /// fallback clients; `image_url` is the `mxc://` source; `info_json`
+        /// is the literal MSC2545 `info` object (`"{}"` is acceptable).
+        /// matrix-sdk handles E2EE rooms transparently.
+        fn send_sticker(
+            self: &mut ClientFfi,
+            room_id: &str,
+            body: &str,
+            image_url: &str,
+            info_json: &str,
+        ) -> OpResult;
+
+        /// Add a sticker to the user's MSC2545 personal pack
+        /// (`im.ponies.user_emotes`), creating the pack on first use with
+        /// display_name "Saved Stickers". When the suggested `shortcode`
+        /// collides with an existing entry a numeric suffix is appended.
+        /// GET-modify-PUT against the homeserver; on success the local cache
+        /// updates on the next sync settle and `on_image_packs_updated`
+        /// fires.
+        fn save_sticker_to_user_pack(
+            self: &mut ClientFfi,
+            shortcode: &str,
+            body: &str,
+            image_url: &str,
+            info_json: &str,
+        ) -> OpResult;
+
+        /// True when `image_url` is already present in the user's personal
+        /// pack. Used by the right-click context menu to hide the "Add to
+        /// Saved Stickers" item for stickers the user has already saved.
+        fn user_pack_has_sticker(self: &ClientFfi, image_url: &str) -> bool;
+
+        /// Flip the `im.tesseract.favorite` flag on the user-pack entry
+        /// whose `url` matches `image_url`. No-op when the sticker isn't in
+        /// the user pack (call `save_sticker_to_user_pack` first).
+        fn toggle_favorite_sticker(
+            self: &mut ClientFfi,
+            image_url: &str,
+        ) -> OpResult;
 
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 

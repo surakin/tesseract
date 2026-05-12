@@ -223,6 +223,66 @@ std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url) {
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source) {
+    auto v = impl_->ffi->fetch_source_bytes(source);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
+// ---------------------------------------------------------------------------
+// MSC2545 image packs
+// ---------------------------------------------------------------------------
+
+std::vector<ImagePack> Client::list_image_packs() const {
+    auto raw = impl_->ffi->list_image_packs();
+    std::vector<ImagePack> out;
+    out.reserve(raw.size());
+    for (const auto& p : raw)
+        out.push_back(from_ffi(p));
+    return out;
+}
+
+std::vector<ImagePackImage> Client::list_pack_images(const std::string& pack_id,
+                                                     PackUsageFilter filter) const {
+    auto raw = impl_->ffi->list_pack_images(pack_id, pack_usage_filter_to_str(filter));
+    std::vector<ImagePackImage> out;
+    out.reserve(raw.size());
+    for (const auto& e : raw)
+        out.push_back(from_ffi(e));
+    return out;
+}
+
+std::vector<ImagePackImage> Client::list_favorite_stickers() const {
+    auto raw = impl_->ffi->list_favorite_stickers();
+    std::vector<ImagePackImage> out;
+    out.reserve(raw.size());
+    for (const auto& e : raw)
+        out.push_back(from_ffi(e));
+    return out;
+}
+
+Result Client::send_sticker(const std::string& room_id,
+                            const std::string& body,
+                            const std::string& image_url,
+                            const std::string& info_json) {
+    return from_ffi(impl_->ffi->send_sticker(room_id, body, image_url, info_json));
+}
+
+Result Client::save_sticker_to_user_pack(const std::string& shortcode,
+                                         const std::string& body,
+                                         const std::string& image_url,
+                                         const std::string& info_json) {
+    return from_ffi(impl_->ffi->save_sticker_to_user_pack(
+        shortcode, body, image_url, info_json));
+}
+
+bool Client::user_pack_has_sticker(const std::string& image_url) const {
+    return impl_->ffi->user_pack_has_sticker(image_url);
+}
+
+Result Client::toggle_favorite_sticker(const std::string& image_url) {
+    return from_ffi(impl_->ffi->toggle_favorite_sticker(image_url));
+}
+
 std::vector<std::string> Client::space_children(const std::string& space_id) const {
     auto raw = impl_->ffi->space_children(space_id);
     std::vector<std::string> result;

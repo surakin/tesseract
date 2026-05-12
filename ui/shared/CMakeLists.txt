@@ -30,6 +30,8 @@ set(_tk_sources
     views/MessageListView.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
+    views/StickerPicker.h
+    views/StickerPicker.cpp
     views/RecoveryBanner.h
     views/RecoveryBanner.cpp
     views/ComposeBar.h

@@ -1,5 +1,6 @@
 #pragma once
 #include "event_handler.h"
+#include "image_pack.h"
 #include "types.h"
 
 #include <cstdint>
@@ -233,6 +234,61 @@ public:
     /// client is not logged in. The SDK's SQLite media cache is consulted
     /// first, so repeat calls for the same URL are instant.
     std::vector<uint8_t> fetch_media_bytes(const std::string& mxc_url);
+
+    /// Download media from either a plain mxc:// URI or a JSON-serialised
+    /// `MediaSource` (an opaque token that may carry an `EncryptedFile` for
+    /// MSC2545 stickers and encrypted images). The two forms are detected by
+    /// the leading `mxc://` prefix. Returns an empty vector on any failure.
+    std::vector<uint8_t> fetch_source_bytes(const std::string& source);
+
+    // ------------------------------------------------------------------
+    // MSC2545 image packs (Step 8)
+    // ------------------------------------------------------------------
+
+    /// Snapshot of every image pack the client knows about — the user's
+    /// personal pack plus every globally-enabled room pack. Reads the local
+    /// cache only. The cache is refreshed by the sync watcher; the UI is
+    /// notified via `IEventHandler::on_image_packs_updated`.
+    std::vector<ImagePack> list_image_packs() const;
+
+    /// Return every image entry in `pack_id` whose usage intersects
+    /// `filter`. Use `PackUsageFilter::Sticker` for the StickerPicker and
+    /// `PackUsageFilter::Emoticon` for the EmojiPicker's custom tab.
+    std::vector<ImagePackImage> list_pack_images(const std::string& pack_id,
+                                                  PackUsageFilter filter) const;
+
+    /// Flatten every favourite-marked entry across all packs. Sticker-only;
+    /// emoticon favourites are out of scope.
+    std::vector<ImagePackImage> list_favorite_stickers() const;
+
+    /// Send `m.sticker` to `room_id`. `body` is the fallback description;
+    /// `image_url` is the mxc:// URI; `info_json` is the literal MSC2545
+    /// `info` object (`"{}"` is fine). matrix-sdk handles E2EE rooms
+    /// transparently.
+    Result send_sticker(const std::string& room_id,
+                        const std::string& body,
+                        const std::string& image_url,
+                        const std::string& info_json);
+
+    /// Add a sticker to the user's MSC2545 personal pack
+    /// (`im.ponies.user_emotes`). Creates the pack on first use with
+    /// display_name "Saved Stickers". Shortcodes collide-resolve by
+    /// numeric suffix. GET-modify-PUT against the homeserver; the local
+    /// pack cache refreshes once the server round-trip completes.
+    Result save_sticker_to_user_pack(const std::string& shortcode,
+                                     const std::string& body,
+                                     const std::string& image_url,
+                                     const std::string& info_json);
+
+    /// True when `image_url` is already in the user's personal pack. Used
+    /// by the right-click context menu to suppress "Add to Saved Stickers"
+    /// for stickers the user has already saved.
+    bool user_pack_has_sticker(const std::string& image_url) const;
+
+    /// Flip the `im.tesseract.favorite` flag on the user-pack entry whose
+    /// `url` matches `image_url`. No-op when the sticker isn't in the user
+    /// pack — call `save_sticker_to_user_pack` first.
+    Result toggle_favorite_sticker(const std::string& image_url);
 
     // ------------------------------------------------------------------
     // Spaces

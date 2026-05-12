@@ -123,6 +123,11 @@ public:
     /// Fires when the emoji button is clicked.
     std::function<void()>                    on_emoji;
 
+    /// Fires when the sticker button is clicked. Hosts open the
+    /// `StickerPicker` popup; the chosen entry is sent via
+    /// `Client::send_sticker`.
+    std::function<void()>                    on_sticker;
+
     /// Fires when `natural_height()` may have changed due to an image
     /// being attached or detached. The host should re-apply its
     /// fixed-height envelope and re-run `relayout()`.
@@ -156,15 +161,18 @@ private:
     std::unique_ptr<tk::TextLayout> file_size_layout_;
     std::string                     file_layout_key_;  // mime+name+size cache key
 
-    tk::Button* emoji_btn_  = nullptr;   // borrowed (owned by Widget tree)
-    tk::Button* send_btn_   = nullptr;   // borrowed
-    tk::Button* remove_btn_ = nullptr;   // borrowed; hidden when no image
-    // Cached layout for the grinning-face glyph painted *over* the
-    // Icon-variant emoji button — same Title-size + ascent-centring as
-    // reaction chips, so the two emoji surfaces look consistent.
+    tk::Button* emoji_btn_   = nullptr;   // borrowed (owned by Widget tree)
+    tk::Button* sticker_btn_ = nullptr;   // borrowed
+    tk::Button* send_btn_    = nullptr;   // borrowed
+    tk::Button* remove_btn_  = nullptr;   // borrowed; hidden when no image
+    // Cached layouts for glyphs painted *over* the Icon-variant emoji and
+    // sticker buttons — same Title-size + ascent-centring as reaction
+    // chips, so the surfaces look consistent.
     std::unique_ptr<tk::TextLayout> emoji_layout_;
+    std::unique_ptr<tk::TextLayout> sticker_layout_;
     tk::Rect    text_area_rect_{};
     tk::Rect    emoji_rect_{};
+    tk::Rect    sticker_rect_{};
     tk::Rect    send_rect_{};
     tk::Rect    preview_band_rect_{};
     tk::Rect    preview_image_rect_{};

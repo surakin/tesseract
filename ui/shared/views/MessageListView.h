@@ -17,7 +17,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tesseract::views {
@@ -105,6 +107,19 @@ public:
     std::function<void(const std::string& event_id,
                         tk::Rect anchor)>             on_add_reaction_requested;
 
+    // Sticker right-click hit. Native shells call this with the world-coord
+    // pointer position from their secondary-click handler. Returns the
+    // sticker event metadata when the click lands on a Kind::Sticker rect,
+    // or `std::nullopt` otherwise. The shell decides whether to show a
+    // context menu (e.g. skip when `Client::user_pack_has_sticker` is true).
+    struct StickerHit {
+        std::string event_id;
+        std::string mxc_url;
+        std::string body;
+        tk::Rect    world_rect;
+    };
+    std::optional<StickerHit> sticker_hit_at(tk::Point world) const;
+
     // Widget overrides — own pointer-move/down/up so we can hit-test
     // reaction chips before the ListView base sees the event.
     bool on_pointer_down(tk::Point local) override;
@@ -151,6 +166,12 @@ private:
     // Per-frame chip geometry for the hovered row. Mutable so paint_row
     // can write into it from a const-ish paint pass.
     mutable RowChipGeom            hovered_row_geom_;
+
+    // Per-frame inline-sticker geometry, keyed by event_id. Populated by
+    // `Adapter::paint_row` when it paints a Kind::Sticker row; consumed by
+    // `sticker_hit_at` on demand. Cleared at the top of each paint pass so
+    // entries scrolled offscreen don't linger.
+    mutable std::unordered_map<std::string, StickerHit> sticker_geom_;
 
     // Which chip (if any) the pointer is currently over within the
     // hovered row. -1 means "no chip"; HoverTarget chooses between an

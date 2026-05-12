@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod client;
+mod image_packs;
 mod oauth;
 
 // Production cxx bridge — skipped during `cargo test` to avoid needing C++ linked.
@@ -84,6 +85,29 @@ pub mod ffi {
         pub total_keys:    u64,
     }
 
+    #[derive(Debug, PartialEq, Default)]
+    pub struct ImagePackFfi {
+        pub id:               String,
+        pub display_name:     String,
+        pub avatar_url:       String,
+        pub attribution:      String,
+        pub usage_mask:       u8,
+        pub source_kind:      String,
+        pub source_room:      String,
+        pub source_state_key: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct ImageEntryFfi {
+        pub pack_id:    String,
+        pub shortcode:  String,
+        pub url:        String,
+        pub body:       String,
+        pub info_json:  String,
+        pub usage_mask: u8,
+        pub favorite:   bool,
+    }
+
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str, _snapshot: &Vec<TimelineEvent>) {}
@@ -94,5 +118,6 @@ pub mod ffi {
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
+        pub fn on_image_packs_updated(&self) {}
     }
 }

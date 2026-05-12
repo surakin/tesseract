@@ -233,6 +233,18 @@ void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress)
     }, p);
 }
 
+void EventHandler::on_image_packs_updated() {
+    // Marshal onto the GTK main loop; the picker reads the cache via
+    // Client APIs that aren't safe to call from a worker thread alongside
+    // a GTK widget repaint.
+    auto* w = reinterpret_cast<MainWindow*>(
+        g_object_get_data(G_OBJECT(window_), "cpp_window"));
+    g_idle_add([](gpointer data) -> gboolean {
+        static_cast<MainWindow*>(data)->push_image_packs_updated();
+        return G_SOURCE_REMOVE;
+    }, w);
+}
+
 // ---------------------------------------------------------------------------
 // MainWindow
 // ---------------------------------------------------------------------------
@@ -634,7 +646,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             static_cast<int>(compose_shared_->natural_height()));
         compose_surface_->relayout();
     };
-    compose_shared_->on_emoji = [this] { toggle_emoji_picker(); };
+    compose_shared_->on_emoji   = [this] { toggle_emoji_picker(); };
+    compose_shared_->on_sticker = [this] { toggle_sticker_picker(); };
 
     message_list_view_->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key) {
@@ -662,6 +675,21 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     // surface widget. Recents live in account-data now
     // (io.element.recent_emoji); no local-disk load.
     build_emoji_popover();
+    build_sticker_popover();
+    build_sticker_context_menu();
+
+    // Right-click on the message surface: hit-test sticker rects and
+    // pop the context menu. Gesture is added after msg_surface_ +
+    // sticker_ctx_menu_ both exist.
+    {
+        GtkGesture* gesture = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
+                                       GDK_BUTTON_SECONDARY);
+        g_signal_connect(gesture, "pressed",
+                         G_CALLBACK(on_msg_right_click_), this);
+        gtk_widget_add_controller(msg_surface_->widget(),
+                                   GTK_EVENT_CONTROLLER(gesture));
+    }
 
     status_bar_ = gtk_label_new("Not logged in");
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
@@ -1250,6 +1278,17 @@ void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data) {
         gtk_widget_set_visible(self->recovery_surface_->widget(), FALSE);
 }
 
+void MainWindow::push_image_packs_updated() {
+    apply_image_packs_updated();
+}
+
+void MainWindow::apply_image_packs_updated() {
+    if (sticker_picker_shared_) sticker_picker_shared_->refresh_packs();
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+    if (emoji_picker_shared_) emoji_picker_shared_->refresh_emoticon_packs();
+    if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+}
+
 void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
     maybe_show_recovery_banner();
 
@@ -1396,6 +1435,164 @@ void MainWindow::build_emoji_popover() {
     GtkWidget* surface_widget = emoji_picker_surface_->widget();
     gtk_widget_set_size_request(surface_widget, 320, 360);
     gtk_popover_set_child(GTK_POPOVER(emoji_popover_), surface_widget);
+}
+
+// ---------------------------------------------------------------------------
+// Sticker picker — GtkPopover hosting a tk::gtk4::Surface that paints the
+// shared tesseract::views::StickerPicker. Mirrors the emoji popover.
+// ---------------------------------------------------------------------------
+
+void MainWindow::build_sticker_popover() {
+    sticker_popover_ = gtk_popover_new();
+    gtk_widget_set_parent(sticker_popover_, compose_surface_->widget());
+    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
+    gtk_popover_set_has_arrow(GTK_POPOVER(sticker_popover_), TRUE);
+    gtk_popover_set_autohide(GTK_POPOVER(sticker_popover_), TRUE);
+
+    sticker_picker_surface_ =
+        std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+
+    auto shared = std::make_unique<tesseract::views::StickerPicker>();
+    sticker_picker_shared_ = shared.get();
+    sticker_picker_shared_->set_client(&client_);
+    sticker_picker_shared_->on_selected =
+        [this](const tesseract::ImagePackImage& img) {
+            if (current_room_id_.empty()) return;
+            std::string body = img.body.empty() ? img.shortcode : img.body;
+            client_.send_sticker(current_room_id_, body, img.url, img.info_json);
+            if (sticker_popover_)
+                gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+        };
+    // Reuse the existing tk_images_ cache (populated by ensure_media_image
+    // on demand for message-list inline media). The picker calls this on
+    // every cell paint; on miss it currently returns nullptr and the cell
+    // paints a placeholder until the host pre-fetches the bytes.
+    sticker_picker_shared_->set_image_provider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            auto it = tk_images_.find(cache_key);
+            return it == tk_images_.end() ? nullptr : it->second.get();
+        });
+    sticker_picker_surface_->set_root(std::move(shared));
+
+    sticker_picker_search_field_ =
+        sticker_picker_surface_->host().make_text_field();
+    sticker_picker_search_field_->set_placeholder("Search stickers");
+    sticker_picker_search_field_->set_on_changed(
+        [this](const std::string& q) {
+            if (sticker_picker_shared_) sticker_picker_shared_->set_search_query(q);
+            if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+        });
+    sticker_picker_surface_->set_on_layout([this] {
+        if (sticker_picker_search_field_ && sticker_picker_shared_) {
+            sticker_picker_search_field_->set_rect(
+                sticker_picker_shared_->search_field_rect());
+        }
+    });
+
+    GtkWidget* surface_widget = sticker_picker_surface_->widget();
+    gtk_widget_set_size_request(surface_widget, 360, 420);
+    gtk_popover_set_child(GTK_POPOVER(sticker_popover_), surface_widget);
+}
+
+void MainWindow::toggle_sticker_picker() {
+    if (!sticker_popover_) return;
+    if (gtk_widget_get_visible(sticker_popover_)) {
+        gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+        return;
+    }
+    GtkWidget* desired_parent =
+        compose_surface_ ? compose_surface_->widget() : nullptr;
+    if (desired_parent &&
+        gtk_widget_get_parent(sticker_popover_) != desired_parent) {
+        gtk_widget_unparent(sticker_popover_);
+        gtk_widget_set_parent(sticker_popover_, desired_parent);
+    }
+    gtk_popover_set_pointing_to(GTK_POPOVER(sticker_popover_), nullptr);
+    if (sticker_picker_shared_) sticker_picker_shared_->refresh_packs();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_text("");
+    if (sticker_picker_shared_) sticker_picker_shared_->set_search_query("");
+    gtk_popover_popup(GTK_POPOVER(sticker_popover_));
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+}
+
+// ---------------------------------------------------------------------------
+// Sticker context menu — right-click on a sticker row offers
+// "Add to Saved Stickers" (suppressed for stickers already saved).
+// ---------------------------------------------------------------------------
+
+void MainWindow::build_sticker_context_menu() {
+    GMenu* menu = g_menu_new();
+    g_menu_append(menu, "Add to Saved Stickers", "sticker.save");
+
+    sticker_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+    gtk_popover_set_has_arrow(GTK_POPOVER(sticker_ctx_menu_), FALSE);
+    gtk_widget_set_parent(sticker_ctx_menu_, msg_surface_->widget());
+    g_object_unref(menu);
+
+    sticker_ctx_actions_ = g_simple_action_group_new();
+    GSimpleAction* save = g_simple_action_new("save", nullptr);
+    g_signal_connect(save, "activate",
+                     G_CALLBACK(on_sticker_save_activate_), this);
+    g_action_map_add_action(G_ACTION_MAP(sticker_ctx_actions_),
+                            G_ACTION(save));
+    g_object_unref(save);
+    gtk_widget_insert_action_group(msg_surface_->widget(), "sticker",
+                                    G_ACTION_GROUP(sticker_ctx_actions_));
+}
+
+void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
+                                      int /*n_press*/,
+                                      double x, double y,
+                                      gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (!self->message_list_view_ || !self->sticker_ctx_menu_) return;
+
+    // Surface coordinates equal MessageListView-local coordinates because
+    // the view is the surface's root widget.
+    auto hit = self->message_list_view_->sticker_hit_at(
+        tk::Point{ static_cast<float>(x), static_cast<float>(y) });
+    if (!hit) return;
+    if (self->client_.user_pack_has_sticker(hit->mxc_url)) return;
+
+    // Claim the gesture so the underlying surface doesn't also process it
+    // (e.g. as a drag-start or text-selection event).
+    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+
+    // Capture sticker fields for the action handler. The hit_at result
+    // points into MessageListView's per-frame sticker_geom_ map and would
+    // dangle by the time the action fires.
+    self->ctx_sticker_event_id_ = hit->event_id;
+    self->ctx_sticker_mxc_url_  = hit->mxc_url;
+    self->ctx_sticker_body_     = hit->body;
+
+    GdkRectangle r{
+        .x      = static_cast<int>(x),
+        .y      = static_cast<int>(y),
+        .width  = 1,
+        .height = 1
+    };
+    gtk_popover_set_pointing_to(GTK_POPOVER(self->sticker_ctx_menu_), &r);
+    gtk_popover_popup(GTK_POPOVER(self->sticker_ctx_menu_));
+}
+
+void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
+                                            GVariant* /*parameter*/,
+                                            gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->ctx_sticker_mxc_url_.empty()) return;
+    self->client_.save_sticker_to_user_pack(
+        self->ctx_sticker_body_,    // shortcode hint (slugified by SDK)
+        self->ctx_sticker_body_,    // body
+        self->ctx_sticker_mxc_url_,
+        "{}");                      // info_json: SDK preserves the original
+                                    // event's info via the local pack cache
+                                    // when the round-trip completes.
+    self->ctx_sticker_event_id_.clear();
+    self->ctx_sticker_mxc_url_.clear();
+    self->ctx_sticker_body_.clear();
+    if (self->sticker_ctx_menu_)
+        gtk_popover_popdown(GTK_POPOVER(self->sticker_ctx_menu_));
 }
 
 void MainWindow::toggle_emoji_picker() {

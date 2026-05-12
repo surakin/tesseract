@@ -11,6 +11,8 @@ qt_add_executable(tesseract_qt
     src/LoginView.h           # MOC input
     src/EmojiPicker.cpp
     src/EmojiPicker.h         # MOC input
+    src/StickerPicker.cpp
+    src/StickerPicker.h       # MOC input
 )
 
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)

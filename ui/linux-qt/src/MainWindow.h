@@ -30,6 +30,7 @@
 #include <vector>
 
 class EmojiPicker;
+class StickerPicker;
 
 namespace qt6 {
 
@@ -64,6 +65,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_image_packs_updated() override;
 
 signals:
     void timelineReset(QString roomId, std::vector<tesseract::Event*> snapshot);
@@ -73,6 +75,7 @@ signals:
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString context, QString description, bool soft_logout);
     void backupProgress(tesseract::BackupProgress progress);
+    void imagePacksUpdated();
 };
 
 // ---------------------------------------------------------------------------
@@ -175,6 +178,7 @@ private:
     tesseract::views::ComposeBar*           composeShared_   = nullptr;  // borrowed
     std::unique_ptr<tk::NativeTextArea>     composeTextArea_;
     EmojiPicker*                            emojiPicker_     = nullptr;
+    ::StickerPicker*                        stickerPicker_   = nullptr;
 
     // When the user opens the emoji picker from a message's "+" chip
     // (rather than from the compose bar), this holds the target event

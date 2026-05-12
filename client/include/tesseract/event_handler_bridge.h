@@ -47,6 +47,7 @@ public:
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;
+    void on_image_packs_updated() const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning

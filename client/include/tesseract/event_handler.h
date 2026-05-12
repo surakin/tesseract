@@ -60,6 +60,12 @@ public:
     /// are imported from the backup during/after `recover()`. UIs use this
     /// to drive the recovery banner and the RecoveryDialog progress text.
     virtual void on_backup_progress(const BackupProgress& /*progress*/) {}
+
+    /// Fired when the cached set of MSC2545 image packs changes (user-pack
+    /// edit, room-pack subscription, or live state-event update on a
+    /// referenced room). UIs re-query via `Client::list_image_packs` and
+    /// repaint any open StickerPicker / EmojiPicker custom tabs.
+    virtual void on_image_packs_updated() {}
 };
 
 } // namespace tesseract

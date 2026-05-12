@@ -26,6 +26,7 @@ add_executable(tesseract_tests
     cpp/test_tk_emoji_picker.cpp
     cpp/test_tk_recovery_banner.cpp
     cpp/test_tk_compose_bar.cpp
+    cpp/test_tk_sticker_picker.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

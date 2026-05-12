@@ -1,5 +1,6 @@
 #pragma once
 #include "tesseract/client.h"
+#include "tesseract/image_pack.h"
 #include "tesseract_sdk_bridge_cxx/bridge.h"
 #include "tesseract/types.h"
 #include <memory>
@@ -28,6 +29,33 @@ inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p) {
         .state         = state,
         .imported_keys = p.imported_keys,
         .total_keys    = p.total_keys,
+    };
+}
+
+inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p) {
+    PackSourceKind kind = (std::string(p.source_kind) == "room")
+        ? PackSourceKind::Room : PackSourceKind::User;
+    return {
+        .id               = std::string(p.id),
+        .display_name     = std::string(p.display_name),
+        .avatar_url       = std::string(p.avatar_url),
+        .attribution      = std::string(p.attribution),
+        .usage            = static_cast<PackUsage>(p.usage_mask),
+        .source_kind      = kind,
+        .source_room      = std::string(p.source_room),
+        .source_state_key = std::string(p.source_state_key),
+    };
+}
+
+inline ImagePackImage from_ffi(const tesseract_ffi::ImageEntryFfi& e) {
+    return {
+        .pack_id   = std::string(e.pack_id),
+        .shortcode = std::string(e.shortcode),
+        .url       = std::string(e.url),
+        .body      = std::string(e.body),
+        .info_json = std::string(e.info_json),
+        .usage     = static_cast<PackUsage>(e.usage_mask),
+        .favorite  = e.favorite,
     };
 }
 

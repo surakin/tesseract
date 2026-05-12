@@ -16,6 +16,7 @@
 #include "tk/widget.h"
 
 #include <tesseract/emoji.h>
+#include <tesseract/image_pack.h>
 
 #include <cstdint>
 #include <functional>
@@ -41,6 +42,18 @@ public:
     /// presentation so re-shows reflect new picks.
     void refresh_frequents();
 
+    /// Refresh the MSC2545 emoticon packs (extra tabs after the Unicode
+    /// categories). Hosts call this from
+    /// `IEventHandler::on_image_packs_updated`.
+    void refresh_emoticon_packs();
+
+    /// Host-supplied image cache (same shape as MessageListView). Used to
+    /// render custom emoticon tabs.
+    using ImageProvider =
+        std::function<const tk::Image*(const std::string& cache_key,
+                                        const std::string& source_token)>;
+    void set_image_provider(ImageProvider p);
+
     /// Host hook for the search-row overlay. Bounds in widget-local
     /// coordinates; valid after the first arrange() pass.
     tk::Rect search_field_rect() const { return search_rect_; }
@@ -48,8 +61,14 @@ public:
     /// Called by the host's NativeTextField on every text change.
     void set_search_query(std::string query);
 
-    /// Fires when the user picks an emoji.
+    /// Fires when the user picks a Unicode glyph.
     std::function<void(const std::string&)> on_selected;
+
+    /// Fires when the user picks a custom (MSC2545) emoticon from a pack
+    /// tab. For now hosts insert `:shortcode:` into the compose field;
+    /// the MSC2545 Phase B "rich emoticon" sending path lives in a
+    /// follow-up.
+    std::function<void(const tesseract::ImagePackImage&)> on_emoticon_selected;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
@@ -60,24 +79,35 @@ public:
 private:
     class GridAdapter;
 
-    enum class Page : std::uint8_t { Frequents, Category, Search };
+    enum class Page : std::uint8_t { Frequents, Category, CustomPack, Search };
 
     void switch_to_frequents();
     void switch_to_category(tesseract::emoji::Category c);
+    void switch_to_custom_pack(int idx);
     void switch_to_search();
     void rebuild_current_items();
 
-    int tab_at(tk::Point local) const;   // 0 = Frequents, 1..8 = categories
+    // Tab layout. Indexes:
+    //   0          → Frequents
+    //   1..N       → Unicode categories (kCategories)
+    //   N+1..end   → Custom MSC2545 emoticon packs (in custom_packs_ order)
+    int      tab_at(tk::Point local) const;
     tk::Rect tab_strip_rect() const;
+    int      builtin_tab_count() const; // 1 + kCategories
+    int      total_tab_count()   const; // builtin + custom_packs_.size()
 
     tesseract::Client*                   client_   = nullptr;
+    ImageProvider                        provider_;
 
     Page                                 page_     = Page::Category;
     tesseract::emoji::Category           category_ = tesseract::emoji::Category::SmileysPeople;
+    int                                  custom_pack_idx_ = -1;
     std::string                          query_;
 
     std::vector<std::string>             frequents_glyphs_;
-    std::vector<std::string>             current_glyphs_;     // backs the grid
+    std::vector<std::string>             current_glyphs_;     // unicode page items
+    std::vector<tesseract::ImagePack>    custom_packs_;       // emoticon-capable
+    std::vector<tesseract::ImagePackImage> current_emoticons_; // image-cell items
 
     tk::GridView*                        grid_         = nullptr;   // borrowed
     std::unique_ptr<GridAdapter>         grid_adapter_;

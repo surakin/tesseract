@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginView.h"
 #include "EmojiPicker.h"
+#include "StickerPicker.h"
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -102,6 +103,10 @@ void EventBridge::on_session_saved(const std::string& session_json) {
 
 void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
     emit backupProgress(progress);
+}
+
+void EventBridge::on_image_packs_updated() {
+    emit imagePacksUpdated();
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +348,42 @@ MainWindow::MainWindow(QWidget* parent)
     msgSurface_->set_root(std::move(msg_view_owner));
     vLayout->addWidget(msgSurface_, 1);
 
+    // Right-click context menu on sticker rows. The shared
+    // MessageListView records sticker rects per-paint (world coords);
+    // we feed the QContextMenuEvent's local-widget position to
+    // `sticker_hit_at` and, on a hit, offer "Add to Saved Stickers".
+    // Suppress the menu when the sticker is already in the user pack.
+    msgSurface_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(msgSurface_, &QWidget::customContextMenuRequested,
+            this, [this](const QPoint& pos) {
+        if (!messageListView_) return;
+        // Surface coordinates equal MessageListView-local coordinates
+        // since the view is the surface's root widget.
+        auto hit = messageListView_->sticker_hit_at(
+            tk::Point{ static_cast<float>(pos.x()),
+                       static_cast<float>(pos.y()) });
+        if (!hit) return;
+        if (client_.user_pack_has_sticker(hit->mxc_url)) return;
+
+        // Capture relevant fields up front; the hit_at result is
+        // recomputed each paint so we don't hold a reference past
+        // the menu lifetime.
+        const auto event_id = hit->event_id;
+        const auto mxc_url  = hit->mxc_url;
+        const auto body     = hit->body;
+
+        QMenu menu(this);
+        QAction* add = menu.addAction("Add to Saved Stickers");
+        connect(add, &QAction::triggered, this, [this, mxc_url, body, event_id]{
+            // Width/height: best-effort from messageListView's row data.
+            // We don't track them here; the SDK preserves info_json
+            // round-trip via the original event when the picker later
+            // sends. For Add-to-pack, an empty info object is fine.
+            client_.save_sticker_to_user_pack(body, body, mxc_url, "{}");
+        });
+        menu.exec(msgSurface_->mapToGlobal(pos));
+    });
+
     // Compose bar — shared widget on a tk::qt6::Surface. The text input
     // is a NativeTextArea overlaid on the shared ComposeBar's
     // text_area_rect; the emoji + send buttons paint into the toolkit.
@@ -472,6 +513,11 @@ MainWindow::MainWindow(QWidget* parent)
         if (emojiPicker_->isVisible()) emojiPicker_->hide();
         else                            emojiPicker_->popupAt(composeSurface_);
     };
+    composeShared_->on_sticker = [this] {
+        if (!stickerPicker_) return;
+        if (stickerPicker_->isVisible()) stickerPicker_->hide();
+        else                              stickerPicker_->popupAt(composeSurface_);
+    };
 
     vLayout->addWidget(composeSurface_);
 
@@ -503,6 +549,19 @@ MainWindow::MainWindow(QWidget* parent)
         composeTextArea_->set_focused(true);
         client_.recent_emoji_bump(glyph.toStdString());
     };
+
+    // Sticker picker: floating panel anchored at the compose-bar sticker
+    // button. On selection, send `m.sticker` to the current room (matrix-
+    // sdk encrypts transparently in E2EE rooms).
+    stickerPicker_ = new StickerPicker(this);
+    stickerPicker_->setClient(&client_);
+    stickerPicker_->onSelected =
+        [this](const tesseract::ImagePackImage& img) {
+            if (currentRoomId_.empty()) return;
+            std::string body = img.body.empty() ? img.shortcode : img.body;
+            client_.send_sticker(currentRoomId_, body, img.url, img.info_json);
+            stickerPicker_->hide();
+        };
 
     // Reaction-chip click: toggle (Rust handles add/remove).
     messageListView_->on_reaction_toggled =
@@ -541,6 +600,9 @@ MainWindow::MainWindow(QWidget* parent)
             this,          &MainWindow::onSyncError);
     connect(bridge_.get(), &EventBridge::backupProgress,
             this,          &MainWindow::onBackupProgress);
+    connect(bridge_.get(), &EventBridge::imagePacksUpdated,
+            this, [this]{ if (stickerPicker_) stickerPicker_->refreshPacks(); },
+            Qt::QueuedConnection);
 
     // Back-pagination on scroll-to-top. The shared MessageListView fires
     // this once per crossing of the near-top threshold; the latch is

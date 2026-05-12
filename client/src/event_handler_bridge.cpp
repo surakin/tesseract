@@ -78,4 +78,9 @@ void EventHandlerBridge::on_backup_progress(const BackupProgress& progress) cons
     handler_->on_backup_progress(tesseract::from_ffi(progress));
 }
 
+void EventHandlerBridge::on_image_packs_updated() const {
+    if (!handler_) return;
+    handler_->on_image_packs_updated();
+}
+
 } // namespace tesseract_ffi

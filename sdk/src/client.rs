@@ -161,6 +161,11 @@ pub struct ClientFfi {
     /// Cached homeserver media upload limit in bytes. 0 = unknown / unfetched.
     /// Populated lazily on first `media_upload_limit()` call after login.
     media_upload_limit: AtomicU64,
+    /// Cached MSC2545 image packs (user pack + every enabled room pack).
+    /// Rebuilt by `refresh_image_packs_async` whenever sync delivers a
+    /// relevant event; read by the FFI list/* accessors without blocking.
+    #[cfg(not(test))]
+    image_packs: Arc<Mutex<Vec<crate::image_packs::ImagePack>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     rt:         Runtime,
@@ -205,6 +210,8 @@ impl ClientFfi {
             #[cfg(not(test))]
             imported_keys:    Arc::new(AtomicU64::new(0)),
             media_upload_limit: AtomicU64::new(0),
+            #[cfg(not(test))]
+            image_packs: Arc::new(Mutex::new(Vec::new())),
             rt:         Runtime::new().expect("tokio runtime"),
         }
     }
@@ -383,6 +390,7 @@ impl ClientFfi {
             let client_clone      = client.clone();
             let mut notable_rx    = client.room_info_notable_update_receiver();
             let mut stop_rx_rooms = stop_rx.clone();
+            let packs_cache       = Arc::clone(&self.image_packs);
 
             self.rt.spawn(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
@@ -401,6 +409,13 @@ impl ClientFfi {
                 if let Ok(guard) = h.lock() {
                     guard.on_rooms_updated(&rooms);
                 }
+                // Initial image-pack snapshot, same reasoning as for the
+                // room list: piggy-back on the same wakeup channel so
+                // both lists arrive together after every notable
+                // sync delta.
+                let pks = rebuild_image_packs(&client_clone).await;
+                if let Ok(mut g) = packs_cache.lock() { *g = pks; }
+                if let Ok(guard) = h.lock() { guard.on_image_packs_updated(); }
 
                 loop {
                     tokio::select! {
@@ -417,6 +432,18 @@ impl ClientFfi {
                             let rooms = build_room_infos(&client_clone).await;
                             if let Ok(guard) = h.lock() {
                                 guard.on_rooms_updated(&rooms);
+                            }
+                            // Refresh image packs on the same tick.
+                            // Account-data and state-event changes that
+                            // matter for image packs flow through the
+                            // same sync deltas that produce notable
+                            // room updates; piggy-backing keeps us off
+                            // a polling timer and out of the event
+                            // handler machinery.
+                            let pks = rebuild_image_packs(&client_clone).await;
+                            if let Ok(mut g) = packs_cache.lock() { *g = pks; }
+                            if let Ok(guard) = h.lock() {
+                                guard.on_image_packs_updated();
                             }
                         }
                     }
@@ -1266,24 +1293,363 @@ impl ClientFfi {
             .unwrap_or_default()
     }
 
-pub fn fetch_source_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
+    /// Download media from either a plain `mxc://` URI or a JSON-serialised
+    /// `MediaSource` carrying an `EncryptedFile`. The two shapes are detected
+    /// by the leading `mxc:` prefix: plain URIs go through `MediaSource::Plain`
+    /// and JSON payloads are deserialised as a full `MediaSource` so the SDK
+    /// can decrypt encrypted attachments (MSC2545 stickers, encrypted images,
+    /// etc.). Returns an empty Vec on any failure.
+    pub fn fetch_source_bytes(&mut self, source: &str) -> Vec<u8> {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
 
         let Some(client) = self.client.clone() else { return Vec::new() };
-        if mxc_url.is_empty() { return Vec::new(); }
+        if source.is_empty() { return Vec::new(); }
 
-        let uri = OwnedMxcUri::from(mxc_url);
-        if !uri.is_valid() { return Vec::new(); }
+        let media_source = if source.starts_with("mxc://") {
+            let uri = OwnedMxcUri::from(source);
+            if !uri.is_valid() { return Vec::new(); }
+            MediaSource::Plain(uri.into())
+        } else {
+            match serde_json::from_str::<MediaSource>(source) {
+                Ok(s)  => s,
+                Err(_) => return Vec::new(),
+            }
+        };
 
         let request = MediaRequestParameters {
-            source: MediaSource::Plain(uri.into()),
+            source: media_source,
             format: MediaFormat::File,
         };
-self.rt
+        self.rt
             .block_on(client.media().get_media_content(&request, true))
             .unwrap_or_default()
+    }
+
+    // -----------------------------------------------------------------------
+    // MSC2545 image packs (Step 8)
+    // -----------------------------------------------------------------------
+
+    /// Snapshot of every MSC2545 image pack the client currently knows about.
+    /// Reads the in-memory `image_packs` cache populated by the sync watcher
+    /// and the explicit `refresh_image_packs_async` rebuilds; no network
+    /// roundtrip.
+    #[cfg(not(test))]
+    pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
+        cache
+            .iter()
+            .map(|p| crate::ffi::ImagePackFfi {
+                id:               p.id.clone(),
+                display_name:     p.display_name.clone(),
+                avatar_url:       p.avatar_url.clone(),
+                attribution:      p.attribution.clone(),
+                usage_mask:       p.usage,
+                source_kind:      p.source_kind().to_owned(),
+                source_room:      p.source_room().to_owned(),
+                source_state_key: p.source_state_key().to_owned(),
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> { Vec::new() }
+
+    /// Return every entry in `pack_id` whose usage mask intersects
+    /// `usage_filter` ("sticker" | "emoticon" | "any" — anything else is
+    /// treated as "any"). When `pack_id` doesn't exist, returns empty.
+    #[cfg(not(test))]
+    pub fn list_pack_images(
+        &self,
+        pack_id: &str,
+        usage_filter: &str,
+    ) -> Vec<crate::ffi::ImageEntryFfi> {
+        let needed = match usage_filter {
+            "sticker"  => crate::image_packs::USAGE_STICKER,
+            "emoticon" => crate::image_packs::USAGE_EMOTICON,
+            _          => crate::image_packs::USAGE_ANY,
+        };
+        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
+        let Some(pack) = cache.iter().find(|p| p.id == pack_id) else { return Vec::new() };
+        pack.images
+            .iter()
+            .filter(|e| e.usage & needed != 0)
+            .map(|e| image_entry_to_ffi(&pack.id, e))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn list_pack_images(
+        &self,
+        _pack_id: &str,
+        _usage_filter: &str,
+    ) -> Vec<crate::ffi::ImageEntryFfi> { Vec::new() }
+
+    /// Flatten every favourite-marked entry across all packs. Sticker-usage
+    /// only (Favorites tab is sticker-specific).
+    #[cfg(not(test))]
+    pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> {
+        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
+        let mut out = Vec::new();
+        for pack in cache.iter() {
+            for e in &pack.images {
+                if e.favorite && (e.usage & crate::image_packs::USAGE_STICKER != 0) {
+                    out.push(image_entry_to_ffi(&pack.id, e));
+                }
+            }
+        }
+        out
+    }
+
+    #[cfg(test)]
+    pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> { Vec::new() }
+
+    /// Send an `m.sticker` event to `room_id`. Wraps
+    /// `room.send(StickerEventContent { .. })`. matrix-sdk encrypts in E2EE
+    /// rooms transparently; outgoing stickers always carry a plain
+    /// `mxc://` source.
+    #[cfg(not(test))]
+    pub fn send_sticker(
+        &mut self,
+        room_id: &str,
+        body: &str,
+        image_url: &str,
+        info_json: &str,
+    ) -> OpResult {
+        use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
+        use matrix_sdk::ruma::events::room::ImageInfo;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+
+        if image_url.is_empty() {
+            return err("image_url is empty");
+        }
+        let uri = OwnedMxcUri::from(image_url);
+        if !uri.is_valid() {
+            return err("image_url is not a valid mxc:// uri");
+        }
+
+        let info: ImageInfo = if info_json.is_empty() || info_json == "{}" {
+            ImageInfo::new()
+        } else {
+            match serde_json::from_str(info_json) {
+                Ok(i) => i,
+                Err(_) => ImageInfo::new(),
+            }
+        };
+
+        // ruma's StickerEventContent::new takes a plain mxc URI directly;
+        // matrix-sdk handles E2EE rooms transparently when sending. The
+        // `StickerMediaSource` enum (Plain / Encrypted) is only meaningful
+        // for received events (parsed under the `compat-encrypted-stickers`
+        // feature).
+        let _ = StickerMediaSource::Plain(uri.clone()); // keep import path used
+        let content = StickerEventContent::new(body.to_owned(), info, uri);
+
+        match self.rt.block_on(async move { room.send(content).await }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_sticker(
+        &mut self,
+        _room_id: &str,
+        _body: &str,
+        _image_url: &str,
+        _info_json: &str,
+    ) -> OpResult { err("not logged in") }
+
+    /// Add a sticker to the user's MSC2545 personal pack
+    /// (`im.ponies.user_emotes`). Reads the current content (creating an
+    /// empty object on first use), inserts the new entry under a
+    /// collision-free shortcode derived from `shortcode` or `body`, writes
+    /// the result back via `set_account_data_raw`, then triggers a local
+    /// cache rebuild.
+    #[cfg(not(test))]
+    pub fn save_sticker_to_user_pack(
+        &mut self,
+        shortcode: &str,
+        body: &str,
+        image_url: &str,
+        info_json: &str,
+    ) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+
+        if image_url.is_empty() {
+            return err("image_url is empty");
+        }
+        let uri = matrix_sdk::ruma::OwnedMxcUri::from(image_url);
+        if !uri.is_valid() {
+            return err("image_url is not a valid mxc:// uri");
+        }
+
+        let ev_type =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+
+        let client_for_read = client.clone();
+        let read_result = self.rt.block_on(async move {
+            client_for_read.account().account_data_raw(ev_type.clone()).await
+        });
+
+        let current_content: Value = match read_result {
+            Ok(Some(raw)) => serde_json::from_str(raw.json().get())
+                .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+            Ok(None) => Value::Object(serde_json::Map::new()),
+            Err(e)   => return err(format!("read user pack: {e}")),
+        };
+
+        // Compute final shortcode (collision-free) against the existing
+        // images map so re-saving the same sticker doesn't shadow a
+        // pre-existing entry.
+        let existing_images = current_content
+            .get("images")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+
+        let base = if shortcode.is_empty() { body } else { shortcode };
+        let final_shortcode =
+            crate::image_packs::suggest_shortcode(base, &existing_images);
+
+        let new_content = crate::image_packs::upsert_image_into_user_pack(
+            current_content,
+            &final_shortcode,
+            image_url,
+            body,
+            info_json,
+            None,
+            "Saved Stickers",
+        );
+
+        let raw = match Raw::new(&new_content) {
+            Ok(r)  => r.cast_unchecked(),
+            Err(e) => return err(format!("serialize user pack: {e}")),
+        };
+
+        let client_for_write = client.clone();
+        let ev_type_for_write =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+        let write_result = self.rt.block_on(async move {
+            client_for_write
+                .account()
+                .set_account_data_raw(ev_type_for_write, raw)
+                .await
+        });
+
+        match write_result {
+            Ok(_) => {
+                // Optimistically update the local cache so the UI sees the
+                // change before the next sync round-trip. The eventual
+                // sync-driven rebuild reconciles any drift.
+                self.refresh_image_packs_blocking();
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn save_sticker_to_user_pack(
+        &mut self,
+        _shortcode: &str,
+        _body: &str,
+        _image_url: &str,
+        _info_json: &str,
+    ) -> OpResult { err("not logged in") }
+
+    #[cfg(not(test))]
+    pub fn user_pack_has_sticker(&self, image_url: &str) -> bool {
+        if image_url.is_empty() { return false; }
+        let Ok(cache) = self.image_packs.lock() else { return false };
+        cache.iter()
+            .filter(|p| matches!(p.source, crate::image_packs::PackSource::User))
+            .flat_map(|p| p.images.iter())
+            .any(|e| e.url == image_url)
+    }
+
+    #[cfg(test)]
+    pub fn user_pack_has_sticker(&self, _image_url: &str) -> bool { false }
+
+    #[cfg(not(test))]
+    pub fn toggle_favorite_sticker(&mut self, image_url: &str) -> OpResult {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::serde::Raw;
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        if image_url.is_empty() { return err("image_url is empty"); }
+
+        let ev_type =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+        let client_for_read = client.clone();
+        let read_result = self.rt.block_on(async move {
+            client_for_read.account().account_data_raw(ev_type).await
+        });
+
+        let current: Value = match read_result {
+            Ok(Some(raw)) => serde_json::from_str(raw.json().get())
+                .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+            Ok(None) => return err("sticker is not saved; add it before favoriting"),
+            Err(e)   => return err(format!("read user pack: {e}")),
+        };
+
+        let (new_content, _new_state) =
+            crate::image_packs::toggle_favorite_in_user_pack(current, image_url);
+
+        let raw = match Raw::new(&new_content) {
+            Ok(r)  => r.cast_unchecked(),
+            Err(e) => return err(format!("serialize user pack: {e}")),
+        };
+        let client_for_write = client.clone();
+        let ev_type_for_write =
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+        let write_result = self.rt.block_on(async move {
+            client_for_write.account().set_account_data_raw(ev_type_for_write, raw).await
+        });
+
+        match write_result {
+            Ok(_) => {
+                self.refresh_image_packs_blocking();
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn toggle_favorite_sticker(&mut self, _image_url: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Rebuild the image pack cache on the current runtime, blocking until
+    /// it completes. Used by FFI write paths to refresh the cache eagerly so
+    /// subsequent `list_*` calls reflect the just-written change without
+    /// waiting for the next sync round-trip.
+    #[cfg(not(test))]
+    fn refresh_image_packs_blocking(&self) {
+        let Some(client) = self.client.clone() else { return };
+        let cache = Arc::clone(&self.image_packs);
+        let handler = self.handler.clone();
+        self.rt.block_on(async move {
+            let packs = rebuild_image_packs(&client).await;
+            if let Ok(mut g) = cache.lock() { *g = packs; }
+            if let Some(h) = handler {
+                if let Ok(g) = h.lock() { g.on_image_packs_updated(); }
+            }
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -1428,6 +1794,106 @@ async fn backfill_room_silent(
     Ok(())
 }
 
+/// Convert an `ImageEntry` from the cache to the FFI shape, attaching the
+/// pack id so the UI can group rows back to packs without re-traversing the
+/// cache.
+#[cfg(not(test))]
+fn image_entry_to_ffi(
+    pack_id: &str,
+    e:       &crate::image_packs::ImageEntry,
+) -> crate::ffi::ImageEntryFfi {
+    crate::ffi::ImageEntryFfi {
+        pack_id:    pack_id.to_owned(),
+        shortcode:  e.shortcode.clone(),
+        url:        e.url.clone(),
+        body:       e.body.clone(),
+        info_json:  e.info_json.clone(),
+        usage_mask: e.usage,
+        favorite:   e.favorite,
+    }
+}
+
+/// Rebuild the full `Vec<ImagePack>` from the SDK state store: read the user
+/// pack from account_data, read the enabled-rooms list, and for each
+/// referenced (room_id, state_key) read the room state event. Tries the
+/// unstable type names first (everything in the wild today) and falls back
+/// to the stable names. Returns an empty Vec when not logged in.
+#[cfg(not(test))]
+async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePack> {
+    use matrix_sdk::ruma::events::{GlobalAccountDataEventType, StateEventType};
+    use serde_json::Value;
+
+    let mut packs: Vec<crate::image_packs::ImagePack> = Vec::new();
+
+    // -- User pack (account_data) --
+    for ev_type_str in [
+        crate::image_packs::TYPE_USER_PACK_UNSTABLE,
+        crate::image_packs::TYPE_USER_PACK_STABLE,
+    ] {
+        let et = GlobalAccountDataEventType::from(ev_type_str);
+        let Ok(Some(raw)) = client.account().account_data_raw(et).await else { continue };
+        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else { continue };
+        let Some(mut pack) = crate::image_packs::parse_pack_content(
+            "user".to_owned(),
+            crate::image_packs::PackSource::User,
+            &content,
+        ) else { continue };
+        if pack.display_name.is_empty() {
+            pack.display_name = "Saved Stickers".to_owned();
+        }
+        packs.push(pack);
+        break;
+    }
+
+    // -- Globally enabled room packs (account_data) --
+    let mut room_refs: Vec<(String, String)> = Vec::new();
+    for ev_type_str in [
+        crate::image_packs::TYPE_EMOTE_ROOMS_UNSTABLE,
+        crate::image_packs::TYPE_EMOTE_ROOMS_STABLE,
+    ] {
+        let et = GlobalAccountDataEventType::from(ev_type_str);
+        let Ok(Some(raw)) = client.account().account_data_raw(et).await else { continue };
+        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else { continue };
+        room_refs = crate::image_packs::iter_emote_rooms(&content);
+        break;
+    }
+
+    for (room_id_str, state_key) in room_refs {
+        let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else { continue };
+        let Some(room) = client.get_room(&room_id) else { continue };
+        for ev_type_str in [
+            crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
+            crate::image_packs::TYPE_ROOM_PACK_STABLE,
+        ] {
+            let et = StateEventType::from(ev_type_str);
+            let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else { continue };
+            // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
+            // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
+            // variants are envelopes carrying `{type, content, state_key,...}`;
+            // pull the `content` subobject without doing a full deserialize.
+            use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+            let content_opt: Option<Value> = match &raw_state {
+                RawAnySyncOrStrippedState::Sync(raw)     => raw.get_field("content").ok().flatten(),
+                RawAnySyncOrStrippedState::Stripped(raw) => raw.get_field("content").ok().flatten(),
+            };
+            let Some(content) = content_opt else { continue };
+            let source = crate::image_packs::PackSource::Room {
+                room_id:   room_id_str.clone(),
+                state_key: state_key.clone(),
+            };
+            let id = crate::image_packs::pack_id_for(&source);
+            if let Some(pack) =
+                crate::image_packs::parse_pack_content(id, source, &content)
+            {
+                packs.push(pack);
+                break;
+            }
+        }
+    }
+
+    packs
+}
+
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();
     for room in client.joined_rooms() {
@@ -1561,8 +2027,16 @@ async fn timeline_item_to_ffi(
         event_item.content()
     {
         let c = s.content();
+        // For encrypted sticker sources (MSC2545 + ruma compat-encrypted-stickers
+        // feature) we serialise the full MediaSource as JSON so the C++ side can
+        // pipe it back through fetch_source_bytes for decryption.
         let src = match &c.source {
-            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) => uri.to_string(),
+            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) =>
+                uri.to_string(),
+            matrix_sdk::ruma::events::sticker::StickerMediaSource::Encrypted(file) => {
+                let ms = matrix_sdk::ruma::events::room::MediaSource::Encrypted(file.clone());
+                serde_json::to_string(&ms).unwrap_or_default()
+            }
             _ => String::new(),
         };
         let w = c.info.width.map(u64::from).unwrap_or(0);
