@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "resource.h"
 
 #include <thread>
 
@@ -577,7 +578,18 @@ bool MainWindow::register_class(HINSTANCE hInst) {
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     wc.lpszClassName = CLASS_NAME;
-    wc.hIcon         = LoadIcon(nullptr, IDI_APPLICATION);
+    // Big icon: Alt+Tab, taskbar. Small icon: titlebar, system menu.
+    // LoadImage picks the best-matching frame from the multi-resolution .ico.
+    wc.hIcon = static_cast<HICON>(LoadImageW(
+        hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
+        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+        LR_DEFAULTCOLOR | LR_SHARED));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(
+        hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+        LR_DEFAULTCOLOR | LR_SHARED));
+    if (!wc.hIcon)   wc.hIcon   = LoadIcon(nullptr, IDI_APPLICATION);
+    if (!wc.hIconSm) wc.hIconSm = wc.hIcon;
     return RegisterClassExW(&wc) != 0;
 }
 

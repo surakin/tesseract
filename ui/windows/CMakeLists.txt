@@ -1,9 +1,43 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Generate Tesseract.ico from the shared SVG at build time. Renderer is
+# resvg-py (pure Rust SVG -> PNG), then a small stdlib packer wraps the
+# frames in an ICO container. Install once per build environment with:
+#     python -m pip install resvg-py
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+set(_svg    "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg")
+set(_script "${CMAKE_CURRENT_SOURCE_DIR}/../icons/generate_ico.py")
+set(TESSERACT_ICO_PATH "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.ico")
+
+add_custom_command(
+    OUTPUT "${TESSERACT_ICO_PATH}"
+    COMMAND ${Python3_EXECUTABLE} "${_script}" "${TESSERACT_ICO_PATH}"
+    DEPENDS "${_svg}" "${_script}"
+    COMMENT "Generating Tesseract.ico from tesseract.svg"
+    VERBATIM
+)
+
+# Bake the generated ICO's absolute path into the .rc so rc.exe / windres
+# can find it regardless of build-dir layout.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/Tesseract.rc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
+    @ONLY
+)
+
+# Tell CMake the resource depends on the .ico, so rebuilding the SVG forces
+# rc.exe to re-run.
+set_source_files_properties(
+    "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
+    PROPERTIES OBJECT_DEPENDS "${TESSERACT_ICO_PATH}"
+)
+
 add_executable(tesseract_win32 WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/LoginView.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)

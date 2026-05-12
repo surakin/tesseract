@@ -1,0 +1,7 @@
+// Generated from Tesseract.rc.in by CMake. Do not edit the configured copy
+// in the build directory — edit the .in template instead.
+#include "@CMAKE_CURRENT_SOURCE_DIR@/src/resource.h"
+
+// Lowest-numbered ICON resource also becomes the executable's shell icon
+// (Explorer, taskbar, Alt+Tab) — keep IDI_TESSERACT first.
+IDI_TESSERACT ICON "@TESSERACT_ICO_PATH@"
