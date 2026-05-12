@@ -488,20 +488,25 @@ public:
         on_layout_ = std::move(cb);
     }
 
-    void set_on_image_drop(ImageDropHandler cb) {
-        on_image_drop_ = std::move(cb);
+    void set_on_file_drop(FileDropHandler cb) {
+        on_file_drop_ = std::move(cb);
     }
-    bool has_image_drop_handler() const {
-        return static_cast<bool>(on_image_drop_);
+    bool has_file_drop_handler() const {
+        return static_cast<bool>(on_file_drop_);
     }
 
-    // Read a dropped GFile, sniff MIME, and forward to the installed
-    // handler. Returns true when the drop was accepted (handler fired);
-    // false otherwise so the drop target can tell GTK the drop failed.
-    bool dispatch_image_drop(GFile* file) {
-        if (!file || !on_image_drop_) return false;
+    void set_drag_active(bool active) {
+        if (drag_active_ == active) return;
+        drag_active_ = active;
+        if (drawing_area_) gtk_widget_queue_draw(drawing_area_);
+    }
+    bool drag_active() const { return drag_active_; }
 
-        // Size guard — bail before reading.
+    // Read a single dropped GFile and forward to the installed handler.
+    // Returns true on success. Used to iterate over multi-file drops.
+    bool dispatch_file_drop(GFile* file) {
+        if (!file || !on_file_drop_) return false;
+
         GError*    err  = nullptr;
         GFileInfo* info = g_file_query_info(file,
             G_FILE_ATTRIBUTE_STANDARD_SIZE ","
@@ -512,7 +517,7 @@ public:
         if (!info) return false;
         const goffset sz = g_file_info_get_size(info);
         if (sz <= 0 ||
-            static_cast<std::size_t>(sz) > kMaxDroppedImageBytes) {
+            static_cast<std::size_t>(sz) > kMaxDroppedFileBytes) {
             g_object_unref(info);
             return false;
         }
@@ -529,8 +534,6 @@ public:
             return false;
         }
 
-        // Prefer file-info-supplied content type; fall back to guessing
-        // from name+content. Reject anything outside the image allowlist.
         const char* declared = g_file_info_get_content_type(info);
         gchar*      guessed  = g_content_type_guess(
             g_file_info_get_name(info), static_cast<const guchar*>(data),
@@ -539,47 +542,69 @@ public:
 
         gchar* mime_c = content_type
             ? g_content_type_get_mime_type(content_type) : nullptr;
-
-        auto is_allowed = [](const char* m) {
-            return m && (std::strcmp(m, "image/png")  == 0 ||
-                         std::strcmp(m, "image/jpeg") == 0 ||
-                         std::strcmp(m, "image/webp") == 0 ||
-                         std::strcmp(m, "image/bmp")  == 0 ||
-                         std::strcmp(m, "image/gif")  == 0);
-        };
-
-        if (!is_allowed(mime_c)) {
-            if (mime_c)  g_free(mime_c);
-            if (guessed) g_free(guessed);
-            g_bytes_unref(gb);
-            g_object_unref(info);
-            return false;
-        }
+        std::string mime = mime_c ? mime_c : "application/octet-stream";
 
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(data),
             static_cast<const std::uint8_t*>(data) + len);
 
-        // Sanitize: use the GFile basename (already stripped of dirs).
         char* basename = g_file_get_basename(file);
         std::string filename = basename ? basename : "";
         if (basename) g_free(basename);
 
-        std::string mime = mime_c;
-        on_image_drop_(std::move(bytes), std::move(mime), std::move(filename));
+        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename));
 
-        g_free(mime_c);
+        if (mime_c)  g_free(mime_c);
         if (guessed) g_free(guessed);
         g_bytes_unref(gb);
         g_object_unref(info);
         return true;
     }
 
-    void on_draw(cairo_t* cr, int /*w*/, int /*h*/) {
+    void on_draw(cairo_t* cr, int w, int h) {
         if (!root_) return;
         auto canvas = tk::cairo_pango::make_canvas(cr);
         PaintCtx ctx{ *canvas, *factory_, *theme_ };
         root_->paint(ctx);
+
+        if (drag_active_ && w > 0 && h > 0) {
+            const Color accent = theme_->palette.accent;
+            const double inset = 8.0;
+            const double rx = inset, ry = inset;
+            const double rw = std::max(0.0, w - inset * 2);
+            const double rh = std::max(0.0, h - inset * 2);
+            if (rw <= 0 || rh <= 0) return;
+
+            cairo_save(cr);
+            // Translucent fill.
+            cairo_set_source_rgba(cr,
+                accent.r / 255.0, accent.g / 255.0, accent.b / 255.0, 0.11);
+            cairo_rectangle(cr, rx, ry, rw, rh);
+            cairo_fill(cr);
+            // Dashed border.
+            double dashes[2] = { 6.0, 4.0 };
+            cairo_set_dash(cr, dashes, 2, 0);
+            cairo_set_line_width(cr, 2.0);
+            cairo_set_source_rgba(cr,
+                accent.r / 255.0, accent.g / 255.0, accent.b / 255.0, 0.75);
+            cairo_rectangle(cr, rx, ry, rw, rh);
+            cairo_stroke(cr);
+            cairo_set_dash(cr, nullptr, 0, 0);
+            // Centred label.
+            const char* label = "Drop to attach";
+            cairo_set_source_rgba(cr,
+                accent.r / 255.0, accent.g / 255.0, accent.b / 255.0, 0.95);
+            cairo_select_font_face(cr, "Sans",
+                CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+            cairo_set_font_size(cr, 16.0);
+            cairo_text_extents_t te;
+            cairo_text_extents(cr, label, &te);
+            cairo_move_to(cr,
+                rx + (rw - te.width)  * 0.5 - te.x_bearing,
+                ry + (rh - te.height) * 0.5 - te.y_bearing);
+            cairo_show_text(cr, label);
+            cairo_restore(cr);
+        }
     }
 
     void on_resize(int /*w*/, int /*h*/) { relayout(); }
@@ -684,7 +709,8 @@ private:
     Widget*                             hovered_widget_ = nullptr;
     double                              last_pointer_x_ = -1;
     double                              last_pointer_y_ = -1;
-    ImageDropHandler                    on_image_drop_;
+    FileDropHandler                     on_file_drop_;
+    bool                                drag_active_   = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -733,22 +759,42 @@ gboolean scroll_cb(GtkEventControllerScroll*, double dx, double dy,
 
 // GtkDropTarget "drop" signal. Receives a GValue holding either a
 // GdkFileList (multi-file drag from Nautilus) or a single GFile (URI
-// drag from Firefox etc.). We take the first acceptable file, hand it
-// to the host, and ignore the rest.
+// drag from Firefox etc.). Iterates over every dropped file; the shell
+// dispatches by mime.
 gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value,
                   double /*x*/, double /*y*/, gpointer p) {
     Host* host = static_cast<Host*>(p);
     if (!host || !value) return FALSE;
 
-    GFile* file = nullptr;
+    host->set_drag_active(false);
+
+    bool any = false;
     if (G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST)) {
         GSList* list = static_cast<GSList*>(g_value_get_boxed(value));
-        if (list) file = G_FILE(list->data);
+        for (GSList* it = list; it != nullptr; it = it->next) {
+            GFile* f = G_FILE(it->data);
+            if (host->dispatch_file_drop(f)) any = true;
+        }
     } else if (G_VALUE_HOLDS(value, G_TYPE_FILE)) {
-        file = G_FILE(g_value_get_object(value));
+        GFile* f = G_FILE(g_value_get_object(value));
+        if (host->dispatch_file_drop(f)) any = true;
     }
-    if (!file) return FALSE;
-    return host->dispatch_image_drop(file) ? TRUE : FALSE;
+    return any ? TRUE : FALSE;
+}
+
+GdkDragAction drop_enter_cb(GtkDropTarget* /*target*/,
+                             double /*x*/, double /*y*/, gpointer p) {
+    Host* host = static_cast<Host*>(p);
+    if (host && host->has_file_drop_handler()) {
+        host->set_drag_active(true);
+        return GDK_ACTION_COPY;
+    }
+    return static_cast<GdkDragAction>(0);
+}
+
+void drop_leave_cb(GtkDropTarget* /*target*/, gpointer p) {
+    Host* host = static_cast<Host*>(p);
+    if (host) host->set_drag_active(false);
 }
 
 } // namespace
@@ -804,6 +850,10 @@ Surface::Surface(const Theme& theme) {
     gtk_drop_target_set_gtypes(drop, drop_types, G_N_ELEMENTS(drop_types));
     g_signal_connect(drop, "drop",
                       G_CALLBACK(&drop_cb), host_.get());
+    g_signal_connect(drop, "enter",
+                      G_CALLBACK(&drop_enter_cb), host_.get());
+    g_signal_connect(drop, "leave",
+                      G_CALLBACK(&drop_leave_cb), host_.get());
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(drop));
 
     // The overlay is owned by whoever embeds it. Sink the floating
@@ -836,8 +886,8 @@ void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));
 }
 
-void Surface::set_on_image_drop(ImageDropHandler cb) {
-    host_->set_on_image_drop(std::move(cb));
+void Surface::set_on_file_drop(FileDropHandler cb) {
+    host_->set_on_file_drop(std::move(cb));
 }
 
 } // namespace tk::gtk4

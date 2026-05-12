@@ -144,6 +144,25 @@ public:
                       std::uint32_t width,
                       std::uint32_t height);
 
+    /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
+    /// the raw file payload (no re-encoding); `mime_type` is best-effort —
+    /// "application/octet-stream" is acceptable when unknown. When `caption`
+    /// is non-empty the event follows MSC2530 framing (`body` = caption,
+    /// dedicated `filename` field carries the file name). E2EE rooms are
+    /// handled transparently by matrix-sdk.
+    Result send_file(const std::string& room_id,
+                     const std::vector<uint8_t>& bytes,
+                     const std::string& mime_type,
+                     const std::string& filename,
+                     const std::string& caption);
+
+    /// Homeserver-reported maximum upload size, in bytes. Cached after the
+    /// first successful call. Returns 0 when not yet fetched, the server
+    /// doesn't advertise a limit, or the client is not logged in. UIs use
+    /// this to reject oversize attachments locally rather than waiting for
+    /// a long upload to fail server-side.
+    std::uint64_t media_upload_limit();
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a

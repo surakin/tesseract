@@ -552,19 +552,34 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                                     std::move(mime));
         });
 
-    // Drag-and-drop: dropping an image file on either the message list
-    // or the composer parks it in the same pending-image slot the paste
-    // path uses.
-    auto on_image_drop = [this](std::vector<std::uint8_t> bytes,
-                                std::string mime,
-                                std::string filename) {
-        if (compose_shared_)
+    // Drag-and-drop: dropping any file on either the message list or the
+    // composer parks it in the compose bar — images go to the preview
+    // band, everything else to the file chip.
+    auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
+                               std::string mime,
+                               std::string filename) {
+        if (!compose_shared_) return;
+        const auto limit = client_.media_upload_limit();
+        if (limit > 0 && bytes.size() > limit) {
+            if (status_bar_) {
+                std::string msg = "File exceeds server limit ("
+                                + tesseract::views::format_size(limit) + ")";
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+            return;
+        }
+        if (mime.rfind("image/", 0) == 0) {
             compose_shared_->set_pending_image(std::move(bytes),
                                                std::move(mime),
                                                std::move(filename));
+        } else {
+            compose_shared_->set_pending_file(std::move(bytes),
+                                              std::move(mime),
+                                              std::move(filename));
+        }
     };
-    compose_surface_->set_on_image_drop(on_image_drop);
-    if (msg_surface_) msg_surface_->set_on_image_drop(on_image_drop);
+    compose_surface_->set_on_file_drop(on_file_drop);
+    if (msg_surface_) msg_surface_->set_on_file_drop(on_file_drop);
     compose_surface_->set_on_layout([this] {
         if (compose_shared_ && compose_text_area_)
             compose_text_area_->set_rect(compose_shared_->text_area_rect());
@@ -596,6 +611,21 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
+        }
+    };
+    compose_shared_->on_send_file = [this](std::vector<std::uint8_t> bytes,
+                                             std::string mime,
+                                             std::string filename,
+                                             std::string caption) {
+        if (current_room_id_.empty()) return;
+        auto res = client_.send_file(current_room_id_, bytes, mime,
+                                      filename, caption);
+        if (res) {
+            if (compose_text_area_) compose_text_area_->set_text("");
+            if (compose_shared_)    compose_shared_->set_current_text({});
+        } else if (status_bar_) {
+            std::string msg = "Send file failed: " + res.message;
+            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         }
     };
     compose_shared_->on_size_changed = [this] {

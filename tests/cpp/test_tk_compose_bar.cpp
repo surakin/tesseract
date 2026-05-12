@@ -255,6 +255,110 @@ TEST_CASE("ComposeBar second pending image replaces the first",
     CHECK(changes == 1);
 }
 
+TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send without text",
+          "[tk][view][compose][file]") {
+    Stage st;
+    ComposeBar bar;
+    const float baseline = bar.natural_height();
+    CHECK_FALSE(bar.has_pending());
+
+    int size_changes = 0;
+    bar.on_size_changed = [&] { ++size_changes; };
+
+    std::vector<std::uint8_t> payload(128, 0xAB);
+    bar.set_pending_file(std::move(payload),
+                         "application/pdf",
+                         "report.pdf");
+    CHECK(bar.has_pending());
+    // File band is shorter than the image band, but still grows past baseline.
+    CHECK(bar.natural_height() > baseline);
+    CHECK(bar.natural_height() < baseline + ComposeBar::kPreviewBandH);
+    CHECK(size_changes == 1);
+
+    Button* send = find_button(bar, "Send");
+    REQUIRE(send);
+    CHECK(send->enabled());
+
+    // The chip layout is built lazily in arrange(); ensure that path runs
+    // without crashing the test surface.
+    st.run(bar, { 0, 0, 640, bar.natural_height() });
+}
+
+TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
+          "[tk][view][compose][file]") {
+    Stage st;
+    ComposeBar bar;
+
+    bool fired = false;
+    std::string got_mime, got_filename, got_caption;
+    std::size_t got_size = 0;
+    bar.on_send_file = [&](std::vector<std::uint8_t> bytes,
+                            std::string mime,
+                            std::string filename,
+                            std::string caption) {
+        fired = true;
+        got_size = bytes.size();
+        got_mime = std::move(mime);
+        got_filename = std::move(filename);
+        got_caption = std::move(caption);
+    };
+    int image_fires = 0;
+    bar.on_send_image = [&](std::vector<std::uint8_t>, std::string,
+                              std::string, std::string,
+                              std::uint32_t, std::uint32_t) { ++image_fires; };
+    int plain_send = 0;
+    bar.on_send = [&](const std::string&) { ++plain_send; };
+
+    std::vector<std::uint8_t> payload(2048, 0x42);
+    bar.set_pending_file(std::move(payload),
+                         "application/octet-stream",
+                         "blob.bin");
+    bar.set_current_text("here you go");
+    st.run(bar, { 0, 0, 640, bar.natural_height() });
+
+    Button* send = find_button(bar, "Send");
+    REQUIRE(send);
+    REQUIRE(send->enabled());
+    send->click();
+
+    CHECK(fired);
+    CHECK(got_mime == "application/octet-stream");
+    CHECK(got_filename == "blob.bin");
+    CHECK(got_caption == "here you go");
+    CHECK(got_size == 2048);
+    CHECK(image_fires == 0);
+    CHECK(plain_send == 0);
+    CHECK_FALSE(bar.has_pending());
+}
+
+TEST_CASE("ComposeBar pending image followed by pending file replaces the attachment",
+          "[tk][view][compose][file]") {
+    ComposeBar bar;
+    bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
+                           "image/png");
+    REQUIRE(bar.has_pending());
+    // image band heights to compare deltas against
+    const float h_with_image = bar.natural_height();
+
+    bar.set_pending_file(std::vector<std::uint8_t>(64, 0x11),
+                         "application/zip", "archive.zip");
+    REQUIRE(bar.has_pending());
+    // File band is strictly smaller than image band, so the bar shrinks.
+    CHECK(bar.natural_height() < h_with_image);
+}
+
+TEST_CASE("ComposeBar clear_pending discards a pending file too",
+          "[tk][view][compose][file]") {
+    ComposeBar bar;
+    const float baseline = bar.natural_height();
+    bar.set_pending_file(std::vector<std::uint8_t>(16, 0x00),
+                         "application/json", "data.json");
+    REQUIRE(bar.has_pending());
+    bar.clear_pending();
+    CHECK_FALSE(bar.has_pending());
+    CHECK(bar.natural_height() == baseline);
+}
+
 TEST_CASE("ComposeBar set_enabled(false) gates the send button regardless of text",
           "[tk][view][compose]") {
     Stage st;

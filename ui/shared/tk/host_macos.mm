@@ -5,6 +5,7 @@
 #import <AppKit/AppKit.h>
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include <algorithm>
 #include <cmath>
@@ -62,17 +63,19 @@ public:
     void on_pointer_leave();
     void on_wheel       (NSPoint p, CGFloat dx, CGFloat dy);
 
-    // Drag-and-drop. `pasteboard_has_image` is consulted from
-    // -draggingEntered: to gate the cursor; `dispatch_image_drop` runs
+    // Drag-and-drop. `pasteboard_has_dropable` is consulted from
+    // -draggingEntered: to gate the cursor; `dispatch_file_drop` runs
     // the actual decode + handler invocation from -performDragOperation:.
-    void set_on_image_drop(ImageDropHandler cb) {
-        on_image_drop_ = std::move(cb);
+    void set_on_file_drop(FileDropHandler cb) {
+        on_file_drop_ = std::move(cb);
     }
-    bool has_image_drop_handler() const {
-        return static_cast<bool>(on_image_drop_);
+    bool has_file_drop_handler() const {
+        return static_cast<bool>(on_file_drop_);
     }
-    bool pasteboard_has_image(NSPasteboard* pb) const;
-    bool dispatch_image_drop (NSPasteboard* pb);
+    bool pasteboard_has_dropable(NSPasteboard* pb) const;
+    bool dispatch_file_drop      (NSPasteboard* pb);
+    void set_drag_active(bool active);
+    bool drag_active() const { return drag_active_; }
 
 private:
     TKSurfaceView*                       view_;
@@ -83,7 +86,8 @@ private:
     Widget*                              pressed_widget_ = nullptr;
     Button*                              hovered_btn_    = nullptr;
     Widget*                              hovered_widget_ = nullptr;
-    ImageDropHandler                     on_image_drop_;
+    FileDropHandler                      on_file_drop_;
+    bool                                 drag_active_   = false;
 };
 
 } // namespace tk::macos
@@ -209,10 +213,12 @@ private:
 // ── Drag-and-drop destination ───────────────────────────────────────────
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-    if (!self.hostPtr || !self.hostPtr->has_image_drop_handler())
+    if (!self.hostPtr || !self.hostPtr->has_file_drop_handler())
         return NSDragOperationNone;
-    if (self.hostPtr->pasteboard_has_image(sender.draggingPasteboard))
+    if (self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard)) {
+        self.hostPtr->set_drag_active(true);
         return NSDragOperationCopy;
+    }
     return NSDragOperationNone;
 }
 
@@ -220,14 +226,22 @@ private:
     return [self draggingEntered:sender];
 }
 
+- (void)draggingExited:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    if (self.hostPtr) self.hostPtr->set_drag_active(false);
+}
+
 - (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
     return self.hostPtr
-        && self.hostPtr->pasteboard_has_image(sender.draggingPasteboard);
+        && self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard);
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
     if (!self.hostPtr) return NO;
-    return self.hostPtr->dispatch_image_drop(sender.draggingPasteboard) ? YES : NO;
+    BOOL ok = self.hostPtr->dispatch_file_drop(sender.draggingPasteboard)
+        ? YES : NO;
+    self.hostPtr->set_drag_active(false);
+    return ok;
 }
 
 @end
@@ -734,6 +748,31 @@ void Host::on_draw(CGContextRef ctx) {
     canvas->clear(theme_->palette.bg);
     PaintCtx pc{ *canvas, *factory_, *theme_ };
     root_->paint(pc);
+
+    if (drag_active_ && view_) {
+        NSRect b = view_.bounds;
+        const float inset = 8.0f;
+        Rect area{ inset, inset,
+                   std::max(0.0f, static_cast<float>(b.size.width)  - inset * 2),
+                   std::max(0.0f, static_cast<float>(b.size.height) - inset * 2) };
+        if (area.w > 0 && area.h > 0) {
+            Color accent = theme_->palette.accent;
+            Color fill   = accent;  fill.a   = 28;
+            Color stroke = accent;  stroke.a = 192;
+            canvas->fill_rounded_rect(area, 12.0f, fill);
+            canvas->stroke_rounded_rect(area, 12.0f, stroke, 2.0f);
+            TextStyle st{};
+            st.role = FontRole::Title;
+            auto layout = factory_->build_text("Drop to attach", st);
+            if (layout) {
+                Size sz = layout->measure();
+                canvas->draw_text(*layout,
+                    { area.x + (area.w - sz.w) * 0.5f,
+                      area.y + (area.h - sz.h) * 0.5f },
+                    accent);
+            }
+        }
+    }
 }
 
 void Host::on_layout_changed() { relayout(); }
@@ -817,63 +856,77 @@ const char* mime_from_extension_lower(NSString* ext_lower) {
     return nullptr;
 }
 
-// Walk the dragged file-URL list and return the first one whose extension
-// matches the image allowlist. nil if none qualify.
-NSURL* first_image_url(NSPasteboard* pb) {
-    NSArray<NSURL*>* urls = [pb readObjectsForClasses:@[NSURL.class]
-                                                options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
-    for (NSURL* url in urls) {
-        if (!url.isFileURL) continue;
-        NSString* ext = url.pathExtension.lowercaseString;
-        if (mime_from_extension_lower(ext) != nullptr) return url;
+NSArray<NSURL*>* all_file_urls(NSPasteboard* pb) {
+    return [pb readObjectsForClasses:@[NSURL.class]
+                              options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
+}
+
+// Best-effort MIME from a file extension via macOS UTType (10.15+). Falls
+// back to the local image table, then application/octet-stream.
+std::string mime_for_url(NSURL* url) {
+    NSString* ext = url.pathExtension.lowercaseString;
+    if (ext.length > 0) {
+        if (@available(macOS 11.0, *)) {
+            UTType* type = [UTType typeWithFilenameExtension:ext];
+            if (type) {
+                NSString* mime = type.preferredMIMEType;
+                if (mime.length > 0) return mime.UTF8String;
+            }
+        }
+        if (const char* m = mime_from_extension_lower(ext)) return m;
     }
-    return nil;
+    return "application/octet-stream";
 }
 
 } // namespace
 
-bool Host::pasteboard_has_image(NSPasteboard* pb) const {
+void Host::set_drag_active(bool active) {
+    if (drag_active_ == active) return;
+    drag_active_ = active;
+    if (view_) view_.needsDisplay = YES;
+}
+
+bool Host::pasteboard_has_dropable(NSPasteboard* pb) const {
     if (!pb) return false;
-    if (first_image_url(pb) != nil) return true;
-    // In-app image data — Safari / app drags supply these directly.
+    NSArray<NSURL*>* urls = all_file_urls(pb);
+    if (urls.count > 0) return true;
     if ([pb dataForType:NSPasteboardTypePNG] != nil)  return true;
     if ([pb dataForType:@"public.jpeg"]      != nil)  return true;
     return false;
 }
 
-bool Host::dispatch_image_drop(NSPasteboard* pb) {
-    if (!pb || !on_image_drop_) return false;
+bool Host::dispatch_file_drop(NSPasteboard* pb) {
+    if (!pb || !on_file_drop_) return false;
+    bool any = false;
 
-    // 1) File URL — preserve original filename.
-    NSURL* url = first_image_url(pb);
-    if (url) {
+    // 1) File URLs — one handler call per file. The shell branches on mime.
+    NSArray<NSURL*>* urls = all_file_urls(pb);
+    for (NSURL* url in urls) {
+        if (!url.isFileURL) continue;
         NSString* path = url.path;
         NSError* err = nil;
         NSDictionary<NSFileAttributeKey, id>* attrs =
             [NSFileManager.defaultManager attributesOfItemAtPath:path error:&err];
-        if (!attrs) return false;
+        if (!attrs) continue;
         unsigned long long sz =
             [attrs[NSFileSize] unsignedLongLongValue];
-        if (sz == 0 || sz > kMaxDroppedImageBytes) return false;
+        if (sz == 0 || sz > kMaxDroppedFileBytes) continue;
 
         NSData* data = [NSData dataWithContentsOfFile:path
                                                 options:0
                                                   error:&err];
-        if (!data || data.length == 0) return false;
+        if (!data || data.length == 0) continue;
 
-        NSString* ext_lower = path.pathExtension.lowercaseString;
-        const char* mime = mime_from_extension_lower(ext_lower);
-        if (!mime) return false;
-
+        std::string mime = mime_for_url(url);
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(data.bytes),
             static_cast<const std::uint8_t*>(data.bytes) + data.length);
         std::string filename = path.lastPathComponent.UTF8String
             ? std::string(path.lastPathComponent.UTF8String) : std::string{};
-        on_image_drop_(std::move(bytes), std::string(mime),
-                        std::move(filename));
-        return true;
+        on_file_drop_(std::move(bytes), std::move(mime), std::move(filename));
+        any = true;
     }
+    if (any) return true;
 
     // 2) In-app image data — try PNG then JPEG. Drop is unnamed.
     NSData* png = [pb dataForType:NSPasteboardTypePNG];
@@ -881,7 +934,7 @@ bool Host::dispatch_image_drop(NSPasteboard* pb) {
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(png.bytes),
             static_cast<const std::uint8_t*>(png.bytes) + png.length);
-        on_image_drop_(std::move(bytes), "image/png", std::string{});
+        on_file_drop_(std::move(bytes), "image/png", std::string{});
         return true;
     }
     NSData* jpg = [pb dataForType:@"public.jpeg"];
@@ -889,7 +942,7 @@ bool Host::dispatch_image_drop(NSPasteboard* pb) {
         std::vector<std::uint8_t> bytes(
             static_cast<const std::uint8_t*>(jpg.bytes),
             static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
-        on_image_drop_(std::move(bytes), "image/jpeg", std::string{});
+        on_file_drop_(std::move(bytes), "image/jpeg", std::string{});
         return true;
     }
 
@@ -934,8 +987,8 @@ void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));
 }
 
-void Surface::set_on_image_drop(ImageDropHandler cb) {
-    host_->set_on_image_drop(std::move(cb));
+void Surface::set_on_file_drop(FileDropHandler cb) {
+    host_->set_on_file_drop(std::move(cb));
 }
 
 } // namespace tk::macos

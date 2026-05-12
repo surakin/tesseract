@@ -660,6 +660,33 @@ public:
             PaintCtx ctx{ canvas, *factory_, *theme_ };
             root_->paint(ctx);
         }
+        if (drag_active_) {
+            RECT rc;
+            GetClientRect(hwnd_, &rc);
+            float w = static_cast<float>(rc.right - rc.left);
+            float h = static_cast<float>(rc.bottom - rc.top);
+            const float inset = 8.0f;
+            Rect area{ inset, inset,
+                       std::max(0.0f, w - inset * 2),
+                       std::max(0.0f, h - inset * 2) };
+            if (area.w > 0 && area.h > 0) {
+                Color accent = theme_->palette.accent;
+                Color fill   = accent;  fill.a = 28;
+                Color stroke = accent;  stroke.a = 192;
+                canvas.fill_rounded_rect(area, 12.0f, fill);
+                canvas.stroke_rounded_rect(area, 12.0f, stroke, 2.0f);
+                TextStyle st{};
+                st.role = FontRole::Title;
+                auto layout = factory_->build_text("Drop to attach", st);
+                if (layout) {
+                    Size sz = layout->measure();
+                    canvas.draw_text(*layout,
+                        { area.x + (area.w - sz.w) * 0.5f,
+                          area.y + (area.h - sz.h) * 0.5f },
+                        accent);
+                }
+            }
+        }
         bool lost = d2d_surface_->end_paint();
         EndPaint(hwnd_, &ps);
         if (lost) InvalidateRect(hwnd_, nullptr, FALSE);
@@ -752,22 +779,29 @@ private:
     std::unordered_map<int, Win32NativeTextArea*>  areas_by_id_;
 
 public:
-    void set_on_image_drop(ImageDropHandler cb) {
-        on_image_drop_ = std::move(cb);
+    void set_on_file_drop(FileDropHandler cb) {
+        on_file_drop_ = std::move(cb);
     }
-    bool has_image_drop_handler() const {
-        return static_cast<bool>(on_image_drop_);
+    bool has_file_drop_handler() const {
+        return static_cast<bool>(on_file_drop_);
     }
-    void fire_image_drop(std::vector<std::uint8_t> bytes,
+    void fire_file_drop(std::vector<std::uint8_t> bytes,
                          std::string               mime,
                          std::string               filename) {
-        if (on_image_drop_)
-            on_image_drop_(std::move(bytes), std::move(mime),
+        if (on_file_drop_)
+            on_file_drop_(std::move(bytes), std::move(mime),
                             std::move(filename));
     }
+    void set_drag_active(bool active) {
+        if (drag_active_ == active) return;
+        drag_active_ = active;
+        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+    bool drag_active() const { return drag_active_; }
 
 private:
-    ImageDropHandler                     on_image_drop_;
+    FileDropHandler                      on_file_drop_;
+    bool                                 drag_active_ = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -894,9 +928,10 @@ public:
                                          POINTL /*pt*/,
                                          DWORD* pdwEffect) override {
         if (!pdwEffect) return E_POINTER;
-        accept_ = host_ && host_->has_image_drop_handler()
+        accept_ = host_ && host_->has_file_drop_handler()
                 && acceptable(data);
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        if (accept_ && host_) host_->set_drag_active(true);
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/,
@@ -906,12 +941,17 @@ public:
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragLeave() override { accept_ = false; return S_OK; }
+    HRESULT STDMETHODCALLTYPE DragLeave() override {
+        accept_ = false;
+        if (host_) host_->set_drag_active(false);
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE Drop(IDataObject* data,
                                     DWORD /*grfKeyState*/,
                                     POINTL /*pt*/,
                                     DWORD* pdwEffect) override {
         if (pdwEffect) *pdwEffect = DROPEFFECT_NONE;
+        if (host_) host_->set_drag_active(false);
         if (!accept_ || !host_) return S_OK;
 
         FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
@@ -921,13 +961,13 @@ public:
         bool dispatched = false;
         if (hdrop) {
             UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-            for (UINT i = 0; i < n_files && !dispatched; ++i) {
+            for (UINT i = 0; i < n_files; ++i) {
                 UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
                 if (len == 0) continue;
                 std::wstring path(len, L'\0');
                 if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
                     continue;
-                dispatched = try_dispatch_file(path);
+                if (try_dispatch_file(path)) dispatched = true;
             }
             GlobalUnlock(stg.hGlobal);
         }
@@ -940,12 +980,19 @@ public:
     void detach_host() { host_ = nullptr; }
 
 private:
+    // Extension → MIME table used as a fallback when content-sniffing
+    // via FindMimeFromData isn't conclusive. Covers the common chat
+    // payloads; the rest fall back to application/octet-stream.
     static const char* mime_from_ext(const std::wstring& ext_lower) {
         if (ext_lower == L"png")                       return "image/png";
         if (ext_lower == L"jpg" || ext_lower == L"jpeg") return "image/jpeg";
         if (ext_lower == L"webp")                      return "image/webp";
         if (ext_lower == L"bmp")                       return "image/bmp";
         if (ext_lower == L"gif")                       return "image/gif";
+        if (ext_lower == L"pdf")                       return "application/pdf";
+        if (ext_lower == L"zip")                       return "application/zip";
+        if (ext_lower == L"txt")                       return "text/plain";
+        if (ext_lower == L"json")                      return "application/json";
         return nullptr;
     }
 
@@ -966,37 +1013,15 @@ private:
         return slash == std::wstring::npos ? p : p.substr(slash + 1);
     }
 
-    // Returns true when at least one file in the drop has an allowed
-    // extension. Cheap pre-flight for DragEnter / DragOver.
+    // Returns true when the drop carries at least one local file.
     static bool acceptable(IDataObject* data) {
         if (!data) return false;
         FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-        if (data->QueryGetData(&fe) != S_OK) return false;
-        STGMEDIUM stg{};
-        if (FAILED(data->GetData(&fe, &stg))) return false;
-        bool ok = false;
-        HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
-        if (hdrop) {
-            UINT n = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-            for (UINT i = 0; i < n && !ok; ++i) {
-                UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-                if (len == 0) continue;
-                std::wstring path(len, L'\0');
-                if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
-                    continue;
-                if (mime_from_ext(path_extension_lower(path)) != nullptr)
-                    ok = true;
-            }
-            GlobalUnlock(stg.hGlobal);
-        }
-        ReleaseStgMedium(&stg);
-        return ok;
+        return data->QueryGetData(&fe) == S_OK;
     }
 
     bool try_dispatch_file(const std::wstring& path) {
         if (!host_) return false;
-        const char* mime = mime_from_ext(path_extension_lower(path));
-        if (!mime) return false;
 
         // Size guard via GetFileAttributesEx — single syscall, no open.
         WIN32_FILE_ATTRIBUTE_DATA fa{};
@@ -1005,7 +1030,7 @@ private:
         ULARGE_INTEGER sz{};
         sz.LowPart  = fa.nFileSizeLow;
         sz.HighPart = fa.nFileSizeHigh;
-        if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedImageBytes)
+        if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
             return false;
 
         HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
@@ -1026,8 +1051,16 @@ private:
         CloseHandle(h);
         if (read_total != bytes.size()) return false;
 
-        host_->fire_image_drop(std::move(bytes), std::string(mime),
-                                wide_to_utf8(basename(path)));
+        // Mime: extension table first (cheap), default to
+        // application/octet-stream when unknown. FindMimeFromData would
+        // need urlmon.lib; the table covers the common chat payloads.
+        std::string mime = "application/octet-stream";
+        if (const char* m = mime_from_ext(path_extension_lower(path))) {
+            mime = m;
+        }
+
+        host_->fire_file_drop(std::move(bytes), std::move(mime),
+                              wide_to_utf8(basename(path)));
         return true;
     }
 
@@ -1131,8 +1164,8 @@ void Surface::set_on_layout(std::function<void()> cb) {
 
 CanvasFactory& Surface::factory() { return host_->factory(); }
 
-void Surface::set_on_image_drop(ImageDropHandler cb) {
-    host_->set_on_image_drop(std::move(cb));
+void Surface::set_on_file_drop(FileDropHandler cb) {
+    host_->set_on_file_drop(std::move(cb));
 }
 
 } // namespace tk::win32

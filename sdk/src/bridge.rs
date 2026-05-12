@@ -265,6 +265,27 @@ pub mod ffi {
                       width: u32,
                       height: u32) -> OpResult;
 
+        /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes`
+        /// are the raw file payload (no client-side re-encoding); `mime_type`
+        /// is best-effort guessed by the caller from extension / OS metadata
+        /// (`application/octet-stream` is acceptable when unknown).
+        /// `filename` is the user-visible file name. When `caption` is
+        /// non-empty the event follows MSC2530 framing: `body` carries the
+        /// caption and the dedicated `filename` field carries the file name.
+        /// matrix-sdk handles plain and E2EE rooms transparently.
+        fn send_file(self: &mut ClientFfi,
+                     room_id: &str,
+                     bytes: &[u8],
+                     mime_type: &str,
+                     filename: &str,
+                     caption: &str) -> OpResult;
+
+        /// Homeserver-reported maximum upload size in bytes
+        /// (`/_matrix/media/v3/config`). Cached after the first successful
+        /// query; returns `0` when the server does not advertise a limit, the
+        /// query has not yet completed, or the client is not logged in.
+        fn media_upload_limit(self: &mut ClientFfi) -> u64;
+
         /// Toggle the current user's `key` reaction on `event_id` in
         /// `room_id`. Adds the reaction when the user has not yet reacted
         /// with this key; redacts it when they have. Wraps matrix-sdk-ui's

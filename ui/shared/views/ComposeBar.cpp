@@ -1,5 +1,6 @@
 #include "ComposeBar.h"
 
+#include "format.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -71,17 +72,31 @@ ComposeBar::ComposeBar() {
         tk::Button::Variant::Primary);
     send->set_on_click([this] {
         if (pending_.has_value()) {
-            // Image send: hand off the raw bytes; integration re-encodes
-            // per the user's image-quality setting.
-            if (on_send_image) {
-                on_send_image(std::move(pending_->bytes),
-                              std::move(pending_->mime),
-                              std::move(pending_->filename),
-                              current_text_,
-                              pending_->width,
-                              pending_->height);
+            if (pending_->kind == PendingAttachment::Kind::Image) {
+                // Image send: hand off the raw bytes; integration re-encodes
+                // per the user's image-quality setting.
+                if (on_send_image) {
+                    on_send_image(std::move(pending_->bytes),
+                                  std::move(pending_->mime),
+                                  std::move(pending_->filename),
+                                  current_text_,
+                                  pending_->width,
+                                  pending_->height);
+                }
+            } else {
+                // File send: pass through unmodified; matrix-sdk uploads
+                // and posts m.file.
+                if (on_send_file) {
+                    on_send_file(std::move(pending_->bytes),
+                                 std::move(pending_->mime),
+                                 std::move(pending_->filename),
+                                 current_text_);
+                }
             }
             pending_.reset();
+            file_name_layout_.reset();
+            file_size_layout_.reset();
+            file_layout_key_.clear();
             recompute_height();
             if (remove_btn_) remove_btn_->set_visible(false);
             refresh_send_enabled();
@@ -114,10 +129,14 @@ void ComposeBar::set_text_area_natural_height(float h) {
 void ComposeBar::recompute_height() {
     float text_h = std::clamp(text_area_natural_ + kPadY * 2,
                                kMinHeight, kMaxHeight);
-    float extra = pending_.has_value()
-        ? (kPreviewBandH + kPreviewBandGap)
-        : 0.0f;
-    natural_height_ = text_h + extra;
+    float band_h = 0.0f;
+    if (pending_.has_value()) {
+        band_h = pending_->kind == PendingAttachment::Kind::Image
+            ? kPreviewBandH
+            : kFileBandH;
+        band_h += kPreviewBandGap;
+    }
+    natural_height_ = text_h + band_h;
 }
 
 void ComposeBar::set_current_text(std::string text) {
@@ -136,12 +155,16 @@ void ComposeBar::set_enabled(bool e) {
 void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
                                     std::string mime,
                                     std::string filename) {
-    PendingImage pi;
-    pi.bytes    = std::move(bytes);
-    pi.mime     = std::move(mime);
-    pi.filename = filename.empty() ? make_filename(pi.mime)
+    PendingAttachment pa;
+    pa.kind     = PendingAttachment::Kind::Image;
+    pa.bytes    = std::move(bytes);
+    pa.mime     = std::move(mime);
+    pa.filename = filename.empty() ? make_filename(pa.mime)
                                    : std::move(filename);
-    pending_    = std::move(pi);
+    pending_    = std::move(pa);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
     // Dimensions + preview are filled in lazily on the next arrange()
     // pass (we don't have a CanvasFactory here).
     recompute_height();
@@ -150,9 +173,30 @@ void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
     if (on_size_changed) on_size_changed();
 }
 
-void ComposeBar::clear_pending_image() {
+void ComposeBar::set_pending_file(std::vector<std::uint8_t> bytes,
+                                   std::string mime,
+                                   std::string filename) {
+    PendingAttachment pa;
+    pa.kind     = PendingAttachment::Kind::File;
+    pa.bytes    = std::move(bytes);
+    pa.mime     = std::move(mime);
+    pa.filename = std::move(filename);
+    pending_    = std::move(pa);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    recompute_height();
+    if (remove_btn_) remove_btn_->set_visible(true);
+    refresh_send_enabled();
+    if (on_size_changed) on_size_changed();
+}
+
+void ComposeBar::clear_pending() {
     if (!pending_.has_value()) return;
     pending_.reset();
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
     recompute_height();
     if (remove_btn_) remove_btn_->set_visible(false);
     refresh_send_enabled();
@@ -178,7 +222,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
 
     // ── Decode the pending image lazily (now that we have a factory) ──
-    if (pending_.has_value() && !pending_->preview) {
+    if (pending_.has_value()
+        && pending_->kind == PendingAttachment::Kind::Image
+        && !pending_->preview) {
         auto img = ctx.factory.decode_image(
             std::span<const std::uint8_t>(pending_->bytes.data(),
                                             pending_->bytes.size()));
@@ -189,38 +235,74 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         }
     }
 
-    // ── Preview band on top (only when an image is attached) ──────────
+    // ── Build (or refresh) cached text layouts for the file chip ──────
+    if (pending_.has_value()
+        && pending_->kind == PendingAttachment::Kind::File) {
+        std::string key = pending_->filename + "|"
+                        + std::to_string(pending_->bytes.size());
+        if (file_layout_key_ != key) {
+            tk::TextStyle name_style{};
+            name_style.role = tk::FontRole::Body;
+            file_name_layout_ = ctx.factory.build_text(
+                pending_->filename, name_style);
+
+            // Size line: human-readable bytes.
+            std::string size_str = format_size(
+                static_cast<std::uint64_t>(pending_->bytes.size()));
+            tk::TextStyle size_style{};
+            size_style.role = tk::FontRole::Small;
+            file_size_layout_ = ctx.factory.build_text(size_str, size_style);
+            file_layout_key_ = std::move(key);
+        }
+    }
+
+    // ── Preview band on top (when an attachment is pending) ───────────
     float text_top = bounds.y;
     if (pending_.has_value()) {
+        float band_h = pending_->kind == PendingAttachment::Kind::Image
+            ? kPreviewBandH : kFileBandH;
         preview_band_rect_ = {
             bounds.x + kPadX,
             bounds.y + kPadY,
             std::max(0.0f, bounds.w - kPadX * 2),
-            kPreviewBandH
+            band_h
         };
-        // Thumbnail letterboxed inside the band, preserving aspect.
-        float img_w = static_cast<float>(pending_->width);
-        float img_h = static_cast<float>(pending_->height);
-        if (img_w <= 0 || img_h <= 0) {
-            preview_image_rect_ = preview_band_rect_;
+        if (pending_->kind == PendingAttachment::Kind::Image) {
+            // Thumbnail letterboxed inside the band, preserving aspect.
+            float img_w = static_cast<float>(pending_->width);
+            float img_h = static_cast<float>(pending_->height);
+            if (img_w <= 0 || img_h <= 0) {
+                preview_image_rect_ = preview_band_rect_;
+            } else {
+                float s = std::min(preview_band_rect_.w / img_w,
+                                    preview_band_rect_.h / img_h);
+                float dw = img_w * s;
+                float dh = img_h * s;
+                preview_image_rect_ = {
+                    preview_band_rect_.x,
+                    preview_band_rect_.y + (preview_band_rect_.h - dh) * 0.5f,
+                    dw, dh
+                };
+            }
+            // Remove button overlaid top-right of the thumbnail.
+            remove_btn_rect_ = {
+                preview_image_rect_.x + preview_image_rect_.w
+                    - kRemoveBtnSide - kRemoveBtnInset,
+                preview_image_rect_.y + kRemoveBtnInset,
+                kRemoveBtnSide, kRemoveBtnSide
+            };
         } else {
-            float s = std::min(preview_band_rect_.w / img_w,
-                                preview_band_rect_.h / img_h);
-            float dw = img_w * s;
-            float dh = img_h * s;
-            preview_image_rect_ = {
-                preview_band_rect_.x,                  // left-aligned in the band
-                preview_band_rect_.y + (preview_band_rect_.h - dh) * 0.5f,
-                dw, dh
+            // File chip: remove button anchored to right edge of band,
+            // vertically centred. Image rect unused.
+            preview_image_rect_ = {};
+            remove_btn_rect_ = {
+                preview_band_rect_.x + preview_band_rect_.w
+                    - kRemoveBtnSide - kRemoveBtnInset,
+                preview_band_rect_.y
+                    + (preview_band_rect_.h - kRemoveBtnSide) * 0.5f,
+                kRemoveBtnSide, kRemoveBtnSide
             };
         }
-        // Remove button overlaid top-right of the thumbnail.
-        remove_btn_rect_ = {
-            preview_image_rect_.x + preview_image_rect_.w
-                - kRemoveBtnSide - kRemoveBtnInset,
-            preview_image_rect_.y + kRemoveBtnInset,
-            kRemoveBtnSide, kRemoveBtnSide
-        };
         text_top = preview_band_rect_.y + preview_band_rect_.h
                     + kPreviewBandGap;
     } else {
@@ -273,8 +355,33 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
         // Subtle card behind the preview band.
         ctx.canvas.fill_rounded_rect(preview_band_rect_, 8.0f,
                                        card_bg(ctx.theme));
-        if (pending_->preview) {
-            ctx.canvas.draw_image(*pending_->preview, preview_image_rect_);
+        if (pending_->kind == PendingAttachment::Kind::Image) {
+            if (pending_->preview) {
+                ctx.canvas.draw_image(*pending_->preview, preview_image_rect_);
+            }
+        } else {
+            // File chip: paperclip glyph + filename (top line) + size
+            // (caption line). Layout was prepared in arrange().
+            constexpr float kChipPadX = 12.0f;
+            float text_x = preview_band_rect_.x + kChipPadX;
+            float text_right = remove_btn_rect_.empty()
+                ? preview_band_rect_.x + preview_band_rect_.w - kChipPadX
+                : remove_btn_rect_.x - kPadX;
+            float avail_w = std::max(0.0f, text_right - text_x);
+
+            if (file_name_layout_ && file_size_layout_) {
+                tk::Size name_sz = file_name_layout_->measure();
+                tk::Size size_sz = file_size_layout_->measure();
+                float total_h = name_sz.h + size_sz.h;
+                float ty = preview_band_rect_.y
+                    + (preview_band_rect_.h - total_h) * 0.5f;
+                ctx.canvas.draw_text(*file_name_layout_,
+                    { text_x, ty }, ctx.theme.palette.text_primary);
+                ctx.canvas.draw_text(*file_size_layout_,
+                    { text_x, ty + name_sz.h },
+                    ctx.theme.palette.text_secondary);
+                (void)avail_w;  // truncation handled by layout backend
+            }
         }
     }
 

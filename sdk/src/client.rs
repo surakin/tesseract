@@ -109,7 +109,6 @@ fn dirs_like_home() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------------------
 
-#[cfg(not(test))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(not(test))]
@@ -159,6 +158,9 @@ pub struct ClientFfi {
     /// process started. Reset to 0 only on logout.
     #[cfg(not(test))]
     imported_keys:    Arc<AtomicU64>,
+    /// Cached homeserver media upload limit in bytes. 0 = unknown / unfetched.
+    /// Populated lazily on first `media_upload_limit()` call after login.
+    media_upload_limit: AtomicU64,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     rt:         Runtime,
@@ -202,6 +204,7 @@ impl ClientFfi {
             backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
             #[cfg(not(test))]
             imported_keys:    Arc::new(AtomicU64::new(0)),
+            media_upload_limit: AtomicU64::new(0),
             rt:         Runtime::new().expect("tokio runtime"),
         }
     }
@@ -956,6 +959,87 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Upload `bytes` as-is and send an `m.file` event. See the FFI doc
+    /// comment in `bridge.rs` for caption/filename framing.
+    /// matrix-sdk's `send_attachment` infers `m.file` from the absence of an
+    /// image/video/audio `AttachmentInfo`; encryption is handled transparently
+    /// for E2EE rooms.
+    #[cfg(not(test))]
+    pub fn send_file(
+        &mut self,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+    ) -> OpResult {
+        use matrix_sdk::attachment::AttachmentConfig;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let mime: mime::Mime = match mime_type.parse() {
+            Ok(m) => m,
+            Err(e) => return err(format!("invalid mime: {e}")),
+        };
+
+        let mut config = AttachmentConfig::new();
+        if !caption.is_empty() {
+            config = config.caption(Some(TextMessageEventContent::plain(caption)));
+        }
+
+        let data = bytes.to_vec();
+        let filename = filename.to_owned();
+
+        match self.rt.block_on(async move {
+            room.send_attachment(filename, &mime, data, config).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_file(
+        &mut self,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Returns the cached homeserver upload limit, lazily fetching it on the
+    /// first call after login. The query (`/_matrix/media/v3/config`) is
+    /// blocking but happens at most once per session.
+    /// Returns 0 when unknown, the server doesn't advertise a limit, or the
+    /// client is not logged in.
+    #[cfg(not(test))]
+    pub fn media_upload_limit(&mut self) -> u64 {
+        let cached = self.media_upload_limit.load(Ordering::Relaxed);
+        if cached != 0 { return cached; }
+
+        let Some(client) = self.client.clone() else { return 0 };
+        let limit = self.rt.block_on(async move {
+            client.load_or_fetch_max_upload_size().await
+                .map(u64::from)
+                .unwrap_or(0)
+        });
+        if limit != 0 {
+            self.media_upload_limit.store(limit, Ordering::Relaxed);
+        }
+        limit
+    }
+
+    #[cfg(test)]
+    pub fn media_upload_limit(&mut self) -> u64 { 0 }
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that
     /// `room_id` is currently subscribed via `subscribe_room` — we look up
@@ -1277,6 +1361,7 @@ self.rt
             self.imported_keys.store(0, Ordering::Relaxed);
             self.backup_state_code.store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
         }
+        self.media_upload_limit.store(0, Ordering::Relaxed);
 
         let Some(client) = self.client.take() else {
             let _ = std::fs::remove_dir_all(data_dir());

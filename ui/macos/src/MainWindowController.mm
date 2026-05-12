@@ -108,6 +108,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                        mime:(std::string)mime
                    filename:(std::string)filename
                     caption:(std::string)caption;
+- (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption;
 @end
 
 namespace {
@@ -482,20 +486,41 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
                                                           std::move(mime));
             });
 
-        // Drag-and-drop: dropping an image file on either the message
-        // list or the composer parks it in the same pending-image slot
-        // the paste path uses.
-        auto on_image_drop = [weakSelf](std::vector<std::uint8_t> bytes,
-                                         std::string mime,
-                                         std::string filename) {
+        // Drag-and-drop: any file dropped on the message list or
+        // composer parks in the compose bar — images use the preview
+        // band, everything else uses the file chip.
+        auto on_file_drop = [weakSelf](std::vector<std::uint8_t> bytes,
+                                        std::string mime,
+                                        std::string filename) {
             MainWindowController* c = weakSelf;
-            if (c && c->_composeShared)
+            if (!c || !c->_composeShared) return;
+            const auto limit = c->_client.media_upload_limit();
+            if (limit > 0 && bytes.size() > limit) return;
+            if (mime.rfind("image/", 0) == 0) {
                 c->_composeShared->set_pending_image(std::move(bytes),
                                                      std::move(mime),
                                                      std::move(filename));
+            } else {
+                c->_composeShared->set_pending_file(std::move(bytes),
+                                                    std::move(mime),
+                                                    std::move(filename));
+            }
         };
-        _composeSurface->set_on_image_drop(on_image_drop);
-        if (_msgSurface) _msgSurface->set_on_image_drop(on_image_drop);
+        _composeSurface->set_on_file_drop(on_file_drop);
+        if (_msgSurface) _msgSurface->set_on_file_drop(on_file_drop);
+
+        _composeShared->on_send_file =
+            [weakSelf](std::vector<std::uint8_t> bytes,
+                        std::string mime,
+                        std::string filename,
+                        std::string caption) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                [s _sendComposedFile:std::move(bytes)
+                                  mime:std::move(mime)
+                              filename:std::move(filename)
+                                caption:std::move(caption)];
+            };
 
         _composeSurface->set_on_layout([weakSelf] {
             MainWindowController* c = weakSelf;
@@ -666,6 +691,19 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     auto res = _client.send_image(_currentRoomId, enc.bytes, enc.mime,
                                     out_name, caption,
                                     enc.width, enc.height);
+    if (res) {
+        if (_composeTextArea) _composeTextArea->set_text("");
+        if (_composeShared)   _composeShared->set_current_text({});
+    }
+}
+
+- (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption {
+    if (_currentRoomId.empty()) return;
+    auto res = _client.send_file(_currentRoomId, bytes, mime,
+                                  filename, caption);
     if (res) {
         if (_composeTextArea) _composeTextArea->set_text("");
         if (_composeShared)   _composeShared->set_current_text({});

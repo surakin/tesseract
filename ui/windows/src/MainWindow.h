@@ -20,6 +20,7 @@
 #include "tk/host_win32.h"
 #include "views/ComposeBar.h"
 #include "views/EmojiPicker.h"
+#include "views/format.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"

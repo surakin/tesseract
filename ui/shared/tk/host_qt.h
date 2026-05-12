@@ -48,11 +48,19 @@ public:
     void set_on_layout(std::function<void()> cb);
 
     // Install a drag-and-drop handler. When set, the Surface accepts
-    // image file drops (matching the same allowlist as the clipboard-
-    // paste path) and invokes the callback with the file bytes, MIME,
-    // and basename. The shell wires this to the active ComposeBar's
-    // `set_pending_image`. Pass {} to disable.
-    void set_on_image_drop(ImageDropHandler cb);
+    // any file drop (and in-app image data) and invokes the callback
+    // once per dropped file with raw bytes, OS-supplied MIME, and
+    // basename. The shell dispatches by MIME — images go to the
+    // compose bar's image preview, files go to its file chip.
+    // Pass {} to disable.
+    void set_on_file_drop(FileDropHandler cb);
+    // Deprecated alias.
+    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
+
+    // True while a drag is hovering over the Surface (between
+    // dragEnter / dragLeave / drop). Painted as a translucent
+    // "Drop to attach" overlay so the user sees a valid target.
+    bool drag_active() const { return drag_active_; }
 
 protected:
     void paintEvent       (QPaintEvent*)      override;
@@ -64,11 +72,13 @@ protected:
     void leaveEvent       (QEvent*)           override;
     void dragEnterEvent   (QDragEnterEvent*)  override;
     void dragMoveEvent    (QDragMoveEvent*)   override;
+    void dragLeaveEvent   (QDragLeaveEvent*)  override;
     void dropEvent        (QDropEvent*)       override;
 
 private:
     std::unique_ptr<Host> host_;
-    ImageDropHandler      on_image_drop_;
+    FileDropHandler       on_file_drop_;
+    bool                  drag_active_ = false;
 };
 
 } // namespace tk::qt6

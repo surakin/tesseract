@@ -47,10 +47,12 @@ public:
     void set_on_layout(std::function<void()> cb);
 
     // Install a drag-and-drop handler. When set, the underlying NSView
-    // accepts image-file drops (matching the same allowlist as the
-    // clipboard-paste path) and invokes the callback with the file
-    // bytes, MIME, and basename. Pass {} to disable.
-    void set_on_image_drop(ImageDropHandler cb);
+    // accepts any file drop (and in-app image data) and invokes the
+    // callback once per dropped file with raw bytes, OS-supplied MIME,
+    // and basename. The shell dispatches by MIME. Pass {} to disable.
+    void set_on_file_drop(FileDropHandler cb);
+    // Deprecated alias.
+    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
 
 private:
     std::unique_ptr<Host> host_;

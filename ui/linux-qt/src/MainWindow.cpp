@@ -373,20 +373,36 @@ MainWindow::MainWindow(QWidget* parent)
                                                     std::move(mime));
         });
 
-    // Drag-and-drop: dropping an image file on either the message list
-    // or the composer parks it in the same pending-image slot the paste
-    // path uses. Same handler wired to both surfaces; the sidebar gets
-    // none (drops there show "no drop" by virtue of accepting nothing).
-    auto onImageDrop = [this](std::vector<std::uint8_t> bytes,
-                              std::string mime,
-                              std::string filename) {
-        if (composeShared_)
+    // Drag-and-drop: dropping any file on either the message list or
+    // the composer parks it in the compose bar (image → preview band,
+    // anything else → file chip). Same handler wired to both surfaces;
+    // the sidebar gets none (drops there show "no drop" by virtue of
+    // accepting nothing).
+    auto onFileDrop = [this](std::vector<std::uint8_t> bytes,
+                             std::string mime,
+                             std::string filename) {
+        if (!composeShared_) return;
+        const auto limit = client_.media_upload_limit();
+        if (limit > 0 && bytes.size() > limit) {
+            statusBar()->showMessage(
+                QStringLiteral("File exceeds server limit (%1)")
+                    .arg(QString::fromStdString(
+                        tesseract::views::format_size(limit))),
+                4000);
+            return;
+        }
+        if (mime.rfind("image/", 0) == 0) {
             composeShared_->set_pending_image(std::move(bytes),
                                               std::move(mime),
                                               std::move(filename));
+        } else {
+            composeShared_->set_pending_file(std::move(bytes),
+                                             std::move(mime),
+                                             std::move(filename));
+        }
     };
-    composeSurface_->set_on_image_drop(onImageDrop);
-    if (msgSurface_) msgSurface_->set_on_image_drop(onImageDrop);
+    composeSurface_->set_on_file_drop(onFileDrop);
+    if (msgSurface_) msgSurface_->set_on_file_drop(onFileDrop);
     composeSurface_->set_on_layout([this] {
         if (composeShared_ && composeTextArea_)
             composeTextArea_->set_rect(composeShared_->text_area_rect());
@@ -426,6 +442,22 @@ MainWindow::MainWindow(QWidget* parent)
             return;
         }
         // Clear the caption now that the image went out.
+        if (composeTextArea_) composeTextArea_->set_text("");
+        if (composeShared_)   composeShared_->set_current_text({});
+    };
+    composeShared_->on_send_file = [this](std::vector<std::uint8_t> bytes,
+                                            std::string mime,
+                                            std::string filename,
+                                            std::string caption) {
+        if (currentRoomId_.empty()) return;
+        auto res = client_.send_file(currentRoomId_, bytes, mime,
+                                      filename, caption);
+        if (!res) {
+            statusBar()->showMessage(
+                "Send file failed: " + QString::fromStdString(res.message),
+                4000);
+            return;
+        }
         if (composeTextArea_) composeTextArea_->set_text("");
         if (composeShared_)   composeShared_->set_current_text({});
     };

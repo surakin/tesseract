@@ -19,6 +19,7 @@
 #include "tk/host.h"
 #include "tk/host_qt.h"
 #include "views/ComposeBar.h"
+#include "views/format.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"

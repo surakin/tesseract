@@ -509,42 +509,20 @@ void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));
 }
 
-void Surface::set_on_image_drop(ImageDropHandler cb) {
-    on_image_drop_ = std::move(cb);
-    setAcceptDrops(static_cast<bool>(on_image_drop_));
+void Surface::set_on_file_drop(FileDropHandler cb) {
+    on_file_drop_ = std::move(cb);
+    setAcceptDrops(static_cast<bool>(on_file_drop_));
 }
 
 namespace {
 
-// Allowlist mirrors the clipboard-paste path. The Matrix homeserver will
-// happily ingest other image types, but we only sniff/encode these.
-const char* mime_from_extension(const QString& ext_lower) {
-    if (ext_lower == QLatin1String("png"))                                  return "image/png";
-    if (ext_lower == QLatin1String("jpg") || ext_lower == QLatin1String("jpeg")) return "image/jpeg";
-    if (ext_lower == QLatin1String("webp"))                                 return "image/webp";
-    if (ext_lower == QLatin1String("bmp"))                                  return "image/bmp";
-    if (ext_lower == QLatin1String("gif"))                                  return "image/gif";
-    return nullptr;
-}
-
-// Walk a drop's URL list, return the first local file with an allowed
-// image extension. Returns an empty QString when none qualifies.
-QString first_image_path(const QMimeData* md) {
-    if (!md || !md->hasUrls()) return {};
-    const QList<QUrl> urls = md->urls();
-    for (const QUrl& u : urls) {
-        if (!u.isLocalFile()) continue;
-        const QString p = u.toLocalFile();
-        const QFileInfo fi(p);
-        if (!fi.isFile()) continue;
-        if (mime_from_extension(fi.suffix().toLower()) != nullptr) return p;
-    }
-    return {};
-}
-
 bool drop_is_acceptable(const QMimeData* md) {
     if (!md) return false;
-    if (!first_image_path(md).isEmpty()) return true;
+    if (md->hasUrls()) {
+        for (const QUrl& u : md->urls()) {
+            if (u.isLocalFile()) return true;
+        }
+    }
     return md->hasImage();
 }
 
@@ -553,6 +531,35 @@ bool drop_is_acceptable(const QMimeData* md) {
 void Surface::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     host_->paint(painter);
+
+    if (drag_active_) {
+        // Translucent accent fill + dashed border + centred "Drop to
+        // attach" label. Painted last so it sits above the widget tree.
+        const QPalette& pal = palette();
+        QColor accent = pal.color(QPalette::Highlight);
+        QColor fill   = accent;  fill.setAlpha(28);
+        QColor stroke = accent;  stroke.setAlpha(192);
+        const qreal inset = 8.0;
+        const QRectF area = rect().adjusted(inset, inset, -inset, -inset);
+        if (area.width() > 0 && area.height() > 0) {
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.fillRect(area, fill);
+            QPen pen(stroke, 2.0, Qt::DashLine);
+            painter.setPen(pen);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(area, 12.0, 12.0);
+
+            QFont f = painter.font();
+            f.setBold(true);
+            painter.setFont(f);
+            painter.setPen(pal.color(QPalette::HighlightedText).alpha() != 0
+                ? pal.color(QPalette::HighlightedText) : accent);
+            painter.drawText(area, Qt::AlignCenter,
+                             QStringLiteral("Drop to attach"));
+            painter.restore();
+        }
+    }
 }
 
 void Surface::resizeEvent(QResizeEvent*) {
@@ -596,16 +603,17 @@ void Surface::leaveEvent(QEvent* e) {
 }
 
 void Surface::dragEnterEvent(QDragEnterEvent* e) {
-    if (on_image_drop_ && drop_is_acceptable(e->mimeData())) {
+    if (on_file_drop_ && drop_is_acceptable(e->mimeData())) {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
+        if (!drag_active_) { drag_active_ = true; update(); }
     } else {
         e->ignore();
     }
 }
 
 void Surface::dragMoveEvent(QDragMoveEvent* e) {
-    if (on_image_drop_ && drop_is_acceptable(e->mimeData())) {
+    if (on_file_drop_ && drop_is_acceptable(e->mimeData())) {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
     } else {
@@ -613,66 +621,79 @@ void Surface::dragMoveEvent(QDragMoveEvent* e) {
     }
 }
 
+void Surface::dragLeaveEvent(QDragLeaveEvent*) {
+    if (drag_active_) { drag_active_ = false; update(); }
+}
+
 void Surface::dropEvent(QDropEvent* e) {
-    if (!on_image_drop_) { e->ignore(); return; }
+    const bool was_active = drag_active_;
+    drag_active_ = false;
+    if (was_active) update();
+
+    if (!on_file_drop_) { e->ignore(); return; }
     const QMimeData* md = e->mimeData();
     if (!md) { e->ignore(); return; }
 
-    // 1) File drop — preserve the original filename.
-    const QString path = first_image_path(md);
-    if (!path.isEmpty()) {
-        const QFileInfo fi(path);
-        if (fi.size() <= 0 ||
-            static_cast<std::size_t>(fi.size()) > kMaxDroppedImageBytes) {
-            e->ignore();
-            return;
-        }
-        QFile f(path);
-        if (!f.open(QIODevice::ReadOnly)) { e->ignore(); return; }
-        const QByteArray ba = f.readAll();
-        if (ba.isEmpty()) { e->ignore(); return; }
+    bool handled = false;
 
-        // Prefer Qt's content-based sniff; fall back to extension-derived
-        // MIME so we always land in the allowlist the receiver expects.
+    // 1) File drops — iterate over every dropped local file. Each fires
+    // the handler separately; the shell dispatches by mime.
+    if (md->hasUrls()) {
         QMimeDatabase db;
-        const QString sniffed = db.mimeTypeForFileNameAndData(path, ba).name();
-        const char*   ext_mime = mime_from_extension(fi.suffix().toLower());
-        std::string   mime;
-        if (sniffed.startsWith(QLatin1String("image/")))
-            mime = sniffed.toStdString();
-        else if (ext_mime)
-            mime = ext_mime;
-        else { e->ignore(); return; }
+        for (const QUrl& u : md->urls()) {
+            if (!u.isLocalFile()) continue;
+            const QString path = u.toLocalFile();
+            const QFileInfo fi(path);
+            if (!fi.isFile()) continue;
+            const qint64 size = fi.size();
+            if (size <= 0
+                || static_cast<std::size_t>(size) > kMaxDroppedFileBytes) {
+                continue;
+            }
+            QFile f(path);
+            if (!f.open(QIODevice::ReadOnly)) continue;
+            const QByteArray ba = f.readAll();
+            if (ba.isEmpty()) continue;
 
-        std::vector<std::uint8_t> bytes(
-            reinterpret_cast<const std::uint8_t*>(ba.constData()),
-            reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
-        on_image_drop_(std::move(bytes), std::move(mime),
-                        fi.fileName().toStdString());
-        e->setDropAction(Qt::CopyAction);
-        e->acceptProposedAction();
-        return;
+            // Sniff mime by content + name. Fall back to
+            // application/octet-stream so the handler still fires.
+            QString mime = db.mimeTypeForFileNameAndData(path, ba).name();
+            if (mime.isEmpty()) mime = QStringLiteral("application/octet-stream");
+
+            std::vector<std::uint8_t> bytes(
+                reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
+            on_file_drop_(std::move(bytes), mime.toStdString(),
+                          fi.fileName().toStdString());
+            handled = true;
+        }
     }
 
     // 2) In-app image data (e.g. drag from Firefox / a Qt app). Encode
-    // as PNG — mirrors the clipboard-paste fallback.
-    if (md->hasImage()) {
+    // as PNG — mirrors the clipboard-paste fallback. Only fires when no
+    // url-bearing files were forwarded.
+    if (!handled && md->hasImage()) {
         const QImage img = qvariant_cast<QImage>(md->imageData());
-        if (img.isNull()) { e->ignore(); return; }
-        QByteArray out;
-        QBuffer buf(&out);
-        buf.open(QIODevice::WriteOnly);
-        if (!img.save(&buf, "PNG")) { e->ignore(); return; }
-        std::vector<std::uint8_t> bytes(
-            reinterpret_cast<const std::uint8_t*>(out.constData()),
-            reinterpret_cast<const std::uint8_t*>(out.constData()) + out.size());
-        on_image_drop_(std::move(bytes), "image/png", std::string{});
-        e->setDropAction(Qt::CopyAction);
-        e->acceptProposedAction();
-        return;
+        if (!img.isNull()) {
+            QByteArray out;
+            QBuffer buf(&out);
+            buf.open(QIODevice::WriteOnly);
+            if (img.save(&buf, "PNG")) {
+                std::vector<std::uint8_t> bytes(
+                    reinterpret_cast<const std::uint8_t*>(out.constData()),
+                    reinterpret_cast<const std::uint8_t*>(out.constData()) + out.size());
+                on_file_drop_(std::move(bytes), "image/png", std::string{});
+                handled = true;
+            }
+        }
     }
 
-    e->ignore();
+    if (handled) {
+        e->setDropAction(Qt::CopyAction);
+        e->acceptProposedAction();
+    } else {
+        e->ignore();
+    }
 }
 
 } // namespace tk::qt6
