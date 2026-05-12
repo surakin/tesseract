@@ -12,38 +12,40 @@ std::string nsstr(NSString* s) {
 
 } // namespace
 
+@interface LoginView () <UITextFieldDelegate>
+@end
+
 @implementation LoginView {
     tesseract::Client* _client;  // non-owning
 
-    NSView*       _card;
-    NSTextField*  _titleLabel;
-    NSTextField*  _statusLabel;
+    UIView*       _card;
+    UILabel*      _titleLabel;
+    UILabel*      _statusLabel;
 
     // Form subviews
-    NSView*       _formView;
-    NSTextField*  _hsField;
-    NSTextField*  _errorLabel;
-    NSButton*     _signInBtn;
+    UIView*       _formView;
+    UITextField*  _hsField;
+    UILabel*      _errorLabel;
+    UIButton*     _signInBtn;
 
     // Waiting subviews
-    NSView*               _waitingView;
-    NSProgressIndicator*  _spinner;
-    NSTextField*          _waitingLabel;
-    NSButton*             _cancelBtn;
+    UIView*               _waitingView;
+    UIActivityIndicatorView* _spinner;
+    UILabel*              _waitingLabel;
+    UIButton*             _cancelBtn;
 
     std::thread       _worker;
     std::atomic<bool> _cancelled;
 }
 
 - (instancetype)initWithClient:(tesseract::Client*)client {
-    if (!(self = [super initWithFrame:NSZeroRect])) return nil;
+    if (!(self = [super initWithFrame:CGRectZero])) return nil;
     _client = client;
     _cancelled.store(false);
 
     self.translatesAutoresizingMaskIntoConstraints = NO;
-    self.wantsLayer = YES;
-    self.layer.backgroundColor =
-        [NSColor colorWithCalibratedWhite:0.94 alpha:1.0].CGColor;
+    self.backgroundColor =
+        [UIColor colorWithWhite:0.94 alpha:1.0];
 
     [self _buildCard];
     [self _buildFormView];
@@ -61,30 +63,29 @@ std::string nsstr(NSString* s) {
 // ── Card / title / status ─────────────────────────────────────────────────────
 
 - (void)_buildCard {
-    _card = [[NSView alloc] init];
+    _card = [[UIView alloc] init];
     _card.translatesAutoresizingMaskIntoConstraints = NO;
-    _card.wantsLayer = YES;
-    _card.layer.backgroundColor = [NSColor whiteColor].CGColor;
-    _card.layer.cornerRadius    = 8;
-    _card.layer.borderWidth     = 1;
-    _card.layer.borderColor     =
-        [NSColor colorWithCalibratedWhite:0.82 alpha:1.0].CGColor;
+    _card.backgroundColor = [UIColor systemBackgroundColor];
+    _card.layer.cornerRadius = 8;
+    _card.layer.borderWidth  = 1;
+    _card.layer.borderColor  = [UIColor colorWithWhite:0.82 alpha:1.0].CGColor;
     [self addSubview:_card];
 
-    _titleLabel = [NSTextField labelWithString:@"Sign in to Tesseract"];
+    _titleLabel = [[UILabel alloc] init];
     _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _titleLabel.font = [NSFont boldSystemFontOfSize:18];
+    _titleLabel.text = @"Sign in to Tesseract";
+    _titleLabel.font = [UIFont boldSystemFontOfSize:18];
     [_card addSubview:_titleLabel];
 
-    _statusLabel = [NSTextField labelWithString:@""];
+    _statusLabel = [[UILabel alloc] init];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _statusLabel.textColor = [NSColor secondaryLabelColor];
-    _statusLabel.font      = [NSFont systemFontOfSize:11];
+    _statusLabel.textColor = [UIColor secondaryLabelColor];
+    _statusLabel.font      = [UIFont systemFontOfSize:11];
     _statusLabel.hidden    = YES;
+    _statusLabel.numberOfLines = 0;
     [_card addSubview:_statusLabel];
 
     [NSLayoutConstraint activateConstraints:@[
-        // Center the card in self.
         [_card.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
         [_card.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
         [_card.widthAnchor   constraintEqualToConstant:420],
@@ -102,28 +103,37 @@ std::string nsstr(NSString* s) {
 // ── View building ─────────────────────────────────────────────────────────────
 
 - (void)_buildFormView {
-    _formView = [[NSView alloc] init];
+    _formView = [[UIView alloc] init];
     _formView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSTextField* label = [NSTextField labelWithString:@"Homeserver URL:"];
+    UILabel* label = [[UILabel alloc] init];
+    label.text = @"Homeserver URL:";
     label.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _hsField = [NSTextField textFieldWithString:@"https://matrix.org"];
+    _hsField = [[UITextField alloc] init];
     _hsField.translatesAutoresizingMaskIntoConstraints = NO;
-    _hsField.placeholderString = @"https://matrix.org";
+    _hsField.text             = @"https://matrix.org";
+    _hsField.placeholder      = @"https://matrix.org";
+    _hsField.borderStyle      = UITextBorderStyleRoundedRect;
+    _hsField.keyboardType     = UIKeyboardTypeURL;
+    _hsField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    _hsField.autocorrectionType     = UITextAutocorrectionTypeNo;
+    _hsField.returnKeyType    = UIReturnKeyGo;
+    _hsField.delegate         = self;
 
-    _errorLabel = [NSTextField labelWithString:@""];
+    _errorLabel = [[UILabel alloc] init];
     _errorLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _errorLabel.textColor = [NSColor systemRedColor];
-    _errorLabel.font      = [NSFont systemFontOfSize:11];
+    _errorLabel.textColor = [UIColor systemRedColor];
+    _errorLabel.font      = [UIFont systemFontOfSize:11];
     _errorLabel.hidden    = YES;
+    _errorLabel.numberOfLines = 0;
 
-    _signInBtn = [NSButton buttonWithTitle:@"Sign In"
-                                    target:self
-                                    action:@selector(_signInClicked)];
+    _signInBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     _signInBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    _signInBtn.bezelStyle    = NSBezelStyleRounded;
-    _signInBtn.keyEquivalent = @"\r";
+    [_signInBtn setTitle:@"Sign In" forState:UIControlStateNormal];
+    [_signInBtn addTarget:self
+                   action:@selector(_signInClicked)
+         forControlEvents:UIControlEventTouchUpInside];
 
     [_formView addSubview:label];
     [_formView addSubview:_hsField];
@@ -150,23 +160,24 @@ std::string nsstr(NSString* s) {
 }
 
 - (void)_buildWaitingView {
-    _waitingView = [[NSView alloc] init];
+    _waitingView = [[UIView alloc] init];
     _waitingView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _spinner = [[NSProgressIndicator alloc] init];
+    _spinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
     _spinner.translatesAutoresizingMaskIntoConstraints = NO;
-    _spinner.style       = NSProgressIndicatorStyleSpinning;
-    _spinner.controlSize = NSControlSizeRegular;
+    _spinner.hidesWhenStopped = NO;
 
-    _waitingLabel = [NSTextField
-        labelWithString:@"Complete sign-in in your browser…"];
+    _waitingLabel = [[UILabel alloc] init];
+    _waitingLabel.text = @"Complete sign-in in your browser…";
     _waitingLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _cancelBtn = [NSButton buttonWithTitle:@"Cancel"
-                                    target:self
-                                    action:@selector(_cancelClicked)];
+    _cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     _cancelBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    _cancelBtn.bezelStyle = NSBezelStyleRounded;
+    [_cancelBtn setTitle:@"Cancel" forState:UIControlStateNormal];
+    [_cancelBtn addTarget:self
+                   action:@selector(_cancelClicked)
+         forControlEvents:UIControlEventTouchUpInside];
 
     [_waitingView addSubview:_spinner];
     [_waitingView addSubview:_waitingLabel];
@@ -190,7 +201,7 @@ std::string nsstr(NSString* s) {
 
 - (void)_showFormView {
     [_waitingView removeFromSuperview];
-    [_spinner stopAnimation:nil];
+    [_spinner stopAnimating];
 
     if (_formView.superview != _card) {
         [_card addSubview:_formView];
@@ -203,7 +214,7 @@ std::string nsstr(NSString* s) {
     }
     _signInBtn.enabled = YES;
     _hsField.enabled   = YES;
-    [self.window makeFirstResponder:_hsField];
+    [_hsField becomeFirstResponder];
 }
 
 - (void)_showWaitingView {
@@ -216,9 +227,9 @@ std::string nsstr(NSString* s) {
         [_waitingView.trailingAnchor constraintEqualToAnchor:_card.trailingAnchor constant:-24],
         [_waitingView.bottomAnchor   constraintEqualToAnchor:_card.bottomAnchor constant:-24],
     ]];
-    [_spinner startAnimation:nil];
+    [_spinner startAnimating];
     _cancelBtn.enabled = YES;
-    _waitingLabel.stringValue = @"Complete sign-in in your browser…";
+    _waitingLabel.text = @"Complete sign-in in your browser…";
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -235,17 +246,25 @@ std::string nsstr(NSString* s) {
 - (void)setStatusMessage:(NSString*)message {
     if (message.length == 0) {
         _statusLabel.hidden = YES;
-        _statusLabel.stringValue = @"";
+        _statusLabel.text   = @"";
     } else {
-        _statusLabel.stringValue = message;
+        _statusLabel.text   = message;
         _statusLabel.hidden = NO;
     }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+- (BOOL)textFieldShouldReturn:(UITextField*)textField {
+    if (textField == _hsField) {
+        [self _signInClicked];
+        return YES;
+    }
+    return YES;
+}
+
 - (void)_signInClicked {
-    NSString* hs = [_hsField.stringValue
+    NSString* hs = [_hsField.text
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (hs.length == 0) {
         [self _showError:@"Please enter a homeserver URL."];
@@ -254,6 +273,7 @@ std::string nsstr(NSString* s) {
     _errorLabel.hidden = YES;
     _signInBtn.enabled = NO;
     _hsField.enabled   = NO;
+    [_hsField resignFirstResponder];
     [self _showWaitingView];
     [self _startPhase1:nsstr(hs)];
 }
@@ -261,7 +281,7 @@ std::string nsstr(NSString* s) {
 - (void)_cancelClicked {
     _cancelled.store(true);
     if (_client) _client->cancel_oauth();
-    _waitingLabel.stringValue = @"Cancelling…";
+    _waitingLabel.text = @"Cancelling…";
     _cancelBtn.enabled = NO;
 }
 
@@ -321,8 +341,8 @@ std::string nsstr(NSString* s) {
 }
 
 - (void)_showError:(NSString*)msg {
-    _errorLabel.stringValue = msg;
-    _errorLabel.hidden      = NO;
+    _errorLabel.text   = msg;
+    _errorLabel.hidden = NO;
 }
 
 @end

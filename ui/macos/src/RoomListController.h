@@ -1,5 +1,5 @@
 #pragma once
-#import <AppKit/AppKit.h>
+#import <UIKit/UIKit.h>
 #include <tesseract/types.h>
 #include <vector>
 
@@ -10,7 +10,7 @@ namespace tesseract { class Client; }
 - (void)roomListDidSelectSpaceId:(NSString*)spaceId;
 @end
 
-@interface RoomListController : NSViewController <NSTableViewDelegate, NSTableViewDataSource>
+@interface RoomListController : UITableViewController
 
 @property (nonatomic, weak)   id<RoomListDelegate> delegate;
 @property (nonatomic, assign) tesseract::Client*   client;

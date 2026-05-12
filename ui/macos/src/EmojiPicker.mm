@@ -13,19 +13,20 @@ constexpr CGFloat kGap        = 2.0;
 constexpr int     kCols       = 8;
 constexpr CGFloat kPickerW    = kCols * (kBtnSize + kGap) + 24.0;
 constexpr CGFloat kPickerH    = 320.0;
-constexpr CGFloat kSearchH    = 28.0;
-constexpr CGFloat kTabH       = 32.0;
+constexpr CGFloat kSearchH    = 36.0;
+constexpr CGFloat kTabH       = 36.0;
 
-// Associated-object key for the glyph string on each NSButton.
+// Associated-object key for the glyph string on each UIButton.
 const void* const kEmojiGlyphKey = &kEmojiGlyphKey;
 
-NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
-    NSButton* b = [NSButton buttonWithTitle:glyph target:target action:action];
-    b.bezelStyle = NSBezelStyleShadowlessSquare;
-    b.bordered   = NO;
-    b.font       = [NSFont systemFontOfSize:20];
+UIButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
+    UIButton* b = [UIButton buttonWithType:UIButtonTypeSystem];
+    [b setTitle:glyph forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:20];
+    b.tintColor = [UIColor labelColor];
     [b.widthAnchor  constraintEqualToConstant:kBtnSize].active = YES;
     [b.heightAnchor constraintEqualToConstant:kBtnSize].active = YES;
+    [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
     objc_setAssociatedObject(b, kEmojiGlyphKey, glyph,
                              OBJC_ASSOCIATION_COPY_NONATOMIC);
     return b;
@@ -33,120 +34,125 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
 
 } // namespace
 
-@interface EmojiPickerController () <NSSearchFieldDelegate>
+@interface EmojiPickerController () <UISearchBarDelegate>
 @end
 
 @implementation EmojiPickerController {
-    NSSearchField*    _search;
-    NSTabView*        _tabs;
-    NSScrollView*     _freqScroll;
-    NSStackView*      _freqGrid;
-    NSScrollView*     _searchScroll;
-    NSStackView*      _searchGrid;
-    NSTabViewItem*    _freqTab;
-    NSTabViewItem*    _searchTab;
+    UISearchBar*           _search;
+    UISegmentedControl*    _tabs;
+    UIScrollView*          _scroll;
+    UIStackView*           _grid;
+
+    // Snapshot of the tab-glyph order; index 0 is Frequents, then one per
+    // emoji::Category, then a hidden Search slot.
+    NSMutableArray<NSString*>* _tabTitles;
+    NSInteger                  _searchTabIndex;
 }
 
 - (void)loadView {
-    NSView* root = [[NSView alloc] initWithFrame:
-        NSMakeRect(0, 0, kPickerW, kPickerH)];
+    self.preferredContentSize = CGSizeMake(kPickerW, kPickerH);
 
-    // Search field (top).
-    _search = [[NSSearchField alloc] init];
+    UIView* root = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kPickerW, kPickerH)];
+    root.backgroundColor = [UIColor systemBackgroundColor];
+
+    // Search bar (top).
+    _search = [[UISearchBar alloc] init];
     _search.translatesAutoresizingMaskIntoConstraints = NO;
-    _search.placeholderString = @"Search emoji…";
-    _search.delegate = self;
+    _search.placeholder = @"Search emoji…";
+    _search.delegate    = self;
+    _search.searchBarStyle = UISearchBarStyleMinimal;
     [root addSubview:_search];
 
-    // Tab view (middle): one tab per category + a hidden "search" tab.
-    _tabs = [[NSTabView alloc] init];
-    _tabs.translatesAutoresizingMaskIntoConstraints = NO;
-    _tabs.tabViewType = NSBottomTabsBezelBorder;
-    [root addSubview:_tabs];
+    // Scrollable grid container (middle).
+    _scroll = [[UIScrollView alloc] init];
+    _scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    _scroll.showsHorizontalScrollIndicator = NO;
+    [root addSubview:_scroll];
 
-    // Frequents tab.
-    _freqGrid = [self _newEmojiGrid];
-    _freqScroll = [self _wrapGridInScroll:_freqGrid];
-    _freqTab = [[NSTabViewItem alloc] initWithIdentifier:@"freq"];
-    _freqTab.label = @"★";  // ★
-    _freqTab.view = _freqScroll;
-    [_tabs addTabViewItem:_freqTab];
+    _grid = [[UIStackView alloc] init];
+    _grid.translatesAutoresizingMaskIntoConstraints = NO;
+    _grid.axis      = UILayoutConstraintAxisVertical;
+    _grid.alignment = UIStackViewAlignmentLeading;
+    _grid.spacing   = kGap;
+    [_scroll addSubview:_grid];
 
-    // Category tabs (one per emoji::Category).
+    // Tab strip (bottom): Frequents + each category + hidden Search.
+    _tabTitles = [NSMutableArray array];
+    [_tabTitles addObject:@"★"];  // Frequents
     for (tesseract::emoji::Category c : tesseract::emoji::kCategories) {
-        NSStackView* grid = [self _newEmojiGrid];
-        NSScrollView* sc  = [self _wrapGridInScroll:grid];
-        [self _populateGrid:grid withEntries:tesseract::emoji::by_category(c)];
-        NSTabViewItem* item = [[NSTabViewItem alloc] initWithIdentifier:
-            [NSString stringWithFormat:@"cat%d", (int)c]];
-        item.label = @(tesseract::emoji::category_tab_glyph(c));
-        item.view  = sc;
-        [_tabs addTabViewItem:item];
+        [_tabTitles addObject:@(tesseract::emoji::category_tab_glyph(c))];
     }
+    _searchTabIndex = (NSInteger)_tabTitles.count;
+    [_tabTitles addObject:@"🔍"]; // hidden search tab — kept off the segmented control
 
-    // Hidden search-results tab (selected programmatically).
-    _searchGrid = [self _newEmojiGrid];
-    _searchScroll = [self _wrapGridInScroll:_searchGrid];
-    _searchTab = [[NSTabViewItem alloc] initWithIdentifier:@"search"];
-    _searchTab.label = @"";
-    _searchTab.view  = _searchScroll;
-    [_tabs addTabViewItem:_searchTab];
+    NSArray<NSString*>* visibleTitles =
+        [_tabTitles subarrayWithRange:NSMakeRange(0, _searchTabIndex)];
+    _tabs = [[UISegmentedControl alloc] initWithItems:visibleTitles];
+    _tabs.translatesAutoresizingMaskIntoConstraints = NO;
+    _tabs.selectedSegmentIndex = 1;  // Smileys & People default
+    [_tabs addTarget:self
+              action:@selector(_tabChanged)
+    forControlEvents:UIControlEventValueChanged];
+    [root addSubview:_tabs];
 
     [NSLayoutConstraint activateConstraints:@[
         [_search.leadingAnchor  constraintEqualToAnchor:root.leadingAnchor  constant:8],
         [_search.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-8],
-        [_search.topAnchor      constraintEqualToAnchor:root.topAnchor      constant:8],
+        [_search.topAnchor      constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor],
         [_search.heightAnchor   constraintEqualToConstant:kSearchH],
 
-        [_tabs.leadingAnchor  constraintEqualToAnchor:root.leadingAnchor  constant:4],
-        [_tabs.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-4],
-        [_tabs.topAnchor      constraintEqualToAnchor:_search.bottomAnchor constant:6],
-        [_tabs.bottomAnchor   constraintEqualToAnchor:root.bottomAnchor   constant:-4],
+        [_scroll.leadingAnchor  constraintEqualToAnchor:root.leadingAnchor  constant:4],
+        [_scroll.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-4],
+        [_scroll.topAnchor      constraintEqualToAnchor:_search.bottomAnchor constant:4],
+        [_scroll.bottomAnchor   constraintEqualToAnchor:_tabs.topAnchor constant:-4],
+
+        [_grid.leadingAnchor    constraintEqualToAnchor:_scroll.contentLayoutGuide.leadingAnchor],
+        [_grid.topAnchor        constraintEqualToAnchor:_scroll.contentLayoutGuide.topAnchor],
+        [_grid.bottomAnchor     constraintEqualToAnchor:_scroll.contentLayoutGuide.bottomAnchor],
+        [_grid.widthAnchor      constraintEqualToAnchor:_scroll.frameLayoutGuide.widthAnchor],
+
+        [_tabs.leadingAnchor    constraintEqualToAnchor:root.leadingAnchor  constant:8],
+        [_tabs.trailingAnchor   constraintEqualToAnchor:root.trailingAnchor constant:-8],
+        [_tabs.bottomAnchor     constraintEqualToAnchor:root.safeAreaLayoutGuide.bottomAnchor constant:-4],
+        [_tabs.heightAnchor     constraintEqualToConstant:kTabH],
     ]];
 
-    // Default to Smileys & People when frequents are empty.
-    [_tabs selectTabViewItemAtIndex:1];
-
     self.view = root;
+    [self _tabChanged];
 }
 
-- (NSStackView*)_newEmojiGrid {
-    NSStackView* grid = [[NSStackView alloc] init];
-    grid.translatesAutoresizingMaskIntoConstraints = NO;
-    grid.orientation = NSUserInterfaceLayoutOrientationVertical;
-    grid.alignment   = NSLayoutAttributeLeading;
-    grid.spacing     = kGap;
-    return grid;
+- (void)_tabChanged {
+    NSInteger idx = _tabs.selectedSegmentIndex;
+    if (idx == 0) {
+        // Frequents
+        if (self.client) {
+            auto top = self.client->recent_emoji_top(24);
+            [self _populateGridGlyphs:top];
+            return;
+        }
+        [self _populateGridGlyphs:{}];
+        return;
+    }
+    if (idx >= 1 && idx < (NSInteger)tesseract::emoji::kCategories.size() + 1) {
+        tesseract::emoji::Category c = tesseract::emoji::kCategories[idx - 1];
+        [self _populateGridEntries:tesseract::emoji::by_category(c)];
+    }
 }
 
-- (NSScrollView*)_wrapGridInScroll:(NSStackView*)grid {
-    NSScrollView* sc = [[NSScrollView alloc] init];
-    sc.translatesAutoresizingMaskIntoConstraints = NO;
-    sc.hasVerticalScroller   = YES;
-    sc.hasHorizontalScroller = NO;
-    sc.autohidesScrollers    = YES;
-    sc.borderType            = NSNoBorder;
-    sc.documentView          = grid;
-    return sc;
-}
-
-- (void)_populateGrid:(NSStackView*)grid
-          withEntries:(const std::vector<const tesseract::emoji::Entry*>&)entries
-{
-    // Clear existing rows.
-    for (NSView* v in [grid.arrangedSubviews copy]) {
-        [grid removeArrangedSubview:v];
+- (void)_populateGridEntries:(const std::vector<const tesseract::emoji::Entry*>&)entries {
+    for (UIView* v in _grid.arrangedSubviews.copy) {
+        [_grid removeArrangedSubview:v];
         [v removeFromSuperview];
     }
-    NSStackView* row = nil;
+    UIStackView* row = nil;
     int colIdx = 0;
     for (const tesseract::emoji::Entry* e : entries) {
         if (!row || colIdx >= kCols) {
-            row = [[NSStackView alloc] init];
+            row = [[UIStackView alloc] init];
             row.translatesAutoresizingMaskIntoConstraints = NO;
-            row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-            row.spacing     = kGap;
-            [grid addArrangedSubview:row];
+            row.axis    = UILayoutConstraintAxisHorizontal;
+            row.spacing = kGap;
+            [_grid addArrangedSubview:row];
             colIdx = 0;
         }
         NSString* glyph = [NSString stringWithUTF8String:
@@ -157,22 +163,20 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
     }
 }
 
-- (void)_populateGridGlyphs:(NSStackView*)grid
-                 withGlyphs:(const std::vector<std::string>&)glyphs
-{
-    for (NSView* v in [grid.arrangedSubviews copy]) {
-        [grid removeArrangedSubview:v];
+- (void)_populateGridGlyphs:(const std::vector<std::string>&)glyphs {
+    for (UIView* v in _grid.arrangedSubviews.copy) {
+        [_grid removeArrangedSubview:v];
         [v removeFromSuperview];
     }
-    NSStackView* row = nil;
+    UIStackView* row = nil;
     int colIdx = 0;
     for (const auto& g : glyphs) {
         if (!row || colIdx >= kCols) {
-            row = [[NSStackView alloc] init];
+            row = [[UIStackView alloc] init];
             row.translatesAutoresizingMaskIntoConstraints = NO;
-            row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-            row.spacing     = kGap;
-            [grid addArrangedSubview:row];
+            row.axis    = UILayoutConstraintAxisHorizontal;
+            row.spacing = kGap;
+            [_grid addArrangedSubview:row];
             colIdx = 0;
         }
         NSString* glyph = [NSString stringWithUTF8String:g.c_str()];
@@ -185,37 +189,33 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
 - (void)refreshFrequents {
     if (!self.client) return;
     auto top = self.client->recent_emoji_top(24);
-    [self _populateGridGlyphs:_freqGrid withGlyphs:top];
-    // If frequents are non-empty we land on that tab; otherwise stay on
-    // Smileys & People.
-    if (!top.empty())
-        [_tabs selectTabViewItem:_freqTab];
-    else
-        [_tabs selectTabViewItemAtIndex:1];
-    _search.stringValue = @"";
+    if (!top.empty()) {
+        _tabs.selectedSegmentIndex = 0;
+        [self _populateGridGlyphs:top];
+    } else {
+        _tabs.selectedSegmentIndex = 1;
+        [self _tabChanged];
+    }
+    _search.text = @"";
 }
 
-- (void)_emojiClicked:(NSButton*)sender {
+- (void)_emojiClicked:(UIButton*)sender {
     NSString* glyph = objc_getAssociatedObject(sender, kEmojiGlyphKey);
     if (!glyph) return;
     if (self.onSelect) self.onSelect(glyph);
     // Keep popover open — mobile-keyboard style.
 }
 
-- (void)controlTextDidChange:(NSNotification*)n {
-    NSString* q = [_search.stringValue stringByTrimmingCharactersInSet:
+- (void)searchBar:(UISearchBar*)searchBar textDidChange:(NSString*)searchText {
+    NSString* q = [searchText stringByTrimmingCharactersInSet:
                    [NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (q.length == 0) {
-        // Restore the user's previously-selected category tab. Easiest:
-        // jump to Smileys & People when frequents empty, otherwise to
-        // freq tab.
-        [self refreshFrequents];
+        [self _tabChanged];
         return;
     }
     std::string std_q(q.UTF8String);
     auto results = tesseract::emoji::filter(std_q);
-    [self _populateGrid:_searchGrid withEntries:results];
-    [_tabs selectTabViewItem:_searchTab];
+    [self _populateGridEntries:results];
 }
 
 @end

@@ -56,7 +56,7 @@
     },
     {
       "name": "macos-native-debug",
-      "displayName": "macOS – Native AppKit (Debug)",
+      "displayName": "macOS – UIKit Catalyst (Debug)",
       "inherits": "base",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
       "cacheVariables": {
@@ -65,7 +65,7 @@
     },
     {
       "name": "macos-native-release",
-      "displayName": "macOS – Native AppKit (Release)",
+      "displayName": "macOS – UIKit Catalyst (Release)",
       "inherits": "macos-native-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"

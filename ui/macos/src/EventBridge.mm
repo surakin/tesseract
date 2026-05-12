@@ -1,14 +1,14 @@
 #import "EventBridge.h"
-#import "MainWindowController.h"
+#import "MainViewController.h"
 
 #include <tesseract/session_store.h>
 #include <memory>
 
-EventBridge::EventBridge(MainWindowController* ctrl) : ctrl_(ctrl) {}
+EventBridge::EventBridge(MainViewController* ctrl) : ctrl_(ctrl) {}
 
 void EventBridge::on_message(tesseract::Event* ev) {
     struct P {
-        __unsafe_unretained MainWindowController* ctrl;
+        __unsafe_unretained MainViewController* ctrl;
         std::unique_ptr<tesseract::Event> ev;
     };
     auto* p = new P{ctrl_, std::unique_ptr<tesseract::Event>(ev)};
@@ -20,7 +20,7 @@ void EventBridge::on_message(tesseract::Event* ev) {
 
 void EventBridge::on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) {
     struct P {
-        __unsafe_unretained MainWindowController* ctrl;
+        __unsafe_unretained MainViewController* ctrl;
         std::vector<tesseract::RoomInfo> rooms;
     };
     auto* p = new P{ctrl_, rooms};
@@ -34,7 +34,7 @@ void EventBridge::on_sync_error(const std::string& context,
                                  const std::string& description,
                                  bool soft_logout) {
     struct P {
-        __unsafe_unretained MainWindowController* ctrl;
+        __unsafe_unretained MainViewController* ctrl;
         NSString* context;
         NSString* description;
         BOOL soft_logout;
@@ -55,7 +55,7 @@ void EventBridge::on_sync_error(const std::string& context,
 
 void EventBridge::on_timeline_reset(const std::string& room_id) {
     struct P {
-        __unsafe_unretained MainWindowController* ctrl;
+        __unsafe_unretained MainViewController* ctrl;
         NSString* room_id;
     };
     auto* p = new P{ctrl_, [NSString stringWithUTF8String:room_id.c_str()]};
@@ -72,7 +72,7 @@ void EventBridge::on_session_saved(const std::string& session_json) {
 
 void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
     struct P {
-        __unsafe_unretained MainWindowController* ctrl;
+        __unsafe_unretained MainViewController* ctrl;
         tesseract::BackupProgress progress;
     };
     auto* p = new P{ctrl_, progress};

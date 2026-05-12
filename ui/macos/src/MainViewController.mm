@@ -1,4 +1,4 @@
-#import "MainWindowController.h"
+#import "MainViewController.h"
 #import "LoginView.h"
 #import "RoomListController.h"
 #import "MessageListController.h"
@@ -19,22 +19,24 @@ static std::string nsstr(NSString* s) {
     return s ? std::string(s.UTF8String) : std::string{};
 }
 
-// User-strip view that surfaces an NSMenu on right-click / Ctrl-click.
-@interface UserStripView : NSView
-@property (nonatomic, strong) NSMenu* contextMenu;
-@end
+// ── User strip: a UIView that surfaces a "Logout" menu on right-click /
+// long-press via UIContextMenuInteraction (Catalyst Mac idiom).
+// ─────────────────────────────────────────────────────────────────────────────
 
-@implementation UserStripView
-- (NSMenu*)menuForEvent:(NSEvent*)__unused event { return _contextMenu; }
+@class MainViewController;
+
+@interface UserStripView : UIView <UIContextMenuInteractionDelegate>
+@property (nonatomic, weak) MainViewController* owner;
 @end
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
-@interface MainWindowController ()
+@interface MainViewController ()
     <RoomListDelegate, MessageListDelegate, LoginViewDelegate>
+- (void)_doLogout;
 @end
 
-@implementation MainWindowController {
+@implementation MainViewController {
     // C++ members — constructed in init, destroyed in dealloc.
     struct Impl {
         tesseract::Client        client;
@@ -47,94 +49,88 @@ static std::string nsstr(NSString* s) {
     MessageListController* _msgList;
     ComposeBar*            _compose;
     LoginView*             _loginView;
-    NSArray<NSView*>*      _mainContentViews;  // toggled vs _loginView visibility
+    NSArray<UIView*>*      _mainContentViews;  // toggled vs _loginView visibility
 
     // User identity strip (sidebar footer)
     UserStripView*       _userStrip;
-    NSImageView*         _userAvatar;
-    NSTextField*         _userNameLabel;
+    UIImageView*         _userAvatar;
+    UILabel*             _userNameLabel;
     std::string          _myDisplayName;
     std::string          _myAvatarUrl;
 
-    // Recovery banner widgets (Step 6) — inline key entry, no modal dialog.
-    NSView*              _recoveryBanner;
-    NSTextField*         _recoveryLabel;
-    NSSecureTextField*   _recoveryKeyField;
-    NSButton*            _recoveryVerifyBtn;
+    // Recovery banner — inline key entry, no modal dialog.
+    UIView*              _recoveryBanner;
+    UILabel*             _recoveryLabel;
+    UITextField*         _recoveryKeyField;
+    UIButton*            _recoveryVerifyBtn;
     NSLayoutConstraint*  _recoveryBannerHeight;
     BOOL                 _recoveryBannerDismissed;
     BOOL                 _recoveryInFlight;
 
     // State
-    NSString* _currentRoomId;
-    NSString* _myUserId;
-    NSTextField* _statusLabel;
+    NSString*    _currentRoomId;
+    NSString*    _myUserId;
+    UILabel*     _statusLabel;
     std::vector<tesseract::RoomInfo> _rooms;
     std::vector<std::string>         _spaceStack;
 
     // Sidebar nav bar (visible when inside a space)
-    NSView*      _sidebarContainer;
-    NSView*      _navBar;
-    NSButton*    _backButton;
-    NSTextField* _spaceNameLabel;
+    UIView*      _sidebarContainer;
+    UIView*      _navBar;
+    UIButton*    _backButton;
+    UILabel*     _spaceNameLabel;
 
     // Room header
-    NSView* _msgContainer;
-    NSView* _roomHeaderView;
-    NSImageView* _roomHeaderAvatar;
-    NSTextField* _roomHeaderName;
-    NSTextField* _roomHeaderTopic;
+    UIView*      _msgContainer;
+    UIView*      _roomHeaderView;
+    UIImageView* _roomHeaderAvatar;
+    UILabel*     _roomHeaderName;
+    UILabel*     _roomHeaderTopic;
 }
 
 - (instancetype)init {
-    NSWindow* win = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 900, 620)
-                  styleMask:(NSWindowStyleMaskTitled          |
-                             NSWindowStyleMaskClosable        |
-                             NSWindowStyleMaskMiniaturizable  |
-                             NSWindowStyleMaskResizable)
-                    backing:NSBackingStoreBuffered
-                      defer:NO];
-    win.title              = @"Tesseract";
-    win.minSize            = NSMakeSize(600, 400);
-    win.releasedWhenClosed = NO;
-    [win center];
-
-    if (!(self = [super initWithWindow:win])) return nil;
+    if (!(self = [super initWithNibName:nil bundle:nil])) return nil;
     _impl = std::make_unique<Impl>();
-    [self _buildUI];
+    self.title = @"Tesseract";
+    // Catalyst respects preferredContentSize for window-default sizing on
+    // the Mac idiom.
+    self.preferredContentSize = CGSizeMake(900, 620);
     return self;
 }
 
 - (void)dealloc {
     // _loginView holds a non-owning pointer to _impl->client and calls
-    // cancel_oauth() + joins its worker on dealloc. Release it now so the
-    // client is still alive — _impl destructs later when ARC tears down
-    // C++ ivars after this method returns.
+    // cancel_oauth() + joins its worker on dealloc. Release it explicitly
+    // before _impl unwinds at the end of -dealloc.
     [_loginView removeFromSuperview];
     _loginView = nil;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    [self _buildUI];
 }
 
 // ── UI construction ───────────────────────────────────────────────────────────
 
 - (void)_buildUI {
-    NSView* content = self.window.contentView;
+    UIView* content = self.view;
 
     // ── Status bar at the bottom ──────────────────────────────────────────────
-    _statusLabel = [NSTextField labelWithString:@"Not connected"];
+    _statusLabel = [[UILabel alloc] init];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _statusLabel.textColor  = [NSColor secondaryLabelColor];
-    _statusLabel.font       = [NSFont systemFontOfSize:11];
-    _statusLabel.alignment  = NSTextAlignmentCenter;
+    _statusLabel.text          = @"Not connected";
+    _statusLabel.textColor     = [UIColor secondaryLabelColor];
+    _statusLabel.font          = [UIFont systemFontOfSize:11];
+    _statusLabel.textAlignment = NSTextAlignmentCenter;
     [content addSubview:_statusLabel];
 
-    NSBox* statusSep = [[NSBox alloc] init];
-    statusSep.boxType = NSBoxSeparator;
-    statusSep.translatesAutoresizingMaskIntoConstraints = NO;
+    UIView* statusSep = [self _makeSeparator];
     [content addSubview:statusSep];
 
     // ── Compose bar ───────────────────────────────────────────────────────────
-    _compose = [[ComposeBar alloc] initWithFrame:NSZeroRect];
+    _compose = [[ComposeBar alloc] initWithFrame:CGRectZero];
     _compose.translatesAutoresizingMaskIntoConstraints = NO;
     _compose.client = &_impl->client;
     __weak typeof(self) weakSelf = self;
@@ -144,166 +140,168 @@ static std::string nsstr(NSString* s) {
     [content addSubview:_compose];
 
     // ── Sidebar (nav bar + room list) ─────────────────────────────────────────
-    _sidebarContainer = [[NSView alloc] init];
+    _sidebarContainer = [[UIView alloc] init];
     _sidebarContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    [content addSubview:_sidebarContainer];
 
-    _navBar = [[NSView alloc] init];
+    _navBar = [[UIView alloc] init];
     _navBar.translatesAutoresizingMaskIntoConstraints = NO;
     _navBar.hidden = YES;
+    [_sidebarContainer addSubview:_navBar];
 
-    _backButton = [NSButton buttonWithTitle:@"←"
-                                     target:self
-                                     action:@selector(_onBackClicked)];
+    _backButton = [UIButton buttonWithType:UIButtonTypeSystem];
     _backButton.translatesAutoresizingMaskIntoConstraints = NO;
-    _backButton.bezelStyle = NSBezelStyleRounded;
+    [_backButton setTitle:@"←" forState:UIControlStateNormal];
+    [_backButton addTarget:self
+                    action:@selector(_onBackClicked)
+          forControlEvents:UIControlEventTouchUpInside];
     [_navBar addSubview:_backButton];
 
-    _spaceNameLabel = [NSTextField labelWithString:@""];
+    _spaceNameLabel = [[UILabel alloc] init];
     _spaceNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _spaceNameLabel.font = [NSFont boldSystemFontOfSize:12];
-    _spaceNameLabel.textColor = [NSColor labelColor];
+    _spaceNameLabel.font          = [UIFont boldSystemFontOfSize:12];
+    _spaceNameLabel.textColor     = [UIColor labelColor];
     _spaceNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [_navBar addSubview:_spaceNameLabel];
 
-    NSBox* navSep = [[NSBox alloc] init];
-    navSep.boxType = NSBoxSeparator;
-    navSep.translatesAutoresizingMaskIntoConstraints = NO;
+    UIView* navSep = [self _makeSeparator];
     [_navBar addSubview:navSep];
-
-    [_sidebarContainer addSubview:_navBar];
 
     _roomList = [[RoomListController alloc] init];
     _roomList.delegate = self;
     _roomList.client   = &_impl->client;
+    [self addChildViewController:_roomList];
     _roomList.view.translatesAutoresizingMaskIntoConstraints = NO;
     [_sidebarContainer addSubview:_roomList.view];
+    [_roomList didMoveToParentViewController:self];
 
     // ── User identity strip (sidebar footer) ──────────────────────────────────
     _userStrip = [[UserStripView alloc] init];
+    _userStrip.owner = self;
     _userStrip.translatesAutoresizingMaskIntoConstraints = NO;
-    _userStrip.wantsLayer = YES;
-    _userStrip.layer.backgroundColor =
-        [NSColor colorWithCalibratedWhite:0.91 alpha:1.0].CGColor;
+    _userStrip.backgroundColor = [UIColor secondarySystemBackgroundColor];
     _userStrip.hidden = YES;
     [_sidebarContainer addSubview:_userStrip];
 
-    _userAvatar = [[NSImageView alloc] init];
+    _userAvatar = [[UIImageView alloc] init];
     _userAvatar.translatesAutoresizingMaskIntoConstraints = NO;
+    _userAvatar.contentMode = UIViewContentModeScaleAspectFill;
+    _userAvatar.clipsToBounds = YES;
+    _userAvatar.layer.cornerRadius = 16;
     [_userStrip addSubview:_userAvatar];
 
-    _userNameLabel = [NSTextField labelWithString:@""];
+    _userNameLabel = [[UILabel alloc] init];
     _userNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _userNameLabel.font = [NSFont boldSystemFontOfSize:13];
+    _userNameLabel.font          = [UIFont boldSystemFontOfSize:13];
     _userNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [_userStrip addSubview:_userNameLabel];
 
-    NSMenu* userMenu = [[NSMenu alloc] init];
-    [userMenu addItemWithTitle:@"Logout"
-                        action:@selector(_doLogout)
-                 keyEquivalent:@""];
-    for (NSMenuItem* item in userMenu.itemArray) item.target = self;
-    _userStrip.contextMenu = userMenu;
-
+    // ── Message container: header + recovery banner + message list ────────────
     _msgList = [[MessageListController alloc] init];
     _msgList.delegate = self;
     _msgList.client   = &_impl->client;
+    [self addChildViewController:_msgList];
 
-    // Message container: header + message list stacked vertically
-    _msgContainer = [[NSView alloc] init];
+    _msgContainer = [[UIView alloc] init];
     _msgContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    [content addSubview:_msgContainer];
 
     // Room header bar
-    _roomHeaderView = [[NSView alloc] init];
+    _roomHeaderView = [[UIView alloc] init];
     _roomHeaderView.translatesAutoresizingMaskIntoConstraints = NO;
+    _roomHeaderView.backgroundColor = [UIColor secondarySystemBackgroundColor];
     [_msgContainer addSubview:_roomHeaderView];
 
     // Avatar
-    _roomHeaderAvatar = [[NSImageView alloc] init];
+    _roomHeaderAvatar = [[UIImageView alloc] init];
     _roomHeaderAvatar.translatesAutoresizingMaskIntoConstraints = NO;
+    _roomHeaderAvatar.contentMode    = UIViewContentModeScaleAspectFill;
+    _roomHeaderAvatar.clipsToBounds  = YES;
+    _roomHeaderAvatar.layer.cornerRadius = 20;
     [_roomHeaderView addSubview:_roomHeaderAvatar];
 
     // Name label
-    _roomHeaderName = [NSTextField labelWithString:@""];
+    _roomHeaderName = [[UILabel alloc] init];
     _roomHeaderName.translatesAutoresizingMaskIntoConstraints = NO;
-    _roomHeaderName.font = [NSFont boldSystemFontOfSize:15];
-    _roomHeaderName.textColor = [NSColor labelColor];
+    _roomHeaderName.font          = [UIFont boldSystemFontOfSize:15];
+    _roomHeaderName.textColor     = [UIColor labelColor];
     _roomHeaderName.lineBreakMode = NSLineBreakByTruncatingTail;
     [_roomHeaderView addSubview:_roomHeaderName];
 
     // Topic label
-    _roomHeaderTopic = [NSTextField labelWithString:@""];
+    _roomHeaderTopic = [[UILabel alloc] init];
     _roomHeaderTopic.translatesAutoresizingMaskIntoConstraints = NO;
-    _roomHeaderTopic.font = [NSFont systemFontOfSize:12];
-    _roomHeaderTopic.textColor = [NSColor secondaryLabelColor];
+    _roomHeaderTopic.font          = [UIFont systemFontOfSize:12];
+    _roomHeaderTopic.textColor     = [UIColor secondaryLabelColor];
     _roomHeaderTopic.lineBreakMode = NSLineBreakByTruncatingTail;
-    _roomHeaderTopic.hidden = YES;
+    _roomHeaderTopic.hidden        = YES;
     [_roomHeaderView addSubview:_roomHeaderTopic];
 
-    // Recovery banner (Step 6) — hidden until needs_recovery() is true.
-    _recoveryBanner = [[NSView alloc] init];
+    // Recovery banner — hidden until needs_recovery() is true.
+    _recoveryBanner = [[UIView alloc] init];
     _recoveryBanner.translatesAutoresizingMaskIntoConstraints = NO;
-    _recoveryBanner.wantsLayer = YES;
-    _recoveryBanner.layer.backgroundColor =
-        [NSColor colorWithCalibratedRed:1.0 green:0.96 blue:0.84 alpha:1.0].CGColor;
+    _recoveryBanner.backgroundColor =
+        [UIColor colorWithRed:1.0 green:0.96 blue:0.84 alpha:1.0];
     _recoveryBanner.hidden = YES;
     [_msgContainer addSubview:_recoveryBanner];
 
-    _recoveryLabel = [NSTextField labelWithString:@"Verify this device:"];
+    _recoveryLabel = [[UILabel alloc] init];
     _recoveryLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _recoveryLabel.textColor = [NSColor colorWithCalibratedRed:0.36 green:0.27 blue:0.0 alpha:1.0];
+    _recoveryLabel.text          = @"Verify this device:";
+    _recoveryLabel.textColor     =
+        [UIColor colorWithRed:0.36 green:0.27 blue:0.0 alpha:1.0];
     _recoveryLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [_recoveryBanner addSubview:_recoveryLabel];
 
-    _recoveryKeyField = [[NSSecureTextField alloc] init];
+    _recoveryKeyField = [[UITextField alloc] init];
     _recoveryKeyField.translatesAutoresizingMaskIntoConstraints = NO;
-    _recoveryKeyField.placeholderString = @"Recovery key or passphrase";
-    _recoveryKeyField.target = self;
-    _recoveryKeyField.action = @selector(_onRecoveryVerifyClicked);  // Enter triggers verify
+    _recoveryKeyField.placeholder       = @"Recovery key or passphrase";
+    _recoveryKeyField.secureTextEntry   = YES;
+    _recoveryKeyField.borderStyle       = UITextBorderStyleRoundedRect;
+    _recoveryKeyField.returnKeyType     = UIReturnKeyGo;
+    [_recoveryKeyField addTarget:self
+                          action:@selector(_onRecoveryVerifyClicked)
+                forControlEvents:UIControlEventEditingDidEndOnExit];
     [_recoveryBanner addSubview:_recoveryKeyField];
 
-    _recoveryVerifyBtn = [NSButton buttonWithTitle:@"Verify"
-                                            target:self
-                                            action:@selector(_onRecoveryVerifyClicked)];
+    _recoveryVerifyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     _recoveryVerifyBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    _recoveryVerifyBtn.bezelStyle = NSBezelStyleRounded;
-    _recoveryVerifyBtn.keyEquivalent = @"\r";
+    [_recoveryVerifyBtn setTitle:@"Verify" forState:UIControlStateNormal];
+    [_recoveryVerifyBtn addTarget:self
+                           action:@selector(_onRecoveryVerifyClicked)
+                 forControlEvents:UIControlEventTouchUpInside];
     [_recoveryBanner addSubview:_recoveryVerifyBtn];
 
-    NSButton* dismissBtn = [NSButton buttonWithTitle:@"✕"
-                                              target:self
-                                              action:@selector(_onRecoveryDismissClicked)];
+    UIButton* dismissBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     dismissBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    dismissBtn.bezelStyle = NSBezelStyleInline;
+    [dismissBtn setTitle:@"✕" forState:UIControlStateNormal];
+    [dismissBtn addTarget:self
+                   action:@selector(_onRecoveryDismissClicked)
+         forControlEvents:UIControlEventTouchUpInside];
     [_recoveryBanner addSubview:dismissBtn];
 
-    // Message list fills remaining space
+    // Message list fills remaining space below the (possibly-hidden) banner.
     _msgList.view.translatesAutoresizingMaskIntoConstraints = NO;
     [_msgContainer addSubview:_msgList.view];
+    [_msgList didMoveToParentViewController:self];
 
     _roomHeaderView.hidden = YES;
 
-    NSSplitView* split = [[NSSplitView alloc] init];
-    split.translatesAutoresizingMaskIntoConstraints = NO;
-    split.vertical        = YES;
-    split.dividerStyle    = NSSplitViewDividerStyleThin;
-    split.autosaveName    = @"TesseractMainSplit";
-
-    [split addArrangedSubview:_sidebarContainer];
-    [split addArrangedSubview:_msgContainer];
-    [split setHoldingPriority:NSLayoutPriorityDefaultLow + 1
-              forSubviewAtIndex:0];
-    [content addSubview:split];
-
     // ── Auto Layout ───────────────────────────────────────────────────────────
-    [NSLayoutConstraint activateConstraints:@[
-        // Split view fills top portion
-        [split.topAnchor     constraintEqualToAnchor:content.topAnchor],
-        [split.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-        [split.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [split.bottomAnchor  constraintEqualToAnchor:_compose.topAnchor],
+    UILayoutGuide* safe = content.safeAreaLayoutGuide;
 
-        // Left pane width
-        [_sidebarContainer.widthAnchor constraintEqualToConstant:220],
+    [NSLayoutConstraint activateConstraints:@[
+        // Sidebar fills the top-left of the safe area, fixed 220 wide.
+        [_sidebarContainer.topAnchor     constraintEqualToAnchor:safe.topAnchor],
+        [_sidebarContainer.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [_sidebarContainer.bottomAnchor  constraintEqualToAnchor:_compose.topAnchor],
+        [_sidebarContainer.widthAnchor   constraintEqualToConstant:220],
+
+        // Message container fills the area to the right of the sidebar.
+        [_msgContainer.topAnchor      constraintEqualToAnchor:safe.topAnchor],
+        [_msgContainer.leadingAnchor  constraintEqualToAnchor:_sidebarContainer.trailingAnchor],
+        [_msgContainer.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [_msgContainer.bottomAnchor   constraintEqualToAnchor:_compose.topAnchor],
 
         // Nav bar at top of sidebar (hidden by default)
         [_navBar.topAnchor      constraintEqualToAnchor:_sidebarContainer.topAnchor],
@@ -354,53 +352,53 @@ static std::string nsstr(NSString* s) {
         // Header avatar: 40x40, centered vertically, 16px from left
         [_roomHeaderAvatar.leadingAnchor constraintEqualToAnchor:_roomHeaderView.leadingAnchor constant:16],
         [_roomHeaderAvatar.centerYAnchor constraintEqualToAnchor:_roomHeaderView.centerYAnchor],
-        [_roomHeaderAvatar.widthAnchor  constraintEqualToConstant:40],
-        [_roomHeaderAvatar.heightAnchor constraintEqualToConstant:40],
+        [_roomHeaderAvatar.widthAnchor   constraintEqualToConstant:40],
+        [_roomHeaderAvatar.heightAnchor  constraintEqualToConstant:40],
 
         // Header name: right of avatar, top portion
-        [_roomHeaderName.leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderName.leadingAnchor  constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
         [_roomHeaderName.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
-        [_roomHeaderName.topAnchor constraintEqualToAnchor:_roomHeaderView.topAnchor constant:14],
+        [_roomHeaderName.topAnchor      constraintEqualToAnchor:_roomHeaderView.topAnchor constant:14],
 
         // Header topic: right of avatar, below name
-        [_roomHeaderTopic.leadingAnchor constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
+        [_roomHeaderTopic.leadingAnchor  constraintEqualToAnchor:_roomHeaderAvatar.trailingAnchor constant:12],
         [_roomHeaderTopic.trailingAnchor constraintEqualToAnchor:_roomHeaderView.trailingAnchor constant:-16],
-        [_roomHeaderTopic.topAnchor constraintEqualToAnchor:_roomHeaderName.bottomAnchor constant:2],
+        [_roomHeaderTopic.topAnchor      constraintEqualToAnchor:_roomHeaderName.bottomAnchor constant:2],
 
         // Recovery banner sits between header and message list. Height is 0
-        // when hidden; toggled to 30 by _maybeShowRecoveryBanner.
+        // when hidden; toggled to 36 by _maybeShowRecoveryBanner.
         [_recoveryBanner.topAnchor      constraintEqualToAnchor:_roomHeaderView.bottomAnchor],
         [_recoveryBanner.leadingAnchor  constraintEqualToAnchor:_msgContainer.leadingAnchor],
         [_recoveryBanner.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
 
         // Message list fills remaining space below the banner.
-        [_msgList.view.topAnchor     constraintEqualToAnchor:_recoveryBanner.bottomAnchor],
-        [_msgList.view.leadingAnchor constraintEqualToAnchor:_msgContainer.leadingAnchor],
+        [_msgList.view.topAnchor      constraintEqualToAnchor:_recoveryBanner.bottomAnchor],
+        [_msgList.view.leadingAnchor  constraintEqualToAnchor:_msgContainer.leadingAnchor],
         [_msgList.view.trailingAnchor constraintEqualToAnchor:_msgContainer.trailingAnchor],
-        [_msgList.view.bottomAnchor  constraintEqualToAnchor:_msgContainer.bottomAnchor],
+        [_msgList.view.bottomAnchor   constraintEqualToAnchor:_msgContainer.bottomAnchor],
 
         // Compose bar
-        [_compose.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [_compose.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [_compose.leadingAnchor  constraintEqualToAnchor:safe.leadingAnchor],
+        [_compose.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
         [_compose.bottomAnchor   constraintEqualToAnchor:statusSep.topAnchor],
 
         // Status separator + label
-        [statusSep.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [statusSep.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [statusSep.leadingAnchor  constraintEqualToAnchor:safe.leadingAnchor],
+        [statusSep.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
         [statusSep.bottomAnchor   constraintEqualToAnchor:_statusLabel.topAnchor],
+        [statusSep.heightAnchor   constraintEqualToConstant:1],
 
-        [_statusLabel.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [_statusLabel.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [_statusLabel.bottomAnchor  constraintEqualToAnchor:content.bottomAnchor],
-        [_statusLabel.heightAnchor  constraintEqualToConstant:20],
+        [_statusLabel.leadingAnchor  constraintEqualToAnchor:safe.leadingAnchor],
+        [_statusLabel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [_statusLabel.bottomAnchor   constraintEqualToAnchor:safe.bottomAnchor],
+        [_statusLabel.heightAnchor   constraintEqualToConstant:20],
     ]];
 
-    // Recovery banner: collapsible height (0 when hidden, 36 when shown) plus
-    // internal layout. Subview order: 0=label, 1=key field, 2=verify, 3=dismiss.
+    // Recovery banner: collapsible height (0 when hidden, 36 when shown)
+    // plus internal layout.
     _recoveryBannerHeight = [_recoveryBanner.heightAnchor constraintEqualToConstant:0];
     _recoveryBannerHeight.active = YES;
 
-    NSButton* dismissBtnLayout = _recoveryBanner.subviews[3];
     [NSLayoutConstraint activateConstraints:@[
         [_recoveryLabel.leadingAnchor      constraintEqualToAnchor:_recoveryBanner.leadingAnchor constant:12],
         [_recoveryLabel.centerYAnchor      constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
@@ -410,19 +408,20 @@ static std::string nsstr(NSString* s) {
         [_recoveryKeyField.trailingAnchor  constraintEqualToAnchor:_recoveryVerifyBtn.leadingAnchor constant:-8],
 
         [_recoveryVerifyBtn.centerYAnchor  constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
-        [_recoveryVerifyBtn.trailingAnchor constraintEqualToAnchor:dismissBtnLayout.leadingAnchor constant:-6],
+        [_recoveryVerifyBtn.trailingAnchor constraintEqualToAnchor:dismissBtn.leadingAnchor constant:-6],
 
-        [dismissBtnLayout.centerYAnchor    constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
-        [dismissBtnLayout.trailingAnchor   constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
+        [dismissBtn.centerYAnchor          constraintEqualToAnchor:_recoveryBanner.centerYAnchor],
+        [dismissBtn.trailingAnchor         constraintEqualToAnchor:_recoveryBanner.trailingAnchor constant:-6],
     ]];
 
     // ── Inline login view ─────────────────────────────────────────────────────
-    // Sibling of split/compose/statusSep/_statusLabel; toggled via -hidden.
-    _mainContentViews = @[split, _compose, statusSep, _statusLabel];
+    // Sibling of sidebar/msg/compose/statusSep/statusLabel; toggled via -hidden.
+    _mainContentViews = @[_sidebarContainer, _msgContainer, _compose, statusSep, _statusLabel];
 
     _loginView = [[LoginView alloc] initWithClient:&_impl->client];
     _loginView.delegate = self;
     _loginView.hidden   = YES;
+    _loginView.translatesAutoresizingMaskIntoConstraints = NO;
     [content addSubview:_loginView];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -431,6 +430,13 @@ static std::string nsstr(NSString* s) {
         [_loginView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [_loginView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
     ]];
+}
+
+- (UIView*)_makeSeparator {
+    UIView* sep = [[UIView alloc] init];
+    sep.translatesAutoresizingMaskIntoConstraints = NO;
+    sep.backgroundColor = [UIColor separatorColor];
+    return sep;
 }
 
 // ── Login flow ────────────────────────────────────────────────────────────────
@@ -463,13 +469,13 @@ static std::string nsstr(NSString* s) {
 }
 
 - (void)_showLoginView {
-    for (NSView* v in _mainContentViews) v.hidden = YES;
+    for (UIView* v in _mainContentViews) v.hidden = YES;
     _loginView.hidden = NO;
 }
 
 - (void)_showMainContent {
     _loginView.hidden = YES;
-    for (NSView* v in _mainContentViews) v.hidden = NO;
+    for (UIView* v in _mainContentViews) v.hidden = NO;
 }
 
 - (void)loginViewDidSucceed:(LoginView*)view {
@@ -498,7 +504,7 @@ static std::string nsstr(NSString* s) {
 }
 
 - (void)_setStatus:(NSString*)text {
-    _statusLabel.stringValue = text;
+    _statusLabel.text = text;
 }
 
 // ── RoomListDelegate ──────────────────────────────────────────────────────────
@@ -554,7 +560,7 @@ static std::string nsstr(NSString* s) {
         [_roomList updateRooms:std::move(filtered)];
         for (const auto& r : _rooms)
             if (r.id == space_id) {
-                _spaceNameLabel.stringValue = @(r.name.c_str());
+                _spaceNameLabel.text = @(r.name.c_str());
                 break;
             }
         _navBar.hidden = NO;
@@ -619,17 +625,17 @@ static std::string nsstr(NSString* s) {
         [_msgList clearMessages];
 }
 
-// ── Recovery banner (Step 6) — inline key entry, no modal dialog. ────────────
+// ── Recovery banner — inline key entry, no modal dialog. ─────────────────────
 
 - (void)_maybeShowRecoveryBanner {
     if (_recoveryBannerDismissed) return;
     if (!_impl->client.needs_recovery()) return;
     if (_recoveryBanner.hidden) {
         // Fresh prompt — restore the input row.
-        _recoveryLabel.stringValue = @"Verify this device:";
-        _recoveryKeyField.stringValue = @"";
-        _recoveryKeyField.hidden  = NO;
-        _recoveryKeyField.enabled = YES;
+        _recoveryLabel.text = @"Verify this device:";
+        _recoveryKeyField.text     = @"";
+        _recoveryKeyField.hidden   = NO;
+        _recoveryKeyField.enabled  = YES;
         _recoveryVerifyBtn.hidden  = NO;
         _recoveryVerifyBtn.enabled = YES;
         _recoveryBanner.hidden = NO;
@@ -639,17 +645,17 @@ static std::string nsstr(NSString* s) {
 }
 
 - (void)_onRecoveryVerifyClicked {
-    NSString* key = [_recoveryKeyField.stringValue
+    NSString* key = [_recoveryKeyField.text
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     if (key.length == 0) {
-        _recoveryLabel.stringValue = @"Please enter a recovery key or passphrase.";
+        _recoveryLabel.text = @"Please enter a recovery key or passphrase.";
         return;
     }
     _recoveryKeyField.enabled  = NO;
     _recoveryVerifyBtn.enabled = NO;
     _recoveryKeyField.hidden   = YES;
     _recoveryVerifyBtn.hidden  = YES;
-    _recoveryLabel.stringValue = @"Verifying…";
+    _recoveryLabel.text        = @"Verifying…";
     _recoveryInFlight = YES;
 
     std::string k = key.UTF8String ? key.UTF8String : "";
@@ -667,16 +673,16 @@ static std::string nsstr(NSString* s) {
     if (ok) {
         // Backup watcher will repaint into "Importing keys…" and hide the
         // banner once state reaches Enabled.
-        _recoveryLabel.stringValue = @"Downloading historical keys…";
+        _recoveryLabel.text = @"Downloading historical keys…";
         return;
     }
-    _recoveryLabel.stringValue =
+    _recoveryLabel.text =
         [NSString stringWithFormat:@"Recovery failed: %@", msg];
     _recoveryKeyField.hidden   = NO;
     _recoveryKeyField.enabled  = YES;
     _recoveryVerifyBtn.hidden  = NO;
     _recoveryVerifyBtn.enabled = YES;
-    [_recoveryKeyField selectText:nil];
+    [_recoveryKeyField becomeFirstResponder];
     _recoveryInFlight = NO;
 }
 
@@ -698,7 +704,7 @@ static std::string nsstr(NSString* s) {
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
-        _recoveryLabel.stringValue = [NSString
+        _recoveryLabel.text = [NSString
             stringWithFormat:@"Importing keys from backup… %llu imported.",
             (unsigned long long)progress.imported_keys];
     }
@@ -718,19 +724,17 @@ static std::string nsstr(NSString* s) {
         return;
     }
 
-    _roomHeaderName.stringValue = @(info.name.c_str());
+    _roomHeaderName.text = @(info.name.c_str());
 
     if (!info.topic.empty()) {
-        _roomHeaderTopic.stringValue = @(info.topic.c_str());
-        _roomHeaderTopic.toolTip     = @(info.topic.c_str());
+        _roomHeaderTopic.text = @(info.topic.c_str());
         _roomHeaderTopic.hidden = NO;
     } else {
         _roomHeaderTopic.hidden = YES;
-        _roomHeaderTopic.toolTip = nil;
     }
 
     NSString* key = @(info.avatar_url.empty() ? info.id.c_str() : info.avatar_url.c_str());
-    NSImage* cached = [[AvatarCache shared] cachedImageForKey:key];
+    UIImage* cached = [[AvatarCache shared] cachedImageForKey:key];
     if (cached) {
         _roomHeaderAvatar.image = cached;
     } else {
@@ -741,7 +745,7 @@ static std::string nsstr(NSString* s) {
         tesseract::Client* client = &_impl->client;
         [[AvatarCache shared] avatarForKey:key
                                     fetch:[client, room_id] { return client->fetch_avatar_bytes(room_id); }
-                               completion:^(NSImage* img) {
+                               completion:^(UIImage* img) {
             __strong typeof(self) s = weakSelf;
             if (!s) return;
             NSString* expected = @(avatar_url.empty() ? room_id.c_str() : avatar_url.c_str());
@@ -759,7 +763,7 @@ static std::string nsstr(NSString* s) {
     NSString* shown = _myDisplayName.empty()
         ? _myUserId
         : @(_myDisplayName.c_str());
-    _userNameLabel.stringValue = shown ?: @"";
+    _userNameLabel.text = shown ?: @"";
 
     if (!_myAvatarUrl.empty()) {
         NSString* key = @(_myAvatarUrl.c_str());
@@ -771,7 +775,7 @@ static std::string nsstr(NSString* s) {
                    fetch:[impl_ptr, url_copy]() {
                        return impl_ptr->client.fetch_media_bytes(url_copy);
                    }
-              completion:^(NSImage* img) {
+              completion:^(UIImage* img) {
                   __strong typeof(self) s = weakSelf;
                   s->_userAvatar.image = img;
               }];
@@ -808,6 +812,39 @@ static std::string nsstr(NSString* s) {
     [_loginView reset];
     [_loginView setStatusMessage:@""];
     [self _showLoginView];
+}
+
+@end
+
+// ── UserStripView impl ────────────────────────────────────────────────────────
+
+@implementation UserStripView
+
+- (instancetype)init {
+    if (!(self = [super init])) return nil;
+    UIContextMenuInteraction* interaction =
+        [[UIContextMenuInteraction alloc] initWithDelegate:self];
+    [self addInteraction:interaction];
+    return self;
+}
+
+- (UIContextMenuConfiguration*)contextMenuInteraction:(UIContextMenuInteraction*)i
+                       configurationForMenuAtLocation:(CGPoint)location {
+    __weak typeof(self) weakSelf = self;
+    return [UIContextMenuConfiguration
+        configurationWithIdentifier:nil
+                    previewProvider:nil
+                     actionProvider:^UIMenu*(NSArray<UIMenuElement*>* suggested) {
+        UIAction* logout = [UIAction
+            actionWithTitle:@"Logout"
+                      image:nil
+                 identifier:nil
+                    handler:^(__kindof UIAction* action) {
+            __strong UserStripView* s = weakSelf;
+            [s.owner _doLogout];
+        }];
+        return [UIMenu menuWithChildren:@[logout]];
+    }];
 }
 
 @end

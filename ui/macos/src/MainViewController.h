@@ -1,12 +1,12 @@
 #pragma once
-#import <AppKit/AppKit.h>
+#import <UIKit/UIKit.h>
 #include <tesseract/types.h>
 #include <memory>
 #include <string>
 #include <vector>
 
 // Called by EventBridge (from the main thread after GCD dispatch).
-@interface MainWindowController : NSWindowController
+@interface MainViewController : UIViewController
 
 - (void)doLogin;
 - (void)stopSync;

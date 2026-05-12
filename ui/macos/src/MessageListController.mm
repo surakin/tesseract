@@ -6,16 +6,10 @@
 #import <objc/runtime.h>
 
 // Keys for objc_setAssociatedObject — stash (roomId, eventId, reactionKey)
-// on each chip NSButton so `reactionChipClicked:` can forward to the client.
+// on each chip UIButton so `reactionChipClicked:` can forward to the client.
 static const void* const kChipRoomIdKey   = &kChipRoomIdKey;
 static const void* const kChipEventIdKey  = &kChipEventIdKey;
 static const void* const kChipKeyKey      = &kChipKeyKey;
-
-// Same scheme, but on a BubbleCellView's NSMenu items — carries the
-// (roomId, eventId) of the message that owns the menu so `deleteMessage:`
-// can call back into the client.
-static const void* const kCellRoomIdKey   = &kCellRoomIdKey;
-static const void* const kCellEventIdKey  = &kCellEventIdKey;
 
 // Sizes/spacing live in client/include/tesseract/visual.h — see
 // docs/UI-PARITY.md for the canonical anatomy. Per-platform constants
@@ -23,10 +17,10 @@ static const void* const kCellEventIdKey  = &kCellEventIdKey;
 // invisible) bubble layout container.
 static NSString* const kCellId     = @"MsgCell";
 static const CGFloat kAvatarSize   = tesseract::visual::kMsgAvatarSize;
-static const CGFloat kBubblePadH   = 10;   // inner content padding (no visual bubble)
+static const CGFloat kBubblePadH   = 10;
 static const CGFloat kBubblePadV   = 7;
 static const CGFloat kRowPadV      = tesseract::visual::kMsgRowVerticalPad;
-static const CGFloat kMaxBubbleW   = 520;  // matches Qt's kMsgMaxWidth
+static const CGFloat kMaxBubbleW   = 520;
 static const CGFloat kSenderH      = tesseract::visual::kMsgSenderNameHeight;
 static const CGFloat kTsH          = tesseract::visual::kMsgTimestampHeight;
 static const CGFloat kAvatarGap    = tesseract::visual::kMsgAvatarGap;
@@ -53,7 +47,7 @@ struct MessageData {
     std::string image_url;
     uint64_t    image_w   = 0;
     uint64_t    image_h   = 0;
-    std::string image_filename; // MSC2530: only set when sender supplied a distinct filename
+    std::string image_filename;
 
     // File
     std::string file_name;
@@ -120,88 +114,88 @@ static NSString* formatFileBody(const MessageData& m) {
     return s;
 }
 
-static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
-    if (src.width <= 0 || src.height <= 0) return NSMakeSize(maxW, maxH);
+static CGSize scaledImageSize(CGSize src, CGFloat maxW, CGFloat maxH) {
+    if (src.width <= 0 || src.height <= 0) return CGSizeMake(maxW, maxH);
     CGFloat scale = MIN(maxW / src.width, maxH / src.height);
     if (scale >= 1.0) return src;
-    return NSMakeSize(floor(src.width * scale), floor(src.height * scale));
+    return CGSizeMake(floor(src.width * scale), floor(src.height * scale));
 }
 
-// ── Bubble cell view ──────────────────────────────────────────────────────────
+// ── Bubble cell view (inner content view inside UITableViewCell) ──────────────
 
-@interface BubbleCellView : NSView
+@interface BubbleCellView : UITableViewCell
 - (void)configureWith:(const MessageData&)msg
            tableWidth:(CGFloat)w
             myUserId:(NSString*)myUserId
-          mediaImage:(NSImage*)mediaImage
-        chipIcons:(NSDictionary<NSString*, NSImage*>*)chipIcons
+          mediaImage:(UIImage*)mediaImage
+        chipIcons:(NSDictionary<NSString*, UIImage*>*)chipIcons
        chipTarget:(id)chipTarget;
 @end
 
 @implementation BubbleCellView {
-    NSImageView*  _avatarView;
-    NSTextField*  _senderLabel;
-    NSTextField*  _bodyLabel;
-    NSImageView*  _mediaView;
-    NSTextField*  _timestampLabel;
-    NSView*       _bubble;
-    NSStackView*  _chipStack;
+    UIImageView*  _avatarView;
+    UILabel*      _senderLabel;
+    UILabel*      _bodyLabel;
+    UIImageView*  _mediaView;
+    UILabel*      _timestampLabel;
+    UIView*       _bubble;
+    UIStackView*  _chipStack;
+    NSArray<NSLayoutConstraint*>* _outerConstraints;
+    NSArray<NSLayoutConstraint*>* _innerConstraints;
 }
 
-- (instancetype)initWithFrame:(NSRect)frame {
-    if (!(self = [super initWithFrame:frame])) return nil;
+- (instancetype)initWithStyle:(UITableViewCellStyle)style
+              reuseIdentifier:(NSString*)reuseIdentifier {
+    if (!(self = [super initWithStyle:style reuseIdentifier:reuseIdentifier]))
+        return nil;
 
-    // Invisible layout container — the spec (docs/UI-PARITY.md) calls for
-    // flat text rendering on every platform, so this view has no
-    // background and no rounded corners. It exists only so the inner
-    // content (media / body / footer) can share a single set of layout
-    // constraints with consistent inner padding.
-    _bubble = [[NSView alloc] init];
-    _bubble.wantsLayer            = YES;
+    self.selectionStyle = UITableViewCellSelectionStyleNone;
+
+    UIView* cv = self.contentView;
+
+    // Invisible layout container — flat-text rendering on every platform.
+    _bubble = [[UIView alloc] init];
     _bubble.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:_bubble];
+    [cv addSubview:_bubble];
 
-    _avatarView = [[NSImageView alloc] init];
+    _avatarView = [[UIImageView alloc] init];
     _avatarView.translatesAutoresizingMaskIntoConstraints = NO;
-    _avatarView.wantsLayer              = YES;
-    _avatarView.layer.cornerRadius      = kAvatarSize / 2;
-    _avatarView.layer.masksToBounds     = YES;
-    _avatarView.imageScaling            = NSImageScaleAxesIndependently;
-    [self addSubview:_avatarView];
+    _avatarView.contentMode    = UIViewContentModeScaleAspectFill;
+    _avatarView.clipsToBounds  = YES;
+    _avatarView.layer.cornerRadius = kAvatarSize / 2;
+    [cv addSubview:_avatarView];
 
-    _senderLabel = [NSTextField labelWithString:@""];
+    _senderLabel = [[UILabel alloc] init];
     _senderLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _senderLabel.font      = [NSFont boldSystemFontOfSize:11];
-    _senderLabel.textColor = [NSColor secondaryLabelColor];
-    [self addSubview:_senderLabel];
+    _senderLabel.font      = [UIFont boldSystemFontOfSize:11];
+    _senderLabel.textColor = [UIColor secondaryLabelColor];
+    [cv addSubview:_senderLabel];
 
-    _mediaView = [[NSImageView alloc] init];
+    _mediaView = [[UIImageView alloc] init];
     _mediaView.translatesAutoresizingMaskIntoConstraints = NO;
-    _mediaView.imageScaling = NSImageScaleProportionallyUpOrDown;
-    _mediaView.imageAlignment = NSImageAlignTopLeft;
-    _mediaView.wantsLayer = YES;
+    _mediaView.contentMode    = UIViewContentModeScaleAspectFill;
+    _mediaView.clipsToBounds  = YES;
     _mediaView.layer.cornerRadius = 8;
-    _mediaView.layer.masksToBounds = YES;
     _mediaView.hidden = YES;
     [_bubble addSubview:_mediaView];
 
-    _bodyLabel = [NSTextField wrappingLabelWithString:@""];
+    _bodyLabel = [[UILabel alloc] init];
     _bodyLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _bodyLabel.font       = [NSFont systemFontOfSize:13];
-    _bodyLabel.selectable = YES;
+    _bodyLabel.font          = [UIFont systemFontOfSize:13];
+    _bodyLabel.numberOfLines = 0;
     [_bubble addSubview:_bodyLabel];
 
-    _timestampLabel = [NSTextField labelWithString:@""];
+    _timestampLabel = [[UILabel alloc] init];
     _timestampLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    _timestampLabel.font      = [NSFont systemFontOfSize:10];
-    _timestampLabel.textColor = [NSColor tertiaryLabelColor];
-    _timestampLabel.alignment = NSTextAlignmentRight;
+    _timestampLabel.font          = [UIFont systemFontOfSize:10];
+    _timestampLabel.textColor     = [UIColor tertiaryLabelColor];
+    _timestampLabel.textAlignment = NSTextAlignmentRight;
     [_bubble addSubview:_timestampLabel];
 
-    _chipStack = [NSStackView stackViewWithViews:@[]];
-    _chipStack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    _chipStack.alignment   = NSLayoutAttributeCenterY;
-    _chipStack.spacing     = kChipGap;
+    _chipStack = [[UIStackView alloc] init];
+    _chipStack.axis      = UILayoutConstraintAxisHorizontal;
+    _chipStack.alignment = UIStackViewAlignmentCenter;
+    _chipStack.spacing   = kChipGap;
     _chipStack.translatesAutoresizingMaskIntoConstraints = NO;
     [_bubble addSubview:_chipStack];
 
@@ -211,29 +205,24 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 - (void)configureWith:(const MessageData&)msg
            tableWidth:(CGFloat)tableW
             myUserId:(NSString*)myUserId
-          mediaImage:(NSImage*)mediaImage
-        chipIcons:(NSDictionary<NSString*, NSImage*>*)chipIcons
+          mediaImage:(UIImage*)mediaImage
+        chipIcons:(NSDictionary<NSString*, UIImage*>*)chipIcons
        chipTarget:(id)chipTarget {
     NSString* sender = @(msg.sender_name.empty()
                            ? msg.sender.c_str()
                            : msg.sender_name.c_str());
 
-    // Flat-text rendering — no bubble background, body uses the ambient
-    // label colour for both own and incoming messages.
-    _bubble.layer.backgroundColor = [NSColor clearColor].CGColor;
-    _bodyLabel.textColor = [NSColor labelColor];
+    _bodyLabel.textColor = [UIColor labelColor];
 
     // Body text per event type.
     NSString* bodyText = nil;
     BOOL bodyIsRedactedTombstone = NO;
     switch (msg.type) {
         case tesseract::EventType::Image:
-            // MSC2530: show body only when sender supplied a distinct filename.
             if (!msg.image_filename.empty() && !msg.body.empty())
                 bodyText = @(msg.body.c_str());
             break;
         case tesseract::EventType::Sticker:
-            // Sticker body is alt-text only; never displayed.
             break;
         case tesseract::EventType::File:
             bodyText = formatFileBody(msg);
@@ -248,22 +237,22 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
             break;
     }
 
-    _bodyLabel.stringValue   = bodyText ?: @"";
-    _bodyLabel.hidden        = (bodyText == nil) || bodyText.length == 0;
+    _bodyLabel.text   = bodyText ?: @"";
+    _bodyLabel.hidden = (bodyText == nil) || bodyText.length == 0;
     if (bodyIsRedactedTombstone) {
-        NSFont* base = _bodyLabel.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
-        NSFontDescriptor* desc = [base.fontDescriptor
-            fontDescriptorWithSymbolicTraits:NSFontDescriptorTraitItalic];
-        NSFont* italic = [NSFont fontWithDescriptor:desc size:base.pointSize] ?: base;
-        _bodyLabel.font      = italic;
-        _bodyLabel.textColor = [NSColor secondaryLabelColor];
+        UIFont* base = _bodyLabel.font ?: [UIFont systemFontOfSize:[UIFont systemFontSize]];
+        UIFontDescriptor* desc = [base.fontDescriptor
+            fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitItalic];
+        UIFont* italic = desc ? [UIFont fontWithDescriptor:desc size:base.pointSize] : base;
+        _bodyLabel.font      = italic ?: base;
+        _bodyLabel.textColor = [UIColor secondaryLabelColor];
     } else {
-        _bodyLabel.font      = [NSFont systemFontOfSize:[NSFont systemFontSize]];
-        _bodyLabel.textColor = [NSColor labelColor];
+        _bodyLabel.font      = [UIFont systemFontOfSize:[UIFont systemFontSize]];
+        _bodyLabel.textColor = [UIColor labelColor];
     }
-    _senderLabel.stringValue = sender;
-    _senderLabel.hidden      = NO;
-    _avatarView.hidden       = NO;
+    _senderLabel.text   = sender;
+    _senderLabel.hidden = NO;
+    _avatarView.hidden  = NO;
 
     // Media: image or sticker
     BOOL hasMedia = (msg.type == tesseract::EventType::Image ||
@@ -272,55 +261,50 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     _mediaView.image  = (hasMedia ? mediaImage : nil);
 
     NSString* ts = formatTimestamp(msg.timestamp);
-    _timestampLabel.stringValue = ts ?: @"";
+    _timestampLabel.text   = ts ?: @"";
     _timestampLabel.hidden = (ts.length == 0);
 
     // Rebuild the reaction chip row.
-    for (NSView* v in _chipStack.arrangedSubviews.copy)
+    for (UIView* v in _chipStack.arrangedSubviews.copy)
         [_chipStack removeArrangedSubview:v], [v removeFromSuperview];
     _chipStack.hidden = msg.reactions.empty();
     if (!_chipStack.hidden) {
         for (const auto& r : msg.reactions) {
-            NSButton* chip = [[NSButton alloc] init];
+            UIButton* chip = [UIButton buttonWithType:UIButtonTypeSystem];
             chip.translatesAutoresizingMaskIntoConstraints = NO;
-            chip.bezelStyle    = NSBezelStyleInline;
-            chip.bordered      = NO;
-            chip.wantsLayer    = YES;
             chip.layer.cornerRadius = kChipH / 2;
             chip.layer.borderWidth  = 1;
-            NSColor* fill   = r.reacted_by_me
-                ? [[NSColor controlAccentColor] colorWithAlphaComponent:0.20]
-                : [[NSColor separatorColor] colorWithAlphaComponent:0.25];
-            NSColor* border = r.reacted_by_me
-                ? [[NSColor controlAccentColor] colorWithAlphaComponent:0.6]
-                : [NSColor separatorColor];
-            chip.layer.backgroundColor = fill.CGColor;
-            chip.layer.borderColor     = border.CGColor;
-            chip.font = [NSFont systemFontOfSize:10];
+            UIColor* fill   = r.reacted_by_me
+                ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.20]
+                : [[UIColor separatorColor]  colorWithAlphaComponent:0.25];
+            UIColor* border = r.reacted_by_me
+                ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.6]
+                : [UIColor separatorColor];
+            chip.backgroundColor      = fill;
+            chip.layer.borderColor    = border.CGColor;
+            chip.titleLabel.font      = [UIFont systemFontOfSize:10];
+            chip.contentEdgeInsets    = UIEdgeInsetsMake(0, 6, 0, 6);
 
             NSString* qsrc = r.source_json.empty() ? nil : @(r.source_json.c_str());
-            NSImage* icon  = qsrc ? chipIcons[qsrc] : nil;
+            UIImage* icon  = qsrc ? chipIcons[qsrc] : nil;
             NSString* count = [NSString stringWithFormat:@"%llu",
                                (unsigned long long)r.count];
             if (icon) {
-                chip.image          = icon;
-                chip.imageScaling   = NSImageScaleProportionallyDown;
-                chip.imagePosition  = NSImageLeft;
-                chip.title          = count;
+                [chip setImage:icon forState:UIControlStateNormal];
+                [chip setTitle:count forState:UIControlStateNormal];
             } else {
-                chip.title = [NSString stringWithFormat:@"%s %@",
-                              r.key.c_str(), count];
+                NSString* title = [NSString stringWithFormat:@"%s %@",
+                                   r.key.c_str(), count];
+                [chip setTitle:title forState:UIControlStateNormal];
             }
 
-            // Tooltip: "Reacted by:\n  Alice\n  Bob".
             if (!r.senders.empty()) {
                 NSMutableString* tip = [@"Reacted by:" mutableCopy];
                 for (const auto& s : r.senders)
                     [tip appendFormat:@"\n  %s", s.c_str()];
-                chip.toolTip = tip;
+                chip.accessibilityHint = tip;
             }
 
-            // Stash click context on the chip itself.
             objc_setAssociatedObject(chip, kChipRoomIdKey,
                 @(msg.room_id.c_str()),
                 OBJC_ASSOCIATION_COPY_NONATOMIC);
@@ -331,8 +315,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                 @(r.key.c_str()),
                 OBJC_ASSOCIATION_COPY_NONATOMIC);
 
-            chip.target = chipTarget;
-            chip.action = @selector(reactionChipClicked:);
+            [chip addTarget:chipTarget
+                     action:@selector(reactionChipClicked:)
+           forControlEvents:UIControlEventTouchUpInside];
 
             [chip.heightAnchor constraintEqualToConstant:kChipH].active = YES;
             [_chipStack addArrangedSubview:chip];
@@ -344,19 +329,19 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         NSString* key  = msg.sender_avatar_url.empty()
                            ? @(msg.sender.c_str())
                            : @(msg.sender_avatar_url.c_str());
-        NSImage* cached = [[AvatarCache shared] cachedImageForKey:key];
+        UIImage* cached = [[AvatarCache shared] cachedImageForKey:key];
         _avatarView.image = cached
             ?: [AvatarCache initialsImageForName:name size:kAvatarSize];
     }
 
     // Recompute layout.
-    [self removeConstraints:self.constraints];
-    [_bubble removeConstraints:_bubble.constraints];
+    if (_outerConstraints) [NSLayoutConstraint deactivateConstraints:_outerConstraints];
+    if (_innerConstraints) [NSLayoutConstraint deactivateConstraints:_innerConstraints];
 
     CGFloat maxBubbleW = MIN(kMaxBubbleW, tableW - kAvatarSize - kAvatarGap - 32);
 
-    // Media size constraints (Image: 320x200, Sticker: 256x256).
-    NSSize mediaSize = NSZeroSize;
+    // Media size constraints.
+    CGSize mediaSize = CGSizeZero;
     if (hasMedia && mediaImage) {
         CGFloat maxW = (msg.type == tesseract::EventType::Sticker)
                           ? kMaxStickerSz : kMaxImageW;
@@ -364,9 +349,7 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                           ? kMaxStickerSz : kMaxImageH;
         mediaSize = scaledImageSize(mediaImage.size, maxW, maxH);
     } else if (hasMedia) {
-        // Placeholder dimensions while loading: derive from event metadata when
-        // available, otherwise a sensible default.
-        NSSize hint = NSMakeSize((CGFloat)msg.image_w, (CGFloat)msg.image_h);
+        CGSize hint = CGSizeMake((CGFloat)msg.image_w, (CGFloat)msg.image_h);
         CGFloat maxW = (msg.type == tesseract::EventType::Sticker)
                           ? kMaxStickerSz : kMaxImageW;
         CGFloat maxH = (msg.type == tesseract::EventType::Sticker)
@@ -374,22 +357,20 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         if (hint.width > 0 && hint.height > 0)
             mediaSize = scaledImageSize(hint, maxW, maxH);
         else
-            mediaSize = NSMakeSize(160, 120);
+            mediaSize = CGSizeMake(160, 120);
     }
 
-    // Inner bubble layout: optional media on top, optional body below it,
-    // optional timestamp pinned right.
-    NSMutableArray* bubbleC = [NSMutableArray array];
-
-    NSView* topAnchor = nil;
+    // Inner bubble layout.
+    NSMutableArray<NSLayoutConstraint*>* inner = [NSMutableArray array];
+    UIView* topAnchor = nil;
     if (hasMedia) {
-        [bubbleC addObjectsFromArray:@[
-            [_mediaView.leadingAnchor  constraintEqualToAnchor:_bubble.leadingAnchor
-                                                      constant:kBubblePadH],
-            [_mediaView.topAnchor      constraintEqualToAnchor:_bubble.topAnchor
-                                                      constant:kBubblePadV],
-            [_mediaView.widthAnchor    constraintEqualToConstant:mediaSize.width],
-            [_mediaView.heightAnchor   constraintEqualToConstant:mediaSize.height],
+        [inner addObjectsFromArray:@[
+            [_mediaView.leadingAnchor constraintEqualToAnchor:_bubble.leadingAnchor
+                                                     constant:kBubblePadH],
+            [_mediaView.topAnchor     constraintEqualToAnchor:_bubble.topAnchor
+                                                     constant:kBubblePadV],
+            [_mediaView.widthAnchor   constraintEqualToConstant:mediaSize.width],
+            [_mediaView.heightAnchor  constraintEqualToConstant:mediaSize.height],
         ]];
         topAnchor = _mediaView;
     }
@@ -397,13 +378,13 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     BOOL showBody = !_bodyLabel.hidden;
     if (showBody) {
         if (topAnchor) {
-            [bubbleC addObject:[_bodyLabel.topAnchor
+            [inner addObject:[_bodyLabel.topAnchor
                 constraintEqualToAnchor:topAnchor.bottomAnchor constant:4]];
         } else {
-            [bubbleC addObject:[_bodyLabel.topAnchor
+            [inner addObject:[_bodyLabel.topAnchor
                 constraintEqualToAnchor:_bubble.topAnchor constant:kBubblePadV]];
         }
-        [bubbleC addObjectsFromArray:@[
+        [inner addObjectsFromArray:@[
             [_bodyLabel.leadingAnchor  constraintEqualToAnchor:_bubble.leadingAnchor
                                                       constant:kBubblePadH],
             [_bodyLabel.trailingAnchor constraintEqualToAnchor:_bubble.trailingAnchor
@@ -412,12 +393,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         topAnchor = _bodyLabel;
     }
 
-    // Footer row: chip stack on the left, timestamp anchored to the right.
-    // When chips are hidden the timestamp still sits flush right because
-    // the `>=` constraint from the (zero-width) chip stack does not push it.
     BOOL hasFooter = !_timestampLabel.hidden || !_chipStack.hidden;
     if (hasFooter) {
-        [bubbleC addObjectsFromArray:@[
+        [inner addObjectsFromArray:@[
             [_chipStack.leadingAnchor constraintEqualToAnchor:_bubble.leadingAnchor
                                                      constant:kBubblePadH],
             [_chipStack.bottomAnchor  constraintEqualToAnchor:_bubble.bottomAnchor
@@ -429,44 +407,36 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                                               _chipStack.trailingAnchor constant:8],
         ]];
         if (topAnchor) {
-            [bubbleC addObject:[_chipStack.topAnchor
+            [inner addObject:[_chipStack.topAnchor
                 constraintGreaterThanOrEqualToAnchor:topAnchor.bottomAnchor constant:2]];
         } else {
-            [bubbleC addObject:[_chipStack.topAnchor
+            [inner addObject:[_chipStack.topAnchor
                 constraintEqualToAnchor:_bubble.topAnchor constant:kBubblePadV]];
         }
         topAnchor = _chipStack;
     }
 
-    // Bubble bottom anchor — pinned to the last element.
     if (topAnchor) {
-        if (topAnchor == _chipStack || topAnchor == _bodyLabel) {
-            [bubbleC addObject:[_bubble.bottomAnchor
-                constraintEqualToAnchor:topAnchor.bottomAnchor constant:kBubblePadV]];
-        } else {
-            // Media-only — match media bottom
-            [bubbleC addObject:[_bubble.bottomAnchor
-                constraintEqualToAnchor:topAnchor.bottomAnchor
-                               constant:kBubblePadV]];
-        }
+        [inner addObject:[_bubble.bottomAnchor
+            constraintEqualToAnchor:topAnchor.bottomAnchor constant:kBubblePadV]];
     }
 
-    [_bubble addConstraints:bubbleC];
+    _innerConstraints = inner;
+    [NSLayoutConstraint activateConstraints:inner];
 
-    // Outer layout — same for own and other (see docs/UI-PARITY.md):
-    // 32 px avatar on the left, sender name above the body, content
-    // expands rightward up to maxBubbleW. No right-align branch.
-    [NSLayoutConstraint activateConstraints:@[
-        [_avatarView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
+    // Outer layout — same for own and other.
+    UIView* cv = self.contentView;
+    _outerConstraints = @[
+        [_avatarView.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor
                                                   constant:12],
-        [_avatarView.bottomAnchor  constraintEqualToAnchor:self.bottomAnchor
+        [_avatarView.bottomAnchor  constraintEqualToAnchor:cv.bottomAnchor
                                                   constant:-kRowPadV],
         [_avatarView.widthAnchor   constraintEqualToConstant:kAvatarSize],
         [_avatarView.heightAnchor  constraintEqualToConstant:kAvatarSize],
 
         [_senderLabel.leadingAnchor constraintEqualToAnchor:_avatarView.trailingAnchor
                                                    constant:kAvatarGap],
-        [_senderLabel.topAnchor     constraintEqualToAnchor:self.topAnchor
+        [_senderLabel.topAnchor     constraintEqualToAnchor:cv.topAnchor
                                                    constant:kRowPadV],
         [_senderLabel.heightAnchor  constraintEqualToConstant:kSenderH],
 
@@ -474,69 +444,45 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                                                constant:kAvatarGap],
         [_bubble.topAnchor      constraintEqualToAnchor:_senderLabel.bottomAnchor
                                                constant:2],
-        [_bubble.bottomAnchor   constraintEqualToAnchor:self.bottomAnchor
-                                               constant:-kRowPadV],
+        [_bubble.bottomAnchor   constraintLessThanOrEqualToAnchor:cv.bottomAnchor
+                                                         constant:-kRowPadV],
         [_bubble.widthAnchor    constraintLessThanOrEqualToConstant:maxBubbleW],
-    ]];
+    ];
+    [NSLayoutConstraint activateConstraints:_outerConstraints];
 }
 
 @end
 
 // ── Controller ────────────────────────────────────────────────────────────────
 
-@interface MessageListController () <NSTableViewDataSource, NSTableViewDelegate>
+@interface MessageListController () <UIScrollViewDelegate>
 @end
 
 @implementation MessageListController {
-    NSTableView*            _table;
-    NSScrollView*           _scroll;
     std::vector<MessageData> _messages;
-    // Image cache keyed by mxc:// URL, holding decoded NSImage.
-    NSMutableDictionary<NSString*, NSImage*>* _imageCache;
-    // Set of URLs currently being fetched.
+    NSMutableDictionary<NSString*, UIImage*>* _imageCache;
     NSMutableSet<NSString*>* _imageInflight;
 }
 
-- (void)loadView {
+- (instancetype)init {
+    return [super initWithStyle:UITableViewStylePlain];
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
     _imageCache    = [NSMutableDictionary dictionary];
     _imageInflight = [NSMutableSet set];
 
-    _scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    _scroll.hasVerticalScroller   = YES;
-    _scroll.autohidesScrollers    = YES;
-    _scroll.borderType            = NSNoBorder;
-
-    _table = [[NSTableView alloc] init];
-    _table.delegate               = self;
-    _table.dataSource             = self;
-    _table.headerView             = nil;
-    _table.rowHeight              = 60;
-    _table.allowsEmptySelection   = YES;
-    _table.intercellSpacing       = NSMakeSize(0, 0);
-    _table.selectionHighlightStyle = NSTableViewSelectionHighlightStyleNone;
-
-    NSTableColumn* col = [[NSTableColumn alloc] initWithIdentifier:@"Msg"];
-    col.resizingMask = NSTableColumnAutoresizingMask;
-    [_table addTableColumn:col];
-    _scroll.documentView = _table;
-
-    // Observe scroll position for paginate-back trigger
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(_scrolled:)
-               name:NSScrollViewDidLiveScrollNotification
-             object:_scroll];
-
-    self.view = _scroll;
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    self.tableView.separatorStyle  = UITableViewCellSeparatorStyleNone;
+    self.tableView.allowsSelection = NO;
+    self.tableView.estimatedRowHeight = 60;
+    [self.tableView registerClass:[BubbleCellView class]
+           forCellReuseIdentifier:kCellId];
 }
 
 - (void)clearMessages {
     _messages.clear();
-    [_table reloadData];
+    [self.tableView reloadData];
 }
 
 - (void)pushEvent:(std::unique_ptr<tesseract::Event>)ev {
@@ -551,11 +497,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                 [self _prefetchAvatarFor:_messages[i]];
                 [self _prefetchMediaFor:_messages[i]];
                 [self _prefetchChipIconsFor:_messages[i]];
-                // Reaction count changes row height; let the table re-measure.
-                [_table noteHeightOfRowsWithIndexesChanged:
-                    [NSIndexSet indexSetWithIndex:i]];
-                [_table reloadDataForRowIndexes:[NSIndexSet indexSetWithIndex:i]
-                                  columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+                [self.tableView reloadRowsAtIndexPaths:
+                    @[[NSIndexPath indexPathForRow:i inSection:0]]
+                                       withRowAnimation:UITableViewRowAnimationNone];
                 return;
             }
         }
@@ -569,10 +513,9 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     NSInteger row = (NSInteger)_messages.size();
     _messages.push_back(std::move(md));
 
-    [_table beginUpdates];
-    [_table insertRowsAtIndexes:[NSIndexSet indexSetWithIndex:row]
-                  withAnimation:NSTableViewAnimationEffectNone];
-    [_table endUpdates];
+    [self.tableView insertRowsAtIndexPaths:
+        @[[NSIndexPath indexPathForRow:row inSection:0]]
+                           withRowAnimation:UITableViewRowAnimationNone];
 
     [self _scrollToBottomIfNeeded];
 }
@@ -586,26 +529,24 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     tesseract::Client* client = _client;
     std::string url = msg.sender_avatar_url;
-    std::string sender = msg.sender_name.empty() ? msg.sender : msg.sender_name;
     __weak typeof(self) weakSelf = self;
     [[AvatarCache shared] avatarForKey:key
                                  fetch:[client, url] {
                                      return client->fetch_media_bytes(url);
                                  }
-                            completion:^(NSImage*) {
+                            completion:^(UIImage*) {
         [weakSelf _reloadRowsForSenderAvatarUrl:url];
     }];
-    (void)sender;
 }
 
 - (void)_reloadRowsForSenderAvatarUrl:(std::string)url {
-    NSMutableIndexSet* idx = [NSMutableIndexSet indexSet];
+    NSMutableArray<NSIndexPath*>* idx = [NSMutableArray array];
     for (NSInteger i = 0; i < (NSInteger)_messages.size(); ++i)
         if (_messages[i].sender_avatar_url == url)
-            [idx addIndex:(NSUInteger)i];
+            [idx addObject:[NSIndexPath indexPathForRow:i inSection:0]];
     if (idx.count > 0)
-        [_table reloadDataForRowIndexes:idx
-                          columnIndexes:[NSIndexSet indexSetWithIndex:0]];
+        [self.tableView reloadRowsAtIndexPaths:idx
+                              withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (void)_prefetchMediaFor:(const MessageData&)msg {
@@ -623,11 +564,11 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         auto bytes = client->fetch_media_bytes(url);
-        NSImage* img = nil;
+        UIImage* img = nil;
         if (!bytes.empty()) {
             NSData* data = [NSData dataWithBytes:bytes.data()
                                           length:bytes.size()];
-            img = [[NSImage alloc] initWithData:data];
+            img = [UIImage imageWithData:data];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             typeof(self) s = weakSelf;
@@ -636,23 +577,17 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
             if (!img) return;
             s->_imageCache[key] = img;
 
-            NSMutableIndexSet* idx = [NSMutableIndexSet indexSet];
+            NSMutableArray<NSIndexPath*>* idx = [NSMutableArray array];
             for (NSInteger i = 0; i < (NSInteger)s->_messages.size(); ++i)
                 if (s->_messages[i].image_url == url)
-                    [idx addIndex:(NSUInteger)i];
-            if (idx.count > 0) {
-                // Row height depends on the loaded image — invalidate.
-                [s->_table noteHeightOfRowsWithIndexesChanged:idx];
-                [s->_table reloadDataForRowIndexes:idx
-                                     columnIndexes:[NSIndexSet indexSetWithIndex:0]];
-            }
+                    [idx addObject:[NSIndexPath indexPathForRow:i inSection:0]];
+            if (idx.count > 0)
+                [s.tableView reloadRowsAtIndexPaths:idx
+                                   withRowAnimation:UITableViewRowAnimationNone];
         });
     });
 }
 
-// MSC 4027 chip icons: fetch the MediaSource referenced by each
-// custom-image reaction so the chip can render with the image instead of
-// the bare shortcode. Same async path as `_prefetchMediaFor:`.
 - (void)_prefetchChipIconsFor:(const MessageData&)msg {
     if (msg.reactions.empty() || !_client) return;
     tesseract::Client* client = _client;
@@ -667,11 +602,11 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         std::string url = r.source_json;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             auto bytes = client->fetch_media_bytes(url);
-            NSImage* img = nil;
+            UIImage* img = nil;
             if (!bytes.empty()) {
                 NSData* data = [NSData dataWithBytes:bytes.data()
                                               length:bytes.size()];
-                img = [[NSImage alloc] initWithData:data];
+                img = [UIImage imageWithData:data];
             }
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) s = weakSelf;
@@ -679,71 +614,66 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                 [s->_imageInflight removeObject:key];
                 if (!img) return;
                 s->_imageCache[key] = img;
-                // Refresh every row that references this chip icon.
-                NSMutableIndexSet* idx = [NSMutableIndexSet indexSet];
+                NSMutableArray<NSIndexPath*>* idx = [NSMutableArray array];
                 for (NSInteger i = 0; i < (NSInteger)s->_messages.size(); ++i) {
                     for (const auto& rr : s->_messages[i].reactions) {
                         if (rr.source_json == url) {
-                            [idx addIndex:(NSUInteger)i];
+                            [idx addObject:[NSIndexPath indexPathForRow:i inSection:0]];
                             break;
                         }
                     }
                 }
-                if (idx.count > 0) {
-                    [s->_table reloadDataForRowIndexes:idx
-                                         columnIndexes:[NSIndexSet indexSetWithIndex:0]];
-                }
+                if (idx.count > 0)
+                    [s.tableView reloadRowsAtIndexPaths:idx
+                                       withRowAnimation:UITableViewRowAnimationNone];
             });
         });
     }
 }
 
 - (void)_scrollToBottomIfNeeded {
-    NSClipView* clip = _scroll.contentView;
-    CGFloat maxY = _table.frame.size.height - clip.bounds.size.height;
-    CGFloat curY = clip.bounds.origin.y;
+    CGFloat maxY = self.tableView.contentSize.height
+                 - self.tableView.bounds.size.height;
+    CGFloat curY = self.tableView.contentOffset.y;
     if (maxY - curY < 200 || _messages.size() <= 2) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (_messages.empty()) return;
             NSInteger last = (NSInteger)_messages.size() - 1;
-            [_table scrollRowToVisible:last];
+            [self.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:last inSection:0]
+                                  atScrollPosition:UITableViewScrollPositionBottom
+                                          animated:NO];
         });
     }
 }
 
-- (void)_scrolled:(NSNotification*)n {
-    NSClipView* clip = _scroll.contentView;
-    if (clip.bounds.origin.y < 20)
+// ── UIScrollViewDelegate — fire paginate-back trigger near the top. ──────────
+
+- (void)scrollViewDidScroll:(UIScrollView*)scrollView {
+    if (scrollView.contentOffset.y < 20)
         [_delegate messageListDidScrollToTop];
 }
 
-// ── NSTableViewDataSource ─────────────────────────────────────────────────────
+// ── UITableViewDataSource / Delegate ──────────────────────────────────────────
 
-- (NSInteger)numberOfRowsInTableView:(NSTableView*)tv {
+- (NSInteger)tableView:(UITableView*)tv numberOfRowsInSection:(NSInteger)section {
     return (NSInteger)_messages.size();
 }
 
-// ── NSTableViewDelegate ───────────────────────────────────────────────────────
-
-- (NSView*)tableView:(NSTableView*)tv
-  viewForTableColumn:(NSTableColumn*)col
-                 row:(NSInteger)row {
-    BubbleCellView* cell = [tv makeViewWithIdentifier:kCellId owner:self];
-    if (!cell) {
-        cell = [[BubbleCellView alloc] initWithFrame:NSZeroRect];
-        cell.identifier = kCellId;
-    }
-    const MessageData& m = _messages[row];
-    NSImage* media = nil;
+- (UITableViewCell*)tableView:(UITableView*)tv
+        cellForRowAtIndexPath:(NSIndexPath*)indexPath {
+    BubbleCellView* cell = (BubbleCellView*)[tv dequeueReusableCellWithIdentifier:kCellId
+                                                                     forIndexPath:indexPath];
+    const MessageData& m = _messages[indexPath.row];
+    UIImage* media = nil;
     if (!m.image_url.empty())
         media = _imageCache[@(m.image_url.c_str())];
 
-    NSMutableDictionary<NSString*, NSImage*>* chipIcons =
+    NSMutableDictionary<NSString*, UIImage*>* chipIcons =
         [NSMutableDictionary dictionary];
     for (const auto& r : m.reactions) {
         if (r.source_json.empty()) continue;
         NSString* key = @(r.source_json.c_str());
-        NSImage* img  = _imageCache[key];
+        UIImage* img  = _imageCache[key];
         if (img) chipIcons[key] = img;
     }
 
@@ -754,76 +684,17 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
           chipIcons:chipIcons
          chipTarget:self];
 
-    // Right-click → "Delete message" — only on own, non-redacted messages.
-    BOOL isOwn = m.is_own;
-    BOOL isRedacted = (m.type == tesseract::EventType::Redacted);
-    if (isOwn && !isRedacted && !m.event_id.empty()) {
-        NSMenu* menu = [[NSMenu alloc] init];
-        NSMenuItem* item = [menu addItemWithTitle:@"Delete message"
-                                           action:@selector(deleteMessage:)
-                                    keyEquivalent:@""];
-        item.target = self;
-        objc_setAssociatedObject(item, kCellRoomIdKey,
-            @(m.room_id.c_str()),  OBJC_ASSOCIATION_COPY_NONATOMIC);
-        objc_setAssociatedObject(item, kCellEventIdKey,
-            @(m.event_id.c_str()), OBJC_ASSOCIATION_COPY_NONATOMIC);
-        cell.menu = menu;
-    } else {
-        cell.menu = nil;
-    }
     return cell;
 }
 
-- (void)deleteMessage:(NSMenuItem*)sender {
-    if (!_client) return;
-    NSString* roomId  = objc_getAssociatedObject(sender, kCellRoomIdKey);
-    NSString* eventId = objc_getAssociatedObject(sender, kCellEventIdKey);
-    if (roomId.length == 0 || eventId.length == 0) return;
-
-    NSAlert* alert = [[NSAlert alloc] init];
-    alert.messageText     = @"Delete message?";
-    alert.informativeText = @"This cannot be undone.";
-    [alert addButtonWithTitle:@"Delete"];
-    [alert addButtonWithTitle:@"Cancel"];
-    if ([alert runModal] != NSAlertFirstButtonReturn) return;
-
-    std::string rid(roomId.UTF8String);
-    std::string eid(eventId.UTF8String);
-    auto res = _client->redact_event(rid, eid, "");
-    if (!res.ok) {
-        NSAlert* err = [[NSAlert alloc] init];
-        err.messageText     = @"Delete failed";
-        err.informativeText = @(res.message.c_str());
-        [err addButtonWithTitle:@"OK"];
-        [err runModal];
-    }
-}
-
-- (void)reactionChipClicked:(NSButton*)sender {
-    if (!_client) return;
-    NSString* roomId  = objc_getAssociatedObject(sender, kChipRoomIdKey);
-    NSString* eventId = objc_getAssociatedObject(sender, kChipEventIdKey);
-    NSString* key     = objc_getAssociatedObject(sender, kChipKeyKey);
-    if (roomId.length == 0 || eventId.length == 0 || key.length == 0) return;
-
-    std::string rid(roomId.UTF8String);
-    std::string eid(eventId.UTF8String);
-    std::string k  (key.UTF8String);
-    // toggle_reaction is fast (local-echo path); call inline. The timeline
-    // re-emits the parent event on success, which refreshes the chip state.
-    auto result = _client->send_reaction(rid, eid, k);
-    (void)result;
-}
-
-- (CGFloat)tableView:(NSTableView*)tv heightOfRow:(NSInteger)row {
-    const MessageData& msg = _messages[row];
+- (CGFloat)tableView:(UITableView*)tv heightForRowAtIndexPath:(NSIndexPath*)indexPath {
+    const MessageData& msg = _messages[indexPath.row];
 
     CGFloat tableW = tv.bounds.size.width;
     CGFloat maxBubbleW = MIN(kMaxBubbleW, tableW - kAvatarSize - kAvatarGap - 32);
     CGFloat innerW = maxBubbleW - 2 * kBubblePadH;
     if (innerW < 50) innerW = 50;
 
-    // Body text height (if any).
     NSString* bodyText = nil;
     switch (msg.type) {
         case tesseract::EventType::Image:
@@ -846,15 +717,14 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
 
     CGFloat bodyH = 0;
     if (bodyText.length > 0) {
-        NSDictionary* attrs = @{ NSFontAttributeName: [NSFont systemFontOfSize:13] };
-        NSRect b = [bodyText boundingRectWithSize:NSMakeSize(innerW, CGFLOAT_MAX)
+        NSDictionary* attrs = @{ NSFontAttributeName: [UIFont systemFontOfSize:13] };
+        CGRect b = [bodyText boundingRectWithSize:CGSizeMake(innerW, CGFLOAT_MAX)
                                           options:NSStringDrawingUsesLineFragmentOrigin
                                        attributes:attrs
                                           context:nil];
         bodyH = ceil(b.size.height);
     }
 
-    // Media height (if any).
     CGFloat mediaH = 0;
     BOOL hasMedia = (msg.type == tesseract::EventType::Image ||
                      msg.type == tesseract::EventType::Sticker);
@@ -863,26 +733,23 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
                           ? kMaxStickerSz : kMaxImageW;
         CGFloat maxH = (msg.type == tesseract::EventType::Sticker)
                           ? kMaxStickerSz : kMaxImageH;
-        NSImage* loaded = !msg.image_url.empty()
+        UIImage* loaded = !msg.image_url.empty()
             ? _imageCache[@(msg.image_url.c_str())] : nil;
-        NSSize sz = NSZeroSize;
+        CGSize sz = CGSizeZero;
         if (loaded) {
             sz = scaledImageSize(loaded.size, maxW, maxH);
         } else if (msg.image_w > 0 && msg.image_h > 0) {
-            sz = scaledImageSize(NSMakeSize((CGFloat)msg.image_w,
+            sz = scaledImageSize(CGSizeMake((CGFloat)msg.image_w,
                                             (CGFloat)msg.image_h), maxW, maxH);
         } else {
-            sz = NSMakeSize(160, 120);
+            sz = CGSizeMake(160, 120);
         }
         mediaH = sz.height;
     }
 
-    CGFloat bubblePadV = 2 * kBubblePadV;       // inner content padding
+    CGFloat bubblePadV = 2 * kBubblePadV;
     CGFloat innerSpacing = (mediaH > 0 && bodyH > 0) ? 4 : 0;
     BOOL hasChips = !msg.reactions.empty();
-    // Footer row holds chips on the left and timestamp on the right;
-    // chip row height dominates the timestamp height when both are
-    // present.
     CGFloat footerInnerH = 0;
     if (hasChips) {
         footerInnerH = MAX(kChipH, kTsH);
@@ -890,12 +757,90 @@ static NSSize scaledImageSize(NSSize src, CGFloat maxW, CGFloat maxH) {
         footerInnerH = kTsH;
     }
     CGFloat footerH = footerInnerH > 0 ? footerInnerH + 4 : 0;
-    CGFloat senderH = kSenderH + 2;             // always shown — see UI-PARITY.md
+    CGFloat senderH = kSenderH + 2;
 
     CGFloat bubbleContentH = mediaH + innerSpacing + bodyH + footerH;
-    if (bubbleContentH == 0) bubbleContentH = 18;  // minimum
+    if (bubbleContentH == 0) bubbleContentH = 18;
 
     return senderH + bubblePadV + bubbleContentH + 2 * kRowPadV;
+}
+
+// ── Right-click / long-press "Delete message" context menu ───────────────────
+
+- (UIContextMenuConfiguration*)tableView:(UITableView*)tv
+    contextMenuConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+                                        point:(CGPoint)point {
+    if (indexPath.row < 0 || indexPath.row >= (NSInteger)_messages.size())
+        return nil;
+    const MessageData& m = _messages[indexPath.row];
+    if (!m.is_own || m.type == tesseract::EventType::Redacted || m.event_id.empty())
+        return nil;
+
+    NSString* roomId  = @(m.room_id.c_str());
+    NSString* eventId = @(m.event_id.c_str());
+    __weak typeof(self) weakSelf = self;
+
+    return [UIContextMenuConfiguration
+        configurationWithIdentifier:nil
+                    previewProvider:nil
+                     actionProvider:^UIMenu*(NSArray<UIMenuElement*>* suggested) {
+        UIAction* del = [UIAction
+            actionWithTitle:@"Delete message"
+                      image:[UIImage systemImageNamed:@"trash"]
+                 identifier:nil
+                    handler:^(__kindof UIAction* action) {
+            [weakSelf _confirmDeleteRoom:roomId event:eventId];
+        }];
+        del.attributes = UIMenuElementAttributesDestructive;
+        return [UIMenu menuWithChildren:@[del]];
+    }];
+}
+
+- (void)_confirmDeleteRoom:(NSString*)roomId event:(NSString*)eventId {
+    if (!_client || roomId.length == 0 || eventId.length == 0) return;
+
+    UIAlertController* a = [UIAlertController
+        alertControllerWithTitle:@"Delete message?"
+                         message:@"This cannot be undone."
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                          style:UIAlertActionStyleCancel
+                                        handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [a addAction:[UIAlertAction actionWithTitle:@"Delete"
+                                          style:UIAlertActionStyleDestructive
+                                        handler:^(UIAlertAction*) {
+        typeof(self) s = weakSelf;
+        if (!s || !s->_client) return;
+        std::string rid(roomId.UTF8String);
+        std::string eid(eventId.UTF8String);
+        auto res = s->_client->redact_event(rid, eid, "");
+        if (!res.ok) {
+            UIAlertController* err = [UIAlertController
+                alertControllerWithTitle:@"Delete failed"
+                                 message:@(res.message.c_str())
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [err addAction:[UIAlertAction actionWithTitle:@"OK"
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:nil]];
+            [s presentViewController:err animated:YES completion:nil];
+        }
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+- (void)reactionChipClicked:(UIButton*)sender {
+    if (!_client) return;
+    NSString* roomId  = objc_getAssociatedObject(sender, kChipRoomIdKey);
+    NSString* eventId = objc_getAssociatedObject(sender, kChipEventIdKey);
+    NSString* key     = objc_getAssociatedObject(sender, kChipKeyKey);
+    if (roomId.length == 0 || eventId.length == 0 || key.length == 0) return;
+
+    std::string rid(roomId.UTF8String);
+    std::string eid(eventId.UTF8String);
+    std::string k  (key.UTF8String);
+    auto result = _client->send_reaction(rid, eid, k);
+    (void)result;
 }
 
 @end

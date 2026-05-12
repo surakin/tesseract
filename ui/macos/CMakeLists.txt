@@ -34,8 +34,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/EventBridge.mm
     src/AvatarCache.h
     src/AvatarCache.mm
-    src/MainWindowController.h
-    src/MainWindowController.mm
+    src/MainViewController.h
+    src/MainViewController.mm
     src/LoginView.h
     src/LoginView.mm
     src/RoomListController.h
@@ -66,9 +66,13 @@ set_target_properties(tesseract_macos PROPERTIES
 
 # All three archives have circular dependencies through the FFI; link them
 # with WHOLE_ARCHIVE so every symbol is present regardless of order.
+#
+# Mac Catalyst: we link UIKit (not AppKit). Foundation, QuartzCore, and
+# CoreGraphics are all available unchanged inside the ios-macabi slice.
 target_link_libraries(tesseract_macos PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
-    "-framework AppKit"
+    "-framework UIKit"
     "-framework Foundation"
     "-framework QuartzCore"
+    "-framework CoreGraphics"
 )

@@ -1,28 +1,26 @@
 #import "AppDelegate.h"
-#import "MainWindowController.h"
+#import "MainViewController.h"
 
 @implementation AppDelegate {
-    MainWindowController* _mainWC;
+    MainViewController* _root;
 }
 
-- (void)applicationDidFinishLaunching:(NSNotification*)notification {
-    _mainWC = [[MainWindowController alloc] init];
-    [_mainWC.window makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
+- (BOOL)application:(UIApplication*)application
+    didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
+    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+    _root = [[MainViewController alloc] init];
+    self.window.rootViewController = _root;
+    [self.window makeKeyAndVisible];
 
-    // Run after the window is on-screen so the sheet attaches properly.
+    // Run after the window is on-screen so the modal sheet attaches properly.
     dispatch_async(dispatch_get_main_queue(), ^{
-        [_mainWC doLogin];
+        [_root doLogin];
     });
-}
-
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
     return YES;
 }
 
-- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
-    [_mainWC stopSync];
-    return NSTerminateNow;
+- (void)applicationWillTerminate:(UIApplication*)application {
+    [_root stopSync];
 }
 
 @end

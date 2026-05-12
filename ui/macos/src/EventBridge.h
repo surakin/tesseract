@@ -3,14 +3,14 @@
 #include <string>
 #include <vector>
 
-@class MainWindowController;
+@class MainViewController;
 
 // Pure C++ class: implements the IEventHandler interface and dispatches all
 // callbacks to the main thread via GCD, mirroring the Win32 PostMessage and
 // GTK g_idle_add patterns in the other backends.
 class EventBridge final : public tesseract::IEventHandler {
 public:
-    explicit EventBridge(MainWindowController* ctrl);
+    explicit EventBridge(MainViewController* ctrl);
 
     void on_message(tesseract::Event* ev)                                override;
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
@@ -22,8 +22,8 @@ public:
     void on_backup_progress(const tesseract::BackupProgress& progress)   override;
 
 private:
-    // __unsafe_unretained: non-owning ARC pointer. MainWindowController
+    // __unsafe_unretained: non-owning ARC pointer. MainViewController
     // calls stop_sync() before dealloc, guaranteeing no callbacks arrive
     // after the controller is gone.
-    __unsafe_unretained MainWindowController* ctrl_;
+    __unsafe_unretained MainViewController* ctrl_;
 };

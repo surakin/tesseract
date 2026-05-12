@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit/Objective-C++ (macOS), Qt6 Widgets, or GTK4 (Linux).
+Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), UIKit / Mac Catalyst (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
 
 ## Build Commands
 
@@ -16,12 +16,14 @@ sudo apt install qt6-base-dev ninja-build cmake sqlite3 libsqlite3-dev golang pe
 # (golang + perl are build-only deps for aws-lc-sys's CMake builder.)
 ```
 
-**Prerequisites (macOS/AppKit):**
+**Prerequisites (macOS / UIKit Catalyst):**
 
 ```bash
 brew install ninja cmake go
 xcode-select --install   # Xcode Command Line Tools
-# also requires a Rust toolchain: rustup
+# Rust toolchain + Catalyst target:
+#   rustup toolchain install stable
+#   rustup target add aarch64-apple-ios-macabi
 # (go is a build-only dep for aws-lc-sys's CMake builder; perl ships with macOS.)
 ```
 
@@ -51,7 +53,7 @@ sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
 client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
   windows/   ← Win32 executable
-  macos/     ← AppKit / Objective-C++ executable (.app bundle)
+  macos/     ← UIKit Catalyst / Objective-C++ executable (.app bundle)
   linux-qt/  ← Qt6 Widgets executable
   linux-gtk/ ← GTK4 executable
 ```
@@ -62,7 +64,7 @@ ui/
 
 **`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON (`%APPDATA%/Tesseract/` on Windows, `~/.config/tesseract/` on Linux).
 
-**`ui/*/` (C++)** — Each target implements `IEventHandler`. Because Rust callbacks arrive on worker threads, Qt UI must use `QueuedConnection` signals; GTK UI must marshal via glib.
+**`ui/*/` (C++)** — Each target implements `IEventHandler`. Because Rust callbacks arrive on worker threads, Qt UI must use `QueuedConnection` signals; GTK UI must marshal via glib; the macOS Catalyst UI uses `dispatch_async(dispatch_get_main_queue(), …)` (see `ui/macos/src/EventBridge.mm`). The macOS port is built as a UIKit Mac Catalyst app — same SDK binding, but UIView/UIViewController instead of NSView/NSWindowController.
 
 ### Key API surface (`client/include/tesseract/`)
 

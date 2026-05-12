@@ -1,5 +1,5 @@
 #pragma once
-#import <AppKit/AppKit.h>
+#import <UIKit/UIKit.h>
 
 #include <tesseract/client.h>
 
@@ -10,11 +10,10 @@
 @end
 
 /// Inline sign-in view shown inside the main window when the user is not
-/// logged in. Drives the same two-phase OAuth / MAS flow as the previous
-/// modal LoginWindowController (form → worker → browser → worker → done),
-/// but is a plain NSView the main window swaps in instead of presenting as
-/// a sheet.
-@interface LoginView : NSView
+/// logged in. Drives the same two-phase OAuth / MAS flow as before
+/// (form → worker → browser → worker → done) but is a plain UIView the
+/// main view controller swaps in instead of presenting modally.
+@interface LoginView : UIView
 
 - (instancetype)initWithClient:(tesseract::Client*)client;
 

@@ -1,5 +1,5 @@
 #pragma once
-#import <AppKit/AppKit.h>
+#import <UIKit/UIKit.h>
 #include <tesseract/types.h>
 #include <memory>
 #include <string>
@@ -10,8 +10,7 @@ namespace tesseract { class Client; }
 - (void)messageListDidScrollToTop;
 @end
 
-@interface MessageListController : NSViewController
-    <NSTableViewDelegate, NSTableViewDataSource>
+@interface MessageListController : UITableViewController
 
 @property (nonatomic, weak)   id<MessageListDelegate> delegate;
 @property (nonatomic, copy)   NSString*               myUserId;
