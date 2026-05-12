@@ -1,5 +1,7 @@
 #include "canvas_d2d.h"
 
+#include <tesseract/settings.h>
+
 #include <d2d1_1.h>
 #include <dwrite_2.h>
 #include <wincodec.h>
@@ -92,18 +94,19 @@ struct FontDesc {
 };
 
 static FontDesc desc_for(FontRole r) {
+    const auto& s = tesseract::Settings::instance();
     switch (r) {
-        case FontRole::Small:           return { L"Segoe UI Variable Text",     9.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::Body:            return { L"Segoe UI Variable Text",    13.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::SenderName:      return { L"Segoe UI Variable Text",    12.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        case FontRole::Timestamp:       return { L"Segoe UI Variable Text",    10.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::SidebarName:     return { L"Segoe UI Variable Text",    13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        case FontRole::SidebarPreview:  return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::UnreadBadge:     return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        case FontRole::Title:           return { L"Segoe UI Variable Display", 15.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
-        case FontRole::UiSemibold:      return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::Small:           return { L"Segoe UI Variable Text",     static_cast<float>(s.font_small),           DWRITE_FONT_WEIGHT_REGULAR  };
+        case FontRole::Body:            return { L"Segoe UI Variable Text",     static_cast<float>(s.font_body),            DWRITE_FONT_WEIGHT_REGULAR  };
+        case FontRole::SenderName:      return { L"Segoe UI Variable Text",     static_cast<float>(s.font_sender_name),     DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::Timestamp:       return { L"Segoe UI Variable Text",     static_cast<float>(s.font_timestamp),       DWRITE_FONT_WEIGHT_REGULAR  };
+        case FontRole::SidebarName:     return { L"Segoe UI Variable Text",     static_cast<float>(s.font_sidebar_name),    DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::SidebarPreview:  return { L"Segoe UI Variable Text",     static_cast<float>(s.font_sidebar_preview), DWRITE_FONT_WEIGHT_REGULAR  };
+        case FontRole::UnreadBadge:     return { L"Segoe UI Variable Text",     static_cast<float>(s.font_unread_badge),    DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::Title:           return { L"Segoe UI Variable Display", static_cast<float>(s.font_title),           DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::UiSemibold:      return { L"Segoe UI Variable Text",     static_cast<float>(s.font_ui_semibold),     DWRITE_FONT_WEIGHT_SEMI_BOLD };
     }
-    return { L"Segoe UI", 13.0f, DWRITE_FONT_WEIGHT_REGULAR };
+    return { L"Segoe UI", static_cast<float>(s.font_body), DWRITE_FONT_WEIGHT_REGULAR };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -71,10 +71,16 @@ constexpr float kBtnIconPad     = 6.0f;
 constexpr float kBtnIconMinSize = 28.0f;
 
 TextStyle button_text_style() {
+    // Leading + Top so the cached layout draws at its natural origin.
+    // Button::paint then offsets that origin to centre the glyph inside
+    // bounds_. If we asked for Center/Center here instead, the Qt
+    // backend would re-centre the text inside its layout rect — whose
+    // max_height defaults to 8192 px — and the glyph would end up
+    // thousands of pixels below the button.
     TextStyle st{};
     st.role   = FontRole::UiSemibold;
-    st.halign = TextHAlign::Center;
-    st.valign = TextVAlign::Center;
+    st.halign = TextHAlign::Leading;
+    st.valign = TextVAlign::Top;
     return st;
 }
 
@@ -119,7 +125,12 @@ Size Button::measure(LayoutCtx& ctx, Size constraints) {
 
     if (!cached_) {
         TextStyle st = button_text_style();
-        st.max_width = constraints.w > 0 ? constraints.w - kBtnHPad * 2 : -1.0f;
+        // No max_width clamp — button labels are single-line and the
+        // Qt/D2D/Cairo backends all clip drawText to the layout rect, so
+        // a tight max_width here would slice the glyph for any button
+        // whose `min_size` is smaller than `cached_w + 2 * kBtnHPad` (the
+        // 40 × 40 emoji button in the compose bar is the canonical case).
+        st.max_width = -1.0f;
         cached_ = ctx.factory.build_text(label_, st);
         if (cached_) cached_size_ = cached_->measure();
     }
@@ -138,7 +149,7 @@ void Button::paint(PaintCtx& ctx) {
 
     if (!cached_) {
         TextStyle st = button_text_style();
-        st.max_width = bounds_.w - kBtnHPad * 2;
+        st.max_width = -1.0f;   // see Button::measure for why
         cached_ = ctx.factory.build_text(label_, st);
         if (cached_) cached_size_ = cached_->measure();
     }

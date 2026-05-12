@@ -1,5 +1,7 @@
 #include "Theme.h"
 
+#include <tesseract/settings.h>
+
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -148,14 +150,19 @@ const wchar_t* preferred_family(FontRole role) {
 HFONT make_font(FontRole role) {
     // Point size → device units relative to a 96-DPI logical inch (the OS
     // already accounts for DPI on per-monitor-aware processes).
-    int    pt     = 11;
+    // This legacy GDI theme has its own 5-value FontRole; we route the
+    // sizes through tesseract::Settings so a future settings dialog
+    // mutates both this path and the shared toolkit. Title converges to
+    // the toolkit value (15→14); other roles preserve their numeric size.
+    const auto& s = tesseract::Settings::instance();
+    int    pt     = s.font_sender_name;
     LONG   weight = FW_NORMAL;
     switch (role) {
-    case FontRole::Small:       pt =  9; weight = FW_NORMAL;   break;
-    case FontRole::Body:        pt = 10; weight = FW_NORMAL;   break;
-    case FontRole::Ui:          pt = 11; weight = FW_NORMAL;   break;
-    case FontRole::UiSemibold:  pt = 11; weight = FW_SEMIBOLD; break;
-    case FontRole::Title:       pt = 15; weight = FW_SEMIBOLD; break;
+    case FontRole::Small:       pt = s.font_timestamp;       weight = FW_NORMAL;   break;
+    case FontRole::Body:        pt = s.font_sidebar_preview; weight = FW_NORMAL;   break;
+    case FontRole::Ui:          pt = s.font_sender_name;     weight = FW_NORMAL;   break;
+    case FontRole::UiSemibold:  pt = s.font_sender_name;     weight = FW_SEMIBOLD; break;
+    case FontRole::Title:       pt = s.font_title;           weight = FW_SEMIBOLD; break;
     }
     HDC hdc = GetDC(nullptr);
     int dpi = GetDeviceCaps(hdc, LOGPIXELSY);

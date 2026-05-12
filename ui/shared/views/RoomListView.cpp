@@ -90,7 +90,12 @@ public:
         }
         if (text_w < 0) text_w = 0;
 
-        // Name (top row).
+        // Name. When the row has a preview underneath, the name pins to
+        // the top and the preview pins to the bottom. When there's no
+        // preview (the common case until matrix-sdk surfaces last-msg
+        // bodies), centre the name vertically so it lines up with the
+        // avatar disc rather than floating above it.
+        bool has_preview = !room.last_message_body.empty();
         tk::TextStyle name_style{};
         name_style.role      = tk::FontRole::SidebarName;
         name_style.trim      = tk::TextTrim::Ellipsis;
@@ -98,8 +103,11 @@ public:
         auto name_layout = ctx.factory.build_text(
             room.name.empty() ? room.id : room.name, name_style);
         if (name_layout) {
+            float name_y = has_preview
+                ? bounds.y + kPadY
+                : bounds.y + (bounds.h - name_layout->measure().h) * 0.5f;
             ctx.canvas.draw_text(*name_layout,
-                                  { text_x, bounds.y + kPadY },
+                                  { text_x, name_y },
                                   ctx.theme.palette.text_primary);
         }
 

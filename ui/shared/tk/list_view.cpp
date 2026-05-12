@@ -107,6 +107,33 @@ void ListView::rebuild_heights(LayoutCtx& ctx, float width) {
     row_offsets_[n] = cursor;
 }
 
+ListView::ThumbGeom ListView::thumb_geom() const {
+    ThumbGeom g{ 0, 0, 0, 0 };
+    float total = content_height();
+    if (total <= bounds_.h || bounds_.h <= 0) return g;
+    g.track_top = bounds_.y + kScrollbarInset;
+    g.track_h   = bounds_.h - kScrollbarInset * 2;
+    g.thumb_h   = std::max(kScrollbarMinLen,
+                            g.track_h * (bounds_.h / total));
+    g.thumb_top = g.track_top
+                + (g.track_h - g.thumb_h)
+                    * (scroll_y_ / std::max(1.0f, total - bounds_.h));
+    return g;
+}
+
+bool ListView::thumb_hit(Point local) const {
+    // local is widget-local — convert to world to compare with the
+    // thumb_geom (which is in world coords because bounds_ is world).
+    float world_x = local.x + bounds_.x;
+    float world_y = local.y + bounds_.y;
+    if (content_height() <= bounds_.h) return false;
+    float right = bounds_.x + bounds_.w - kScrollbarInset;
+    float left  = right - kScrollbarWidth;
+    if (world_x < left || world_x > right) return false;
+    ThumbGeom g = thumb_geom();
+    return world_y >= g.thumb_top && world_y < g.thumb_top + g.thumb_h;
+}
+
 void ListView::paint(PaintCtx& ctx) {
     // Background.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
@@ -171,6 +198,16 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
 }
 
 bool ListView::on_pointer_down(Point local) {
+    // Scrollbar thumb first — it sits on top of the rows visually, so
+    // it should win the press regardless of which row is underneath.
+    if (thumb_hit(local)) {
+        scrollbar_drag_  = true;
+        stick_to_bottom_ = false;
+        ThumbGeom g     = thumb_geom();
+        drag_anchor_y_  = (local.y + bounds_.y) - g.thumb_top;
+        return true;
+    }
+    if (!adapter_) return false;
     int idx = index_at(local);
     if (idx == kInvalidIndex) return false;
     if (!adapter_->is_selectable(idx)) return false;
@@ -178,7 +215,25 @@ bool ListView::on_pointer_down(Point local) {
     return true;
 }
 
+void ListView::on_pointer_drag(Point local) {
+    if (!scrollbar_drag_) return;
+    ThumbGeom g = thumb_geom();
+    float total = content_height();
+    float travel = g.track_h - g.thumb_h;
+    if (travel <= 0 || total <= bounds_.h) return;
+    float wanted_thumb_top = (local.y + bounds_.y) - drag_anchor_y_;
+    float t = (wanted_thumb_top - g.track_top) / travel;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    scroll_y_ = t * (total - bounds_.h);
+    clamp_scroll();
+}
+
 void ListView::on_pointer_up(Point local, bool inside_self) {
+    if (scrollbar_drag_) {
+        scrollbar_drag_ = false;
+        return;     // drag releases never select a row
+    }
     int idx = inside_self ? index_at(local) : kInvalidIndex;
     if (pressed_index_ != kInvalidIndex && pressed_index_ == idx) {
         selected_index_ = idx;

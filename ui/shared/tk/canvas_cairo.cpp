@@ -1,5 +1,7 @@
 #include "canvas_cairo.h"
 
+#include <tesseract/settings.h>
+
 #include <cairo.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gdk/gdk.h>
@@ -21,20 +23,21 @@ namespace {
 // Map FontRole → Pango font description. Family is left to the GTK theme
 // (we don't pin "Sans" so the user's preferred system font still wins).
 PangoFontDescription* desc_for(FontRole role) {
+    const auto& s = tesseract::Settings::instance();
     PangoFontDescription* d = pango_font_description_new();
     int   pt;
     PangoWeight w;
     switch (role) {
-        case FontRole::Small:           pt =  9; w = PANGO_WEIGHT_NORMAL;     break;
-        case FontRole::Body:            pt = 13; w = PANGO_WEIGHT_NORMAL;     break;
-        case FontRole::SenderName:      pt = 12; w = PANGO_WEIGHT_SEMIBOLD;   break;
-        case FontRole::Timestamp:       pt = 10; w = PANGO_WEIGHT_NORMAL;     break;
-        case FontRole::SidebarName:     pt = 13; w = PANGO_WEIGHT_SEMIBOLD;   break;
-        case FontRole::SidebarPreview:  pt = 11; w = PANGO_WEIGHT_NORMAL;     break;
-        case FontRole::UnreadBadge:     pt = 11; w = PANGO_WEIGHT_SEMIBOLD;   break;
-        case FontRole::Title:           pt = 15; w = PANGO_WEIGHT_SEMIBOLD;   break;
-        case FontRole::UiSemibold:      pt = 11; w = PANGO_WEIGHT_SEMIBOLD;   break;
-        default:                        pt = 13; w = PANGO_WEIGHT_NORMAL;     break;
+        case FontRole::Small:           pt = s.font_small;           w = PANGO_WEIGHT_NORMAL;   break;
+        case FontRole::Body:            pt = s.font_body;            w = PANGO_WEIGHT_NORMAL;   break;
+        case FontRole::SenderName:      pt = s.font_sender_name;     w = PANGO_WEIGHT_SEMIBOLD; break;
+        case FontRole::Timestamp:       pt = s.font_timestamp;       w = PANGO_WEIGHT_NORMAL;   break;
+        case FontRole::SidebarName:     pt = s.font_sidebar_name;    w = PANGO_WEIGHT_SEMIBOLD; break;
+        case FontRole::SidebarPreview:  pt = s.font_sidebar_preview; w = PANGO_WEIGHT_NORMAL;   break;
+        case FontRole::UnreadBadge:     pt = s.font_unread_badge;    w = PANGO_WEIGHT_SEMIBOLD; break;
+        case FontRole::Title:           pt = s.font_title;           w = PANGO_WEIGHT_SEMIBOLD; break;
+        case FontRole::UiSemibold:      pt = s.font_ui_semibold;     w = PANGO_WEIGHT_SEMIBOLD; break;
+        default:                        pt = s.font_body;            w = PANGO_WEIGHT_NORMAL;   break;
     }
     pango_font_description_set_size(d, pt * PANGO_SCALE);
     pango_font_description_set_weight(d, w);

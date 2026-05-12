@@ -1,6 +1,7 @@
 #include "MessageListView.h"
 
 #include "tk/theme.h"
+#include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
 #include <algorithm>
@@ -18,10 +19,11 @@ constexpr float kAvatarSize  = tesseract::visual::kMsgAvatarSize;    // 32
 constexpr float kAvatarGap   = tesseract::visual::kMsgAvatarGap;     // 8
 constexpr float kSenderH     = tesseract::visual::kMsgSenderNameHeight; // 16
 constexpr float kTimestampH  = tesseract::visual::kMsgTimestampHeight;  // 14
-constexpr float kChipH       = tesseract::visual::kReactionChipHeight;  // 22
-constexpr float kChipGap     = tesseract::visual::kReactionChipGap;     // 4
 constexpr float kChipPadX    = 8.0f;
-constexpr float kChipRadius  = kChipH * 0.5f;
+
+inline float chip_h()      { return static_cast<float>(tesseract::Settings::instance().reaction_chip_height); }
+inline float chip_gap()    { return static_cast<float>(tesseract::Settings::instance().reaction_chip_gap); }
+inline float chip_radius() { return chip_h() * 0.5f; }
 constexpr float kImageMaxW   = tesseract::visual::kMaxInlineImageWidth;  // 320
 constexpr float kImageMaxH   = tesseract::visual::kMaxInlineImageHeight; // 200
 constexpr float kStickerSize = tesseract::visual::kStickerSize;          // 256
@@ -79,17 +81,14 @@ public:
                               float width) override {
         if (index >= owner_.messages_.size()) return 0;
         const auto& m = owner_.messages_[index];
-        float body_w = body_text_max_width(width);
-
-        float content_h = kSenderH;     // sender row
-        content_h += measure_body_block_height(m, ctx, body_w);
-        if (!m.reactions.empty() || m.timestamp_ms != 0) {
-            content_h += kChipH;        // reactions + timestamp share row
-        }
-        // The avatar column reserves at least kAvatarSize, so the row
-        // is always tall enough for a 32 px disc.
-        float row_h = std::max(content_h, kAvatarSize) + kPadY * 2;
-        return row_h;
+        float body_w  = body_text_max_width(width);
+        float body_h  = measure_body_block_height(m, ctx, body_w);
+        float chips_h = (!m.reactions.empty() || m.timestamp_ms != 0)
+                            ? chip_h() : 0.0f;
+        // Sender name is centered inside the avatar's vertical band, so
+        // the avatar reserves the whole header height; body + reactions
+        // stack below it.
+        return kPadY + kAvatarSize + body_h + chips_h + kPadY;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -124,10 +123,11 @@ public:
         // Right-of-avatar column.
         float col_x  = bounds.x + kPadX + kAvatarSize + kAvatarGap;
         float col_w  = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX);
-        float cursor = bounds.y + kPadY;
 
-        // Sender name.
+        // Sender name — vertically centered against the avatar disc.
         {
+            float sender_y =
+                bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
             tk::TextStyle s{};
             s.role      = tk::FontRole::SenderName;
             s.trim      = tk::TextTrim::Ellipsis;
@@ -135,13 +135,13 @@ public:
             auto layout = ctx.factory.build_text(
                 m.sender_name.empty() ? m.sender : m.sender_name, s);
             if (layout) {
-                ctx.canvas.draw_text(*layout, { col_x, cursor },
+                ctx.canvas.draw_text(*layout, { col_x, sender_y },
                                       ctx.theme.palette.text_secondary);
             }
         }
-        cursor += kSenderH;
 
-        // Body block: text / image / sticker / file card.
+        // Body block starts below the avatar's bottom edge.
+        float cursor = bounds.y + kPadY + kAvatarSize;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
 
         // Reactions row + timestamp.
@@ -155,21 +155,21 @@ public:
                 auto layout = ctx.factory.build_text(chip_text, st);
                 if (!layout) continue;
                 float w = std::max(layout->measure().w + kChipPadX * 2, 28.0f);
-                tk::Rect pill{ chip_x, chip_y, w, kChipH };
+                tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                 tk::Color bg     = r.reacted_by_me ? ctx.theme.palette.chip_bg_me
                                                    : ctx.theme.palette.chip_bg;
                 tk::Color border = r.reacted_by_me ? ctx.theme.palette.chip_border_me
                                                    : ctx.theme.palette.chip_border;
                 tk::Color text   = r.reacted_by_me ? ctx.theme.palette.chip_text_me
                                                    : ctx.theme.palette.chip_text;
-                ctx.canvas.fill_rounded_rect(pill, kChipRadius, bg);
-                ctx.canvas.stroke_rounded_rect(pill, kChipRadius, border, 1.0f);
+                ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
+                ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border, 1.0f);
                 ctx.canvas.draw_text(
                     *layout,
                     { pill.x + kChipPadX,
                       pill.y + (pill.h - layout->measure().h) * 0.5f },
                     text);
-                chip_x += w + kChipGap;
+                chip_x += w + chip_gap();
             }
 
             std::string ts = format_hhmm(m.timestamp_ms);
@@ -181,7 +181,7 @@ public:
                 if (layout) {
                     float tx = bounds.x + bounds.w - kPadX
                                 - layout->measure().w;
-                    float ty = chip_y + (kChipH - layout->measure().h) * 0.5f;
+                    float ty = chip_y + (chip_h() - layout->measure().h) * 0.5f;
                     ctx.canvas.draw_text(*layout, { tx, ty },
                                           ctx.theme.palette.text_muted);
                 }

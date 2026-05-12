@@ -212,18 +212,18 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         }
         .sender-name {
             font-weight: bold;
-            font-size: 12px;
+            font-size: 11px;
             color: #555555;
         }
         .timestamp {
-            font-size: 10px;
+            font-size: 9px;
             color: rgba(0,0,0,0.45);
         }
         .avatar-initial {
             background-color: #8E8E93;
             color: white;
             font-weight: bold;
-            font-size: 16px;
+            font-size: 15px;
             border-radius: 16px;
             min-width: 32px;
             min-height: 32px;
@@ -234,7 +234,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             color: white;
             border-radius: 10px;
             padding: 0px 6px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: bold;
         }
         .room-header {
@@ -243,10 +243,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         }
         .room-header-name {
             font-weight: bold;
-            font-size: 15px;
+            font-size: 14px;
         }
         .room-header-topic {
-            font-size: 12px;
+            font-size: 11px;
             color: #65676B;
         }
     )css");

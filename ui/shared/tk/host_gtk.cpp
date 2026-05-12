@@ -355,6 +355,13 @@ public:
     void on_pointer_move(double x, double y) {
         if (!root_) return;
         Point local{ static_cast<float>(x), static_cast<float>(y) };
+        // While a widget holds the pointer capture every move is a drag.
+        if (pressed_widget_) {
+            Point ws = pressed_widget_->world_to_local(local);
+            pressed_widget_->on_pointer_drag(ws);
+            request_repaint();
+            return;
+        }
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
         if (hovered == hovered_btn_) return;
@@ -385,10 +392,12 @@ public:
             x = gtk_widget_get_width (drawing_area_) * 0.5;
             y = gtk_widget_get_height(drawing_area_) * 0.5;
         }
-        root_->dispatch_wheel({ static_cast<float>(x),
-                                  static_cast<float>(y) },
-                                static_cast<float>(dx),
-                                static_cast<float>(dy));
+        if (root_->dispatch_wheel({ static_cast<float>(x),
+                                       static_cast<float>(y) },
+                                     static_cast<float>(dx),
+                                     static_cast<float>(dy))) {
+            request_repaint();
+        }
     }
 
     void cache_pointer_pos(double x, double y) {

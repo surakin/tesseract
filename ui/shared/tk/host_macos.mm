@@ -537,6 +537,12 @@ void Host::on_pointer_up(NSPoint p) {
 void Host::on_pointer_move(NSPoint p) {
     if (!root_) return;
     Point local{ static_cast<float>(p.x), static_cast<float>(p.y) };
+    if (pressed_widget_) {
+        Point ws = pressed_widget_->world_to_local(local);
+        pressed_widget_->on_pointer_drag(ws);
+        request_repaint();
+        return;
+    }
     Widget* hit = root_->hit_test(local);
     Button* hovered = dynamic_cast<Button*>(hit);
     if (hovered == hovered_btn_) return;
@@ -557,10 +563,12 @@ void Host::on_pointer_leave() {
 
 void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy) {
     if (!root_) return;
-    root_->dispatch_wheel({ static_cast<float>(p.x),
-                              static_cast<float>(p.y) },
-                            static_cast<float>(dx),
-                            static_cast<float>(dy));
+    if (root_->dispatch_wheel({ static_cast<float>(p.x),
+                                   static_cast<float>(p.y) },
+                                 static_cast<float>(dx),
+                                 static_cast<float>(dy))) {
+        request_repaint();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

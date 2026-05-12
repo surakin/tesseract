@@ -284,6 +284,16 @@ public:
 
     void on_pointer_move(Point local) {
         if (!root_) return;
+        // If a widget claimed the last pointer-down, all subsequent
+        // moves go to it as a drag (this is how ListView's scrollbar
+        // thumb tracks a held mouse). Hover updates are suspended for
+        // the duration of the drag.
+        if (pressed_widget_) {
+            Point ws = pressed_widget_->world_to_local(local);
+            pressed_widget_->on_pointer_drag(ws);
+            request_repaint();
+            return;
+        }
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
         if (hovered == hovered_btn_) return;
@@ -308,7 +318,8 @@ public:
     }
 
     void on_wheel(Point local, float dx, float dy) {
-        if (root_) root_->dispatch_wheel(local, dx, dy);
+        if (!root_) return;
+        if (root_->dispatch_wheel(local, dx, dy)) request_repaint();
     }
 
     void detach_surface() { surface_ = nullptr; }

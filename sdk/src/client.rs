@@ -382,6 +382,23 @@ impl ClientFfi {
             let mut stop_rx_rooms = stop_rx.clone();
 
             self.rt.spawn(async move {
+                // Initial snapshot. `room_info_notable_update_receiver`
+                // only fires on *notable* room transitions (display-name,
+                // member changes, encryption state, …). After
+                // `restore_session()` the matrix-sdk has already
+                // repopulated `joined_rooms()` from the SQLite cache, but
+                // no notable update is emitted until the server actually
+                // sends one — so on a quiet restored session the UI
+                // would sit forever on an empty room list. Push the
+                // cached set once before entering the recv loop. On a
+                // fresh login `joined_rooms()` is empty here and we
+                // emit an empty list, which is then overwritten by the
+                // first sync's notable update.
+                let rooms = build_room_infos(&client_clone).await;
+                if let Ok(guard) = h.lock() {
+                    guard.on_rooms_updated(&rooms);
+                }
+
                 loop {
                     tokio::select! {
                         _ = stop_rx_rooms.changed() => {
@@ -681,9 +698,24 @@ impl ClientFfi {
             }
         }).abort_handle();
 
+        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
+        // sync member info on its own — `EventTimelineItem::sender_profile()`
+        // stays at `TimelineDetails::Pending` for any user whose
+        // membership state wasn't included in the initial sync's room
+        // delta, so their messages render with an empty name + avatar.
+        // `fetch_members()` runs `sync_members()` then patches every
+        // affected timeline item in place, which the streaming task
+        // above picks up as `VectorDiff::Set` and re-emits to C++. We
+        // spawn it separately so the initial items aren't blocked
+        // behind a multi-second member sync on big rooms.
+        let tl_for_members = Arc::clone(&timeline);
+        let fetch_abort = self.rt.spawn(async move {
+            tl_for_members.fetch_members().await;
+        }).abort_handle();
+
         self.timelines.insert(room_id, TimelineHandle {
             timeline,
-            abort_tasks: vec![abort],
+            abort_tasks: vec![abort, fetch_abort],
         });
 
         ok("")

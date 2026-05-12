@@ -147,8 +147,6 @@ private:
     static constexpr int kRoomRowH       = tesseract::visual::kRoomRowHeight;
     static constexpr int kMsgRowPad      = tesseract::visual::kMsgRowVerticalPad;
     static constexpr int kMsgMaxWidth    = 520;            // matches Qt
-    static constexpr int kReactionH      = tesseract::visual::kReactionChipHeight;
-    static constexpr int kReactionPad    = tesseract::visual::kReactionChipGap;
     static constexpr int kUserStripH     = tesseract::visual::kUserStripHeight;
 
     HINSTANCE hInst_;

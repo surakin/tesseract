@@ -249,7 +249,7 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
 
     // Room header — a simple bordered strip with the room name.
     _roomTitleLabel = [NSTextField labelWithString:@""];
-    _roomTitleLabel.font = [NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];
+    _roomTitleLabel.font = [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold];
     _roomTitleLabel.textColor = [NSColor labelColor];
     _roomTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     NSView* header = [[NSView alloc] init];

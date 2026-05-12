@@ -1,5 +1,7 @@
 #include "canvas_qpainter.h"
 
+#include <tesseract/settings.h>
+
 #include <QtGui/QBrush>
 #include <QtGui/QColor>
 #include <QtGui/QFont>
@@ -29,19 +31,20 @@ QRectF to_qrect(Rect r) {
 
 // Map FontRole → QFont. Pulls the application default family (whatever
 // QApplication::font() resolved to via the platform theme) and modifies
-// the size + weight per role. Sizes mirror tesseract::visual::kFont*.
+// the size + weight per role. Sizes come from tesseract::Settings.
 QFont font_for(FontRole role) {
+    const auto& s = tesseract::Settings::instance();
     QFont f;
     switch (role) {
-        case FontRole::Small:           f.setPointSize( 9); f.setWeight(QFont::Normal);   break;
-        case FontRole::Body:            f.setPointSize(13); f.setWeight(QFont::Normal);   break;
-        case FontRole::SenderName:      f.setPointSize(12); f.setWeight(QFont::DemiBold); break;
-        case FontRole::Timestamp:       f.setPointSize(10); f.setWeight(QFont::Normal);   break;
-        case FontRole::SidebarName:     f.setPointSize(13); f.setWeight(QFont::DemiBold); break;
-        case FontRole::SidebarPreview:  f.setPointSize(11); f.setWeight(QFont::Normal);   break;
-        case FontRole::UnreadBadge:     f.setPointSize(11); f.setWeight(QFont::DemiBold); break;
-        case FontRole::Title:           f.setPointSize(15); f.setWeight(QFont::DemiBold); break;
-        case FontRole::UiSemibold:      f.setPointSize(11); f.setWeight(QFont::DemiBold); break;
+        case FontRole::Small:           f.setPointSize(s.font_small);           f.setWeight(QFont::Normal);   break;
+        case FontRole::Body:            f.setPointSize(s.font_body);            f.setWeight(QFont::Normal);   break;
+        case FontRole::SenderName:      f.setPointSize(s.font_sender_name);     f.setWeight(QFont::DemiBold); break;
+        case FontRole::Timestamp:       f.setPointSize(s.font_timestamp);       f.setWeight(QFont::Normal);   break;
+        case FontRole::SidebarName:     f.setPointSize(s.font_sidebar_name);    f.setWeight(QFont::DemiBold); break;
+        case FontRole::SidebarPreview:  f.setPointSize(s.font_sidebar_preview); f.setWeight(QFont::Normal);   break;
+        case FontRole::UnreadBadge:     f.setPointSize(s.font_unread_badge);    f.setWeight(QFont::DemiBold); break;
+        case FontRole::Title:           f.setPointSize(s.font_title);           f.setWeight(QFont::DemiBold); break;
+        case FontRole::UiSemibold:      f.setPointSize(s.font_ui_semibold);     f.setWeight(QFont::DemiBold); break;
     }
     return f;
 }
@@ -333,8 +336,15 @@ public:
             measured = br.size();
             line_count = qMax(1, qRound(br.height() / fm.height()));
         } else {
-            QRectF br = fm.boundingRect(text);
-            measured = QSizeF(br.width(), fm.height());
+            // Use the cursor-advance width, not the ink-bounding-rect:
+            // `fm.boundingRect(text)` returns the tight box around the
+            // painted pixels, which omits trailing whitespace advance
+            // and per-glyph right side bearing. drawText() lays glyphs
+            // out using advance widths, so an advance-based measure is
+            // what the chip / button background needs in order to fully
+            // contain the rendered text (e.g. reaction "👍 5" — the space
+            // contributes zero ink but real advance).
+            measured = QSizeF(fm.horizontalAdvance(text), fm.height());
         }
 
         return std::make_unique<QtTextLayout>(

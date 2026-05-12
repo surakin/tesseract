@@ -66,7 +66,10 @@ Size FlexBox::measure(LayoutCtx& ctx, Size constraints) {
     float content_cross = avail_cross > 0
         ? std::min(max_cross_seen, avail_cross)
         : max_cross_seen;
-    return ax.pack(std::min(used_main + 0.0f, avail_main),
+    // Both axes include padding in the reported size — otherwise the
+    // parent thinks the box is smaller than it really is and the parent
+    // arrange clips off our padding (children overflow the box).
+    return ax.pack(std::min(used_main, avail_main) + pad_main,
                     content_cross + pad_cross);
 }
 

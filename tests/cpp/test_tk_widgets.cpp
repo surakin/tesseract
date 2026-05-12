@@ -8,6 +8,7 @@
 #include "tk/widget.h"
 #include "views/LoginView.h"
 #include "tk_test_surface.h"
+#include <tesseract/settings.h>
 
 #include <memory>
 
@@ -153,9 +154,11 @@ TEST_CASE("Button paints a coloured rect at its bounds",
 
     st.run(*btn, { 10, 10, 120, 36 });
 
-    // Centre of the button should be in the accent colour (default Primary).
+    // A pixel inside the rounded rect but clear of the centred glyph
+    // should be the accent fill (default Primary). Sample near the
+    // right edge, vertically centred — well past the end of "Sign in".
     auto accent = Theme::light().palette.accent;
-    auto px     = st.surface->read_pixel(70, 28);
+    auto px     = st.surface->read_pixel(120, 28);
     CHECK(nearly(px, accent, /*tol=*/20));
 }
 
@@ -198,7 +201,7 @@ TEST_CASE("Widget::hit_test descends into children",
     auto lc = st.layout_ctx();
     box.arrange(lc, { 0, 0, 100, 100 });
 
-    // hit_test takes local coords. (5, 5) is inside child a.
+    // hit_test takes world coords. (5, 5) is inside child a.
     Widget* hit = box.hit_test({ 5, 5 });
     CHECK(hit == a);
     // (5, 25) is inside child b (b->y == 20).
@@ -210,6 +213,63 @@ TEST_CASE("Widget::hit_test descends into children",
     // Outside box entirely.
     hit = box.hit_test({ 5, -1 });
     CHECK(hit == nullptr);
+}
+
+TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
+          "container",
+          "[tk][widget][dispatch]") {
+    // Regression: previously the recursive subtraction of bounds_.x in
+    // dispatch_pointer_down over-corrected once it descended past a
+    // parent that was itself laid out at a non-zero world origin — which
+    // is what LoginView does when it centres its card. Build that exact
+    // shape (VBox padded inside a non-zero-origin frame, button inside)
+    // and assert the dispatch reaches the button and fires on_click.
+    Stage st;
+
+    VBox card;
+    card.set_padding(Edges::all(24)).set_cross(Cross::Stretch);
+
+    bool clicked = false;
+    auto* btn = card.add_child(std::make_unique<Button>(
+        "Sign in", [&] { clicked = true; }, Button::Variant::Primary));
+    btn->set_min_size({ 0, 36 });
+
+    auto lc = st.layout_ctx();
+    // Place the card well away from (0, 0) so the bug would manifest.
+    Rect card_bounds{ 20, 250, 360, 100 };
+    card.measure(lc, { card_bounds.w, card_bounds.h });
+    card.arrange(lc, card_bounds);
+
+    Rect bb = btn->bounds();
+    REQUIRE(bb.w > 0);
+    REQUIRE(bb.h > 0);
+
+    // Click in the geometric centre of the button (world coords).
+    Point centre{ bb.x + bb.w * 0.5f, bb.y + bb.h * 0.5f };
+
+    Widget* hit = card.hit_test(centre);
+    CHECK(hit == btn);
+
+    Widget* claimer = card.dispatch_pointer_down(centre);
+    REQUIRE(claimer == btn);
+
+    // Release on the same spot — the Button should treat it as inside
+    // and fire its on_click.
+    Point local = btn->world_to_local(centre);
+    CHECK(local.x >= 0);
+    CHECK(local.y >= 0);
+    CHECK(local.x <  bb.w);
+    CHECK(local.y <  bb.h);
+    btn->on_pointer_up(local,
+                        /*inside_self=*/local.x >= 0 && local.y >= 0 &&
+                                         local.x <  bb.w && local.y <  bb.h);
+    CHECK(clicked);
+
+    // And a click clearly outside the button should miss it.
+    clicked = false;
+    Widget* miss = card.dispatch_pointer_down({ card_bounds.x + 2,
+                                                 card_bounds.y + 2 });
+    CHECK(miss != btn);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -262,4 +322,23 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
         }
     }
     CHECK(visible_buttons == 1);
+}
+
+TEST_CASE("Settings has expected defaults", "[settings]") {
+    const auto& s = tesseract::Settings::instance();
+
+    // Font sizes — one per tk::FontRole.
+    CHECK(s.font_small           ==  8);
+    CHECK(s.font_body            == 12);
+    CHECK(s.font_sender_name     == 11);
+    CHECK(s.font_timestamp       ==  9);
+    CHECK(s.font_sidebar_name    == 12);
+    CHECK(s.font_sidebar_preview == 10);
+    CHECK(s.font_unread_badge    == 10);
+    CHECK(s.font_title           == 14);
+    CHECK(s.font_ui_semibold     == 10);
+
+    // Reaction chip.
+    CHECK(s.reaction_chip_height == 22);
+    CHECK(s.reaction_chip_gap    ==  4);
 }

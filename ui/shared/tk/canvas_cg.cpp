@@ -1,5 +1,7 @@
 #include "canvas_cg.h"
 
+#include <tesseract/settings.h>
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
@@ -76,18 +78,19 @@ struct FontDesc {
 };
 
 FontDesc desc_for(FontRole role) {
+    const auto& s = tesseract::Settings::instance();
     switch (role) {
-        case FontRole::Small:           return {  9, false };
-        case FontRole::Body:            return { 13, false };
-        case FontRole::SenderName:      return { 12, true  };
-        case FontRole::Timestamp:       return { 10, false };
-        case FontRole::SidebarName:     return { 13, true  };
-        case FontRole::SidebarPreview:  return { 11, false };
-        case FontRole::UnreadBadge:     return { 11, true  };
-        case FontRole::Title:           return { 15, true  };
-        case FontRole::UiSemibold:      return { 11, true  };
+        case FontRole::Small:           return { static_cast<CGFloat>(s.font_small),           false };
+        case FontRole::Body:            return { static_cast<CGFloat>(s.font_body),            false };
+        case FontRole::SenderName:      return { static_cast<CGFloat>(s.font_sender_name),     true  };
+        case FontRole::Timestamp:       return { static_cast<CGFloat>(s.font_timestamp),       false };
+        case FontRole::SidebarName:     return { static_cast<CGFloat>(s.font_sidebar_name),    true  };
+        case FontRole::SidebarPreview:  return { static_cast<CGFloat>(s.font_sidebar_preview), false };
+        case FontRole::UnreadBadge:     return { static_cast<CGFloat>(s.font_unread_badge),    true  };
+        case FontRole::Title:           return { static_cast<CGFloat>(s.font_title),           true  };
+        case FontRole::UiSemibold:      return { static_cast<CGFloat>(s.font_ui_semibold),     true  };
     }
-    return { 13, false };
+    return { static_cast<CGFloat>(s.font_body), false };
 }
 
 CTFontRef create_font(FontRole role) {

@@ -153,17 +153,32 @@ public:
     bool on_wheel       (Point local, float dx, float dy) override;
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
+    void on_pointer_drag(Point local)                      override;
 
 private:
     void rebuild_heights(LayoutCtx&, float width);
     void clamp_scroll();
     void update_hover(Point local);
 
+    // Scrollbar geometry helpers. Return the thumb rect (in widget-local
+    // coords) and the visible scroll range, or 0-width thumb when there's
+    // no overflow.
+    struct ThumbGeom { float track_top, track_h, thumb_h, thumb_top; };
+    ThumbGeom thumb_geom() const;
+    bool      thumb_hit(Point local) const;
+
     ListAdapter* adapter_ = nullptr;
 
     int    selected_index_ = -1;
     int    hovered_index_  = -1;
     int    pressed_index_  = -1;
+
+    // Scrollbar drag state. When `scrollbar_drag_` is true, the
+    // pointer-down hit the thumb and `drag_anchor_y_` records the local
+    // y-offset within the thumb that should stay under the cursor for
+    // the duration of the drag.
+    bool   scrollbar_drag_  = false;
+    float  drag_anchor_y_   = 0;
 
     float  scroll_y_         = 0;
     float  measured_width_   = 0;

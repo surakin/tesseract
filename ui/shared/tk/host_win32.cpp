@@ -453,6 +453,12 @@ public:
     void on_pointer_move(int x, int y) {
         if (!root_) return;
         Point local{ static_cast<float>(x), static_cast<float>(y) };
+        if (pressed_widget_) {
+            Point ws = pressed_widget_->world_to_local(local);
+            pressed_widget_->on_pointer_drag(ws);
+            request_repaint();
+            return;
+        }
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
         if (hovered == hovered_btn_) return;
@@ -479,8 +485,10 @@ public:
         // The toolkit convention is positive dy = scroll content down,
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
-        root_->dispatch_wheel({ static_cast<float>(pt.x),
-                                  static_cast<float>(pt.y) }, 0, dy);
+        if (root_->dispatch_wheel({ static_cast<float>(pt.x),
+                                       static_cast<float>(pt.y) }, 0, dy)) {
+            request_repaint();
+        }
     }
 
     void detach() { hwnd_ = nullptr; }

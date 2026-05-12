@@ -70,10 +70,12 @@ public:
     // coordinates — the parent has already translated the canvas).
     virtual void paint(PaintCtx&) = 0;
 
-    // Hit-test in *local* coordinates (origin at widget's top-left).
-    // Default returns this if the point lies inside bounds_, else null.
-    // Containers override to traverse children first.
-    virtual Widget* hit_test(Point local);
+    // Hit-test against this subtree. The input `Point` is in world (root-
+    // surface) coordinates — the same space `bounds_` is stored in.
+    // Returns the deepest visible widget whose bounds contain the point,
+    // or this widget if none of the children claim it, or null if the
+    // point is outside this widget's own bounds.
+    virtual Widget* hit_test(Point world);
 
     // Pointer-wheel input. Positive dy = scroll content forward (down).
     // Return true to consume; otherwise the dispatcher walks up the
@@ -94,19 +96,36 @@ public:
     // user released on the same control they pressed.
     virtual void on_pointer_up(Point /*local*/, bool /*inside_self*/) {}
 
-    // Walk into the deepest visible child under `local`, then bubble
+    // Pointer-drag: the host forwards every pointer-move after a
+    // pointer-down that this widget claimed, until the matching
+    // pointer-up arrives. `local` is in widget-local coordinates and
+    // can land outside the widget's bounds when the user drags off the
+    // control. Used by ListView for scrollbar-thumb dragging.
+    virtual void on_pointer_drag(Point /*local*/) {}
+
+    // Walk into the deepest visible child under `world`, then bubble
     // back up to find a widget whose on_pointer_down returns true.
-    // Returns the claiming widget (or nullptr if none did).
-    Widget* dispatch_pointer_down(Point local);
+    // Returns the claiming widget (or nullptr if none did). `world` is
+    // in root-surface coordinates (the space `bounds_` is stored in).
+    // The widget-local Point handed to on_pointer_down is computed by
+    // subtracting the claimer's own world origin.
+    Widget* dispatch_pointer_down(Point world);
 
     // Walk into the hit widget, then bubble up through parents until
-    // someone consumes the wheel event. Called by hosts on the root.
-    bool dispatch_wheel(Point local, float dx, float dy);
+    // someone consumes the wheel event. `world` is in root-surface
+    // coordinates. Called by hosts on the root.
+    bool dispatch_wheel(Point world, float dx, float dy);
 
-    // Translate a point from root-widget coordinates into this widget's
-    // local coordinate system by walking up the parent chain summing
-    // bounds origins.
+    // Translate a point from root-surface coordinates into this widget's
+    // local coordinate system. Since `bounds_` is stored in world coords
+    // throughout the tree, this is just `world - this->bounds_`.
     Point world_to_local(Point world) const;
+
+    // World-coords containment check used by the dispatch + hit-test
+    // routines above. Exposed as a member so subclasses (notably
+    // clip-respecting containers like ScrollView) can reuse the same
+    // half-open rect test.
+    bool contains_world(Point world) const;
 
     // Tree.
     Widget*  parent() const { return parent_; }

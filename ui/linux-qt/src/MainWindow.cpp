@@ -155,7 +155,7 @@ MainWindow::MainWindow(QWidget* parent)
     backButton_     = new QPushButton("←", roomNavBar_);
     backButton_->setFixedWidth(32);
     spaceNameLabel_ = new QLabel("", roomNavBar_);
-    spaceNameLabel_->setStyleSheet("font-weight: bold; font-size: 12px;");
+    spaceNameLabel_->setStyleSheet("font-weight: bold; font-size: 11px;");
     navLayout->addWidget(backButton_);
     navLayout->addWidget(spaceNameLabel_, 1);
     roomNavBar_->setVisible(false);
@@ -196,7 +196,7 @@ MainWindow::MainWindow(QWidget* parent)
         uLayout->addWidget(userAvatarLabel_);
 
         userNameLabel_ = new QLabel(userStrip_);
-        userNameLabel_->setStyleSheet("font-size:13px; font-weight:bold; color:#111111;");
+        userNameLabel_->setStyleSheet("font-size:12px; font-weight:bold; color:#111111;");
         userNameLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
         uLayout->addWidget(userNameLabel_, 1);
     }
@@ -246,11 +246,11 @@ MainWindow::MainWindow(QWidget* parent)
     nameVBox->setSpacing(2);
 
     roomHeaderName_ = new QLabel(nameBlock);
-    roomHeaderName_->setStyleSheet("font-size:15px; font-weight:bold; color:#111111;");
+    roomHeaderName_->setStyleSheet("font-size:14px; font-weight:bold; color:#111111;");
     nameVBox->addWidget(roomHeaderName_);
 
     roomHeaderTopic_ = new QLabel(nameBlock);
-    roomHeaderTopic_->setStyleSheet("font-size:12px; color:#65676B;");
+    roomHeaderTopic_->setStyleSheet("font-size:11px; color:#65676B;");
     roomHeaderTopic_->setVisible(false);
     roomHeaderTopic_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     roomHeaderTopic_->installEventFilter(this);
