@@ -9,6 +9,8 @@
 #include <QThreadPool>
 #include <QMenu>
 #include <QAction>
+#include <QBuffer>
+#include <QImageReader>
 
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
@@ -342,6 +344,12 @@ MainWindow::MainWindow(QWidget* parent)
         });
     messageListView_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
+            // Animated entries take priority — onMessageAnimTick_
+            // keeps `current` valid; static cache is the second hop.
+            auto ait = tk_anim_images_.find(mxc);
+            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
+                return ait->second.frames[ait->second.current].get();
+            }
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
@@ -603,6 +611,14 @@ MainWindow::MainWindow(QWidget* parent)
     connect(bridge_.get(), &EventBridge::imagePacksUpdated,
             this, [this]{ if (stickerPicker_) stickerPicker_->refreshPacks(); },
             Qt::QueuedConnection);
+
+    // Animation frame-tick for inline media in the timeline (GIF /
+    // animated WebP / APNG). 60 Hz; the timer self-stops in
+    // `onMessageAnimTick_` when `tk_anim_images_` empties.
+    tk_anim_timer_ = new QTimer(this);
+    tk_anim_timer_->setInterval(16);
+    connect(tk_anim_timer_, &QTimer::timeout,
+            this, &MainWindow::onMessageAnimTick_);
 
     // Back-pagination on scroll-to-top. The shared MessageListView fires
     // this once per crossing of the near-top threshold; the latch is
@@ -938,9 +954,51 @@ void MainWindow::ensureUserAvatar(const std::string& mxc) {
 }
 
 void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) {
-    if (url.empty() || tk_images_.count(url)) return;
+    if (url.empty()) return;
+    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
     auto bytes = client_.fetch_media_bytes(url);
     if (bytes.empty()) return;
+
+    // Probe via QImageReader so animated GIF / WebP / APNG land in
+    // `tk_anim_images_` and the frame-tick can advance them in the
+    // message list. Static formats fall through to the existing
+    // `tk_images_` path.
+    QByteArray qbytes(reinterpret_cast<const char*>(bytes.data()),
+                       static_cast<int>(bytes.size()));
+    QBuffer buf(&qbytes);
+    buf.open(QIODevice::ReadOnly);
+    QImageReader reader(&buf);
+    reader.setAutoTransform(true);
+
+    if (reader.supportsAnimation() && reader.imageCount() > 1) {
+        AnimatedImage entry;
+        entry.frames.reserve(reader.imageCount());
+        entry.delays_ms.reserve(reader.imageCount());
+        QImage frame;
+        while (reader.read(&frame)) {
+            int delay = reader.nextImageDelay();
+            if (delay <= 0)   delay = 100;
+            if (delay < 20)   delay = 20;
+            QImage scaled = frame.scaled(max_w, max_h,
+                                          Qt::KeepAspectRatio,
+                                          Qt::SmoothTransformation);
+            entry.frames.push_back(tk::qt6::make_image(std::move(scaled)));
+            entry.delays_ms.push_back(delay);
+        }
+        if (!entry.frames.empty()) {
+            entry.current         = 0;
+            entry.next_advance_ms = QDateTime::currentMSecsSinceEpoch()
+                                  + entry.delays_ms[0];
+            tk_anim_images_.emplace(url, std::move(entry));
+            if (tk_anim_timer_ && !tk_anim_timer_->isActive())
+                tk_anim_timer_->start();
+            return;
+        }
+        // Decoder claimed animation but yielded nothing — fall through
+        // to the static path with the original bytes.
+        buf.seek(0);
+    }
+
     QImage img;
     if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
                           static_cast<int>(bytes.size())))
@@ -949,6 +1007,28 @@ void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) 
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
     tk_images_.emplace(url, tk::qt6::make_image(std::move(scaled)));
+}
+
+void MainWindow::onMessageAnimTick_() {
+    if (tk_anim_images_.empty()) {
+        if (tk_anim_timer_) tk_anim_timer_->stop();
+        return;
+    }
+    const std::int64_t now = QDateTime::currentMSecsSinceEpoch();
+    bool any_changed = false;
+    for (auto& [_, entry] : tk_anim_images_) {
+        if (entry.frames.size() <= 1) continue;
+        std::size_t steps = 0;
+        while (now >= entry.next_advance_ms
+                && steps < entry.frames.size())
+        {
+            entry.current = (entry.current + 1) % entry.frames.size();
+            entry.next_advance_ms += entry.delays_ms[entry.current];
+            ++steps;
+        }
+        if (steps > 0) any_changed = true;
+    }
+    if (any_changed && msgSurface_) msgSurface_->update();
 }
 
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {

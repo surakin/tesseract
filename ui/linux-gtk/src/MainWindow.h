@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace gtk4 {
@@ -136,6 +137,21 @@ private:
     void ensure_user_avatar(const std::string& mxc);
     void ensure_media_image(const std::string& url, int max_w, int max_h);
 
+    /// Background-thread variant for the sticker picker: kick off a
+    /// `fetch_source_bytes` on a detached thread, then post the decoded
+    /// `tk::Image` back to the UI thread via `g_idle_add`. Deduplicates
+    /// via `sticker_fetches_in_flight_` so each cell paint doesn't spawn
+    /// a duplicate fetch.
+    void ensure_sticker_image_async(std::string url);
+
+    /// Lazily install a 16 ms `g_timeout` that drives `tk_anim_tick_`.
+    /// No-op when the tick is already armed.
+    void start_anim_tick_if_needed_();
+    /// Repaint every surface that reads from `tk_anim_images_` after a
+    /// frame advance (or on initial population of an entry). Cheap.
+    void invalidate_anim_consumers_();
+    static gboolean on_tk_anim_tick_(gpointer user_data);
+
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
 
@@ -219,6 +235,25 @@ private:
     // shared RoomListView / MessageListView provider lambdas.
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
+    /// Animated inline-media entries (GIF / animated WebP / APNG). Same
+    /// shape as the Qt port's `AnimatedImage`. Decoded eagerly: each
+    /// frame is a fully-baked cairo surface wrapped in `tk::Image`. The
+    /// `tk_anim_tick_id_` g_timeout drives `tk_anim_tick_` and repaints
+    /// `msg_surface_` + `sticker_picker_surface_` when frames advance.
+    struct AnimatedImage {
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int>                         delays_ms;
+        std::size_t                              current        = 0;
+        std::int64_t                             next_advance_ms = 0;
+    };
+    std::unordered_map<std::string, AnimatedImage>               tk_anim_images_;
+    guint                                                         tk_anim_tick_id_ = 0;
+
+    // URLs for which `ensure_sticker_image_async` has spawned a worker
+    // that hasn't yet posted its result. Stops every cell-paint from
+    // queueing a duplicate fetch.
+    std::unordered_set<std::string>                              sticker_fetches_in_flight_;
 
     std::vector<std::string>                               space_stack_;
 

@@ -31,6 +31,7 @@
 
 class EmojiPicker;
 class StickerPicker;
+class QTimer;
 
 namespace qt6 {
 
@@ -105,6 +106,10 @@ private slots:
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
     void onPaginateFinished(QString roomId, bool reached_start);
+    /// Frame-tick driver for animated inline media in the timeline.
+    /// Advances frames in `tk_anim_images_` and repaints `msgSurface_`
+    /// when at least one frame changes.
+    void onMessageAnimTick_();
 
 signals:
     void recoverFinished(bool ok, QString error);
@@ -204,6 +209,20 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
+    /// Animated inline-media entries for the timeline (GIF / animated
+    /// WebP / APNG). Same shape as `StickerPicker::AnimatedEntry`; kept
+    /// per-MainWindow so message-list rows and the sticker picker can
+    /// both animate independently. `tk_anim_timer_` ticks at 60 Hz and
+    /// repaints `msgSurface_` when at least one frame advances.
+    struct AnimatedImage {
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int>                         delays_ms;
+        std::size_t                              current        = 0;
+        std::int64_t                             next_advance_ms = 0;
+    };
+    std::unordered_map<std::string, AnimatedImage> tk_anim_images_;
+    QTimer*                                         tk_anim_timer_ = nullptr;
     QString                       currentTopicText_;
     std::vector<std::string>      spaceStack_;
 

@@ -13,7 +13,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdint>
 #include <ctime>
+#include <optional>
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
@@ -520,6 +523,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         });
     message_list_view_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
+            // Animated entries first — `on_tk_anim_tick_` keeps
+            // `current` valid; static cache is the second hop.
+            auto ait = tk_anim_images_.find(mxc);
+            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
+                return ait->second.frames[ait->second.current].get();
+            }
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
@@ -980,25 +989,12 @@ namespace {
 // shared CairoImage wrapper expects. Reuses GdkPixbufLoader so the
 // existing matrix-sdk attachments path (PNG/JPEG/WebP/AVIF) decodes
 // identically to the legacy GTK rendering.
-cairo_surface_t* decode_image_to_cairo_surface(
-    const std::vector<uint8_t>& bytes)
-{
-    if (bytes.empty()) return nullptr;
-    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
-    GError* err = nullptr;
-    if (!gdk_pixbuf_loader_write(loader, bytes.data(), bytes.size(), &err)) {
-        if (err) g_error_free(err);
-        g_object_unref(loader);
-        return nullptr;
-    }
-    if (!gdk_pixbuf_loader_close(loader, &err)) {
-        if (err) g_error_free(err);
-        g_object_unref(loader);
-        return nullptr;
-    }
-    GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
-    if (!pb) { g_object_unref(loader); return nullptr; }
-
+//
+// Inner helper: convert an already-decoded GdkPixbuf into a premultiplied
+// ARGB32 cairo surface. Reused by both the static decoder and the
+// animated-frame iterator below.
+cairo_surface_t* pixbuf_to_premultiplied_argb32(GdkPixbuf* pb) {
+    if (!pb) return nullptr;
     int  w        = gdk_pixbuf_get_width (pb);
     int  h        = gdk_pixbuf_get_height(pb);
     int  channels = gdk_pixbuf_get_n_channels(pb);
@@ -1009,7 +1005,6 @@ cairo_surface_t* decode_image_to_cairo_surface(
         cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
         cairo_surface_destroy(surface);
-        g_object_unref(loader);
         return nullptr;
     }
     cairo_surface_flush(surface);
@@ -1033,9 +1028,112 @@ cairo_surface_t* decode_image_to_cairo_surface(
         }
     }
     cairo_surface_mark_dirty(surface);
+    return surface;
+}
+
+cairo_surface_t* decode_image_to_cairo_surface(
+    const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty()) return nullptr;
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    GError* err = nullptr;
+    if (!gdk_pixbuf_loader_write(loader, bytes.data(), bytes.size(), &err)) {
+        if (err) g_error_free(err);
+        g_object_unref(loader);
+        return nullptr;
+    }
+    if (!gdk_pixbuf_loader_close(loader, &err)) {
+        if (err) g_error_free(err);
+        g_object_unref(loader);
+        return nullptr;
+    }
+    GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
+    cairo_surface_t* surface = pixbuf_to_premultiplied_argb32(pb);
     g_object_unref(loader);
     return surface;
 }
+
+// Decode an animated GIF / WebP / APNG into a list of premultiplied
+// ARGB32 cairo surfaces + a per-frame delay (ms). Returns nullopt for
+// non-animated payloads — callers should fall back to the static path.
+//
+// Termination: walks the GdkPixbufAnimationIter forwards with a
+// synthesised clock advanced by each frame's reported delay. Capped at
+// `kMaxFrames` to keep runaway / never-ending GIFs from blowing memory.
+// Most animated stickers ship ≤ 30 frames.
+struct DecodedAnimation {
+    std::vector<cairo_surface_t*> frames;       // caller owns each
+    std::vector<int>              delays_ms;
+};
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+std::optional<DecodedAnimation> decode_animation(
+    const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty()) return std::nullopt;
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    GError* err = nullptr;
+    if (!gdk_pixbuf_loader_write(loader, bytes.data(), bytes.size(), &err)) {
+        if (err) g_error_free(err);
+        g_object_unref(loader);
+        return std::nullopt;
+    }
+    if (!gdk_pixbuf_loader_close(loader, &err)) {
+        if (err) g_error_free(err);
+        g_object_unref(loader);
+        return std::nullopt;
+    }
+    GdkPixbufAnimation* anim = gdk_pixbuf_loader_get_animation(loader);
+    if (!anim || gdk_pixbuf_animation_is_static_image(anim)) {
+        g_object_unref(loader);
+        return std::nullopt;
+    }
+
+    GTimeVal t = { 0, 0 };
+    GdkPixbufAnimationIter* iter =
+        gdk_pixbuf_animation_get_iter(anim, &t);
+    if (!iter) {
+        g_object_unref(loader);
+        return std::nullopt;
+    }
+
+    DecodedAnimation out;
+    constexpr int kMaxFrames = 200;
+    for (int i = 0; i < kMaxFrames; ++i) {
+        GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
+        if (!pb) break;
+        cairo_surface_t* surf = pixbuf_to_premultiplied_argb32(pb);
+        if (!surf) break;
+        int delay = gdk_pixbuf_animation_iter_get_delay_time(iter);
+        // -1 means there's no upcoming frame (last frame of a
+        // non-looping animation). Capture this final frame and stop.
+        if (delay < 0) {
+            out.frames.push_back(surf);
+            out.delays_ms.push_back(100); // arbitrary tail-hold
+            break;
+        }
+        if (delay < 20) delay = 20;
+        out.frames.push_back(surf);
+        out.delays_ms.push_back(delay);
+
+        // Advance the synthesised clock by the just-captured delay.
+        t.tv_usec += delay * 1000;
+        while (t.tv_usec >= G_USEC_PER_SEC) {
+            t.tv_sec  += 1;
+            t.tv_usec -= G_USEC_PER_SEC;
+        }
+        if (!gdk_pixbuf_animation_iter_advance(iter, &t)) {
+            // Iterator decided no new frame would be shown — we'd
+            // duplicate the same pixbuf on the next iteration. Stop.
+            break;
+        }
+    }
+    g_object_unref(iter);
+    g_object_unref(loader);
+    if (out.frames.empty()) return std::nullopt;
+    return out;
+}
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 } // namespace
 
@@ -1063,14 +1161,141 @@ void MainWindow::ensure_user_avatar(const std::string& mxc) {
 
 void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
-    if (url.empty() || tk_images_.count(url)) return;
+    if (url.empty()) return;
+    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
     auto bytes = client_.fetch_media_bytes(url);
     if (bytes.empty()) return;
+
+    // Animated formats (GIF / animated WebP / APNG) populate
+    // `tk_anim_images_`; the tick driver advances frames + repaints the
+    // message surface. Static formats fall through to the existing path.
+    if (auto anim = decode_animation(bytes)) {
+        AnimatedImage entry;
+        entry.frames.reserve(anim->frames.size());
+        entry.delays_ms = std::move(anim->delays_ms);
+        for (cairo_surface_t* s : anim->frames) {
+            entry.frames.push_back(tk::cairo_pango::make_image(s));
+            cairo_surface_destroy(s);
+        }
+        if (!entry.frames.empty()) {
+            entry.current         = 0;
+            const gint64 now_ms   = g_get_monotonic_time() / 1000;
+            entry.next_advance_ms = now_ms + entry.delays_ms[0];
+            tk_anim_images_.emplace(url, std::move(entry));
+            start_anim_tick_if_needed_();
+            return;
+        }
+    }
     cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
     if (!surface) return;
     auto img = tk::cairo_pango::make_image(surface);
     cairo_surface_destroy(surface);
     tk_images_.emplace(url, std::move(img));
+}
+
+void MainWindow::start_anim_tick_if_needed_() {
+    if (tk_anim_tick_id_ != 0) return;
+    if (tk_anim_images_.empty()) return;
+    tk_anim_tick_id_ = g_timeout_add(16, on_tk_anim_tick_, this);
+}
+
+void MainWindow::invalidate_anim_consumers_() {
+    if (msg_surface_) msg_surface_->relayout();
+    if (sticker_picker_shared_)
+        sticker_picker_shared_->invalidate_image_cache();
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+}
+
+gboolean MainWindow::on_tk_anim_tick_(gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->tk_anim_images_.empty()) {
+        self->tk_anim_tick_id_ = 0;
+        return G_SOURCE_REMOVE;
+    }
+    const std::int64_t now_ms = g_get_monotonic_time() / 1000;
+    bool any_changed = false;
+    for (auto& [_, entry] : self->tk_anim_images_) {
+        if (entry.frames.size() <= 1) continue;
+        std::size_t steps = 0;
+        while (now_ms >= entry.next_advance_ms
+                && steps < entry.frames.size())
+        {
+            entry.current =
+                (entry.current + 1) % entry.frames.size();
+            entry.next_advance_ms +=
+                entry.delays_ms[entry.current];
+            ++steps;
+        }
+        if (steps > 0) any_changed = true;
+    }
+    if (any_changed) self->invalidate_anim_consumers_();
+    return G_SOURCE_CONTINUE;
+}
+
+void MainWindow::ensure_sticker_image_async(std::string url) {
+    if (url.empty() || tk_images_.count(url) || tk_anim_images_.count(url))
+        return;
+    if (!sticker_fetches_in_flight_.insert(url).second) return;
+
+    struct IdleData {
+        MainWindow*           self;
+        std::string           url;
+        std::vector<uint8_t>  bytes;
+    };
+
+    // Detached worker — `client_` is thread-safe (the SDK runs on its own
+    // tokio runtime; FFI calls are sync wrappers). The picker outlives
+    // any in-flight fetch.
+    std::thread([this, url]() mutable {
+        auto bytes = client_.fetch_source_bytes(url);
+        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* d = static_cast<IdleData*>(p);
+            d->self->sticker_fetches_in_flight_.erase(d->url);
+            if (!d->bytes.empty()
+                && !d->self->tk_images_.count(d->url)
+                && !d->self->tk_anim_images_.count(d->url))
+            {
+                // Probe for animation first; animated stickers
+                // (GIF / animated WebP / APNG) land in tk_anim_images_
+                // and ride the frame-tick loop. Static formats fall
+                // through to the existing tk_images_ path.
+                if (auto anim = decode_animation(d->bytes)) {
+                    AnimatedImage entry;
+                    entry.frames.reserve(anim->frames.size());
+                    entry.delays_ms = std::move(anim->delays_ms);
+                    for (cairo_surface_t* s : anim->frames) {
+                        entry.frames.push_back(
+                            tk::cairo_pango::make_image(s));
+                        cairo_surface_destroy(s);
+                    }
+                    if (!entry.frames.empty()) {
+                        entry.current         = 0;
+                        gint64 now_ms =
+                            g_get_monotonic_time() / 1000;
+                        entry.next_advance_ms =
+                            now_ms + entry.delays_ms[0];
+                        d->self->tk_anim_images_.emplace(
+                            d->url, std::move(entry));
+                        d->self->start_anim_tick_if_needed_();
+                        d->self->invalidate_anim_consumers_();
+                    }
+                } else if (cairo_surface_t* surface =
+                              decode_image_to_cairo_surface(d->bytes))
+                {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    d->self->tk_images_.emplace(d->url, std::move(img));
+                    if (d->self->sticker_picker_shared_)
+                        d->self->sticker_picker_shared_->invalidate_image_cache();
+                    if (d->self->sticker_picker_surface_)
+                        d->self->sticker_picker_surface_->relayout();
+                }
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, data);
+    }).detach();
 }
 
 // ---------------------------------------------------------------------------
@@ -1463,15 +1688,21 @@ void MainWindow::build_sticker_popover() {
             if (sticker_popover_)
                 gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
         };
-    // Reuse the existing tk_images_ cache (populated by ensure_media_image
-    // on demand for message-list inline media). The picker calls this on
-    // every cell paint; on miss it currently returns nullptr and the cell
-    // paints a placeholder until the host pre-fetches the bytes.
+    // Share the same caches the message list reads from. Animated
+    // entries take priority; static entries are the second hop; on
+    // miss kick off an async fetch via `ensure_sticker_image_async`
+    // so the next paint after the worker posts back finds the bitmap.
     sticker_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
                 const std::string& /*source_token*/) -> const tk::Image* {
+            auto ait = tk_anim_images_.find(cache_key);
+            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
+                return ait->second.frames[ait->second.current].get();
+            }
             auto it = tk_images_.find(cache_key);
-            return it == tk_images_.end() ? nullptr : it->second.get();
+            if (it != tk_images_.end()) return it->second.get();
+            ensure_sticker_image_async(cache_key);
+            return nullptr;
         });
     sticker_picker_surface_->set_root(std::move(shared));
 
