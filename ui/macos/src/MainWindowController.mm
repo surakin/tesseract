@@ -25,7 +25,7 @@ static std::string nsstr(NSString* s) {
 @end
 
 @implementation UserStripView
-- (NSMenu*)menuForEvent:(NSEvent*)/*event*/ { return _contextMenu; }
+- (NSMenu*)menuForEvent:(NSEvent*)__unused event { return _contextMenu; }
 @end
 
 // ── Controller ────────────────────────────────────────────────────────────────
@@ -763,14 +763,16 @@ static std::string nsstr(NSString* s) {
     if (!_myAvatarUrl.empty()) {
         NSString* key = @(_myAvatarUrl.c_str());
         std::string url_copy = _myAvatarUrl;
+        auto* impl_ptr = _impl.get();
         __weak typeof(self) weakSelf = self;
         _userAvatar.image = [[AvatarCache shared]
             avatarForKey:key
-                   fetch:[this, url_copy]() {
-                       return _impl->client.fetch_media_bytes(url_copy);
+                   fetch:[impl_ptr, url_copy]() {
+                       return impl_ptr->client.fetch_media_bytes(url_copy);
                    }
               completion:^(NSImage* img) {
-                  weakSelf.userAvatar.image = img;
+                  __strong typeof(self) s = weakSelf;
+                  s->_userAvatar.image = img;
               }];
     } else {
         _userAvatar.image = [AvatarCache initialsImageForName:shown size:32];
