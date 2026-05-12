@@ -1087,6 +1087,7 @@ tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& e
     row.timestamp_ms      = ev.timestamp;
     row.is_own            = (ev.sender == myUserId_);
     row.reactions         = ev.reactions;
+    row.read_receipts     = ev.read_receipts;
 
     switch (ev.type) {
         case tesseract::EventType::Text:
@@ -1132,6 +1133,9 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
     // MessageListView reads from tk_avatars_ / tk_images_ via provider
     // lambdas wired in the constructor.
     ensureUserAvatar(ev.sender_avatar_url);
+    for (const auto& rr : ev.read_receipts) {
+        ensureUserAvatar(rr.avatar_url);
+    }
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
         ensureMediaImage(img.image_url, kMaxImageWidth, kMaxImageHeight);

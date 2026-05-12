@@ -102,6 +102,16 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e) {
             out.senders.emplace_back(std::string(s));
         ev.reactions.push_back(std::move(out));
     }
+
+    ev.read_receipts.clear();
+    ev.read_receipts.reserve(e.read_receipts.size());
+    for (const auto& rr : e.read_receipts) {
+        ev.read_receipts.push_back(ReadReceipt{
+            std::string(rr.user_id),
+            std::string(rr.display_name),
+            std::string(rr.avatar_url),
+        });
+    }
 }
 
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) {

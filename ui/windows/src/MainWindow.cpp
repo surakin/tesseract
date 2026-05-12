@@ -1618,6 +1618,7 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
     row.timestamp_ms      = ev.timestamp;
     row.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
     row.reactions         = ev.reactions;
+    row.read_receipts     = ev.read_receipts;
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
@@ -1654,6 +1655,9 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
 
 void MainWindow::ensure_row_media(const tesseract::Event& ev) {
     ensure_user_avatar_tk(ev.sender_avatar_url);
+    for (const auto& rr : ev.read_receipts) {
+        ensure_user_avatar_tk(rr.avatar_url);
+    }
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
         ensure_media_image(img.image_url,

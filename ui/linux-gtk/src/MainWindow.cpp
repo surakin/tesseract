@@ -1361,6 +1361,7 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
     row.timestamp_ms      = ev.timestamp;
     row.is_own            = (ev.sender == my_user_id_);
     row.reactions         = ev.reactions;
+    row.read_receipts     = ev.read_receipts;
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
@@ -1399,6 +1400,9 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
     // Pre-fetch any media this row will reference. The shared view's
     // provider lambdas look up tk_avatars_ / tk_images_ on each paint.
     ensure_user_avatar(ev.sender_avatar_url);
+    for (const auto& rr : ev.read_receipts) {
+        ensure_user_avatar(rr.avatar_url);
+    }
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
         ensure_media_image(img.image_url,

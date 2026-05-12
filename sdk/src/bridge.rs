@@ -46,6 +46,17 @@ pub mod ffi {
         senders:       Vec<String>,
     }
 
+    /// One user's most recent read receipt landing on a timeline event.
+    /// `display_name` is the room member's resolved name (falls back to the
+    /// bare Matrix ID); `avatar_url` is the member's mxc:// URI (empty when
+    /// unset). Receipts for the current user are filtered on the Rust side
+    /// so the UI never has to render its own avatar on every message.
+    struct ReadReceipt {
+        user_id:      String,
+        display_name: String,
+        avatar_url:   String,
+    }
+
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
     /// For `m.image`   → source_json, width, height are populated.
@@ -80,6 +91,9 @@ pub mod ffi {
         image_filename:    String,
         /// Aggregated reactions, grouped by key. May be empty.
         reactions:         Vec<ReactionGroup>,
+        /// Users (other than the current user) whose latest read receipt
+        /// landed on this event. Order matches the SDK's iteration order.
+        read_receipts:     Vec<ReadReceipt>,
     }
 
     /// Outcome of an asynchronous SDK operation.

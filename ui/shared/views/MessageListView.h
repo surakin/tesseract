@@ -50,6 +50,10 @@ struct MessageRowData {
     std::uint64_t file_size = 0;
 
     std::vector<tesseract::Reaction> reactions;
+    /// Users (excluding the current user) whose latest read receipt landed
+    /// on this event. The view renders up to a small cap of mini-avatars
+    /// at the bottom-right of the row; the rest fall into a "+N" overflow.
+    std::vector<tesseract::ReadReceipt> read_receipts;
 };
 
 class MessageListView : public tk::ListView {

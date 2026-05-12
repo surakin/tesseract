@@ -24,6 +24,18 @@ struct Reaction {
     std::vector<std::string> senders;
 };
 
+/// One user's most recent read receipt landing on a timeline event.
+/// `display_name` is the room member's resolved name (falls back to the
+/// bare Matrix ID when membership isn't yet hydrated); `avatar_url` is the
+/// member's mxc:// URI, empty when unset. Receipts for the *current* user
+/// are filtered on the SDK side — the UI never has to render its own
+/// avatar on every message it has read.
+struct ReadReceipt {
+    std::string user_id;
+    std::string display_name;
+    std::string avatar_url;
+};
+
 struct Event {
     std::string event_id;
     std::string room_id;
@@ -34,6 +46,7 @@ struct Event {
     uint64_t    timestamp = 0;
     EventType   type = EventType::Unhandled;
     std::vector<Reaction> reactions;
+    std::vector<ReadReceipt> read_receipts;
     virtual ~Event() = default;
 };
 

@@ -1081,6 +1081,7 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     row.timestamp_ms      = ev.timestamp;
     row.is_own            = (ev.sender == _myUserId);
     row.reactions         = ev.reactions;
+    row.read_receipts     = ev.read_receipts;
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
@@ -1117,6 +1118,9 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
 
 - (void)_ensureRowMedia:(const tesseract::Event&)ev {
     [self _ensureUserAvatar:ev.sender_avatar_url];
+    for (const auto& rr : ev.read_receipts) {
+        [self _ensureUserAvatar:rr.avatar_url];
+    }
 
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);

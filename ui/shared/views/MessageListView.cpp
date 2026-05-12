@@ -21,6 +21,15 @@ constexpr float kSenderH     = tesseract::visual::kMsgSenderNameHeight; // 16
 constexpr float kTimestampH  = tesseract::visual::kMsgTimestampHeight;  // 14
 constexpr float kChipPadX    = 10.0f;
 
+// Read-receipt avatar cluster — painted at the bottom-right of each row,
+// inside the existing bounds. Discs overlap by (kReceiptSize - kReceiptStride)
+// so a busy room's receipts stay narrow. Anything above `kReceiptCap` collapses
+// into a small "+N" pill anchored to the left of the cluster.
+constexpr float kReceiptSize    = 16.0f;
+constexpr float kReceiptStride  = 11.0f;          // 5 px overlap
+constexpr std::size_t kReceiptCap = 5;
+constexpr float kReceiptOverflowGap = 4.0f;       // gap between "+N" pill and discs
+
 inline float chip_h()      { return static_cast<float>(tesseract::Settings::instance().reaction_chip_height); }
 inline float chip_gap()    { return static_cast<float>(tesseract::Settings::instance().reaction_chip_gap); }
 inline float chip_radius() { return chip_h() * 0.5f; }
@@ -83,8 +92,15 @@ public:
         const auto& m = owner_.messages_[index];
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h = (!m.reactions.empty() || m.timestamp_ms != 0)
-                            ? chip_h() : 0.0f;
+        // The bottom strip is reserved on every row carrying a
+        // timestamp — it's where reactions, the read-receipt cluster,
+        // the hover-only timestamp under the avatar, and the trailing
+        // "+" add-reaction button all live. The hover timestamp paints
+        // in the avatar column (otherwise empty); receipts paint on
+        // the right; reactions paint on the left. No collisions.
+        float chips_h = (!m.reactions.empty()
+                            || !m.read_receipts.empty()
+                            || m.timestamp_ms != 0) ? chip_h() : 0.0f;
         // Sender name is centered inside the avatar's vertical band, so
         // the avatar reserves the whole header height; body + reactions
         // stack below it.
@@ -152,8 +168,10 @@ public:
         float cursor = bounds.y + kPadY + kAvatarSize;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
 
-        // Reactions row + timestamp.
-        if (!m.reactions.empty() || m.timestamp_ms != 0 || hovered) {
+        // Reactions row + read-receipt cluster. The strip exists when the
+        // row has either, or while the row is hovered (so the trailing
+        // "+" add-reaction button has a place to land).
+        if (!m.reactions.empty() || !m.read_receipts.empty() || hovered) {
             float chip_y = cursor;
             float chip_x = col_x;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
@@ -243,16 +261,88 @@ public:
                 }
             }
 
+            // Read-receipt cluster — bottom-right of the strip, capped at
+            // `kReceiptCap` avatars with a "+N" overflow pill on the left.
+            // Painted right-to-left so the rightmost receipt is the topmost
+            // disc in the overlap stack.
+            if (!m.read_receipts.empty()) {
+                const std::size_t total   = m.read_receipts.size();
+                const std::size_t visible = std::min(total, kReceiptCap);
+                const std::size_t overflow = total - visible;
+                const float disc_cy = chip_y + chip_h() * 0.5f;
+
+                float right_edge = bounds.x + bounds.w - kPadX;
+                for (std::size_t i = 0; i < visible; ++i) {
+                    // m.read_receipts is oldest-first; paint the last
+                    // `visible` of them right-to-left so the most-recent
+                    // receipt sits on top of the stack.
+                    const auto& rr = m.read_receipts[total - 1 - i];
+                    float cx = right_edge - kReceiptSize * 0.5f
+                                - i * kReceiptStride;
+                    tk::Point centre{ cx, disc_cy };
+                    const tk::Image* img = nullptr;
+                    if (owner_.avatar_provider_ && !rr.avatar_url.empty()) {
+                        img = owner_.avatar_provider_(rr.avatar_url);
+                    }
+                    if (img) {
+                        ctx.canvas.draw_circle_image(*img, centre, kReceiptSize);
+                    } else {
+                        ctx.canvas.draw_initials_circle(
+                            rr.display_name.empty() ? rr.user_id : rr.display_name,
+                            centre,
+                            kReceiptSize,
+                            ctx.theme.palette.avatar_initials_bg,
+                            ctx.theme.palette.avatar_initials_text);
+                    }
+                }
+
+                // "+N" overflow pill — anchored just to the left of the
+                // leftmost disc in the cluster.
+                if (overflow > 0) {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::UiSemibold;
+                    auto layout = ctx.factory.build_text(
+                        std::string("+") + std::to_string(overflow), st);
+                    if (layout) {
+                        tk::Size sz = layout->measure();
+                        float pill_w = sz.w + kChipPadX;
+                        float pill_h = kReceiptSize;
+                        float cluster_left = right_edge
+                            - (kReceiptSize + (visible - 1) * kReceiptStride);
+                        tk::Rect pill{
+                            cluster_left - kReceiptOverflowGap - pill_w,
+                            disc_cy - pill_h * 0.5f,
+                            pill_w,
+                            pill_h,
+                        };
+                        ctx.canvas.fill_rounded_rect(
+                            pill, pill_h * 0.5f,
+                            ctx.theme.palette.subtle_hover);
+                        ctx.canvas.draw_text(
+                            *layout,
+                            { pill.x + (pill_w - sz.w) * 0.5f,
+                              pill.y + (pill_h - sz.h) * 0.5f },
+                            ctx.theme.palette.text_secondary);
+                    }
+                }
+            }
+        }
+
+        // Hover-only timestamp, painted under the sender avatar (left
+        // column). The column from `y = kPadY + kAvatarSize` downward is
+        // empty for every row — body text wraps in the right column — so
+        // this can sit hugging the row's bottom padding without colliding
+        // with anything else the strip painted.
+        if (hovered) {
             std::string ts = format_hhmm(m.timestamp_ms);
             if (!ts.empty()) {
                 tk::TextStyle st{};
-                st.role   = tk::FontRole::Timestamp;
-                st.halign = tk::TextHAlign::Trailing;
+                st.role = tk::FontRole::Timestamp;
                 auto layout = ctx.factory.build_text(ts, st);
                 if (layout) {
-                    float tx = bounds.x + bounds.w - kPadX
-                                - layout->measure().w;
-                    float ty = chip_y + (chip_h() - layout->measure().h) * 0.5f;
+                    tk::Size sz = layout->measure();
+                    float tx = avatar_cx - sz.w * 0.5f;
+                    float ty = bounds.y + bounds.h - kPadY - sz.h;
                     ctx.canvas.draw_text(*layout, { tx, ty },
                                           ctx.theme.palette.text_muted);
                 }

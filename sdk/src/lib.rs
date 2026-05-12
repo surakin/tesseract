@@ -38,6 +38,13 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct ReadReceipt {
+        pub user_id:      String,
+        pub display_name: String,
+        pub avatar_url:   String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct TimelineEvent {
         pub event_id:          String,
         pub room_id:           String,
@@ -55,6 +62,7 @@ pub mod ffi {
         pub file_size:         u64,
         pub image_filename:    String,
         pub reactions:         Vec<ReactionGroup>,
+        pub read_receipts:     Vec<ReadReceipt>,
     }
 
     #[derive(Debug, PartialEq, Default)]

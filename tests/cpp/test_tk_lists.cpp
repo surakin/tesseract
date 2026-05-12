@@ -415,6 +415,124 @@ TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
     CHECK(got_key   == "🎉");
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Read receipts + hover timestamp
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+bool pixel_differs(tk::Color a, tk::Color b) {
+    return a.r != b.r || a.g != b.g || a.b != b.b || a.a != b.a;
+}
+
+MessageRowData make_text_row(const char* id, const char* body) {
+    MessageRowData m{};
+    m.kind        = MessageRowData::Kind::Text;
+    m.event_id    = id;
+    m.sender_name = "Alice";
+    m.body        = body;
+    m.timestamp_ms = 1700000000000ull;
+    return m;
+}
+
+tesseract::ReadReceipt make_receipt(const char* user, const char* name) {
+    tesseract::ReadReceipt rr{};
+    rr.user_id      = user;
+    rr.display_name = name;
+    rr.avatar_url   = "";  // Force initials-disc fallback.
+    return rr;
+}
+
+} // namespace
+
+TEST_CASE("MessageListView read receipts paint inside existing row bounds",
+          "[tk][view][messagelist][receipts]") {
+    Stage st;
+    MessageListView view;
+
+    MessageRowData plain = make_text_row("$plain", "hi");
+    MessageRowData with_rr = make_text_row("$rr", "hi");
+    with_rr.read_receipts = {
+        make_receipt("@a:x", "Alice"),
+        make_receipt("@b:x", "Bob"),
+        make_receipt("@c:x", "Carol"),
+    };
+
+    view.set_messages({ plain });
+    st.run(view, { 0, 0, 320, 400 });
+    float plain_h = view.content_height();
+
+    view.set_messages({ with_rr });
+    st.run(view, { 0, 0, 320, 400 });
+    float with_h = view.content_height();
+
+    // Receipts share the existing chip-row strip — they must not push the
+    // row taller than a plain row carrying the same body.
+    CHECK(with_h == plain_h);
+}
+
+TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-right",
+          "[tk][view][messagelist][receipts]") {
+    Stage st;
+    MessageListView view;
+    MessageRowData m = make_text_row("$evt", "hi");
+    // Seven receipts — five render as discs, with a "+2" pill to the left.
+    m.read_receipts = {
+        make_receipt("@a:x", "Alice"),
+        make_receipt("@b:x", "Bob"),
+        make_receipt("@c:x", "Carol"),
+        make_receipt("@d:x", "Dave"),
+        make_receipt("@e:x", "Eve"),
+        make_receipt("@f:x", "Frank"),
+        make_receipt("@g:x", "Grace"),
+    };
+    view.set_messages({ m });
+    st.run(view, { 0, 0, 320, 400 });
+
+    // Sample a pixel near the centre of the rightmost receipt disc.
+    // Layout: right_edge = bounds.x + bounds.w - kPadX = 320 - 12 = 308.
+    // Rightmost disc centre is (308 - kReceiptSize/2, disc_cy) = (300, ~).
+    // The disc fills its area with a coloured initials background.
+    int sample_x = 300;
+    int sample_y = static_cast<int>(view.content_height()) - 21;
+    auto disc_px = st.surface->read_pixel(sample_x, sample_y);
+    auto bg_px   = st.surface->read_pixel(300, 0);
+    CHECK(pixel_differs(disc_px, bg_px));
+
+    // And further left (where the "+2" overflow pill should sit) should
+    // also differ from the row background.
+    int overflow_x = 300 - 5 * 11 - 4; // past the disc cluster + small gap
+    auto overflow_px = st.surface->read_pixel(overflow_x, sample_y);
+    CHECK(pixel_differs(overflow_px, bg_px));
+}
+
+TEST_CASE("MessageListView paints hover timestamp under the avatar",
+          "[tk][view][messagelist][hover]") {
+    Stage st;
+    MessageListView view;
+    MessageRowData m = make_text_row("$evt", "hi");
+    view.set_messages({ m });
+
+    // Measure + arrange first so `on_pointer_move` resolves a row index,
+    // then hover, then paint once. (TestSurface::read_pixel ends the
+    // backing painter, so we only get one paint pass per test.)
+    auto lc = st.layout_ctx();
+    view.measure(lc, { 320, 400 });
+    view.arrange(lc, { 0, 0, 320, 400 });
+    view.on_pointer_move({ 50, 20 });
+    auto pc = st.paint_ctx();
+    view.paint(pc);
+
+    int row_h = static_cast<int>(view.content_height());
+    // Pixel inside the row (avatar column, near the row's bottom edge):
+    // gets the row highlight + the HH:MM glyph painted on top.
+    auto hovered_px = st.surface->read_pixel(28, row_h - 13);
+    // Pixel well below the only row: untouched by any paint — pristine
+    // white background.
+    auto bg_px      = st.surface->read_pixel(28, 300);
+    CHECK(pixel_differs(hovered_px, bg_px));
+}
+
 TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
           "[tk][view][messagelist][reactions]") {
     Stage st;

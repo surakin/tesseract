@@ -34,7 +34,7 @@ use matrix_sdk_ui::{
 #[cfg(not(test))]
 use futures_util::StreamExt;
 #[cfg(not(test))]
-use crate::ffi::{EventHandlerBridge, ReactionGroup, TimelineEvent};
+use crate::ffi::{EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent};
 #[cfg(not(test))]
 use matrix_sdk::{Room, ruma::UserId};
 
@@ -1972,6 +1972,41 @@ async fn collect_reactions(
 }
 
 #[cfg(not(test))]
+async fn collect_read_receipts(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+    room: &Room,
+    me: Option<&UserId>,
+) -> Vec<ReadReceipt> {
+    let table = event_item.read_receipts();
+    if table.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<ReadReceipt> = Vec::with_capacity(table.len());
+    for uid in table.keys() {
+        // Hide the current user's own receipt: they don't need to see their
+        // own avatar marching down every message they've read.
+        if me.map_or(false, |m| uid.as_str() == m.as_str()) {
+            continue;
+        }
+        // Cheap-ish lookup against the SDK's in-memory state store. Same
+        // pattern `collect_reactions` uses for resolving sender labels.
+        let (display_name, avatar_url) = match room.get_member_no_sync(uid).await {
+            Ok(Some(m)) => (
+                m.display_name().map(str::to_owned).unwrap_or_else(|| uid.to_string()),
+                m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+            ),
+            _ => (uid.to_string(), String::new()),
+        };
+        out.push(ReadReceipt {
+            user_id: uid.to_string(),
+            display_name,
+            avatar_url,
+        });
+    }
+    out
+}
+
+#[cfg(not(test))]
 async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
     room_id: &str,
@@ -2018,6 +2053,10 @@ async fn timeline_item_to_ffi(
             file_size:         0u64,
             image_filename:    String::new(),
             reactions:         Vec::new(),
+            // Receipts on a tombstone are meaningless — the original event
+            // is gone; the redacted placeholder doesn't carry a reading
+            // audience worth surfacing.
+            read_receipts:     Vec::new(),
         });
     }
 
@@ -2051,6 +2090,7 @@ async fn timeline_item_to_ffi(
                 (String::new(), String::new())
             };
         let reactions = collect_reactions(event_item, room, me).await;
+        let read_receipts = collect_read_receipts(event_item, room, me).await;
         return Some(TimelineEvent {
             event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
             room_id:           room_id.to_owned(),
@@ -2068,6 +2108,7 @@ async fn timeline_item_to_ffi(
             file_size:         0u64,
             image_filename:    String::new(),
             reactions,
+            read_receipts,
         });
     }
 
@@ -2136,6 +2177,7 @@ async fn timeline_item_to_ffi(
         };
 
     let reactions = collect_reactions(event_item, room, me).await;
+    let read_receipts = collect_read_receipts(event_item, room, me).await;
 
     Some(TimelineEvent {
         event_id:          event_item.event_id()
@@ -2156,6 +2198,7 @@ async fn timeline_item_to_ffi(
         file_size,
         image_filename,
         reactions,
+        read_receipts,
     })
 }
 
