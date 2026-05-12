@@ -1,13 +1,11 @@
 #import "EmojiPicker.h"
+#import <objc/runtime.h>
 
 #include "tesseract/client.h"
 #include "tesseract/emoji.h"
 
 #include <string>
 #include <vector>
-
-using tesseract::emoji::Category;
-using tesseract::emoji::Entry;
 
 namespace {
 constexpr CGFloat kBtnSize    = 32.0;
@@ -34,8 +32,6 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
 }
 
 } // namespace
-
-#import <objc/runtime.h>
 
 @interface EmojiPickerController () <NSSearchFieldDelegate>
 @end
@@ -77,7 +73,7 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
     [_tabs addTabViewItem:_freqTab];
 
     // Category tabs (one per emoji::Category).
-    for (Category c : tesseract::emoji::kCategories) {
+    for (tesseract::emoji::Category c : tesseract::emoji::kCategories) {
         NSStackView* grid = [self _newEmojiGrid];
         NSScrollView* sc  = [self _wrapGridInScroll:grid];
         [self _populateGrid:grid withEntries:tesseract::emoji::by_category(c)];
@@ -135,7 +131,7 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
 }
 
 - (void)_populateGrid:(NSStackView*)grid
-          withEntries:(const std::vector<const Entry*>&)entries
+          withEntries:(const std::vector<const tesseract::emoji::Entry*>&)entries
 {
     // Clear existing rows.
     for (NSView* v in [grid.arrangedSubviews copy]) {
@@ -144,7 +140,7 @@ NSButton* makeEmojiButton(NSString* glyph, id target, SEL action) {
     }
     NSStackView* row = nil;
     int colIdx = 0;
-    for (const Entry* e : entries) {
+    for (const tesseract::emoji::Entry* e : entries) {
         if (!row || colIdx >= kCols) {
             row = [[NSStackView alloc] init];
             row.translatesAutoresizingMaskIntoConstraints = NO;
