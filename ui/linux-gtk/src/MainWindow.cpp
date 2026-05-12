@@ -198,7 +198,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_css_provider_load_from_string(css, R"css(
         .sidebar {
             background-color: #F0F2F5;
-            border-right: 1px solid #D0D3D8;
+        }
+        .sidebar-separator {
+            background-color: #D0D3D8;
+            min-width: 1px;
         }
         .message-body {
             padding: 2px 0px;
@@ -340,6 +343,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         g_object_unref(group);
     }
     gtk_box_append(GTK_BOX(side_vbox), user_strip_);
+
+    // 1px vertical separator between sidebar and chat area. A dedicated
+    // widget is used instead of the sidebar's CSS `border-right`, because
+    // the scrolled-window's own background paints over the parent border.
+    GtkWidget* side_separator =
+        gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+    gtk_widget_add_css_class(side_separator, "sidebar-separator");
+    gtk_box_append(GTK_BOX(hbox), side_separator);
 
     // Chat area
     GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);

@@ -169,6 +169,7 @@ private:
     std::unique_ptr<LoginView> login_view_;
     bool      login_visible_ = false;
     HWND      hRoomList_   = nullptr;
+    HWND      hSideSep_    = nullptr;   // 1px vertical separator at x=ROOM_W
     HWND      hRoomHeader_ = nullptr;
     HWND      hMsgList_    = nullptr;
     HWND      hInput_      = nullptr;
@@ -220,6 +221,7 @@ private:
     static constexpr int            IDC_RECOVERY_KEY     = 109;
     static constexpr int            IDC_RECOVERY_VERIFY  = 110;
     static constexpr int            IDC_RECOVERY_DISMISS = 111;
+    static constexpr int            IDC_SIDE_SEPARATOR   = 112;
     static constexpr int            IDM_LOGOUT           = 120;
 };
 

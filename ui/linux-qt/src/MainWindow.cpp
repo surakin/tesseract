@@ -138,7 +138,7 @@ MainWindow::MainWindow(QWidget* parent)
     auto* sidePanel = new QWidget(mainContent_);
     sidePanel->setFixedWidth(260);
     sidePanel->setObjectName("sidePanel");
-    sidePanel->setStyleSheet("#sidePanel { background-color: #F0F2F5; border-right: 1px solid #D0D3D8; }");
+    sidePanel->setStyleSheet("#sidePanel { background-color: #F0F2F5; }");
 
     auto* sideLayout = new QVBoxLayout(sidePanel);
     sideLayout->setContentsMargins(0, 0, 0, 0);
@@ -197,6 +197,17 @@ MainWindow::MainWindow(QWidget* parent)
             this,       &MainWindow::onUserStripContextMenu);
 
     hLayout->addWidget(sidePanel);
+
+    // 1px vertical separator between sidebar and chat area. A QFrame::VLine
+    // is used instead of a stylesheet border on the sidebar, because the
+    // QListView's own background paints over the parent's right-edge border.
+    auto* sideSeparator = new QFrame(mainContent_);
+    sideSeparator->setFrameShape(QFrame::VLine);
+    sideSeparator->setFrameShadow(QFrame::Plain);
+    sideSeparator->setLineWidth(1);
+    sideSeparator->setStyleSheet("color: #D0D3D8;");
+    sideSeparator->setFixedWidth(1);
+    hLayout->addWidget(sideSeparator);
 
     // ---- Main chat area ----
     auto* chatPanel = new QWidget(this);

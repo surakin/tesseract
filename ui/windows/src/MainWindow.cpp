@@ -415,6 +415,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->draw_emoji_grid_item(dis);
         else if (dis->CtlID == IDC_EMOJI_PICKER_TABS)
             self->draw_emoji_tab_item(dis);
+        else if (dis->CtlID == IDC_SIDE_SEPARATOR) {
+            HBRUSH br = CreateSolidBrush(RGB(0xD0, 0xD3, 0xD8));
+            FillRect(dis->hDC, &dis->rcItem, br);
+            DeleteObject(br);
+        }
         return TRUE;
     }
 
@@ -614,6 +619,14 @@ void MainWindow::on_create(HWND hwnd) {
         0, 0, 240, 600,
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ROOMLIST)), hInst_, nullptr);
 
+    // 1px vertical separator between the sidebar and the chat area.
+    hSideSep_ = CreateWindowExW(
+        0, L"STATIC", nullptr,
+        WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
+        240, 0, 1, 600,
+        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SIDE_SEPARATOR)),
+        hInst_, nullptr);
+
     // Room header — above message area
     WNDCLASSEXW rhwc{};
     rhwc.cbSize = sizeof(rhwc);
@@ -746,6 +759,8 @@ void MainWindow::on_destroy() {
 
 void MainWindow::on_size(int w, int h) {
     constexpr int ROOM_W   = 240;
+    constexpr int SEP_W    = 1;
+    constexpr int CHAT_X   = ROOM_W + SEP_W;
     constexpr int SEND_W   = 100;
     constexpr int INPUT_H  = 60;
     constexpr int STATUS_H = 22;
@@ -774,11 +789,11 @@ void MainWindow::on_size(int w, int h) {
     if (recovery_banner_visible_) {
         constexpr int LABEL_W = 140;
         SetWindowPos(hRecoveryBanner_, nullptr,
-                     ROOM_W, msg_area_y, w - ROOM_W, BANNER_H, SWP_NOZORDER);
+                     CHAT_X, msg_area_y, w - CHAT_X, BANNER_H, SWP_NOZORDER);
         SetWindowPos(hRecoveryLabel_, nullptr,
-                     ROOM_W + 12, msg_area_y + 8, LABEL_W, 18, SWP_NOZORDER);
+                     CHAT_X + 12, msg_area_y + 8, LABEL_W, 18, SWP_NOZORDER);
         // Edit fills the gap between label and the right-anchored buttons.
-        int edit_x = ROOM_W + 12 + LABEL_W + 8;
+        int edit_x = CHAT_X + 12 + LABEL_W + 8;
         int edit_w = std::max(40, w - edit_x - 124 - 8);
         SetWindowPos(hRecoveryKeyEdit_, nullptr,
                      edit_x, msg_area_y + 4, edit_w, 22, SWP_NOZORDER);
@@ -798,11 +813,14 @@ void MainWindow::on_size(int w, int h) {
         SetWindowPos(hUserStrip_, nullptr,
                      0, room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
     }
-    SetWindowPos(hRoomHeader_, nullptr, ROOM_W, 0, w - ROOM_W, kRoomHeaderH, SWP_NOZORDER);
-    SetWindowPos(hMsgList_,  nullptr, ROOM_W, msg_area_y, w - ROOM_W, msg_area_h, SWP_NOZORDER);
+    if (hSideSep_) {
+        SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, msg_h, SWP_NOZORDER);
+    }
+    SetWindowPos(hRoomHeader_, nullptr, CHAT_X, 0, w - CHAT_X, kRoomHeaderH, SWP_NOZORDER);
+    SetWindowPos(hMsgList_,  nullptr, CHAT_X, msg_area_y, w - CHAT_X, msg_area_h, SWP_NOZORDER);
     constexpr int EMOJI_W = 40;
-    SetWindowPos(hInput_,    nullptr, ROOM_W, msg_h,
-                 w - ROOM_W - SEND_W - EMOJI_W, INPUT_H, SWP_NOZORDER);
+    SetWindowPos(hInput_,    nullptr, CHAT_X, msg_h,
+                 w - CHAT_X - SEND_W - EMOJI_W, INPUT_H, SWP_NOZORDER);
     SetWindowPos(hEmoji_,    nullptr, w - SEND_W - EMOJI_W, msg_h,
                  EMOJI_W, INPUT_H, SWP_NOZORDER);
     SetWindowPos(hSend_,     nullptr, w - SEND_W, msg_h, SEND_W, INPUT_H, SWP_NOZORDER);
@@ -866,6 +884,7 @@ void MainWindow::show_login_view() {
     }
     // Hide all main-content widgets.
     ShowWindow(hRoomList_,        SW_HIDE);
+    ShowWindow(hSideSep_,         SW_HIDE);
     ShowWindow(hRoomHeader_,      SW_HIDE);
     ShowWindow(hUserStrip_,       SW_HIDE);
     ShowWindow(hMsgList_,         SW_HIDE);
@@ -892,6 +911,7 @@ void MainWindow::show_main_content() {
     // (hRoomHeader_, hUserStrip_, recovery banner) are shown by their own
     // code paths once their state is set.
     ShowWindow(hRoomList_, SW_SHOW);
+    ShowWindow(hSideSep_,  SW_SHOW);
     ShowWindow(hMsgList_,  SW_SHOW);
     ShowWindow(hInput_,    SW_SHOW);
     ShowWindow(hSend_,     SW_SHOW);
