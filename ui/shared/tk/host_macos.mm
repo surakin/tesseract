@@ -57,11 +57,12 @@ public:
     void on_draw(CGContextRef ctx);
     void on_layout_changed();
 
-    void on_pointer_down(NSPoint p);
-    void on_pointer_up  (NSPoint p);
-    void on_pointer_move(NSPoint p);
+    void on_pointer_down (NSPoint p);
+    void on_pointer_up   (NSPoint p);
+    void on_pointer_move (NSPoint p);
     void on_pointer_leave();
-    void on_wheel       (NSPoint p, CGFloat dx, CGFloat dy);
+    void on_wheel        (NSPoint p, CGFloat dx, CGFloat dy);
+    void on_right_click  (NSPoint p);
 
     // Drag-and-drop. `pasteboard_has_dropable` is consulted from
     // -draggingEntered: to gate the cursor; `dispatch_file_drop` runs
@@ -71,6 +72,9 @@ public:
     }
     bool has_file_drop_handler() const {
         return static_cast<bool>(on_file_drop_);
+    }
+    void set_on_right_click(std::function<void(tk::Point)> cb) {
+        on_right_click_ = std::move(cb);
     }
     bool pasteboard_has_dropable(NSPasteboard* pb) const;
     bool dispatch_file_drop      (NSPasteboard* pb);
@@ -87,6 +91,7 @@ private:
     Button*                              hovered_btn_    = nullptr;
     Widget*                              hovered_widget_ = nullptr;
     FileDropHandler                      on_file_drop_;
+    std::function<void(tk::Point)>       on_right_click_;
     bool                                 drag_active_   = false;
 };
 
@@ -177,6 +182,10 @@ private:
 
 - (void)mouseUp:(NSEvent*)e {
     if (self.hostPtr) self.hostPtr->on_pointer_up([self tkLocationFromEvent:e]);
+}
+
+- (void)rightMouseDown:(NSEvent*)e {
+    if (self.hostPtr) self.hostPtr->on_right_click([self tkLocationFromEvent:e]);
 }
 
 - (void)mouseMoved:(NSEvent*)e {
@@ -840,6 +849,12 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy) {
     }
 }
 
+void Host::on_right_click(NSPoint p) {
+    if (!on_right_click_) return;
+    on_right_click_(tk::Point{ static_cast<float>(p.x),
+                                static_cast<float>(p.y) });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Host — drag-and-drop helpers (pasteboard inspection + dispatch)
 // ─────────────────────────────────────────────────────────────────────────
@@ -989,6 +1004,10 @@ void Surface::set_on_layout(std::function<void()> cb) {
 
 void Surface::set_on_file_drop(FileDropHandler cb) {
     host_->set_on_file_drop(std::move(cb));
+}
+
+void Surface::set_on_right_click(std::function<void(tk::Point)> cb) {
+    host_->set_on_right_click(std::move(cb));
 }
 
 } // namespace tk::macos

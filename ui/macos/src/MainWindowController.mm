@@ -1,6 +1,7 @@
 #import "MainWindowController.h"
 #import "LoginView.h"
 #import "EmojiPicker.h"
+#import "StickerPicker.h"
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
@@ -19,8 +20,20 @@
 
 #include <ImageIO/ImageIO.h>
 
+// Animated WebP properties landed in macOS 11 SDK; define them ourselves
+// when building against an older SDK so we can still attempt WebP delay
+// extraction at runtime on newer OS versions.
+#ifndef kCGImagePropertyWebPDictionary
+#define kCGImagePropertyWebPDictionary CFSTR("{WebP}")
+#endif
+#ifndef kCGImagePropertyWebPDelayTime
+#define kCGImagePropertyWebPDelayTime  CFSTR("DelayTime")
+#endif
+
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -35,6 +48,13 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 namespace {
+
+struct AnimEntry {
+    std::vector<std::unique_ptr<tk::Image>> frames;
+    std::vector<int>                         delays_ms;
+    std::size_t                              current         = 0;
+    std::int64_t                             next_advance_ms = 0;
+};
 
 class EventBridge final : public tesseract::IEventHandler {
 public:
@@ -57,6 +77,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_image_packs_updated() override;
 
 private:
     MainWindowController* __weak controller_;
@@ -112,6 +133,17 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       mime:(std::string)mime
                   filename:(std::string)filename
                    caption:(std::string)caption;
+
+// Sticker picker + animated stickers.
+- (void)handleImagePacksUpdated;
+- (void)_showStickerPicker;
+- (void)_showStickerContextMenuAt:(NSPoint)screenPt;
+- (void)_onStickerSave:(id)sender;
+- (void)_startAnimTickIfNeeded;
+- (void)_animTick:(NSTimer*)timer;
+- (void)_ensureStickerImageAsync:(std::string)url;
+- (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
+                   forKey:(const std::string&)key;
 @end
 
 namespace {
@@ -210,6 +242,14 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     });
 }
 
+void EventBridge::on_image_packs_updated() {
+    MainWindowController* c = controller_;
+    if (!c) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c handleImagePacksUpdated];
+    });
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -259,6 +299,18 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     tesseract::views::RecoveryBanner*               _recoveryShared;  // borrowed
     std::unique_ptr<tk::NativeTextField>            _recoveryKeyField;
     BOOL                                             _recoveryDismissed;
+
+    // Animated sticker cache (GIF / APNG / animated WebP).
+    std::unordered_map<std::string, AnimEntry>       _tkAnimImages;
+    NSTimer*                                         _animTimer;
+
+    // Sticker picker async-fetch guard.
+    std::set<std::string>                            _stickerFetchesInFlight;
+
+    // Right-click context menu sticker state.
+    std::string                                      _ctxStickerEventId;
+    std::string                                      _ctxStickerMxcUrl;
+    std::string                                      _ctxStickerBody;
 }
 
 - (instancetype)init {
@@ -351,6 +403,9 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
         });
     _messageListView->set_image_provider(
         [self](const std::string& mxc) -> const tk::Image* {
+            auto ait = _tkAnimImages.find(mxc);
+            if (ait != _tkAnimImages.end() && !ait->second.frames.empty())
+                return ait->second.frames[ait->second.current].get();
             auto it = _tkImages.find(mxc);
             return it == _tkImages.end() ? nullptr : it->second.get();
         });
@@ -382,6 +437,24 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
         };
     }
     _msgSurface->set_root(std::move(msg_view));
+    {
+        __weak MainWindowController* ws = self;
+        _msgSurface->set_on_right_click([ws](tk::Point p) {
+            MainWindowController* s = ws;
+            if (!s || !s->_messageListView) return;
+            auto hit = s->_messageListView->sticker_hit_at(p);
+            if (!hit) return;
+            if (s->_client.user_pack_has_sticker(hit->mxc_url)) return;
+            s->_ctxStickerEventId = hit->event_id;
+            s->_ctxStickerMxcUrl  = hit->mxc_url;
+            s->_ctxStickerBody    = hit->body;
+            NSView* view = (__bridge NSView*)s->_msgSurface->view_handle();
+            NSPoint local = NSMakePoint(p.x, p.y);
+            NSPoint screen = [view.window convertPointToScreen:
+                               [view convertPoint:local toView:nil]];
+            [s _showStickerContextMenuAt:screen];
+        });
+    }
     NSView* msgSurfaceView = (__bridge NSView*)_msgSurface->view_handle();
     msgSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -458,6 +531,10 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
         _composeShared->on_emoji = [weakSelf] {
             MainWindowController* s = weakSelf;
             if (s) [s showEmojiPicker:nil];
+        };
+        _composeShared->on_sticker = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s _showStickerPicker];
         };
         _composeSurface->set_root(std::move(bar));
 
@@ -785,12 +862,9 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
 }
 
 - (void)_ensureMediaImage:(const std::string&)url cap:(int)cap {
-    if (url.empty() || _tkImages.count(url)) return;
+    if (url.empty() || _tkImages.count(url) || _tkAnimImages.count(url)) return;
     auto bytes = _client.fetch_media_bytes(url);
-    [self _decodeAndCache:bytes
-                    forKey:url
-                  destMap:_tkImages
-                       cap:cap];
+    [self _decodeMediaBytes:bytes forKey:url];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1136,6 +1210,223 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
             [self _ensureMediaImage:r.source_json cap:20];
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Animated sticker support
+// ─────────────────────────────────────────────────────────────────────────
+
+- (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
+                   forKey:(const std::string&)key {
+    if (bytes.empty() || _tkImages.count(key) || _tkAnimImages.count(key)) return;
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
+                                   bytes.data(),
+                                   static_cast<CFIndex>(bytes.size()));
+    if (!data) return;
+    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
+    CFRelease(data);
+    if (!src) return;
+
+    std::size_t count = CGImageSourceGetCount(src);
+    if (count > 1) {
+        AnimEntry entry;
+        entry.frames.reserve(count);
+        entry.delays_ms.reserve(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
+            if (!frame) continue;
+            entry.frames.push_back(tk::cg::make_image(frame));
+            CGImageRelease(frame);
+            int delay_ms = 100;
+            CFDictionaryRef props =
+                CGImageSourceCopyPropertiesAtIndex(src, i, nullptr);
+            if (props) {
+                auto try_delay = [&](CFStringRef dictKey,
+                                     CFStringRef unclampedKey,
+                                     CFStringRef clampedKey) {
+                    auto* d = (CFDictionaryRef)CFDictionaryGetValue(props, dictKey);
+                    if (!d) return;
+                    auto* v = (CFNumberRef)CFDictionaryGetValue(d, unclampedKey);
+                    if (!v) v = (CFNumberRef)CFDictionaryGetValue(d, clampedKey);
+                    if (!v) return;
+                    double secs = 0;
+                    CFNumberGetValue(v, kCFNumberDoubleType, &secs);
+                    if (secs > 0) delay_ms = static_cast<int>(secs * 1000.0);
+                };
+                try_delay(kCGImagePropertyGIFDictionary,
+                          kCGImagePropertyGIFUnclampedDelayTime,
+                          kCGImagePropertyGIFDelayTime);
+                try_delay(kCGImagePropertyPNGDictionary,
+                          kCGImagePropertyAPNGUnclampedDelayTime,
+                          kCGImagePropertyAPNGDelayTime);
+                if (@available(macOS 11.0, *)) {
+                    try_delay(kCGImagePropertyWebPDictionary,
+                              kCGImagePropertyWebPDelayTime,
+                              kCGImagePropertyWebPDelayTime);
+                }
+                CFRelease(props);
+            }
+            entry.delays_ms.push_back(std::max(delay_ms, 20));
+        }
+        if (!entry.frames.empty()) {
+            CFRelease(src);
+            entry.current = 0;
+            entry.next_advance_ms =
+                static_cast<std::int64_t>(
+                    [[NSDate date] timeIntervalSince1970] * 1000.0)
+                + entry.delays_ms[0];
+            _tkAnimImages.emplace(key, std::move(entry));
+            [self _startAnimTickIfNeeded];
+            return;
+        }
+        // No valid animated frames — fall through to static decode below.
+        CFRelease(src);
+        CFDataRef data2 = CFDataCreate(kCFAllocatorDefault,
+                                        bytes.data(),
+                                        static_cast<CFIndex>(bytes.size()));
+        if (!data2) return;
+        src = CGImageSourceCreateWithData(data2, nullptr);
+        CFRelease(data2);
+        if (!src) return;
+    }
+
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return;
+    _tkImages.emplace(key, tk::cg::make_image(img));
+    CGImageRelease(img);
+}
+
+- (void)_startAnimTickIfNeeded {
+    if (_animTimer || _tkAnimImages.empty()) return;
+    __weak MainWindowController* weakSelf = self;
+    _animTimer = [NSTimer scheduledTimerWithTimeInterval:0.016
+                                                 repeats:YES
+                                                   block:^(NSTimer* t) {
+        [weakSelf _animTick:t];
+    }];
+    [[NSRunLoop currentRunLoop] addTimer:_animTimer
+                                 forMode:NSRunLoopCommonModes];
+}
+
+- (void)_animTick:(NSTimer*)timer {
+    if (_tkAnimImages.empty()) {
+        [_animTimer invalidate];
+        _animTimer = nil;
+        return;
+    }
+    const std::int64_t now =
+        static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] * 1000.0);
+    bool any_changed = false;
+    for (auto& [_, entry] : _tkAnimImages) {
+        if (entry.frames.size() <= 1) continue;
+        std::size_t steps = 0;
+        while (now >= entry.next_advance_ms && steps < entry.frames.size()) {
+            entry.current = (entry.current + 1) % entry.frames.size();
+            entry.next_advance_ms += entry.delays_ms[entry.current];
+            ++steps;
+        }
+        if (steps > 0) any_changed = true;
+    }
+    if (any_changed) {
+        if (_msgSurface) _msgSurface->relayout();
+        StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+        if (panel.isVisible) [panel invalidateImageCache];
+    }
+}
+
+- (void)_ensureStickerImageAsync:(std::string)url {
+    if (url.empty() || _tkImages.count(url) || _tkAnimImages.count(url)) return;
+    if (!_stickerFetchesInFlight.insert(url).second) return;
+
+    tesseract::Client* clientPtr = &_client;
+    __weak MainWindowController* weakSelf = self;
+    auto bytes_holder =
+        std::make_shared<std::vector<uint8_t>>();
+
+    std::thread([clientPtr, weakSelf, url, bytes_holder]() {
+        *bytes_holder = clientPtr->fetch_source_bytes(url);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_stickerFetchesInFlight.erase(url);
+            if (bytes_holder->empty()
+                || s->_tkImages.count(url)
+                || s->_tkAnimImages.count(url)) return;
+            [s _decodeMediaBytes:*bytes_holder forKey:url];
+            StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+            if (panel.isVisible) [panel invalidateImageCache];
+        });
+    }).detach();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Sticker picker
+// ─────────────────────────────────────────────────────────────────────────
+
+- (void)handleImagePacksUpdated {
+    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    panel.client = &_client;
+    [panel refreshPacks];
+}
+
+- (void)_showStickerPicker {
+    if (!_composeSurface || _currentRoomId.empty()) return;
+    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    panel.client = &_client;
+
+    __weak MainWindowController* weakSelf = self;
+
+    [panel setImageProvider:
+        [weakSelf](const std::string& cache_key,
+                   const std::string& /*source_token*/) -> const tk::Image* {
+            MainWindowController* s = weakSelf;
+            if (!s) return nullptr;
+            auto ait = s->_tkAnimImages.find(cache_key);
+            if (ait != s->_tkAnimImages.end() && !ait->second.frames.empty())
+                return ait->second.frames[ait->second.current].get();
+            auto it = s->_tkImages.find(cache_key);
+            if (it != s->_tkImages.end()) return it->second.get();
+            [s _ensureStickerImageAsync:cache_key];
+            return nullptr;
+        }];
+
+    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
+        MainWindowController* s = weakSelf;
+        if (!s || s->_currentRoomId.empty()) return;
+        std::string u = url.UTF8String      ?: "";
+        std::string b = body.UTF8String     ?: "";
+        std::string j = infoJson.UTF8String ?: "{}";
+        s->_client.send_sticker(s->_currentRoomId, b, u, j);
+        [panel orderOut:nil];
+    };
+
+    NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();
+    [panel popupAboveView:anchor];
+}
+
+- (void)_showStickerContextMenuAt:(NSPoint)screenPt {
+    if (_ctxStickerMxcUrl.empty()) return;
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Sticker"];
+    NSMenuItem* item = [[NSMenuItem alloc]
+        initWithTitle:@"Add to Saved Stickers"
+               action:@selector(_onStickerSave:)
+        keyEquivalent:@""];
+    item.target = self;
+    [menu addItem:item];
+    [menu popUpMenuPositioningItem:nil atLocation:screenPt inView:nil];
+}
+
+- (void)_onStickerSave:(id)sender {
+    if (_ctxStickerMxcUrl.empty()) return;
+    _client.save_sticker_to_user_pack(
+        _ctxStickerBody,
+        _ctxStickerBody,
+        _ctxStickerMxcUrl,
+        "{}");
+    _ctxStickerEventId.clear();
+    _ctxStickerMxcUrl.clear();
+    _ctxStickerBody.clear();
 }
 
 @end
