@@ -35,10 +35,11 @@ if(TESSERACT_UI STREQUAL "qt6")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_qt.cpp)
 elseif(TESSERACT_UI STREQUAL "gtk")
     target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_gtk.cpp)
+elseif(TESSERACT_UI STREQUAL "win32")
+    target_sources(tesseract_tests PRIVATE cpp/tk_test_surface_win32.cpp)
 endif()
-# Win32 (D2D WIC bitmap target) + macOS (CGBitmapContext) test surfaces
-# are TODO; the test cases compile but TestSurface::create is undefined
-# on those platforms until added.
+# macOS (CGBitmapContext) test surface is TODO; the test cases compile
+# but TestSurface::create is undefined on that platform until added.
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
 

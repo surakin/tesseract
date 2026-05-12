@@ -84,8 +84,9 @@ if(TESSERACT_UI STREQUAL "win32")
     target_compile_definitions(tesseract_tk PRIVATE
         UNICODE _UNICODE
         WIN32_LEAN_AND_MEAN NOMINMAX
-        # ID2D1Factory1 / IDWriteFactory2 / WIC require Windows 8.1+.
-        _WIN32_WINNT=0x0603
+        # GetDpiForWindow requires Windows 10 (1607); D2D/DWrite/WIC are
+        # available from 8.1, so 0x0A00 is the floor for the toolkit.
+        _WIN32_WINNT=0x0A00
     )
     target_link_libraries(tesseract_tk PUBLIC
         d2d1

@@ -188,11 +188,11 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 ### Known gaps from the shared-toolkit migration
 
 - **macOS build is unverified end-to-end** — `MainWindowController.mm` was rewritten on a Linux dev box and `ComposeBar.{h,mm}` deleted. The AppKit shell + `tk::macos::NSTextViewNative` need a real macOS toolchain pass.
-- **Win32 binary can't currently link on MinGW** — pre-existing gaps in MinGW's DirectWrite headers (`DWRITE_FONT_WEIGHT_SEMIBOLD`, `GetDpiForWindow`) block `canvas_d2d.cpp`. The MSVC build is the supported path; MinGW needs header shims if we want to cross-compile from Linux.
+- **Win32 MinGW build is unverified** — `canvas_d2d.cpp` compiles under MSVC; MinGW depends on whether its DirectWrite/user32 headers expose `DWRITE_FONT_WEIGHT_SEMI_BOLD` and `GetDpiForWindow` (the latter needs `_WIN32_WINNT=0x0A00`, which is now the floor). Cross-compiling from Linux still needs a verification pass.
 - **`NativeTextArea` placeholder is a no-op on GTK4 + macOS** — `GtkTextView` and `NSTextView` ship without built-in placeholders. The shared `ComposeBar` paints the input outline but the empty-state hint is missing. Fix: paint a `current_text().empty()`-gated label in the shared widget instead of pushing it through `NativeTextArea`.
 - **`set_password` is a no-op on macOS** — toggling password mode on `NSTextField` requires swapping for `NSSecureTextField`. The recovery-key field on macOS still shows the secret in plaintext.
 - **Win32 `NativeTextArea::natural_height()` undercounts wrapped lines** — heuristic is `EM_GETLINECOUNT × tmHeight`, which ignores the EDIT control's soft-wrap. Auto-grow lags by one keystroke when wrapping in.
-- **`TestSurface` only covers QPainter + Cairo** — Catch2 backend tests don't exercise D2D or CoreGraphics. `tests/CMakeLists.txt` flags both as TODO.
+- **`TestSurface` doesn't cover CoreGraphics** — Catch2 backend tests now exercise QPainter, Cairo, and D2D (via `CreateWicBitmapRenderTarget`); the macOS CGBitmapContext surface is still TODO and `tests/CMakeLists.txt` flags it.
 
 ### Decisions still open
 

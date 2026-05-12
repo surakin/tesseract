@@ -21,6 +21,11 @@
 
 #include <memory>
 
+struct ID2D1Factory1;
+struct ID2D1RenderTarget;
+struct IDWriteFactory2;
+struct IWICImagingFactory;
+
 namespace tk::d2d {
 
 // One per application. Owns the D2D, DWrite, and WIC factory singletons.
@@ -71,5 +76,20 @@ private:
 // CanvasFactory backed by a Backend. Use one for the application lifetime
 // to build avatars + text layouts that outlive any single paint.
 std::unique_ptr<CanvasFactory> make_factory(Backend&);
+
+// Wrap a borrowed ID2D1RenderTarget as a tk::Canvas. Caller owns the
+// render target and is responsible for BeginDraw/EndDraw. The Canvas
+// holds the raw pointer, so the render target must outlive it.
+std::unique_ptr<Canvas> make_canvas(Backend&, ID2D1RenderTarget*);
+
+// Direct access to the underlying D2D / DWrite / WIC factories owned by
+// the Backend. Intended for callers that need to construct their own
+// render target (e.g. tests using CreateWicBitmapRenderTarget).
+struct Factories {
+    ID2D1Factory1*      d2d;
+    IDWriteFactory2*    dwrite;
+    IWICImagingFactory* wic;
+};
+Factories factories(Backend&);
 
 } // namespace tk::d2d

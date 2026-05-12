@@ -95,13 +95,13 @@ static FontDesc desc_for(FontRole r) {
     switch (r) {
         case FontRole::Small:           return { L"Segoe UI Variable Text",     9.0f, DWRITE_FONT_WEIGHT_REGULAR  };
         case FontRole::Body:            return { L"Segoe UI Variable Text",    13.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::SenderName:      return { L"Segoe UI Variable Text",    12.0f, DWRITE_FONT_WEIGHT_SEMIBOLD };
+        case FontRole::SenderName:      return { L"Segoe UI Variable Text",    12.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
         case FontRole::Timestamp:       return { L"Segoe UI Variable Text",    10.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::SidebarName:     return { L"Segoe UI Variable Text",    13.0f, DWRITE_FONT_WEIGHT_SEMIBOLD };
+        case FontRole::SidebarName:     return { L"Segoe UI Variable Text",    13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
         case FontRole::SidebarPreview:  return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_REGULAR  };
-        case FontRole::UnreadBadge:     return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMIBOLD };
-        case FontRole::Title:           return { L"Segoe UI Variable Display", 15.0f, DWRITE_FONT_WEIGHT_SEMIBOLD };
-        case FontRole::UiSemibold:      return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMIBOLD };
+        case FontRole::UnreadBadge:     return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::Title:           return { L"Segoe UI Variable Display", 15.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::UiSemibold:      return { L"Segoe UI Variable Text",    11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD };
     }
     return { L"Segoe UI", 13.0f, DWRITE_FONT_WEIGHT_REGULAR };
 }
@@ -249,10 +249,10 @@ private:
 
 class D2DCanvas : public Canvas {
 public:
-    D2DCanvas(Backend::Impl& backend, ID2D1HwndRenderTarget* rt)
+    D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt)
         : backend_(backend), rt_(rt) {}
 
-    void rebind(ID2D1HwndRenderTarget* rt) {
+    void rebind(ID2D1RenderTarget* rt) {
         rt_ = rt;
         brush_cache_.clear();
     }
@@ -351,7 +351,7 @@ public:
         ComPtr<IDWriteTextFormat> tf;
         HRESULT hr = backend_.dwrite->CreateTextFormat(
             L"Segoe UI Variable Text", nullptr,
-            DWRITE_FONT_WEIGHT_SEMIBOLD, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL, font_dip, L"",
             tf.GetAddressOf());
         if (FAILED(hr)) return;
@@ -435,7 +435,7 @@ private:
     }
 
     Backend::Impl&         backend_;
-    ID2D1HwndRenderTarget* rt_;
+    ID2D1RenderTarget*     rt_;
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
                            brush_cache_;
     std::vector<ClipKind>  clip_stack_;
@@ -618,6 +618,15 @@ private:
 
 std::unique_ptr<CanvasFactory> make_factory(Backend& b) {
     return std::make_unique<D2DFactory>(b);
+}
+
+std::unique_ptr<Canvas> make_canvas(Backend& b, ID2D1RenderTarget* rt) {
+    return std::make_unique<D2DCanvas>(b.impl(), rt);
+}
+
+Factories factories(Backend& b) {
+    Backend::Impl& impl = b.impl();
+    return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get() };
 }
 
 } // namespace tk::d2d

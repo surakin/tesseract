@@ -66,8 +66,8 @@ target_link_libraries(tesseract_win32 PRIVATE
 target_compile_definitions(tesseract_win32 PRIVATE
     UNICODE _UNICODE
     WIN32_LEAN_AND_MEAN NOMINMAX
-    # ID2D1Factory1 and IDWriteFactory2 require the Windows 8.1 platform.
-    _WIN32_WINNT=0x0603)
+    # GetDpiForWindow + per-monitor v2 awareness require Windows 10 (1607).
+    _WIN32_WINNT=0x0A00)
 
 # MinGW: main.cpp uses wWinMain (wide entry). MinGW's default crtexewin
 # object resolves WinMain; -municode swaps to the unicode entry resolver.
