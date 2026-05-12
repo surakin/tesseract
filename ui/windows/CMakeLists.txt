@@ -79,3 +79,27 @@ endif()
 
 set_target_properties(tesseract_win32 PROPERTIES
     OUTPUT_NAME "Tesseract")
+
+# ---------------------------------------------------------------------------
+# Installer (CPack NSIS) — see cmake/Installers.cmake for generator config.
+# Nothing else needs bundling: the Rust SDK is a staticlib and all Win32
+# system libraries are part of the OS, so the install set is just the .exe.
+# ---------------------------------------------------------------------------
+install(TARGETS tesseract_win32
+        RUNTIME DESTINATION bin
+        COMPONENT Application)
+
+set(TESSERACT_WIN_SIGN_CERT "" CACHE STRING
+    "Path to .pfx for signtool (empty = no signing)")
+set(TESSERACT_WIN_SIGN_PASS "" CACHE STRING
+    "Password for the .pfx referenced by TESSERACT_WIN_SIGN_CERT")
+
+if(TESSERACT_WIN_SIGN_CERT)
+    install(CODE "
+        execute_process(COMMAND signtool sign
+            /f \"${TESSERACT_WIN_SIGN_CERT}\"
+            /p \"${TESSERACT_WIN_SIGN_PASS}\"
+            /tr http://timestamp.digicert.com /td sha256 /fd sha256
+            \"\${CMAKE_INSTALL_PREFIX}/bin/Tesseract.exe\")
+    " COMPONENT Application)
+endif()

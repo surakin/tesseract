@@ -60,3 +60,25 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework QuartzCore"
     "-framework CoreGraphics"
 )
+
+# ---------------------------------------------------------------------------
+# Installer (CPack DragNDrop) — see cmake/Installers.cmake for generator
+# config. BUNDLE DESTINATION "." drops Tesseract.app at the DMG root next
+# to the Applications-folder symlink CPack adds automatically.
+# ---------------------------------------------------------------------------
+install(TARGETS tesseract_macos
+        BUNDLE  DESTINATION .
+        COMPONENT Application)
+
+set(TESSERACT_MAC_CODESIGN_IDENTITY "" CACHE STRING
+    "codesign identity (e.g. 'Developer ID Application: Foo (TEAMID)') — empty = no signing")
+set(TESSERACT_MAC_NOTARIZE_PROFILE "" CACHE STRING
+    "notarytool keychain profile name — empty = no notarization")
+
+if(TESSERACT_MAC_CODESIGN_IDENTITY)
+    install(CODE "
+        execute_process(COMMAND codesign --force --options runtime --timestamp
+            --sign \"${TESSERACT_MAC_CODESIGN_IDENTITY}\"
+            \"\${CMAKE_INSTALL_PREFIX}/Tesseract.app\")
+    " COMPONENT Application)
+endif()

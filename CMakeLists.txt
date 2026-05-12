@@ -254,3 +254,12 @@ elseif(TESSERACT_UI STREQUAL "qt6")
 else()
     message(FATAL_ERROR "Unknown TESSERACT_UI value: ${TESSERACT_UI}")
 endif()
+
+# ---------------------------------------------------------------------------
+# Installer packaging (CPack). Windows → NSIS .exe, macOS → DragNDrop .dmg.
+# Linux installer packaging is intentionally out of scope (two backends,
+# distro-native packaging is a separate effort).
+# ---------------------------------------------------------------------------
+if(WIN32 OR APPLE)
+    include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
+endif()
