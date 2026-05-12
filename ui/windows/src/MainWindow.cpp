@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "TextRenderer.h"
 #include "Theme.h"
 #include "resource.h"
 
@@ -111,30 +112,33 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         else
             self->draw_initials_circle(g, info.name, ax, ay, MainWindow::kRoomAvatarSize);
 
-        // Name
-        Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font nameFont(&ff, 13.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_primary));
-        Gdiplus::StringFormat sf;
-        sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-        sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
-
+        // Name + topic — DirectWrite/D2D so emoji in room names/topics render
+        // in color via Segoe UI Emoji's COLR layers.
         int tx = ax + MainWindow::kRoomAvatarSize + 12;
         int text_w = rc.right - tx - 16;
 
         auto wname = utf8_to_wstr(info.name);
-        g.DrawString(wname.c_str(), -1, &nameFont,
-                     Gdiplus::RectF((float)tx, (float)(y0 + 12), (float)text_w, 22.0f),
-                     &sf, &nameBrush);
+        RECT name_rc{ tx, y0 + 12, tx + text_w, y0 + 12 + 22 };
+        win32::text::draw(hdc, name_rc, wname.c_str(), -1,
+            win32::text::Style{
+                .family = L"Segoe UI",
+                .size   = 13.5f,
+                .weight = win32::text::Weight::Bold,
+                .color  = pal.text_primary,
+                .trim   = win32::text::Trim::EllipsisChar,
+            });
 
         // Topic
         if (!info.topic.empty()) {
-            Gdiplus::Font topicFont(&ff, 10.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-            Gdiplus::SolidBrush topicBrush(theme::gpc(pal.text_secondary));
             auto wtopic = utf8_to_wstr(info.topic);
-            g.DrawString(wtopic.c_str(), -1, &topicFont,
-                         Gdiplus::RectF((float)tx, (float)(y0 + 34), (float)text_w, 18.0f),
-                         &sf, &topicBrush);
+            RECT topic_rc{ tx, y0 + 34, tx + text_w, y0 + 34 + 18 };
+            win32::text::draw(hdc, topic_rc, wtopic.c_str(), -1,
+                win32::text::Style{
+                    .family = L"Segoe UI",
+                    .size   = 10.0f,
+                    .color  = pal.text_secondary,
+                    .trim   = win32::text::Trim::EllipsisChar,
+                });
         }
 
         EndPaint(hwnd, &ps);
@@ -194,20 +198,19 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         else
             self->draw_initials_circle(g, shown, ax, ay, AVATAR);
 
-        Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font nameFont(&ff, 10.5f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_primary));
-        Gdiplus::StringFormat sf;
-        sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-        sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
-        sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-
         int tx = ax + AVATAR + 10;
         int text_w = rc.right - tx - 8;
         auto wname = utf8_to_wstr(shown);
-        g.DrawString(wname.c_str(), -1, &nameFont,
-                     Gdiplus::RectF((float)tx, (float)y0, (float)text_w, (float)h),
-                     &sf, &nameBrush);
+        RECT name_rc{ tx, y0, tx + text_w, y0 + h };
+        win32::text::draw(hdc, name_rc, wname.c_str(), -1,
+            win32::text::Style{
+                .family = L"Segoe UI",
+                .size   = 10.5f,
+                .weight = win32::text::Weight::Bold,
+                .color  = pal.text_primary,
+                .valign = win32::text::VAlign::Center,
+                .trim   = win32::text::Trim::EllipsisChar,
+            });
 
         EndPaint(hwnd, &ps);
         return 0;
@@ -429,14 +432,23 @@ void MainWindow::draw_initials_circle(Gdiplus::Graphics& g, const std::string& n
 
     std::wstring wn = utf8_to_wstr(name);
     wchar_t init[2] = { wn.empty() ? L'?' : static_cast<wchar_t>(towupper(wn[0])), L'\0' };
-    Gdiplus::FontFamily ff(L"Segoe UI");
-    Gdiplus::Font font(&ff, (float)size * 0.38f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush white(Gdiplus::Color(0xFFFFFFFF));
-    Gdiplus::StringFormat sf;
-    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
-    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-    g.DrawString(init, 1, &font, Gdiplus::RectF((float)x, (float)y, (float)size, (float)size),
-                 &sf, &white);
+
+    // GDI+ Graphics holds the DC; flush before handing the DC to D2D so
+    // any pending circle-fill operations are present when text draws on top.
+    g.Flush(Gdiplus::FlushIntentionSync);
+    HDC hdc = g.GetHDC();
+    RECT rc{ x, y, x + size, y + size };
+    win32::text::draw(hdc, rc, init, 1,
+        win32::text::Style{
+            .family = L"Segoe UI",
+            .size   = (float)size * 0.38f,
+            .unit   = win32::text::SizeUnit::Pixel,
+            .weight = win32::text::Weight::Bold,
+            .color  = RGB(0xFF, 0xFF, 0xFF),
+            .halign = win32::text::HAlign::Center,
+            .valign = win32::text::VAlign::Center,
+        });
+    g.ReleaseHDC(hdc);
 }
 
 Gdiplus::Bitmap* MainWindow::get_room_avatar(const std::string& room_id) {
@@ -595,6 +607,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         }
         return 0;
     }
+
+    case WM_DPICHANGED:
+        win32::text::on_dpi_changed(LOWORD(wParam));
+        return 0;
 
     case WM_TESSERACT_MESSAGE: {
         auto* p = reinterpret_cast<tesseract::Event*>(lParam);
@@ -780,6 +796,7 @@ MainWindow::~MainWindow() {
     for (auto& [k, v] : avatar_cache_)      delete v;
     for (auto& [k, v] : user_avatar_cache_) delete v;
     theme::shutdown();
+    win32::text::shutdown();
     if (gdiplus_token_)
         Gdiplus::GdiplusShutdown(gdiplus_token_);
 }
@@ -799,6 +816,11 @@ bool MainWindow::create(int nCmdShow) {
 void MainWindow::on_create(HWND hwnd) {
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
+    win32::text::init();
+    HDC dpi_dc = GetDC(hwnd);
+    UINT dpi = dpi_dc ? GetDeviceCaps(dpi_dc, LOGPIXELSY) : 96;
+    if (dpi_dc) ReleaseDC(hwnd, dpi_dc);
+    win32::text::on_dpi_changed(dpi);
 
     // Initialise theme + DWM attributes for the caption + Mica backdrop
     // before any child controls are created so the first paint already
@@ -1330,26 +1352,22 @@ int MainWindow::compute_message_height(size_t idx) {
                               avail_w - kMsgAvatarSize - 3 * tesseract::visual::kMsgAvatarGap);
     if (body_max_w < 60) body_max_w = 60;
 
-    Gdiplus::RectF bound;
-    HDC hdc = GetDC(hMsgList_);
-    {
-        Gdiplus::Graphics g(hdc);
-        Gdiplus::FontFamily ff(L"Segoe UI");
-        bool redacted = (msg.type == tesseract::EventType::Redacted);
-        Gdiplus::Font bodyFont(&ff, 10.0f,
-            redacted ? Gdiplus::FontStyleItalic : Gdiplus::FontStyleRegular,
-            Gdiplus::UnitPoint);
-        std::wstring wbody = redacted
-            ? std::wstring(L"Message deleted")
-            : utf8_to_wstr(msg.body);
-        Gdiplus::StringFormat sf;
-        Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
-        g.MeasureString(wbody.c_str(), -1, &bodyFont, layout, &sf, &bound);
-    }
-    ReleaseDC(hMsgList_, hdc);
+    bool redacted = (msg.type == tesseract::EventType::Redacted);
+    std::wstring wbody = redacted
+        ? std::wstring(L"Message deleted")
+        : utf8_to_wstr(msg.body);
+    auto body_m = win32::text::measure(wbody.c_str(), -1,
+        win32::text::Style{
+            .family = L"Segoe UI",
+            .size   = 10.0f,
+            .slant  = redacted ? win32::text::Slant::Italic
+                                : win32::text::Slant::Roman,
+            .wrap   = win32::text::Wrap::Word,
+        },
+        body_max_w);
 
     int name_h      = tesseract::visual::kMsgSenderNameHeight + 2;   // +2 gap
-    int body_h      = (int)bound.Height;
+    int body_h      = body_m.height;
     int reactions_h = msg.reactions.empty() ? 0 : (kReactionH + kReactionPad);
     int ts_h        = tesseract::visual::kMsgTimestampHeight + 2;
     int content_h   = name_h + body_h + reactions_h + ts_h;
@@ -1399,39 +1417,45 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
     // Measure unread badge to know text area width
     float pill_w = 0.0f;
     std::wstring wcount;
+    win32::text::Style badge_style{
+        .family = L"Segoe UI",
+        .size   = 8.0f,
+        .weight = win32::text::Weight::Bold,
+        .color  = pal.unread_badge_text,
+        .halign = win32::text::HAlign::Center,
+        .valign = win32::text::VAlign::Center,
+    };
     if (room.unread_count > 0) {
         wcount = std::to_wstring(room.unread_count);
-        Gdiplus::FontFamily ff(L"Segoe UI");
-        Gdiplus::Font badgeFont(&ff, 8.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::StringFormat sf;
-        Gdiplus::RectF bounds;
-        g.MeasureString(wcount.c_str(), -1, &badgeFont, Gdiplus::PointF{}, &sf, &bounds);
-        pill_w = std::max(20.0f, bounds.Width + 12.0f);
+        auto bm = win32::text::measure(wcount.c_str(), -1, badge_style);
+        pill_w = std::max(20.0f, (float)bm.width + 12.0f);
     }
 
     // Room name + preview text
     int tx     = ax + kRoomAvatarSize + 10;
     int text_w = rc.right - tx - (int)pill_w - 10;
 
-    Gdiplus::FontFamily ff(L"Segoe UI");
-    Gdiplus::Font nameFont   (&ff, 10.0f, Gdiplus::FontStyleBold,    Gdiplus::UnitPoint);
-    Gdiplus::Font previewFont(&ff,  9.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-    Gdiplus::SolidBrush nameBrush   (theme::gpc(pal.text_primary));
-    Gdiplus::SolidBrush previewBrush(theme::gpc(pal.text_muted));
-
-    Gdiplus::StringFormat sf;
-    sf.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-    sf.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
-
     auto wname    = utf8_to_wstr(room.name);
     auto wpreview = utf8_to_wstr(room.last_message_body);
 
-    g.DrawString(wname.c_str(), -1, &nameFont,
-                 Gdiplus::RectF((float)tx, (float)(y0 + 10), (float)text_w, 20.0f),
-                 &sf, &nameBrush);
-    g.DrawString(wpreview.c_str(), -1, &previewFont,
-                 Gdiplus::RectF((float)tx, (float)(y0 + 33), (float)text_w, 18.0f),
-                 &sf, &previewBrush);
+    RECT name_rc{ tx, y0 + 10, tx + text_w, y0 + 10 + 20 };
+    win32::text::draw(dis->hDC, name_rc, wname.c_str(), -1,
+        win32::text::Style{
+            .family = L"Segoe UI",
+            .size   = 10.0f,
+            .weight = win32::text::Weight::Bold,
+            .color  = pal.text_primary,
+            .trim   = win32::text::Trim::EllipsisChar,
+        });
+
+    RECT preview_rc{ tx, y0 + 33, tx + text_w, y0 + 33 + 18 };
+    win32::text::draw(dis->hDC, preview_rc, wpreview.c_str(), -1,
+        win32::text::Style{
+            .family = L"Segoe UI",
+            .size   = 9.0f,
+            .color  = pal.text_muted,
+            .trim   = win32::text::Trim::EllipsisChar,
+        });
 
     // Unread badge pill
     if (pill_w > 0.0f) {
@@ -1442,13 +1466,11 @@ void MainWindow::draw_room_item(DRAWITEMSTRUCT* dis) {
         Gdiplus::SolidBrush badgeBrush(theme::gpc(pal.unread_badge_bg));
         fill_rounded_rect(g, badgeBrush, pill_x, pill_y, pill_w, pill_h, 9.0f);
 
-        Gdiplus::Font badgeFont(&ff, 8.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush wBrush(theme::gpc(pal.unread_badge_text));
-        Gdiplus::StringFormat center;
-        center.SetAlignment(Gdiplus::StringAlignmentCenter);
-        center.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-        g.DrawString(wcount.c_str(), -1, &badgeFont,
-                     Gdiplus::RectF(pill_x, pill_y, pill_w, pill_h), &center, &wBrush);
+        RECT badge_rc{
+            (LONG)pill_x, (LONG)pill_y,
+            (LONG)(pill_x + pill_w), (LONG)(pill_y + pill_h),
+        };
+        win32::text::draw(dis->hDC, badge_rc, wcount.c_str(), -1, badge_style);
     }
 }
 
@@ -1476,11 +1498,7 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     Gdiplus::SolidBrush bgBrush(theme::gpc(pal.window_bg));
     g.FillRectangle(&bgBrush, x0, y0, w, h);
 
-    Gdiplus::FontFamily ff(L"Segoe UI");
     bool redacted = (msg.type == tesseract::EventType::Redacted);
-    Gdiplus::Font bodyFont(&ff, 10.0f,
-        redacted ? Gdiplus::FontStyleItalic : Gdiplus::FontStyleRegular,
-        Gdiplus::UnitPoint);
 
     // Flat-text layout — same anatomy on every platform (see UI-PARITY.md):
     // 32 px avatar on the left for everyone, sender name above body, body
@@ -1494,11 +1512,16 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     std::wstring wbody = redacted
         ? std::wstring(L"Message deleted")
         : utf8_to_wstr(msg.body);
-    Gdiplus::StringFormat sfWrap;
-    Gdiplus::RectF layout(0, 0, (float)body_max_w, 4096.0f);
-    Gdiplus::RectF bound;
-    g.MeasureString(wbody.c_str(), -1, &bodyFont, layout, &sfWrap, &bound);
-    int body_h = (int)bound.Height;
+    win32::text::Style body_style{
+        .family = L"Segoe UI",
+        .size   = 10.0f,
+        .slant  = redacted ? win32::text::Slant::Italic
+                            : win32::text::Slant::Roman,
+        .color  = redacted ? pal.text_muted : pal.text_primary,
+        .wrap   = win32::text::Wrap::Word,
+    };
+    auto body_m = win32::text::measure(wbody.c_str(), -1, body_style, body_max_w);
+    int body_h = body_m.height;
 
     int y_cur = y0 + kMsgRowPad;
 
@@ -1514,17 +1537,20 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
 
     // Sender name (always — both own and other).
     {
-        Gdiplus::Font nameFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontSenderName,
-                                Gdiplus::FontStyleBold, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush nameBrush(theme::gpc(pal.text_secondary));
-        Gdiplus::StringFormat sfNoWrap;
-        sfNoWrap.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
-        sfNoWrap.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
-        g.DrawString(utf8_to_wstr(disp).c_str(), -1, &nameFont,
-                     Gdiplus::RectF((float)bx, (float)y_cur,
-                                    (float)body_max_w,
-                                    (float)tesseract::visual::kMsgSenderNameHeight),
-                     &sfNoWrap, &nameBrush);
+        auto wdisp = utf8_to_wstr(disp);
+        RECT name_rc{
+            bx, y_cur,
+            bx + body_max_w,
+            y_cur + tesseract::visual::kMsgSenderNameHeight,
+        };
+        win32::text::draw(dis->hDC, name_rc, wdisp.c_str(), -1,
+            win32::text::Style{
+                .family = L"Segoe UI",
+                .size   = (float)tesseract::visual::kFontSenderName,
+                .weight = win32::text::Weight::Bold,
+                .color  = pal.text_secondary,
+                .trim   = win32::text::Trim::EllipsisChar,
+            });
         y_cur += tesseract::visual::kMsgSenderNameHeight + 2;
     }
 
@@ -1532,13 +1558,12 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     int body_left = bx;
     int body_top  = y_cur;
     {
-        Gdiplus::SolidBrush textBrush(redacted
-            ? theme::gpc(pal.text_muted)
-            : theme::gpc(pal.text_primary));
-        g.DrawString(wbody.c_str(), -1, &bodyFont,
-                     Gdiplus::RectF((float)body_left, (float)body_top,
-                                    (float)body_max_w, (float)body_h),
-                     &sfWrap, &textBrush);
+        RECT body_rc{
+            body_left, body_top,
+            body_left + body_max_w,
+            body_top + body_h,
+        };
+        win32::text::draw(dis->hDC, body_rc, wbody.c_str(), -1, body_style);
     }
     y_cur += body_h;
 
@@ -1550,20 +1575,23 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
     // body's leading edge. Record each chip's screen-space RECT relative
     // to the row origin so WM_LBUTTONDOWN can hit-test against it.
     if (!msg.reactions.empty()) {
-        Gdiplus::Font chipFont(&ff, 8.5f, Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-        Gdiplus::StringFormat chipFmt;
-        chipFmt.SetAlignment(Gdiplus::StringAlignmentCenter);
-        chipFmt.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-
         float chip_x = (float)bubble_x;
         float chip_y = (float)(bubble_bottom + kReactionPad);
         for (const auto& r : msg.reactions) {
             std::wstring label = utf8_to_wstr(r.key) + L" " +
                                  std::to_wstring(r.count);
-            Gdiplus::RectF tb;
-            g.MeasureString(label.c_str(), -1, &chipFont,
-                            Gdiplus::PointF{}, &chipFmt, &tb);
-            float pill_w = tb.Width + 14.0f;
+            COLORREF textc = r.reacted_by_me
+                ? pal.reaction_chip_text_me
+                : pal.reaction_chip_text;
+            win32::text::Style chip_style{
+                .family = L"Segoe UI",
+                .size   = 8.5f,
+                .color  = textc,
+                .halign = win32::text::HAlign::Center,
+                .valign = win32::text::VAlign::Center,
+            };
+            auto chip_m = win32::text::measure(label.c_str(), -1, chip_style);
+            float pill_w = (float)chip_m.width + 14.0f;
             float pill_h = (float)kReactionH;
 
             Gdiplus::Color fill = r.reacted_by_me
@@ -1572,9 +1600,6 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
             Gdiplus::Color border = r.reacted_by_me
                 ? theme::gpc(pal.reaction_chip_border_me)
                 : theme::gpc(pal.reaction_chip_border);
-            Gdiplus::Color textc = r.reacted_by_me
-                ? theme::gpc(pal.reaction_chip_text_me)
-                : theme::gpc(pal.reaction_chip_text);
 
             Gdiplus::SolidBrush fillBrush(fill);
             fill_rounded_rect(g, fillBrush, chip_x, chip_y,
@@ -1586,10 +1611,11 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
             path.CloseFigure();
             g.DrawPath(&borderPen, &path);
 
-            Gdiplus::SolidBrush textBr(textc);
-            g.DrawString(label.c_str(), -1, &chipFont,
-                         Gdiplus::RectF(chip_x, chip_y, pill_w, pill_h),
-                         &chipFmt, &textBr);
+            RECT chip_text_rc{
+                (LONG)chip_x, (LONG)chip_y,
+                (LONG)(chip_x + pill_w), (LONG)(chip_y + pill_h),
+            };
+            win32::text::draw(dis->hDC, chip_text_rc, label.c_str(), -1, chip_style);
 
             // Store row-relative rect for hit-testing.
             RECT chip_rc{
@@ -1621,19 +1647,19 @@ void MainWindow::draw_message_item(DRAWITEMSTRUCT* dis) {
         wchar_t ts_buf[8] = {0};
         wcsftime(ts_buf, 8, L"%H:%M", &tm_local);
 
-        Gdiplus::Font tsFont(&ff, (Gdiplus::REAL)tesseract::visual::kFontTimestamp,
-                              Gdiplus::FontStyleRegular, Gdiplus::UnitPoint);
-        Gdiplus::SolidBrush tsBrush(theme::gpc(pal.text_muted));
-        Gdiplus::StringFormat tsFmt;
-        tsFmt.SetAlignment(Gdiplus::StringAlignmentFar);
-        tsFmt.SetLineAlignment(Gdiplus::StringAlignmentNear);
-
         int ts_right = body_left + body_max_w;
-        g.DrawString(ts_buf, -1, &tsFont,
-                     Gdiplus::RectF((float)body_left, (float)footer_y,
-                                    (float)(ts_right - body_left),
-                                    (float)tesseract::visual::kMsgTimestampHeight),
-                     &tsFmt, &tsBrush);
+        RECT ts_rc{
+            body_left, footer_y,
+            ts_right,
+            footer_y + tesseract::visual::kMsgTimestampHeight,
+        };
+        win32::text::draw(dis->hDC, ts_rc, ts_buf, -1,
+            win32::text::Style{
+                .family = L"Segoe UI",
+                .size   = (float)tesseract::visual::kFontTimestamp,
+                .color  = pal.text_muted,
+                .halign = win32::text::HAlign::Trailing,
+            });
     }
 }
 
@@ -2115,21 +2141,25 @@ void MainWindow::draw_emoji_grid_item(DRAWITEMSTRUCT* dis) {
     int row = static_cast<int>(dis->itemID);
     const auto& pal = theme::palette();
 
-    Gdiplus::Graphics g(dis->hDC);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
-    Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
-    g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
-                    (INT)(dis->rcItem.right - dis->rcItem.left),
-                    (INT)(dis->rcItem.bottom - dis->rcItem.top));
+    {
+        Gdiplus::Graphics g(dis->hDC);
+        Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
+        g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
+                        (INT)(dis->rcItem.right - dis->rcItem.left),
+                        (INT)(dis->rcItem.bottom - dis->rcItem.top));
+    }
 
-    Gdiplus::FontFamily ff(L"Segoe UI Emoji");
-    Gdiplus::Font font(&ff, 18.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush fg(theme::gpc(pal.text_primary));
-    Gdiplus::StringFormat sf;
-    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
-    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-
+    // Emoji rendered through DirectWrite + D2D with ENABLE_COLOR_FONT so
+    // Segoe UI Emoji's COLR layers paint in full color (GDI+ DrawString
+    // could only see the monochrome outline glyphs).
+    win32::text::Style style{
+        .family = L"Segoe UI Emoji",
+        .size   = 18.0f,
+        .unit   = win32::text::SizeUnit::Pixel,
+        .color  = pal.text_primary,
+        .halign = win32::text::HAlign::Center,
+        .valign = win32::text::VAlign::Center,
+    };
     for (int col = 0; col < kEmojiCols; ++col) {
         size_t idx = static_cast<size_t>(row) * kEmojiCols + col;
         if (idx >= emoji_view_.size()) break;
@@ -2140,12 +2170,13 @@ void MainWindow::draw_emoji_grid_item(DRAWITEMSTRUCT* dis) {
         std::wstring w(n, L'\0');
         MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(),
                             w.data(), n);
-        Gdiplus::RectF rc(
-            (float)(dis->rcItem.left + col * kEmojiCellW),
-            (float)dis->rcItem.top,
-            (float)kEmojiCellW,
-            (float)(dis->rcItem.bottom - dis->rcItem.top));
-        g.DrawString(w.c_str(), (int)w.size(), &font, rc, &sf, &fg);
+        RECT rc{
+            dis->rcItem.left + col * kEmojiCellW,
+            dis->rcItem.top,
+            dis->rcItem.left + (col + 1) * kEmojiCellW,
+            dis->rcItem.bottom,
+        };
+        win32::text::draw(dis->hDC, rc, w.c_str(), (int)w.size(), style);
     }
 }
 
@@ -2161,26 +2192,26 @@ void MainWindow::draw_emoji_tab_item(DRAWITEMSTRUCT* dis) {
                             w.data(), n);
 
     const auto& pal = theme::palette();
-    Gdiplus::Graphics g(dis->hDC);
-    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAlias);
-    Gdiplus::Color bgc = (dis->itemState & ODS_SELECTED)
-        ? theme::gpc(pal.sidebar_sel_bg)
-        : theme::gpc(pal.chrome_bg);
-    Gdiplus::SolidBrush bg(bgc);
-    g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
-                    (INT)(dis->rcItem.right - dis->rcItem.left),
-                    (INT)(dis->rcItem.bottom - dis->rcItem.top));
+    {
+        Gdiplus::Graphics g(dis->hDC);
+        Gdiplus::Color bgc = (dis->itemState & ODS_SELECTED)
+            ? theme::gpc(pal.sidebar_sel_bg)
+            : theme::gpc(pal.chrome_bg);
+        Gdiplus::SolidBrush bg(bgc);
+        g.FillRectangle(&bg, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
+                        (INT)(dis->rcItem.right - dis->rcItem.left),
+                        (INT)(dis->rcItem.bottom - dis->rcItem.top));
+    }
 
-    Gdiplus::FontFamily ff(L"Segoe UI Emoji");
-    Gdiplus::Font font(&ff, 16.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush fg(theme::gpc(pal.text_primary));
-    Gdiplus::StringFormat sf;
-    sf.SetAlignment(Gdiplus::StringAlignmentCenter);
-    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
-    Gdiplus::RectF rc((float)dis->rcItem.left, (float)dis->rcItem.top,
-                      (float)(dis->rcItem.right - dis->rcItem.left),
-                      (float)(dis->rcItem.bottom - dis->rcItem.top));
-    g.DrawString(w.c_str(), (int)w.size(), &font, rc, &sf, &fg);
+    win32::text::draw(dis->hDC, dis->rcItem, w.c_str(), (int)w.size(),
+        win32::text::Style{
+            .family = L"Segoe UI Emoji",
+            .size   = 16.0f,
+            .unit   = win32::text::SizeUnit::Pixel,
+            .color  = pal.text_primary,
+            .halign = win32::text::HAlign::Center,
+            .valign = win32::text::VAlign::Center,
+        });
 }
 
 } // namespace win32
