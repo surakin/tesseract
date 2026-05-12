@@ -1680,6 +1680,18 @@ void MainWindow::maybe_show_recovery_banner() {
         ShowWindow(hRecoveryKeyEdit_,  SW_SHOW);
         ShowWindow(hRecoveryVerify_,   SW_SHOW);
         ShowWindow(hRecoveryDismiss_,  SW_SHOW);
+        // The LoginView is created last (highest z-order) and is normally
+        // hidden by show_main_content() before we run, but if its 0×0 →
+        // full-rect resize race ever leaves it on top of these controls
+        // they become un-hittable. Hoist the interactive banner widgets
+        // above every sibling explicitly. Banner STATIC must move first
+        // so the edit/buttons end up on top of it.
+        constexpr UINT kZFlags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        SetWindowPos(hRecoveryBanner_,   HWND_TOP, 0, 0, 0, 0, kZFlags);
+        SetWindowPos(hRecoveryLabel_,    HWND_TOP, 0, 0, 0, 0, kZFlags);
+        SetWindowPos(hRecoveryKeyEdit_,  HWND_TOP, 0, 0, 0, 0, kZFlags);
+        SetWindowPos(hRecoveryVerify_,   HWND_TOP, 0, 0, 0, 0, kZFlags);
+        SetWindowPos(hRecoveryDismiss_,  HWND_TOP, 0, 0, 0, 0, kZFlags);
         recovery_banner_visible_ = true;
         recovery_in_flight_      = false;
         RECT rc; GetClientRect(hwnd_, &rc);
