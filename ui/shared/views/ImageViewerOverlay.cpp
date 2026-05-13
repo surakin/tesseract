@@ -202,8 +202,12 @@ void ImageViewerOverlay::on_pointer_move(tk::Point local) {
 bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy) {
     if (!is_open_) return false;
 
-    // dy < 0 = wheel up = zoom in; dy > 0 = wheel down = zoom out
-    float factor   = std::pow(kZoomStep, -dy);
+    // dy < 0 = wheel up = zoom in; dy > 0 = wheel down = zoom out.
+    // Clamp to ±1 so one physical notch always steps by kZoomStep regardless
+    // of how the host reports wheel magnitude (Qt6: ±15/notch, Win32: ±90/notch,
+    // GTK DISCRETE: ±1/notch). Sub-notch values (smooth-scroll trackpads) are
+    // preserved proportionally.
+    float factor   = std::pow(kZoomStep, -std::clamp(dy, -1.0f, 1.0f));
     float new_zoom = std::clamp(zoom_ * factor, 1.0f, kZoomMax);
     if (new_zoom == zoom_) return true;
 
