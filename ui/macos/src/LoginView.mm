@@ -36,10 +36,10 @@ std::string trim(std::string s) {
     std::atomic<bool>                               _cancelled;
 }
 
-- (instancetype)initWithClient:(tesseract::Client*)client {
+- (instancetype)init {
     self = [super initWithFrame:NSZeroRect];
     if (!self) return nil;
-    _client    = client;
+    _client    = nullptr;
     _cancelled = false;
 
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
@@ -83,6 +83,15 @@ std::string trim(std::string s) {
     return self;
 }
 
+- (void)setClient:(tesseract::Client*)client {
+    _client = client;
+}
+
+- (void)setMode:(tesseract::views::LoginView::Mode)mode {
+    if (_shared) _shared->set_mode(mode);
+    if (_surface) _surface->relayout();
+}
+
 - (void)dealloc {
     _cancelled = true;
     if (_client) _client->cancel_oauth();
@@ -123,6 +132,7 @@ std::string trim(std::string s) {
 }
 
 - (void)_onSignIn {
+    if (!_client) return;
     std::string hs = trim(_hsField->text());
     if (hs.empty()) {
         _shared->set_status("Please enter a homeserver.",
@@ -207,6 +217,9 @@ std::string trim(std::string s) {
     _shared->set_state(tesseract::views::LoginView::State::Form);
     _hsField->set_enabled(true);
     _surface->relayout();
+    if ([self.delegate respondsToSelector:@selector(loginViewDidCancel:)]) {
+        [self.delegate loginViewDidCancel:self];
+    }
 }
 
 @end

@@ -29,13 +29,19 @@ namespace win32 {
 /// lands.
 class LoginView {
 public:
-    LoginView(HINSTANCE hInst, HWND hParent, tesseract::Client& client);
+    LoginView(HINSTANCE hInst, HWND hParent);
     ~LoginView();
 
     LoginView(const LoginView&)            = delete;
     LoginView& operator=(const LoginView&) = delete;
 
     HWND hwnd() const;
+
+    /// Rebind before each login attempt.
+    void set_client(tesseract::Client* c) { client_ = c; }
+
+    /// Initial = Cancel hidden; AddAccount = Cancel visible in Form + Waiting.
+    void set_mode(tesseract::views::LoginView::Mode m);
 
     /// Lay the surface out at (0, 0, w, h) inside the parent client area.
     void layout(int w, int h);
@@ -49,6 +55,9 @@ public:
     /// Called on the UI thread when the OAuth flow completes successfully.
     void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
 
+    /// Called on the UI thread when the user cancels (AddAccount mode only).
+    void set_on_cancel(std::function<void()> cb) { on_cancel_fn_ = std::move(cb); }
+
 private:
     void on_sign_in();
     void on_cancel();
@@ -60,8 +69,9 @@ private:
     static std::string  trim         (std::string s);
     static std::string  wstring_to_utf8(const std::wstring& s);
 
-    tesseract::Client&                     client_;
+    tesseract::Client*                     client_ = nullptr;
     std::function<void()>                  on_success_;
+    std::function<void()>                  on_cancel_fn_;
 
     std::unique_ptr<tk::win32::Surface>    surface_;
     tesseract::views::LoginView*           shared_   = nullptr;

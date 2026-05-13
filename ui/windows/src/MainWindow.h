@@ -11,8 +11,10 @@
 #include <algorithm>  // std::min/std::max — must precede gdiplus.h with NOMINMAX
 #include <gdiplus.h>
 
+#include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
 #include "tk/canvas.h"
@@ -28,9 +30,12 @@
 #include "views/RoomListView.h"
 #include "views/StickerPicker.h"
 
+#include "views/AccountPicker.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -75,6 +80,9 @@ class EventHandler final : public tesseract::IEventHandler {
 public:
     explicit EventHandler(HWND hwnd) : hwnd_(hwnd) {}
 
+    void set_user_id(std::string uid) { user_id_ = std::move(uid); }
+    const std::string& user_id() const { return user_id_; }
+
     void on_timeline_reset(const std::string& room_id,
                             std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
     void on_message_inserted(const std::string& room_id,
@@ -98,8 +106,8 @@ public:
                          const std::string& sender,  const std::string& body,
                          bool is_mention) override;
 
-private:
-    HWND hwnd_;
+    HWND        hwnd_;
+    std::string user_id_;
 };
 
 // ---------------------------------------------------------------------------
@@ -157,6 +165,10 @@ private:
         std::string body;
         bool        is_mention;
     };
+    struct RoomsPayload {
+        std::string                     user_id;
+        std::vector<tesseract::RoomInfo> rooms;
+    };
 
     void on_tesseract_notify(const NotificationPayload* p);
     void navigate_to_room(const std::string& room_id);
@@ -166,7 +178,7 @@ private:
     void on_tesseract_message_removed(PostedMessageEvent* payload);
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_subscribe_done(std::string* room_id, bool reached_start);
-    void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
+    void on_tesseract_rooms(RoomsPayload* payload);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.
     void request_more_history(const std::string& room_id);
@@ -179,12 +191,18 @@ private:
     void ensure_media_image(const std::string& url, int max_w, int max_h);
     void ensure_reply_details(const std::string& event_id);
 
-    void on_reconnect();
+    void on_reconnect(const std::string& user_id);
     void on_space_back();
-    void on_auth_error(bool soft_logout);
+    void on_auth_error(const std::string& user_id, bool soft_logout);
     void on_backup_progress(tesseract::BackupProgress* progress);
     void on_room_list_state(tesseract::RoomListState state);
     void refresh_sync_status();
+    void switch_active_account(int new_idx);
+    void begin_add_account();
+    void logout_active_account();
+    void on_login_cancelled();
+    void rebuild_account_picker();
+    void open_account_picker();
     // Sync-progress status cache.
     tesseract::RoomListState last_room_list_state_ = tesseract::RoomListState::Init;
     tesseract::BackupState   last_backup_state_    = tesseract::BackupState::Unknown;
@@ -197,7 +215,6 @@ private:
     void on_recovery_dismiss_clicked();
     void on_recover_done(bool ok, std::wstring msg);
     void populate_user_strip();
-    void do_logout();
     // Resolve any media bytes the row references and decode them into
     // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
     // positional-callback path (insert / update / reset).
@@ -311,12 +328,28 @@ private:
     bool      recovery_in_flight_        = false;
 
     HWND             hUserStrip_     = nullptr;
+    HWND             hUserIdLabel_   = nullptr;  // Matrix ID second line
     std::string      my_display_name_;
     std::string      my_avatar_url_;
     Gdiplus::Bitmap* user_avatar_bmp_ = nullptr;  // owned; null = use initials
 
-    tesseract::Client                client_;
-    std::unique_ptr<EventHandler>    event_handler_;
+    // Multi-account state. client_ and event_handler_ are non-owning
+    // aliases of accounts_[active_account_index_].
+    std::vector<std::unique_ptr<tesseract::AccountSession>> accounts_;
+    int                         active_account_index_ = -1;
+    tesseract::Client*          client_        = nullptr;  // non-owning alias
+    EventHandler*               event_handler_ = nullptr;  // non-owning alias
+    std::unordered_map<std::string, std::vector<tesseract::RoomInfo>> per_account_rooms_;
+    std::unique_ptr<tesseract::Client>   pending_login_client_;
+    std::filesystem::path                pending_login_temp_dir_;
+    bool                                 pending_login_is_add_account_ = false;
+    int                                  add_account_return_idx_       = -1;
+
+    // Account-picker popup (WS_POPUP HWND hosting AccountPicker surface).
+    HWND                                         hAccountPicker_  = nullptr;
+    std::unique_ptr<tk::win32::Surface>          account_picker_surface_;
+    tesseract::views::AccountPicker*             account_picker_  = nullptr;  // borrowed
+
     std::unique_ptr<Win32Notifier>   notifier_;
     std::unique_ptr<Win32TrayIcon>   tray_;
     bool                              quitting_ = false;
@@ -423,6 +456,7 @@ private:
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;
     static constexpr int            IDC_SPACE_BACK       = 113;
     static constexpr int            IDM_LOGOUT           = 120;
+    static constexpr int            IDM_ADD_ACCOUNT      = 121;
 };
 
 } // namespace win32

@@ -2,11 +2,13 @@
 #import <AppKit/AppKit.h>
 
 #include <tesseract/client.h>
+#include "views/LoginView.h"
 
 @class LoginView;
 
 @protocol LoginViewDelegate <NSObject>
 - (void)loginViewDidSucceed:(LoginView*)view;
+- (void)loginViewDidCancel:(LoginView*)view;
 @end
 
 /// Inline sign-in view shown inside the main window when the user is not
@@ -15,7 +17,13 @@
 /// machine + worker thread + native NSTextField overlay live here.
 @interface LoginView : NSView
 
-- (instancetype)initWithClient:(tesseract::Client*)client;
+- (instancetype)init;
+
+/// Rebind before each login attempt.
+- (void)setClient:(tesseract::Client*)client;
+
+/// Initial = no cancel button; AddAccount = cancel visible in Form + Waiting.
+- (void)setMode:(tesseract::views::LoginView::Mode)mode;
 
 @property (nonatomic, weak) id<LoginViewDelegate> delegate;
 

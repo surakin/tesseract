@@ -8,18 +8,23 @@
 
 #include <thread>
 
+#include <tesseract/account_session.h>
 #include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
 #include <tesseract/settings.h>
+
+#include "views/AccountPicker.h"
 
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <windowsx.h>
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <cwchar>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -87,6 +92,10 @@ struct MediaBytesPayload {
 struct VideoBytesPayload {
     std::string                 source_json;  // original request key
     std::vector<std::uint8_t>   bytes;
+};
+struct AuthErrorPayload {
+    std::string user_id;
+    bool        soft_logout;
 };
 } // namespace
 
@@ -237,27 +246,49 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
         int tx = ax + AVATAR + 10;
         int text_w = rc.right - tx - 8;
+        bool has_id = !self->my_display_name_.empty() && !self->my_user_id_.empty();
         auto wname = utf8_to_wstr(shown);
-        RECT name_rc{ tx, y0, tx + text_w, y0 + h };
+        RECT name_rc{ tx, has_id ? y0 + 7 : y0, tx + text_w,
+                      has_id ? y0 + 27 : y0 + h };
         win32::text::draw(hdc, name_rc, wname.c_str(), -1,
             win32::text::Style{
                 .family = L"Segoe UI",
                 .size   = 10.5f,
                 .weight = win32::text::Weight::Bold,
                 .color  = pal.text_primary,
-                .valign = win32::text::VAlign::Center,
+                .valign = has_id ? win32::text::VAlign::Top
+                                 : win32::text::VAlign::Center,
                 .trim   = win32::text::Trim::EllipsisChar,
             });
+        if (has_id) {
+            auto wid = utf8_to_wstr(self->my_user_id_);
+            RECT id_rc{ tx, y0 + 28, tx + text_w, y0 + h - 5 };
+            win32::text::draw(hdc, id_rc, wid.c_str(), -1,
+                win32::text::Style{
+                    .family = L"Segoe UI",
+                    .size   = 9.0f,
+                    .color  = pal.text_secondary,
+                    .trim   = win32::text::Trim::EllipsisChar,
+                });
+        }
 
         EndPaint(hwnd, &ps);
         return 0;
     }
+    case WM_LBUTTONUP:
+        self->open_account_picker();
+        return 0;
     case WM_CONTEXTMENU: {
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, MainWindow::IDM_LOGOUT, L"Logout");
+        AppendMenuW(menu, MF_STRING, MainWindow::IDM_ADD_ACCOUNT, L"Add Account…");
+        std::wstring logout_label = L"Log Out";
+        if (!self->my_display_name_.empty()) {
+            logout_label += L" ";
+            logout_label += utf8_to_wstr(self->my_display_name_);
+        }
+        AppendMenuW(menu, MF_STRING, MainWindow::IDM_LOGOUT, logout_label.c_str());
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
-        // For keyboard-triggered context menus (-1,-1) anchor to widget centre.
         if (x == -1 && y == -1) {
             RECT rc; GetWindowRect(hwnd, &rc);
             x = rc.left + (rc.right - rc.left) / 2;
@@ -267,12 +298,8 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             TPM_RIGHTBUTTON | TPM_RETURNCMD,
             x, y, 0, hwnd, nullptr);
         DestroyMenu(menu);
-        if (pick == static_cast<UINT>(MainWindow::IDM_LOGOUT)) {
-            // Forward to the parent so MainWindow::wnd_proc's WM_COMMAND
-            // handler runs do_logout(). HIWORD=0 mimics a menu accelerator.
-            PostMessageW(GetParent(hwnd), WM_COMMAND,
-                         MAKEWPARAM(MainWindow::IDM_LOGOUT, 0), 0);
-        }
+        if (pick)
+            PostMessageW(GetParent(hwnd), WM_COMMAND, MAKEWPARAM(pick, 0), 0);
         return 0;
     }
     default:
@@ -432,7 +459,7 @@ void EventHandler::on_message_removed(
 }
 
 void EventHandler::on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) {
-    auto* p = new std::vector<tesseract::RoomInfo>(rooms);
+    auto* p = new MainWindow::RoomsPayload{ user_id_, std::vector<tesseract::RoomInfo>(rooms) };
     PostMessage(hwnd_, WM_TESSERACT_ROOMS, 0, reinterpret_cast<LPARAM>(p));
 }
 
@@ -441,10 +468,11 @@ void EventHandler::on_sync_error(const std::string& context,
                                    bool soft_logout)
 {
     if (context == "sync_reconnect") {
-        PostMessage(hwnd_, WM_TESSERACT_RECONNECT, 0, 0);
+        auto* s = new std::string(user_id_);
+        PostMessage(hwnd_, WM_TESSERACT_RECONNECT, 0, reinterpret_cast<LPARAM>(s));
     } else if (context == "sync_auth_error") {
-        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR,
-                    static_cast<WPARAM>(soft_logout), 0);
+        auto* p = new AuthErrorPayload{ user_id_, soft_logout };
+        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR, 0, reinterpret_cast<LPARAM>(p));
     } else {
         auto* p = new std::string(description);
         PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
@@ -452,7 +480,7 @@ void EventHandler::on_sync_error(const std::string& context,
 }
 
 void EventHandler::on_session_saved(const std::string& session_json) {
-    tesseract::SessionStore::save(session_json);
+    tesseract::SessionStore::save_account(user_id_, session_json);
 }
 
 void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress) {
@@ -550,7 +578,7 @@ void MainWindow::draw_initials_circle(Gdiplus::Graphics& g, const std::string& n
 Gdiplus::Bitmap* MainWindow::get_room_avatar(const std::string& room_id) {
     auto it = avatar_cache_.find(room_id);
     if (it != avatar_cache_.end()) return it->second;
-    auto bytes = client_.fetch_avatar_bytes(room_id);
+    auto bytes = client_->fetch_avatar_bytes(room_id);
     Gdiplus::Bitmap* bmp = bitmap_from_bytes(bytes);
     avatar_cache_[room_id] = bmp;
     return bmp;
@@ -560,7 +588,7 @@ Gdiplus::Bitmap* MainWindow::get_user_avatar(const std::string& mxc_url) {
     if (mxc_url.empty()) return nullptr;
     auto it = user_avatar_cache_.find(mxc_url);
     if (it != user_avatar_cache_.end()) return it->second;
-    auto bytes = client_.fetch_media_bytes(mxc_url);
+    auto bytes = client_->fetch_media_bytes(mxc_url);
     Gdiplus::Bitmap* bmp = bitmap_from_bytes(bytes);
     user_avatar_cache_[mxc_url] = bmp;
     return bmp;
@@ -613,7 +641,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         if (LOWORD(wParam) == IDC_SPACE_BACK)
             self->on_space_back();
         if (LOWORD(wParam) == IDM_LOGOUT)
-            self->do_logout();
+            self->logout_active_account();
+        if (LOWORD(wParam) == IDM_ADD_ACCOUNT)
+            self->begin_add_account();
         return 0;
 
     case WM_DRAWITEM: {
@@ -705,7 +735,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
     }
     case WM_TESSERACT_ROOMS: {
-        auto* p = reinterpret_cast<std::vector<tesseract::RoomInfo>*>(lParam);
+        auto* p = reinterpret_cast<MainWindow::RoomsPayload*>(lParam);
         self->on_tesseract_rooms(p);
         delete p;
         return 0;
@@ -722,12 +752,19 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
-    case WM_TESSERACT_RECONNECT:
-        self->on_reconnect();
+    case WM_TESSERACT_RECONNECT: {
+        auto* uid = reinterpret_cast<std::string*>(lParam);
+        std::string u = uid ? std::move(*uid) : std::string{};
+        delete uid;
+        self->on_reconnect(u);
         return 0;
-    case WM_TESSERACT_AUTH_ERROR:
-        self->on_auth_error(static_cast<bool>(wParam));
+    }
+    case WM_TESSERACT_AUTH_ERROR: {
+        auto* p = reinterpret_cast<AuthErrorPayload*>(lParam);
+        self->on_auth_error(p->user_id, p->soft_logout);
+        delete p;
         return 0;
+    }
     case WM_TESSERACT_BACKUP_PROGRESS: {
         auto* p = reinterpret_cast<tesseract::BackupProgress*>(lParam);
         self->on_backup_progress(p);
@@ -933,10 +970,10 @@ bool MainWindow::register_class(HINSTANCE hInst) {
 MainWindow::MainWindow(HINSTANCE hInst) : hInst_(hInst) {}
 
 MainWindow::~MainWindow() {
-    client_.stop_sync();
-    // login_view_ holds a reference to client_ and calls cancel_oauth() +
-    // joins its worker on destruction. Tear it down here so client_ is
-    // still alive when ~LoginView runs.
+    for (auto& s : accounts_) if (s && s->client) s->client->stop_sync();
+    if (pending_login_client_) pending_login_client_->stop_sync();
+    // login_view_ calls cancel_oauth() + joins its worker on destruction.
+    // Tear it down while the client pointers are still alive.
     login_view_.reset();
     for (auto& [k, v] : avatar_cache_)      delete v;
     for (auto& [k, v] : user_avatar_cache_) delete v;
@@ -1097,7 +1134,7 @@ void MainWindow::on_create(HWND hwnd) {
         message_list_view_->on_reaction_toggled =
             [this](const std::string& event_id, const std::string& key) {
                 if (current_room_id_.empty()) return;
-                client_.send_reaction(current_room_id_, event_id, key);
+                client_->send_reaction(current_room_id_, event_id, key);
             };
         message_list_view_->on_add_reaction_requested =
             [this](const std::string& event_id, tk::Rect anchor) {
@@ -1140,7 +1177,7 @@ void MainWindow::on_create(HWND hwnd) {
         }
         message_list_view_->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-                return client_.fetch_source_bytes(source_json);
+                return client_->fetch_source_bytes(source_json);
             });
         msg_surface_->set_root(std::move(view));
     }
@@ -1164,7 +1201,7 @@ void MainWindow::on_create(HWND hwnd) {
             if (l == std::string::npos) return;
             trimmed = trimmed.substr(l, r - l + 1);
             if (trimmed.empty() || current_room_id_.empty()) return;
-            auto res = client_.send_message(current_room_id_, trimmed);
+            auto res = client_->send_message(current_room_id_, trimmed);
             if (res) {
                 if (compose_text_area_) compose_text_area_->set_text("");
                 compose_shared_->set_current_text({});
@@ -1193,7 +1230,7 @@ void MainWindow::on_create(HWND hwnd) {
                 if (dot != std::string::npos) out_name = out_name.substr(0, dot);
                 out_name += ".jpg";
             }
-            auto res = client_.send_image(current_room_id_, enc.bytes, enc.mime,
+            auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
                                             out_name, caption,
                                             enc.width, enc.height,
                                             reply_event_id);
@@ -1212,7 +1249,7 @@ void MainWindow::on_create(HWND hwnd) {
         compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
                                                  const std::string& body) {
             if (body.empty() || current_room_id_.empty()) return;
-            client_.send_reply(current_room_id_, reply_event_id, body);
+            client_->send_reply(current_room_id_, reply_event_id, body);
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
         };
@@ -1246,7 +1283,7 @@ void MainWindow::on_create(HWND hwnd) {
                                    std::string mime,
                                    std::string filename) {
             if (!compose_shared_) return;
-            const auto limit = client_.media_upload_limit();
+            const auto limit = client_->media_upload_limit();
             if (limit > 0 && bytes.size() > limit) {
                 if (hStatus_) SetWindowTextW(hStatus_,
                     L"File exceeds server limit");
@@ -1272,7 +1309,7 @@ void MainWindow::on_create(HWND hwnd) {
                    std::string caption,
                    std::string reply_event_id) {
             if (current_room_id_.empty()) return;
-            auto res = client_.send_file(current_room_id_, bytes, mime,
+            auto res = client_->send_file(current_room_id_, bytes, mime,
                                           filename, caption, reply_event_id);
             if (res) {
                 if (compose_text_area_) compose_text_area_->set_text("");
@@ -1284,7 +1321,7 @@ void MainWindow::on_create(HWND hwnd) {
         compose_shared_->on_send_edit = [this](const std::string& event_id,
                                                 const std::string& new_body) {
             if (new_body.empty() || current_room_id_.empty()) return;
-            client_.send_edit(current_room_id_, event_id, new_body);
+            client_->send_edit(current_room_id_, event_id, new_body);
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
         };
@@ -1431,7 +1468,7 @@ void MainWindow::on_create(HWND hwnd) {
             HWND target = hwnd_;
             std::string src = hit.source_json;
             run_async_([this, target, src = std::move(src)]() mutable {
-                auto bytes = client_.fetch_source_bytes(src);
+                auto bytes = client_->fetch_source_bytes(src);
                 auto* p = new VideoBytesPayload{ src, std::move(bytes) };
                 if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
                                   reinterpret_cast<LPARAM>(p)))
@@ -1439,8 +1476,9 @@ void MainWindow::on_create(HWND hwnd) {
             });
         };
 
-    login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
+    login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
+    login_view_->set_on_cancel([this]() { on_login_cancelled(); });
     ShowWindow(login_view_->hwnd(), SW_HIDE);
 
     start_login();
@@ -1451,8 +1489,8 @@ void MainWindow::on_destroy() {
         KillTimer(hwnd_, kAnimTimerId);
         anim_timer_running_ = false;
     }
-    // Drain background workers BEFORE tearing the client down.  Each
-    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // Drain background workers BEFORE tearing any client down.  Each
+    // worker calls `client_->fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
     shutting_down_.store(true, std::memory_order_release);
@@ -1461,7 +1499,8 @@ void MainWindow::on_destroy() {
         workers_cv_.wait_for(lk, std::chrono::seconds(5),
                               [this]{ return workers_in_flight_ == 0; });
     }
-    client_.stop_sync();
+    for (auto& s : accounts_) if (s && s->client) s->client->stop_sync();
+    if (pending_login_client_) pending_login_client_->stop_sync();
 }
 
 void MainWindow::run_async_(std::function<void()> fn) {
@@ -1595,67 +1634,126 @@ void MainWindow::on_size(int w, int h) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::start_login() {
-    std::wstring status_msg;
-    if (auto saved = tesseract::SessionStore::load()) {
-        SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                     reinterpret_cast<LPARAM>(L"Restoring session…"));
-        auto res = client_.restore_session(*saved);
-        if (res) {
-            my_user_id_       = client_.get_user_id();
-            my_display_name_  = client_.get_display_name();
-            my_avatar_url_    = client_.get_avatar_url();
-            pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-            populate_user_strip();
-            event_handler_ = std::make_unique<EventHandler>(hwnd_);
-            client_.start_sync(event_handler_.get());
-            SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                         reinterpret_cast<LPARAM>(L"Connected"));
-            show_main_content();
-            maybe_show_recovery_banner();
-            if (!tray_) {
-                tray_ = std::make_unique<Win32TrayIcon>(
-                    hInst_,
-                    [this]{ ShowWindow(hwnd_, SW_SHOW);
-                             if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
-                             SetForegroundWindow(hwnd_); },
-                    [this]{ quitting_ = true; DestroyWindow(hwnd_); });
-            }
-            return;
+    tesseract::SessionStore::migrate_legacy_layout();
+    auto index = tesseract::SessionStore::load_index();
+
+    SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(L"Restoring session…"));
+
+    for (const auto& uid : index.user_ids) {
+        auto json = tesseract::SessionStore::load_account(uid);
+        if (!json) continue;
+
+        auto sess = std::make_unique<tesseract::AccountSession>();
+        sess->client = std::make_unique<tesseract::Client>();
+        sess->client->set_data_dir(
+            tesseract::SessionStore::sdk_store_dir(uid).string());
+
+        auto res = sess->client->restore_session(*json);
+        if (!res) {
+            tesseract::SessionStore::clear_account(uid);
+            continue;
         }
-        tesseract::SessionStore::clear();
-        status_msg = L"Saved session expired: ";
-        status_msg += utf8_to_wstr(res.message);
+        sess->user_id      = sess->client->get_user_id();
+        sess->display_name = sess->client->get_display_name();
+        sess->avatar_url   = sess->client->get_avatar_url();
+        sess->last_room    =
+            tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
+
+        auto bridge = std::make_unique<EventHandler>(hwnd_);
+        bridge->set_user_id(sess->user_id);
+        sess->bridge = std::move(bridge);
+        sess->client->start_sync(sess->bridge.get());
+        sess->sync_started = true;
+
+        accounts_.push_back(std::move(sess));
     }
 
-    if (login_view_) {
-        login_view_->reset();
-        login_view_->set_status_message(status_msg);
+    if (accounts_.empty()) {
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        if (login_view_) {
+            login_view_->set_client(pending_login_client_.get());
+            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+            login_view_->reset();
+        }
+        show_login_view();
+        SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                     reinterpret_cast<LPARAM>(L"Not logged in"));
+        return;
     }
-    show_login_view();
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(L"Not logged in"));
+
+    int active_idx = 0;
+    if (!index.active_user_id.empty()) {
+        for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+            if (accounts_[i]->user_id == index.active_user_id) {
+                active_idx = i;
+                break;
+            }
+        }
+    }
+    switch_active_account(active_idx);
 }
 
 void MainWindow::on_login_succeeded() {
-    my_user_id_       = client_.get_user_id();
-    my_display_name_  = client_.get_display_name();
-    my_avatar_url_    = client_.get_avatar_url();
-    pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-    populate_user_strip();
-    tesseract::SessionStore::save(client_.export_session());
-    event_handler_ = std::make_unique<EventHandler>(hwnd_);
-    client_.start_sync(event_handler_.get());
-    SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Connected"));
-    show_main_content();
-    maybe_show_recovery_banner();
-    if (!tray_) {
-        tray_ = std::make_unique<Win32TrayIcon>(
-            hInst_,
-            [this]{ ShowWindow(hwnd_, SW_SHOW);
-                     if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
-                     SetForegroundWindow(hwnd_); },
-            [this]{ quitting_ = true; DestroyWindow(hwnd_); });
+    // The pending client ran OAuth into a temp directory.
+    // Drop it (releases SQLite handles), rename the temp dir to its final
+    // per-account location, then reopen a fresh client at the final path.
+    if (!pending_login_client_) return;
+
+    std::string user_id   = pending_login_client_->get_user_id();
+    std::string json      = pending_login_client_->export_session();
+    pending_login_client_.reset();   // closes SQLite in the temp dir
+
+    namespace fs = std::filesystem;
+    fs::path final_dir = tesseract::SessionStore::account_dir(user_id);
+    std::error_code ec;
+    if (!pending_login_temp_dir_.empty() && fs::exists(pending_login_temp_dir_)) {
+        fs::create_directories(final_dir.parent_path(), ec);
+        fs::rename(pending_login_temp_dir_, final_dir, ec);
+        if (ec) {
+            // Rename failed (e.g. cross-device); leave temp dir and bail.
+            pending_login_temp_dir_.clear();
+            if (login_view_) {
+                login_view_->set_status_message(L"Failed to save session.");
+                login_view_->reset();
+            }
+            return;
+        }
+        pending_login_temp_dir_.clear();
     }
+
+    auto sess = std::make_unique<tesseract::AccountSession>();
+    sess->client = std::make_unique<tesseract::Client>();
+    sess->client->set_data_dir(
+        tesseract::SessionStore::sdk_store_dir(user_id).string());
+    if (!sess->client->restore_session(json)) {
+        tesseract::SessionStore::clear_account(user_id);
+        if (login_view_) login_view_->reset();
+        return;
+    }
+    sess->user_id      = sess->client->get_user_id();
+    sess->display_name = sess->client->get_display_name();
+    sess->avatar_url   = sess->client->get_avatar_url();
+    sess->last_room    =
+        tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
+
+    auto bridge = std::make_unique<EventHandler>(hwnd_);
+    bridge->set_user_id(sess->user_id);
+    sess->bridge = std::move(bridge);
+    sess->client->start_sync(sess->bridge.get());
+    sess->sync_started = true;
+
+    int new_idx = static_cast<int>(accounts_.size());
+    accounts_.push_back(std::move(sess));
+
+    // Persist updated index.
+    auto idx = tesseract::SessionStore::load_index();
+    idx.user_ids.push_back(user_id);
+    idx.active_user_id = user_id;
+    tesseract::SessionStore::save_index(idx);
+    tesseract::SessionStore::save_account(user_id, json);
+
+    switch_active_account(new_idx);
 }
 
 void MainWindow::show_login_view() {
@@ -1702,37 +1800,77 @@ void MainWindow::show_main_content() {
     on_size(rc.right, rc.bottom);
 }
 
-void MainWindow::on_reconnect() {
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(L"Sync error: reconnecting…"));
-    client_.stop_sync();
-    start_login();
+void MainWindow::on_reconnect(const std::string& user_id) {
+    int idx = -1;
+    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+        if (accounts_[i]->user_id == user_id) { idx = i; break; }
+    }
+    if (idx < 0) return;
+
+    auto& sess = accounts_[idx];
+    sess->client->stop_sync();
+
+    auto json = tesseract::SessionStore::load_account(user_id);
+    if (json && sess->client->restore_session(*json)) {
+        auto bridge = std::make_unique<EventHandler>(hwnd_);
+        bridge->set_user_id(user_id);
+        sess->bridge = std::move(bridge);
+        if (idx == active_account_index_)
+            event_handler_ = static_cast<EventHandler*>(sess->bridge.get());
+        sess->client->start_sync(sess->bridge.get());
+        if (idx == active_account_index_)
+            SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                         reinterpret_cast<LPARAM>(L"Reconnected"));
+    } else {
+        if (idx == active_account_index_)
+            logout_active_account();
+    }
 }
 
-void MainWindow::on_auth_error(bool soft_logout) {
+void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout) {
+    int idx = -1;
+    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+        if (accounts_[i]->user_id == user_id) { idx = i; break; }
+    }
+    if (idx < 0) return;
+
     if (soft_logout) {
-        if (auto saved = tesseract::SessionStore::load()) {
-            SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                         reinterpret_cast<LPARAM>(L"Reconnecting session…"));
-            if (client_.restore_session(*saved)) {
-                my_user_id_       = client_.get_user_id();
-                my_display_name_  = client_.get_display_name();
-                my_avatar_url_    = client_.get_avatar_url();
+        auto json = tesseract::SessionStore::load_account(user_id);
+        if (json && accounts_[idx]->client->restore_session(*json)) {
+            auto bridge = std::make_unique<EventHandler>(hwnd_);
+            bridge->set_user_id(user_id);
+            accounts_[idx]->bridge = std::move(bridge);
+            if (idx == active_account_index_) {
+                event_handler_ = static_cast<EventHandler*>(accounts_[idx]->bridge.get());
+                my_user_id_       = accounts_[idx]->client->get_user_id();
+                my_display_name_  = accounts_[idx]->client->get_display_name();
+                my_avatar_url_    = accounts_[idx]->client->get_avatar_url();
                 populate_user_strip();
-                event_handler_ = std::make_unique<EventHandler>(hwnd_);
-                client_.start_sync(event_handler_.get());
                 SendMessageW(hStatus_, SB_SETTEXTW, 0,
                              reinterpret_cast<LPARAM>(L"Reconnected"));
                 maybe_show_recovery_banner();
-                return;
             }
+            accounts_[idx]->client->start_sync(accounts_[idx]->bridge.get());
+            return;
         }
     }
-    tesseract::SessionStore::clear();
-    client_.stop_sync();
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(L"Session expired; please log in again."));
-    start_login();
+    if (idx == active_account_index_) {
+        SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                     reinterpret_cast<LPARAM>(L"Session expired; please log in again."));
+        logout_active_account();
+    } else {
+        accounts_[idx]->client->stop_sync();
+        tesseract::SessionStore::clear_account(user_id);
+        accounts_.erase(accounts_.begin() + idx);
+        if (idx < active_account_index_) --active_account_index_;
+        auto index = tesseract::SessionStore::load_index();
+        index.user_ids.erase(
+            std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
+            index.user_ids.end());
+        if (index.active_user_id == user_id && active_account_index_ >= 0)
+            index.active_user_id = accounts_[active_account_index_]->user_id;
+        tesseract::SessionStore::save_index(index);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1781,14 +1919,14 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
 
     if (!current_room_id_.empty() && current_room_id_ != room_id)
-        client_.unsubscribe_room(current_room_id_);
+        client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
     reply_details_requested_.clear();
     {
-        auto prefs = tesseract::Prefs::parse(client_.load_prefs_json());
+        auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
         prefs.last_room = room_id;
-        client_.save_prefs_json(tesseract::Prefs::serialize(prefs));
+        client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (compose_shared_) {
         compose_shared_->clear_reply();
@@ -1805,13 +1943,14 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     // run them on a worker thread so the Win32 message pump stays responsive.
     HWND hwnd = hwnd_;
     std::string sub_room = current_room_id_;
-    run_async_([this, sub_room, hwnd]{
-        auto res = client_.subscribe_room(sub_room);
+    tesseract::Client* cl = client_;
+    run_async_([this, sub_room, hwnd, cl]{
+        auto res = cl->subscribe_room(sub_room);
         bool reached = false;
         if (res) {
-            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            auto pr = cl->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_.start_background_backfill();
+            cl->start_background_backfill();
         }
         auto* p = new std::string(sub_room);
         PostMessageW(hwnd, WM_TESSERACT_SUBSCRIBE_DONE,
@@ -1826,8 +1965,9 @@ void MainWindow::request_more_history(const std::string& room_id) {
     state.in_flight = true;
 
     HWND hwnd = hwnd_;
-    run_async_([this, room_id, hwnd]{
-        auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
+    tesseract::Client* cl = client_;
+    run_async_([this, room_id, hwnd, cl]{
+        auto pr = cl->paginate_back_with_status(room_id, kPaginationBatch);
         auto* p = new std::string(room_id);
         PostMessageW(hwnd, WM_TESSERACT_PAGINATE_DONE,
                       static_cast<WPARAM>(pr.ok && pr.reached_start),
@@ -1919,8 +2059,13 @@ void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
     if (msg_surface_) msg_surface_->relayout();
 }
 
-void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
-    rooms_ = std::move(*rooms);
+void MainWindow::on_tesseract_rooms(RoomsPayload* payload) {
+    per_account_rooms_[payload->user_id] = std::move(payload->rooms);
+    if (active_account_index_ < 0 ||
+        active_account_index_ >= static_cast<int>(accounts_.size()) ||
+        accounts_[active_account_index_]->user_id != payload->user_id)
+        return;
+    rooms_ = per_account_rooms_[payload->user_id];
     refresh_room_list();
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_) {
@@ -1958,7 +2103,7 @@ void MainWindow::refresh_room_list() {
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_)
             if (r.is_space)
-                for (const auto& id : client_.space_children(r.id))
+                for (const auto& id : client_->space_children(r.id))
                     in_space.insert(id);
         for (const auto& r : rooms_) if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         for (const auto& r : rooms_) if ( r.is_space) filtered.push_back(r);
@@ -1973,7 +2118,7 @@ void MainWindow::refresh_room_list() {
         }
         if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_SHOWNA);
         if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_SHOWNA);
-        auto child_ids = client_.space_children(space_stack_.back());
+        auto child_ids = client_->space_children(space_stack_.back());
         for (const auto& r : rooms_) {
             if (std::find(child_ids.begin(), child_ids.end(), r.id)
                 != child_ids.end()) {
@@ -2033,7 +2178,7 @@ void MainWindow::ensure_media_image(const std::string& url,
 void MainWindow::ensure_reply_details(const std::string& event_id) {
     if (event_id.empty() || current_room_id_.empty()) return;
     if (!reply_details_requested_.insert(event_id).second) return;
-    client_.fetch_reply_details(current_room_id_, event_id);
+    client_->fetch_reply_details(current_room_id_, event_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -2119,7 +2264,7 @@ void MainWindow::request_sticker_image(const std::string& cache_key) {
 
     HWND target = hwnd_;
     run_async_([this, target, cache_key]() {
-        auto bytes = client_.fetch_source_bytes(cache_key);
+        auto bytes = client_->fetch_source_bytes(cache_key);
         auto* p    = new StickerBytesPayload{ cache_key, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_STICKER_BYTES, 0,
                           reinterpret_cast<LPARAM>(p)))
@@ -2137,7 +2282,7 @@ void MainWindow::request_room_avatar(const std::string& room_id,
 
     HWND target = hwnd_;
     run_async_([this, target, room_id, mxc]() {
-        auto bytes = client_.fetch_avatar_bytes(room_id);
+        auto bytes = client_->fetch_avatar_bytes(room_id);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::RoomAvatar, mxc, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
@@ -2155,7 +2300,7 @@ void MainWindow::request_user_avatar(const std::string& mxc) {
 
     HWND target = hwnd_;
     run_async_([this, target, mxc]() {
-        auto bytes = client_.fetch_media_bytes(mxc);
+        auto bytes = client_->fetch_media_bytes(mxc);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::UserAvatar, mxc, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
@@ -2177,7 +2322,7 @@ void MainWindow::request_media_image(const std::string& url) {
         // MediaSource (encrypted images, stickers, reaction sources).
         // `fetch_source_bytes` accepts both shapes; `fetch_media_bytes`
         // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_.fetch_source_bytes(url);
+        auto bytes = client_->fetch_source_bytes(url);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::MediaImage, url, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
@@ -2287,7 +2432,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         if (!v.audio_source.empty() &&
             voice_prefetched_.insert(v.audio_source).second) {
             run_async_([this, src = v.audio_source]() mutable {
-                (void)client_.fetch_source_bytes(src);
+                (void)client_->fetch_source_bytes(src);
             });
         }
     } else if (ev.type == tesseract::EventType::Video) {
@@ -2344,8 +2489,9 @@ std::string narrow_edit_utf8(HWND hEdit) {
 } // namespace
 
 void MainWindow::maybe_show_recovery_banner() {
+    if (!client_) return;
     if (recovery_banner_dismissed_) return;
-    if (!client_.needs_recovery())  return;
+    if (!client_->needs_recovery())  return;
     if (recovery_banner_visible_) return;
     if (!recovery_surface_ || !recovery_surface_->hwnd()) return;
 
@@ -2392,7 +2538,7 @@ void MainWindow::on_recovery_verify_clicked() {
 
     HWND target = hwnd_;
     run_async_([this, target, key]() {
-        auto res = client_.recover(key);
+        auto res = client_->recover(key);
         WPARAM ok = res.ok ? 1 : 0;
         auto*  p  = new std::wstring(widen_utf8(res.message));
         PostMessageW(target, WM_TESSERACT_RECOVER_DONE,
@@ -2453,7 +2599,7 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
         if (recovery_surface_) recovery_surface_->relayout();
     }
     if (progress->state == tesseract::BackupState::Enabled
-        && !client_.needs_recovery())
+        && !client_->needs_recovery())
     {
         if (recovery_surface_ && recovery_surface_->hwnd())
             ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
@@ -2527,8 +2673,8 @@ void MainWindow::populate_user_strip() {
         delete user_avatar_bmp_;
         user_avatar_bmp_ = nullptr;
     }
-    if (!my_avatar_url_.empty()) {
-        auto bytes = client_.fetch_media_bytes(my_avatar_url_);
+    if (client_ && !my_avatar_url_.empty()) {
+        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
         if (!bytes.empty()) user_avatar_bmp_ = bitmap_from_bytes(bytes);
     }
     ShowWindow(hUserStrip_, SW_SHOW);
@@ -2537,13 +2683,129 @@ void MainWindow::populate_user_strip() {
     on_size(rc.right, rc.bottom);
 }
 
-void MainWindow::do_logout() {
-    auto res = client_.logout();
-    tesseract::SessionStore::clear();
-    client_.stop_sync();
-    event_handler_.reset();
+// ---------------------------------------------------------------------------
+// Multi-account: switch / add / logout / cancel / picker
+// ---------------------------------------------------------------------------
 
-    // Reset visible state.
+void MainWindow::switch_active_account(int new_idx) {
+    if (new_idx < 0 || new_idx >= static_cast<int>(accounts_.size())) return;
+    active_account_index_ = new_idx;
+    auto& sess = accounts_[new_idx];
+
+    client_        = sess->client.get();
+    event_handler_ = static_cast<EventHandler*>(sess->bridge.get());
+
+    my_user_id_       = sess->user_id;
+    my_display_name_  = sess->display_name;
+    my_avatar_url_    = sess->avatar_url;
+    pending_restore_room_ = sess->last_room;
+
+    current_room_id_.clear();
+    current_room_info_ = tesseract::RoomInfo{};
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
+
+    // Swap in cached rooms snapshot if available.
+    auto it = per_account_rooms_.find(sess->user_id);
+    if (it != per_account_rooms_.end())
+        rooms_ = it->second;
+    else
+        rooms_.clear();
+
+    if (room_list_view_)    room_list_view_->set_rooms({});
+    if (message_list_view_) message_list_view_->set_messages({});
+    if (room_surface_)  room_surface_->relayout();
+    if (msg_surface_)   msg_surface_->relayout();
+
+    recovery_banner_visible_   = false;
+    recovery_banner_dismissed_ = false;
+    if (recovery_surface_ && recovery_surface_->hwnd())
+        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+
+    populate_user_strip();
+    refresh_room_list();
+
+    // Update active_user_id on disk.
+    auto idx = tesseract::SessionStore::load_index();
+    idx.active_user_id = sess->user_id;
+    tesseract::SessionStore::save_index(idx);
+
+    show_main_content();
+    SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Connected"));
+    maybe_show_recovery_banner();
+
+    if (!tray_) {
+        tray_ = std::make_unique<Win32TrayIcon>(
+            hInst_,
+            [this]{ ShowWindow(hwnd_, SW_SHOW);
+                     if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+                     SetForegroundWindow(hwnd_); },
+            [this]{ quitting_ = true; DestroyWindow(hwnd_); });
+    }
+    if (!notifier_) {
+        notifier_ = std::make_unique<Win32Notifier>(hwnd_);
+    }
+}
+
+void MainWindow::begin_add_account() {
+    add_account_return_idx_ = active_account_index_;
+    pending_login_is_add_account_ = true;
+
+    // New client runs OAuth into a unique temp dir.
+    std::string ts = std::to_string(
+        static_cast<long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    pending_login_temp_dir_ =
+        tesseract::SessionStore::account_dir("pending-" + ts);
+
+    pending_login_client_ = std::make_unique<tesseract::Client>();
+    pending_login_client_->set_data_dir(
+        (pending_login_temp_dir_ / "matrix-store").string());
+
+    if (login_view_) {
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
+        login_view_->reset();
+    }
+    show_login_view();
+}
+
+void MainWindow::on_login_cancelled() {
+    pending_login_client_.reset();
+    if (!pending_login_temp_dir_.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+        pending_login_temp_dir_.clear();
+    }
+    pending_login_is_add_account_ = false;
+
+    if (add_account_return_idx_ >= 0 &&
+        add_account_return_idx_ < static_cast<int>(accounts_.size()))
+    {
+        switch_active_account(add_account_return_idx_);
+    } else {
+        show_login_view();
+    }
+    add_account_return_idx_ = -1;
+}
+
+void MainWindow::logout_active_account() {
+    if (active_account_index_ < 0 ||
+        active_account_index_ >= static_cast<int>(accounts_.size()))
+        return;
+
+    std::string uid = accounts_[active_account_index_]->user_id;
+    accounts_[active_account_index_]->client->logout();
+    accounts_[active_account_index_]->client->stop_sync();
+    accounts_.erase(accounts_.begin() + active_account_index_);
+
+    tesseract::SessionStore::clear_account(uid);
+    auto index = tesseract::SessionStore::load_index();
+    index.user_ids.erase(
+        std::remove(index.user_ids.begin(), index.user_ids.end(), uid),
+        index.user_ids.end());
+
     current_room_id_.clear();
     current_room_info_ = tesseract::RoomInfo{};
     my_user_id_.clear();
@@ -2561,13 +2823,122 @@ void MainWindow::do_logout() {
         ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
     recovery_banner_visible_   = false;
     recovery_banner_dismissed_ = false;
-    RECT rc; GetClientRect(hwnd_, &rc);
-    on_size(rc.right, rc.bottom);
 
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-        reinterpret_cast<LPARAM>(res ? L"Signed out" : L"Sign out failed"));
+    if (accounts_.empty()) {
+        client_        = nullptr;
+        event_handler_ = nullptr;
+        active_account_index_ = -1;
+        index.active_user_id.clear();
+        tesseract::SessionStore::save_index(index);
 
-    start_login();
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        if (login_view_) {
+            login_view_->set_client(pending_login_client_.get());
+            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+            login_view_->reset();
+        }
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+        show_login_view();
+        SendMessageW(hStatus_, SB_SETTEXTW, 0,
+                     reinterpret_cast<LPARAM>(L"Signed out"));
+    } else {
+        int next = std::min(active_account_index_,
+                            static_cast<int>(accounts_.size()) - 1);
+        active_account_index_ = -1;  // force re-bind
+        index.active_user_id = accounts_[next]->user_id;
+        tesseract::SessionStore::save_index(index);
+        switch_active_account(next);
+        SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Signed out"));
+    }
+}
+
+void MainWindow::rebuild_account_picker() {
+    if (!hAccountPicker_) {
+        static bool registered = false;
+        if (!registered) {
+            WNDCLASSEXW wc{};
+            wc.cbSize        = sizeof(wc);
+            wc.lpfnWndProc   = DefWindowProcW;
+            wc.hInstance     = hInst_;
+            wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+            wc.hbrBackground = nullptr;
+            wc.lpszClassName = L"TesseractAccountPicker";
+            RegisterClassExW(&wc);
+            registered = true;
+        }
+        constexpr int kPickerW = 260;
+        constexpr int kRowH    = 56;
+        int           kPickerH = kRowH * static_cast<int>(accounts_.size());
+        hAccountPicker_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            L"TesseractAccountPicker", L"",
+            WS_POPUP | WS_BORDER,
+            0, 0, kPickerW, kPickerH,
+            hwnd_, nullptr, hInst_, nullptr);
+        if (!hAccountPicker_) return;
+
+        account_picker_surface_ =
+            std::make_unique<tk::win32::Surface>(hInst_, hAccountPicker_,
+                                                  tk::Theme::light());
+        auto picker = std::make_unique<tesseract::views::AccountPicker>();
+        account_picker_ = picker.get();
+        account_picker_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        account_picker_->on_select = [this](const std::string& uid) {
+            if (hAccountPicker_) ShowWindow(hAccountPicker_, SW_HIDE);
+            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                if (accounts_[i]->user_id == uid) { switch_active_account(i); break; }
+            }
+        };
+        account_picker_surface_->set_root(std::move(picker));
+        if (HWND s = account_picker_surface_->hwnd()) {
+            constexpr int kPickerW = 260;
+            constexpr int kRowH    = 56;
+            int kPickerH = kRowH * static_cast<int>(accounts_.size());
+            SetWindowPos(s, nullptr, 0, 0, kPickerW, kPickerH,
+                          SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
+    // Rebuild entries.
+    std::vector<tesseract::views::AccountEntry> entries;
+    for (const auto& s : accounts_) {
+        entries.push_back({ s->user_id, s->display_name, s->avatar_url,
+                             s->user_id == my_user_id_ });
+    }
+    if (account_picker_) {
+        account_picker_->set_entries(std::move(entries));
+        if (account_picker_surface_) account_picker_surface_->relayout();
+    }
+}
+
+void MainWindow::open_account_picker() {
+    if (accounts_.size() < 2) return;
+    rebuild_account_picker();
+    if (!hAccountPicker_) return;
+
+    constexpr int kPickerW = 260;
+    constexpr int kRowH    = 56;
+    int kPickerH = kRowH * static_cast<int>(accounts_.size());
+
+    RECT sr{}; GetWindowRect(hUserStrip_, &sr);
+    int x = sr.left;
+    int y = sr.top - kPickerH - 4;
+
+    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(mon, &mi)) {
+        if (x + kPickerW > mi.rcWork.right)
+            x = mi.rcWork.right - kPickerW - 4;
+        if (y < mi.rcWork.top) y = sr.bottom + 4;
+    }
+    SetWindowPos(hAccountPicker_, HWND_TOPMOST,
+                 x, y, kPickerW, kPickerH, SWP_NOACTIVATE);
+    ShowWindow(hAccountPicker_, SW_SHOWNOACTIVATE);
 }
 
 // ---------------------------------------------------------------------------
@@ -2611,7 +2982,7 @@ void MainWindow::ensure_emoji_picker_created() {
 
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     emoji_picker_shared_ = shared.get();
-    emoji_picker_shared_->set_client(&client_);
+    emoji_picker_shared_->set_client(client_);
     emoji_picker_shared_->on_selected =
         [this](const std::string& glyph) { insert_emoji_at_cursor(glyph); };
     emoji_picker_shared_->set_image_provider(
@@ -2736,7 +3107,7 @@ void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
         std::string ev = std::move(pending_reaction_event_id_);
         pending_reaction_event_id_.clear();
         if (!current_room_id_.empty()) {
-            client_.send_reaction(current_room_id_, ev, glyph);
+            client_->send_reaction(current_room_id_, ev, glyph);
         }
         if (hEmojiPicker_) ShowWindow(hEmojiPicker_, SW_HIDE);
         return;
@@ -2793,13 +3164,13 @@ void MainWindow::ensure_sticker_picker_created() {
 
     auto shared = std::make_unique<tesseract::views::StickerPicker>();
     sticker_picker_shared_ = shared.get();
-    sticker_picker_shared_->set_client(&client_);
+    sticker_picker_shared_->set_client(client_);
     sticker_picker_shared_->on_selected =
         [this](const tesseract::ImagePackImage& img) {
             if (!current_room_id_.empty()) {
                 const std::string body =
                     img.body.empty() ? img.shortcode : img.body;
-                client_.send_sticker(current_room_id_, body,
+                client_->send_sticker(current_room_id_, body,
                                       img.url, img.info_json);
             }
             if (hStickerPicker_) ShowWindow(hStickerPicker_, SW_HIDE);
