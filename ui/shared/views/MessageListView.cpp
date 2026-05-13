@@ -152,10 +152,12 @@ public:
         bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h = !m.reactions.empty() ? chip_h() : 0.0f;
+        float chips_h   = !m.reactions.empty() ? chip_h() : 0.0f;
+        float receipt_h = !m.read_receipts.empty() && m.reactions.empty()
+                              ? kReceiptSize + kPadY : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
-        return top_pad + header_h + body_h + chips_h + kPadY;
+        return top_pad + header_h + body_h + chips_h + receipt_h + kPadY;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -293,10 +295,12 @@ public:
             }
         }
 
-        // Disc centre Y for receipts. Default: aligned with the bottom of the
-        // body block. Overridden below when a chip strip is also present so
-        // the receipt cluster shares the strip row instead of stacking above it.
-        float receipt_disc_cy = cursor - kReceiptSize * 0.5f;
+        // Disc centre Y for receipts. When reactions are present the disc shares
+        // their chip strip (overridden inside that block). When only receipts are
+        // present they get their own strip immediately below the body block.
+        float receipt_disc_cy = (!m.read_receipts.empty() && m.reactions.empty())
+            ? cursor + kReceiptSize * 0.5f
+            : cursor - kReceiptSize * 0.5f;
 
         // ── Bottom chip strip (reactions) ────────────────────────────────────
         // Only created when there are persistent reaction chips to show.
@@ -494,7 +498,7 @@ public:
                     };
                     ctx.canvas.fill_rounded_rect(
                         pill, pill_h * 0.5f,
-                        ctx.theme.palette.subtle_hover);
+                        ctx.theme.palette.chip_bg);
                     ctx.canvas.draw_text(
                         *layout,
                         { pill.x + (pill_w - sz.w) * 0.5f,
