@@ -5,6 +5,7 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/visual.h>
 #include "LinuxNotifier.h"
+#include "LinuxGtkTrayIcon.h"
 
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -126,6 +127,9 @@ private:
                                             guint keyval, guint,
                                             GdkModifierType,
                                             gpointer user_data);
+    static gboolean on_window_close_request_(GtkWindow* window, gpointer user_data);
+
+    void start_tray_if_needed_();
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
@@ -270,6 +274,7 @@ private:
     tesseract::Client                     client_;
     std::unique_ptr<EventHandler>         event_handler_;
     std::unique_ptr<LinuxNotifierGtk>     notifier_;
+    std::unique_ptr<LinuxGtkTrayIcon>     tray_;
     std::vector<tesseract::RoomInfo>  rooms_;
     std::string                    current_room_id_;
     std::string                    pending_restore_room_;

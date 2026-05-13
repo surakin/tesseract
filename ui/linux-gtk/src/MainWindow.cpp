@@ -978,10 +978,42 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     notifier_ = std::make_unique<LinuxNotifierGtk>(
         [this](std::string room_id) { navigate_to_room(std::move(room_id)); });
 
+    g_signal_connect(window_, "close-request",
+                     G_CALLBACK(&MainWindow::on_window_close_request_), this);
+
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
         return G_SOURCE_REMOVE;
     }, this);
+}
+
+void MainWindow::start_tray_if_needed_() {
+    if (tray_) return;
+    tray_ = std::make_unique<LinuxGtkTrayIcon>(
+        [this]{
+            gtk_window_present(GTK_WINDOW(window_));
+        },
+        [this]{
+            // Real quit: drop the tray so close-request falls through to
+            // the default (window destroyed → app holds nothing → quits).
+            tray_.reset();
+            g_application_quit(G_APPLICATION(app_));
+        });
+    if (tray_->is_available()) {
+        // Keep the GApplication alive when the window is hidden.
+        g_application_hold(G_APPLICATION(app_));
+    } else {
+        tray_.reset();
+    }
+}
+
+gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/, gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->tray_ && self->tray_->is_available()) {
+        gtk_widget_set_visible(self->window_, FALSE);
+        return TRUE;  // stop default destruction
+    }
+    return FALSE;
 }
 
 MainWindow::~MainWindow() {
@@ -1014,6 +1046,7 @@ void MainWindow::do_login() {
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             maybe_show_recovery_banner();
+            start_tray_if_needed_();
             return;
         }
         tesseract::SessionStore::clear();
@@ -1038,6 +1071,7 @@ void MainWindow::on_login_succeeded() {
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
+    start_tray_if_needed_();
 }
 
 void MainWindow::on_send_clicked() {

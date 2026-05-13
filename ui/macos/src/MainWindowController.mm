@@ -2,6 +2,7 @@
 #import "LoginView.h"
 #import "EmojiPicker.h"
 #import "StickerPicker.h"
+#import "MacOSTrayIcon.h"
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
@@ -112,7 +113,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 //  Internal IBO that the C++ EventBridge calls back into.
 // ─────────────────────────────────────────────────────────────────────────
 
-@interface MainWindowController () <LoginViewDelegate, UNUserNotificationCenterDelegate>
+@interface MainWindowController () <LoginViewDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate>
 - (void)handleTimelineReset:(NSString*)roomId
                     snapshot:(std::vector<tesseract::Event*>)snapshot;
 - (void)handleMessageInserted:(NSString*)roomId
@@ -358,6 +359,11 @@ void EventBridge::on_notification(const std::string& room_id,
     std::unordered_map<std::string, AnimEntry>       _tkAnimImages;
     NSTimer*                                         _animTimer;
 
+    // System-tray icon (menu-bar status item). Created after login; nil
+    // until then. When non-nil and `is_available()`, closing the window
+    // hides it instead of terminating the app.
+    std::unique_ptr<MacOSTrayIcon>                    _tray;
+
     // Sticker picker async-fetch guard.
     std::set<std::string>                            _stickerFetchesInFlight;
 
@@ -424,8 +430,20 @@ void EventBridge::on_notification(const std::string& room_id,
 
     _videoThumbInFlight = [NSMutableSet set];
     _bridge = std::make_unique<EventBridge>(self);
+    window.delegate = self;
     [self _buildChrome];
     return self;
+}
+
+// Intercept the red traffic-light / Cmd-W. If the tray icon is up, hide the
+// window instead of closing it; the user can bring it back via the menu-bar
+// item. Returns NO to swallow the close.
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+    if (_tray && _tray->is_available()) {
+        [sender orderOut:nil];
+        return NO;
+    }
+    return YES;
 }
 
 - (void)_buildChrome {
@@ -1221,6 +1239,24 @@ void EventBridge::on_notification(const std::string& room_id,
     _splitView.hidden = NO;
     _loginView.hidden = YES;
     [self _populateUserStrip];
+
+    if (!_tray) {
+        __weak MainWindowController* weakSelf = self;
+        _tray = std::make_unique<MacOSTrayIcon>(
+            [weakSelf]{
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    MainWindowController* strong = weakSelf;
+                    if (!strong) return;
+                    [strong.window makeKeyAndOrderFront:nil];
+                    [NSApp activateIgnoringOtherApps:YES];
+                });
+            },
+            []{
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [NSApp terminate:nil];
+                });
+            });
+    }
 
     UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;

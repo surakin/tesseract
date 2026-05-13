@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-13**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-14**.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -8,8 +8,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 65 |
-| C++ Catch2 tests via ctest (Qt6 + GTK4 presets) | 151 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 67 |
+| C++ Catch2 tests via ctest (Qt6 + GTK4 presets) | 189 |
 
 ## Platforms
 
@@ -122,6 +122,15 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **GTK4** — all shell strings wrapped with `_(s)` = `gettext(s)`; `bindtextdomain("tesseract", share/locale)` + `textdomain` called in `main()`. `i18n_extract_gtk` CMake target runs `xgettext` to produce `i18n/gtk/tesseract.pot`.
 - Shared views (`ui/shared/views/`) stay in English — translated via each platform's mechanism when strings are passed in by the host.
 - macOS (`NSLocalizedString`) and Win32 (`LoadString`) not yet wired.
+
+## System tray
+
+- **All four platforms** — system-tray icon with **Show App** / **Quit** popup menu. Closing the main window hides it (the SDK keeps running, sync stays warm); Quit on the tray menu does the real exit.
+- Cross-platform `tesseract::ITrayIcon` abstraction; per-platform impls created after login (mirrors `INotifier`).
+- **Qt6** — `QSystemTrayIcon`; `is_available()` from `QSystemTrayIcon::isSystemTrayAvailable`. Falls back to plain quit when no system tray is present.
+- **GTK4** — `libayatana-appindicator3` (probed via `org.kde.StatusNotifierWatcher`). Built in a separate `tesseract_gtk_tray` static lib so GTK3 headers stay isolated from the GTK4 shell. Requires `libayatana-appindicator3-dev`.
+- **Win32** — `Shell_NotifyIcon` against a hidden helper HWND; `TrackPopupMenuEx` for the right-click menu; `WM_CLOSE` intercepted in `MainWindow`'s wnd_proc.
+- **macOS** — `NSStatusItem` with a template menu-bar icon; `windowShouldClose:` hides the window; Quit calls `[NSApp terminate:nil]`.
 
 ## Build & packaging
 

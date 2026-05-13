@@ -19,6 +19,7 @@
 #include "tk/host.h"
 #include "tk/host_qt.h"
 #include "LinuxNotifier.h"
+#include "LinuxQtTrayIcon.h"
 #include "views/ComposeBar.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
@@ -108,6 +109,7 @@ protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
     void keyPressEvent(QKeyEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
+    void closeEvent(QCloseEvent* ev) override;
 
 private slots:
     void onLoginSucceeded();
@@ -263,6 +265,7 @@ private:
     tesseract::Client                   client_;
     std::unique_ptr<EventBridge>        bridge_;
     std::unique_ptr<LinuxNotifierQt>    notifier_;
+    std::unique_ptr<LinuxQtTrayIcon>    tray_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
     std::string                   pendingRestoreRoom_;

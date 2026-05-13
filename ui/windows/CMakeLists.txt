@@ -40,6 +40,7 @@ add_executable(tesseract_win32 WIN32
     src/TextRenderer.cpp
     src/Theme.cpp
     src/Win32Notifier.cpp
+    src/Win32TrayIcon.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
 

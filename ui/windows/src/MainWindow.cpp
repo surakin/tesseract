@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "Win32Notifier.h"
+#include "Win32TrayIcon.h"
 #include "LoginView.h"
 #include "TextRenderer.h"
 #include "Theme.h"
@@ -581,6 +582,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_CREATE:
         self->on_create(hwnd);
         return 0;
+
+    case WM_CLOSE:
+        if (self->tray_ && self->tray_->is_available() && !self->quitting_) {
+            ShowWindow(hwnd, SW_HIDE);
+            return 0;
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);  // → WM_DESTROY
 
     case WM_DESTROY:
         self->on_destroy();
@@ -1554,6 +1562,14 @@ void MainWindow::start_login() {
                          reinterpret_cast<LPARAM>(L"Connected"));
             show_main_content();
             maybe_show_recovery_banner();
+            if (!tray_) {
+                tray_ = std::make_unique<Win32TrayIcon>(
+                    hInst_,
+                    [this]{ ShowWindow(hwnd_, SW_SHOW);
+                             if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+                             SetForegroundWindow(hwnd_); },
+                    [this]{ quitting_ = true; DestroyWindow(hwnd_); });
+            }
             return;
         }
         tesseract::SessionStore::clear();
@@ -1582,6 +1598,14 @@ void MainWindow::on_login_succeeded() {
     SendMessageW(hStatus_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(L"Connected"));
     show_main_content();
     maybe_show_recovery_banner();
+    if (!tray_) {
+        tray_ = std::make_unique<Win32TrayIcon>(
+            hInst_,
+            [this]{ ShowWindow(hwnd_, SW_SHOW);
+                     if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+                     SetForegroundWindow(hwnd_); },
+            [this]{ quitting_ = true; DestroyWindow(hwnd_); });
+    }
 }
 
 void MainWindow::show_login_view() {

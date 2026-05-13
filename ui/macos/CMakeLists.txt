@@ -34,6 +34,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/EmojiPicker.mm
     src/StickerPicker.h
     src/StickerPicker.mm
+    src/MacOSTrayIcon.h
+    src/MacOSTrayIcon.mm
     "${_icns}"
 )
 

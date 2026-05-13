@@ -3,6 +3,26 @@ cmake_minimum_required(VERSION 3.25)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK4 REQUIRED gtk4)
 pkg_check_modules(GIO  REQUIRED gio-2.0)
+pkg_check_modules(AYATANA_APPINDICATOR REQUIRED IMPORTED_TARGET ayatana-appindicator3-0.1)
+
+# libayatana-appindicator3 is a GTK3 library. The tray code is compiled in
+# its own static library so the GTK3 include paths stay isolated from the
+# GTK4 translation units. See LinuxGtkTrayIcon.{h,cpp} for the type-erased
+# header used by the rest of the shell.
+add_library(tesseract_gtk_tray STATIC
+    src/LinuxGtkTrayIcon.cpp
+    src/LinuxGtkTrayIcon.h
+)
+target_compile_features(tesseract_gtk_tray PRIVATE cxx_std_20)
+target_include_directories(tesseract_gtk_tray PRIVATE
+    ${CMAKE_SOURCE_DIR}/client/include
+)
+target_link_libraries(tesseract_gtk_tray PRIVATE
+    PkgConfig::AYATANA_APPINDICATOR
+)
+target_compile_definitions(tesseract_gtk_tray PRIVATE
+    TESSERACT_ICON_SEARCH_PATH="${CMAKE_CURRENT_BINARY_DIR}/icons"
+)
 
 add_executable(tesseract_gtk
     src/main.cpp
@@ -35,6 +55,8 @@ target_link_libraries(tesseract_gtk PRIVATE
     # removing all ordering constraints between them. Mirrors ui/linux-qt.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     tesseract_tk
+    tesseract_gtk_tray
+    PkgConfig::AYATANA_APPINDICATOR  # transitive runtime: appindicator + GTK3
     ${GTK4_LIBRARIES}
     ${GIO_LIBRARIES}
 )

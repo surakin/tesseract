@@ -24,6 +24,8 @@
 #include <QVBoxLayout>
 #include <QMessageBox>
 #include <QMetaType>
+#include <QApplication>
+#include <QCloseEvent>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -925,6 +927,24 @@ void MainWindow::onLoginSucceeded() {
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
+
+    if (!tray_) {
+        tray_ = std::make_unique<LinuxQtTrayIcon>(
+            [this]{ show(); raise(); activateWindow(); },
+            []{ qApp->quit(); },
+            this);
+        if (tray_->is_available())
+            qApp->setQuitOnLastWindowClosed(false);
+    }
+}
+
+void MainWindow::closeEvent(QCloseEvent* ev) {
+    if (tray_ && tray_->is_available()) {
+        ev->ignore();
+        hide();
+        return;
+    }
+    QMainWindow::closeEvent(ev);
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id) {

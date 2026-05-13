@@ -60,6 +60,7 @@ constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 namespace win32 {
 
 class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
+class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
 
 class LoginView;
 
@@ -301,6 +302,8 @@ private:
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
     std::unique_ptr<Win32Notifier>   notifier_;
+    std::unique_ptr<Win32TrayIcon>   tray_;
+    bool                              quitting_ = false;
     std::vector<tesseract::RoomInfo> rooms_;
     tesseract::RoomInfo              current_room_info_;
     std::string                      current_room_id_;
