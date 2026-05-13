@@ -690,6 +690,24 @@ impl ClientFfi {
     }
 
     pub fn stop_sync(&mut self) {
+        // Flush the latest OAuth session to disk before tearing down the
+        // runtime.  The session-watcher task (spawned in start_sync) saves
+        // new tokens whenever TokensRefreshed fires, but its JoinHandle is
+        // discarded so it may be cancelled mid-flight when the runtime drops.
+        // Saving here, while the C++ EventHandler is still alive, ensures the
+        // most recent refresh token is always persisted on clean shutdown.
+        #[cfg(not(test))]
+        if let (Some(client), Some(handler)) = (&self.client, &self.handler) {
+            if let Some(full) = client.oauth().full_session() {
+                let persisted = PersistedSession { client_id: full.client_id, user: full.user };
+                if let Ok(json) = serde_json::to_string(&persisted) {
+                    if let Ok(guard) = handler.lock() {
+                        guard.on_session_refreshed(&json);
+                    }
+                }
+            }
+        }
+
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(true);
         }
