@@ -13,6 +13,7 @@
 #include <QImageReader>
 #include <QPointer>
 
+#include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
 
@@ -757,9 +758,10 @@ void MainWindow::doLogin() {
         statusBar()->showMessage(tr("Restoring session\xe2\x80\xa6"));
         auto res = client_.restore_session(*saved);
         if (res) {
-            myUserId_      = client_.get_user_id();
-            myDisplayName_ = client_.get_display_name();
-            myAvatarUrl_   = client_.get_avatar_url();
+            myUserId_          = client_.get_user_id();
+            myDisplayName_     = client_.get_display_name();
+            myAvatarUrl_       = client_.get_avatar_url();
+            pendingRestoreRoom_ = tesseract::Prefs::load_last_room();
             populateUserStrip();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage(tr("Connected"));
@@ -779,9 +781,10 @@ void MainWindow::doLogin() {
 }
 
 void MainWindow::onLoginSucceeded() {
-    myUserId_      = client_.get_user_id();
-    myDisplayName_ = client_.get_display_name();
-    myAvatarUrl_   = client_.get_avatar_url();
+    myUserId_          = client_.get_user_id();
+    myDisplayName_     = client_.get_display_name();
+    myAvatarUrl_       = client_.get_avatar_url();
+    pendingRestoreRoom_ = tesseract::Prefs::load_last_room();
     populateUserStrip();
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
@@ -835,6 +838,8 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         client_.unsubscribe_room(currentRoomId_);
 
     currentRoomId_ = room_id;
+    reply_details_requested_.clear();
+    tesseract::Prefs::save_last_room(room_id);
     if (composeShared_) {
         composeShared_->clear_reply();
         composeShared_->clear_editing();
@@ -866,6 +871,7 @@ void MainWindow::onTimelineReset(
         for (auto* ev : snapshot) {
             if (!ev) continue;
             ensureRowMedia(*ev);
+            ensureReplyDetails(ev->in_reply_to_id);
             rows.push_back(toRowData(*ev));
         }
         messageListView_->set_messages(std::move(rows));
@@ -881,6 +887,7 @@ void MainWindow::onMessageInserted(
         && ev->type != tesseract::EventType::Unhandled)
     {
         ensureRowMedia(*ev);
+        ensureReplyDetails(ev->in_reply_to_id);
         messageListView_->insert_message(index, toRowData(*ev));
         msgSurface_->relayout();
     }
@@ -894,6 +901,7 @@ void MainWindow::onMessageUpdated(
         && ev->type != tesseract::EventType::Unhandled)
     {
         ensureRowMedia(*ev);
+        ensureReplyDetails(ev->in_reply_to_id);
         messageListView_->update_message(index, toRowData(*ev));
         msgSurface_->relayout();
     }
@@ -943,9 +951,19 @@ void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     refreshRoomList();
-    if (!currentRoomId_.empty())
+    if (!currentRoomId_.empty()) {
         for (const auto& r : rooms_)
             if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
+    } else if (!pendingRestoreRoom_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == pendingRestoreRoom_ && !r.is_space) {
+                std::string target = std::move(pendingRestoreRoom_);
+                pendingRestoreRoom_.clear();
+                onRoomSelected(target);
+                break;
+            }
+        }
+    }
 }
 
 void MainWindow::onSyncError(
@@ -1057,6 +1075,12 @@ void MainWindow::ensureUserAvatar(const std::string& mxc) {
 
 void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) {
     requestMediaImage_(url, max_w, max_h);
+}
+
+void MainWindow::ensureReplyDetails(const std::string& event_id) {
+    if (event_id.empty() || currentRoomId_.empty()) return;
+    if (!reply_details_requested_.insert(event_id).second) return;
+    client_.fetch_reply_details(currentRoomId_, event_id);
 }
 
 void MainWindow::requestRoomAvatar_(const std::string& room_id,

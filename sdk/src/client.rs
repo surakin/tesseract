@@ -968,6 +968,38 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Trigger an async fetch of the replied-to event's details for all
+    /// timeline items in `room_id` that reference `event_id` via
+    /// `m.in_reply_to`. When the data arrives, the SDK re-emits every
+    /// affected item as an `on_message_updated` callback so the UI can
+    /// paint the quote block with the resolved sender name and body snippet.
+    /// Requires `subscribe_room`. The call spawns a tokio task and returns
+    /// immediately — it never blocks the UI thread.
+    #[cfg(not(test))]
+    pub fn fetch_reply_details(&mut self, room_id: &str, event_id: &str) -> OpResult {
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return err("room not subscribed");
+        };
+        let tl = Arc::clone(&handle.timeline);
+        self.rt.spawn(async move {
+            let _ = tl.fetch_details_for_event(&event_id).await;
+        });
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn fetch_reply_details(&mut self, _: &str, _: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Upload `bytes` (already encoded as `mime_type`) and send an `m.image`
     /// event. Caption/filename handling follows MSC2530 — see the FFI doc
     /// comment in `bridge.rs`. Returns `OpResult` with `ok=false` for

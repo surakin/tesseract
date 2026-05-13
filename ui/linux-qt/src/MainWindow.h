@@ -153,6 +153,7 @@ private:
     void                              ensureRoomAvatar(const tesseract::RoomInfo& r);
     void                              ensureMediaImage(const std::string& url,
                                                          int max_w, int max_h);
+    void                              ensureReplyDetails(const std::string& event_id);
 
     /// Async media-bytes fetch. The synchronous Rust FFI does a
     /// `tokio::block_on` per call — running it on the UI thread freezes
@@ -231,6 +232,7 @@ private:
     std::unique_ptr<EventBridge>  bridge_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
+    std::string                   pendingRestoreRoom_;
     std::string                   myUserId_;
     // Room-header avatar (the 40 px disc shown above the message list)
     // still uses QPixmap because the header itself remains a QLabel-
@@ -245,6 +247,11 @@ private:
     // SDK caches the decoded blob, so we only need to mark which source
     // tokens we've already kicked a worker off for to avoid duplicates.
     std::unordered_set<std::string> voice_prefetched_;
+
+    // Replied-to event IDs for which we have already called
+    // fetch_reply_details this subscription session. Cleared on room switch
+    // so a fresh subscription re-requests any still-unresolved context.
+    std::unordered_set<std::string> reply_details_requested_;
 
     /// Animated inline-media entries for the timeline (GIF / animated
     /// WebP / APNG). Same shape as `StickerPicker::AnimatedEntry`; kept

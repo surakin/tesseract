@@ -8,6 +8,7 @@
 #include <thread>
 
 #include <tesseract/emoji.h>
+#include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
 
@@ -821,9 +822,10 @@ void MainWindow::do_login() {
         gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
         auto res = client_.restore_session(*saved);
         if (res) {
-            my_user_id_       = client_.get_user_id();
-            my_display_name_  = client_.get_display_name();
-            my_avatar_url_    = client_.get_avatar_url();
+            my_user_id_           = client_.get_user_id();
+            my_display_name_      = client_.get_display_name();
+            my_avatar_url_        = client_.get_avatar_url();
+            pending_restore_room_ = tesseract::Prefs::load_last_room();
             populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
@@ -843,9 +845,10 @@ void MainWindow::do_login() {
 }
 
 void MainWindow::on_login_succeeded() {
-    my_user_id_       = client_.get_user_id();
-    my_display_name_  = client_.get_display_name();
-    my_avatar_url_    = client_.get_avatar_url();
+    my_user_id_           = client_.get_user_id();
+    my_display_name_      = client_.get_display_name();
+    my_avatar_url_        = client_.get_avatar_url();
+    pending_restore_room_ = tesseract::Prefs::load_last_room();
     populate_user_strip();
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
@@ -904,6 +907,8 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_.unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    reply_details_requested_.clear();
+    tesseract::Prefs::save_last_room(room_id);
     if (compose_shared_) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();
@@ -969,6 +974,7 @@ void MainWindow::push_message_inserted(
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media(*ev);
+    ensure_reply_details(ev->in_reply_to_id);
     message_list_view_->insert_message(index, to_row_data(*ev));
     msg_surface_->relayout();
 }
@@ -982,6 +988,7 @@ void MainWindow::push_message_updated(
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media(*ev);
+    ensure_reply_details(ev->in_reply_to_id);
     message_list_view_->update_message(index, to_row_data(*ev));
     msg_surface_->relayout();
 }
@@ -995,9 +1002,19 @@ void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
 void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
     rooms_ = std::move(rooms);
     refresh_room_list();
-    if (!current_room_id_.empty())
+    if (!current_room_id_.empty()) {
         for (const auto& r : rooms_)
             if (r.id == current_room_id_) { update_room_header(r); break; }
+    } else if (!pending_restore_room_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(pending_restore_room_);
+                pending_restore_room_.clear();
+                on_room_selected(target);
+                break;
+            }
+        }
+    }
 }
 
 void MainWindow::handle_reconnect() {
@@ -1042,6 +1059,7 @@ void MainWindow::push_timeline_reset(
     for (auto& ev : snapshot) {
         if (!ev) continue;
         ensure_row_media(*ev);
+        ensure_reply_details(ev->in_reply_to_id);
         rows.push_back(to_row_data(*ev));
     }
     message_list_view_->set_messages(std::move(rows));
@@ -1265,6 +1283,12 @@ void MainWindow::ensure_user_avatar(const std::string& mxc) {
 void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
     request_media_image_async(url);
+}
+
+void MainWindow::ensure_reply_details(const std::string& event_id) {
+    if (event_id.empty() || current_room_id_.empty()) return;
+    if (!reply_details_requested_.insert(event_id).second) return;
+    client_.fetch_reply_details(current_room_id_, event_id);
 }
 
 void MainWindow::start_anim_tick_if_needed_() {

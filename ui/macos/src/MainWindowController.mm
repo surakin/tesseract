@@ -318,6 +318,10 @@ void EventBridge::on_image_packs_updated() {
     // (one round-trip per avatar). The worker spawns are deduped here.
     std::set<std::string>                            _mediaFetchesInFlight;
 
+    // Replied-to event IDs for which we have already called
+    // fetch_reply_details this subscription session. Cleared on room switch.
+    std::set<std::string>                            _replyDetailsRequested;
+
     // Right-click context menu sticker state.
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
@@ -1258,6 +1262,12 @@ void EventBridge::on_image_packs_updated() {
     }).detach();
 }
 
+- (void)_ensureReplyDetails:(const std::string&)eventId {
+    if (eventId.empty() || _currentRoomId.empty()) return;
+    if (!_replyDetailsRequested.insert(eventId).second) return;
+    _client.fetch_reply_details(_currentRoomId, eventId);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Event-bridge callbacks (main thread)
 // ─────────────────────────────────────────────────────────────────────────
@@ -1271,6 +1281,7 @@ void EventBridge::on_image_packs_updated() {
     if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
     if (event->type == tesseract::EventType::Unhandled) return;
     [self _ensureRowMedia:*event];
+    [self _ensureReplyDetails:event->in_reply_to_id];
     _messageListView->insert_message(index, [self _toRowData:*event]);
     _msgSurface->relayout();
 }
@@ -1284,6 +1295,7 @@ void EventBridge::on_image_packs_updated() {
     if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
     if (event->type == tesseract::EventType::Unhandled) return;
     [self _ensureRowMedia:*event];
+    [self _ensureReplyDetails:event->in_reply_to_id];
     _messageListView->update_message(index, [self _toRowData:*event]);
     _msgSurface->relayout();
 }
@@ -1340,6 +1352,7 @@ void EventBridge::on_image_packs_updated() {
         for (auto* ev : snapshot) {
             if (!ev) continue;
             [self _ensureRowMedia:*ev];
+            [self _ensureReplyDetails:ev->in_reply_to_id];
             rows.push_back([self _toRowData:*ev]);
         }
         _messageListView->set_messages(std::move(rows));
@@ -1514,6 +1527,7 @@ void EventBridge::on_image_packs_updated() {
         _client.unsubscribe_room(_currentRoomId);
     }
     _currentRoomId = roomId;
+    _replyDetailsRequested.clear();
     if (_composeShared) {
         _composeShared->clear_reply();
         _composeShared->clear_editing();

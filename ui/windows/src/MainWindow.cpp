@@ -1470,6 +1470,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_.unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    reply_details_requested_.clear();
     if (compose_shared_) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();
@@ -1551,6 +1552,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
     for (auto& ev : payload->snapshot) {
         if (!ev) continue;
         ensure_row_media(*ev);
+        ensure_reply_details(ev->in_reply_to_id);
         rows.push_back(to_row_data(*ev));
     }
     message_list_view_->set_messages(std::move(rows));
@@ -1564,6 +1566,7 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
     if (!message_list_view_) return;
 
     ensure_row_media(*payload->event);
+    ensure_reply_details(payload->event->in_reply_to_id);
     message_list_view_->insert_message(payload->index,
                                          to_row_data(*payload->event));
     if (msg_surface_) msg_surface_->relayout();
@@ -1576,6 +1579,7 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
     if (!message_list_view_) return;
 
     ensure_row_media(*payload->event);
+    ensure_reply_details(payload->event->in_reply_to_id);
     message_list_view_->update_message(payload->index,
                                          to_row_data(*payload->event));
     if (msg_surface_) msg_surface_->relayout();
@@ -1650,6 +1654,12 @@ void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
     if (!msg_surface_) return;
     request_media_image(url);
+}
+
+void MainWindow::ensure_reply_details(const std::string& event_id) {
+    if (event_id.empty() || current_room_id_.empty()) return;
+    if (!reply_details_requested_.insert(event_id).second) return;
+    client_.fetch_reply_details(current_room_id_, event_id);
 }
 
 // ---------------------------------------------------------------------------

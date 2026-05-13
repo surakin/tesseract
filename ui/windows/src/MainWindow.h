@@ -146,6 +146,7 @@ private:
     void ensure_room_avatar(const tesseract::RoomInfo& r);
     void ensure_user_avatar_tk(const std::string& mxc);
     void ensure_media_image(const std::string& url, int max_w, int max_h);
+    void ensure_reply_details(const std::string& event_id);
 
     void on_reconnect();
     void on_auth_error(bool soft_logout);
@@ -288,6 +289,10 @@ private:
     // Voice-message source tokens already prefetched (or in flight). The
     // SDK media cache owns the bytes; this set just dedupes worker spawns.
     std::unordered_set<std::string> voice_prefetched_;
+
+    // Replied-to event IDs for which we have already called
+    // fetch_reply_details this subscription session. Cleared on room switch.
+    std::unordered_set<std::string> reply_details_requested_;
 
     // Animated inline-media entries (GIF / APNG / animated WebP). Frames
     // are eager-decoded by tk::d2d::decode_animation; `next_advance_ms`

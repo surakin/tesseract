@@ -136,6 +136,7 @@ private:
     void ensure_room_avatar(const tesseract::RoomInfo& r);
     void ensure_user_avatar(const std::string& mxc);
     void ensure_media_image(const std::string& url, int max_w, int max_h);
+    void ensure_reply_details(const std::string& event_id);
 
     /// Background-thread variant for the sticker picker: kick off a
     /// `fetch_source_bytes` on a detached thread, then post the decoded
@@ -242,6 +243,7 @@ private:
     std::unique_ptr<EventHandler>  event_handler_;
     std::vector<tesseract::RoomInfo>  rooms_;
     std::string                    current_room_id_;
+    std::string                    pending_restore_room_;
     std::string                    my_user_id_;
     // Raw bytes-cache for the room-header avatar (still painted via
     // GdkPixbuf into a GtkImage). Sidebar + message-list avatars and
@@ -277,6 +279,10 @@ private:
     // that hasn't yet posted its result. Stops every cell-paint from
     // queueing a duplicate fetch.
     std::unordered_set<std::string>                              sticker_fetches_in_flight_;
+
+    // Replied-to event IDs for which we have already called
+    // fetch_reply_details this subscription session. Cleared on room switch.
+    std::unordered_set<std::string>                              reply_details_requested_;
 
     std::vector<std::string>                               space_stack_;
 

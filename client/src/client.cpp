@@ -195,6 +195,11 @@ Result Client::send_reply(const std::string& room_id,
     return from_ffi(impl_->ffi->send_reply(room_id, event_id, body));
 }
 
+Result Client::fetch_reply_details(const std::string& room_id,
+                                    const std::string& event_id) {
+    return from_ffi(impl_->ffi->fetch_reply_details(room_id, event_id));
+}
+
 Result Client::send_edit(const std::string& room_id,
                          const std::string& event_id,
                          const std::string& new_body) {

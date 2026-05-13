@@ -337,6 +337,14 @@ pub mod ffi {
                       event_id: &str,
                       body:     &str) -> OpResult;
 
+        /// Trigger an async fetch of the details of the event referenced by
+        /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
+        /// the result arrives via `on_message_updated` for every message in
+        /// the subscribed timeline that references `event_id`.
+        fn fetch_reply_details(self: &mut ClientFfi,
+                               room_id:  &str,
+                               event_id: &str) -> OpResult;
+
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK
         /// uploads them via the homeserver's media repository and posts an
