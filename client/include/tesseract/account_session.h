@@ -1,6 +1,5 @@
 #pragma once
 
-#include "tesseract/avatar_disk_cache.h"
 #include "tesseract/client.h"
 #include "tesseract/event_handler.h"
 #include "tesseract/notifier.h"
@@ -34,9 +33,6 @@ struct AccountSession {
     // client teardown), stopping incoming notifications before the SDK tears
     // down. bridge is still declared first so it outlives both.
     std::unique_ptr<INotifier>     notifier;
-    // avatar_disk_cache has no SDK callbacks so destruction order relative to
-    // client/notifier does not matter; declared last for simplicity.
-    std::unique_ptr<AvatarDiskCache> avatar_disk_cache;
 
     /// Canonical Matrix ID, e.g. `@alice:example.org`. Used as the key in
     /// `accounts.json` and as the parent of `SessionStore::account_dir`.

@@ -856,12 +856,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             switch (p->kind) {
             case Kind::RoomAvatar:
                 if (self->room_surface_) {
-                    // L1 write: persist bytes for future launches.
-                    if (self->active_account_index_ >= 0) {
-                        if (auto* c = self->accounts_[self->active_account_index_]
-                                          ->avatar_disk_cache.get())
-                            c->put(p->cache_key, p->bytes);
-                    }
                     if (auto img = self->room_surface_->factory()
                                        .decode_image(p->bytes))
                         self->tk_avatars_.emplace(p->cache_key,
@@ -871,12 +865,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                 break;
             case Kind::UserAvatar:
                 if (self->msg_surface_) {
-                    // L1 write: persist bytes for future launches.
-                    if (self->active_account_index_ >= 0) {
-                        if (auto* c = self->accounts_[self->active_account_index_]
-                                          ->avatar_disk_cache.get())
-                            c->put(p->cache_key, p->bytes);
-                    }
                     if (auto img = self->msg_surface_->factory()
                                        .decode_image(p->bytes))
                         self->tk_avatars_.emplace(p->cache_key,
@@ -1688,19 +1676,6 @@ void MainWindow::start_login() {
         const std::string uid = sess->user_id;
         sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, uid);
 
-        sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
-            tesseract::SessionStore::account_dir(uid) / "avatars");
-        {
-            auto* cache_ptr  = sess->avatar_disk_cache.get();
-            auto* client_ptr = sess->client.get();
-            run_async_([cache_ptr, client_ptr]() {
-                for (const auto& mxc : cache_ptr->all_keys()) {
-                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                        cache_ptr->remove(mxc);
-                }
-            });
-        }
-
         accounts_.push_back(std::move(sess));
     }
 
@@ -1781,19 +1756,6 @@ void MainWindow::on_login_succeeded() {
     // Per-account notifier: click switches to this account then navigates.
     const std::string new_uid = sess->user_id;
     sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, new_uid);
-
-    sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
-        tesseract::SessionStore::account_dir(new_uid) / "avatars");
-    {
-        auto* cache_ptr  = sess->avatar_disk_cache.get();
-        auto* client_ptr = sess->client.get();
-        run_async_([cache_ptr, client_ptr]() {
-            for (const auto& mxc : cache_ptr->all_keys()) {
-                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                    cache_ptr->remove(mxc);
-            }
-        });
-    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -2340,22 +2302,6 @@ void MainWindow::request_room_avatar(const std::string& room_id,
                                        const std::string& mxc) {
     if (room_id.empty() || mxc.empty()) return;
     if (tk_avatars_.count(mxc)) return;
-
-    // L1 check: synchronous disk read before touching the network/SDK.
-    if (active_account_index_ >= 0) {
-        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
-        if (cache) {
-            auto bytes = cache->get(mxc);
-            if (!bytes.empty()) {
-                if (room_surface_) {
-                    if (auto img = room_surface_->factory().decode_image(bytes))
-                        tk_avatars_.emplace(mxc, std::move(img));
-                }
-                return;
-            }
-        }
-    }
-
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     HWND target = hwnd_;
@@ -2374,22 +2320,6 @@ void MainWindow::request_room_avatar(const std::string& room_id,
 void MainWindow::request_user_avatar(const std::string& mxc) {
     if (mxc.empty()) return;
     if (tk_avatars_.count(mxc)) return;
-
-    // L1 check: synchronous disk read before touching the network/SDK.
-    if (active_account_index_ >= 0) {
-        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
-        if (cache) {
-            auto bytes = cache->get(mxc);
-            if (!bytes.empty()) {
-                if (msg_surface_) {
-                    if (auto img = msg_surface_->factory().decode_image(bytes))
-                        tk_avatars_.emplace(mxc, std::move(img));
-                }
-                return;
-            }
-        }
-    }
-
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     HWND target = hwnd_;

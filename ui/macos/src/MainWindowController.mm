@@ -1347,19 +1347,6 @@ void EventBridge::on_notification(const std::string& room_id,
         session->sync_started = true;
         session->client->start_sync(session->bridge.get());
 
-        session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
-            tesseract::SessionStore::account_dir(uid) / "avatars");
-        {
-            auto* cache_ptr  = session->avatar_disk_cache.get();
-            auto* client_ptr = session->client.get();
-            [self runAsync:[cache_ptr, client_ptr]() {
-                for (const auto& mxc : cache_ptr->all_keys()) {
-                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                        cache_ptr->remove(mxc);
-                }
-            }];
-        }
-
         _accounts.push_back(std::move(session));
     }
 
@@ -1419,19 +1406,6 @@ void EventBridge::on_notification(const std::string& room_id,
         session->client->load_prefs_json()).last_room;
     session->sync_started = true;
     session->client->start_sync(session->bridge.get());
-
-    session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
-        tesseract::SessionStore::account_dir(newUserId) / "avatars");
-    {
-        auto* cache_ptr  = session->avatar_disk_cache.get();
-        auto* client_ptr = session->client.get();
-        [self runAsync:[cache_ptr, client_ptr]() {
-            for (const auto& mxc : cache_ptr->all_keys()) {
-                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                    cache_ptr->remove(mxc);
-            }
-        }];
-    }
 
     tesseract::SessionStore::save_account(newUserId, sessionJson);
     auto idxData = tesseract::SessionStore::load_index();
@@ -1908,22 +1882,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 // bytes arrive.
 - (void)_ensureRoomAvatar:(const tesseract::RoomInfo&)r {
     if (r.avatar_url.empty() || _tkAvatars.count(r.avatar_url)) return;
-
-    // L1 check: synchronous disk read before touching the network/SDK.
-    if (_activeAccountIndex >= 0) {
-        auto* cache = _accounts[_activeAccountIndex]->avatar_disk_cache.get();
-        if (cache) {
-            auto bytes = cache->get(r.avatar_url);
-            if (!bytes.empty()) {
-                [self _decodeAndCache:bytes
-                                forKey:r.avatar_url
-                              destMap:_tkAvatars
-                                   cap:tesseract::visual::kRoomAvatarSize];
-                return;
-            }
-        }
-    }
-
     if (!_mediaFetchesInFlight.insert(r.avatar_url).second) return;
 
     tesseract::Client* clientPtr = _client;
@@ -1939,12 +1897,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             if (!s) return;
             s->_mediaFetchesInFlight.erase(mxc);
             if (bytes_holder->empty() || s->_tkAvatars.count(mxc)) return;
-            // L1 write: persist bytes for future launches.
-            if (s->_activeAccountIndex >= 0) {
-                if (auto* c = s->_accounts[s->_activeAccountIndex]
-                                  ->avatar_disk_cache.get())
-                    c->put(mxc, *bytes_holder);
-            }
             [s _decodeAndCache:*bytes_holder
                           forKey:mxc
                         destMap:s->_tkAvatars
@@ -1956,22 +1908,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_ensureUserAvatar:(const std::string&)mxc {
     if (mxc.empty() || _tkAvatars.count(mxc)) return;
-
-    // L1 check: synchronous disk read before touching the network/SDK.
-    if (_activeAccountIndex >= 0) {
-        auto* cache = _accounts[_activeAccountIndex]->avatar_disk_cache.get();
-        if (cache) {
-            auto bytes = cache->get(mxc);
-            if (!bytes.empty()) {
-                [self _decodeAndCache:bytes
-                                forKey:mxc
-                              destMap:_tkAvatars
-                                   cap:tesseract::visual::kMsgAvatarSize];
-                return;
-            }
-        }
-    }
-
     if (!_mediaFetchesInFlight.insert(mxc).second) return;
 
     tesseract::Client* clientPtr = _client;
@@ -1986,12 +1922,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             if (!s) return;
             s->_mediaFetchesInFlight.erase(key);
             if (bytes_holder->empty() || s->_tkAvatars.count(key)) return;
-            // L1 write: persist bytes for future launches.
-            if (s->_activeAccountIndex >= 0) {
-                if (auto* c = s->_accounts[s->_activeAccountIndex]
-                                  ->avatar_disk_cache.get())
-                    c->put(key, *bytes_holder);
-            }
             [s _decodeAndCache:*bytes_holder
                           forKey:key
                         destMap:s->_tkAvatars
