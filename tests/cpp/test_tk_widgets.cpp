@@ -313,15 +313,24 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     signin->click();
     CHECK(clicked);
 
-    // Switching to Waiting hides Sign in, shows Cancel.
+    // Switching to Waiting hides Sign in. Cancel visibility is now gated
+    // on Mode (added for multi-account): Initial keeps Cancel hidden,
+    // AddAccount surfaces it.
     view.set_state(LoginView::State::Waiting);
-    int visible_buttons = 0;
-    for (auto& ch : card->children()) {
-        if (auto* b = dynamic_cast<Button*>(ch.get())) {
-            if (b->visible()) ++visible_buttons;
+    auto count_visible_buttons = [&]() {
+        int n = 0;
+        for (auto& ch : card->children()) {
+            if (auto* b = dynamic_cast<Button*>(ch.get())) {
+                if (b->visible()) ++n;
+            }
         }
-    }
-    CHECK(visible_buttons == 1);
+        return n;
+    };
+    CHECK(count_visible_buttons() == 0);  // Initial + Waiting → both hidden
+
+    view.set_mode(LoginView::Mode::AddAccount);
+    CHECK(count_visible_buttons() == 1);  // AddAccount + Waiting → Cancel only
+    CHECK(view.cancel_visible());
 }
 
 TEST_CASE("Settings has expected defaults", "[settings]") {

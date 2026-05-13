@@ -26,6 +26,9 @@ add_executable(tesseract_tests
     cpp/test_tk_emoji_picker.cpp
     cpp/test_tk_recovery_banner.cpp
     cpp/test_tk_compose_bar.cpp
+    cpp/test_tk_user_info.cpp
+    cpp/test_tk_account_picker.cpp
+    cpp/test_tk_login_view.cpp
     cpp/test_tk_sticker_picker.cpp
     cpp/test_tk_image_viewer.cpp
     cpp/test_tk_video_viewer.cpp

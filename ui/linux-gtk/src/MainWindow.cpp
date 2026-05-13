@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <filesystem>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
@@ -72,11 +73,13 @@ static GdkTexture* make_scaled_texture(const std::vector<uint8_t>& data,
 
 struct IdleRooms {
     MainWindow*                  window;
+    std::string                  user_id;
     std::vector<tesseract::RoomInfo> rooms;
 };
 
 struct IdleError {
     MainWindow* window;
+    std::string user_id;
     std::string context;
     std::string description;
     bool soft_logout;
@@ -189,11 +192,12 @@ void EventHandler::on_rooms_updated(
     auto* p = new IdleRooms{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        user_id_,
         rooms
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleRooms*>(data);
-        d->window->push_rooms(std::move(d->rooms));
+        d->window->push_rooms(std::move(d->user_id), std::move(d->rooms));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -207,6 +211,7 @@ void EventHandler::on_sync_error(
     auto* p = new IdleError{
         reinterpret_cast<MainWindow*>(
             g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        user_id_,
         context,
         description,
         soft_logout
@@ -225,7 +230,8 @@ void EventHandler::on_sync_error(
 }
 
 void EventHandler::on_session_saved(const std::string& session_json) {
-    tesseract::SessionStore::save(session_json);
+    if (!user_id_.empty())
+        tesseract::SessionStore::save_account(user_id_, session_json);
 }
 
 namespace {
@@ -412,8 +418,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         GTK_STACK(content_stack_), GTK_STACK_TRANSITION_TYPE_NONE);
     gtk_window_set_child(GTK_WINDOW(window_), content_stack_);
 
-    login_view_ = std::make_unique<LoginView>(client_);
+    login_view_ = std::make_unique<LoginView>();
     login_view_->set_on_success([this]() { on_login_succeeded(); });
+    login_view_->set_on_cancel([this]() { on_login_cancelled(); });
     gtk_stack_add_named(GTK_STACK(content_stack_),
                         login_view_->widget(), "login");
 
@@ -509,13 +516,31 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         gtk_image_set_pixel_size(GTK_IMAGE(user_avatar_img_), 32);
         gtk_box_append(GTK_BOX(user_strip_), user_avatar_img_);
 
+        // Name + Matrix ID stacked vertically.
+        GtkWidget* name_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        gtk_widget_set_hexpand(name_vbox, TRUE);
+
         user_name_lbl_ = gtk_label_new("");
         gtk_label_set_xalign(GTK_LABEL(user_name_lbl_), 0.0f);
         gtk_label_set_ellipsize(GTK_LABEL(user_name_lbl_), PANGO_ELLIPSIZE_END);
-        gtk_widget_set_hexpand(user_name_lbl_, TRUE);
-        gtk_box_append(GTK_BOX(user_strip_), user_name_lbl_);
+        gtk_box_append(GTK_BOX(name_vbox), user_name_lbl_);
 
-        // Right-click gesture → popover menu with single "Logout" item.
+        user_id_lbl_ = gtk_label_new("");
+        gtk_label_set_xalign(GTK_LABEL(user_id_lbl_), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(user_id_lbl_), PANGO_ELLIPSIZE_END);
+        gtk_widget_add_css_class(user_id_lbl_, "timestamp");  // smaller, muted
+        gtk_box_append(GTK_BOX(name_vbox), user_id_lbl_);
+
+        gtk_box_append(GTK_BOX(user_strip_), name_vbox);
+
+        // Left-click → account picker (only when ≥2 accounts).
+        GtkGesture* lclick = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(lclick), GDK_BUTTON_PRIMARY);
+        g_signal_connect(lclick, "pressed",
+                         G_CALLBACK(on_user_strip_left_click_), this);
+        gtk_widget_add_controller(user_strip_, GTK_EVENT_CONTROLLER(lclick));
+
+        // Right-click gesture → popover menu.
         GtkGesture* gesture = gtk_gesture_click_new();
         gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
         g_signal_connect(gesture, "pressed",
@@ -524,17 +549,26 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
         // Build the GMenu model + GSimpleActionGroup once.
         GMenu* menu = g_menu_new();
-        g_menu_append(menu, _("Logout"), "user.logout");
+        g_menu_append(menu, _("Add Account\xe2\x80\xa6"), "user.add_account");
+        g_menu_append(menu, _("Log Out"), "user.logout");
         user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
         gtk_widget_set_parent(user_popover_, user_strip_);
         gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
         g_object_unref(menu);
 
         GSimpleActionGroup* group = g_simple_action_group_new();
-        GSimpleAction* act = g_simple_action_new("logout", nullptr);
-        g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_), this);
-        g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
-        g_object_unref(act);
+        {
+            GSimpleAction* act = g_simple_action_new("add_account", nullptr);
+            g_signal_connect(act, "activate", G_CALLBACK(on_add_account_activate_), this);
+            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            g_object_unref(act);
+        }
+        {
+            GSimpleAction* act = g_simple_action_new("logout", nullptr);
+            g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_), this);
+            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            g_object_unref(act);
+        }
         gtk_widget_insert_action_group(user_strip_, "user", G_ACTION_GROUP(group));
         g_object_unref(group);
     }
@@ -650,7 +684,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     }
     message_list_view_->set_voice_bytes_provider(
         [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return client_.fetch_source_bytes(source_json);
+            return client_->fetch_source_bytes(source_json);
         });
     {
         tk::gtk4::Surface* sfp = msg_surface_.get();
@@ -706,7 +740,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                std::string mime,
                                std::string filename) {
         if (!compose_shared_) return;
-        const auto limit = client_.media_upload_limit();
+        const auto limit = client_->media_upload_limit();
         if (limit > 0 && bytes.size() > limit) {
             if (status_bar_) {
                 std::string msg = std::string(_("File exceeds server limit ("))
@@ -739,7 +773,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         if (l == std::string::npos) return;
         std::string trimmed = body.substr(l, r - l + 1);
         if (trimmed.empty()) return;
-        auto res = client_.send_message(current_room_id_, trimmed);
+        auto res = client_->send_message(current_room_id_, trimmed);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             compose_shared_->set_current_text({});
@@ -765,7 +799,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (dot != std::string::npos) out_name = out_name.substr(0, dot);
             out_name += ".jpg";
         }
-        auto res = client_.send_image(current_room_id_, enc.bytes, enc.mime,
+        auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
                                         out_name, caption,
                                         enc.width, enc.height,
                                         reply_event_id);
@@ -780,7 +814,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                              std::string caption,
                                              std::string reply_event_id) {
         if (current_room_id_.empty()) return;
-        auto res = client_.send_file(current_room_id_, bytes, mime,
+        auto res = client_->send_file(current_room_id_, bytes, mime,
                                       filename, caption, reply_event_id);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
@@ -801,7 +835,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
                                              const std::string& body) {
         if (body.empty() || current_room_id_.empty()) return;
-        auto res = client_.send_reply(current_room_id_, reply_event_id, body);
+        auto res = client_->send_reply(current_room_id_, reply_event_id, body);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
@@ -814,7 +848,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     message_list_view_->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key) {
             if (current_room_id_.empty()) return;
-            client_.send_reaction(current_room_id_, event_id, key);
+            client_->send_reaction(current_room_id_, event_id, key);
         };
     message_list_view_->on_add_reaction_requested =
         [this](const std::string& event_id, tk::Rect anchor) {
@@ -851,7 +885,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_shared_->on_send_edit = [this](const std::string& event_id,
                                             const std::string& new_body) {
         if (new_body.empty() || current_room_id_.empty()) return;
-        auto res = client_.send_edit(current_room_id_, event_id, new_body);
+        auto res = client_->send_edit(current_room_id_, event_id, new_body);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
@@ -966,7 +1000,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             // Async byte fetch on a detached thread.
             std::string src = hit.source_json;
             run_async_([this, src = std::move(src)]() mutable {
-                auto bytes = client_.fetch_source_bytes(src);
+                auto bytes = client_->fetch_source_bytes(src);
                 struct Ctx { MainWindow* self; std::vector<uint8_t> bytes; };
                 auto* ctx = new Ctx{ this, std::move(bytes) };
                 g_idle_add([](gpointer p) -> gboolean {
@@ -1043,7 +1077,7 @@ MainWindow::~MainWindow() {
         search_debounce_id_ = 0;
     }
     // Drain background workers BEFORE tearing the client down. Each
-    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // worker calls `client_->fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
     // Order: flip the flag → wait (bounded) for in-flight ones →
@@ -1054,11 +1088,13 @@ MainWindow::~MainWindow() {
         workers_cv_.wait_for(lk, std::chrono::seconds(5),
                               [this]{ return workers_in_flight_ == 0; });
     }
-    client_.stop_sync();
-    // login_view_ holds a reference to client_ and calls cancel_oauth() +
-    // joins its worker on destruction. Tear it down here so client_ is
-    // still alive when ~LoginView runs.
+    // Stop sync on all accounts before any client is destroyed.
+    for (auto& sess : accounts_)
+        if (sess->sync_started) sess->client->stop_sync();
+    // login_view_ holds pending_login_client_* — cancel + join its worker
+    // before we destroy pending_login_client_ and the accounts vector.
     login_view_.reset();
+    pending_login_client_.reset();
 }
 
 void MainWindow::run_async_(std::function<void()> fn) {
@@ -1082,43 +1118,127 @@ void MainWindow::run_async_(std::function<void()> fn) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
-    std::string status_msg;
-    if (auto saved = tesseract::SessionStore::load()) {
+    tesseract::SessionStore::migrate_legacy_layout();
+
+    auto index = tesseract::SessionStore::load_index();
+    if (!index.user_ids.empty()) {
         gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
-        auto res = client_.restore_session(*saved);
-        if (res) {
-            my_user_id_           = client_.get_user_id();
-            my_display_name_      = client_.get_display_name();
-            my_avatar_url_        = client_.get_avatar_url();
-            pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-            populate_user_strip();
-            event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
-            client_.start_sync(event_handler_.get());
+        int first_active = -1;
+        for (const auto& uid : index.user_ids) {
+            auto saved = tesseract::SessionStore::load_account(uid);
+            if (!saved) continue;
+
+            auto sess = std::make_unique<tesseract::AccountSession>();
+            sess->client = std::make_unique<tesseract::Client>();
+            sess->client->set_data_dir(
+                tesseract::SessionStore::sdk_store_dir(uid).string());
+            auto res = sess->client->restore_session(*saved);
+            if (!res) {
+                tesseract::SessionStore::clear_account(uid);
+                continue;
+            }
+            sess->user_id      = sess->client->get_user_id();
+            sess->display_name = sess->client->get_display_name();
+            sess->avatar_url   = sess->client->get_avatar_url();
+            sess->last_room    =
+                tesseract::Prefs::parse(
+                    sess->client->load_prefs_json()).last_room;
+
+            auto bridge = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+            bridge->set_user_id(sess->user_id);
+            sess->client->start_sync(bridge.get());
+            sess->bridge       = std::move(bridge);
+            sess->sync_started = true;
+
+            int idx = static_cast<int>(accounts_.size());
+            if (uid == index.active_user_id) first_active = idx;
+            accounts_.push_back(std::move(sess));
+        }
+
+        if (!accounts_.empty()) {
+            if (first_active < 0) first_active = 0;
+            switch_active_account(first_active);
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             maybe_show_recovery_banner();
             start_tray_if_needed_();
             return;
         }
-        tesseract::SessionStore::clear();
-        status_msg = std::string(_("Saved session expired: ")) + res.message;
     }
 
+    // No accounts: fresh install or all restores failed → show login view.
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    pending_login_temp_dir_ =
+        tesseract::SessionStore::account_dir("pending-" + std::to_string(ts));
+    pending_login_client_ = std::make_unique<tesseract::Client>();
+    pending_login_client_->set_data_dir(
+        (pending_login_temp_dir_ / "matrix-store").string());
+    pending_login_is_add_account_ = false;
+
+    login_view_->set_client(pending_login_client_.get());
+    login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
     login_view_->reset();
-    login_view_->set_status_message(status_msg);
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
 }
 
 void MainWindow::on_login_succeeded() {
-    my_user_id_           = client_.get_user_id();
-    my_display_name_      = client_.get_display_name();
-    my_avatar_url_        = client_.get_avatar_url();
-    pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-    populate_user_strip();
-    tesseract::SessionStore::save(client_.export_session());
-    event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
-    client_.start_sync(event_handler_.get());
+    // Export session before dropping the in-flight client.
+    std::string uid      = pending_login_client_->get_user_id();
+    std::string exported = pending_login_client_->export_session();
+
+    // Drop the in-flight client to release SQLite handles before rename.
+    pending_login_client_.reset();
+
+    // Rename temp dir → final per-account dir.
+    auto target = tesseract::SessionStore::account_dir(uid);
+    std::error_code ec;
+    std::filesystem::rename(pending_login_temp_dir_, target, ec);
+    if (ec) {
+        std::filesystem::copy(pending_login_temp_dir_, target,
+            std::filesystem::copy_options::recursive, ec);
+        std::filesystem::remove_all(pending_login_temp_dir_, ec);
+    }
+    pending_login_temp_dir_.clear();
+
+    tesseract::SessionStore::save_account(uid, exported);
+
+    // Reopen the store at the final path.
+    auto sess = std::make_unique<tesseract::AccountSession>();
+    sess->client = std::make_unique<tesseract::Client>();
+    sess->client->set_data_dir(
+        tesseract::SessionStore::sdk_store_dir(uid).string());
+    auto res = sess->client->restore_session(exported);
+    if (!res) {
+        gtk_label_set_text(GTK_LABEL(status_bar_),
+            (std::string(_("Login error: ")) + res.message).c_str());
+        return;
+    }
+    sess->user_id      = sess->client->get_user_id();
+    sess->display_name = sess->client->get_display_name();
+    sess->avatar_url   = sess->client->get_avatar_url();
+    sess->last_room    =
+        tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
+
+    auto bridge = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+    bridge->set_user_id(sess->user_id);
+    sess->client->start_sync(bridge.get());
+    sess->bridge       = std::move(bridge);
+    sess->sync_started = true;
+
+    int new_idx = static_cast<int>(accounts_.size());
+    accounts_.push_back(std::move(sess));
+
+    // Update accounts.json index.
+    auto index = tesseract::SessionStore::load_index();
+    if (std::find(index.user_ids.begin(), index.user_ids.end(), uid)
+            == index.user_ids.end())
+        index.user_ids.push_back(uid);
+    index.active_user_id = uid;
+    tesseract::SessionStore::save_index(index);
+
+    switch_active_account(new_idx);
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
@@ -1142,14 +1262,14 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
 
     if (!current_room_id_.empty() && current_room_id_ != room_id)
-        client_.unsubscribe_room(current_room_id_);
+        client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
     reply_details_requested_.clear();
     {
-        auto prefs = tesseract::Prefs::parse(client_.load_prefs_json());
+        auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
         prefs.last_room = room_id;
-        client_.save_prefs_json(tesseract::Prefs::serialize(prefs));
+        client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (compose_shared_) {
         compose_shared_->clear_reply();
@@ -1162,12 +1282,12 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     // run them on a worker thread so the GTK main loop stays responsive.
     std::string sub_room = current_room_id_;
     run_async_([this, sub_room]{
-        auto res = client_.subscribe_room(sub_room);
+        auto res = client_->subscribe_room(sub_room);
         bool reached = false;
         if (res) {
-            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            auto pr = client_->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_.start_background_backfill();
+            client_->start_background_backfill();
         }
         auto* d = new IdleSubscribeResult{this, sub_room, reached};
         g_idle_add([](gpointer data) -> gboolean {
@@ -1205,7 +1325,7 @@ void MainWindow::request_more_history(const std::string& room_id) {
     // Worker thread: invoke the blocking SDK call, marshal the result
     // back via g_idle_add on the main loop.
     run_async_([this, room_id]{
-        auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
+        auto pr = client_->paginate_back_with_status(room_id, kPaginationBatch);
         auto* p = new IdlePaginateResult{
             this, room_id, pr.ok && pr.reached_start
         };
@@ -1259,7 +1379,10 @@ void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
     msg_surface_->relayout();
 }
 
-void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
+void MainWindow::push_rooms(std::string user_id,
+                            std::vector<tesseract::RoomInfo> rooms) {
+    per_account_rooms_[user_id] = rooms;
+    if (user_id != my_user_id_) return;  // background account
     rooms_ = std::move(rooms);
     refresh_room_list();
     if (!current_room_id_.empty()) {
@@ -1279,28 +1402,31 @@ void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
 
 void MainWindow::handle_reconnect() {
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Sync error: reconnecting\xe2\x80\xa6"));
-    client_.stop_sync();
+    if (client_) client_->stop_sync();
     do_login();
 }
 
 void MainWindow::handle_auth_error(bool soft_logout) {
-    if (soft_logout) {
-        if (auto saved = tesseract::SessionStore::load()) {
+    if (soft_logout && active_account_index_ >= 0) {
+        const std::string& uid = accounts_[active_account_index_]->user_id;
+        if (auto saved = tesseract::SessionStore::load_account(uid)) {
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnecting session\xe2\x80\xa6"));
-            if (client_.restore_session(*saved)) {
-                my_user_id_       = client_.get_user_id();
-                my_display_name_  = client_.get_display_name();
-                my_avatar_url_    = client_.get_avatar_url();
+            if (client_->restore_session(*saved)) {
+                my_user_id_       = client_->get_user_id();
+                my_display_name_  = client_->get_display_name();
+                my_avatar_url_    = client_->get_avatar_url();
                 populate_user_strip();
-                client_.start_sync(event_handler_.get());
+                client_->start_sync(event_handler_);
                 gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnected"));
                 maybe_show_recovery_banner();
                 return;
             }
         }
     }
-    tesseract::SessionStore::clear();
-    client_.stop_sync();
+    if (active_account_index_ >= 0)
+        tesseract::SessionStore::clear_account(
+            accounts_[active_account_index_]->user_id);
+    if (client_) client_->stop_sync();
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Session expired; please log in again."));
     do_login();
 }
@@ -1339,7 +1465,7 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 
     if (!info.avatar_url.empty()) {
         if (avatar_cache_.find(info.avatar_url) == avatar_cache_.end())
-            avatar_cache_[info.avatar_url] = client_.fetch_avatar_bytes(info.id);
+            avatar_cache_[info.avatar_url] = client_->fetch_avatar_bytes(info.id);
         auto it = avatar_cache_.find(info.avatar_url);
         if (it != avatar_cache_.end() && !it->second.empty()) {
             GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
@@ -1548,7 +1674,7 @@ void MainWindow::ensure_media_image(const std::string& url,
 void MainWindow::ensure_reply_details(const std::string& event_id) {
     if (event_id.empty() || current_room_id_.empty()) return;
     if (!reply_details_requested_.insert(event_id).second) return;
-    client_.fetch_reply_details(current_room_id_, event_id);
+    client_->fetch_reply_details(current_room_id_, event_id);
 }
 
 void MainWindow::start_anim_tick_if_needed_() {
@@ -1602,7 +1728,7 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
     };
 
     run_async_([this, room_id, mxc]() mutable {
-        auto bytes = client_.fetch_avatar_bytes(room_id);
+        auto bytes = client_->fetch_avatar_bytes(room_id);
         auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
             auto* d = static_cast<IdleData*>(p);
@@ -1635,7 +1761,7 @@ void MainWindow::request_user_avatar_async(const std::string& mxc) {
     };
 
     run_async_([this, mxc]() mutable {
-        auto bytes = client_.fetch_media_bytes(mxc);
+        auto bytes = client_->fetch_media_bytes(mxc);
         auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
             auto* d = static_cast<IdleData*>(p);
@@ -1673,7 +1799,7 @@ void MainWindow::request_media_image_async(const std::string& url) {
         // MediaSource (encrypted images/stickers + reaction sources).
         // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
         // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_.fetch_source_bytes(url);
+        auto bytes = client_->fetch_source_bytes(url);
         auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
             auto* d = static_cast<IdleData*>(p);
@@ -1734,7 +1860,7 @@ void MainWindow::ensure_sticker_image_async(std::string url) {
     // tokio runtime; FFI calls are sync wrappers). The picker outlives
     // any in-flight fetch.
     run_async_([this, url]() mutable {
-        auto bytes = client_.fetch_source_bytes(url);
+        auto bytes = client_->fetch_source_bytes(url);
         auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
             auto* d = static_cast<IdleData*>(p);
@@ -1809,7 +1935,7 @@ void MainWindow::refresh_room_list() {
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_) {
             if (!r.is_space) continue;
-            for (const auto& id : client_.space_children(r.id))
+            for (const auto& id : client_->space_children(r.id))
                 in_space.insert(id);
         }
         std::vector<tesseract::RoomInfo> filtered;
@@ -1821,7 +1947,7 @@ void MainWindow::refresh_room_list() {
         gtk_widget_set_visible(room_nav_bar_, FALSE);
     } else {
         const std::string& space_id = space_stack_.back();
-        auto child_ids = client_.space_children(space_id);
+        auto child_ids = client_->space_children(space_id);
         std::vector<tesseract::RoomInfo> filtered;
         for (const auto& r : rooms_)
             if (std::find(child_ids.begin(), child_ids.end(), r.id) != child_ids.end())
@@ -1946,7 +2072,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
             // is instant. We discard the bytes — the view's synchronous
             // fetch on click reads them straight out of the cache.
             run_async_([this, src = v.audio_source]() mutable {
-                (void)client_.fetch_source_bytes(src);
+                (void)client_->fetch_source_bytes(src);
             });
         }
     } else if (ev.type == tesseract::EventType::Video) {
@@ -1960,7 +2086,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
             video_thumb_in_flight_.insert(ev.event_id).second) {
             const std::string eid = ev.event_id;
             run_async_([this, eid, src = vid.video_url]() mutable {
-                auto bytes = client_.fetch_source_bytes(src);
+                auto bytes = client_->fetch_source_bytes(src);
                 if (bytes.empty()) return;
                 // Extract first frame via GStreamer appsink.
                 GstElement* pipe  = gst_pipeline_new(nullptr);
@@ -2073,7 +2199,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
 
 void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
-    if (!client_.needs_recovery()) return;
+    if (!client_->needs_recovery()) return;
     if (!recovery_surface_) return;
     GtkWidget* w = recovery_surface_->widget();
     if (!gtk_widget_get_visible(w)) {
@@ -2121,7 +2247,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
         std::string message;
     };
     self->run_async_([self, key]() {
-        auto res = self->client_.recover(key);
+        auto res = self->client_->recover(key);
         auto* p  = new RecoverDone{ self, res.ok, res.message };
         g_idle_add([](gpointer data) -> gboolean {
             auto* d = static_cast<RecoverDone*>(data);
@@ -2211,7 +2337,7 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
         recovery_surface_->relayout();
     }
     if (progress.state == tesseract::BackupState::Enabled
-        && !client_.needs_recovery()
+        && !client_->needs_recovery()
         && recovery_surface_)
     {
         gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
@@ -2293,10 +2419,11 @@ void MainWindow::refresh_sync_status() {
 void MainWindow::populate_user_strip() {
     std::string shown = my_display_name_.empty() ? my_user_id_ : my_display_name_;
     gtk_label_set_text(GTK_LABEL(user_name_lbl_), shown.c_str());
+    gtk_label_set_text(GTK_LABEL(user_id_lbl_), my_user_id_.c_str());
 
     bool has_avatar = false;
-    if (!my_avatar_url_.empty()) {
-        auto bytes = client_.fetch_media_bytes(my_avatar_url_);
+    if (!my_avatar_url_.empty() && client_) {
+        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
         if (!bytes.empty()) {
             GdkTexture* tex = make_scaled_texture(bytes, 32, 32);
             if (tex) {
@@ -2308,8 +2435,6 @@ void MainWindow::populate_user_strip() {
         }
     }
     if (!has_avatar) {
-        // Fallback: GTK's "avatar-default-symbolic" if available, otherwise a
-        // generic person icon.
         gtk_image_set_from_icon_name(GTK_IMAGE(user_avatar_img_),
                                      "avatar-default-symbolic");
     }
@@ -2327,43 +2452,24 @@ void MainWindow::on_user_strip_right_click_(GtkGestureClick* gesture,
     gtk_popover_popup(GTK_POPOVER(self->user_popover_));
 }
 
+void MainWindow::on_add_account_activate_(GSimpleAction* /*action*/,
+                                          GVariant* /*parameter*/,
+                                          gpointer user_data) {
+    gtk_popover_popdown(GTK_POPOVER(
+        static_cast<MainWindow*>(user_data)->user_popover_));
+    static_cast<MainWindow*>(user_data)->begin_add_account();
+}
+
 void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
                                      GVariant* /*parameter*/,
                                      gpointer user_data) {
-    static_cast<MainWindow*>(user_data)->do_logout();
+    gtk_popover_popdown(GTK_POPOVER(
+        static_cast<MainWindow*>(user_data)->user_popover_));
+    static_cast<MainWindow*>(user_data)->logout_active_account();
 }
 
 void MainWindow::do_logout() {
-    gtk_popover_popdown(GTK_POPOVER(user_popover_));
-
-    auto res = client_.logout();
-    tesseract::SessionStore::clear();
-    client_.stop_sync();
-    event_handler_.reset();
-
-    // Reset visible state.
-    if (!current_room_id_.empty())
-        client_.unsubscribe_room(current_room_id_);
-    current_room_id_.clear();
-    my_user_id_.clear();
-    my_display_name_.clear();
-    my_avatar_url_.clear();
-    rooms_.clear();
-    refresh_room_list();
-    clear_messages();
-    gtk_widget_set_visible(user_strip_, FALSE);
-    if (recovery_surface_)
-        gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
-    recovery_banner_dismissed_ = false;
-    gtk_widget_set_visible(room_header_, FALSE);
-
-    gtk_label_set_text(GTK_LABEL(status_bar_),
-                       res ? _("Signed out")
-                           : (std::string(_("Sign out failed: ")) + res.message).c_str());
-
-    login_view_->reset();
-    login_view_->set_status_message("");
-    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+    logout_active_account();
 }
 
 // ---------------------------------------------------------------------------
@@ -2385,7 +2491,7 @@ void MainWindow::build_emoji_popover() {
 
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     emoji_picker_shared_ = shared.get();
-    emoji_picker_shared_->set_client(&client_);
+    emoji_picker_shared_->set_client(client_);
     emoji_picker_shared_->on_selected =
         [this](const std::string& glyph) { emoji_selected(glyph); };
     emoji_picker_surface_->set_root(std::move(shared));
@@ -2430,12 +2536,12 @@ void MainWindow::build_sticker_popover() {
 
     auto shared = std::make_unique<tesseract::views::StickerPicker>();
     sticker_picker_shared_ = shared.get();
-    sticker_picker_shared_->set_client(&client_);
+    sticker_picker_shared_->set_client(client_);
     sticker_picker_shared_->on_selected =
         [this](const tesseract::ImagePackImage& img) {
             if (current_room_id_.empty()) return;
             std::string body = img.body.empty() ? img.shortcode : img.body;
-            client_.send_sticker(current_room_id_, body, img.url, img.info_json);
+            client_->send_sticker(current_room_id_, body, img.url, img.info_json);
             if (sticker_popover_)
                 gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
         };
@@ -2535,7 +2641,7 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
     auto hit = self->message_list_view_->sticker_hit_at(
         tk::Point{ static_cast<float>(x), static_cast<float>(y) });
     if (!hit) return;
-    if (self->client_.user_pack_has_sticker(hit->mxc_url)) return;
+    if (self->client_->user_pack_has_sticker(hit->mxc_url)) return;
 
     // Claim the gesture so the underlying surface doesn't also process it
     // (e.g. as a drag-start or text-selection event).
@@ -2579,7 +2685,7 @@ void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
                                             gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
     if (self->ctx_sticker_mxc_url_.empty()) return;
-    self->client_.save_sticker_to_user_pack(
+    self->client_->save_sticker_to_user_pack(
         self->ctx_sticker_body_,    // shortcode hint (slugified by SDK)
         self->ctx_sticker_body_,    // body
         self->ctx_sticker_mxc_url_,
@@ -2646,7 +2752,7 @@ void MainWindow::emoji_selected(const std::string& glyph) {
         std::string ev = std::move(pending_reaction_event_id_);
         pending_reaction_event_id_.clear();
         if (!current_room_id_.empty()) {
-            client_.send_reaction(current_room_id_, ev, glyph);
+            client_->send_reaction(current_room_id_, ev, glyph);
         }
         if (emoji_popover_) gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
         return;
@@ -2659,6 +2765,215 @@ void MainWindow::emoji_selected(const std::string& glyph) {
     compose_text_area_->set_focused(true);
     // The shared picker already calls recent_emoji_bump before invoking
     // this callback. Keep the popover open so users can pick several.
+}
+
+// ---------------------------------------------------------------------------
+// Multi-account management
+// ---------------------------------------------------------------------------
+
+void MainWindow::switch_active_account(int new_idx) {
+    active_account_index_ = new_idx;
+    auto& sess = *accounts_[new_idx];
+
+    client_        = sess.client.get();
+    event_handler_ = static_cast<EventHandler*>(sess.bridge.get());
+
+    my_user_id_      = sess.user_id;
+    my_display_name_ = sess.display_name;
+    my_avatar_url_   = sess.avatar_url;
+    pending_restore_room_ = sess.last_room;
+
+    populate_user_strip();
+
+    if (emoji_picker_shared_)   emoji_picker_shared_->set_client(client_);
+    if (sticker_picker_shared_) sticker_picker_shared_->set_client(client_);
+
+    // Load room snapshot for this account.
+    auto it = per_account_rooms_.find(my_user_id_);
+    if (it != per_account_rooms_.end()) {
+        rooms_ = it->second;
+        refresh_room_list();
+    } else {
+        rooms_.clear();
+        refresh_room_list();
+    }
+
+    // Rewrite accounts.json active pointer.
+    auto index = tesseract::SessionStore::load_index();
+    index.active_user_id = my_user_id_;
+    tesseract::SessionStore::save_index(index);
+
+    rebuild_account_picker();
+}
+
+void MainWindow::begin_add_account() {
+    add_account_return_idx_ = active_account_index_;
+    pending_login_is_add_account_ = true;
+
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    pending_login_temp_dir_ =
+        tesseract::SessionStore::account_dir("pending-" + std::to_string(ts));
+    pending_login_client_ = std::make_unique<tesseract::Client>();
+    pending_login_client_->set_data_dir(
+        (pending_login_temp_dir_ / "matrix-store").string());
+
+    login_view_->set_client(pending_login_client_.get());
+    login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
+    login_view_->reset();
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+}
+
+void MainWindow::logout_active_account() {
+    if (active_account_index_ < 0) return;
+
+    auto& sess = *accounts_[active_account_index_];
+
+    if (!current_room_id_.empty()) {
+        client_->unsubscribe_room(current_room_id_);
+        current_room_id_.clear();
+    }
+
+    auto res = client_->logout();
+    client_->stop_sync();
+
+    tesseract::SessionStore::clear_account(sess.user_id);
+
+    // Remove from the accounts vector.
+    accounts_.erase(accounts_.begin() + active_account_index_);
+
+    // Reset UI state.
+    clear_messages();
+    rooms_.clear();
+    refresh_room_list();
+    gtk_widget_set_visible(room_header_, FALSE);
+    if (recovery_surface_)
+        gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
+    recovery_banner_dismissed_ = false;
+
+    gtk_label_set_text(GTK_LABEL(status_bar_),
+                       res ? _("Signed out")
+                           : (std::string(_("Sign out failed: ")) + res.message).c_str());
+
+    if (accounts_.empty()) {
+        client_        = nullptr;
+        event_handler_ = nullptr;
+        active_account_index_ = -1;
+        my_user_id_.clear();
+        my_display_name_.clear();
+        my_avatar_url_.clear();
+        gtk_widget_set_visible(user_strip_, FALSE);
+
+        // Update accounts.json.
+        tesseract::SessionStore::AccountIndex idx;
+        tesseract::SessionStore::save_index(idx);
+
+        login_view_->set_client(nullptr);
+        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        login_view_->reset();
+        gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
+    } else {
+        // Switch to the closest remaining account.
+        int next = std::min(static_cast<int>(accounts_.size()) - 1,
+                            active_account_index_);
+        active_account_index_ = -1;  // reset so switch_active_account does full rebind
+        switch_active_account(next);
+
+        auto idx = tesseract::SessionStore::load_index();
+        idx.active_user_id = my_user_id_;
+        // Remove logged-out uid from index.
+        idx.user_ids.erase(
+            std::remove(idx.user_ids.begin(), idx.user_ids.end(), sess.user_id),
+            idx.user_ids.end());
+        tesseract::SessionStore::save_index(idx);
+    }
+}
+
+void MainWindow::on_login_cancelled() {
+    pending_login_client_.reset();
+    if (!pending_login_temp_dir_.empty()) {
+        std::filesystem::remove_all(pending_login_temp_dir_);
+        pending_login_temp_dir_.clear();
+    }
+
+    if (pending_login_is_add_account_ && add_account_return_idx_ >= 0) {
+        switch_active_account(add_account_return_idx_);
+        gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+    }
+    pending_login_is_add_account_ = false;
+    add_account_return_idx_ = -1;
+}
+
+void MainWindow::rebuild_account_picker() {
+    if (!account_picker_) return;
+    std::vector<tesseract::views::AccountEntry> entries;
+    entries.reserve(accounts_.size());
+    for (const auto& sess : accounts_) {
+        tesseract::views::AccountEntry e;
+        e.user_id      = sess->user_id;
+        e.display_name = sess->display_name;
+        e.avatar_url   = sess->avatar_url;
+        e.active       = (sess->user_id == my_user_id_);
+        entries.push_back(std::move(e));
+    }
+    account_picker_->set_entries(std::move(entries));
+    if (account_picker_surface_) account_picker_surface_->relayout();
+}
+
+void MainWindow::open_account_picker(double /*ax*/, double /*ay*/) {
+    if (accounts_.size() < 2) return;
+
+    if (!account_picker_popover_) {
+        // Build once; a GtkPopover parented to the user strip.
+        account_picker_surface_ =
+            std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+        auto picker = std::make_unique<tesseract::views::AccountPicker>();
+        account_picker_ = picker.get();
+        account_picker_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        account_picker_->on_select = [this](const std::string& uid) {
+            if (account_picker_popover_)
+                gtk_popover_popdown(GTK_POPOVER(account_picker_popover_));
+            // Find the index of this account.
+            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                if (accounts_[i]->user_id == uid) {
+                    switch_active_account(i);
+                    break;
+                }
+            }
+        };
+        account_picker_surface_->set_root(std::move(picker));
+
+        account_picker_popover_ = gtk_popover_new();
+        gtk_popover_set_child(GTK_POPOVER(account_picker_popover_),
+                              account_picker_surface_->widget());
+        gtk_widget_set_parent(account_picker_popover_, user_strip_);
+        gtk_popover_set_position(GTK_POPOVER(account_picker_popover_),
+                                 GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(account_picker_popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(account_picker_popover_), TRUE);
+
+        // Size to fit rows.
+        const int row_h = 48;
+        gtk_widget_set_size_request(account_picker_surface_->widget(),
+                                    240,
+                                    row_h * static_cast<int>(accounts_.size()));
+    }
+
+    rebuild_account_picker();
+    gtk_popover_popup(GTK_POPOVER(account_picker_popover_));
+}
+
+void MainWindow::on_user_strip_left_click_(GtkGestureClick* gesture,
+                                            int /*n_press*/,
+                                            double x, double y,
+                                            gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+    self->open_account_picker(x, y);
 }
 
 } // namespace gtk4

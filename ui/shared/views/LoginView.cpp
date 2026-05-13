@@ -79,7 +79,20 @@ void LoginView::set_state(State s) {
     state_ = s;
     if (!sign_in_btn_ || !cancel_btn_) return;
     sign_in_btn_->set_visible(s == State::Form);
-    cancel_btn_ ->set_visible(s == State::Waiting);
+    // Cancel button visibility is owned by `mode_`, not `state_`: in
+    // Initial mode it stays hidden in both Form and Waiting (the user has
+    // no previous account to fall back to); in AddAccount it stays visible
+    // so the user can back out of an in-progress login round-trip.
+    cancel_btn_ ->set_visible(mode_ == Mode::AddAccount);
+}
+
+void LoginView::set_mode(Mode m) {
+    mode_ = m;
+    if (cancel_btn_) cancel_btn_->set_visible(m == Mode::AddAccount);
+}
+
+bool LoginView::cancel_visible() const {
+    return cancel_btn_ && cancel_btn_->visible();
 }
 
 void LoginView::set_status(std::string message,

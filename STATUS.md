@@ -2,14 +2,30 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-13**.
 
+> **Multi-account support — Qt6 canary landed; GTK4 / macOS / Win32 follow.**
+> Infrastructure is in: per-instance SDK data directory
+> (`Client::set_data_dir`), directory-per-account on-disk layout
+> (`accounts.json` index + `accounts/<sanitized-uid>/session.json` +
+> `accounts/<sanitized-uid>/matrix-store/`) with a one-shot legacy migration
+> that moves both files atomically with rollback on failure, shared `UserInfo`
+> and `AccountPicker` widgets reusable across the sidebar strip and the
+> account-switcher popover, and `LoginView::Mode { Initial, AddAccount }`.
+> The **Qt6 shell** runs N accounts concurrently: every signed-in account
+> calls `start_sync()` on its own `Client` + `EventBridge`, the sidebar
+> avatar's two-line strip shows display name + Matrix ID, left-click on the
+> avatar opens an `AccountPicker` popover (no-op when fewer than two
+> accounts), right-click opens `Add Account…` + `Log Out <name>` menu, and
+> `switchActiveAccount` is the single chokepoint for foreground swaps.
+> GTK4 / macOS / Win32 mirror Qt6 next.
+
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
 ## Test coverage
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 68 |
-| C++ Catch2 tests via ctest (Qt6 + GTK4 presets) | 191 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 69 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 219 |
 
 ## Platforms
 

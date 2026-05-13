@@ -49,6 +49,17 @@ public:
     Client& operator=(Client&&)      noexcept;
 
     // ------------------------------------------------------------------
+    // Data directory
+    // ------------------------------------------------------------------
+
+    /// Override the matrix-sdk SQLite store path for this client. Must be
+    /// called before `begin_oauth` / `restore_session`. Used by the multi-
+    /// account host to scope each account's store under
+    /// `<config>/tesseract/accounts/<sanitized-uid>/matrix-store/`. Passing
+    /// an empty path is a no-op (the client keeps the default location).
+    void set_data_dir(const std::string& path);
+
+    // ------------------------------------------------------------------
     // Authentication (OAuth 2.0 / Matrix Authentication Service)
     // ------------------------------------------------------------------
 

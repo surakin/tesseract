@@ -27,6 +27,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QFrame>
@@ -108,7 +109,13 @@ void EventBridge::on_sync_error(
 }
 
 void EventBridge::on_session_saved(const std::string& session_json) {
-    tesseract::SessionStore::save(session_json);
+    // Per-account save: this bridge belongs to exactly one account; the
+    // user_id was set at attach time. Empty user_id means the bridge
+    // hasn't been adopted into `accounts_` yet (the OAuth round-trip is
+    // still in flight) — in that case the post-login attach path saves
+    // the session itself.
+    if (user_id_.empty()) return;
+    tesseract::SessionStore::save_account(user_id_, session_json);
 }
 
 void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
@@ -180,10 +187,12 @@ MainWindow::MainWindow(QWidget* parent)
     contentStack_ = new QStackedWidget(this);
     setCentralWidget(contentStack_);
 
-    loginView_ = new LoginView(client_, contentStack_);
+    loginView_ = new LoginView(contentStack_);
     contentStack_->addWidget(loginView_);
     connect(loginView_, &LoginView::loginSucceeded,
             this,       &MainWindow::onLoginSucceeded);
+    connect(loginView_, &LoginView::loginCancelled,
+            this,       &MainWindow::onLoginCancelled);
 
     mainContent_ = new QWidget(contentStack_);
     contentStack_->addWidget(mainContent_);
@@ -259,26 +268,47 @@ MainWindow::MainWindow(QWidget* parent)
     });
 
     // ---- User identity strip (footer) ----
+    //
+    // Two-line layout: bold display name on top, smaller dimmer Matrix ID
+    // on the second line. Left-click opens the AccountPicker popover when
+    // there are ≥2 accounts; right-click pops the Add Account / Log Out
+    // context menu. The strip is intentionally still a native composite
+    // (QLabel + QLabel) rather than a tk::Surface — the canvas-painted
+    // strip migration is tracked as a follow-up cosmetic change.
     userStrip_ = new QWidget(sidePanel);
     userStrip_->setObjectName("userStrip");
     userStrip_->setStyleSheet(
         "#userStrip { background-color:#E8EAEE; border-top:1px solid #D0D3D8; }");
-    userStrip_->setFixedHeight(48);
+    userStrip_->setFixedHeight(56);
     userStrip_->setVisible(false);
     userStrip_->setContextMenuPolicy(Qt::CustomContextMenu);
+    userStrip_->setCursor(Qt::PointingHandCursor);
+    userStrip_->installEventFilter(this);   // mouse-press for left-click → picker
     {
         auto* uLayout = new QHBoxLayout(userStrip_);
-        uLayout->setContentsMargins(8, 6, 8, 6);
-        uLayout->setSpacing(8);
+        uLayout->setContentsMargins(8, 8, 8, 8);
+        uLayout->setSpacing(10);
 
         userAvatarLabel_ = new QLabel(userStrip_);
         userAvatarLabel_->setFixedSize(32, 32);
         uLayout->addWidget(userAvatarLabel_);
 
-        userNameLabel_ = new QLabel(userStrip_);
-        userNameLabel_->setStyleSheet("font-size:12px; font-weight:bold; color:#111111;");
+        auto* textCol = new QWidget(userStrip_);
+        auto* textBox = new QVBoxLayout(textCol);
+        textBox->setContentsMargins(0, 0, 0, 0);
+        textBox->setSpacing(2);
+
+        userNameLabel_ = new QLabel(textCol);
+        userNameLabel_->setStyleSheet("font-size:13px; font-weight:bold; color:#111111;");
         userNameLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
-        uLayout->addWidget(userNameLabel_, 1);
+        textBox->addWidget(userNameLabel_);
+
+        userIdLabel_ = new QLabel(textCol);
+        userIdLabel_->setStyleSheet("font-size:11px; color:#888888;");
+        userIdLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
+        textBox->addWidget(userIdLabel_);
+
+        uLayout->addWidget(textCol, 1);
     }
     sideLayout->addWidget(userStrip_);
     connect(userStrip_, &QWidget::customContextMenuRequested,
@@ -403,7 +433,7 @@ MainWindow::MainWindow(QWidget* parent)
     }
     messageListView_->set_voice_bytes_provider(
         [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return client_.fetch_source_bytes(source_json);
+            return client_->fetch_source_bytes(source_json);
         });
     {
         QPointer<tk::qt6::Surface> sfp = msgSurface_;
@@ -429,7 +459,7 @@ MainWindow::MainWindow(QWidget* parent)
             tk::Point{ static_cast<float>(pos.x()),
                        static_cast<float>(pos.y()) });
         if (!hit) return;
-        if (client_.user_pack_has_sticker(hit->mxc_url)) return;
+        if (client_->user_pack_has_sticker(hit->mxc_url)) return;
 
         // Capture relevant fields up front; the hit_at result is
         // recomputed each paint so we don't hold a reference past
@@ -445,7 +475,7 @@ MainWindow::MainWindow(QWidget* parent)
             // We don't track them here; the SDK preserves info_json
             // round-trip via the original event when the picker later
             // sends. For Add-to-pack, an empty info object is fine.
-            client_.save_sticker_to_user_pack(body, body, mxc_url, "{}");
+            client_->save_sticker_to_user_pack(body, body, mxc_url, "{}");
         });
         menu.exec(msgSurface_->mapToGlobal(pos));
     });
@@ -522,7 +552,7 @@ MainWindow::MainWindow(QWidget* parent)
             // Async byte fetch on a worker thread.
             std::string src = hit.source_json;
             runOnPool_([this, src = std::move(src)]() {
-                auto bytes = client_.fetch_source_bytes(src);
+                auto bytes = client_->fetch_source_bytes(src);
                 QMetaObject::invokeMethod(this, [this, bytes = std::move(bytes)]() mutable {
                     if (vidViewer_)
                         vidViewer_->load_bytes(bytes.data(), bytes.size());
@@ -569,7 +599,7 @@ MainWindow::MainWindow(QWidget* parent)
                              std::string mime,
                              std::string filename) {
         if (!composeShared_) return;
-        const auto limit = client_.media_upload_limit();
+        const auto limit = client_->media_upload_limit();
         if (limit > 0 && bytes.size() > limit) {
             statusBar()->showMessage(
                 tr("File exceeds server limit (%1)")
@@ -599,7 +629,7 @@ MainWindow::MainWindow(QWidget* parent)
         if (currentRoomId_.empty()) return;
         std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
         if (trimmed.empty()) return;
-        auto res = client_.send_message(currentRoomId_, trimmed);
+        auto res = client_->send_message(currentRoomId_, trimmed);
         if (res) {
             if (composeTextArea_) composeTextArea_->set_text("");
             if (composeShared_)   composeShared_->set_current_text({});
@@ -631,7 +661,7 @@ MainWindow::MainWindow(QWidget* parent)
             if (dot != std::string::npos) out_name = out_name.substr(0, dot);
             out_name += ".jpg";
         }
-        auto res = client_.send_image(currentRoomId_, enc.bytes, enc.mime,
+        auto res = client_->send_image(currentRoomId_, enc.bytes, enc.mime,
                                         out_name, caption,
                                         enc.width, enc.height,
                                         reply_event_id);
@@ -651,7 +681,7 @@ MainWindow::MainWindow(QWidget* parent)
                                             std::string caption,
                                             std::string reply_event_id) {
         if (currentRoomId_.empty()) return;
-        auto res = client_.send_file(currentRoomId_, bytes, mime,
+        auto res = client_->send_file(currentRoomId_, bytes, mime,
                                       filename, caption, reply_event_id);
         if (!res) {
             statusBar()->showMessage(
@@ -681,7 +711,7 @@ MainWindow::MainWindow(QWidget* parent)
     composeShared_->on_send_reply = [this](const std::string& reply_event_id,
                                             const std::string& body) {
         if (body.empty() || currentRoomId_.empty()) return;
-        auto res = client_.send_reply(currentRoomId_, reply_event_id, body);
+        auto res = client_->send_reply(currentRoomId_, reply_event_id, body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
@@ -697,7 +727,7 @@ MainWindow::MainWindow(QWidget* parent)
     // insert + account-data bump. Recents live in the SDK now (synced via
     // `io.element.recent_emoji`), so no local-disk load is needed.
     emojiPicker_ = new EmojiPicker(this);
-    emojiPicker_->setClient(&client_);
+    emojiPicker_->setClient(client_);
     emojiPicker_->onSelected = [this](const QString& glyph) {
         // Reaction mode: a message's "+" chip set pendingReactionEventId_
         // before opening the picker. Route the glyph through
@@ -707,9 +737,9 @@ MainWindow::MainWindow(QWidget* parent)
             std::string ev = std::move(pendingReactionEventId_);
             pendingReactionEventId_.clear();
             if (!currentRoomId_.empty()) {
-                client_.send_reaction(currentRoomId_, ev, glyph.toStdString());
+                client_->send_reaction(currentRoomId_, ev, glyph.toStdString());
             }
-            client_.recent_emoji_bump(glyph.toStdString());
+            client_->recent_emoji_bump(glyph.toStdString());
             emojiPicker_->hide();
             return;
         }
@@ -719,19 +749,19 @@ MainWindow::MainWindow(QWidget* parent)
         composeTextArea_->set_text(cur);
         if (composeShared_) composeShared_->set_current_text(cur);
         composeTextArea_->set_focused(true);
-        client_.recent_emoji_bump(glyph.toStdString());
+        client_->recent_emoji_bump(glyph.toStdString());
     };
 
     // Sticker picker: floating panel anchored at the compose-bar sticker
     // button. On selection, send `m.sticker` to the current room (matrix-
     // sdk encrypts transparently in E2EE rooms).
     stickerPicker_ = new StickerPicker(this);
-    stickerPicker_->setClient(&client_);
+    stickerPicker_->setClient(client_);
     stickerPicker_->onSelected =
         [this](const tesseract::ImagePackImage& img) {
             if (currentRoomId_.empty()) return;
             std::string body = img.body.empty() ? img.shortcode : img.body;
-            client_.send_sticker(currentRoomId_, body, img.url, img.info_json);
+            client_->send_sticker(currentRoomId_, body, img.url, img.info_json);
             stickerPicker_->hide();
         };
 
@@ -739,7 +769,7 @@ MainWindow::MainWindow(QWidget* parent)
     messageListView_->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key) {
             if (currentRoomId_.empty()) return;
-            client_.send_reaction(currentRoomId_, event_id, key);
+            client_->send_reaction(currentRoomId_, event_id, key);
         };
 
     // "+" pseudo-chip click: open the emoji picker in reaction mode.
@@ -778,7 +808,7 @@ MainWindow::MainWindow(QWidget* parent)
     composeShared_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
         if (new_body.empty() || currentRoomId_.empty()) return;
-        auto res = client_.send_edit(currentRoomId_, event_id, new_body);
+        auto res = client_->send_edit(currentRoomId_, event_id, new_body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);
@@ -797,36 +827,9 @@ MainWindow::MainWindow(QWidget* parent)
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
 
-    bridge_ = std::make_unique<EventBridge>(this);
-    connect(bridge_.get(), &EventBridge::timelineReset,
-            this,          &MainWindow::onTimelineReset);
-    connect(bridge_.get(), &EventBridge::messageInserted,
-            this,          &MainWindow::onMessageInserted);
-    connect(bridge_.get(), &EventBridge::messageUpdated,
-            this,          &MainWindow::onMessageUpdated);
-    connect(bridge_.get(), &EventBridge::messageRemoved,
-            this,          &MainWindow::onMessageRemoved);
-    connect(bridge_.get(), &EventBridge::roomsUpdated,
-            this,          &MainWindow::onRoomsUpdated);
-    connect(bridge_.get(), &EventBridge::syncError,
-            this,          &MainWindow::onSyncError);
-    connect(bridge_.get(), &EventBridge::backupProgress,
-            this,          &MainWindow::onBackupProgress);
-    connect(bridge_.get(), &EventBridge::roomListStateChanged,
-            this,          &MainWindow::onRoomListStateChanged);
-    connect(bridge_.get(), &EventBridge::imagePacksUpdated,
-            this, [this]{ if (stickerPicker_) stickerPicker_->refreshPacks(); },
-            Qt::QueuedConnection);
-    connect(bridge_.get(), &EventBridge::accountPrefsUpdated,
-            this, [this](const QString& json) {
-                auto prefs = tesseract::Prefs::parse(json.toStdString());
-                if (!prefs.last_room.empty() && pendingRestoreRoom_.empty() && currentRoomId_.empty())
-                    pendingRestoreRoom_ = prefs.last_room;
-            },
-            Qt::QueuedConnection);
-    connect(bridge_.get(), &EventBridge::notificationTriggered,
-            this,          &MainWindow::onNotificationTriggered,
-            Qt::QueuedConnection);
+    // Bridges live in `accounts_[].bridge` and are wired through
+    // `wireBridge` when an account is attached. Slots filter on `sender()`
+    // so callbacks from inactive accounts don't reach the UI surfaces.
 
     notifier_ = std::make_unique<LinuxNotifierQt>(
         [this](std::string room_id) { navigate_to_room(std::move(room_id)); }, this);
@@ -858,21 +861,32 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
-    // Drain background workers BEFORE tearing the client down.  Each
-    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // Drain background workers BEFORE tearing the clients down.  Each
+    // worker calls `client_->fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    // Order: flip the flag → drop queued runnables → wait (bounded)
-    // for in-flight ones → only then stop_sync + destroy members.
+    // Order: flip the flag → drop queued runnables → wait (bounded) for
+    // in-flight ones → only then stop_sync on every account + destroy
+    // members.
     shuttingDown_.store(true, std::memory_order_release);
     mediaPool_.clear();
     mediaPool_.waitForDone(5000);
 
-    client_.stop_sync();
+    // Stop sync on every signed-in account. The ~ClientFfi destructor
+    // calls stop_sync again as a safety net, but doing it here drains
+    // tokio workers while the bridges are still alive to receive the
+    // final session-refreshed callback (so the latest refresh token
+    // makes it to disk before shutdown).
+    for (auto& a : accounts_) {
+        if (a && a->client) a->client->stop_sync();
+    }
+    client_ = nullptr;
+    bridge_ = nullptr;
+
     // LoginView is a child widget, normally destroyed during ~QMainWindow
-    // — but that runs *after* client_ has been destroyed, and ~LoginView
-    // calls client_.cancel_oauth(). Tear it down here while client_ is
-    // still alive.
+    // — but that runs *after* the AccountSessions (and thus their
+    // Clients) are destroyed, and ~LoginView calls cancel_oauth on its
+    // bound client. Tear it down here while everything is still alive.
     delete loginView_;
     loginView_ = nullptr;
 }
@@ -888,12 +902,8 @@ void MainWindow::runOnPool_(std::function<void()> fn) {
 
 // ---------------------------------------------------------------------------
 
-bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == roomHeaderTopic_ && event->type() == QEvent::Resize) {
-        updateTopicElision();
-    }
-    return QMainWindow::eventFilter(obj, event);
-}
+// eventFilter is defined further down (multi-account section) so it can
+// dispatch user-strip left-clicks into the AccountPicker popover.
 
 void MainWindow::keyPressEvent(QKeyEvent* ev) {
     if (ev->key() == Qt::Key_Escape) {
@@ -914,43 +924,230 @@ void MainWindow::resizeEvent(QResizeEvent* ev) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::doLogin() {
-    if (auto saved = tesseract::SessionStore::load()) {
-        statusBar()->showMessage(tr("Restoring session\xe2\x80\xa6"));
-        auto res = client_.restore_session(*saved);
-        if (res) {
-            myUserId_          = client_.get_user_id();
-            myDisplayName_     = client_.get_display_name();
-            myAvatarUrl_       = client_.get_avatar_url();
-            pendingRestoreRoom_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-            populateUserStrip();
-            client_.start_sync(bridge_.get());
-            statusBar()->showMessage(tr("Connected"));
-            contentStack_->setCurrentWidget(mainContent_);
-            maybeShowRecoveryBanner();
-            return;
-        }
-        tesseract::SessionStore::clear();
-        statusBar()->showMessage(
-            tr("Saved session expired: %1").arg(QString::fromStdString(res.message)),
-            6000);
+    // One-shot migration from the legacy single-account layout. Runs once
+    // per install before any Client is constructed; idempotent on every
+    // subsequent launch.
+    tesseract::SessionStore::migrate_legacy_layout();
+
+    // Restore every account on disk, in index order, so notifications
+    // fire for any of them while the user works in the foreground one.
+    auto idx = tesseract::SessionStore::load_index();
+
+    if (idx.user_ids.empty()) {
+        // Fresh install: no accounts → initial LoginView, no Cancel.
+        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        pending_login_is_add_account_ = false;
+        add_account_return_idx_ = -1;
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        pending_login_temp_dir_ = tesseract::SessionStore::account_dir(
+            "pending-" + std::to_string(QDateTime::currentMSecsSinceEpoch()));
+        std::error_code ec;
+        std::filesystem::create_directories(pending_login_temp_dir_, ec);
+        pending_login_client_->set_data_dir(
+            (pending_login_temp_dir_ / "matrix-store").string());
+        loginView_->set_client(pending_login_client_.get());
+        loginView_->reset();
+        contentStack_->setCurrentWidget(loginView_);
+        statusBar()->showMessage(tr("Not logged in"));
+        return;
     }
 
-    loginView_->reset();
-    contentStack_->setCurrentWidget(loginView_);
-    statusBar()->showMessage(tr("Not logged in"));
-}
+    statusBar()->showMessage(tr("Restoring sessions\xe2\x80\xa6"));
 
-void MainWindow::onLoginSucceeded() {
-    myUserId_          = client_.get_user_id();
-    myDisplayName_     = client_.get_display_name();
-    myAvatarUrl_       = client_.get_avatar_url();
-    pendingRestoreRoom_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
-    populateUserStrip();
-    tesseract::SessionStore::save(client_.export_session());
-    client_.start_sync(bridge_.get());
+    int target_active = -1;
+    for (std::size_t i = 0; i < idx.user_ids.size(); ++i) {
+        const auto& uid = idx.user_ids[i];
+        auto json = tesseract::SessionStore::load_account(uid);
+        if (!json) continue;
+
+        auto session = std::make_unique<tesseract::AccountSession>();
+        session->user_id = uid;
+        session->client  = std::make_unique<tesseract::Client>();
+        session->client->set_data_dir(
+            tesseract::SessionStore::sdk_store_dir(uid).string());
+
+        auto res = session->client->restore_session(*json);
+        if (!res) {
+            // This account's session is bad — wipe it from disk so the
+            // next launch doesn't keep retrying.
+            tesseract::SessionStore::clear_account(uid);
+            statusBar()->showMessage(
+                tr("Account %1 expired: %2")
+                    .arg(QString::fromStdString(uid),
+                         QString::fromStdString(res.message)),
+                6000);
+            continue;
+        }
+        session->display_name = session->client->get_display_name();
+        session->avatar_url   = session->client->get_avatar_url();
+        session->last_room    = tesseract::Prefs::parse(
+            session->client->load_prefs_json()).last_room;
+
+        auto bridge = std::make_unique<EventBridge>(this);
+        bridge->set_user_id(uid);
+        wireBridge(bridge.get());
+        session->client->start_sync(bridge.get());
+        session->sync_started = true;
+        session->bridge = std::move(bridge);
+
+        if (uid == idx.active_user_id) target_active = static_cast<int>(accounts_.size());
+        accounts_.push_back(std::move(session));
+    }
+
+    if (accounts_.empty()) {
+        // Every stored account failed to restore — drop to initial login.
+        tesseract::SessionStore::save_index({});
+        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        pending_login_is_add_account_ = false;
+        add_account_return_idx_ = -1;
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        pending_login_temp_dir_ = tesseract::SessionStore::account_dir(
+            "pending-" + std::to_string(QDateTime::currentMSecsSinceEpoch()));
+        std::error_code ec;
+        std::filesystem::create_directories(pending_login_temp_dir_, ec);
+        pending_login_client_->set_data_dir(
+            (pending_login_temp_dir_ / "matrix-store").string());
+        loginView_->set_client(pending_login_client_.get());
+        loginView_->reset();
+        contentStack_->setCurrentWidget(loginView_);
+        statusBar()->showMessage(tr("Not logged in"));
+        return;
+    }
+
+    if (target_active < 0) target_active = 0;
+    switchActiveAccount(target_active);
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
+}
+
+void MainWindow::onLoginSucceeded() {
+    if (!pending_login_client_) return;   // defensive — should not happen
+
+    // The OAuth round-trip completed on `pending_login_client_`, which the
+    // LoginView drove against a temporary data dir
+    // (`pending_login_temp_dir_/matrix-store`). We don't yet know the
+    // user_id; ask the client now.
+    std::string user_id = pending_login_client_->get_user_id();
+    if (user_id.empty()) {
+        statusBar()->showMessage(tr("Sign-in failed: no user id"), 6000);
+        return;
+    }
+
+    // If an account with the same user_id is already signed in (the user
+    // added an account they're already logged into), refuse rather than
+    // colliding on disk.
+    for (auto& a : accounts_) {
+        if (a->user_id == user_id) {
+            statusBar()->showMessage(
+                tr("Already signed in as %1")
+                    .arg(QString::fromStdString(user_id)),
+                4000);
+            pending_login_client_.reset();
+            loginView_->set_client(nullptr);
+            std::error_code ec;
+            std::filesystem::remove_all(pending_login_temp_dir_, ec);
+            // Restore previous active account's UI.
+            if (add_account_return_idx_ >= 0
+                && add_account_return_idx_ < static_cast<int>(accounts_.size())) {
+                switchActiveAccount(add_account_return_idx_);
+                contentStack_->setCurrentWidget(mainContent_);
+            }
+            pending_login_is_add_account_ = false;
+            add_account_return_idx_ = -1;
+            return;
+        }
+    }
+
+    // Snapshot the session blob before we drop the in-flight Client —
+    // re-opening it below needs to restore from this JSON.
+    auto session_json = pending_login_client_->export_session();
+    if (session_json.empty()) {
+        statusBar()->showMessage(tr("Sign-in failed: empty session"), 6000);
+        return;
+    }
+
+    // Drop the in-flight Client so its SQLite handles are released
+    // before we rename the directory underneath it.
+    pending_login_client_.reset();
+    loginView_->set_client(nullptr);
+
+    // Move the temp account directory into its final per-user-id home.
+    std::filesystem::path final_dir = tesseract::SessionStore::account_dir(user_id);
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(final_dir.parent_path(), ec);
+        std::filesystem::rename(pending_login_temp_dir_, final_dir, ec);
+        if (ec) {
+            // Rename failed — try recursive copy + remove, falling back
+            // to leaving the data in the temp dir if even that fails.
+            std::error_code ec2;
+            std::filesystem::copy(pending_login_temp_dir_, final_dir,
+                std::filesystem::copy_options::recursive
+                | std::filesystem::copy_options::overwrite_existing, ec2);
+            if (ec2) {
+                statusBar()->showMessage(
+                    tr("Sign-in failed: couldn't persist matrix store: %1")
+                        .arg(QString::fromStdString(ec2.message())),
+                    6000);
+                return;
+            }
+            std::filesystem::remove_all(pending_login_temp_dir_, ec2);
+        }
+    }
+    pending_login_temp_dir_.clear();
+
+    // Persist the session blob into the final per-account dir.
+    if (!tesseract::SessionStore::save_account(user_id, session_json)) {
+        statusBar()->showMessage(tr("Sign-in failed: couldn't persist session"), 6000);
+        return;
+    }
+
+    // Open a fresh Client against the final store path and restore from
+    // the just-exported session JSON (the matrix-sdk reuses the moved
+    // SQLite store transparently — no resync).
+    auto session = std::make_unique<tesseract::AccountSession>();
+    session->user_id = user_id;
+    session->client  = std::make_unique<tesseract::Client>();
+    session->client->set_data_dir(
+        tesseract::SessionStore::sdk_store_dir(user_id).string());
+    auto res = session->client->restore_session(session_json);
+    if (!res) {
+        statusBar()->showMessage(
+            tr("Sign-in failed at restore: %1")
+                .arg(QString::fromStdString(res.message)),
+            6000);
+        tesseract::SessionStore::clear_account(user_id);
+        return;
+    }
+    session->display_name = session->client->get_display_name();
+    session->avatar_url   = session->client->get_avatar_url();
+    session->last_room    = tesseract::Prefs::parse(
+        session->client->load_prefs_json()).last_room;
+
+    auto bridge = std::make_unique<EventBridge>(this);
+    bridge->set_user_id(user_id);
+    wireBridge(bridge.get());
+    session->client->start_sync(bridge.get());
+    session->sync_started = true;
+    session->bridge = std::move(bridge);
+
+    int new_idx = static_cast<int>(accounts_.size());
+    accounts_.push_back(std::move(session));
+
+    // Update the on-disk index. Active = the account we just added.
+    tesseract::SessionStore::AccountIndex idx;
+    idx.active_user_id = user_id;
+    for (auto& a : accounts_) idx.user_ids.push_back(a->user_id);
+    tesseract::SessionStore::save_index(idx);
+
+    switchActiveAccount(new_idx);
+    statusBar()->showMessage(tr("Connected"));
+    contentStack_->setCurrentWidget(mainContent_);
+    maybeShowRecoveryBanner();
+
+    pending_login_is_add_account_ = false;
+    add_account_return_idx_ = -1;
 
     if (!tray_) {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
@@ -959,6 +1156,22 @@ void MainWindow::onLoginSucceeded() {
             this);
         if (tray_->is_available())
             qApp->setQuitOnLastWindowClosed(false);
+    }
+}
+
+void MainWindow::onLoginCancelled() {
+    // The user clicked Cancel during AddAccount. Return to the previous
+    // foreground account; the in-flight client is discarded.
+    pending_login_client_.reset();
+    loginView_->set_client(nullptr);
+    if (!pending_login_is_add_account_) return;   // no back-state in Initial mode
+
+    int back = add_account_return_idx_;
+    pending_login_is_add_account_ = false;
+    add_account_return_idx_ = -1;
+    if (back >= 0 && back < static_cast<int>(accounts_.size())) {
+        switchActiveAccount(back);
+        contentStack_->setCurrentWidget(mainContent_);
     }
 }
 
@@ -1010,14 +1223,14 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     }
 
     if (!currentRoomId_.empty() && currentRoomId_ != room_id)
-        client_.unsubscribe_room(currentRoomId_);
+        client_->unsubscribe_room(currentRoomId_);
 
     currentRoomId_ = room_id;
     reply_details_requested_.clear();
     {
-        auto prefs = tesseract::Prefs::parse(client_.load_prefs_json());
+        auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
         prefs.last_room = room_id;
-        client_.save_prefs_json(tesseract::Prefs::serialize(prefs));
+        client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (composeShared_) {
         composeShared_->clear_reply();
@@ -1032,14 +1245,14 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     // first-load network round-trip.
     std::string sub_room = currentRoomId_;
     runOnPool_([this, sub_room]{
-        auto res = client_.subscribe_room(sub_room);
+        auto res = client_->subscribe_room(sub_room);
         bool ok  = res.ok;
         std::string msg = res.message;
         bool reached = false;
         if (ok) {
-            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            auto pr = client_->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_.start_background_backfill();
+            client_->start_background_backfill();
         }
         QMetaObject::invokeMethod(
             this,
@@ -1063,7 +1276,11 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
 void MainWindow::onTimelineReset(
     QString roomId, std::vector<tesseract::Event*> snapshot)
 {
-    const bool current = roomId.toStdString() == currentRoomId_;
+    // Filter: only the active account drives the message list. Background
+    // accounts deliver their timeline events too (they're all syncing), but
+    // the message list always shows the foreground room.
+    const bool from_active = (sender() == bridge_);
+    const bool current = from_active && roomId.toStdString() == currentRoomId_;
     if (current) {
         std::vector<tesseract::views::MessageRowData> rows;
         rows.reserve(snapshot.size());
@@ -1082,7 +1299,8 @@ void MainWindow::onTimelineReset(
 void MainWindow::onMessageInserted(
     QString roomId, std::size_t index, tesseract::Event* ev)
 {
-    if (ev && roomId.toStdString() == currentRoomId_
+    const bool from_active = (sender() == bridge_);
+    if (ev && from_active && roomId.toStdString() == currentRoomId_
         && ev->type != tesseract::EventType::Unhandled)
     {
         ensureRowMedia(*ev);
@@ -1096,7 +1314,8 @@ void MainWindow::onMessageInserted(
 void MainWindow::onMessageUpdated(
     QString roomId, std::size_t index, tesseract::Event* ev)
 {
-    if (ev && roomId.toStdString() == currentRoomId_
+    const bool from_active = (sender() == bridge_);
+    if (ev && from_active && roomId.toStdString() == currentRoomId_
         && ev->type != tesseract::EventType::Unhandled)
     {
         ensureRowMedia(*ev);
@@ -1108,6 +1327,7 @@ void MainWindow::onMessageUpdated(
 }
 
 void MainWindow::onMessageRemoved(QString roomId, std::size_t index) {
+    if (sender() != bridge_) return;
     if (roomId.toStdString() != currentRoomId_) return;
     messageListView_->remove_message(index);
     msgSurface_->relayout();
@@ -1123,7 +1343,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
     // via a queued connection. `client_` is thread-safe (Rust runtime
     // serialises concurrent calls).
     runOnPool_([this, room_id]{
-        auto res = client_.paginate_back_with_status(room_id, kPaginationBatch);
+        auto res = client_->paginate_back_with_status(room_id, kPaginationBatch);
         bool reached = res.ok && res.reached_start;
         QMetaObject::invokeMethod(
             this,
@@ -1148,6 +1368,19 @@ void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
 }
 
 void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
+    // Identify the source account from the sender bridge so we can cache
+    // the snapshot under the right user_id even when the callback comes
+    // from a background account. Looking up by pointer keeps this O(N)
+    // worst case in account count, which is tiny.
+    auto* sender_bridge = qobject_cast<EventBridge*>(sender());
+    std::string source_uid;
+    if (sender_bridge) source_uid = sender_bridge->user_id();
+
+    if (!source_uid.empty())
+        per_account_rooms_[source_uid] = rooms;
+
+    if (sender_bridge != bridge_) return;   // background account → cache only
+
     rooms_ = std::move(rooms);
     refreshRoomList();
     if (!currentRoomId_.empty()) {
@@ -1168,28 +1401,43 @@ void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
 void MainWindow::onSyncError(
     QString context, QString description, bool soft_logout)
 {
+    // Identify which account fired the error. With multi-account we have
+    // N concurrent syncs; a soft-logout on one shouldn't yank a different
+    // account's session.
+    auto* sender_bridge = qobject_cast<EventBridge*>(sender());
+    tesseract::AccountSession* affected = nullptr;
+    if (sender_bridge) {
+        for (auto& a : accounts_) {
+            if (static_cast<EventBridge*>(a->bridge.get()) == sender_bridge) {
+                affected = a.get(); break;
+            }
+        }
+    }
+
     if (context == "sync_reconnect") {
         statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
-        client_.stop_sync();
+        if (affected && affected->client) affected->client->stop_sync();
         doLogin();
     } else if (context == "sync_auth_error") {
-        if (soft_logout) {
-            if (auto saved = tesseract::SessionStore::load()) {
+        if (soft_logout && affected) {
+            if (auto saved = tesseract::SessionStore::load_account(affected->user_id)) {
                 statusBar()->showMessage(tr("Reconnecting session\xe2\x80\xa6"));
-                if (client_.restore_session(*saved)) {
-                    myUserId_      = client_.get_user_id();
-                    myDisplayName_ = client_.get_display_name();
-                    myAvatarUrl_   = client_.get_avatar_url();
-                    populateUserStrip();
-                    client_.start_sync(bridge_.get());
+                if (affected->client->restore_session(*saved)) {
+                    affected->display_name = affected->client->get_display_name();
+                    affected->avatar_url   = affected->client->get_avatar_url();
+                    if (affected == accounts_[std::max(0, active_account_index_)].get())
+                        switchActiveAccount(active_account_index_);
+                    affected->client->start_sync(static_cast<EventBridge*>(affected->bridge.get()));
                     statusBar()->showMessage(tr("Reconnected"));
                     maybeShowRecoveryBanner();
                     return;
                 }
             }
         }
-        tesseract::SessionStore::clear();
-        client_.stop_sync();
+        if (affected) {
+            tesseract::SessionStore::clear_account(affected->user_id);
+            affected->client->stop_sync();
+        }
         statusBar()->showMessage(tr("Session expired; please log in again."));
         doLogin();
     } else {
@@ -1219,7 +1467,7 @@ void MainWindow::updateRoomHeader(const tesseract::RoomInfo& info) {
     if (!info.avatar_url.empty()) {
         QString qurl = QString::fromStdString(info.avatar_url);
         if (!avatarCache_.contains(qurl)) {
-            auto bytes = client_.fetch_avatar_bytes(info.id);
+            auto bytes = client_->fetch_avatar_bytes(info.id);
             if (!bytes.empty()) {
                 QPixmap raw;
                 raw.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
@@ -1279,7 +1527,7 @@ void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) 
 void MainWindow::ensureReplyDetails(const std::string& event_id) {
     if (event_id.empty() || currentRoomId_.empty()) return;
     if (!reply_details_requested_.insert(event_id).second) return;
-    client_.fetch_reply_details(currentRoomId_, event_id);
+    client_->fetch_reply_details(currentRoomId_, event_id);
 }
 
 void MainWindow::requestRoomAvatar_(const std::string& room_id,
@@ -1290,7 +1538,7 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
 
     QString qkey = QString::fromStdString(mxc);
     runOnPool_([this, room_id, qkey]() {
-        auto bytes = client_.fetch_avatar_bytes(room_id);
+        auto bytes = client_->fetch_avatar_bytes(room_id);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
         emit mediaBytesLoaded_(qkey,
@@ -1306,7 +1554,7 @@ void MainWindow::requestUserAvatar_(const std::string& mxc) {
 
     QString qkey = QString::fromStdString(mxc);
     runOnPool_([this, key = mxc, qkey]() {
-        auto bytes = client_.fetch_media_bytes(key);
+        auto bytes = client_->fetch_media_bytes(key);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
         emit mediaBytesLoaded_(qkey,
@@ -1328,7 +1576,7 @@ void MainWindow::requestMediaImage_(const std::string& url,
         // MediaSource (encrypted images/stickers + reaction sources).
         // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
         // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_.fetch_source_bytes(key);
+        auto bytes = client_->fetch_source_bytes(key);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
         emit mediaBytesLoaded_(qkey,
@@ -1467,7 +1715,7 @@ void MainWindow::refreshRoomList() {
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_) {
             if (!r.is_space) continue;
-            for (const auto& id : client_.space_children(r.id))
+            for (const auto& id : client_->space_children(r.id))
                 in_space.insert(id);
         }
         std::vector<tesseract::RoomInfo> filtered;
@@ -1479,7 +1727,7 @@ void MainWindow::refreshRoomList() {
         roomNavBar_->setVisible(false);
     } else {
         const std::string& space_id = spaceStack_.back();
-        auto child_ids = client_.space_children(space_id);
+        auto child_ids = client_->space_children(space_id);
         std::vector<tesseract::RoomInfo> filtered;
         for (const auto& r : rooms_)
             if (std::find(child_ids.begin(), child_ids.end(), r.id) != child_ids.end())
@@ -1607,7 +1855,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
             // view) reads them straight back out of the cache.
             std::string src = v.audio_source;
             runOnPool_([this, src = std::move(src)]() {
-                (void)client_.fetch_source_bytes(src);
+                (void)client_->fetch_source_bytes(src);
             });
         }
     } else if (ev.type == tesseract::EventType::Video) {
@@ -1622,7 +1870,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
             std::string src = vid.video_url;
             runOnPool_(
                 [this, eid, src = std::move(src)]() {
-                    auto bytes = client_.fetch_source_bytes(src);
+                    auto bytes = client_->fetch_source_bytes(src);
                     if (bytes.empty()) return;
                     // Decode the first frame on the UI thread — Qt multimedia
                     // objects (QMediaPlayer, QVideoSink) must live there.
@@ -1676,7 +1924,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
 
 void MainWindow::maybeShowRecoveryBanner() {
     if (recoveryBannerDismissed_) return;
-    if (!client_.needs_recovery()) return;
+    if (!client_->needs_recovery()) return;
     if (!recoverySurface_->isVisible()) {
         if (recoveryShared_) {
             recoveryShared_->set_state(
@@ -1717,7 +1965,7 @@ void MainWindow::onRecoveryVerifyClicked() {
     recoverySurface_->relayout();
 
     runOnPool_([this, k = key]() {
-        auto res = client_.recover(k);
+        auto res = client_->recover(k);
         emit recoverFinished(res.ok, QString::fromStdString(res.message));
     });
 }
@@ -1749,6 +1997,7 @@ void MainWindow::onDismissRecoveryBanner() {
 }
 
 void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
+    if (sender() != bridge_) return;   // background-account backup state stays out of the active UI
     maybeShowRecoveryBanner();
 
     if (recoverySurface_ && recoverySurface_->isVisible()
@@ -1762,7 +2011,7 @@ void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
         recoverySurface_->relayout();
     }
     if (progress.state == tesseract::BackupState::Enabled
-        && !client_.needs_recovery())
+        && !client_->needs_recovery())
     {
         if (recoverySurface_) recoverySurface_->setVisible(false);
     }
@@ -1773,6 +2022,7 @@ void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
 }
 
 void MainWindow::onRoomListStateChanged(std::uint8_t state) {
+    if (sender() != bridge_) return;   // background-account sync state stays out of the status bar
     lastRoomListState_ = static_cast<tesseract::RoomListState>(state);
     refreshSyncStatus();
 }
@@ -1846,10 +2096,11 @@ void MainWindow::populateUserStrip() {
         ? QString::fromStdString(myUserId_)
         : QString::fromStdString(myDisplayName_);
     userNameLabel_->setText(shown);
+    if (userIdLabel_) userIdLabel_->setText(QString::fromStdString(myUserId_));
 
     QPixmap avatar;
-    if (!myAvatarUrl_.empty()) {
-        auto bytes = client_.fetch_media_bytes(myAvatarUrl_);
+    if (!myAvatarUrl_.empty() && client_) {
+        auto bytes = client_->fetch_media_bytes(myAvatarUrl_);
         if (!bytes.empty()) {
             QPixmap raw;
             if (raw.loadFromData(bytes.data(), static_cast<int>(bytes.size()))) {
@@ -1869,20 +2120,171 @@ void MainWindow::populateUserStrip() {
 
 void MainWindow::onUserStripContextMenu(const QPoint& pos) {
     QMenu menu(this);
-    QAction* logoutAct = menu.addAction(tr("Logout"));
+    QAction* addAct = menu.addAction(tr("Add Account…"));
+    QString logout_label = tr("Log Out %1").arg(
+        myDisplayName_.empty()
+            ? QString::fromStdString(myUserId_)
+            : QString::fromStdString(myDisplayName_));
+    QAction* logoutAct = menu.addAction(logout_label);
     QAction* picked = menu.exec(userStrip_->mapToGlobal(pos));
-    if (picked == logoutAct)
-        doLogout();
+    if      (picked == addAct)    beginAddAccount();
+    else if (picked == logoutAct) logoutActiveAccount();
 }
 
-void MainWindow::doLogout() {
-    auto res = client_.logout();
-    tesseract::SessionStore::clear();
-    client_.stop_sync();
+void MainWindow::onUserStripLeftClick(const QPoint& pos) {
+    // Left-click is a no-op when there's only one signed-in account —
+    // the picker would just show the active row and do nothing.
+    if (accounts_.size() < 2) return;
+    openAccountPicker(userStrip_->mapToGlobal(pos));
+}
 
-    // Reset visible state.
-    if (!currentRoomId_.empty())
-        client_.unsubscribe_room(currentRoomId_);
+bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == userStrip_ && event->type() == QEvent::MouseButtonRelease) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton) {
+            onUserStripLeftClick(me->pos());
+            return true;
+        }
+    }
+    if (obj == roomHeaderTopic_ && event->type() == QEvent::Resize) {
+        updateTopicElision();
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-account orchestration
+// ---------------------------------------------------------------------------
+
+void MainWindow::wireBridge(EventBridge* b) {
+    // Each AccountSession's bridge is connected to the same MainWindow
+    // slots. Slots check `sender()` against `bridge_` (the active bridge)
+    // to filter out callbacks coming from inactive accounts — except
+    // `onRoomsUpdated`, which caches every account's snapshot in
+    // `per_account_rooms_` so a fast switch is immediate, and
+    // `onNotificationTriggered`, which fires regardless of foreground.
+    connect(b, &EventBridge::timelineReset,
+            this, &MainWindow::onTimelineReset);
+    connect(b, &EventBridge::messageInserted,
+            this, &MainWindow::onMessageInserted);
+    connect(b, &EventBridge::messageUpdated,
+            this, &MainWindow::onMessageUpdated);
+    connect(b, &EventBridge::messageRemoved,
+            this, &MainWindow::onMessageRemoved);
+    connect(b, &EventBridge::roomsUpdated,
+            this, &MainWindow::onRoomsUpdated);
+    connect(b, &EventBridge::syncError,
+            this, &MainWindow::onSyncError);
+    connect(b, &EventBridge::backupProgress,
+            this, &MainWindow::onBackupProgress);
+    connect(b, &EventBridge::roomListStateChanged,
+            this, &MainWindow::onRoomListStateChanged);
+    connect(b, &EventBridge::imagePacksUpdated,
+            this, [this, b]{
+                if (b == bridge_ && stickerPicker_) stickerPicker_->refreshPacks();
+            },
+            Qt::QueuedConnection);
+    connect(b, &EventBridge::accountPrefsUpdated,
+            this, [this, b](const QString& json) {
+                if (b != bridge_) return;   // ignore inactive accounts
+                auto prefs = tesseract::Prefs::parse(json.toStdString());
+                if (!prefs.last_room.empty() && pendingRestoreRoom_.empty() && currentRoomId_.empty())
+                    pendingRestoreRoom_ = prefs.last_room;
+            },
+            Qt::QueuedConnection);
+    connect(b, &EventBridge::notificationTriggered,
+            this, &MainWindow::onNotificationTriggered,
+            Qt::QueuedConnection);
+}
+
+void MainWindow::switchActiveAccount(int new_idx) {
+    if (new_idx < 0 || new_idx >= static_cast<int>(accounts_.size())) return;
+    if (new_idx == active_account_index_ && client_) return;
+
+    // Unsubscribe the previous account's open room so its timeline stops
+    // streaming updates to the message list when we swap surfaces.
+    if (client_ && !currentRoomId_.empty()) {
+        client_->unsubscribe_room(currentRoomId_);
+    }
+    currentRoomId_.clear();
+    clearMessages();
+
+    active_account_index_ = new_idx;
+    auto& s = *accounts_[new_idx];
+    client_ = s.client.get();
+    bridge_ = static_cast<EventBridge*>(s.bridge.get());
+
+    myUserId_      = s.user_id;
+    myDisplayName_ = s.display_name;
+    myAvatarUrl_   = s.avatar_url;
+    pendingRestoreRoom_ = s.last_room;
+
+    populateUserStrip();
+    if (emojiPicker_)   emojiPicker_->setClient(client_);
+    if (stickerPicker_) stickerPicker_->setClient(client_);
+
+    // Use this account's last-known rooms snapshot if we have one
+    // cached; otherwise wait for the next on_rooms_updated callback to
+    // populate the list.
+    auto it = per_account_rooms_.find(s.user_id);
+    if (it != per_account_rooms_.end()) {
+        rooms_ = it->second;
+        refreshRoomList();
+    } else {
+        rooms_.clear();
+        refreshRoomList();
+    }
+
+    // Persist the active selection.
+    tesseract::SessionStore::AccountIndex idx;
+    idx.active_user_id = s.user_id;
+    for (auto& a : accounts_) idx.user_ids.push_back(a->user_id);
+    tesseract::SessionStore::save_index(idx);
+
+    rebuildAccountPicker();
+    maybeShowRecoveryBanner();
+}
+
+void MainWindow::beginAddAccount() {
+    add_account_return_idx_ = active_account_index_;
+    pending_login_is_add_account_ = true;
+
+    // Create a fresh client for the OAuth round-trip. The user_id won't
+    // be known until await_oauth completes, so we point the SDK at a
+    // per-attempt "pending-<ts>" directory; onLoginSucceeded renames
+    // it to accounts/<sanitized-uid>/ once the round-trip completes.
+    pending_login_client_ = std::make_unique<tesseract::Client>();
+    pending_login_temp_dir_ = tesseract::SessionStore::account_dir(
+        "pending-" + std::to_string(QDateTime::currentMSecsSinceEpoch()));
+    std::error_code ec;
+    std::filesystem::create_directories(pending_login_temp_dir_, ec);
+    pending_login_client_->set_data_dir(
+        (pending_login_temp_dir_ / "matrix-store").string());
+
+    loginView_->set_client(pending_login_client_.get());
+    loginView_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
+    loginView_->reset();
+    contentStack_->setCurrentWidget(loginView_);
+    statusBar()->showMessage(tr("Add Account"));
+}
+
+void MainWindow::logoutActiveAccount() {
+    if (active_account_index_ < 0) return;
+    auto& a = *accounts_[active_account_index_];
+    const std::string uid = a.user_id;
+
+    a.client->logout();
+    a.client->stop_sync();
+    tesseract::SessionStore::clear_account(uid);
+    per_account_rooms_.erase(uid);
+
+    // Remove this account from the live vector.
+    accounts_.erase(accounts_.begin() + active_account_index_);
+    active_account_index_ = -1;
+    client_ = nullptr;
+    bridge_ = nullptr;
+
+    // Reset visible state regardless of where we go next.
     currentRoomId_.clear();
     myUserId_.clear();
     myDisplayName_.clear();
@@ -1890,18 +2292,107 @@ void MainWindow::doLogout() {
     rooms_.clear();
     refreshRoomList();
     clearMessages();
-    userStrip_->setVisible(false);
     if (recoverySurface_) recoverySurface_->setVisible(false);
     recoveryBannerDismissed_ = false;
     roomHeader_->setVisible(false);
 
-    statusBar()->showMessage(res
-        ? tr("Signed out")
-        : tr("Sign out failed: %1").arg(QString::fromStdString(res.message)),
-        res ? 3000 : 6000);
+    if (accounts_.empty()) {
+        // No accounts left → back to initial login.
+        userStrip_->setVisible(false);
+        tesseract::SessionStore::save_index({});
+        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        pending_login_is_add_account_ = false;
+        add_account_return_idx_ = -1;
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        loginView_->set_client(pending_login_client_.get());
+        loginView_->reset();
+        contentStack_->setCurrentWidget(loginView_);
+        statusBar()->showMessage(tr("Signed out"), 3000);
+        rebuildAccountPicker();
+        return;
+    }
 
-    loginView_->reset();
-    contentStack_->setCurrentWidget(loginView_);
+    // Otherwise switch to the next account (or the first one if we
+    // removed the last in the vector). Update the on-disk active pointer.
+    switchActiveAccount(0);
+    statusBar()->showMessage(tr("Signed out of %1")
+                                 .arg(QString::fromStdString(uid)),
+                             3000);
+}
+
+void MainWindow::rebuildAccountPicker() {
+    if (!accountPicker_) return;
+    std::vector<tesseract::views::AccountEntry> entries;
+    entries.reserve(accounts_.size());
+    for (std::size_t i = 0; i < accounts_.size(); ++i) {
+        const auto& a = *accounts_[i];
+        entries.push_back({
+            a.user_id, a.display_name, a.avatar_url,
+            static_cast<int>(i) == active_account_index_,
+        });
+    }
+    accountPicker_->set_entries(std::move(entries));
+}
+
+void MainWindow::openAccountPicker(const QPoint& global_anchor) {
+    if (!accountPickerPopover_) {
+        accountPickerPopover_ = new QFrame(this);
+        accountPickerPopover_->setWindowFlags(Qt::Popup
+                                              | Qt::FramelessWindowHint);
+        accountPickerPopover_->setFrameShape(QFrame::Box);
+        accountPickerPopover_->setStyleSheet(
+            "QFrame { background-color: #FFFFFF; border:1px solid #C9CDD2; }");
+        auto* lay = new QVBoxLayout(accountPickerPopover_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+
+        accountPickerSurface_ = new tk::qt6::Surface(tk::Theme::light(),
+                                                     accountPickerPopover_);
+        auto picker_owner = std::make_unique<tesseract::views::AccountPicker>();
+        accountPicker_ = picker_owner.get();
+        accountPicker_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it != tk_avatars_.end() ? it->second.get() : nullptr;
+            });
+        accountPicker_->on_select = [this](const std::string& uid) {
+            onAccountSelected(uid);
+        };
+        accountPickerSurface_->set_root(std::move(picker_owner));
+        lay->addWidget(accountPickerSurface_);
+    }
+    rebuildAccountPicker();
+
+    constexpr int kPickerWidth = 260;
+    constexpr int kRowHeight   = 56;
+    const int rows = static_cast<int>(accounts_.size());
+    const int height = std::max(kRowHeight, rows * kRowHeight) + 2;
+    accountPickerPopover_->resize(kPickerWidth, height);
+
+    // Anchor above the strip (popover hangs down from the user-strip top
+    // edge on most desktops; if it would clip the screen bottom Qt::Popup
+    // reflows automatically).
+    QPoint anchor = global_anchor;
+    anchor.setY(anchor.y() - height);
+    accountPickerPopover_->move(anchor);
+    accountPickerPopover_->show();
+}
+
+void MainWindow::onAccountSelected(const std::string& user_id) {
+    if (accountPickerPopover_) accountPickerPopover_->hide();
+    for (std::size_t i = 0; i < accounts_.size(); ++i) {
+        if (accounts_[i]->user_id == user_id) {
+            switchActiveAccount(static_cast<int>(i));
+            contentStack_->setCurrentWidget(mainContent_);
+            return;
+        }
+    }
+}
+
+void MainWindow::doLogout() {
+    // Legacy shim that the tray / external code may still call. Routes to
+    // the active-account logout path.
+    logoutActiveAccount();
 }
 
 } // namespace qt6

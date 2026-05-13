@@ -8,9 +8,8 @@
 
 namespace qt6 {
 
-LoginView::LoginView(tesseract::Client& client, QWidget* parent)
+LoginView::LoginView(QWidget* parent)
     : QWidget(parent),
-      client_(client),
       surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
     // Build the shared widget tree and mount it as Surface's root.
@@ -31,8 +30,16 @@ LoginView::LoginView(tesseract::Client& client, QWidget* parent)
 
 LoginView::~LoginView() {
     cancelled_.store(true);
-    client_.cancel_oauth();
+    if (client_) client_->cancel_oauth();
     join_worker();
+}
+
+void LoginView::set_client(tesseract::Client* client) {
+    client_ = client;
+}
+
+void LoginView::set_mode(tesseract::views::LoginView::Mode m) {
+    if (shared_) shared_->set_mode(m);
 }
 
 void LoginView::resizeEvent(QResizeEvent* e) {
@@ -51,7 +58,7 @@ void LoginView::layout_overlays() {
 
 void LoginView::reset() {
     cancelled_.store(true);
-    client_.cancel_oauth();
+    if (client_) client_->cancel_oauth();
     join_worker();
     cancelled_.store(false);
 
@@ -65,6 +72,7 @@ void LoginView::reset() {
 }
 
 void LoginView::on_sign_in() {
+    if (!client_) return;   // set_client() must be called before showing
     std::string hs = trim(hs_field_->text());
     if (hs.empty()) {
         shared_->set_status("Please enter a homeserver.",
@@ -81,7 +89,7 @@ void LoginView::on_sign_in() {
     join_worker();
     cancelled_.store(false);
     worker_ = std::thread([this, hs] {
-        auto flow = client_.begin_oauth(hs);
+        auto flow = client_->begin_oauth(hs);
         if (cancelled_.load()) return;
         bool        ok      = static_cast<bool>(flow);
         std::string payload = ok ? flow.auth_url : flow.message;
@@ -110,7 +118,7 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url) {
 
     cancelled_.store(false);
     worker_ = std::thread([this] {
-        auto res = client_.await_oauth();
+        auto res = client_->await_oauth();
         if (cancelled_.load()) return;
         bool        ok  = static_cast<bool>(res);
         std::string msg = res.message;
@@ -137,7 +145,7 @@ void LoginView::on_await_completed(bool ok, std::string err) {
 
 void LoginView::on_cancel() {
     cancelled_.store(true);
-    client_.cancel_oauth();
+    if (client_) client_->cancel_oauth();
     shared_->set_status("Cancelling…");
     surface_->update();
     join_worker();
@@ -146,6 +154,10 @@ void LoginView::on_cancel() {
     hs_field_->set_enabled(true);
     surface_->relayout();
     layout_overlays();
+    // Tell the host so it can swap back to the previous account's UI (in
+    // AddAccount mode) or do nothing (in Initial mode the host has no
+    // back-state and just leaves the LoginView visible).
+    emit loginCancelled();
 }
 
 void LoginView::join_worker() {

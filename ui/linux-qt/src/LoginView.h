@@ -23,8 +23,21 @@ namespace qt6 {
 class LoginView final : public QWidget {
     Q_OBJECT
 public:
-    explicit LoginView(tesseract::Client& client, QWidget* parent = nullptr);
+    explicit LoginView(QWidget* parent = nullptr);
     ~LoginView() override;
+
+    /// Rebind the target `tesseract::Client` that this view drives through
+    /// OAuth. Called by `MainWindow` before showing the view: a fresh
+    /// `Client` (with its own data dir) is created for each login attempt
+    /// — initial or "Add Account" — so each account ends up with its own
+    /// matrix-sdk store. Must be set before the user clicks Sign In.
+    void set_client(tesseract::Client* client);
+
+    /// Toggle between initial-login and add-account presentation. Forwards
+    /// to the shared widget's `Mode` and (re)wires the visible buttons:
+    /// `Initial` hides Cancel; `AddAccount` shows it in both Form and
+    /// Waiting states so the user can back out at any time.
+    void set_mode(tesseract::views::LoginView::Mode m);
 
     /// Return the view to its initial "form" state. Call before showing
     /// the view again after a successful sign-in or logout.
@@ -32,6 +45,7 @@ public:
 
 signals:
     void loginSucceeded();
+    void loginCancelled();   // emitted when the user clicks Cancel in AddAccount mode
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -46,7 +60,7 @@ private:
 
     static std::string trim(std::string s);
 
-    tesseract::Client& client_;
+    tesseract::Client* client_ = nullptr;   // non-owning; rebound per login attempt by `set_client`
 
     tk::qt6::Surface*                       surface_  = nullptr;
     tesseract::views::LoginView*            shared_   = nullptr;  // borrowed

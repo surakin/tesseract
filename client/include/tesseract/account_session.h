@@ -1,0 +1,54 @@
+#pragma once
+
+#include "tesseract/client.h"
+#include "tesseract/event_handler.h"
+
+#include <memory>
+#include <string>
+
+namespace tesseract {
+
+/// Everything the host needs to drive a single Matrix account: the `Client`
+/// (its own tokio runtime + matrix-sdk Client), the per-account
+/// `IEventHandler` bridge (each shell concretes this with its own marshalling
+/// type — `EventBridge` on Qt6, `EventHandler` on GTK4 / Win32, the
+/// `EventBridgeImpl` on macOS), and cached identity bits the user-strip and
+/// account-picker views read every frame.
+///
+/// `AccountSession` is a pure value type — no methods beyond the implicit
+/// move/destructor. The host owns a `std::vector<std::unique_ptr<AccountSession>>`
+/// and rebinds shared UI surfaces to the active entry through the
+/// `MainWindow::switch_active_account` chokepoint.
+struct AccountSession {
+    // bridge must be declared BEFORE client so that it is destroyed LAST
+    // (C++ destroys fields in reverse declaration order). The tokio runtime
+    // inside ClientFfi calls rt.drop() last, which blocks until all spawned
+    // watcher tasks finish. Those tasks hold Arc<Mutex<SendHandler>> and may
+    // invoke C++ callbacks — the IEventHandler must still be alive for the
+    // entire duration of rt.drop(). Declaring client second guarantees that.
+    std::unique_ptr<IEventHandler> bridge;
+    std::unique_ptr<Client>        client;
+
+    /// Canonical Matrix ID, e.g. `@alice:example.org`. Used as the key in
+    /// `accounts.json` and as the parent of `SessionStore::account_dir`.
+    std::string user_id;
+
+    /// Display name resolved at restore/login time and refreshed when the
+    /// server-side profile changes. Empty when the account has none set.
+    std::string display_name;
+
+    /// `mxc://…` URI of the account's avatar, or empty when unset. The shell's
+    /// avatar cache resolves this to a `tk::Image*` on demand.
+    std::string avatar_url;
+
+    /// Room ID the user last had focused for this account, restored from the
+    /// `im.gnomos.tesseract` account-data event on session restore.
+    std::string last_room;
+
+    /// True once `client->start_sync(bridge.get())` has been called for this
+    /// session — guards against double-starts and lets the destructor know to
+    /// call `stop_sync` for clean shutdown.
+    bool sync_started = false;
+};
+
+} // namespace tesseract

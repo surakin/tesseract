@@ -112,7 +112,11 @@ fn backup_progress_default() -> BackupProgress {
     BackupProgress { state: BACKUP_STATE_UNKNOWN, imported_keys: 0, total_keys: 0 }
 }
 
-fn data_dir() -> PathBuf {
+/// Default per-platform location for the matrix-sdk SQLite store. Used as the
+/// initial value of `ClientFfi::data_dir`; callers can override it via
+/// `ClientFfi::set_data_dir` (e.g. to scope the store under a specific
+/// account directory in the multi-account layout).
+fn default_data_dir() -> PathBuf {
     let base = dirs_like_home().unwrap_or_else(std::env::temp_dir);
     let dir  = base.join("tesseract").join("matrix-store");
     let _ = std::fs::create_dir_all(&dir);
@@ -195,6 +199,10 @@ pub struct ClientFfi {
     /// relevant event; read by the FFI list/* accessors without blocking.
     #[cfg(not(test))]
     image_packs: Arc<Mutex<Vec<crate::image_packs::ImagePack>>>,
+    /// Directory holding the matrix-sdk SQLite store for this client. Set via
+    /// `set_data_dir` before `oauth_begin` / `restore_session`. Defaults to
+    /// `default_data_dir()` for legacy single-account callers.
+    data_dir:   PathBuf,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     rt:         Runtime,
@@ -241,8 +249,21 @@ impl ClientFfi {
             media_upload_limit: AtomicU64::new(0),
             #[cfg(not(test))]
             image_packs: Arc::new(Mutex::new(Vec::new())),
+            data_dir:   default_data_dir(),
             rt:         Runtime::new().expect("tokio runtime"),
         }
+    }
+
+    /// Override the per-instance data directory. Callers should invoke this
+    /// immediately after `new()` and before `oauth_begin` / `restore_session`
+    /// so the matrix-sdk SQLite store is opened at the right path. Creates
+    /// the directory if it does not exist; silently ignores empty input so
+    /// FFI callers that pass through an empty string keep the default.
+    pub fn set_data_dir(&mut self, path: &str) {
+        if path.is_empty() { return; }
+        let p = PathBuf::from(path);
+        let _ = std::fs::create_dir_all(&p);
+        self.data_dir = p;
     }
 
     // -----------------------------------------------------------------------
@@ -255,9 +276,10 @@ impl ClientFfi {
         }
 
         let hs   = homeserver.to_owned();
-        let path = data_dir();
+        let path = self.data_dir.clone();
 
         let _ = std::fs::remove_dir_all(&path);
+        let _ = std::fs::create_dir_all(&path);
 
         match self.rt.block_on(oauth::begin(&hs, &path)) {
             Ok(begin) => {
@@ -305,7 +327,8 @@ impl ClientFfi {
         };
 
         let homeserver = persisted.user.meta.user_id.server_name().to_string();
-        let path       = data_dir();
+        let path       = self.data_dir.clone();
+        let _ = std::fs::create_dir_all(&path);
 
         let result = self.rt.block_on(async move {
             let client = Client::builder()
@@ -725,6 +748,7 @@ impl ClientFfi {
         let svc_clone      = Arc::clone(&sync_service);
         let h_state        = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
+        let data_dir_sv    = self.data_dir.clone();
 
         self.rt.spawn(async move {
             svc_clone.start().await;
@@ -747,7 +771,7 @@ impl ClientFfi {
                             // token accumulated across SDK upgrades or server
                             // migrations.  Deleting the store lets the next
                             // restore_session() start from scratch.
-                            let _ = std::fs::remove_dir_all(data_dir());
+                            let _ = std::fs::remove_dir_all(&data_dir_sv);
                             if let Ok(guard) = h_state.lock() {
                                 guard.on_error(
                                     "sync_reconnect",
@@ -2052,7 +2076,7 @@ impl ClientFfi {
         self.media_upload_limit.store(0, Ordering::Relaxed);
 
         let Some(client) = self.client.take() else {
-            let _ = std::fs::remove_dir_all(data_dir());
+            let _ = std::fs::remove_dir_all(&self.data_dir);
             return ok("");
         };
 
@@ -2060,7 +2084,7 @@ impl ClientFfi {
             client.oauth().logout().await
         });
 
-        let _ = std::fs::remove_dir_all(data_dir());
+        let _ = std::fs::remove_dir_all(&self.data_dir);
 
         match revoke {
             Ok(_)  => ok(""),
@@ -3202,13 +3226,37 @@ mod tests {
 
     #[test]
     #[cfg(all(unix, not(target_os = "macos")))]
-    fn data_dir_ends_with_expected_suffix() {
-        let d = data_dir();
+    fn default_data_dir_ends_with_expected_suffix() {
+        let d = default_data_dir();
         let s = d.to_string_lossy();
         assert!(
             s.ends_with("tesseract/matrix-store"),
-            "unexpected data_dir: {s}"
+            "unexpected default_data_dir: {s}"
         );
+    }
+
+    #[test]
+    fn set_data_dir_overrides_default_and_ignores_empty() {
+        let mut c = ClientFfi::new();
+        let default = c.data_dir.clone();
+
+        // Empty string keeps the default — useful for FFI callers that may
+        // pass through an empty value.
+        c.set_data_dir("");
+        assert_eq!(c.data_dir, default);
+
+        let tmp = std::env::temp_dir().join(format!(
+            "tesseract-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        c.set_data_dir(tmp.to_str().unwrap());
+        assert_eq!(c.data_dir, tmp);
+        assert!(tmp.exists(), "set_data_dir should create the directory");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // -- visibility-mirror translator (the heart of the index-aware FFI) --

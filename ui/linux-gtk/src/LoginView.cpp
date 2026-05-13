@@ -4,9 +4,8 @@
 
 namespace gtk4 {
 
-LoginView::LoginView(tesseract::Client& client)
-    : client_(client),
-      surface_(std::make_unique<tk::gtk4::Surface>(tk::Theme::light()))
+LoginView::LoginView()
+    : surface_(std::make_unique<tk::gtk4::Surface>(tk::Theme::light()))
 {
     auto shared_view = std::make_unique<tesseract::views::LoginView>();
     shared_ = shared_view.get();
@@ -26,12 +25,16 @@ LoginView::LoginView(tesseract::Client& client)
 
 LoginView::~LoginView() {
     cancelled_.store(true);
-    client_.cancel_oauth();
+    if (client_) client_->cancel_oauth();
     join_worker();
 }
 
 GtkWidget* LoginView::widget() const {
     return surface_ ? surface_->widget() : nullptr;
+}
+
+void LoginView::set_mode(tesseract::views::LoginView::Mode m) {
+    if (shared_) shared_->set_mode(m);
 }
 
 void LoginView::position_overlay() {
@@ -43,7 +46,7 @@ void LoginView::position_overlay() {
 
 void LoginView::reset() {
     cancelled_.store(true);
-    client_.cancel_oauth();
+    if (client_) client_->cancel_oauth();
     join_worker();
     cancelled_.store(false);
 
@@ -60,15 +63,13 @@ void LoginView::set_status_message(const std::string& msg) {
     if (msg.empty()) {
         shared_->set_status("");
     } else {
-        // Plain informational message (e.g. "Saved session expired") —
-        // not an error from this attempt. The default theme colour is
-        // primary text, which reads neutral.
         shared_->set_status(msg);
     }
     surface_->relayout();
 }
 
 void LoginView::on_sign_in() {
+    if (!client_) return;
     std::string hs = trim(hs_field_->text());
     if (hs.empty()) {
         shared_->set_status("Please enter a homeserver.",
@@ -84,7 +85,7 @@ void LoginView::on_sign_in() {
     join_worker();
     cancelled_.store(false);
     worker_ = std::thread([this, hs] {
-        auto flow = client_.begin_oauth(hs);
+        auto flow = client_->begin_oauth(hs);
         if (cancelled_.load()) return;
         bool        ok      = static_cast<bool>(flow);
         std::string payload = ok ? flow.auth_url : flow.message;
@@ -107,14 +108,13 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url) {
     }
 
     if (!tesseract::Client::open_in_browser(err_or_url)) {
-        // Browser launch failed; show the URL so the user can copy it.
         shared_->set_status("Open this URL in your browser:\n" + err_or_url);
         surface_->relayout();
     }
 
     cancelled_.store(false);
     worker_ = std::thread([this] {
-        auto res = client_.await_oauth();
+        auto res = client_->await_oauth();
         if (cancelled_.load()) return;
         bool        ok  = static_cast<bool>(res);
         std::string msg = res.message;
@@ -140,14 +140,15 @@ void LoginView::on_await_completed(bool ok, std::string err) {
 
 void LoginView::on_cancel() {
     cancelled_.store(true);
-    client_.cancel_oauth();
-    shared_->set_status("Cancelling…");
+    if (client_) client_->cancel_oauth();
+    shared_->set_status("Cancelling\xe2\x80\xa6");
     surface_->relayout();
     join_worker();
     shared_->set_status("");
     shared_->set_state(tesseract::views::LoginView::State::Form);
     hs_field_->set_enabled(true);
     surface_->relayout();
+    if (on_cancel_fn_) on_cancel_fn_();
 }
 
 void LoginView::join_worker() {

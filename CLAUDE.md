@@ -234,6 +234,136 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
 
+**Step 13 — Multi-account support (in progress)**
+
+Infrastructure done; per-platform shell wiring pending. The goal is to let
+the user run N accounts side-by-side: every signed-in account syncs in the
+background so notifications fire for any of them; **left-click** on the
+sidebar avatar opens an account-picker popover (gated on `accounts >= 2`);
+**right-click** opens a menu with `Add Account…` (launches the shared
+`LoginView` in `Mode::AddAccount`) and `Log Out <display_name>`. The very
+first login (no accounts on disk) is `Mode::Initial` so the Cancel button is
+hidden.
+
+**Infrastructure done:**
+- **`Client::set_data_dir`** — per-instance matrix-sdk store path on the
+  Rust + C++ side; `ClientFfi` already has no globals, so N concurrent
+  Client instances are supported by construction once they each scope to
+  their own dir. Added a `data_dir` field on `ClientFfi`, defaulted to the
+  pre-existing `default_data_dir()` for legacy callers.
+- **On-disk directory-per-account layout** — `<config>/accounts.json`
+  index + `<config>/accounts/<sanitized-uid>/session.json` +
+  `<config>/accounts/<sanitized-uid>/matrix-store/`. New
+  `SessionStore::AccountIndex`, `account_dir`, `sdk_store_dir`,
+  `load_index` / `save_index`, `load_account` / `save_account` /
+  `clear_account` helpers.
+- **One-shot legacy migration** — `SessionStore::migrate_legacy_layout`
+  runs on every startup before any `Client` is constructed. Moves the
+  legacy `session.json` *and* `matrix-store/` (which lives at the SDK's
+  historical path — different XDG base on Linux: `XDG_DATA_HOME`) into the
+  new per-account directory atomically; rolls `session.json` back if the
+  store move fails so the SDK is never pointed at an empty store while the
+  legacy data still sits on disk. Handles fresh, legacy-with-store,
+  legacy-without-store, already-migrated, corrupt-session, and store-move-
+  failure branches; 6 Catch2 cases.
+- **`tesseract::AccountSession`** — pure value type bundling
+  `unique_ptr<Client>` + `unique_ptr<IEventHandler>` (per-account bridge) +
+  cached identity (user_id / display_name / avatar_url) + `last_room` from
+  prefs + `sync_started` guard.
+- **Shared `tesseract::views::UserInfo` widget** — `tk::Widget` painting
+  avatar disc + display name + Matrix ID on a smaller dimmer line;
+  initials-disc fallback via the canvas's built-in
+  `draw_initials_circle`; image provider lambda routes through each
+  shell's `tk_avatars_` cache; primary + secondary callbacks for left- /
+  right-click. 8 Catch2 cases.
+- **Shared `tesseract::views::AccountPicker` widget** — vertical list of
+  `UserInfo` rows, one per signed-in account; active row carries an
+  indicator dot; `on_select(user_id)` fires when the user picks a row;
+  threads the image provider down to every child. 4 Catch2 cases.
+- **`LoginView::Mode { Initial, AddAccount }`** — Initial keeps Cancel
+  hidden in both `Form` and `Waiting` states (first-ever login has nothing
+  to fall back to); AddAccount keeps Cancel visible in both states so the
+  user can back out and return to the previous active account. The
+  existing `set_state(Waiting)` no longer auto-toggles Cancel — `set_mode`
+  owns that. New public `cancel_visible()` accessor so hosts (and the
+  multi-account tests) don't have to walk the widget tree to introspect
+  it. 5 Catch2 cases.
+
+**Qt6 canary — landed:**
+
+- `MainWindow::accounts_` (`std::vector<std::unique_ptr<AccountSession>>`)
+  + `active_account_index_` replace today's single `client_` / `bridge_`
+  members. `client_` and `bridge_` are now non-owning aliases of
+  `accounts_[active_account_index_]->client` / `->bridge`, repointed by
+  `switchActiveAccount`. Cached identity (`myUserId_`, `myDisplayName_`,
+  `myAvatarUrl_`) is repopulated from the active `AccountSession` on every
+  switch so existing call sites keep reading them unchanged.
+- Every restored account calls `start_sync` at launch. Each account's
+  `EventBridge` connects to the same MainWindow slots; the slots filter
+  on `sender() == bridge_` so callbacks from background accounts don't
+  reach the UI surfaces. `onRoomsUpdated` is the exception — it caches
+  *every* account's snapshot in `per_account_rooms_` keyed by user_id,
+  so a switch is instant.
+- New-login flow uses a per-attempt `accounts/pending-<ts>/` directory:
+  OAuth runs into it, after `await_oauth` the in-flight `Client` is
+  dropped (releasing the SQLite handles), the temp dir is `rename`d to
+  `accounts/<sanitized-uid>/`, then a fresh `Client::set_data_dir(...)`
+  + `restore_session(exported_json)` reopens the store at the final
+  path — no resync.
+- Sidebar `userStrip_` grew a second `userIdLabel_` line for the Matrix
+  ID under the display name. `userStrip_->installEventFilter(this)` so
+  left-click → `onUserStripLeftClick` → `openAccountPicker` (no-op when
+  `accounts_.size() < 2`). Right-click → `onUserStripContextMenu` →
+  `QMenu` with `Add Account…` + `Log Out <display_name>`.
+- `AccountPicker` popover: frameless `Qt::Popup` `QFrame` hosting a
+  `tk::qt6::Surface` rendering the shared `AccountPicker` widget;
+  rebuilt by `rebuildAccountPicker` on every account add/remove/switch.
+- `beginAddAccount` records the previous `active_account_index_`, flips
+  `loginView_` to `Mode::AddAccount`, creates a fresh
+  `pending_login_client_` against a per-attempt temp dir, and swaps the
+  LoginView in. On `loginSucceeded` → `onLoginSucceeded` does the
+  rename-and-reopen + `switchActiveAccount(new_idx)`. On
+  `loginCancelled` → restore the recorded active index, drop the
+  in-flight client, wipe the temp dir.
+- `logoutActiveAccount` removes the active session from `accounts_`,
+  `clear_account`s its on-disk dir, rewrites `accounts.json`, and
+  either switches to the next account or returns to `LoginView` in
+  `Mode::Initial`.
+- `EventBridge::on_session_saved` now routes to
+  `SessionStore::save_account(user_id, json)` using a `user_id` member
+  set at attach time, so token refreshes land in the right per-account
+  file.
+- `onSyncError` (sync_reconnect + sync_auth_error + soft_logout) now
+  routes to the affected account via `sender()` so an auth failure on
+  one account doesn't blow away the others.
+- LoginView rebindable: `qt6::LoginView` no longer takes a `Client&` in
+  its constructor — `set_client(Client*)` + `set_mode(Mode)` are called
+  by MainWindow before each login attempt. Added a `loginCancelled`
+  signal alongside the existing `loginSucceeded`.
+
+**Still pending — GTK4 / macOS / Win32 mirror Qt6:** the legacy
+single-account `SessionStore::load()` / `save()` / `clear()` shims are
+still in place specifically so those three shells keep building until
+they're rewired. The Qt6 pattern is the template for each.
+
+**Known gaps even on Qt6:**
+
+- The single shared `notifier_` fires for every account but the click
+  callback only navigates inside the active account. Per-account
+  notifier wiring (each `AccountSession` owns its own `INotifier`
+  closing over the session pointer so toast-click switches active
+  account before navigating) is the natural follow-up.
+- `tk_avatars_` / `tk_images_` are not yet keyed by `(user_id, mxc)`.
+  Two accounts viewing rooms with overlapping avatar mxc URLs will
+  share cache entries. Harmless when both URLs resolve to the same
+  bytes (typical homeserver-hosted avatars); cosmetic ghosting risk
+  when they don't.
+- The sidebar user strip remains native (QLabel-based composite) on
+  Qt6. The full `tk::qt6::Surface + UserInfo` swap of the strip
+  itself is a cosmetic refactor tracked as a follow-up; the shared
+  `UserInfo` widget is already used inside the account-picker
+  popover.
+
 ### Known gaps from the shared-toolkit migration
 
 - ~~**macOS build is unverified end-to-end**~~ ✓ verified and fixed — built and tested on macOS 15 (Intel, 10.15 CommandLineTools SDK); SDK compat guard added to `host_macos.mm`; session restore, login flash, user strip, and space back-button all confirmed working.

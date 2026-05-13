@@ -28,8 +28,28 @@ public:
 
     enum class State { Form, Waiting };
 
+    /// `Initial` — the very first login on a fresh install. Cancel button
+    /// is hidden in both `Form` and `Waiting` states, because there is no
+    /// previous account to fall back to. (If the user wants to bail on an
+    /// in-progress OAuth round-trip in this mode they close the app — that
+    /// matches the user-facing spec.)
+    ///
+    /// `AddAccount` — the user is adding a second/Nth account from the
+    /// avatar right-click menu. Cancel button is visible in both states so
+    /// they can back out and return to the previous active account.
+    enum class Mode  { Initial, AddAccount };
+
     void set_state(State s);
     State state() const { return state_; }
+
+    void set_mode(Mode m);
+    Mode  mode() const { return mode_; }
+
+    /// True when the Cancel button is currently visible. Always `false` in
+    /// `Mode::Initial`; always `true` in `Mode::AddAccount`. Exposed so the
+    /// hosts and the multi-account tests don't have to walk the widget
+    /// tree to introspect it.
+    bool  cancel_visible() const;
 
     // Status banner shown beneath the form (errors during phase = Form,
     // progress text during phase = Waiting). Empty string hides it.
@@ -59,6 +79,7 @@ private:
     void rebuild_tree();
 
     State        state_       = State::Form;
+    Mode         mode_        = Mode::Initial;
     std::string  homeserver_label_ = "matrix.org";
 
     // Borrowed: all of these are owned by `card_` which is owned by `this`.

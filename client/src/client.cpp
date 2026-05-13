@@ -45,6 +45,10 @@ Client& Client::operator=(Client&&) noexcept = default;
 
 // ---------------------------------------------------------------------------
 
+void Client::set_data_dir(const std::string& path) {
+    impl_->ffi->set_data_dir(path);
+}
+
 Client::OAuthFlow Client::begin_oauth(const std::string& homeserver) {
     auto r = impl_->ffi->oauth_begin(homeserver);
     return OAuthFlow{

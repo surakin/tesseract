@@ -12,8 +12,10 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
 #include "tk/canvas.h"
@@ -21,6 +23,7 @@
 #include "tk/host_qt.h"
 #include "LinuxNotifier.h"
 #include "LinuxQtTrayIcon.h"
+#include "views/AccountPicker.h"
 #include "views/ComposeBar.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
@@ -28,8 +31,10 @@
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/UserInfo.h"
 
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -52,6 +57,17 @@ class EventBridge final : public QObject, public tesseract::IEventHandler {
     Q_OBJECT
 public:
     explicit EventBridge(QObject* parent = nullptr) : QObject(parent) {}
+
+    /// Called once by `MainWindow::attachNewAccount` after the user_id is
+    /// known so `on_session_saved` (which runs on the SDK background
+    /// thread on token refresh) can route the refreshed JSON to the right
+    /// `SessionStore::save_account(user_id, …)` file.
+    void set_user_id(std::string id) { user_id_ = std::move(id); }
+    const std::string& user_id() const { return user_id_; }
+
+private:
+    std::string user_id_;
+public:
 
     // IEventHandler – called on the sync thread.
     // We marshal each callback to the UI thread via a queued connection
@@ -136,6 +152,9 @@ private slots:
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
+    void onUserStripLeftClick(const QPoint& pos);
+    void onLoginCancelled();
+    void onAccountSelected(const std::string& user_id);
     void onPaginateFinished(QString roomId, bool reached_start);
     void onNotificationTriggered(QString roomId, QString roomName,
                                   QString sender, QString body, bool is_mention);
@@ -158,6 +177,41 @@ signals:
 private:
     void     doLogin();
     void     doLogout();
+
+    // ---- Multi-account orchestration ----
+
+    /// Wire `b`'s signals to the MainWindow slots. Called once per account
+    /// when it's attached to `accounts_`. Slots filter on `sender()` to
+    /// route only the active account's traffic to the UI.
+    void     wireBridge(EventBridge* b);
+
+    /// Detach the room/message/compose surfaces from `accounts_[old]` (if
+    /// any) and rebind them to `accounts_[new_idx]`. Single chokepoint for
+    /// foreground swaps; called by both the picker and the post-login
+    /// flow. Rewrites `accounts.json::active_user_id`.
+    void     switchActiveAccount(int new_idx);
+
+    /// Right-click → "Add Account…" path. Records the current active index
+    /// in `add_account_return_idx_`, sets `loginView_` to
+    /// `LoginView::Mode::AddAccount`, creates a fresh `pending_login_client_`
+    /// scoped to its own data dir, swaps the LoginView in. Cancel restores
+    /// the old active account; success pushes the new `AccountSession`.
+    void     beginAddAccount();
+
+    /// Right-click → "Log Out <name>". Stops sync on the active account,
+    /// clears its on-disk state, removes it from `accounts_`, rewrites
+    /// `accounts.json`, and either switches to the next account or shows
+    /// the LoginView in `Mode::Initial`.
+    void     logoutActiveAccount();
+
+    /// Left-click on the avatar opens the AccountPicker popover. No-op
+    /// when `accounts_.size() < 2`.
+    void     openAccountPicker(const QPoint& global_anchor);
+
+    /// Refresh the `AccountPicker` row set from `accounts_`. Called after
+    /// add/logout/switch so the popover reflects current state next open.
+    void     rebuildAccountPicker();
+
     void     navigate_to_room(const std::string& room_id);
     void     populateUserStrip();
     void     maybeShowRecoveryBanner();
@@ -253,8 +307,7 @@ private:
     QWidget*             userStrip_       = nullptr;
     QLabel*              userAvatarLabel_ = nullptr;
     QLabel*              userNameLabel_   = nullptr;
-    std::string          myDisplayName_;
-    std::string          myAvatarUrl_;
+    QLabel*              userIdLabel_     = nullptr;   // smaller, dimmer Matrix ID line under display name
 
     tk::qt6::Surface*               roomSurface_    = nullptr;
     tesseract::views::RoomListView* roomListView_   = nullptr;  // borrowed
@@ -298,14 +351,63 @@ private:
     LoginView*           loginView_       = nullptr;
     QWidget*             mainContent_     = nullptr;
 
-    tesseract::Client                   client_;
-    std::unique_ptr<EventBridge>        bridge_;
+    // Account-switcher popover anchored under the user strip. Opened by
+    // left-click on the avatar when `accounts_.size() >= 2`; a single
+    // account is a no-op. The popover is a frameless `Qt::Popup` `QFrame`
+    // hosting a `tk::qt6::Surface` rendering the shared `AccountPicker`.
+    QFrame*                              accountPickerPopover_  = nullptr;
+    tk::qt6::Surface*                    accountPickerSurface_  = nullptr;
+    tesseract::views::AccountPicker*     accountPicker_         = nullptr;
+
+    // ---- Multi-account state ----
+    //
+    // Every signed-in account lives in `accounts_` as its own `AccountSession`
+    // (its own `tesseract::Client`, its own `EventBridge`). All accounts
+    // start sync at restore/login time and keep syncing in the background
+    // so notifications fire regardless of which one is foreground. UI
+    // surfaces (room list / message list / compose / recovery banner) are
+    // bound only to the active account; slots filter via `sender()` to
+    // ignore traffic from inactive bridges (their `RoomInfo` snapshots are
+    // cached in `per_account_rooms_` so a fast switch_active_account doesn't
+    // have to wait for the next push).
+    std::vector<std::unique_ptr<tesseract::AccountSession>> accounts_;
+    int                                                     active_account_index_ = -1;
+
+    // Cached `RoomInfo` snapshots per account (keyed by user_id). Updated
+    // from every `onRoomsUpdated` callback; read on switch_active_account
+    // so the new active account's room list appears immediately.
+    std::unordered_map<std::string, std::vector<tesseract::RoomInfo>> per_account_rooms_;
+
+    // Pending login state. `pending_login_client_` is the unparented
+    // `tesseract::Client` instance that `LoginView` drives through OAuth
+    // (it doesn't belong to an `AccountSession` until the round-trip
+    // succeeds and we know the user_id). `add_account_return_idx_` is the
+    // active-account index to restore if the user cancels in
+    // `Mode::AddAccount`; -1 means there was no previous active account
+    // (initial login).
+    std::unique_ptr<tesseract::Client> pending_login_client_;
+    std::filesystem::path               pending_login_temp_dir_;   // <config>/accounts/pending-<ts>/
+    int                                 add_account_return_idx_ = -1;
+    bool                                pending_login_is_add_account_ = false;
+
+    // Non-owning aliases of the active account's client + bridge. Repointed
+    // by `switch_active_account`. Both are null when no account is active
+    // (the LoginView is up).
+    tesseract::Client*  client_ = nullptr;
+    EventBridge*        bridge_ = nullptr;
+
     std::unique_ptr<LinuxNotifierQt>    notifier_;
     std::unique_ptr<LinuxQtTrayIcon>    tray_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
     std::string                   pendingRestoreRoom_;
+    // Cached identity of the foreground account. Repopulated by
+    // `switchActiveAccount` from `accounts_[active_account_index_]` so the
+    // sidebar strip, message rows, and the room-list view keep reading
+    // them with no awareness of the multi-account layer underneath.
     std::string                   myUserId_;
+    std::string                   myDisplayName_;
+    std::string                   myAvatarUrl_;
     // Room-header avatar (the 40 px disc shown above the message list)
     // still uses QPixmap because the header itself remains a QLabel-
     // based widget for now. The shared RoomListView / MessageListView

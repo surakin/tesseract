@@ -305,6 +305,15 @@ pub mod ffi {
 
         fn client_create() -> Box<ClientFfi>;
 
+        // ----- Data directory -----
+
+        /// Override the matrix-sdk SQLite store path for this client. Must be
+        /// called before `oauth_begin` / `restore_session` so the SDK opens
+        /// the store at the correct location. Used by the multi-account host
+        /// to scope each account's store under its own directory. Passing an
+        /// empty string is a no-op (the client keeps the default path).
+        fn set_data_dir(self: &mut ClientFfi, path: &str);
+
         // ----- OAuth -----
 
         fn oauth_begin(self: &mut ClientFfi, homeserver: &str) -> OAuthBegin;

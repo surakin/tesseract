@@ -38,6 +38,10 @@ set(_tk_sources
     views/RecoveryBanner.cpp
     views/ComposeBar.h
     views/ComposeBar.cpp
+    views/UserInfo.h
+    views/UserInfo.cpp
+    views/AccountPicker.h
+    views/AccountPicker.cpp
     views/ImageViewerOverlay.h
     views/ImageViewerOverlay.cpp
     views/VideoViewerOverlay.h

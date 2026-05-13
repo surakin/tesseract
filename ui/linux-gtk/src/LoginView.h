@@ -23,7 +23,7 @@ namespace gtk4 {
 /// lands.
 class LoginView {
 public:
-    explicit LoginView(tesseract::Client& client);
+    LoginView();
     ~LoginView();
 
     LoginView(const LoginView&)            = delete;
@@ -32,8 +32,18 @@ public:
     /// Root widget — add to a container / GtkStack.
     GtkWidget* widget() const;
 
+    /// Rebind the target Client before each login attempt (set before showing).
+    void set_client(tesseract::Client* c) { client_ = c; }
+
+    /// Toggle between initial-login (no Cancel button) and add-account
+    /// (Cancel visible in both Form and Waiting states) presentation.
+    void set_mode(tesseract::views::LoginView::Mode m);
+
     /// Called on the main thread when the OAuth flow completes successfully.
     void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
+
+    /// Called on the main thread when the user clicks Cancel in AddAccount mode.
+    void set_on_cancel(std::function<void()> cb) { on_cancel_fn_ = std::move(cb); }
 
     /// Return the view to its initial "form" state.
     void reset();
@@ -51,8 +61,9 @@ private:
 
     static std::string trim(std::string s);
 
-    tesseract::Client&                     client_;
+    tesseract::Client*                     client_ = nullptr;  // non-owning
     std::function<void()>                  on_success_;
+    std::function<void()>                  on_cancel_fn_;
 
     std::unique_ptr<tk::gtk4::Surface>     surface_;
     tesseract::views::LoginView*           shared_   = nullptr;  // borrowed
