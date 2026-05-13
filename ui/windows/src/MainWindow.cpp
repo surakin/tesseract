@@ -2254,8 +2254,8 @@ void MainWindow::ensure_emoji_picker_created() {
     hEmojiPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kEmojiPickerClass, L"",
-        WS_POPUP | WS_BORDER,
-        0, 0, 320, 360,
+        WS_POPUP,
+        0, 0, kEmojiPickW, kEmojiPickH,
         hwnd_, nullptr, hInst_, nullptr);
     if (!hEmojiPicker_) return;
 
@@ -2271,7 +2271,7 @@ void MainWindow::ensure_emoji_picker_created() {
     emoji_picker_surface_->set_root(std::move(shared));
 
     if (HWND s = emoji_picker_surface_->hwnd()) {
-        SetWindowPos(s, nullptr, 0, 0, 320, 360,
+        SetWindowPos(s, nullptr, 0, 0, kEmojiPickW, kEmojiPickH,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
