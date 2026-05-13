@@ -311,6 +311,12 @@ void EventBridge::on_image_packs_updated() {
     // Sticker picker async-fetch guard.
     std::set<std::string>                            _stickerFetchesInFlight;
 
+    // Room/user-avatar + inline-media async-fetch guard. The synchronous
+    // Rust FFI does a `tokio::block_on` per call; running it on the main
+    // queue would freeze the AppKit run loop on accounts with many rooms
+    // (one round-trip per avatar). The worker spawns are deduped here.
+    std::set<std::string>                            _mediaFetchesInFlight;
+
     // Right-click context menu sticker state.
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
@@ -1129,28 +1135,88 @@ void EventBridge::on_image_packs_updated() {
     dest.emplace(key, std::move(wrapper));
 }
 
+// These three helpers used to call the synchronous Rust FFI on the
+// main queue. `fetch_avatar_bytes` / `fetch_media_bytes` do a
+// `tokio::block_on` inside; on first sync of an account with many rooms
+// the room-list paint froze the AppKit run loop for minutes (one
+// network round-trip per room avatar, serialised on the main queue).
+// Decode + cache now happens after a worker thread lands the bytes
+// back via `dispatch_async(main_queue)`; the call sites return
+// immediately and the views paint initials placeholders until the
+// bytes arrive.
 - (void)_ensureRoomAvatar:(const tesseract::RoomInfo&)r {
     if (r.avatar_url.empty() || _tkAvatars.count(r.avatar_url)) return;
-    auto bytes = _client.fetch_avatar_bytes(r.id);
-    [self _decodeAndCache:bytes
-                    forKey:r.avatar_url
-                  destMap:_tkAvatars
-                       cap:tesseract::visual::kRoomAvatarSize];
+    if (!_mediaFetchesInFlight.insert(r.avatar_url).second) return;
+
+    tesseract::Client* clientPtr = &_client;
+    __weak MainWindowController* weakSelf = self;
+    std::string roomId = r.id;
+    std::string mxc    = r.avatar_url;
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+
+    std::thread([clientPtr, weakSelf, roomId, mxc, bytes_holder]() {
+        *bytes_holder = clientPtr->fetch_avatar_bytes(roomId);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_mediaFetchesInFlight.erase(mxc);
+            if (bytes_holder->empty() || s->_tkAvatars.count(mxc)) return;
+            [s _decodeAndCache:*bytes_holder
+                          forKey:mxc
+                        destMap:s->_tkAvatars
+                             cap:tesseract::visual::kRoomAvatarSize];
+            if (s->_roomSurface) s->_roomSurface->relayout();
+        });
+    }).detach();
 }
 
 - (void)_ensureUserAvatar:(const std::string&)mxc {
     if (mxc.empty() || _tkAvatars.count(mxc)) return;
-    auto bytes = _client.fetch_media_bytes(mxc);
-    [self _decodeAndCache:bytes
-                    forKey:mxc
-                  destMap:_tkAvatars
-                       cap:tesseract::visual::kMsgAvatarSize];
+    if (!_mediaFetchesInFlight.insert(mxc).second) return;
+
+    tesseract::Client* clientPtr = &_client;
+    __weak MainWindowController* weakSelf = self;
+    std::string key = mxc;
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+
+    std::thread([clientPtr, weakSelf, key, bytes_holder]() {
+        *bytes_holder = clientPtr->fetch_media_bytes(key);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_mediaFetchesInFlight.erase(key);
+            if (bytes_holder->empty() || s->_tkAvatars.count(key)) return;
+            [s _decodeAndCache:*bytes_holder
+                          forKey:key
+                        destMap:s->_tkAvatars
+                             cap:tesseract::visual::kMsgAvatarSize];
+            if (s->_msgSurface) s->_msgSurface->relayout();
+        });
+    }).detach();
 }
 
 - (void)_ensureMediaImage:(const std::string&)url cap:(int)cap {
     if (url.empty() || _tkImages.count(url) || _tkAnimImages.count(url)) return;
-    auto bytes = _client.fetch_media_bytes(url);
-    [self _decodeMediaBytes:bytes forKey:url];
+    if (!_mediaFetchesInFlight.insert(url).second) return;
+
+    tesseract::Client* clientPtr = &_client;
+    __weak MainWindowController* weakSelf = self;
+    std::string key = url;
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+
+    std::thread([clientPtr, weakSelf, key, bytes_holder]() {
+        *bytes_holder = clientPtr->fetch_media_bytes(key);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_mediaFetchesInFlight.erase(key);
+            if (bytes_holder->empty()
+                || s->_tkImages.count(key)
+                || s->_tkAnimImages.count(key)) return;
+            [s _decodeMediaBytes:*bytes_holder forKey:key];
+            if (s->_msgSurface) s->_msgSurface->relayout();
+        });
+    }).detach();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

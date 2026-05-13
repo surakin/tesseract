@@ -694,6 +694,13 @@ MainWindow::MainWindow(QWidget* parent)
     connect(tk_anim_timer_, &QTimer::timeout,
             this, &MainWindow::onMessageAnimTick_);
 
+    // Worker-thread media fetches bounce back through this queued
+    // connection — see `requestRoomAvatar_` / `requestUserAvatar_` /
+    // `requestMediaImage_`.
+    connect(this, &MainWindow::mediaBytesLoaded_,
+            this, &MainWindow::onMediaBytesLoaded_,
+            Qt::QueuedConnection);
+
     // Back-pagination on scroll-to-top. The shared MessageListView fires
     // this once per crossing of the near-top threshold; the latch is
     // re-armed automatically after prepended rows are spliced in.
@@ -999,51 +1006,123 @@ void MainWindow::clearMessages() {
     msgSurface_->relayout();
 }
 
+// These three helpers used to call the synchronous Rust FFI on the UI
+// thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
+// `tokio::block_on` inside; on first sync of an account with many rooms
+// `showRooms` froze the event loop for minutes (one network round-trip
+// per room avatar, serialised on the UI thread). Decode + cache now
+// happens via `mediaBytesLoaded_` after a `QThreadPool` worker landed
+// the bytes; the call sites return immediately and the views paint
+// initials placeholders until the bytes land.
 void MainWindow::ensureRoomAvatar(const tesseract::RoomInfo& r) {
-    if (r.avatar_url.empty()) return;
-    const std::string& mxc = r.avatar_url;
-    if (tk_avatars_.count(mxc)) return;
-
-    auto bytes = client_.fetch_avatar_bytes(r.id);
-    if (bytes.empty()) return;
-
-    QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                          static_cast<int>(bytes.size())))
-        return;
-    QImage scaled = img.scaled(kRoomAvatarSize, kRoomAvatarSize,
-                                Qt::KeepAspectRatio,
-                                Qt::SmoothTransformation);
-    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+    requestRoomAvatar_(r.id, r.avatar_url);
 }
 
 void MainWindow::ensureUserAvatar(const std::string& mxc) {
-    if (mxc.empty() || tk_avatars_.count(mxc)) return;
-    auto bytes = client_.fetch_media_bytes(mxc);
-    if (bytes.empty()) return;
-    QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                          static_cast<int>(bytes.size())))
-        return;
-    QImage scaled = img.scaled(kMsgAvatarSize, kMsgAvatarSize,
-                                Qt::KeepAspectRatio,
-                                Qt::SmoothTransformation);
-    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+    requestUserAvatar_(mxc);
 }
 
 void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) {
+    requestMediaImage_(url, max_w, max_h);
+}
+
+void MainWindow::requestRoomAvatar_(const std::string& room_id,
+                                      const std::string& mxc) {
+    if (room_id.empty() || mxc.empty()) return;
+    if (tk_avatars_.count(mxc)) return;
+    if (!mediaFetchesInFlight_.insert(mxc).second) return;
+
+    QString qkey = QString::fromStdString(mxc);
+    auto* runner = QRunnable::create([this, room_id, qkey]() {
+        auto bytes = client_.fetch_avatar_bytes(room_id);
+        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                       static_cast<int>(bytes.size()));
+        emit mediaBytesLoaded_(qkey,
+                                static_cast<int>(MediaKind::RoomAvatar),
+                                qb);
+    });
+    QThreadPool::globalInstance()->start(runner);
+}
+
+void MainWindow::requestUserAvatar_(const std::string& mxc) {
+    if (mxc.empty()) return;
+    if (tk_avatars_.count(mxc)) return;
+    if (!mediaFetchesInFlight_.insert(mxc).second) return;
+
+    QString qkey = QString::fromStdString(mxc);
+    auto* runner = QRunnable::create([this, key = mxc, qkey]() {
+        auto bytes = client_.fetch_media_bytes(key);
+        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                       static_cast<int>(bytes.size()));
+        emit mediaBytesLoaded_(qkey,
+                                static_cast<int>(MediaKind::UserAvatar),
+                                qb);
+    });
+    QThreadPool::globalInstance()->start(runner);
+}
+
+void MainWindow::requestMediaImage_(const std::string& url,
+                                      int max_w, int max_h) {
     if (url.empty()) return;
     if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
-    auto bytes = client_.fetch_media_bytes(url);
-    if (bytes.empty()) return;
+    if (!mediaFetchesInFlight_.insert(url).second) return;
+    mediaImageSizes_[url] = { max_w, max_h };
 
-    // Probe via QImageReader so animated GIF / WebP / APNG land in
-    // `tk_anim_images_` and the frame-tick can advance them in the
-    // message list. Static formats fall through to the existing
-    // `tk_images_` path.
-    QByteArray qbytes(reinterpret_cast<const char*>(bytes.data()),
+    QString qkey = QString::fromStdString(url);
+    auto* runner = QRunnable::create([this, key = url, qkey]() {
+        auto bytes = client_.fetch_media_bytes(key);
+        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
-    QBuffer buf(&qbytes);
+        emit mediaBytesLoaded_(qkey,
+                                static_cast<int>(MediaKind::MediaImage),
+                                qb);
+    });
+    QThreadPool::globalInstance()->start(runner);
+}
+
+void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
+                                       QByteArray bytes) {
+    std::string key = cache_key.toStdString();
+    mediaFetchesInFlight_.erase(key);
+    if (bytes.isEmpty()) {
+        mediaImageSizes_.erase(key);
+        return;
+    }
+
+    const MediaKind k = static_cast<MediaKind>(kind);
+    if (k == MediaKind::RoomAvatar || k == MediaKind::UserAvatar) {
+        if (tk_avatars_.count(key)) return;
+        QImage img;
+        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
+                              bytes.size()))
+            return;
+        const int size = (k == MediaKind::RoomAvatar)
+                          ? kRoomAvatarSize : kMsgAvatarSize;
+        QImage scaled = img.scaled(size, size,
+                                    Qt::KeepAspectRatio,
+                                    Qt::SmoothTransformation);
+        tk_avatars_.emplace(key, tk::qt6::make_image(std::move(scaled)));
+        if (k == MediaKind::RoomAvatar) {
+            if (roomSurface_) roomSurface_->update();
+        } else {
+            if (msgSurface_) msgSurface_->update();
+        }
+        return;
+    }
+
+    // MediaImage — animated probe first, then static fallback.
+    if (tk_images_.count(key) || tk_anim_images_.count(key)) {
+        mediaImageSizes_.erase(key);
+        return;
+    }
+    int max_w = kMaxImageWidth, max_h = kMaxImageHeight;
+    if (auto sit = mediaImageSizes_.find(key); sit != mediaImageSizes_.end()) {
+        max_w = sit->second.first;
+        max_h = sit->second.second;
+        mediaImageSizes_.erase(sit);
+    }
+
+    QBuffer buf(&bytes);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
@@ -1067,24 +1146,24 @@ void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) 
             entry.current         = 0;
             entry.next_advance_ms = QDateTime::currentMSecsSinceEpoch()
                                   + entry.delays_ms[0];
-            tk_anim_images_.emplace(url, std::move(entry));
+            tk_anim_images_.emplace(key, std::move(entry));
             if (tk_anim_timer_ && !tk_anim_timer_->isActive())
                 tk_anim_timer_->start();
+            if (msgSurface_) msgSurface_->update();
             return;
         }
-        // Decoder claimed animation but yielded nothing — fall through
-        // to the static path with the original bytes.
         buf.seek(0);
     }
 
     QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                          static_cast<int>(bytes.size())))
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
+                          bytes.size()))
         return;
     QImage scaled = img.scaled(max_w, max_h,
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
-    tk_images_.emplace(url, tk::qt6::make_image(std::move(scaled)));
+    tk_images_.emplace(key, tk::qt6::make_image(std::move(scaled)));
+    if (msgSurface_) msgSurface_->update();
 }
 
 void MainWindow::onMessageAnimTick_() {

@@ -48,6 +48,7 @@ constexpr UINT WM_TESSERACT_PAGINATE_DONE    = WM_APP + 10;
 constexpr UINT WM_TESSERACT_MESSAGE_REMOVED  = WM_APP + 11;
 constexpr UINT WM_TESSERACT_IMAGE_PACKS      = WM_APP + 12;
 constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
+constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
 
 namespace win32 {
 
@@ -96,6 +97,15 @@ public:
     ~MainWindow();
 
     bool create(int nCmdShow);
+
+    // Names the worker-thread media fetch's target cache / surface; the
+    // matching payload (MediaBytesPayload) is in the .cpp's anonymous
+    // namespace and needs to spell this type publicly.
+    enum class MediaKind : std::uint8_t {
+        RoomAvatar,  // tk_avatars_[mxc],  invalidate room_surface_
+        UserAvatar,  // tk_avatars_[mxc],  invalidate msg_surface_
+        MediaImage,  // tk_images_/tk_anim_images_[url], invalidate msg_surface_
+    };
 
 private:
     void on_create(HWND hwnd);
@@ -310,10 +320,23 @@ private:
     /// (animated or static), caches, and invalidates the picker.
     void request_sticker_image(const std::string& cache_key);
 
+    /// Async media fetches for room avatars, user avatars, and inline
+    /// media. The synchronous Rust fetches do a `tokio::block_on` per
+    /// call; running them on the UI thread freezes the message pump on
+    /// large accounts (one cache miss per room on first sync). These
+    /// helpers move the fetch onto a worker thread; the decoded bytes
+    /// come back via WM_TESSERACT_MEDIA_BYTES and land in the matching
+    /// cache + trigger a repaint of the relevant surface.
+    void request_room_avatar(const std::string& room_id,
+                              const std::string& mxc);
+    void request_user_avatar(const std::string& mxc);
+    void request_media_image(const std::string& url);
+
     static constexpr UINT_PTR kAnimTimerId   = 0xA01u;
     static constexpr UINT     kAnimTimerHz   = 16;     // ~60 fps
     bool anim_timer_running_ = false;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
+    std::unordered_set<std::string> media_fetches_in_flight_;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;

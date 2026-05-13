@@ -76,6 +76,11 @@ struct StickerBytesPayload {
     std::string                 cache_key;
     std::vector<std::uint8_t>   bytes;
 };
+struct MediaBytesPayload {
+    win32::MainWindow::MediaKind kind;
+    std::string                  cache_key;   // mxc (room/user avatar) or url
+    std::vector<std::uint8_t>    bytes;
+};
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -701,6 +706,50 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                 InvalidateRect(self->sticker_picker_surface_->hwnd(),
                                 nullptr, FALSE);
             }
+        }
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_MEDIA_BYTES: {
+        auto* p = reinterpret_cast<MediaBytesPayload*>(lParam);
+        self->media_fetches_in_flight_.erase(p->cache_key);
+        if (!p->bytes.empty()) {
+            using Kind = MainWindow::MediaKind;
+            HWND invalidate_hwnd = nullptr;
+            switch (p->kind) {
+            case Kind::RoomAvatar:
+                if (self->room_surface_) {
+                    if (auto img = self->room_surface_->factory()
+                                       .decode_image(p->bytes))
+                        self->tk_avatars_.emplace(p->cache_key,
+                                                    std::move(img));
+                    invalidate_hwnd = self->room_surface_->hwnd();
+                }
+                break;
+            case Kind::UserAvatar:
+                if (self->msg_surface_) {
+                    if (auto img = self->msg_surface_->factory()
+                                       .decode_image(p->bytes))
+                        self->tk_avatars_.emplace(p->cache_key,
+                                                    std::move(img));
+                    invalidate_hwnd = self->msg_surface_->hwnd();
+                }
+                break;
+            case Kind::MediaImage:
+                if (self->msg_surface_) {
+                    self->try_load_animation(p->cache_key, p->bytes);
+                    if (!self->tk_anim_images_.count(p->cache_key)) {
+                        if (auto img = self->msg_surface_->factory()
+                                           .decode_image(p->bytes))
+                            self->tk_images_.emplace(p->cache_key,
+                                                       std::move(img));
+                    }
+                    invalidate_hwnd = self->msg_surface_->hwnd();
+                }
+                break;
+            }
+            if (invalidate_hwnd)
+                InvalidateRect(invalidate_hwnd, nullptr, FALSE);
         }
         delete p;
         return 0;
@@ -1524,39 +1573,28 @@ void MainWindow::refresh_room_list() {
 //  Avatar / inline-media decode into tk::Image
 // ---------------------------------------------------------------------------
 
+// These three helpers used to call the synchronous Rust FFI directly on
+// the UI thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
+// `tokio::block_on` inside, so on first sync of an account with many
+// rooms `refresh_room_list` was freezing the message pump for minutes
+// (one network round-trip per room avatar, serialised on the UI thread).
+// Decode + cache + repaint now happens via WM_TESSERACT_MEDIA_BYTES;
+// the call sites return immediately and the next paint shows an
+// initials placeholder until the bytes land.
 void MainWindow::ensure_room_avatar(const tesseract::RoomInfo& r) {
-    if (r.avatar_url.empty() || tk_avatars_.count(r.avatar_url) ||
-        !room_surface_) return;
-    auto bytes = client_.fetch_avatar_bytes(r.id);
-    if (bytes.empty()) return;
-    if (auto img = room_surface_->factory().decode_image(bytes))
-        tk_avatars_.emplace(r.avatar_url, std::move(img));
+    if (!room_surface_) return;
+    request_room_avatar(r.id, r.avatar_url);
 }
 
 void MainWindow::ensure_user_avatar_tk(const std::string& mxc) {
-    if (mxc.empty() || tk_avatars_.count(mxc) || !msg_surface_) return;
-    auto bytes = client_.fetch_media_bytes(mxc);
-    if (bytes.empty()) return;
-    if (auto img = msg_surface_->factory().decode_image(bytes))
-        tk_avatars_.emplace(mxc, std::move(img));
+    if (!msg_surface_) return;
+    request_user_avatar(mxc);
 }
 
 void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
-    if (url.empty() || tk_images_.count(url) ||
-        tk_anim_images_.count(url) || !msg_surface_) return;
-    auto bytes = client_.fetch_media_bytes(url);
-    if (bytes.empty()) return;
-
-    // Probe via WIC for multi-frame content (GIF / APNG / animated
-    // WebP). Animated entries route into `tk_anim_images_` and start the
-    // frame-tick timer; everything else falls through to the static
-    // path.
-    try_load_animation(url, bytes);
-    if (tk_anim_images_.count(url)) return;
-
-    if (auto img = msg_surface_->factory().decode_image(bytes))
-        tk_images_.emplace(url, std::move(img));
+    if (!msg_surface_) return;
+    request_media_image(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -1642,6 +1680,61 @@ void MainWindow::request_sticker_image(const std::string& cache_key) {
                           reinterpret_cast<LPARAM>(p)))
         {
             delete p;   // window already gone; drop the payload.
+        }
+    }).detach();
+}
+
+void MainWindow::request_room_avatar(const std::string& room_id,
+                                       const std::string& mxc) {
+    if (room_id.empty() || mxc.empty()) return;
+    if (tk_avatars_.count(mxc)) return;
+    if (!media_fetches_in_flight_.insert(mxc).second) return;
+
+    HWND target = hwnd_;
+    std::thread([this, target, room_id, mxc]() {
+        auto bytes = client_.fetch_avatar_bytes(room_id);
+        auto* p    = new MediaBytesPayload{
+            MainWindow::MediaKind::RoomAvatar, mxc, std::move(bytes) };
+        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
+                          reinterpret_cast<LPARAM>(p)))
+        {
+            delete p;
+        }
+    }).detach();
+}
+
+void MainWindow::request_user_avatar(const std::string& mxc) {
+    if (mxc.empty()) return;
+    if (tk_avatars_.count(mxc)) return;
+    if (!media_fetches_in_flight_.insert(mxc).second) return;
+
+    HWND target = hwnd_;
+    std::thread([this, target, mxc]() {
+        auto bytes = client_.fetch_media_bytes(mxc);
+        auto* p    = new MediaBytesPayload{
+            MainWindow::MediaKind::UserAvatar, mxc, std::move(bytes) };
+        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
+                          reinterpret_cast<LPARAM>(p)))
+        {
+            delete p;
+        }
+    }).detach();
+}
+
+void MainWindow::request_media_image(const std::string& url) {
+    if (url.empty()) return;
+    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
+    if (!media_fetches_in_flight_.insert(url).second) return;
+
+    HWND target = hwnd_;
+    std::thread([this, target, url]() {
+        auto bytes = client_.fetch_media_bytes(url);
+        auto* p    = new MediaBytesPayload{
+            MainWindow::MediaKind::MediaImage, url, std::move(bytes) };
+        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
+                          reinterpret_cast<LPARAM>(p)))
+        {
+            delete p;
         }
     }).detach();
 }

@@ -1211,60 +1211,25 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
 } // namespace
 
+// These three helpers used to call the synchronous Rust FFI on the UI
+// thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
+// `tokio::block_on` inside; on first sync of an account with many rooms
+// `show_rooms` froze the GTK main loop for minutes (one network
+// round-trip per room avatar, serialised on the UI thread). Decode +
+// cache now happens after a worker thread lands the bytes back via
+// `g_idle_add`; the call sites return immediately and the views paint
+// initials placeholders until the bytes arrive.
 void MainWindow::ensure_room_avatar(const tesseract::RoomInfo& r) {
-    if (r.avatar_url.empty() || tk_avatars_.count(r.avatar_url)) return;
-    auto bytes = client_.fetch_avatar_bytes(r.id);
-    if (bytes.empty()) return;
-    cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
-    if (!surface) return;
-    auto img = tk::cairo_pango::make_image(surface);
-    cairo_surface_destroy(surface);   // make_image took its own ref
-    tk_avatars_.emplace(r.avatar_url, std::move(img));
+    request_room_avatar_async(r.id, r.avatar_url);
 }
 
 void MainWindow::ensure_user_avatar(const std::string& mxc) {
-    if (mxc.empty() || tk_avatars_.count(mxc)) return;
-    auto bytes = client_.fetch_media_bytes(mxc);
-    if (bytes.empty()) return;
-    cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
-    if (!surface) return;
-    auto img = tk::cairo_pango::make_image(surface);
-    cairo_surface_destroy(surface);
-    tk_avatars_.emplace(mxc, std::move(img));
+    request_user_avatar_async(mxc);
 }
 
 void MainWindow::ensure_media_image(const std::string& url,
                                       int /*max_w*/, int /*max_h*/) {
-    if (url.empty()) return;
-    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
-    auto bytes = client_.fetch_media_bytes(url);
-    if (bytes.empty()) return;
-
-    // Animated formats (GIF / animated WebP / APNG) populate
-    // `tk_anim_images_`; the tick driver advances frames + repaints the
-    // message surface. Static formats fall through to the existing path.
-    if (auto anim = decode_animation(bytes)) {
-        AnimatedImage entry;
-        entry.frames.reserve(anim->frames.size());
-        entry.delays_ms = std::move(anim->delays_ms);
-        for (cairo_surface_t* s : anim->frames) {
-            entry.frames.push_back(tk::cairo_pango::make_image(s));
-            cairo_surface_destroy(s);
-        }
-        if (!entry.frames.empty()) {
-            entry.current         = 0;
-            const gint64 now_ms   = g_get_monotonic_time() / 1000;
-            entry.next_advance_ms = now_ms + entry.delays_ms[0];
-            tk_anim_images_.emplace(url, std::move(entry));
-            start_anim_tick_if_needed_();
-            return;
-        }
-    }
-    cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
-    if (!surface) return;
-    auto img = tk::cairo_pango::make_image(surface);
-    cairo_surface_destroy(surface);
-    tk_images_.emplace(url, std::move(img));
+    request_media_image_async(url);
 }
 
 void MainWindow::start_anim_tick_if_needed_() {
@@ -1304,6 +1269,131 @@ gboolean MainWindow::on_tk_anim_tick_(gpointer user_data) {
     }
     if (any_changed) self->invalidate_anim_consumers_();
     return G_SOURCE_CONTINUE;
+}
+
+void MainWindow::request_room_avatar_async(const std::string& room_id,
+                                              const std::string& mxc) {
+    if (room_id.empty() || mxc.empty() || tk_avatars_.count(mxc)) return;
+    if (!media_fetches_in_flight_.insert(mxc).second) return;
+
+    struct IdleData {
+        MainWindow*           self;
+        std::string           mxc;
+        std::vector<uint8_t>  bytes;
+    };
+
+    std::thread([this, room_id, mxc]() mutable {
+        auto bytes = client_.fetch_avatar_bytes(room_id);
+        auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* d = static_cast<IdleData*>(p);
+            d->self->media_fetches_in_flight_.erase(d->mxc);
+            if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
+                if (cairo_surface_t* surface =
+                        decode_image_to_cairo_surface(d->bytes))
+                {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    d->self->tk_avatars_.emplace(d->mxc, std::move(img));
+                    if (d->self->room_surface_)
+                        d->self->room_surface_->relayout();
+                }
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, data);
+    }).detach();
+}
+
+void MainWindow::request_user_avatar_async(const std::string& mxc) {
+    if (mxc.empty() || tk_avatars_.count(mxc)) return;
+    if (!media_fetches_in_flight_.insert(mxc).second) return;
+
+    struct IdleData {
+        MainWindow*           self;
+        std::string           mxc;
+        std::vector<uint8_t>  bytes;
+    };
+
+    std::thread([this, mxc]() mutable {
+        auto bytes = client_.fetch_media_bytes(mxc);
+        auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* d = static_cast<IdleData*>(p);
+            d->self->media_fetches_in_flight_.erase(d->mxc);
+            if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
+                if (cairo_surface_t* surface =
+                        decode_image_to_cairo_surface(d->bytes))
+                {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    d->self->tk_avatars_.emplace(d->mxc, std::move(img));
+                    if (d->self->msg_surface_)
+                        d->self->msg_surface_->relayout();
+                }
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, data);
+    }).detach();
+}
+
+void MainWindow::request_media_image_async(const std::string& url) {
+    if (url.empty()) return;
+    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
+    if (!media_fetches_in_flight_.insert(url).second) return;
+
+    struct IdleData {
+        MainWindow*           self;
+        std::string           url;
+        std::vector<uint8_t>  bytes;
+    };
+
+    std::thread([this, url]() mutable {
+        auto bytes = client_.fetch_media_bytes(url);
+        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* d = static_cast<IdleData*>(p);
+            d->self->media_fetches_in_flight_.erase(d->url);
+            if (!d->bytes.empty()
+                && !d->self->tk_images_.count(d->url)
+                && !d->self->tk_anim_images_.count(d->url))
+            {
+                // Animated probe first; static fallback decodes via
+                // decode_image_to_cairo_surface.
+                if (auto anim = decode_animation(d->bytes)) {
+                    AnimatedImage entry;
+                    entry.frames.reserve(anim->frames.size());
+                    entry.delays_ms = std::move(anim->delays_ms);
+                    for (cairo_surface_t* s : anim->frames) {
+                        entry.frames.push_back(
+                            tk::cairo_pango::make_image(s));
+                        cairo_surface_destroy(s);
+                    }
+                    if (!entry.frames.empty()) {
+                        entry.current         = 0;
+                        const gint64 now_ms   = g_get_monotonic_time() / 1000;
+                        entry.next_advance_ms = now_ms + entry.delays_ms[0];
+                        d->self->tk_anim_images_.emplace(
+                            d->url, std::move(entry));
+                        d->self->start_anim_tick_if_needed_();
+                        if (d->self->msg_surface_)
+                            d->self->msg_surface_->relayout();
+                    }
+                } else if (cairo_surface_t* surface =
+                              decode_image_to_cairo_surface(d->bytes))
+                {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    d->self->tk_images_.emplace(d->url, std::move(img));
+                    if (d->self->msg_surface_)
+                        d->self->msg_surface_->relayout();
+                }
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, data);
+    }).detach();
 }
 
 void MainWindow::ensure_sticker_image_async(std::string url) {

@@ -111,9 +111,17 @@ private slots:
     /// Advances frames in `tk_anim_images_` and repaints `msgSurface_`
     /// when at least one frame changes.
     void onMessageAnimTick_();
+    /// Decode + cache worker-thread media fetch results. `kind` is one
+    /// of the MediaKind enum values cast to int (QMetaType can carry int
+    /// across queued connections without registering custom types).
+    void onMediaBytesLoaded_(QString cache_key, int kind, QByteArray bytes);
 
 signals:
     void recoverFinished(bool ok, QString error);
+    /// Emitted on worker threads by `requestRoomAvatar_` /
+    /// `requestUserAvatar_` / `requestMediaImage_` to bounce fetched
+    /// bytes back onto the UI thread via QueuedConnection.
+    void mediaBytesLoaded_(QString cache_key, int kind, QByteArray bytes);
 
 private:
     void     doLogin();
@@ -145,6 +153,27 @@ private:
     void                              ensureRoomAvatar(const tesseract::RoomInfo& r);
     void                              ensureMediaImage(const std::string& url,
                                                          int max_w, int max_h);
+
+    /// Async media-bytes fetch. The synchronous Rust FFI does a
+    /// `tokio::block_on` per call — running it on the UI thread freezes
+    /// the event loop on accounts with many rooms (one round-trip per
+    /// avatar serialised on first sync). These helpers spawn the fetch
+    /// on a QThreadPool worker and emit `mediaBytesLoaded_`; the queued
+    /// connection lands the bytes back on the UI thread for decode.
+    enum class MediaKind : int {
+        RoomAvatar = 0,   // tk_avatars_[mxc], scale to kRoomAvatarSize, invalidate roomSurface_
+        UserAvatar = 1,   // tk_avatars_[mxc], scale to kMsgAvatarSize,  invalidate msgSurface_
+        MediaImage = 2,   // tk_images_/tk_anim_images_[url], invalidate msgSurface_
+    };
+    void requestRoomAvatar_(const std::string& room_id,
+                             const std::string& mxc);
+    void requestUserAvatar_(const std::string& mxc);
+    void requestMediaImage_(const std::string& url, int max_w, int max_h);
+    std::unordered_set<std::string> mediaFetchesInFlight_;
+    /// Pinned `(max_w, max_h)` for in-flight `MediaImage` fetches so the
+    /// UI-thread decode can scale them. RoomAvatar / UserAvatar use the
+    /// shell-wide constants and don't need pinning.
+    std::unordered_map<std::string, std::pair<int,int>> mediaImageSizes_;
 
     static constexpr int kRoomAvatarSize  = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize   = tesseract::visual::kMsgAvatarSize;

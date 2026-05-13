@@ -144,6 +144,23 @@ private:
     /// a duplicate fetch.
     void ensure_sticker_image_async(std::string url);
 
+    /// Async media fetches for room avatars, user avatars, and inline
+    /// media. The synchronous Rust FFI does a `tokio::block_on` per
+    /// call; running it on the UI thread freezes the GTK main loop on
+    /// large accounts (one round-trip per room avatar serialised on
+    /// first sync). These helpers spawn a detached worker and bounce
+    /// the bytes back through `g_idle_add` for decode + cache.
+    enum class MediaKind : std::uint8_t {
+        RoomAvatar,
+        UserAvatar,
+        MediaImage,
+    };
+    void request_room_avatar_async(const std::string& room_id,
+                                     const std::string& mxc);
+    void request_user_avatar_async(const std::string& mxc);
+    void request_media_image_async(const std::string& url);
+    std::unordered_set<std::string> media_fetches_in_flight_;
+
     /// Lazily install a 16 ms `g_timeout` that drives `tk_anim_tick_`.
     /// No-op when the tick is already armed.
     void start_anim_tick_if_needed_();
