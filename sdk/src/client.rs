@@ -2171,6 +2171,57 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         }
     }
 
+    // -- Room packs from ALL joined rooms (implicit membership, beyond the
+    //    explicit im.ponies.emote_rooms subscription list above) --
+    // This surfaces image packs published by rooms the user is a member of
+    // without requiring them to have explicitly subscribed via account data.
+    // Dedup against packs already added above.
+    let mut added_ids: std::collections::HashSet<String> =
+        packs.iter().map(|p| p.id.clone()).collect();
+
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    for room in client.joined_rooms() {
+        let room_id_str = room.room_id().to_string();
+        for ev_type_str in [
+            crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
+            crate::image_packs::TYPE_ROOM_PACK_STABLE,
+        ] {
+            let et = StateEventType::from(ev_type_str);
+            let Ok(events) = room.get_state_events(et).await else { continue };
+            for raw_state in &events {
+                let (state_key, content_opt): (String, Option<Value>) = match raw_state {
+                    RawAnySyncOrStrippedState::Sync(raw) => (
+                        raw.get_field("state_key").ok().flatten().unwrap_or_default(),
+                        raw.get_field("content").ok().flatten(),
+                    ),
+                    RawAnySyncOrStrippedState::Stripped(raw) => (
+                        raw.get_field("state_key").ok().flatten().unwrap_or_default(),
+                        raw.get_field("content").ok().flatten(),
+                    ),
+                };
+                let source = crate::image_packs::PackSource::Room {
+                    room_id:   room_id_str.clone(),
+                    state_key: state_key.clone(),
+                };
+                let id = crate::image_packs::pack_id_for(&source);
+                if !added_ids.insert(id.clone()) { continue; }
+                let Some(content) = content_opt else { continue };
+                if let Some(mut pack) =
+                    crate::image_packs::parse_pack_content(id, source, &content)
+                {
+                    if pack.display_name.is_empty() {
+                        pack.display_name = room
+                            .display_name().await
+                            .map(|n| n.to_string())
+                            .unwrap_or_default();
+                    }
+                    packs.push(pack);
+                }
+            }
+            if !events.is_empty() { break; }
+        }
+    }
+
     packs
 }
 

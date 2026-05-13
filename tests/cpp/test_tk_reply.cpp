@@ -84,8 +84,10 @@ TEST_CASE("ComposeBar natural_height grows by kReplyBandH + kReplyBandGap when r
     ComposeBar bar;
     const float baseline = bar.natural_height();
     bar.set_reply_to("$evt1", "Alice", "Hello there");
+    // arrange() insets the first band 8 px (kPadY) from the widget top, so
+    // recompute_height() adds kPadY once whenever any top band is active.
     CHECK(bar.natural_height() ==
-          Approx(baseline + ComposeBar::kReplyBandH + ComposeBar::kReplyBandGap));
+          Approx(baseline + ComposeBar::kReplyBandH + ComposeBar::kReplyBandGap + 8.0f));
 }
 
 TEST_CASE("ComposeBar natural_height shrinks back to baseline when reply is cleared",
@@ -211,8 +213,9 @@ TEST_CASE("ComposeBar natural_height grows by kEditBandH + kEditBandGap when edi
     ComposeBar bar;
     const float baseline = bar.natural_height();
     bar.set_editing("$edit_evt");
+    // +8.0f is the kPadY top-band inset added by recompute_height() (same as the reply case).
     CHECK(bar.natural_height() ==
-          Approx(baseline + ComposeBar::kEditBandH + ComposeBar::kEditBandGap));
+          Approx(baseline + ComposeBar::kEditBandH + ComposeBar::kEditBandGap + 8.0f));
 }
 
 TEST_CASE("ComposeBar natural_height shrinks back when editing is cleared",

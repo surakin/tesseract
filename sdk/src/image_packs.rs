@@ -1,6 +1,6 @@
 //! MSC2545 image pack aggregation.
 //!
-//! Surfaces three sources as a single `Vec<ImagePack>` cache:
+//! Surfaces four sources as a single `Vec<ImagePack>` cache:
 //!   * account_data `im.ponies.user_emotes` / `m.image_pack` — the user's
 //!     personal pack (de facto extension; not in merged MSC2545 text but used
 //!     by Element/Cinny and our "Saved Stickers" feature relies on it).
@@ -8,6 +8,10 @@
 //!     of (room_id, state_key) pairs the user has globally enabled.
 //!   * room state `im.ponies.room_emotes` / `m.room.image_pack` at each
 //!     referenced state_key.
+//!   * room state `im.ponies.room_emotes` / `m.room.image_pack` from ALL other
+//!     joined rooms (implicit membership packs, deduped against the explicit
+//!     subscription list above). Display name falls back to the room name when
+//!     the pack doesn't carry its own `pack.display_name`.
 //!
 //! Per spec: when `pack.usage` is absent/empty, BOTH `sticker` and `emoticon`
 //! are allowed. Per-image `usage` overrides pack-level `usage` when present.
