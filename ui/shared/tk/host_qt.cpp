@@ -64,10 +64,12 @@ public:
 
     void set_rect(Rect r) override {
         if (!edit_) return;
-        edit_->setGeometry(static_cast<int>(r.x),
-                            static_cast<int>(r.y),
-                            static_cast<int>(r.w),
-                            static_cast<int>(r.h));
+        // Use the widget's preferred height and centre it vertically within
+        // the allocated rect rather than stretching to fill it.
+        int h = edit_->sizeHint().height();
+        int y = static_cast<int>(r.y) + (static_cast<int>(r.h) - h) / 2;
+        edit_->setGeometry(static_cast<int>(r.x), y,
+                            static_cast<int>(r.w), h);
     }
     void set_text(std::string text) override {
         if (!edit_) return;

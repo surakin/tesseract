@@ -303,11 +303,15 @@ bool SessionStore::migrate_legacy_layout() {
         return true;
     }
 
-    // (3) Read user_id out of session.json.
-    std::ifstream in(legacy_session, std::ios::binary);
-    std::ostringstream buf;
-    buf << in.rdbuf();
-    const std::string blob = buf.str();
+    // (3) Read user_id out of session.json. The ifstream is closed before
+    // the move/remove below — on Windows an open handle blocks rename().
+    std::string blob;
+    {
+        std::ifstream in(legacy_session, std::ios::binary);
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        blob = buf.str();
+    }
     const std::string uid  = extract_string(blob, "user_id");
     if (uid.empty() || sanitize_user_id(uid).empty()) {
         // (3a) Corrupt blob: throw away both legacy files and let the user

@@ -48,11 +48,18 @@ public:
 
     void set_rect(Rect r) override {
         if (!entry_) return;
+        // Use the entry's natural height and centre it vertically within
+        // the allocated rect rather than stretching to fill it.
+        int nat_h = 0;
+        gtk_widget_measure(entry_, GTK_ORIENTATION_VERTICAL, -1,
+                           nullptr, &nat_h, nullptr, nullptr);
+        int h = nat_h > 0 ? nat_h : static_cast<int>(std::round(r.h));
+        int y = static_cast<int>(std::floor(r.y)) +
+                (static_cast<int>(std::round(r.h)) - h) / 2;
         gtk_widget_set_margin_start(entry_, static_cast<int>(std::floor(r.x)));
-        gtk_widget_set_margin_top  (entry_, static_cast<int>(std::floor(r.y)));
+        gtk_widget_set_margin_top  (entry_, y);
         gtk_widget_set_size_request(entry_,
-            static_cast<int>(std::round(r.w)),
-            static_cast<int>(std::round(r.h)));
+            static_cast<int>(std::round(r.w)), h);
     }
 
     void set_text(std::string text) override {

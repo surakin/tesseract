@@ -222,6 +222,14 @@ public:
                            1, reinterpret_cast<DWORD_PTR>(this));
         SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
                       MAKELONG(8, 8));
+        // Measure the natural one-line height for vertical centering in set_rect.
+        HDC hdc = GetDC(hwnd_);
+        HGDIOBJ old = SelectObject(hdc, body_font());
+        TEXTMETRICW tm{};
+        GetTextMetricsW(hdc, &tm);
+        SelectObject(hdc, old);
+        ReleaseDC(hwnd_, hdc);
+        line_h_ = tm.tmHeight + 4; // 2 px internal top+bottom margin
     }
 
     ~Win32NativeTextField() override {
@@ -234,12 +242,15 @@ public:
 
     void set_rect(Rect r) override {
         if (!hwnd_) return;
-        SetWindowPos(hwnd_, nullptr,
-                      static_cast<int>(std::floor(r.x)),
-                      static_cast<int>(std::floor(r.y)),
-                      static_cast<int>(std::round(r.w)),
-                      static_cast<int>(std::round(r.h)),
-                      SWP_NOZORDER | SWP_NOACTIVATE);
+        int x = static_cast<int>(std::floor(r.x));
+        int w = static_cast<int>(std::round(r.w));
+        // Single-line EDIT controls draw text top-aligned within their HWND.
+        // Size the HWND to the measured line height and centre it vertically
+        // within the rect the caller allocated so text appears centred.
+        int h = (line_h_ > 0) ? line_h_ : static_cast<int>(std::round(r.h));
+        int y = static_cast<int>(std::floor(r.y)) +
+                (static_cast<int>(std::round(r.h)) - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     }
     void set_text(std::string text) override {
         if (!hwnd_) return;
@@ -319,6 +330,7 @@ private:
     HWND parent_     = nullptr;
     HWND hwnd_       = nullptr;
     int  id_         = 0;
+    int  line_h_     = 0;
     bool suppress_changed_ = false;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()>                   on_submit_;
