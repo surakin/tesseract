@@ -729,6 +729,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     }
     case WM_TESSERACT_IMAGE_PACKS:
         self->refresh_sticker_picker();
+        self->refresh_emoji_picker();
         return 0;
     case WM_TESSERACT_ACCOUNT_PREFS: {
         auto* s = reinterpret_cast<std::string*>(lParam);
@@ -772,6 +773,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             }
             if (self->sticker_picker_shared_)
                 self->sticker_picker_shared_->invalidate_image_cache();
+            if (self->emoji_picker_shared_)
+                self->emoji_picker_shared_->invalidate_image_cache();
             if (self->sticker_picker_surface_ &&
                 self->sticker_picker_surface_->hwnd())
             {
@@ -2027,6 +2030,12 @@ void MainWindow::on_anim_tick() {
         if (sticker_picker_shared_) sticker_picker_shared_->invalidate_image_cache();
         InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
     }
+    if (emoji_picker_surface_ && emoji_picker_surface_->hwnd() &&
+        hEmojiPicker_ && IsWindowVisible(hEmojiPicker_))
+    {
+        if (emoji_picker_shared_) emoji_picker_shared_->invalidate_image_cache();
+        InvalidateRect(emoji_picker_surface_->hwnd(), nullptr, FALSE);
+    }
 }
 
 void MainWindow::request_sticker_image(const std::string& cache_key) {
@@ -2476,6 +2485,17 @@ void MainWindow::ensure_emoji_picker_created() {
     emoji_picker_shared_->set_client(&client_);
     emoji_picker_shared_->on_selected =
         [this](const std::string& glyph) { insert_emoji_at_cursor(glyph); };
+    emoji_picker_shared_->set_image_provider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            auto ait = tk_anim_images_.find(cache_key);
+            if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                return ait->second.frames[ait->second.current].get();
+            auto sit = tk_images_.find(cache_key);
+            if (sit != tk_images_.end()) return sit->second.get();
+            const_cast<MainWindow*>(this)->request_sticker_image(cache_key);
+            return nullptr;
+        });
     emoji_picker_surface_->set_root(std::move(shared));
 
     if (HWND s = emoji_picker_surface_->hwnd()) {
@@ -2744,6 +2764,14 @@ void MainWindow::refresh_sticker_picker() {
         sticker_picker_shared_->invalidate_image_cache();
     }
     if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+}
+
+void MainWindow::refresh_emoji_picker() {
+    if (emoji_picker_shared_) {
+        emoji_picker_shared_->refresh_emoticon_packs();
+        emoji_picker_shared_->invalidate_image_cache();
+    }
+    if (emoji_picker_surface_) emoji_picker_surface_->relayout();
 }
 
 } // namespace win32

@@ -54,6 +54,9 @@ public:
                                         const std::string& source_token)>;
     void set_image_provider(ImageProvider p);
 
+    /// Force a grid repaint after the host's media cache lands new bitmaps.
+    void invalidate_image_cache();
+
     /// Host hook for the search-row overlay. Bounds in widget-local
     /// coordinates; valid after the first arrange() pass.
     tk::Rect search_field_rect() const { return search_rect_; }

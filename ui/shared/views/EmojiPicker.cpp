@@ -193,6 +193,10 @@ void EmojiPicker::set_image_provider(ImageProvider p) {
     if (grid_) grid_->invalidate_data();
 }
 
+void EmojiPicker::invalidate_image_cache() {
+    if (grid_) grid_->invalidate_data();
+}
+
 int EmojiPicker::builtin_tab_count() const { return kBuiltinTabCount; }
 int EmojiPicker::total_tab_count() const {
     return kBuiltinTabCount + static_cast<int>(custom_packs_.size());
