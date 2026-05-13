@@ -163,11 +163,13 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
                        mime:(std::string)mime
                    filename:(std::string)filename
-                    caption:(std::string)caption;
+                    caption:(std::string)caption
+               replyEventId:(std::string)reply_event_id;
 - (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
                       mime:(std::string)mime
                   filename:(std::string)filename
-                   caption:(std::string)caption;
+                   caption:(std::string)caption
+             replyEventId:(std::string)reply_event_id;
 
 // Notifications.
 - (void)handleNotification:(std::string)roomId
@@ -779,10 +781,10 @@ void EventBridge::on_notification(const std::string& room_id,
                 [s->_vidViewerView setHidden:NO];
                 [s->_vidViewerView.window makeFirstResponder:s->_vidViewerView];
                 // Async byte fetch.
-                tesseract::Client* clientPtr = &s->_client;
+                tesseract::Client* clientPtr = s->_client;
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
                 std::string src = hit.source_json;
-                [self runAsync:[clientPtr, weakSelf, src, bytes_holder]() {
+                [s runAsync:[clientPtr, weakSelf, src, bytes_holder]() {
                     *bytes_holder = clientPtr->fetch_source_bytes(src);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         MainWindowController* s2 = weakSelf;
