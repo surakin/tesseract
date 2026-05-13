@@ -1493,7 +1493,7 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
         }
         filtered.reserve(_rooms.size());
         for (const auto& r : _rooms)
-            if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
+            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         for (const auto& r : _rooms)
             if ( r.is_space) filtered.push_back(r);
         _spaceNavBar.hidden = YES;

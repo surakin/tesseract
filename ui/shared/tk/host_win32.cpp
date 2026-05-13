@@ -200,7 +200,7 @@ public:
     Win32NativeTextField(HWND parent, int ctrl_id)
         : parent_(parent), id_(ctrl_id) {
         hwnd_ = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
+            0,
             L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
             0, 0, 100, 24,
@@ -213,6 +213,8 @@ public:
                       reinterpret_cast<WPARAM>(ui_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
+        SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                      MAKELONG(8, 8));
     }
 
     ~Win32NativeTextField() override {
@@ -292,6 +294,8 @@ private:
                                            UINT_PTR /*id*/,
                                            DWORD_PTR ref) {
         auto* self = reinterpret_cast<Win32NativeTextField*>(ref);
+        if (msg == WM_NCPAINT)
+            return 0;
         if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
             if (self->on_submit_) self->on_submit_();
             return 0;
@@ -327,7 +331,7 @@ public:
     Win32NativeTextArea(HWND parent, int ctrl_id, IWICImagingFactory* wic = nullptr)
         : parent_(parent), id_(ctrl_id), wic_(wic) {
         hwnd_ = CreateWindowExW(
-            WS_EX_CLIENTEDGE,
+            0,
             L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
@@ -341,6 +345,8 @@ public:
                       reinterpret_cast<WPARAM>(ui_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
+        SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                      MAKELONG(8, 8));
     }
 
     ~Win32NativeTextArea() override {
@@ -439,6 +445,8 @@ private:
                                            UINT_PTR /*id*/,
                                            DWORD_PTR ref) {
         auto* self = reinterpret_cast<Win32NativeTextArea*>(ref);
+        if (msg == WM_NCPAINT)
+            return 0;
         if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (!shift) {

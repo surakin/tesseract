@@ -1699,7 +1699,7 @@ void MainWindow::refresh_room_list() {
             if (r.is_space)
                 for (const auto& id : client_.space_children(r.id))
                     in_space.insert(id);
-        for (const auto& r : rooms_) if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
+        for (const auto& r : rooms_) if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         for (const auto& r : rooms_) if ( r.is_space) filtered.push_back(r);
     } else {
         // Show the navigation bar with the current space's name.

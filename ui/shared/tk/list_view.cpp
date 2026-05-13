@@ -204,6 +204,15 @@ void ListView::paint(PaintCtx& ctx) {
 
     if (!adapter_ || adapter_->count() == 0) return;
 
+    // Heights may be dirty when data changed since the last arrange — e.g. a
+    // collapse toggle calls invalidate_data() then triggers a repaint without
+    // an intervening layout pass. Rebuild now so paint_row receives correct
+    // bounds rather than stale row heights from the previous item set.
+    if (heights_dirty_) {
+        LayoutCtx lctx{ ctx.factory, ctx.theme };
+        rebuild_heights(lctx, measured_width_);
+    }
+
     ctx.canvas.push_clip_rect(bounds_);
 
     // Find the first row whose end is past the viewport top.
