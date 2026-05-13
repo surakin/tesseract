@@ -56,7 +56,7 @@ constexpr float kVoiceSpeedPillW  = 30.0f;  // "1×" / "1.5×" / "2×"
 constexpr float kVoiceSpeedPillH  = 20.0f;
 
 // Reply quote block — painted above the body block when m.has_reply().
-constexpr float kQuoteBlockH   = 38.0f;  // total height of the quote band
+constexpr float kQuoteBlockH   = 44.0f;  // total height of the quote band
 constexpr float kQuoteAccentW  =  3.0f;  // left accent stripe width
 constexpr float kQuotePadX     =  8.0f;
 constexpr float kQuoteGapAfter =  4.0f;  // gap between quote and body
@@ -152,8 +152,7 @@ public:
         bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h = (!m.reactions.empty() || !m.read_receipts.empty())
-                            ? chip_h() : 0.0f;
+        float chips_h = !m.reactions.empty() ? chip_h() : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
         return top_pad + header_h + body_h + chips_h + kPadY;
@@ -228,7 +227,7 @@ public:
         // float right-aligned at the avatar-band height so they never push
         // the row taller. Built right-to-left so the cluster stays flush with
         // the right edge regardless of which buttons are present.
-        if (hovered && m.reactions.empty() && m.read_receipts.empty()) {
+        if (hovered && m.reactions.empty()) {
             // Vertical centre: inside the avatar band for full rows, top of
             // body for continuation rows (no avatar band).
             float btn_y = cont
@@ -287,9 +286,9 @@ public:
             }
         }
 
-        // ── Bottom chip strip (reactions and/or read-receipt cluster) ────────
-        // Only created when there is persistent content that needs its own row.
-        if (!m.reactions.empty() || !m.read_receipts.empty()) {
+        // ── Bottom chip strip (reactions) ────────────────────────────────────
+        // Only created when there are persistent reaction chips to show.
+        if (!m.reactions.empty()) {
             float chip_y = cursor;
             float chip_x = col_x;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
@@ -424,69 +423,70 @@ public:
                 }
             }
 
-            // Read-receipt cluster — bottom-right of the strip, capped at
-            // `kReceiptCap` avatars with a "+N" overflow pill on the left.
-            // Painted right-to-left so the rightmost receipt is the topmost
-            // disc in the overlap stack.
-            if (!m.read_receipts.empty()) {
-                const std::size_t total   = m.read_receipts.size();
-                const std::size_t visible = std::min(total, kReceiptCap);
-                const std::size_t overflow = total - visible;
-                const float disc_cy = chip_y + chip_h() * 0.5f;
+        }
 
-                float right_edge = bounds.x + bounds.w - kPadX;
-                for (std::size_t i = 0; i < visible; ++i) {
-                    // m.read_receipts is oldest-first; paint the last
-                    // `visible` of them right-to-left so the most-recent
-                    // receipt sits on top of the stack.
-                    const auto& rr = m.read_receipts[total - 1 - i];
-                    float cx = right_edge - kReceiptSize * 0.5f
-                                - i * kReceiptStride;
-                    tk::Point centre{ cx, disc_cy };
-                    const tk::Image* img = nullptr;
-                    if (owner_.avatar_provider_ && !rr.avatar_url.empty()) {
-                        img = owner_.avatar_provider_(rr.avatar_url);
-                    }
-                    if (img) {
-                        ctx.canvas.draw_circle_image(*img, centre, kReceiptSize);
-                    } else {
-                        ctx.canvas.draw_initials_circle(
-                            rr.display_name.empty() ? rr.user_id : rr.display_name,
-                            centre,
-                            kReceiptSize,
-                            ctx.theme.palette.avatar_initials_bg,
-                            ctx.theme.palette.avatar_initials_text);
-                    }
+        // ── Read-receipt cluster ──────────────────────────────────────────────
+        // Painted at the bottom-right of the body block — no extra row height.
+        // Discs are centred at the bottom edge of the body so they sit at the
+        // same vertical level as the last line of text.
+        if (!m.read_receipts.empty()) {
+            const std::size_t total    = m.read_receipts.size();
+            const std::size_t visible  = std::min(total, kReceiptCap);
+            const std::size_t overflow = total - visible;
+            const float disc_cy = cursor - kReceiptSize * 0.5f;
+
+            float right_edge = bounds.x + bounds.w - kPadX;
+            for (std::size_t i = 0; i < visible; ++i) {
+                // m.read_receipts is oldest-first; paint the last
+                // `visible` of them right-to-left so the most-recent
+                // receipt sits on top of the stack.
+                const auto& rr = m.read_receipts[total - 1 - i];
+                float cx = right_edge - kReceiptSize * 0.5f
+                            - static_cast<float>(i) * kReceiptStride;
+                tk::Point centre{ cx, disc_cy };
+                const tk::Image* img = nullptr;
+                if (owner_.avatar_provider_ && !rr.avatar_url.empty()) {
+                    img = owner_.avatar_provider_(rr.avatar_url);
                 }
+                if (img) {
+                    ctx.canvas.draw_circle_image(*img, centre, kReceiptSize);
+                } else {
+                    ctx.canvas.draw_initials_circle(
+                        rr.display_name.empty() ? rr.user_id : rr.display_name,
+                        centre,
+                        kReceiptSize,
+                        ctx.theme.palette.avatar_initials_bg,
+                        ctx.theme.palette.avatar_initials_text);
+                }
+            }
 
-                // "+N" overflow pill — anchored just to the left of the
-                // leftmost disc in the cluster.
-                if (overflow > 0) {
-                    tk::TextStyle st{};
-                    st.role = tk::FontRole::UiSemibold;
-                    auto layout = ctx.factory.build_text(
-                        std::string("+") + std::to_string(overflow), st);
-                    if (layout) {
-                        tk::Size sz = layout->measure();
-                        float pill_w = sz.w + kChipPadX;
-                        float pill_h = kReceiptSize;
-                        float cluster_left = right_edge
-                            - (kReceiptSize + (visible - 1) * kReceiptStride);
-                        tk::Rect pill{
-                            cluster_left - kReceiptOverflowGap - pill_w,
-                            disc_cy - pill_h * 0.5f,
-                            pill_w,
-                            pill_h,
-                        };
-                        ctx.canvas.fill_rounded_rect(
-                            pill, pill_h * 0.5f,
-                            ctx.theme.palette.subtle_hover);
-                        ctx.canvas.draw_text(
-                            *layout,
-                            { pill.x + (pill_w - sz.w) * 0.5f,
-                              pill.y + (pill_h - sz.h) * 0.5f },
-                            ctx.theme.palette.text_secondary);
-                    }
+            // "+N" overflow pill — anchored just to the left of the
+            // leftmost disc in the cluster.
+            if (overflow > 0) {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::UiSemibold;
+                auto layout = ctx.factory.build_text(
+                    std::string("+") + std::to_string(overflow), st);
+                if (layout) {
+                    tk::Size sz = layout->measure();
+                    float pill_w = sz.w + kChipPadX;
+                    float pill_h = kReceiptSize;
+                    float cluster_left = right_edge
+                        - (kReceiptSize + static_cast<float>(visible - 1) * kReceiptStride);
+                    tk::Rect pill{
+                        cluster_left - kReceiptOverflowGap - pill_w,
+                        disc_cy - pill_h * 0.5f,
+                        pill_w,
+                        pill_h,
+                    };
+                    ctx.canvas.fill_rounded_rect(
+                        pill, pill_h * 0.5f,
+                        ctx.theme.palette.subtle_hover);
+                    ctx.canvas.draw_text(
+                        *layout,
+                        { pill.x + (pill_w - sz.w) * 0.5f,
+                          pill.y + (pill_h - sz.h) * 0.5f },
+                        ctx.theme.palette.text_secondary);
                 }
             }
         }
@@ -658,33 +658,37 @@ private:
         float tx   = x + kQuoteAccentW + kQuotePadX;
         float tw   = std::max(0.0f, col_w - kQuoteAccentW - kQuotePadX * 2);
 
-        // Sender name — upper half
+        // Build both text layouts before drawing so we can measure their
+        // actual heights and vertically centre the pair within the card.
         const std::string& sname = m.in_reply_to_sender_name.empty()
             ? m.in_reply_to_id : m.in_reply_to_sender_name;
-        if (!sname.empty()) {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::UiSemibold;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = tw;
-            auto lo = ctx.factory.build_text(sname, st);
-            if (lo) {
-                ctx.canvas.draw_text(*lo, { tx, y + 4.0f },
-                                      ctx.theme.palette.text_secondary);
-            }
-        }
 
-        // Body snippet — lower half
-        if (!m.in_reply_to_body.empty()) {
-            tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.trim      = tk::TextTrim::Ellipsis;
-            st.max_width = tw;
-            auto lo = ctx.factory.build_text(m.in_reply_to_body, st);
-            if (lo) {
-                ctx.canvas.draw_text(*lo, { tx, y + kQuoteBlockH * 0.5f + 2.0f },
-                                      ctx.theme.palette.text_muted);
-            }
-        }
+        tk::TextStyle name_st{};
+        name_st.role      = tk::FontRole::UiSemibold;
+        name_st.trim      = tk::TextTrim::Ellipsis;
+        name_st.max_width = tw;
+        auto name_lo = sname.empty()
+            ? nullptr : ctx.factory.build_text(sname, name_st);
+
+        tk::TextStyle body_st{};
+        body_st.role      = tk::FontRole::Body;
+        body_st.trim      = tk::TextTrim::Ellipsis;
+        body_st.max_width = tw;
+        auto body_lo = m.in_reply_to_body.empty()
+            ? nullptr : ctx.factory.build_text(m.in_reply_to_body, body_st);
+
+        constexpr float kLineGap = 2.0f;
+        float name_h = name_lo ? name_lo->measure().h : 0.0f;
+        float body_h = body_lo ? body_lo->measure().h : 0.0f;
+        float total_h = name_h + (body_h > 0.0f ? kLineGap + body_h : 0.0f);
+        float text_y  = y + (kQuoteBlockH - total_h) * 0.5f;
+
+        if (name_lo)
+            ctx.canvas.draw_text(*name_lo, { tx, text_y },
+                                  ctx.theme.palette.text_secondary);
+        if (body_lo)
+            ctx.canvas.draw_text(*body_lo, { tx, text_y + name_h + kLineGap },
+                                  ctx.theme.palette.text_muted);
 
         return y + kQuoteBlockH;
     }
@@ -1034,7 +1038,7 @@ void MessageListView::set_repaint_requester(std::function<void()> request_repain
 
 void MessageListView::on_pointer_drag(tk::Point local) {
     if (press_voice_kind_ != VoicePressKind::Waveform) {
-        tk::Widget::on_pointer_drag(local);
+        tk::ListView::on_pointer_drag(local);
         return;
     }
     if (press_voice_event_id_.empty()) return;

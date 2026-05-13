@@ -559,7 +559,6 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
     if (has_reply() && !reply_band_rect_.empty()) {
         constexpr float kAccentW      =  3.0f;
         constexpr float kReplyPadX    =  8.0f;
-        constexpr float kReplyPadY    =  5.0f;
 
         ctx.canvas.fill_rounded_rect(reply_band_rect_, 6.0f,
                                       card_bg(ctx.theme));
@@ -570,27 +569,33 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
 
         float text_x = reply_band_rect_.x + kAccentW + kReplyPadX;
 
-        // "Replying to <sender>" on the first line
+        // Build both lines first so we can measure heights and centre the
+        // pair vertically within the band.
         tk::TextStyle label_style{};
         label_style.role = tk::FontRole::Small;
         auto label_layout = ctx.factory.build_text(
             "Replying to " + reply_sender_name_, label_style);
-        if (label_layout) {
-            ctx.canvas.draw_text(*label_layout,
-                { text_x, reply_band_rect_.y + kReplyPadY },
-                ctx.theme.palette.text_secondary);
-        }
 
-        // Body preview on the second line
         tk::TextStyle body_style{};
         body_style.role = tk::FontRole::Small;
         auto body_layout = ctx.factory.build_text(
             reply_body_preview_, body_style);
-        if (body_layout) {
+
+        constexpr float kLineGap = 2.0f;
+        float label_h = label_layout ? label_layout->measure().h : 0.0f;
+        float body_h  = body_layout  ? body_layout->measure().h  : 0.0f;
+        float total_h = label_h + (body_h > 0.0f ? kLineGap + body_h : 0.0f);
+        float text_y  = reply_band_rect_.y
+                        + (kReplyBandH - total_h) * 0.5f;
+
+        if (label_layout)
+            ctx.canvas.draw_text(*label_layout,
+                { text_x, text_y },
+                ctx.theme.palette.text_secondary);
+        if (body_layout)
             ctx.canvas.draw_text(*body_layout,
-                { text_x, reply_band_rect_.y + kReplyBandH * 0.5f + 2.0f },
+                { text_x, text_y + label_h + kLineGap },
                 ctx.theme.palette.text_muted);
-        }
 
         // "×" cancel glyph centred in reply_cancel_rect_
         if (!reply_cancel_rect_.empty()) {
