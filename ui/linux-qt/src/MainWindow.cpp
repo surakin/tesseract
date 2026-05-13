@@ -400,7 +400,7 @@ MainWindow::MainWindow(QWidget* parent)
         const auto body     = hit->body;
 
         QMenu menu(this);
-        QAction* add = menu.addAction("Add to Saved Stickers");
+        QAction* add = menu.addAction(tr("Add to Saved Stickers"));
         connect(add, &QAction::triggered, this, [this, mxc_url, body, event_id]{
             // Width/height: best-effort from messageListView's row data.
             // We don't track them here; the SDK preserves info_json
@@ -422,7 +422,7 @@ MainWindow::MainWindow(QWidget* parent)
     composeSurface_->set_root(std::move(compose_owner));
 
     composeTextArea_ = composeSurface_->host().make_text_area();
-    composeTextArea_->set_placeholder("Message…");
+    composeTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     composeTextArea_->set_on_changed([this](const std::string& s) {
         if (composeShared_) composeShared_->set_current_text(s);
     });
@@ -453,7 +453,7 @@ MainWindow::MainWindow(QWidget* parent)
         const auto limit = client_.media_upload_limit();
         if (limit > 0 && bytes.size() > limit) {
             statusBar()->showMessage(
-                QStringLiteral("File exceeds server limit (%1)")
+                tr("File exceeds server limit (%1)")
                     .arg(QString::fromStdString(
                         tesseract::views::format_size(limit))),
                 4000);
@@ -491,7 +491,7 @@ MainWindow::MainWindow(QWidget* parent)
         auto enc = composeSurface_->host().encode_for_send(
             bytes.data(), bytes.size(), compress);
         if (enc.bytes.empty()) {
-            statusBar()->showMessage("Image decode failed", 4000);
+            statusBar()->showMessage(tr("Image decode failed"), 4000);
             return;
         }
         // After compression mime/extension may have changed to JPEG.
@@ -507,7 +507,7 @@ MainWindow::MainWindow(QWidget* parent)
                                         reply_event_id);
         if (!res) {
             statusBar()->showMessage(
-                "Send image failed: " + QString::fromStdString(res.message),
+                tr("Send image failed: %1").arg(QString::fromStdString(res.message)),
                 4000);
             return;
         }
@@ -525,7 +525,7 @@ MainWindow::MainWindow(QWidget* parent)
                                       filename, caption, reply_event_id);
         if (!res) {
             statusBar()->showMessage(
-                "Send file failed: " + QString::fromStdString(res.message),
+                tr("Send file failed: %1").arg(QString::fromStdString(res.message)),
                 4000);
             return;
         }
@@ -554,7 +554,7 @@ MainWindow::MainWindow(QWidget* parent)
         auto res = client_.send_reply(currentRoomId_, reply_event_id, body);
         if (!res) {
             statusBar()->showMessage(
-                "Send reply failed: " + QString::fromStdString(res.message), 4000);
+                tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
             return;
         }
         if (composeTextArea_) composeTextArea_->set_text("");
@@ -651,7 +651,7 @@ MainWindow::MainWindow(QWidget* parent)
         auto res = client_.send_edit(currentRoomId_, event_id, new_body);
         if (!res) {
             statusBar()->showMessage(
-                "Edit failed: " + QString::fromStdString(res.message), 4000);
+                tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);
             return;
         }
         if (composeTextArea_) composeTextArea_->set_text("");
@@ -663,7 +663,7 @@ MainWindow::MainWindow(QWidget* parent)
         if (composeShared_)   composeShared_->set_current_text({});
     };
 
-    statusBar()->showMessage("Not logged in");
+    statusBar()->showMessage(tr("Not logged in"));
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
 
@@ -735,7 +735,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
 
 void MainWindow::doLogin() {
     if (auto saved = tesseract::SessionStore::load()) {
-        statusBar()->showMessage("Restoring session…");
+        statusBar()->showMessage(tr("Restoring session\xe2\x80\xa6"));
         auto res = client_.restore_session(*saved);
         if (res) {
             myUserId_      = client_.get_user_id();
@@ -743,20 +743,20 @@ void MainWindow::doLogin() {
             myAvatarUrl_   = client_.get_avatar_url();
             populateUserStrip();
             client_.start_sync(bridge_.get());
-            statusBar()->showMessage("Connected");
+            statusBar()->showMessage(tr("Connected"));
             contentStack_->setCurrentWidget(mainContent_);
             maybeShowRecoveryBanner();
             return;
         }
         tesseract::SessionStore::clear();
         statusBar()->showMessage(
-            "Saved session expired: " + QString::fromStdString(res.message),
+            tr("Saved session expired: %1").arg(QString::fromStdString(res.message)),
             6000);
     }
 
     loginView_->reset();
     contentStack_->setCurrentWidget(loginView_);
-    statusBar()->showMessage("Not logged in");
+    statusBar()->showMessage(tr("Not logged in"));
 }
 
 void MainWindow::onLoginSucceeded() {
@@ -766,7 +766,7 @@ void MainWindow::onLoginSucceeded() {
     populateUserStrip();
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
-    statusBar()->showMessage("Connected");
+    statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
 }
@@ -813,7 +813,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     auto res = client_.subscribe_room(currentRoomId_);
     if (!res) {
         statusBar()->showMessage(
-            "Subscribe failed: " + QString::fromStdString(res.message), 4000);
+            tr("Subscribe failed: %1").arg(QString::fromStdString(res.message)), 4000);
         return;
     }
     auto& state = pagination_[currentRoomId_];
@@ -919,20 +919,20 @@ void MainWindow::onSyncError(
     QString context, QString description, bool soft_logout)
 {
     if (context == "sync_reconnect") {
-        statusBar()->showMessage("Sync error: reconnecting…");
+        statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
         client_.stop_sync();
         doLogin();
     } else if (context == "sync_auth_error") {
         if (soft_logout) {
             if (auto saved = tesseract::SessionStore::load()) {
-                statusBar()->showMessage("Reconnecting session…");
+                statusBar()->showMessage(tr("Reconnecting session\xe2\x80\xa6"));
                 if (client_.restore_session(*saved)) {
                     myUserId_      = client_.get_user_id();
                     myDisplayName_ = client_.get_display_name();
                     myAvatarUrl_   = client_.get_avatar_url();
                     populateUserStrip();
                     client_.start_sync(bridge_.get());
-                    statusBar()->showMessage("Reconnected");
+                    statusBar()->showMessage(tr("Reconnected"));
                     maybeShowRecoveryBanner();
                     return;
                 }
@@ -940,10 +940,10 @@ void MainWindow::onSyncError(
         }
         tesseract::SessionStore::clear();
         client_.stop_sync();
-        statusBar()->showMessage("Session expired; please log in again.");
+        statusBar()->showMessage(tr("Session expired; please log in again."));
         doLogin();
     } else {
-        statusBar()->showMessage("Sync error: " + description, 8000);
+        statusBar()->showMessage(tr("Sync error: %1").arg(description), 8000);
     }
 }
 
@@ -1508,8 +1508,8 @@ void MainWindow::doLogout() {
     roomHeader_->setVisible(false);
 
     statusBar()->showMessage(res
-        ? "Signed out"
-        : QString::fromStdString("Sign out failed: " + res.message),
+        ? tr("Signed out")
+        : tr("Sign out failed: %1").arg(QString::fromStdString(res.message)),
         res ? 3000 : 6000);
 
     loginView_->reset();

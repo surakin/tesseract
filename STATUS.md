@@ -116,6 +116,13 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - Clipboard image paste; file drag-drop; pending-image / pending-file preview chip with clear button.
 - Reply-mode banner (`kReplyBandH = 44 px`) with sender + body snippet and "×" cancel; edit-mode banner (`kEditBandH = 44 px`) with "×" cancel; both modes mutually exclusive.
 
+## Internationalisation
+
+- **Qt6** — all shell strings wrapped with `QObject::tr()`; `QTranslator` loads `share/translations/tesseract_<locale>.qm` at startup. `i18n_extract_qt` CMake target (guarded by `find_program(lupdate)`) runs `lupdate src/ -ts i18n/qt/tesseract_LANG.ts` to produce a translation template.
+- **GTK4** — all shell strings wrapped with `_(s)` = `gettext(s)`; `bindtextdomain("tesseract", share/locale)` + `textdomain` called in `main()`. `i18n_extract_gtk` CMake target runs `xgettext` to produce `i18n/gtk/tesseract.pot`.
+- Shared views (`ui/shared/views/`) stay in English — translated via each platform's mechanism when strings are passed in by the host.
+- macOS (`NSLocalizedString`) and Win32 (`LoadString`) not yet wired.
+
 ## Build & packaging
 
 - **Corrosion** fetched at configure time (no global Rust toolchain install requirement beyond `rustup`).

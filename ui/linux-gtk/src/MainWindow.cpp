@@ -20,6 +20,8 @@
 #include <string>
 #include <unordered_set>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <libintl.h>
+#define _(s) gettext(s)
 
 namespace gtk4 {
 
@@ -413,7 +415,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
         // Build the GMenu model + GSimpleActionGroup once.
         GMenu* menu = g_menu_new();
-        g_menu_append(menu, "Logout", "user.logout");
+        g_menu_append(menu, _("Logout"), "user.logout");
         user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
         gtk_widget_set_parent(user_popover_, user_strip_);
         gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
@@ -489,7 +491,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         recovery_surface_->set_root(std::move(banner));
 
         recovery_key_field_ = recovery_surface_->host().make_text_field();
-        recovery_key_field_->set_placeholder("Recovery key or passphrase");
+        recovery_key_field_->set_placeholder(_("Recovery key or passphrase"));
         recovery_key_field_->set_password(true);
         recovery_key_field_->set_on_changed([this](const std::string& k) {
             if (recovery_shared_) recovery_shared_->set_current_key(k);
@@ -569,7 +571,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_box_append(GTK_BOX(vbox), compose_surface_widget);
 
     compose_text_area_ = compose_surface_->host().make_text_area();
-    compose_text_area_->set_placeholder("Message…");
+    compose_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
     compose_text_area_->set_on_changed([this](const std::string& s) {
         if (compose_shared_) compose_shared_->set_current_text(s);
     });
@@ -598,7 +600,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         const auto limit = client_.media_upload_limit();
         if (limit > 0 && bytes.size() > limit) {
             if (status_bar_) {
-                std::string msg = "File exceeds server limit ("
+                std::string msg = std::string(_("File exceeds server limit ("))
                                 + tesseract::views::format_size(limit) + ")";
                 gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
             }
@@ -663,7 +665,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
         } else if (status_bar_) {
-            std::string msg = "Send file failed: " + res.message;
+            std::string msg = std::string(_("Send file failed: ")) + res.message;
             gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         }
     };
@@ -683,7 +685,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
         } else if (status_bar_) {
-            std::string msg = "Send reply failed: " + res.message;
+            std::string msg = std::string(_("Send reply failed: ")) + res.message;
             gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         }
     };
@@ -733,7 +735,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
         } else if (status_bar_) {
-            std::string msg = "Edit failed: " + res.message;
+            std::string msg = std::string(_("Edit failed: ")) + res.message;
             gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         }
     };
@@ -770,7 +772,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                    GTK_EVENT_CONTROLLER(gesture));
     }
 
-    status_bar_ = gtk_label_new("Not logged in");
+    status_bar_ = gtk_label_new(_("Not logged in"));
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
     gtk_widget_set_margin_bottom(status_bar_, 2);
@@ -797,7 +799,7 @@ MainWindow::~MainWindow() {
 void MainWindow::do_login() {
     std::string status_msg;
     if (auto saved = tesseract::SessionStore::load()) {
-        gtk_label_set_text(GTK_LABEL(status_bar_), "Restoring session…");
+        gtk_label_set_text(GTK_LABEL(status_bar_), _("Restoring session\xe2\x80\xa6"));
         auto res = client_.restore_session(*saved);
         if (res) {
             my_user_id_       = client_.get_user_id();
@@ -806,19 +808,19 @@ void MainWindow::do_login() {
             populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
             client_.start_sync(event_handler_.get());
-            gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+            gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             maybe_show_recovery_banner();
             return;
         }
         tesseract::SessionStore::clear();
-        status_msg = "Saved session expired: " + res.message;
+        status_msg = std::string(_("Saved session expired: ")) + res.message;
     }
 
     login_view_->reset();
     login_view_->set_status_message(status_msg);
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
-    gtk_label_set_text(GTK_LABEL(status_bar_), "Not logged in");
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Not logged in"));
 }
 
 void MainWindow::on_login_succeeded() {
@@ -829,7 +831,7 @@ void MainWindow::on_login_succeeded() {
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(GTK_WINDOW(window_));
     client_.start_sync(event_handler_.get());
-    gtk_label_set_text(GTK_LABEL(status_bar_), "Connected");
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
 }
@@ -966,7 +968,7 @@ void MainWindow::push_rooms(std::vector<tesseract::RoomInfo> rooms) {
 }
 
 void MainWindow::handle_reconnect() {
-    gtk_label_set_text(GTK_LABEL(status_bar_), "Sync error: reconnecting…");
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Sync error: reconnecting\xe2\x80\xa6"));
     client_.stop_sync();
     do_login();
 }
@@ -974,14 +976,14 @@ void MainWindow::handle_reconnect() {
 void MainWindow::handle_auth_error(bool soft_logout) {
     if (soft_logout) {
         if (auto saved = tesseract::SessionStore::load()) {
-            gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnecting session…");
+            gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnecting session\xe2\x80\xa6"));
             if (client_.restore_session(*saved)) {
                 my_user_id_       = client_.get_user_id();
                 my_display_name_  = client_.get_display_name();
                 my_avatar_url_    = client_.get_avatar_url();
                 populate_user_strip();
                 client_.start_sync(event_handler_.get());
-                gtk_label_set_text(GTK_LABEL(status_bar_), "Reconnected");
+                gtk_label_set_text(GTK_LABEL(status_bar_), _("Reconnected"));
                 maybe_show_recovery_banner();
                 return;
             }
@@ -989,7 +991,7 @@ void MainWindow::handle_auth_error(bool soft_logout) {
     }
     tesseract::SessionStore::clear();
     client_.stop_sync();
-    gtk_label_set_text(GTK_LABEL(status_bar_), "Session expired; please log in again.");
+    gtk_label_set_text(GTK_LABEL(status_bar_), _("Session expired; please log in again."));
     do_login();
 }
 
@@ -1657,7 +1659,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
             self->recovery_shared_->set_state(
                 tesseract::views::RecoveryBanner::State::Failed);
             self->recovery_shared_->set_failure_message(
-                "Please enter a recovery key or passphrase.");
+                _("Please enter a recovery key or passphrase."));
             self->recovery_surface_->relayout();
         }
         return;
@@ -1815,8 +1817,8 @@ void MainWindow::do_logout() {
     gtk_widget_set_visible(room_header_, FALSE);
 
     gtk_label_set_text(GTK_LABEL(status_bar_),
-                       res ? "Signed out"
-                           : ("Sign out failed: " + res.message).c_str());
+                       res ? _("Signed out")
+                           : (std::string(_("Sign out failed: ")) + res.message).c_str());
 
     login_view_->reset();
     login_view_->set_status_message("");
@@ -1850,7 +1852,7 @@ void MainWindow::build_emoji_popover() {
     // Native GtkEntry overlay for the search row. The shared widget paints
     // the affordance; the entry handles IME + selection natively.
     emoji_picker_search_field_ = emoji_picker_surface_->host().make_text_field();
-    emoji_picker_search_field_->set_placeholder("Search emoji");
+    emoji_picker_search_field_->set_placeholder(_("Search emoji"));
     emoji_picker_search_field_->set_on_changed(
         [this](const std::string& q) {
             if (emoji_picker_shared_) emoji_picker_shared_->set_search_query(q);
@@ -1916,7 +1918,7 @@ void MainWindow::build_sticker_popover() {
 
     sticker_picker_search_field_ =
         sticker_picker_surface_->host().make_text_field();
-    sticker_picker_search_field_->set_placeholder("Search stickers");
+    sticker_picker_search_field_->set_placeholder(_("Search stickers"));
     sticker_picker_search_field_->set_on_changed(
         [this](const std::string& q) {
             if (sticker_picker_shared_) sticker_picker_shared_->set_search_query(q);
@@ -1962,7 +1964,7 @@ void MainWindow::toggle_sticker_picker() {
 
 void MainWindow::build_sticker_context_menu() {
     GMenu* menu = g_menu_new();
-    g_menu_append(menu, "Add to Saved Stickers", "sticker.save");
+    g_menu_append(menu, _("Add to Saved Stickers"), "sticker.save");
 
     sticker_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
     gtk_popover_set_has_arrow(GTK_POPOVER(sticker_ctx_menu_), FALSE);
