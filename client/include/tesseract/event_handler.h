@@ -74,6 +74,17 @@ public:
     /// `Client::load_prefs_json()` and apply the updated fields (e.g. the
     /// last-opened room).
     virtual void on_account_prefs_updated(const std::string& /*json*/) {}
+
+    /// Fired when a new incoming message matches the user's push rules and
+    /// should trigger a notification. Called on a background thread; marshal to
+    /// the UI thread before showing a system notification. `is_mention` is true
+    /// when the push rules matched a highlight rule (@ mention). Only fired for
+    /// live PushBack events — pagination does not trigger notifications.
+    virtual void on_notification(const std::string& /*room_id*/,
+                                  const std::string& /*room_name*/,
+                                  const std::string& /*sender*/,
+                                  const std::string& /*body*/,
+                                  bool              /*is_mention*/) {}
 };
 
 } // namespace tesseract

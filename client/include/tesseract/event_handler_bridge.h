@@ -49,6 +49,8 @@ public:
     void on_backup_progress(const BackupProgress& progress) const;
     void on_image_packs_updated() const;
     void on_account_prefs_updated(rust::Str json) const;
+    void on_notification(rust::Str room_id, rust::Str room_name,
+                         rust::Str sender, rust::Str body, bool is_mention) const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning

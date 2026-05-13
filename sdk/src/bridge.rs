@@ -263,6 +263,16 @@ pub mod ffi {
         /// value). `json` is the raw event content, or `"{}"` when missing.
         /// The UI re-reads via `load_prefs` and applies any changed fields.
         fn on_account_prefs_updated(self: &EventHandlerBridge, json: &str);
+        /// Fired when a new message matches push rules and a notification
+        /// should be shown. Only called for non-self messages, only for live
+        /// PushBack (not pagination). `is_mention` is true when the push rules
+        /// returned a `SetHighlight(true)` tweak (@ mention or highlight rule).
+        fn on_notification(self: &EventHandlerBridge,
+                           room_id:   &str,
+                           room_name: &str,
+                           sender:    &str,
+                           body:      &str,
+                           is_mention: bool);
     }
 
     // -------------------------------------------------------------------------

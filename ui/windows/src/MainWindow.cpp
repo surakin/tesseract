@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Win32Notifier.h"
 #include "LoginView.h"
 #include "TextRenderer.h"
 #include "Theme.h"
@@ -465,6 +466,20 @@ void EventHandler::on_account_prefs_updated(const std::string& json) {
                 reinterpret_cast<LPARAM>(s));
 }
 
+void EventHandler::on_notification(const std::string& room_id,
+                                    const std::string& room_name,
+                                    const std::string& sender,
+                                    const std::string& body,
+                                    bool is_mention)
+{
+    auto* p = new MainWindow::NotificationPayload{
+        room_id, room_name, sender, body, is_mention
+    };
+    PostMessage(hwnd_, WM_TESSERACT_NOTIFY,
+                static_cast<WPARAM>(is_mention ? 1 : 0),
+                reinterpret_cast<LPARAM>(p));
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -723,6 +738,20 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         }
         return 0;
     }
+    case WM_TESSERACT_NOTIFY: {
+        auto* p = reinterpret_cast<MainWindow::NotificationPayload*>(lParam);
+        self->on_tesseract_notify(p);
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_NOTIFY_CLICK: {
+        auto* room_id = reinterpret_cast<std::string*>(lParam);
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+        self->navigate_to_room(*room_id);
+        delete room_id;
+        return 0;
+    }
     case WM_TESSERACT_STICKER_BYTES: {
         auto* p = reinterpret_cast<StickerBytesPayload*>(lParam);
         self->sticker_fetches_in_flight_.erase(p->cache_key);
@@ -872,6 +901,8 @@ bool MainWindow::create(int nCmdShow) {
 }
 
 void MainWindow::on_create(HWND hwnd) {
+    notifier_ = std::make_unique<Win32Notifier>(hwnd);
+
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
     win32::text::init();
@@ -1502,6 +1533,28 @@ void MainWindow::on_auth_error(bool soft_logout) {
 
 void MainWindow::on_send_clicked() {
     if (compose_shared_) compose_shared_->trigger_send();
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+void MainWindow::on_tesseract_notify(const NotificationPayload* p)
+{
+    // Suppress if the window is focused and the active room is the source room.
+    if (GetForegroundWindow() == hwnd_ && current_room_id_ == p->room_id)
+        return;
+    if (notifier_)
+        notifier_->notify({ p->room_id, p->room_name, p->sender, p->body, p->is_mention });
+}
+
+void MainWindow::navigate_to_room(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    // Select the room in the list view so the sidebar highlights it, then
+    // route through on_room_selected which handles subscription + prefs save.
+    if (room_list_view_) room_list_view_->set_selected_room(room_id);
+    on_room_selected(room_id);
 }
 
 // ---------------------------------------------------------------------------

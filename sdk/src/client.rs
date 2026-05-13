@@ -37,6 +37,13 @@ use futures_util::StreamExt;
 use crate::ffi::{EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent};
 #[cfg(not(test))]
 use matrix_sdk::{Room, ruma::UserId};
+#[cfg(not(test))]
+use matrix_sdk::ruma::{
+    events::AnySyncTimelineEvent,
+    push::{PushConditionRoomCtx, Ruleset},
+    serde::Raw,
+    UInt,
+};
 
 // ---------------------------------------------------------------------------
 
@@ -765,6 +772,7 @@ impl ClientFfi {
         let rid   = room_id_str.clone();
         let room  = room.clone();
         let me    = client.user_id().map(|u| u.to_owned());
+        let client_ref = client.clone();
 
         let abort = self.rt.spawn(async move {
             let (initial_items, mut stream) = tl.subscribe().await;
@@ -791,7 +799,8 @@ impl ClientFfi {
             while let Some(diffs) = stream.next().await {
                 for diff in diffs {
                     handle_timeline_diff(
-                        diff, &mut visible, &h, &rid, &room, me.as_deref()).await;
+                        diff, &mut visible, &h, &rid, &room, me.as_deref(),
+                        &client_ref).await;
                 }
             }
         }).abort_handle();
@@ -2722,6 +2731,73 @@ fn visible_len(visible: &[bool]) -> u64 {
     visible.iter().filter(|b| **b).count() as u64
 }
 
+/// Builds a minimal raw Matrix event JSON envelope from a `TimelineEvent`
+/// suitable for passing to `Ruleset::get_actions`. The `source_json` field on
+/// `TimelineEvent` is the image MediaSource blob, NOT the raw event — so we
+/// synthesise the envelope from the fields that drive push-rule conditions
+/// (type, sender, content.body, content.msgtype).
+#[cfg(not(test))]
+fn build_push_rule_json(room_id: &str, ev: &TimelineEvent) -> String {
+    let msg_type = if ev.msg_type.is_empty() { "m.text" } else { &ev.msg_type };
+    let body_escaped = ev.body.replace('\\', "\\\\").replace('"', "\\\"");
+    let sender_escaped = ev.sender.replace('\\', "\\\\").replace('"', "\\\"");
+    let event_id = if ev.event_id.is_empty() { "$unknown" } else { &ev.event_id };
+    let room_id_escaped = room_id.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        r#"{{"type":"m.room.message","event_id":"{event_id}","sender":"{sender_escaped}","room_id":"{room_id_escaped}","origin_server_ts":{ts},"content":{{"msgtype":"{msg_type}","body":"{body_escaped}"}}}}"#,
+        ts = ev.timestamp,
+    )
+}
+
+/// Evaluates Matrix push rules for `source_json` (a synthetic raw event
+/// envelope) and returns `(should_notify, is_mention)`.
+/// Returns `(false, false)` on any error — callers must not rely on errors being
+/// propagated.
+#[cfg(not(test))]
+async fn evaluate_push_rules(
+    client: &Client,
+    room: &Room,
+    source_json: &str,
+) -> (bool, bool) {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    use serde_json::Value;
+
+    // Read push rules from the local account-data cache (no network).
+    let push_rules_et = GlobalAccountDataEventType::from("m.push_rules");
+    let Some(raw) = client.account().account_data_raw(push_rules_et).await.ok().flatten()
+        else { return (false, false) };
+    let Ok(content) = serde_json::from_str::<Value>(raw.json().get())
+        else { return (false, false) };
+    let global = content.get("global").cloned().unwrap_or_default();
+    let Ok(ruleset) = serde_json::from_value::<Ruleset>(global)
+        else { return (false, false) };
+
+    // Build push-condition context (no power-level data available without an
+    // extra network round-trip — this skips sender_notification_permission
+    // conditions but correctly handles member_count, contains_user_name, and
+    // event_match rules such as mentions and keywords).
+    let Some(uid) = client.user_id().map(|u| u.to_owned()) else { return (false, false) };
+    let display_name = client.account().get_display_name().await
+        .ok().flatten().unwrap_or_default();
+    let member_count = room.joined_members_count();
+    let ctx = PushConditionRoomCtx::new(
+        room.room_id().to_owned(),
+        UInt::try_from(member_count).unwrap_or(UInt::MAX),
+        uid,
+        display_name,
+    );
+
+    // Wrap source_json (synthetic event envelope) as Raw<AnySyncTimelineEvent>.
+    let Ok(raw_value) = serde_json::from_str::<Box<serde_json::value::RawValue>>(source_json)
+        else { return (false, false) };
+    let raw_event = Raw::<AnySyncTimelineEvent>::from_json(raw_value);
+
+    let actions = ruleset.get_actions(&raw_event, &ctx).await;
+    let should_notify = actions.iter().any(|a| a.should_notify());
+    let is_mention = should_notify && actions.iter().any(|a| a.is_highlight());
+    (should_notify, is_mention)
+}
+
 #[cfg(not(test))]
 async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
@@ -2730,6 +2806,7 @@ async fn handle_timeline_diff(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
+    client: &Client,
 ) {
     match diff {
         VectorDiff::Append { values } => {
@@ -2753,6 +2830,24 @@ async fn handle_timeline_diff(
                 visible.push(true);
                 if let Ok(g) = handler.lock() {
                     g.on_message_inserted(room_id, idx, &ev);
+                }
+                // Fire notification for live arrivals only (not self, not empty body).
+                if !ev.sender.is_empty()
+                    && me.map(|u| u.as_str()) != Some(ev.sender.as_str())
+                    && !ev.body.is_empty()
+                {
+                    let synthetic = build_push_rule_json(room_id, &ev);
+                    let (should_notify, is_mention) =
+                        evaluate_push_rules(client, room, &synthetic).await;
+                    if should_notify {
+                        let room_name = room.display_name().await
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|_| room_id.to_string());
+                        if let Ok(g) = handler.lock() {
+                            g.on_notification(room_id, &room_name,
+                                              &ev.sender_name, &ev.body, is_mention);
+                        }
+                    }
                 }
             } else {
                 visible.push(false);

@@ -51,8 +51,12 @@ constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
 constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
 constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
+constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
+constexpr UINT WM_TESSERACT_NOTIFY_CLICK     = WM_APP + 18;
 
 namespace win32 {
+
+class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
 
 class LoginView;
 
@@ -79,6 +83,9 @@ public:
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
+    void on_notification(const std::string& room_id, const std::string& room_name,
+                         const std::string& sender,  const std::string& body,
+                         bool is_mention) override;
 
 private:
     HWND hwnd_;
@@ -132,7 +139,16 @@ private:
         std::size_t                       index;
         std::unique_ptr<tesseract::Event> event;   // null for "removed"
     };
+    struct NotificationPayload {
+        std::string room_id;
+        std::string room_name;
+        std::string sender;
+        std::string body;
+        bool        is_mention;
+    };
 
+    void on_tesseract_notify(const NotificationPayload* p);
+    void navigate_to_room(const std::string& room_id);
     void on_tesseract_timeline_reset(PostedTimelineReset* payload);
     void on_tesseract_message_inserted(PostedMessageEvent* payload);
     void on_tesseract_message_updated(PostedMessageEvent* payload);
@@ -271,6 +287,7 @@ private:
 
     tesseract::Client                client_;
     std::unique_ptr<EventHandler>    event_handler_;
+    std::unique_ptr<Win32Notifier>   notifier_;
     std::vector<tesseract::RoomInfo> rooms_;
     tesseract::RoomInfo              current_room_info_;
     std::string                      current_room_id_;

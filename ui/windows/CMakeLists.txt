@@ -39,12 +39,31 @@ add_executable(tesseract_win32 WIN32
     src/LoginView.cpp
     src/TextRenderer.cpp
     src/Theme.cpp
+    src/Win32Notifier.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
 target_include_directories(tesseract_win32 PRIVATE src)
+
+# C++/WinRT headers live in <WinSDK>/include/<ver>/cppwinrt/ (SDK 10.0.17134+).
+# The MSVC toolchain adds <sdk>/winrt/ as an external path for WRL-style
+# Windows Runtime headers, but NOT cppwinrt/ — add it explicitly.
+if(MSVC)
+    cmake_host_system_information(RESULT _winsdk_root QUERY WINDOWS_REGISTRY
+        "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots"
+        VALUE "KitsRoot10" VIEW BOTH)
+    if(_winsdk_root)
+        file(GLOB _cppwinrt_ver_dirs LIST_DIRECTORIES true
+             "${_winsdk_root}include/10.*")
+        list(SORT _cppwinrt_ver_dirs ORDER DESCENDING)
+        list(GET  _cppwinrt_ver_dirs 0 _cppwinrt_ver_dir)
+        get_filename_component(_cppwinrt_ver "${_cppwinrt_ver_dir}" NAME)
+        target_include_directories(tesseract_win32 SYSTEM PRIVATE
+            "${_winsdk_root}include/${_cppwinrt_ver}/cppwinrt")
+    endif()
+endif()
 
 target_link_libraries(tesseract_win32 PRIVATE
     # The two C++ archives have a circular dependency (client ↔ bridge), so they
@@ -61,6 +80,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     uxtheme
     d2d1
     dwrite
+    windowsapp
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE

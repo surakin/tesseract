@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include <ole2.h>
+#include <ShObjIdl_core.h>
+#include <winrt/base.h>
 #include <stdexcept>
 
 int WINAPI wWinMain(
@@ -13,6 +15,11 @@ int WINAPI wWinMain(
     // superset of CoInitializeEx(COINIT_APARTMENTTHREADED) and matches
     // OleUninitialize 1:1 below.
     if (FAILED(OleInitialize(nullptr))) return 1;
+
+    // Required for WinRT toast notifications: associates toasts with this
+    // process and initialises the COM apartment for C++/WinRT calls.
+    SetCurrentProcessExplicitAppUserModelID(L"io.gnomos.Tesseract");
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     // Opt into per-monitor v2 DPI awareness so DWM hands us crisp pixels on
     // mixed-DPI setups. Dynamic-loaded: the call only exists on Win10 1703+,
