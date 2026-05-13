@@ -1028,6 +1028,15 @@ void MainWindow::doLogin() {
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
+
+    if (!tray_) {
+        tray_ = std::make_unique<LinuxQtTrayIcon>(
+            [this]{ show(); raise(); activateWindow(); },
+            []{ qApp->quit(); },
+            this);
+        if (tray_->is_available())
+            qApp->setQuitOnLastWindowClosed(false);
+    }
 }
 
 void MainWindow::onLoginSucceeded() {
