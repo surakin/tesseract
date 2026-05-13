@@ -259,10 +259,6 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source) {
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
-bool Client::is_avatar_in_sdk_cache(const std::string& mxc_url) {
-    return impl_->ffi->is_avatar_in_sdk_cache(mxc_url);
-}
-
 // ---------------------------------------------------------------------------
 // MSC2545 image packs
 // ---------------------------------------------------------------------------

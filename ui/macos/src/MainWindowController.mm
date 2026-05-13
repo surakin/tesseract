@@ -1349,16 +1349,6 @@ void EventBridge::on_notification(const std::string& room_id,
 
         session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
             tesseract::SessionStore::account_dir(uid) / "avatars");
-        {
-            auto* cache_ptr  = session->avatar_disk_cache.get();
-            auto* client_ptr = session->client.get();
-            [self runAsync:[cache_ptr, client_ptr]() {
-                for (const auto& mxc : cache_ptr->all_keys()) {
-                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                        cache_ptr->remove(mxc);
-                }
-            }];
-        }
 
         _accounts.push_back(std::move(session));
     }
@@ -1422,16 +1412,6 @@ void EventBridge::on_notification(const std::string& room_id,
 
     session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
         tesseract::SessionStore::account_dir(newUserId) / "avatars");
-    {
-        auto* cache_ptr  = session->avatar_disk_cache.get();
-        auto* client_ptr = session->client.get();
-        [self runAsync:[cache_ptr, client_ptr]() {
-            for (const auto& mxc : cache_ptr->all_keys()) {
-                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                    cache_ptr->remove(mxc);
-            }
-        }];
-    }
 
     tesseract::SessionStore::save_account(newUserId, sessionJson);
     auto idxData = tesseract::SessionStore::load_index();
@@ -1919,7 +1899,9 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                                 forKey:r.avatar_url
                               destMap:_tkAvatars
                                    cap:tesseract::visual::kRoomAvatarSize];
-                return;
+                if (_tkAvatars.count(r.avatar_url)) return;
+                // Decode failed: remove the corrupt entry and fall through to fetch.
+                cache->remove(r.avatar_url);
             }
         }
     }
@@ -1967,7 +1949,9 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                                 forKey:mxc
                               destMap:_tkAvatars
                                    cap:tesseract::visual::kMsgAvatarSize];
-                return;
+                if (_tkAvatars.count(mxc)) return;
+                // Decode failed: remove the corrupt entry and fall through to fetch.
+                cache->remove(mxc);
             }
         }
     }

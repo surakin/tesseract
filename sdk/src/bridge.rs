@@ -592,12 +592,6 @@ pub mod ffi {
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
 
-        /// Returns `true` if `mxc_url` is present in the local Matrix SDK
-        /// media cache. Consults the SDK's SQLite store first; falls back to a
-        /// network fetch on a miss (which re-warms the L2 cache). Returns
-        /// `false` on invalid URL, network error, or empty response.
-        fn is_avatar_in_sdk_cache(self: &mut ClientFfi, mxc_url: &str) -> bool;
-
         // ----- Spaces -----
 
         /// Returns the room IDs of all direct children declared by a space

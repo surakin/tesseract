@@ -1165,16 +1165,6 @@ void MainWindow::do_login() {
 
             sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
                 tesseract::SessionStore::account_dir(uid) / "avatars");
-            {
-                auto* cache_ptr  = sess->avatar_disk_cache.get();
-                auto* client_ptr = sess->client.get();
-                run_async_([cache_ptr, client_ptr]() {
-                    for (const auto& mxc : cache_ptr->all_keys()) {
-                        if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                            cache_ptr->remove(mxc);
-                    }
-                });
-            }
 
             int idx = static_cast<int>(accounts_.size());
             if (uid == index.active_user_id) first_active = idx;
@@ -1267,16 +1257,6 @@ void MainWindow::on_login_succeeded() {
 
     sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
         tesseract::SessionStore::account_dir(uid) / "avatars");
-    {
-        auto* cache_ptr  = sess->avatar_disk_cache.get();
-        auto* client_ptr = sess->client.get();
-        run_async_([cache_ptr, client_ptr]() {
-            for (const auto& mxc : cache_ptr->all_keys()) {
-                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
-                    cache_ptr->remove(mxc);
-            }
-        });
-    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -1781,8 +1761,10 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
                     auto img = tk::cairo_pango::make_image(surface);
                     cairo_surface_destroy(surface);
                     tk_avatars_.emplace(mxc, std::move(img));
+                    return;
                 }
-                return;
+                // Decode failed: remove the corrupt entry and fall through to fetch.
+                cache->remove(mxc);
             }
         }
     }
@@ -1837,8 +1819,10 @@ void MainWindow::request_user_avatar_async(const std::string& mxc) {
                     auto img = tk::cairo_pango::make_image(surface);
                     cairo_surface_destroy(surface);
                     tk_avatars_.emplace(mxc, std::move(img));
+                    return;
                 }
-                return;
+                // Decode failed: remove the corrupt entry and fall through to fetch.
+                cache->remove(mxc);
             }
         }
     }
