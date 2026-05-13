@@ -282,6 +282,31 @@ void EventHandler::on_account_prefs_updated(const std::string& json) {
     }, p);
 }
 
+namespace {
+struct IdleNotif {
+    MainWindow* window;
+    std::string room_id, room_name, sender, body;
+    bool        is_mention;
+};
+} // namespace
+
+void EventHandler::on_notification(
+    const std::string& room_id, const std::string& room_name,
+    const std::string& sender,  const std::string& body, bool is_mention)
+{
+    auto* p = new IdleNotif{
+        cpp_window_for(window_),
+        room_id, room_name, sender, body, is_mention
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleNotif*>(data);
+        d->window->push_notification(d->room_id, d->room_name,
+                                      d->sender, d->body, d->is_mention);
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
 // ---------------------------------------------------------------------------
 // MainWindow
 // ---------------------------------------------------------------------------
@@ -949,6 +974,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_box_append(GTK_BOX(vbox), status_bar_);
 
     gtk_widget_set_visible(window_, TRUE);
+
+    notifier_ = std::make_unique<LinuxNotifierGtk>(
+        [this](std::string room_id) { navigate_to_room(std::move(room_id)); });
 
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
@@ -2051,6 +2079,30 @@ void MainWindow::push_account_prefs_updated(const std::string& json) {
     auto prefs = tesseract::Prefs::parse(json);
     if (!prefs.last_room.empty() && pending_restore_room_.empty() && current_room_id_.empty())
         pending_restore_room_ = prefs.last_room;
+}
+
+void MainWindow::push_notification(
+        const std::string& room_id, const std::string& room_name,
+        const std::string& sender, const std::string& body, bool is_mention)
+{
+    handle_notification(room_id, room_name, sender, body, is_mention);
+}
+
+void MainWindow::handle_notification(
+        const std::string& room_id, const std::string& room_name,
+        const std::string& sender,  const std::string& body, bool is_mention)
+{
+    if (gtk_window_is_active(GTK_WINDOW(window_)) && current_room_id_ == room_id)
+        return;
+    if (notifier_)
+        notifier_->notify({ room_id, room_name, sender, body, is_mention });
+}
+
+void MainWindow::navigate_to_room(const std::string& room_id) {
+    if (room_id.empty()) return;
+    if (room_list_view_) room_list_view_->set_selected_room(room_id);
+    on_room_selected(room_id);
+    gtk_window_present(GTK_WINDOW(window_));
 }
 
 void MainWindow::apply_image_packs_updated() {

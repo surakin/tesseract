@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia DBus)
 qt_standard_project_setup()
 
 qt_add_executable(tesseract_qt
@@ -13,6 +13,8 @@ qt_add_executable(tesseract_qt
     src/EmojiPicker.h         # MOC input
     src/StickerPicker.cpp
     src/StickerPicker.h       # MOC input
+    src/LinuxNotifier.cpp
+    src/LinuxNotifier.h       # MOC input
 )
 
 target_compile_features(tesseract_qt PRIVATE cxx_std_20)
@@ -28,6 +30,7 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Multimedia
+    Qt6::DBus
 )
 
 set_target_properties(tesseract_qt PROPERTIES

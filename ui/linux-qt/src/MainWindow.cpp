@@ -12,6 +12,9 @@
 #include <QBuffer>
 #include <QImageReader>
 #include <QPointer>
+#include <QMediaPlayer>
+#include <QVideoSink>
+#include <QVideoFrame>
 
 #include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
@@ -814,6 +817,12 @@ MainWindow::MainWindow(QWidget* parent)
                     pendingRestoreRoom_ = prefs.last_room;
             },
             Qt::QueuedConnection);
+    connect(bridge_.get(), &EventBridge::notificationTriggered,
+            this,          &MainWindow::onNotificationTriggered,
+            Qt::QueuedConnection);
+
+    notifier_ = std::make_unique<LinuxNotifierQt>(
+        [this](std::string room_id) { navigate_to_room(std::move(room_id)); }, this);
 
     // Animation frame-tick for inline media in the timeline (GIF /
     // animated WebP / APNG). 60 Hz; the timer self-stops in
@@ -916,6 +925,28 @@ void MainWindow::onLoginSucceeded() {
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainContent_);
     maybeShowRecoveryBanner();
+}
+
+void MainWindow::navigate_to_room(const std::string& room_id) {
+    if (room_id.empty()) return;
+    if (roomListView_) roomListView_->set_selected_room(room_id);
+    onRoomSelected(room_id);
+    raise();
+    activateWindow();
+}
+
+void MainWindow::onNotificationTriggered(
+        QString roomId, QString roomName, QString sender,
+        QString body, bool is_mention)
+{
+    const std::string rid = roomId.toStdString();
+    if (isActiveWindow() && currentRoomId_ == rid) return;
+    if (notifier_)
+        notifier_->notify({ rid,
+                             roomName.toStdString(),
+                             sender.toStdString(),
+                             body.toStdString(),
+                             is_mention });
 }
 
 void MainWindow::onSendClicked() {
@@ -1575,7 +1606,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
                                     player->stop();
                                     player->deleteLater();
                                     if (tk_images_.count(key)) return;
-                                    QImage img = frame.toImage(QImage::Format_ARGB32);
+                                    QImage img = frame.toImage();
                                     if (img.isNull()) return;
                                     QByteArray enc;
                                     QBuffer encbuf(&enc);

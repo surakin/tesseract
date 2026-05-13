@@ -18,6 +18,7 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_qt.h"
+#include "LinuxNotifier.h"
 #include "views/ComposeBar.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
@@ -71,6 +72,15 @@ public:
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
+    void on_notification(const std::string& room_id, const std::string& room_name,
+                         const std::string& sender,  const std::string& body,
+                         bool is_mention) override {
+        emit notificationTriggered(QString::fromStdString(room_id),
+                                    QString::fromStdString(room_name),
+                                    QString::fromStdString(sender),
+                                    QString::fromStdString(body),
+                                    is_mention);
+    }
 
 signals:
     void timelineReset(QString roomId, std::vector<tesseract::Event*> snapshot);
@@ -82,6 +92,8 @@ signals:
     void backupProgress(tesseract::BackupProgress progress);
     void imagePacksUpdated();
     void accountPrefsUpdated(QString json);
+    void notificationTriggered(QString roomId, QString roomName,
+                               QString sender, QString body, bool is_mention);
 };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +125,8 @@ private slots:
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
     void onPaginateFinished(QString roomId, bool reached_start);
+    void onNotificationTriggered(QString roomId, QString roomName,
+                                  QString sender, QString body, bool is_mention);
     /// Frame-tick driver for animated inline media in the timeline.
     /// Advances frames in `tk_anim_images_` and repaints `msgSurface_`
     /// when at least one frame changes.
@@ -132,6 +146,7 @@ signals:
 private:
     void     doLogin();
     void     doLogout();
+    void     navigate_to_room(const std::string& room_id);
     void     populateUserStrip();
     void     maybeShowRecoveryBanner();
     void     showRooms(const std::vector<tesseract::RoomInfo>& rooms);
@@ -245,8 +260,9 @@ private:
     LoginView*           loginView_       = nullptr;
     QWidget*             mainContent_     = nullptr;
 
-    tesseract::Client             client_;
-    std::unique_ptr<EventBridge>  bridge_;
+    tesseract::Client                   client_;
+    std::unique_ptr<EventBridge>        bridge_;
+    std::unique_ptr<LinuxNotifierQt>    notifier_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;
     std::string                   pendingRestoreRoom_;

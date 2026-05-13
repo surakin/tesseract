@@ -12,11 +12,17 @@
 // returns nullptr and the viewer shows a static thumbnail.
 
 #include "video.h"
-#include "canvas_cairo.h"
 
+// cairo.h must be included before canvas_cairo.h so that the elaborated
+// struct _cairo_surface type specifier in canvas_cairo.h resolves to the
+// global ::_cairo_surface rather than introducing a new namespace-local type.
+#include <cairo.h>
 #include <glib.h>
+#include <gio/gio.h>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
+
+#include "canvas_cairo.h"
 
 #include <atomic>
 #include <cstdint>

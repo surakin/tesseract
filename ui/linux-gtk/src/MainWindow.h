@@ -4,6 +4,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/visual.h>
+#include "LinuxNotifier.h"
 
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -51,6 +52,9 @@ public:
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
+    void on_notification(const std::string& room_id, const std::string& room_name,
+                         const std::string& sender,  const std::string& body,
+                         bool is_mention) override;
 
     GtkWindow* window_;
 };
@@ -82,6 +86,9 @@ public:
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_image_packs_updated();
     void push_account_prefs_updated(const std::string& json);
+    void push_notification(const std::string& room_id, const std::string& room_name,
+                           const std::string& sender, const std::string& body,
+                           bool is_mention);
 
 private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);
@@ -135,6 +142,10 @@ private:
     void do_login();
     void do_logout();
     void on_login_succeeded();
+    void navigate_to_room(const std::string& room_id);
+    void handle_notification(const std::string& room_id, const std::string& room_name,
+                              const std::string& sender, const std::string& body,
+                              bool is_mention);
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
@@ -256,8 +267,9 @@ private:
     std::string     my_display_name_;
     std::string     my_avatar_url_;
 
-    tesseract::Client              client_;
-    std::unique_ptr<EventHandler>  event_handler_;
+    tesseract::Client                     client_;
+    std::unique_ptr<EventHandler>         event_handler_;
+    std::unique_ptr<LinuxNotifierGtk>     notifier_;
     std::vector<tesseract::RoomInfo>  rooms_;
     std::string                    current_room_id_;
     std::string                    pending_restore_room_;
