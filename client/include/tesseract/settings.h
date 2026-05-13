@@ -37,6 +37,12 @@ public:
     int reaction_chip_height = 28;
     int reaction_chip_gap    =  6;
 
+    // ── Message grouping ─────────────────────────────────────────────
+    // Consecutive messages from the same sender within this window
+    // suppress the repeated avatar + sender name (continuation rows).
+    // Set to 0 to disable grouping entirely.
+    int message_group_interval_s = 60;
+
     // ── Image send ───────────────────────────────────────────────────
     // Image-sending quality. Read by the per-platform shell on each
     // image send to decide whether to re-encode before upload.

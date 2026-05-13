@@ -98,6 +98,12 @@ struct IdlePaginateResult {
     bool        reached_start;
 };
 
+struct IdleSubscribeResult {
+    MainWindow* window;
+    std::string room_id;
+    bool        reached_start;
+};
+
 // ---------------------------------------------------------------------------
 // EventHandler
 // ---------------------------------------------------------------------------
@@ -916,15 +922,26 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     for (const auto& r : rooms_)
         if (r.id == current_room_id_) { update_room_header(r); break; }
 
-    auto res = client_.subscribe_room(current_room_id_);
-    if (res) {
-        auto& state = pagination_[current_room_id_];
-        state.in_flight = false;
-        auto pr = client_.paginate_back_with_status(current_room_id_,
-                                                     kPaginationBatch);
-        state.reached_start = pr.ok && pr.reached_start;
-        client_.start_background_backfill();
-    }
+    // subscribe_room + paginate_back both block inside the Rust runtime;
+    // run them on a worker thread so the GTK main loop stays responsive.
+    std::string sub_room = current_room_id_;
+    std::thread([this, sub_room]{
+        auto res = client_.subscribe_room(sub_room);
+        bool reached = false;
+        if (res) {
+            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            reached = pr.ok && pr.reached_start;
+            client_.start_background_backfill();
+        }
+        auto* d = new IdleSubscribeResult{this, sub_room, reached};
+        g_idle_add([](gpointer data) -> gboolean {
+            auto* dd = static_cast<IdleSubscribeResult*>(data);
+            dd->window->push_subscribe_result(std::move(dd->room_id),
+                                               dd->reached_start);
+            delete dd;
+            return G_SOURCE_REMOVE;
+        }, d);
+    }).detach();
 }
 
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
@@ -934,6 +951,13 @@ void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
     it->second.reached_start = reached_start;
     if (room_id == current_room_id_ && message_list_view_)
         message_list_view_->reset_near_top_latch();
+}
+
+void MainWindow::push_subscribe_result(std::string room_id, bool reached_start) {
+    if (room_id != current_room_id_) return;
+    auto& state = pagination_[room_id];
+    state.in_flight     = false;
+    state.reached_start = reached_start;
 }
 
 void MainWindow::request_more_history(const std::string& room_id) {

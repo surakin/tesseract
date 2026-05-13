@@ -848,17 +848,37 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     for (const auto& r : rooms_)
         if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
 
-    auto res = client_.subscribe_room(currentRoomId_);
-    if (!res) {
-        statusBar()->showMessage(
-            tr("Subscribe failed: %1").arg(QString::fromStdString(res.message)), 4000);
-        return;
-    }
-    auto& state = pagination_[currentRoomId_];
-    state.in_flight = false;
-    auto pr = client_.paginate_back_with_status(currentRoomId_, kPaginationBatch);
-    state.reached_start = pr.ok && pr.reached_start;
-    client_.start_background_backfill();
+    // subscribe_room + paginate_back both block inside the Rust runtime;
+    // run them on a worker thread so the UI stays responsive during the
+    // first-load network round-trip.
+    std::string sub_room = currentRoomId_;
+    std::thread([this, sub_room]{
+        auto res = client_.subscribe_room(sub_room);
+        bool ok  = res.ok;
+        std::string msg = res.message;
+        bool reached = false;
+        if (ok) {
+            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            reached = pr.ok && pr.reached_start;
+            client_.start_background_backfill();
+        }
+        QMetaObject::invokeMethod(
+            this,
+            [this, sub_room, ok, msg = std::move(msg), reached]() mutable {
+                if (!ok) {
+                    statusBar()->showMessage(
+                        tr("Subscribe failed: %1").arg(
+                            QString::fromStdString(msg)), 4000);
+                    return;
+                }
+                if (currentRoomId_ == sub_room) {
+                    auto& state = pagination_[sub_room];
+                    state.in_flight     = false;
+                    state.reached_start = reached;
+                }
+            },
+            Qt::QueuedConnection);
+    }).detach();
 }
 
 void MainWindow::onTimelineReset(

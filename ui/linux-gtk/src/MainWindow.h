@@ -71,6 +71,7 @@ public:
                                std::unique_ptr<tesseract::Event> ev);
     void push_message_removed(std::string room_id, std::size_t index);
     void push_paginate_result(std::string room_id, bool reached_start);
+    void push_subscribe_result(std::string room_id, bool reached_start);
     void push_rooms(std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
     void handle_reconnect();

@@ -8,6 +8,7 @@
 
 #include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
+#include <tesseract/prefs.h>
 #include <tesseract/settings.h>
 
 #include <dwmapi.h>
@@ -656,6 +657,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_SUBSCRIBE_DONE: {
+        auto* p = reinterpret_cast<std::string*>(lParam);
+        self->on_tesseract_subscribe_done(p, wParam != 0);
+        delete p;
+        return 0;
+    }
     case WM_TESSERACT_ROOMS: {
         auto* p = reinterpret_cast<std::vector<tesseract::RoomInfo>*>(lParam);
         self->on_tesseract_rooms(p);
@@ -1298,6 +1305,7 @@ void MainWindow::start_login() {
             my_user_id_       = client_.get_user_id();
             my_display_name_  = client_.get_display_name();
             my_avatar_url_    = client_.get_avatar_url();
+            pending_restore_room_ = tesseract::Prefs::load_last_room();
             populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(hwnd_);
             client_.start_sync(event_handler_.get());
@@ -1325,6 +1333,7 @@ void MainWindow::on_login_succeeded() {
     my_user_id_       = client_.get_user_id();
     my_display_name_  = client_.get_display_name();
     my_avatar_url_    = client_.get_avatar_url();
+    pending_restore_room_ = tesseract::Prefs::load_last_room();
     populate_user_strip();
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
@@ -1471,6 +1480,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     reply_details_requested_.clear();
+    tesseract::Prefs::save_last_room(room_id);
     if (compose_shared_) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();
@@ -1482,15 +1492,22 @@ void MainWindow::on_room_selected(const std::string& room_id) {
             break;
         }
     }
-    auto res = client_.subscribe_room(current_room_id_);
-    if (res) {
-        auto& state = pagination_[current_room_id_];
-        state.in_flight = false;
-        auto pr = client_.paginate_back_with_status(current_room_id_,
-                                                     kPaginationBatch);
-        state.reached_start = pr.ok && pr.reached_start;
-        client_.start_background_backfill();
-    }
+    // subscribe_room + paginate_back both block inside the Rust runtime;
+    // run them on a worker thread so the Win32 message pump stays responsive.
+    HWND hwnd = hwnd_;
+    std::string sub_room = current_room_id_;
+    std::thread([this, sub_room, hwnd]{
+        auto res = client_.subscribe_room(sub_room);
+        bool reached = false;
+        if (res) {
+            auto pr = client_.paginate_back_with_status(sub_room, kPaginationBatch);
+            reached = pr.ok && pr.reached_start;
+            client_.start_background_backfill();
+        }
+        auto* p = new std::string(sub_room);
+        PostMessageW(hwnd, WM_TESSERACT_SUBSCRIBE_DONE,
+                      static_cast<WPARAM>(reached), reinterpret_cast<LPARAM>(p));
+    }).detach();
 }
 
 void MainWindow::request_more_history(const std::string& room_id) {
@@ -1600,7 +1617,24 @@ void MainWindow::on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms) {
         for (const auto& r : rooms_) {
             if (r.id == current_room_id_) { update_room_header(r); break; }
         }
+    } else if (!pending_restore_room_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(pending_restore_room_);
+                pending_restore_room_.clear();
+                on_room_selected(target);
+                break;
+            }
+        }
     }
+}
+
+void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
+                                               bool reached_start) {
+    if (!room_id || *room_id != current_room_id_) return;
+    auto& state = pagination_[*room_id];
+    state.in_flight     = false;
+    state.reached_start = reached_start;
 }
 
 void MainWindow::refresh_room_list() {

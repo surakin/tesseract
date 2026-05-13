@@ -49,6 +49,7 @@ constexpr UINT WM_TESSERACT_MESSAGE_REMOVED  = WM_APP + 11;
 constexpr UINT WM_TESSERACT_IMAGE_PACKS      = WM_APP + 12;
 constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
 constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
+constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
 
 namespace win32 {
 
@@ -135,6 +136,7 @@ private:
     void on_tesseract_message_updated(PostedMessageEvent* payload);
     void on_tesseract_message_removed(PostedMessageEvent* payload);
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
+    void on_tesseract_subscribe_done(std::string* room_id, bool reached_start);
     void on_tesseract_rooms(std::vector<tesseract::RoomInfo>* rooms);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.
@@ -266,6 +268,7 @@ private:
     std::vector<tesseract::RoomInfo> rooms_;
     tesseract::RoomInfo              current_room_info_;
     std::string                      current_room_id_;
+    std::string                      pending_restore_room_;
     std::string                      my_user_id_;
     std::vector<std::string>         space_stack_;
 

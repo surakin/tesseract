@@ -67,6 +67,8 @@ constexpr float kReplyBtnPadX  =  8.0f;
 constexpr float kEditBtnW      = 28.0f;
 // "(edited)" badge — appended after the body text of an edited message.
 constexpr float kEditedBadgeGap =  4.0f;
+// Reduced top padding for continuation rows (no avatar/sender chrome).
+constexpr float kContPadY       =  2.0f;
 
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
@@ -127,37 +129,45 @@ public:
 
     std::size_t count() const override { return owner_.messages_.size(); }
 
+    // True when `index` is a continuation of the previous row: same
+    // sender, not a reply, within the grouping window. Continuation
+    // rows suppress the avatar and sender name.
+    bool is_cont(std::size_t index) const {
+        if (index == 0) return false;
+        const auto& curr = owner_.messages_[index];
+        if (curr.has_reply()) return false;
+        const auto& prev = owner_.messages_[index - 1];
+        if (prev.sender != curr.sender) return false;
+        int interval_s = tesseract::Settings::instance().message_group_interval_s;
+        if (interval_s <= 0) return false;
+        if (curr.timestamp_ms < prev.timestamp_ms) return false;
+        return (curr.timestamp_ms - prev.timestamp_ms)
+                   <= static_cast<std::uint64_t>(interval_s) * 1000;
+    }
+
     float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
                               float width) override {
         if (index >= owner_.messages_.size()) return 0;
         const auto& m = owner_.messages_[index];
+        bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        // The bottom strip is reserved on every row carrying a
-        // timestamp — it's where reactions, the read-receipt cluster,
-        // the hover-only timestamp under the avatar, and the trailing
-        // "+" add-reaction button all live. The hover timestamp paints
-        // in the avatar column (otherwise empty); receipts paint on
-        // the right; reactions paint on the left. No collisions.
         float chips_h = (!m.reactions.empty()
                             || !m.read_receipts.empty()
                             || m.timestamp_ms != 0) ? chip_h() : 0.0f;
-        // Sender name is centered inside the avatar's vertical band, so
-        // the avatar reserves the whole header height; body + reactions
-        // stack below it.
-        return kPadY + kAvatarSize + body_h + chips_h + kPadY;
+        float top_pad  = cont ? kContPadY : kPadY;
+        float header_h = cont ? 0.0f      : kAvatarSize;
+        return top_pad + header_h + body_h + chips_h + kPadY;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                     bool /*selected*/, bool hovered) override {
         if (index >= owner_.messages_.size()) return;
         const auto& m = owner_.messages_[index];
+        bool cont = is_cont(index);
 
         if (hovered) {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
-            // Reset the per-row chip cache for the hovered row. We
-            // rebuild it below as the chip strip paints, then the
-            // owner's pointer handlers hit-test against it.
             owner_.hovered_row_geom_.row_index    = index;
             owner_.hovered_row_geom_.row_bounds   = bounds;
             owner_.hovered_row_geom_.chips.clear();
@@ -167,48 +177,50 @@ public:
             owner_.hovered_row_geom_.edit_button  = tk::Rect{};
         }
 
-        // Avatar (top-left, vertically pinned to the sender row).
+        // Avatar column centre — used both for painting and for the
+        // hover timestamp (continuation rows skip the avatar itself).
         float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
         float avatar_cy = bounds.y + kPadY + kAvatarSize * 0.5f;
-        const tk::Image* avatar = nullptr;
-        if (owner_.avatar_provider_ && !m.sender_avatar_url.empty()) {
-            avatar = owner_.avatar_provider_(m.sender_avatar_url);
-        }
-        if (avatar) {
-            ctx.canvas.draw_circle_image(*avatar,
-                                          { avatar_cx, avatar_cy },
-                                          kAvatarSize);
-        } else {
-            ctx.canvas.draw_initials_circle(
-                m.sender_name.empty() ? m.sender : m.sender_name,
-                { avatar_cx, avatar_cy },
-                kAvatarSize,
-                ctx.theme.palette.avatar_initials_bg,
-                ctx.theme.palette.avatar_initials_text);
-        }
 
-        // Right-of-avatar column.
-        float col_x  = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float col_w  = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX);
+        // Right-of-avatar column (same indent for cont + non-cont so
+        // body text aligns with the row above in a continuation group).
+        float col_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX);
 
-        // Sender name — vertically centered against the avatar disc.
-        {
-            float sender_y =
-                bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
+        if (!cont) {
+            // Avatar disc / initials.
+            const tk::Image* avatar = nullptr;
+            if (owner_.avatar_provider_ && !m.sender_avatar_url.empty())
+                avatar = owner_.avatar_provider_(m.sender_avatar_url);
+            if (avatar) {
+                ctx.canvas.draw_circle_image(*avatar,
+                                              { avatar_cx, avatar_cy },
+                                              kAvatarSize);
+            } else {
+                ctx.canvas.draw_initials_circle(
+                    m.sender_name.empty() ? m.sender : m.sender_name,
+                    { avatar_cx, avatar_cy },
+                    kAvatarSize,
+                    ctx.theme.palette.avatar_initials_bg,
+                    ctx.theme.palette.avatar_initials_text);
+            }
+
+            // Sender name — vertically centered against the avatar disc.
+            float sender_y = bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
             tk::TextStyle s{};
             s.role      = tk::FontRole::SenderName;
             s.trim      = tk::TextTrim::Ellipsis;
             s.max_width = col_w;
             auto layout = ctx.factory.build_text(
                 m.sender_name.empty() ? m.sender : m.sender_name, s);
-            if (layout) {
+            if (layout)
                 ctx.canvas.draw_text(*layout, { col_x, sender_y },
                                       ctx.theme.palette.text_secondary);
-            }
         }
 
-        // Body block starts below the avatar's bottom edge.
-        float cursor = bounds.y + kPadY + kAvatarSize;
+        // Body block: below avatar for full rows, tight to top for continuations.
+        float cursor = cont ? (bounds.y + kContPadY)
+                            : (bounds.y + kPadY + kAvatarSize);
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
 
         // Reactions row + read-receipt cluster. The strip exists when the

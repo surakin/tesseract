@@ -6,6 +6,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/session_store.h>
+#include <tesseract/prefs.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
@@ -114,6 +115,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                         index:(std::size_t)index;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
+- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)updateRooms:(std::vector<tesseract::RoomInfo>)rooms;
 - (void)handleSyncErrorContext:(NSString*)ctx
@@ -260,6 +262,7 @@ void EventBridge::on_image_packs_updated() {
     std::unique_ptr<EventBridge>     _bridge;
     std::vector<tesseract::RoomInfo> _rooms;
     std::string                      _currentRoomId;
+    std::string                      _pendingRestoreRoom;
     std::string                      _myUserId;
 
     // Per-room back-pagination state (mirrors Qt/GTK). `in_flight` gates
@@ -1037,9 +1040,10 @@ void EventBridge::on_image_packs_updated() {
 }
 
 - (void)_afterAuthSucceeded {
-    _myUserId      = _client.get_user_id();
-    _myDisplayName = _client.get_display_name();
-    _myAvatarUrl   = _client.get_avatar_url();
+    _myUserId           = _client.get_user_id();
+    _myDisplayName      = _client.get_display_name();
+    _myAvatarUrl        = _client.get_avatar_url();
+    _pendingRestoreRoom = tesseract::Prefs::load_last_room();
     _client.start_sync(_bridge.get());
     _splitView.hidden = NO;
     _loginView.hidden = YES;
@@ -1318,6 +1322,15 @@ void EventBridge::on_image_packs_updated() {
                 break;
             }
         }
+    } else if (!_pendingRestoreRoom.empty()) {
+        for (const auto& r : _rooms) {
+            if (r.id == _pendingRestoreRoom && !r.is_space) {
+                std::string target = std::move(_pendingRestoreRoom);
+                _pendingRestoreRoom.clear();
+                [self onRoomSelected:target];
+                break;
+            }
+        }
     }
 }
 
@@ -1528,6 +1541,7 @@ void EventBridge::on_image_packs_updated() {
     }
     _currentRoomId = roomId;
     _replyDetailsRequested.clear();
+    tesseract::Prefs::save_last_room(roomId);
     if (_composeShared) {
         _composeShared->clear_reply();
         _composeShared->clear_editing();
@@ -1536,13 +1550,21 @@ void EventBridge::on_image_packs_updated() {
         if (r.id == _currentRoomId) { [self _setRoomHeader:r]; break; }
     }
 
-    auto res = _client.subscribe_room(_currentRoomId);
-    if (!res) return;
-    auto& state = _pagination[_currentRoomId];
-    state.in_flight = false;
-    auto pr = _client.paginate_back_with_status(_currentRoomId, 50);
-    state.reached_start = pr.ok && pr.reached_start;
-    _client.start_background_backfill();
+    // subscribe_room + paginate_back both block inside the Rust runtime;
+    // run them on a background queue so the main thread stays responsive.
+    std::string subRoom = _currentRoomId;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        auto res = self->_client.subscribe_room(subRoom);
+        BOOL reached = NO;
+        if (res) {
+            auto pr = self->_client.paginate_back_with_status(subRoom, 50);
+            reached = pr.ok && pr.reached_start;
+            self->_client.start_background_backfill();
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self handleSubscribeResultForRoom:subRoom reached:reached];
+        });
+    });
 }
 
 - (void)requestMoreHistoryForRoom:(std::string)roomId {
@@ -1570,6 +1592,13 @@ void EventBridge::on_image_packs_updated() {
     it->second.reached_start = reached;
     if (roomId == _currentRoomId && _messageListView)
         _messageListView->reset_near_top_latch();
+}
+
+- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached {
+    if (roomId != _currentRoomId) return;
+    auto& state = _pagination[roomId];
+    state.in_flight     = false;
+    state.reached_start = reached;
 }
 
 - (tesseract::views::MessageRowData)_toRowData:(const tesseract::Event&)ev {
