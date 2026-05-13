@@ -280,6 +280,7 @@ void EventBridge::on_image_packs_updated() {
     std::unique_ptr<tk::macos::Surface>             _msgSurface;
     tesseract::views::RoomListView*                 _roomListView;     // borrowed
     std::unique_ptr<tk::NativeTextField>            _roomSearchField;
+    std::string                                     _pendingSearchText;
     tesseract::views::MessageListView*              _messageListView;  // borrowed
     std::unordered_map<std::string, TkImagePtr>     _tkAvatars;
     std::unordered_map<std::string, TkImagePtr>     _tkImages;
@@ -434,7 +435,13 @@ void EventBridge::on_image_packs_updated() {
     _roomSearchField->set_placeholder("Search rooms");
     _roomSearchField->set_visible(false);
     _roomSearchField->set_on_changed([self](const std::string& q) {
-        if (_roomListView) _roomListView->set_search_text(q);
+        self->_pendingSearchText = q;
+        [NSObject cancelPreviousPerformRequestsWithTarget:self
+                  selector:@selector(_applySearchFilter)
+                  object:nil];
+        [self performSelector:@selector(_applySearchFilter)
+                   withObject:nil
+                   afterDelay:0.5];
     });
     _roomSurface->set_on_layout([self] {
         if (!_roomListView || !_roomSearchField) return;
@@ -1097,6 +1104,10 @@ void EventBridge::on_image_packs_updated() {
          withAttributes:attrs];
     [img unlockFocus];
     _userAvatarView.image = img;
+}
+
+- (void)_applySearchFilter {
+    if (_roomListView) _roomListView->set_search_text(_pendingSearchText);
 }
 
 - (void)_onSpaceBack {

@@ -395,7 +395,18 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     room_search_field_->set_placeholder("Search rooms");
     room_search_field_->set_visible(false);
     room_search_field_->set_on_changed([this](const std::string& q) {
-        if (room_list_view_) room_list_view_->set_search_text(q);
+        search_pending_text_ = q;
+        if (search_debounce_id_) {
+            g_source_remove(search_debounce_id_);
+            search_debounce_id_ = 0;
+        }
+        search_debounce_id_ = g_timeout_add(500, [](gpointer ud) -> gboolean {
+            auto* self = static_cast<MainWindow*>(ud);
+            self->search_debounce_id_ = 0;
+            if (self->room_list_view_)
+                self->room_list_view_->set_search_text(self->search_pending_text_);
+            return G_SOURCE_REMOVE;
+        }, this);
     });
     room_surface_->set_on_layout([this] {
         if (!room_list_view_ || !room_search_field_) return;
@@ -825,6 +836,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 }
 
 MainWindow::~MainWindow() {
+    if (search_debounce_id_) {
+        g_source_remove(search_debounce_id_);
+        search_debounce_id_ = 0;
+    }
     client_.stop_sync();
     // login_view_ holds a reference to client_ and calls cancel_oauth() +
     // joins its worker on destruction. Tear it down here so client_ is

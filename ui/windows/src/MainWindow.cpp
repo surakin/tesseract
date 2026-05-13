@@ -570,7 +570,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // Compose bar Send / Emoji + recovery banner clicks go through
         // the shared widgets' callbacks now — no WM_COMMAND wiring. The
         // emoji-picker search field is a NativeTextField overlay handled
-        // by its set_on_changed lambda. Only the logout menu remains.
+        // by its set_on_changed lambda. Only the logout menu and space
+        // navigation remain.
+        if (LOWORD(wParam) == IDC_SPACE_BACK)
+            self->on_space_back();
         if (LOWORD(wParam) == IDM_LOGOUT)
             self->do_logout();
         return 0;
@@ -773,6 +776,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
     }
     case WM_TIMER:
+        if (wParam == kSearchDebounceTimer) {
+            KillTimer(hwnd, kSearchDebounceTimer);
+            if (self->room_list_view_)
+                self->room_list_view_->set_search_text(self->pending_search_text_);
+            return 0;
+        }
         if (wParam == kAnimTimerId) { self->on_anim_tick(); return 0; }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
@@ -880,7 +889,9 @@ void MainWindow::on_create(HWND hwnd) {
         room_search_field_->set_placeholder("Search rooms");
         room_search_field_->set_visible(false);
         room_search_field_->set_on_changed([this](const std::string& q) {
-            if (room_list_view_) room_list_view_->set_search_text(q);
+            pending_search_text_ = q;
+            KillTimer(hwnd_, kSearchDebounceTimer);
+            SetTimer(hwnd_, kSearchDebounceTimer, 500, nullptr);
         });
         room_surface_->set_on_layout([this] {
             if (!room_list_view_ || !room_search_field_) return;
@@ -936,6 +947,24 @@ void MainWindow::on_create(HWND hwnd) {
         0, 600 - kUserStripH, 240, kUserStripH,
         hwnd, nullptr, hInst_, nullptr);
     SetWindowLongPtrW(hUserStrip_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
+    // Space navigation bar: ← back button + space name label.
+    // Hidden until the user drills into a space; refresh_room_list shows them.
+    hSpaceNavBack_ = CreateWindowExW(
+        0, L"BUTTON", L"\x2190",
+        WS_CHILD | BS_PUSHBUTTON,
+        4, 8, 28, 20,
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SPACE_BACK)),
+        hInst_, nullptr);
+    if (hSpaceNavBack_) apply_default_font(hSpaceNavBack_);
+
+    hSpaceNavLabel_ = CreateWindowExW(
+        0, L"STATIC", L"",
+        WS_CHILD | SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE,
+        36, 0, 240 - 40, kSpaceNavBarH,
+        hwnd, nullptr, hInst_, nullptr);
+    if (hSpaceNavLabel_) apply_default_font(hSpaceNavLabel_);
 
     // Message list — shared toolkit Surface hosting MessageListView.
     msg_surface_ = std::make_unique<tk::win32::Surface>(
@@ -1276,18 +1305,25 @@ void MainWindow::on_size(int w, int h) {
     // The compose bar lives at x=CHAT_X so the left sidebar continues
     // all the way down to content_h to avoid an empty band beneath the
     // user strip.
+    bool nav_bar_visible = hSpaceNavBack_ && IsWindowVisible(hSpaceNavBack_);
+    int  room_surface_y  = nav_bar_visible ? kSpaceNavBarH : 0;
+    if (nav_bar_visible) {
+        SetWindowPos(hSpaceNavBack_,  nullptr, 4,  8,               28,               20,               SWP_NOZORDER);
+        SetWindowPos(hSpaceNavLabel_, nullptr, 36, 0, ROOM_W - 40, kSpaceNavBarH, SWP_NOZORDER);
+    }
+
     bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
-    int sidebar_h  = content_h;
-    int room_list_h = user_strip_visible ? sidebar_h - kUserStripH : sidebar_h;
+    int sidebar_h   = content_h;
+    int room_list_h = (user_strip_visible ? sidebar_h - kUserStripH : sidebar_h) - room_surface_y;
 
     if (room_surface_ && room_surface_->hwnd()) {
         SetWindowPos(room_surface_->hwnd(), nullptr,
-                      0, 0, ROOM_W, room_list_h,
+                      0, room_surface_y, ROOM_W, room_list_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
     if (hUserStrip_) {
         SetWindowPos(hUserStrip_, nullptr,
-                     0, room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
+                     0, room_surface_y + room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
     }
     if (hSideSep_) {
         SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, sidebar_h, SWP_NOZORDER);
@@ -1625,10 +1661,28 @@ void MainWindow::refresh_room_list() {
 
     std::vector<tesseract::RoomInfo> filtered;
     if (space_stack_.empty()) {
-        filtered.reserve(rooms_.size());
-        for (const auto& r : rooms_) if (!r.is_space) filtered.push_back(r);
+        // Hide the space navigation bar and build the root list, excluding
+        // rooms that are children of any space (they appear only when drilled in).
+        if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_HIDE);
+        if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_HIDE);
+        std::unordered_set<std::string> in_space;
+        for (const auto& r : rooms_)
+            if (r.is_space)
+                for (const auto& id : client_.space_children(r.id))
+                    in_space.insert(id);
+        for (const auto& r : rooms_) if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
         for (const auto& r : rooms_) if ( r.is_space) filtered.push_back(r);
     } else {
+        // Show the navigation bar with the current space's name.
+        for (const auto& r : rooms_) {
+            if (r.id == space_stack_.back()) {
+                if (hSpaceNavLabel_)
+                    SetWindowTextW(hSpaceNavLabel_, utf8_to_wstr(r.name).c_str());
+                break;
+            }
+        }
+        if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_SHOWNA);
+        if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_SHOWNA);
         auto child_ids = client_.space_children(space_stack_.back());
         for (const auto& r : rooms_) {
             if (std::find(child_ids.begin(), child_ids.end(), r.id)
@@ -1642,7 +1696,20 @@ void MainWindow::refresh_room_list() {
     room_list_view_->set_rooms(filtered);
     if (!current_room_id_.empty())
         room_list_view_->set_selected_room(current_room_id_);
+
+    // Re-run the size layout so the room surface shifts up/down as the
+    // nav bar appears or disappears.
+    if (hwnd_) {
+        RECT rc;
+        GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+    }
     if (room_surface_) room_surface_->relayout();
+}
+
+void MainWindow::on_space_back() {
+    if (!space_stack_.empty()) space_stack_.pop_back();
+    refresh_room_list();
 }
 
 // ---------------------------------------------------------------------------

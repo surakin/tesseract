@@ -164,7 +164,11 @@ void ComposeBar::recompute_height() {
             : kFileBandH;
         band_h += kPreviewBandGap;
     }
-    natural_height_ = text_h + top_h + band_h;
+    // arrange() insets the first band kPadY from the bar's top edge; add
+    // that offset once when any band is present so natural_height_ matches
+    // the full space that arrange() actually consumes.
+    float total_bands = top_h + band_h;
+    natural_height_ = text_h + total_bands + (total_bands > 0.0f ? kPadY : 0.0f);
 }
 
 void ComposeBar::set_reply_to(std::string event_id,

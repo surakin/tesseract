@@ -151,6 +151,7 @@ private:
     void ensure_reply_details(const std::string& event_id);
 
     void on_reconnect();
+    void on_space_back();
     void on_auth_error(bool soft_logout);
     void on_backup_progress(tesseract::BackupProgress* progress);
     void maybe_show_recovery_banner();
@@ -218,6 +219,7 @@ private:
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
     static constexpr int kRoomHeaderH    = 60;
+    static constexpr int kSpaceNavBarH   = 36;
     static constexpr int kRoomRowH       = tesseract::visual::kRoomRowHeight;
     static constexpr int kMsgRowPad      = tesseract::visual::kMsgRowVerticalPad;
     static constexpr int kMsgMaxWidth    = 520;            // matches Qt
@@ -230,8 +232,10 @@ private:
     std::unique_ptr<tk::win32::Surface>            room_surface_;
     tesseract::views::RoomListView*                room_list_view_   = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>           room_search_field_;
-    HWND      hSideSep_    = nullptr;   // 1px vertical separator at x=ROOM_W
-    HWND      hRoomHeader_ = nullptr;
+    HWND      hSideSep_      = nullptr;   // 1px vertical separator at x=ROOM_W
+    HWND      hSpaceNavBack_ = nullptr;   // ← button shown when inside a space
+    HWND      hSpaceNavLabel_= nullptr;   // space name label next to back button
+    HWND      hRoomHeader_   = nullptr;
     std::unique_ptr<tk::win32::Surface>            msg_surface_;
     tesseract::views::MessageListView*             message_list_view_ = nullptr; // borrowed
     // Compose bar — tk::win32::Surface hosting the shared ComposeBar
@@ -341,14 +345,17 @@ private:
     void request_user_avatar(const std::string& mxc);
     void request_media_image(const std::string& url);
 
-    static constexpr UINT_PTR kAnimTimerId   = 0xA01u;
-    static constexpr UINT     kAnimTimerHz   = 16;     // ~60 fps
+    static constexpr UINT_PTR kAnimTimerId          = 0xA01u;
+    static constexpr UINT_PTR kSearchDebounceTimer  = 3;
+    static constexpr UINT     kAnimTimerHz          = 16;     // ~60 fps
     bool anim_timer_running_ = false;
+    std::string pending_search_text_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
     std::unordered_set<std::string> media_fetches_in_flight_;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;
+    static constexpr int            IDC_SPACE_BACK       = 113;
     static constexpr int            IDM_LOGOUT           = 120;
 };
 

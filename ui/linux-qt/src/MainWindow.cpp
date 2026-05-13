@@ -226,8 +226,14 @@ MainWindow::MainWindow(QWidget* parent)
     roomSearchField_ = roomSurface_->host().make_text_field();
     roomSearchField_->set_placeholder("Search rooms");
     roomSearchField_->set_visible(false);
-    roomSearchField_->set_on_changed([this](const std::string& q) {
-        if (roomListView_) roomListView_->set_search_text(q);
+    auto* searchDebounce = new QTimer(this);
+    searchDebounce->setSingleShot(true);
+    roomSearchField_->set_on_changed([this, searchDebounce](const std::string& q) {
+        roomSearchPendingText_ = q;
+        searchDebounce->start(500);
+    });
+    connect(searchDebounce, &QTimer::timeout, [this] {
+        if (roomListView_) roomListView_->set_search_text(roomSearchPendingText_);
     });
     roomSurface_->set_on_layout([this] {
         if (!roomListView_ || !roomSearchField_) return;

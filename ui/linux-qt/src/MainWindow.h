@@ -223,6 +223,7 @@ private:
     // glyph to `send_reaction` instead of inserting into compose, then
     // clears it.
     std::string                             pendingReactionEventId_;
+    std::string                             roomSearchPendingText_;
 
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;

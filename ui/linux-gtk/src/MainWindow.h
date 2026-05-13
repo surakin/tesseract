@@ -281,6 +281,9 @@ private:
     // queueing a duplicate fetch.
     std::unordered_set<std::string>                              sticker_fetches_in_flight_;
 
+    guint        search_debounce_id_  = 0;
+    std::string  search_pending_text_;
+
     // Replied-to event IDs for which we have already called
     // fetch_reply_details this subscription session. Cleared on room switch.
     std::unordered_set<std::string>                              reply_details_requested_;
