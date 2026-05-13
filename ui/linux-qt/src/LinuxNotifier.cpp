@@ -1,6 +1,8 @@
 #include "LinuxNotifier.h"
+#include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusReply>
+#include <QImage>
 
 LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
                                    QObject* parent)
@@ -35,14 +37,46 @@ bool LinuxNotifierQt::use_portal() const {
 }
 
 void LinuxNotifierQt::notify(const tesseract::Notification& n) {
+    // Build image-data hint: decode avatar, convert to RGBA8888, marshal as
+    // the (iiibiiay) D-Bus struct the freedesktop Notify spec defines.
+    QVariantMap hints;
+    if (!n.avatar_bytes.empty()) {
+        QImage img;
+        if (img.loadFromData(
+                reinterpret_cast<const uchar*>(n.avatar_bytes.data()),
+                static_cast<int>(n.avatar_bytes.size()))) {
+            img = img.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                     .convertToFormat(QImage::Format_RGBA8888);
+            QDBusArgument arg;
+            arg.beginStructure();
+            arg << img.width() << img.height() << img.bytesPerLine()
+                << true << 8 << 4;
+            arg.beginArray(qMetaTypeId<uchar>());
+            const uchar*  bits = img.constBits();
+            const qsizetype sz = img.sizeInBytes();
+            for (qsizetype i = 0; i < sz; ++i)
+                arg << bits[i];
+            arg.endArray();
+            arg.endStructure();
+            hints[QStringLiteral("image-data")] = QVariant::fromValue(arg);
+        }
+    }
+
     if (use_portal()) {
-        portal_.call(
-            "AddNotification",
-            QString::fromStdString(n.room_id),
-            QVariantMap{
-                { "title", QString::fromStdString(n.sender) },
-                { "body",  QString::fromStdString(n.body) }
-            });
+        QVariantMap portalMap{
+            { "title", QString::fromStdString(n.sender) },
+            { "body",  QString::fromStdString(n.body) }
+        };
+        if (!n.avatar_bytes.empty()) {
+            // bytes-icon: pass the raw encoded avatar bytes directly.
+            portalMap["icon"] = QVariantList{
+                QStringLiteral("bytes-icon"),
+                QByteArray(reinterpret_cast<const char*>(n.avatar_bytes.data()),
+                           static_cast<int>(n.avatar_bytes.size()))
+            };
+        }
+        portal_.call("AddNotification",
+                     QString::fromStdString(n.room_id), portalMap);
         return;
     }
 
@@ -56,7 +90,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n) {
         QString::fromStdString(n.sender),
         QString::fromStdString(n.body),
         QStringList{ "default", "Open" },
-        QVariantMap{},
+        hints,
         5000);
 
     if (reply.isValid()) {

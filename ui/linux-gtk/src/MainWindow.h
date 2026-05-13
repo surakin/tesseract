@@ -68,7 +68,8 @@ public:
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
                          const std::string& sender,  const std::string& body,
-                         bool is_mention) override;
+                         bool is_mention,
+                         const std::vector<uint8_t>& avatar_bytes) override;
 
     GtkWindow*  window_;
     std::string user_id_;
@@ -106,7 +107,7 @@ public:
     void push_notification(const std::string& user_id,
                            const std::string& room_id, const std::string& room_name,
                            const std::string& sender, const std::string& body,
-                           bool is_mention);
+                           bool is_mention, std::vector<uint8_t> avatar_bytes);
 
 private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);
@@ -170,7 +171,7 @@ private:
     void handle_notification(const std::string& user_id,
                               const std::string& room_id, const std::string& room_name,
                               const std::string& sender, const std::string& body,
-                              bool is_mention);
+                              bool is_mention, std::vector<uint8_t> avatar_bytes);
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
@@ -321,6 +322,7 @@ private:
     std::unordered_set<std::string>                              sticker_fetches_in_flight_;
 
     guint        search_debounce_id_  = 0;
+    guint        scroll_debounce_id_  = 0;
     std::string  search_pending_text_;
 
     std::unordered_set<std::string>                              reply_details_requested_;

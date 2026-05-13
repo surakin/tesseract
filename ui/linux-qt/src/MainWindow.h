@@ -99,12 +99,15 @@ public:
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
                          const std::string& sender,  const std::string& body,
-                         bool is_mention) override {
+                         bool is_mention,
+                         const std::vector<uint8_t>& avatar_bytes) override {
         emit notificationTriggered(QString::fromStdString(room_id),
                                     QString::fromStdString(room_name),
                                     QString::fromStdString(sender),
                                     QString::fromStdString(body),
-                                    is_mention);
+                                    is_mention,
+                                    QByteArray(reinterpret_cast<const char*>(avatar_bytes.data()),
+                                               static_cast<qsizetype>(avatar_bytes.size())));
     }
 
 signals:
@@ -119,7 +122,8 @@ signals:
     void imagePacksUpdated();
     void accountPrefsUpdated(QString json);
     void notificationTriggered(QString roomId, QString roomName,
-                               QString sender, QString body, bool is_mention);
+                               QString sender, QString body, bool is_mention,
+                               QByteArray avatarBytes);
 };
 
 // ---------------------------------------------------------------------------
@@ -157,7 +161,8 @@ private slots:
     void onAccountSelected(const std::string& user_id);
     void onPaginateFinished(QString roomId, bool reached_start);
     void onNotificationTriggered(QString roomId, QString roomName,
-                                  QString sender, QString body, bool is_mention);
+                                  QString sender, QString body, bool is_mention,
+                                  QByteArray avatarBytes);
     /// Frame-tick driver for animated inline media in the timeline.
     /// Advances frames in `tk_anim_images_` and repaints `msgSurface_`
     /// when at least one frame changes.

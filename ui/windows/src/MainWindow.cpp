@@ -508,7 +508,8 @@ void EventHandler::on_notification(const std::string& room_id,
                                     const std::string& room_name,
                                     const std::string& sender,
                                     const std::string& body,
-                                    bool is_mention)
+                                    bool is_mention,
+                                    const std::vector<uint8_t>& /*avatar_bytes*/)
 {
     auto* p = new MainWindow::NotificationPayload{
         room_id, room_name, sender, body, user_id_, is_mention
@@ -919,6 +920,15 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             return 0;
         }
         if (wParam == kAnimTimerId) { self->on_anim_tick(); return 0; }
+        if (wParam == kScrollDebounceTimerId) {
+            KillTimer(hwnd, kScrollDebounceTimerId);
+            if (self->room_list_view_ && self->client_) {
+                auto ids = self->room_list_view_->visible_room_ids();
+                self->client_->stop_background_backfill();
+                self->client_->start_background_backfill(ids);
+            }
+            return 0;
+        }
         if (wParam == kSyncStatusDebounceTimerId) {
             KillTimer(hwnd, kSyncStatusDebounceTimerId);
             self->sync_status_debounce_timer_id_ = 0;
@@ -1031,6 +1041,10 @@ void MainWindow::on_create(HWND hwnd) {
             });
         room_list_view_->on_room_selected =
             [this](const std::string& room_id) { on_room_selected(room_id); };
+        room_list_view_->on_scroll = [this] {
+            KillTimer(hwnd_, kScrollDebounceTimerId);
+            SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
+        };
         room_surface_->set_root(std::move(view));
 
         // Search field — host-overlaid NativeTextField shown when the

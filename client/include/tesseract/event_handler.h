@@ -88,11 +88,12 @@ public:
     /// the UI thread before showing a system notification. `is_mention` is true
     /// when the push rules matched a highlight rule (@ mention). Only fired for
     /// live PushBack events — pagination does not trigger notifications.
-    virtual void on_notification(const std::string& /*room_id*/,
-                                  const std::string& /*room_name*/,
-                                  const std::string& /*sender*/,
-                                  const std::string& /*body*/,
-                                  bool              /*is_mention*/) {}
+    virtual void on_notification(const std::string&          /*room_id*/,
+                                  const std::string&          /*room_name*/,
+                                  const std::string&          /*sender*/,
+                                  const std::string&          /*body*/,
+                                  bool                        /*is_mention*/,
+                                  const std::vector<uint8_t>& /*avatar_bytes*/) {}
 };
 
 } // namespace tesseract

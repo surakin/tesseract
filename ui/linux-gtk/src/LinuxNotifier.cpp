@@ -1,5 +1,6 @@
 #include "LinuxNotifier.h"
 #include <cstdlib>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 LinuxNotifierGtk::LinuxNotifierGtk(std::function<void(std::string)> on_activate)
     : on_activate_(std::move(on_activate))
@@ -42,6 +43,29 @@ bool LinuxNotifierGtk::use_portal() const {
 void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
     if (!bus_) return;
 
+    // Decode avatar bytes to a GdkPixbuf (kept alive through the D-Bus call so
+    // that the pixel pointer in the image-data variant stays valid).
+    GdkPixbufLoader* loader = nullptr;
+    GdkPixbuf*       rgba   = nullptr;
+    if (!n.avatar_bytes.empty()) {
+        loader = gdk_pixbuf_loader_new();
+        gdk_pixbuf_loader_write(loader,
+            reinterpret_cast<const guchar*>(n.avatar_bytes.data()),
+            static_cast<gsize>(n.avatar_bytes.size()), nullptr);
+        gdk_pixbuf_loader_close(loader, nullptr);
+        GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
+        if (pb) {
+            GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
+                pb, 64, 64, GDK_INTERP_BILINEAR);
+            if (gdk_pixbuf_get_has_alpha(scaled)) {
+                rgba = scaled;
+            } else {
+                rgba = gdk_pixbuf_add_alpha(scaled, FALSE, 0, 0, 0);
+                g_object_unref(scaled);
+            }
+        }
+    }
+
     if (use_portal()) {
         GVariantBuilder notif_b;
         g_variant_builder_init(&notif_b, G_VARIANT_TYPE("a{sv}"));
@@ -49,6 +73,15 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             g_variant_new_string(n.sender.c_str()));
         g_variant_builder_add(&notif_b, "{sv}", "body",
             g_variant_new_string(n.body.c_str()));
+        if (!n.avatar_bytes.empty()) {
+            // Pass raw encoded bytes as a bytes-icon GIcon — the portal daemon
+            // handles decode. g_bytes_new copies so the GVariant owns the data.
+            GBytes*   gb  = g_bytes_new(n.avatar_bytes.data(), n.avatar_bytes.size());
+            GVariant* icv = g_variant_new_from_bytes(G_VARIANT_TYPE("ay"), gb, TRUE);
+            g_bytes_unref(gb);
+            g_variant_builder_add(&notif_b, "{sv}", "icon",
+                g_variant_new("(sv)", "bytes-icon", icv));
+        }
         g_dbus_connection_call(
             bus_,
             "org.freedesktop.portal.Desktop",
@@ -57,6 +90,8 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             "AddNotification",
             g_variant_new("(sa{sv})", n.room_id.c_str(), &notif_b),
             nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
+        if (rgba)   g_object_unref(rgba);
+        if (loader) g_object_unref(loader);
         return;
     }
 
@@ -70,6 +105,21 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
 
     GVariantBuilder hints_b;
     g_variant_builder_init(&hints_b, G_VARIANT_TYPE("a{sv}"));
+    if (rgba) {
+        // image-data hint: (iiibiiay) — width, height, rowstride, has_alpha,
+        // bits_per_sample, channels, pixel_data.  The pixel pointer is owned by
+        // rgba which outlives the synchronous g_dbus_connection_call_sync below.
+        const int    w  = gdk_pixbuf_get_width(rgba);
+        const int    h  = gdk_pixbuf_get_height(rgba);
+        const int    rs = gdk_pixbuf_get_rowstride(rgba);
+        const int    ch = gdk_pixbuf_get_n_channels(rgba);
+        const gboolean ha = gdk_pixbuf_get_has_alpha(rgba);
+        const guchar*  px = gdk_pixbuf_get_pixels(rgba);
+        GVariant* data_v = g_variant_new_fixed_array(
+            G_VARIANT_TYPE_BYTE, px, static_cast<gsize>(rs) * h, 1);
+        g_variant_builder_add(&hints_b, "{sv}", "image-data",
+            g_variant_new("(iiibii@ay)", w, h, rs, ha, 8, ch, data_v));
+    }
 
     GVariant* params = g_variant_new(
         "(susssasa{sv}i)",
@@ -91,6 +141,10 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
         params,
         G_VARIANT_TYPE("(u)"),
         G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+
+    // Safe to release avatar resources now that the sync call has serialised params.
+    if (rgba)   g_object_unref(rgba);
+    if (loader) g_object_unref(loader);
 
     if (result) {
         uint32_t id = 0;

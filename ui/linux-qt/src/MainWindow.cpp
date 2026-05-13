@@ -239,6 +239,19 @@ MainWindow::MainWindow(QWidget* parent)
         });
     roomListView_->on_room_selected =
         [this](const std::string& room_id) { onRoomSelected(room_id); };
+    {
+        auto* scrollDebounce = new QTimer(this);
+        scrollDebounce->setSingleShot(true);
+        roomListView_->on_scroll = [this, scrollDebounce] {
+            scrollDebounce->start(300);
+        };
+        connect(scrollDebounce, &QTimer::timeout, this, [this] {
+            if (!roomListView_ || !client_) return;
+            auto ids = roomListView_->visible_room_ids();
+            client_->stop_background_backfill();
+            client_->start_background_backfill(ids);
+        });
+    }
     roomSurface_->set_root(std::move(room_view_owner));
     sideLayout->addWidget(roomSurface_, 1);
 
@@ -1232,7 +1245,7 @@ void MainWindow::navigate_to_room(const std::string& room_id) {
 
 void MainWindow::onNotificationTriggered(
         QString roomId, QString roomName, QString sender,
-        QString body, bool is_mention)
+        QString body, bool is_mention, QByteArray avatarBytes)
 {
     const std::string rid = roomId.toStdString();
     // Find the account that owns this notification via the emitting bridge.
@@ -1246,10 +1259,18 @@ void MainWindow::onNotificationTriggered(
                 && accounts_[active_account_index_]->user_id == uid
                 && currentRoomId_ == rid)
             return;
-        if (sess->notifier)
-            sess->notifier->notify({ rid, roomName.toStdString(),
-                                     sender.toStdString(), body.toStdString(),
-                                     is_mention });
+        if (sess->notifier) {
+            tesseract::Notification n;
+            n.room_id      = rid;
+            n.room_name    = roomName.toStdString();
+            n.sender       = sender.toStdString();
+            n.body         = body.toStdString();
+            n.is_mention   = is_mention;
+            n.avatar_bytes = std::vector<uint8_t>(
+                reinterpret_cast<const uint8_t*>(avatarBytes.constData()),
+                reinterpret_cast<const uint8_t*>(avatarBytes.constData()) + avatarBytes.size());
+            sess->notifier->notify(n);
+        }
         return;
     }
 }

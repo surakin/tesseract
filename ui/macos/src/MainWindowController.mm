@@ -101,7 +101,8 @@ public:
                          const std::string& room_name,
                          const std::string& sender,
                          const std::string& body,
-                         bool is_mention) override;
+                         bool is_mention,
+                         const std::vector<uint8_t>& avatar_bytes) override;
 
 public:
     std::string user_id_;
@@ -321,7 +322,8 @@ void EventBridge::on_notification(const std::string& room_id,
                                    const std::string& room_name,
                                    const std::string& sender,
                                    const std::string& body,
-                                   bool is_mention) {
+                                   bool is_mention,
+                                   const std::vector<uint8_t>& /*avatar_bytes*/) {
     MainWindowController* c = controller_;
     if (!c) return;
     std::string rid  = room_id;
@@ -564,6 +566,14 @@ void EventBridge::on_notification(const std::string& room_id,
         });
     _roomListView->on_room_selected =
         [self](const std::string& room_id) { [self onRoomSelected:room_id]; };
+    _roomListView->on_scroll = [self] {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self
+                  selector:@selector(_onRoomScrollDebounce)
+                  object:nil];
+        [self performSelector:@selector(_onRoomScrollDebounce)
+                   withObject:nil
+                   afterDelay:0.3];
+    };
     _roomSurface->set_root(std::move(room_view));
 
     // Search field — host-overlaid NativeTextField (an NSTextField under
@@ -1591,6 +1601,13 @@ void EventBridge::on_notification(const std::string& room_id,
 
 - (void)_applySearchFilter {
     if (_roomListView) _roomListView->set_search_text(_pendingSearchText);
+}
+
+- (void)_onRoomScrollDebounce {
+    if (!_roomListView || !_client) return;
+    auto ids = _roomListView->visible_room_ids();
+    _client->stop_background_backfill();
+    _client->start_background_backfill(ids);
 }
 
 - (void)_onSpaceBack {

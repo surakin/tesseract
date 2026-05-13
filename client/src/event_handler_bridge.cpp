@@ -103,11 +103,15 @@ void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const {
 
 void EventHandlerBridge::on_notification(
     rust::Str room_id, rust::Str room_name,
-    rust::Str sender, rust::Str body, bool is_mention) const
+    rust::Str sender, rust::Str body, bool is_mention,
+    rust::Slice<const uint8_t> avatar_bytes) const
 {
     if (!handler_) return;
+    std::vector<uint8_t> av(avatar_bytes.data(),
+                             avatar_bytes.data() + avatar_bytes.size());
     handler_->on_notification(std::string(room_id), std::string(room_name),
-                               std::string(sender), std::string(body), is_mention);
+                               std::string(sender), std::string(body),
+                               is_mention, av);
 }
 
 } // namespace tesseract_ffi

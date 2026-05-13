@@ -104,7 +104,8 @@ public:
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
                          const std::string& sender,  const std::string& body,
-                         bool is_mention) override;
+                         bool is_mention,
+                         const std::vector<uint8_t>& avatar_bytes) override;
 
     HWND        hwnd_;
     std::string user_id_;
@@ -430,8 +431,9 @@ private:
     void request_user_avatar(const std::string& mxc);
     void request_media_image(const std::string& url);
 
-    static constexpr UINT_PTR kAnimTimerId          = 0xA01u;
-    static constexpr UINT_PTR kSearchDebounceTimer  = 3;
+    static constexpr UINT_PTR kAnimTimerId           = 0xA01u;
+    static constexpr UINT_PTR kSearchDebounceTimer   = 3;
+    static constexpr UINT_PTR kScrollDebounceTimerId = 4;
     static constexpr UINT     kAnimTimerHz          = 16;     // ~60 fps
     bool anim_timer_running_ = false;
     std::string pending_search_text_;

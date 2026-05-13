@@ -311,26 +311,30 @@ void EventHandler::on_account_prefs_updated(const std::string& json) {
 
 namespace {
 struct IdleNotif {
-    MainWindow* window;
-    std::string user_id;
-    std::string room_id, room_name, sender, body;
-    bool        is_mention;
+    MainWindow*          window;
+    std::string          user_id;
+    std::string          room_id, room_name, sender, body;
+    bool                 is_mention;
+    std::vector<uint8_t> avatar_bytes;
 };
 } // namespace
 
 void EventHandler::on_notification(
     const std::string& room_id, const std::string& room_name,
-    const std::string& sender,  const std::string& body, bool is_mention)
+    const std::string& sender,  const std::string& body, bool is_mention,
+    const std::vector<uint8_t>& avatar_bytes)
 {
     auto* p = new IdleNotif{
         cpp_window_for(window_),
         user_id_,
-        room_id, room_name, sender, body, is_mention
+        room_id, room_name, sender, body, is_mention,
+        avatar_bytes
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleNotif*>(data);
         d->window->push_notification(d->user_id, d->room_id, d->room_name,
-                                      d->sender, d->body, d->is_mention);
+                                      d->sender, d->body, d->is_mention,
+                                      std::move(d->avatar_bytes));
         delete d;
         return G_SOURCE_REMOVE;
     }, p);
@@ -467,6 +471,21 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         });
     room_list_view_->on_room_selected =
         [this](const std::string& room_id) { on_room_selected(room_id); };
+    room_list_view_->on_scroll = [this] {
+        if (scroll_debounce_id_) {
+            g_source_remove(scroll_debounce_id_);
+            scroll_debounce_id_ = 0;
+        }
+        scroll_debounce_id_ = g_timeout_add(300, [](gpointer ud) -> gboolean {
+            auto* self = static_cast<MainWindow*>(ud);
+            self->scroll_debounce_id_ = 0;
+            if (!self->room_list_view_ || !self->client_) return G_SOURCE_REMOVE;
+            auto ids = self->room_list_view_->visible_room_ids();
+            self->client_->stop_background_backfill();
+            self->client_->start_background_backfill(ids);
+            return G_SOURCE_REMOVE;
+        }, this);
+    };
     room_surface_->set_root(std::move(room_view_owner));
 
     // Search field — host-overlaid NativeTextField (a GtkEntry under
@@ -1076,6 +1095,10 @@ MainWindow::~MainWindow() {
     if (search_debounce_id_) {
         g_source_remove(search_debounce_id_);
         search_debounce_id_ = 0;
+    }
+    if (scroll_debounce_id_) {
+        g_source_remove(scroll_debounce_id_);
+        scroll_debounce_id_ = 0;
     }
     // Drain background workers BEFORE tearing the client down. Each
     // worker calls `client_->fetch_*` (which takes `&mut self` on the
@@ -2343,15 +2366,18 @@ void MainWindow::push_account_prefs_updated(const std::string& json) {
 void MainWindow::push_notification(
         const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
-        const std::string& sender, const std::string& body, bool is_mention)
+        const std::string& sender, const std::string& body, bool is_mention,
+        std::vector<uint8_t> avatar_bytes)
 {
-    handle_notification(user_id, room_id, room_name, sender, body, is_mention);
+    handle_notification(user_id, room_id, room_name, sender, body,
+                        is_mention, std::move(avatar_bytes));
 }
 
 void MainWindow::handle_notification(
         const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
-        const std::string& sender,  const std::string& body, bool is_mention)
+        const std::string& sender,  const std::string& body, bool is_mention,
+        std::vector<uint8_t> avatar_bytes)
 {
     for (auto& sess : accounts_) {
         if (sess->user_id != user_id) continue;
@@ -2361,8 +2387,16 @@ void MainWindow::handle_notification(
                 && accounts_[active_account_index_]->user_id == user_id
                 && current_room_id_ == room_id)
             return;
-        if (sess->notifier)
-            sess->notifier->notify({ room_id, room_name, sender, body, is_mention });
+        if (sess->notifier) {
+            tesseract::Notification n;
+            n.room_id      = room_id;
+            n.room_name    = room_name;
+            n.sender       = sender;
+            n.body         = body;
+            n.is_mention   = is_mention;
+            n.avatar_bytes = std::move(avatar_bytes);
+            sess->notifier->notify(n);
+        }
         return;
     }
 }

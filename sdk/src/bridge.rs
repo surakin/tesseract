@@ -290,11 +290,12 @@ pub mod ffi {
         /// PushBack (not pagination). `is_mention` is true when the push rules
         /// returned a `SetHighlight(true)` tweak (@ mention or highlight rule).
         fn on_notification(self: &EventHandlerBridge,
-                           room_id:   &str,
-                           room_name: &str,
-                           sender:    &str,
-                           body:      &str,
-                           is_mention: bool);
+                           room_id:      &str,
+                           room_name:    &str,
+                           sender:       &str,
+                           body:         &str,
+                           is_mention:   bool,
+                           avatar_bytes: &[u8]);
     }
 
     // -------------------------------------------------------------------------
