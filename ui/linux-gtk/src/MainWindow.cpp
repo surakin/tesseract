@@ -249,6 +249,27 @@ void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress)
     }, p);
 }
 
+namespace {
+struct IdleRoomListState {
+    MainWindow*              window;
+    tesseract::RoomListState state;
+};
+} // namespace
+
+void EventHandler::on_room_list_state(tesseract::RoomListState state) {
+    auto* p = new IdleRoomListState{
+        reinterpret_cast<MainWindow*>(
+            g_object_get_data(G_OBJECT(window_), "cpp_window")),
+        state
+    };
+    g_idle_add([](gpointer data) -> gboolean {
+        auto* d = static_cast<IdleRoomListState*>(data);
+        d->window->push_room_list_state(d->state);
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, p);
+}
+
 void EventHandler::on_image_packs_updated() {
     // Marshal onto the GTK main loop; the picker reads the cache via
     // Client APIs that aren't safe to call from a worker thread alongside
@@ -2164,6 +2185,74 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
         && recovery_surface_)
     {
         gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
+    }
+
+    last_backup_state_  = progress.state;
+    last_imported_keys_ = progress.imported_keys;
+    refresh_sync_status();
+}
+
+void MainWindow::push_room_list_state(tesseract::RoomListState state) {
+    last_room_list_state_ = state;
+    refresh_sync_status();
+}
+
+gboolean MainWindow::on_sync_status_debounce_(gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    self->sync_status_debounce_id_ = 0;
+    using RLS = tesseract::RoomListState;
+    if (self->status_bar_
+     && (self->last_room_list_state_ == RLS::Init
+      || self->last_room_list_state_ == RLS::SettingUp))
+    {
+        self->sync_progress_shown_ = true;
+        gtk_label_set_text(GTK_LABEL(self->status_bar_),
+                           _("Syncing rooms\xe2\x80\xa6"));
+    }
+    return G_SOURCE_REMOVE;
+}
+
+void MainWindow::refresh_sync_status() {
+    if (!status_bar_) return;
+    using RLS = tesseract::RoomListState;
+    using BS  = tesseract::BackupState;
+
+    const bool room_busy = (last_room_list_state_ == RLS::Init
+                         || last_room_list_state_ == RLS::SettingUp);
+    const bool reconnecting = (last_room_list_state_ == RLS::Recovering);
+    const bool keys_busy = (last_backup_state_ == BS::Downloading);
+
+    if (room_busy) {
+        if (!sync_progress_shown_ && sync_status_debounce_id_ == 0)
+            sync_status_debounce_id_ = g_timeout_add(300, on_sync_status_debounce_, this);
+        else if (sync_progress_shown_)
+            gtk_label_set_text(GTK_LABEL(status_bar_),
+                               _("Syncing rooms\xe2\x80\xa6"));
+        return;
+    }
+
+    if (sync_status_debounce_id_ != 0) {
+        g_source_remove(sync_status_debounce_id_);
+        sync_status_debounce_id_ = 0;
+    }
+
+    if (reconnecting) {
+        sync_progress_shown_ = true;
+        gtk_label_set_text(GTK_LABEL(status_bar_),
+                           _("Reconnecting\xe2\x80\xa6"));
+        return;
+    }
+    if (keys_busy) {
+        sync_progress_shown_ = true;
+        std::string msg = std::string(_("Downloading encryption keys ("))
+                        + std::to_string(last_imported_keys_)
+                        + ")\xe2\x80\xa6";
+        gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+        return;
+    }
+    if (sync_progress_shown_) {
+        sync_progress_shown_ = false;
+        gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     }
 }
 

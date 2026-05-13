@@ -61,6 +61,14 @@ public:
     /// to drive the recovery banner and the RecoveryDialog progress text.
     virtual void on_backup_progress(const BackupProgress& /*progress*/) {}
 
+    /// Fired when the sliding-sync `RoomListService` changes phase (Init →
+    /// SettingUp → Running, plus Recovering on reconnect). UIs use this to
+    /// drive a "Syncing rooms…" status while the joined-room set is still
+    /// being hydrated after login / restore. An initial snapshot is emitted
+    /// shortly after `Client::start_sync()` so a UI that opens before the
+    /// first transition still has a starting value.
+    virtual void on_room_list_state(RoomListState /*state*/) {}
+
     /// Fired when the cached set of MSC2545 image packs changes (user-pack
     /// edit, room-pack subscription, or live state-event update on a
     /// referenced room). UIs re-query via `Client::list_image_packs` and

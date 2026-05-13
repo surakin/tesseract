@@ -175,4 +175,23 @@ struct BackupProgress {
     uint64_t    total_keys    = 0;
 };
 
+/// High-level phases of the sliding-sync `RoomListService`. Surfaced via
+/// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
+/// rooms…" indicator while the joined-room set is still being hydrated.
+/// Mirrors the u8 codes in `sdk/src/client.rs` (`ROOM_LIST_STATE_*`).
+enum class RoomListState : uint8_t {
+    /// Initial state — no sync has run yet.
+    Init       = 0,
+    /// First sync is in flight; the joined-room set is filling in.
+    SettingUp  = 1,
+    /// Recovering after Error/Terminated or a stale session window.
+    Recovering = 2,
+    /// Steady-state — all rooms are syncing.
+    Running    = 3,
+    /// Sync stopped due to an error (the SDK will normally retry).
+    Error      = 4,
+    /// Sync stopped intentionally (e.g. shutdown).
+    Terminated = 5,
+};
+
 } // namespace tesseract

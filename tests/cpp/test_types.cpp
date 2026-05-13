@@ -465,6 +465,41 @@ TEST_CASE("BackupProgress fields are settable", "[types][recovery]") {
 }
 
 // ---------------------------------------------------------------------------
+// tesseract::RoomListState
+// ---------------------------------------------------------------------------
+//
+// The wire-level u8 codes must stay in sync with `ROOM_LIST_STATE_*` in
+// `sdk/src/client.rs` and the bridge dispatch in
+// `client/src/event_handler_bridge.cpp`. Any drift means
+// `on_room_list_state` would silently misclassify states.
+
+TEST_CASE("RoomListState enum values match the FFI wire encoding", "[types][sync]") {
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Init)       == 0);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::SettingUp)  == 1);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Recovering) == 2);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Running)    == 3);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Error)      == 4);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Terminated) == 5);
+}
+
+TEST_CASE("RoomListState bridge clamps unknown codes back to Init", "[types][sync]") {
+    // The bridge in event_handler_bridge.cpp clamps out-of-range codes
+    // back to Init so the C++ side never sees an invalid enum even if a
+    // future Rust protocol adds states we don't know yet. Lock this
+    // behaviour in by exercising the same cast the bridge performs.
+    auto clamp = [](uint8_t code) {
+        return (code <= static_cast<uint8_t>(tesseract::RoomListState::Terminated))
+            ? static_cast<tesseract::RoomListState>(code)
+            : tesseract::RoomListState::Init;
+    };
+    CHECK(clamp(0)   == tesseract::RoomListState::Init);
+    CHECK(clamp(5)   == tesseract::RoomListState::Terminated);
+    CHECK(clamp(6)   == tesseract::RoomListState::Init);   // unknown
+    CHECK(clamp(99)  == tesseract::RoomListState::Init);   // unknown
+    CHECK(clamp(255) == tesseract::RoomListState::Init);   // unknown
+}
+
+// ---------------------------------------------------------------------------
 // tesseract::Client recovery surface (Step 6)
 // ---------------------------------------------------------------------------
 

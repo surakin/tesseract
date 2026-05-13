@@ -263,6 +263,18 @@ pub mod ffi {
         /// Fired when the key-backup state changes or when imported-key
         /// counters advance during a recover() call.
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);
+        /// Fired when the `RoomListService` state changes (Init →
+        /// SettingUp → Running, etc.). `state` is one of the
+        /// `ROOM_LIST_STATE_*` constants:
+        ///   0 = Init        (initial state — no sync yet)
+        ///   1 = SettingUp   (first rooms are being synced)
+        ///   2 = Recovering  (recovering from error/terminated/stale)
+        ///   3 = Running     (steady-state — all rooms syncing)
+        ///   4 = Error       (sync stopped due to error)
+        ///   5 = Terminated  (sync stopped by request)
+        /// UIs use this to surface "Syncing rooms…" progress in the status
+        /// bar while the joined-room set is still being hydrated.
+        fn on_room_list_state(self: &EventHandlerBridge, state: u8);
         /// Fired when the cached set of MSC2545 image packs changes
         /// (user-pack edit, room-pack subscription edit, or live state-event
         /// update on a referenced room). The UI re-queries via

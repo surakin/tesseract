@@ -56,6 +56,8 @@ constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
 constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
 constexpr UINT WM_TESSERACT_NOTIFY_CLICK     = WM_APP + 18;
 constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
+// WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
+constexpr UINT WM_TESSERACT_ROOM_LIST_STATE  = WM_APP + 21;
 
 namespace win32 {
 
@@ -85,6 +87,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_room_list_state(tesseract::RoomListState state) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
@@ -176,6 +179,15 @@ private:
     void on_space_back();
     void on_auth_error(bool soft_logout);
     void on_backup_progress(tesseract::BackupProgress* progress);
+    void on_room_list_state(tesseract::RoomListState state);
+    void refresh_sync_status();
+    // Sync-progress status cache.
+    tesseract::RoomListState last_room_list_state_ = tesseract::RoomListState::Init;
+    tesseract::BackupState   last_backup_state_    = tesseract::BackupState::Unknown;
+    std::uint64_t            last_imported_keys_   = 0;
+    UINT_PTR                 sync_status_debounce_timer_id_ = 0;
+    bool                     sync_progress_shown_  = false;
+    static constexpr UINT_PTR kSyncStatusDebounceTimerId = 0xA1B2;
     void maybe_show_recovery_banner();
     void on_recovery_verify_clicked();
     void on_recovery_dismiss_clicked();

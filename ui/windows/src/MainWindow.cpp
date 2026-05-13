@@ -461,6 +461,11 @@ void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress)
                 reinterpret_cast<LPARAM>(p));
 }
 
+void EventHandler::on_room_list_state(tesseract::RoomListState state) {
+    PostMessage(hwnd_, WM_TESSERACT_ROOM_LIST_STATE,
+                static_cast<WPARAM>(state), 0);
+}
+
 void EventHandler::on_image_packs_updated() {
     PostMessage(hwnd_, WM_TESSERACT_IMAGE_PACKS, 0, 0);
 }
@@ -729,6 +734,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_ROOM_LIST_STATE: {
+        self->on_room_list_state(
+            static_cast<tesseract::RoomListState>(wParam));
+        return 0;
+    }
     case WM_TESSERACT_RECOVER_DONE: {
         auto* p = reinterpret_cast<std::wstring*>(lParam);
         self->on_recover_done(wParam != 0, std::move(*p));
@@ -865,6 +875,19 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             return 0;
         }
         if (wParam == kAnimTimerId) { self->on_anim_tick(); return 0; }
+        if (wParam == kSyncStatusDebounceTimerId) {
+            KillTimer(hwnd, kSyncStatusDebounceTimerId);
+            self->sync_status_debounce_timer_id_ = 0;
+            using RLS = tesseract::RoomListState;
+            if (self->hStatus_
+             && (self->last_room_list_state_ == RLS::Init
+              || self->last_room_list_state_ == RLS::SettingUp))
+            {
+                self->sync_progress_shown_ = true;
+                SetWindowTextW(self->hStatus_, L"Syncing rooms…");
+            }
+            return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     default:
@@ -2410,6 +2433,61 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
         recovery_banner_visible_ = false;
         RECT rc; GetClientRect(hwnd_, &rc);
         on_size(rc.right, rc.bottom);
+    }
+
+    last_backup_state_  = progress->state;
+    last_imported_keys_ = progress->imported_keys;
+    refresh_sync_status();
+}
+
+void MainWindow::on_room_list_state(tesseract::RoomListState state) {
+    last_room_list_state_ = state;
+    refresh_sync_status();
+}
+
+void MainWindow::refresh_sync_status() {
+    if (!hStatus_) return;
+    using RLS = tesseract::RoomListState;
+    using BS  = tesseract::BackupState;
+
+    const bool room_busy    = (last_room_list_state_ == RLS::Init
+                            || last_room_list_state_ == RLS::SettingUp);
+    const bool reconnecting = (last_room_list_state_ == RLS::Recovering);
+    const bool keys_busy    = (last_backup_state_ == BS::Downloading);
+
+    if (room_busy) {
+        // Debounce 300 ms so already-warm sessions that flash through
+        // Init→Running don't churn the status bar.
+        if (!sync_progress_shown_ && sync_status_debounce_timer_id_ == 0) {
+            sync_status_debounce_timer_id_ = SetTimer(
+                hwnd_, kSyncStatusDebounceTimerId, 300, nullptr);
+        } else if (sync_progress_shown_) {
+            SetWindowTextW(hStatus_, L"Syncing rooms…");
+        }
+        return;
+    }
+
+    if (sync_status_debounce_timer_id_ != 0) {
+        KillTimer(hwnd_, kSyncStatusDebounceTimerId);
+        sync_status_debounce_timer_id_ = 0;
+    }
+
+    if (reconnecting) {
+        sync_progress_shown_ = true;
+        SetWindowTextW(hStatus_, L"Reconnecting…");
+        return;
+    }
+    if (keys_busy) {
+        sync_progress_shown_ = true;
+        wchar_t buf[96];
+        swprintf_s(buf, L"Downloading encryption keys (%llu)…",
+                   static_cast<unsigned long long>(last_imported_keys_));
+        SetWindowTextW(hStatus_, buf);
+        return;
+    }
+    if (sync_progress_shown_) {
+        sync_progress_shown_ = false;
+        SetWindowTextW(hStatus_, L"Connected");
     }
 }
 

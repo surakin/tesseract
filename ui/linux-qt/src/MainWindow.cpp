@@ -115,6 +115,10 @@ void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) 
     emit backupProgress(progress);
 }
 
+// on_room_list_state is inlined in MainWindow.h — it emits a queued
+// `roomListStateChanged` signal carrying the u8 code (Qt's meta-object
+// system handles std::uint8_t natively across queued connections).
+
 void EventBridge::on_image_packs_updated() {
     emit imagePacksUpdated();
 }
@@ -809,6 +813,8 @@ MainWindow::MainWindow(QWidget* parent)
             this,          &MainWindow::onSyncError);
     connect(bridge_.get(), &EventBridge::backupProgress,
             this,          &MainWindow::onBackupProgress);
+    connect(bridge_.get(), &EventBridge::roomListStateChanged,
+            this,          &MainWindow::onRoomListStateChanged);
     connect(bridge_.get(), &EventBridge::imagePacksUpdated,
             this, [this]{ if (stickerPicker_) stickerPicker_->refreshPacks(); },
             Qt::QueuedConnection);
@@ -1747,6 +1753,75 @@ void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
         && !client_.needs_recovery())
     {
         if (recoverySurface_) recoverySurface_->setVisible(false);
+    }
+
+    lastBackupState_  = progress.state;
+    lastImportedKeys_ = progress.imported_keys;
+    refreshSyncStatus();
+}
+
+void MainWindow::onRoomListStateChanged(std::uint8_t state) {
+    lastRoomListState_ = static_cast<tesseract::RoomListState>(state);
+    refreshSyncStatus();
+}
+
+void MainWindow::refreshSyncStatus() {
+    // Compose progress text for the status bar. Priority order:
+    //   1. Init / SettingUp        → "Syncing rooms…" (debounced 300 ms)
+    //   2. Recovering              → "Reconnecting…"
+    //   3. backup Downloading      → "Downloading encryption keys (N)…"
+    //   4. else                    → clear (restores prior "Connected" copy)
+    //
+    // Error / Terminated leave whatever the sync_error path already wrote.
+    using RLS = tesseract::RoomListState;
+    using BS  = tesseract::BackupState;
+
+    const bool room_busy = (lastRoomListState_ == RLS::Init
+                         || lastRoomListState_ == RLS::SettingUp);
+    const bool reconnecting = (lastRoomListState_ == RLS::Recovering);
+    const bool keys_busy = (lastBackupState_ == BS::Downloading);
+
+    if (room_busy) {
+        // Debounce: only show "Syncing rooms…" after 300 ms of being
+        // non-Running, so already-cached sessions that flash through
+        // Init→Running in a single tick don't churn the bar.
+        if (!syncStatusDebounce_) {
+            syncStatusDebounce_ = new QTimer(this);
+            syncStatusDebounce_->setSingleShot(true);
+            connect(syncStatusDebounce_, &QTimer::timeout, this, [this] {
+                using RLS2 = tesseract::RoomListState;
+                if (lastRoomListState_ == RLS2::Init
+                 || lastRoomListState_ == RLS2::SettingUp) {
+                    syncProgressShown_ = true;
+                    statusBar()->showMessage(tr("Syncing rooms…"));
+                }
+            });
+        }
+        if (!syncStatusDebounce_->isActive() && !syncProgressShown_)
+            syncStatusDebounce_->start(300);
+        else if (syncProgressShown_)
+            statusBar()->showMessage(tr("Syncing rooms…"));
+        return;
+    }
+
+    if (syncStatusDebounce_) syncStatusDebounce_->stop();
+
+    if (reconnecting) {
+        syncProgressShown_ = true;
+        statusBar()->showMessage(tr("Reconnecting…"));
+        return;
+    }
+    if (keys_busy) {
+        syncProgressShown_ = true;
+        statusBar()->showMessage(
+            tr("Downloading encryption keys (%1)…")
+                .arg(static_cast<qulonglong>(lastImportedKeys_)));
+        return;
+    }
+    if (syncProgressShown_) {
+        // We covered up a prior login message; settle to the steady-state copy.
+        syncProgressShown_ = false;
+        statusBar()->showMessage(tr("Connected"));
     }
 }
 

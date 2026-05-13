@@ -9,6 +9,7 @@
 #include <QToolButton>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <tesseract/client.h>
@@ -71,6 +72,9 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_room_list_state(tesseract::RoomListState state) override {
+        emit roomListStateChanged(static_cast<std::uint8_t>(state));
+    }
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
@@ -91,6 +95,7 @@ signals:
     void roomsUpdated(std::vector<tesseract::RoomInfo> rooms);
     void syncError(QString context, QString description, bool soft_logout);
     void backupProgress(tesseract::BackupProgress progress);
+    void roomListStateChanged(std::uint8_t state);
     void imagePacksUpdated();
     void accountPrefsUpdated(QString json);
     void notificationTriggered(QString roomId, QString roomName,
@@ -122,6 +127,7 @@ private slots:
     void onSyncError(QString context, QString description, bool soft_logout);
     void onSpaceBack();
     void onBackupProgress(tesseract::BackupProgress progress);
+    void onRoomListStateChanged(std::uint8_t state);
     void onRecoveryVerifyClicked();
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
@@ -213,6 +219,18 @@ private:
     tesseract::views::RecoveryBanner*       recoveryShared_    = nullptr;  // borrowed
     std::unique_ptr<tk::NativeTextField>    recoveryKeyField_;
     bool                                    recoveryBannerDismissed_ = false;
+
+    // Sync-progress status text (initial room hydration + key backfill).
+    // Cached so refreshSyncStatus() can recompute on either signal.
+    tesseract::RoomListState lastRoomListState_ = tesseract::RoomListState::Init;
+    tesseract::BackupState   lastBackupState_   = tesseract::BackupState::Unknown;
+    std::uint64_t            lastImportedKeys_  = 0;
+    // Single-shot timer that defers entering the "Syncing rooms…" message
+    // by 300 ms so quiet restored sessions (Init→Running in <500 ms) don't
+    // flash the status bar.
+    QTimer*                  syncStatusDebounce_ = nullptr;
+    bool                     syncProgressShown_  = false;
+    void refreshSyncStatus();
 
     QWidget*             userStrip_       = nullptr;
     QLabel*              userAvatarLabel_ = nullptr;

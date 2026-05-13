@@ -78,6 +78,19 @@ void EventHandlerBridge::on_backup_progress(const BackupProgress& progress) cons
     handler_->on_backup_progress(tesseract::from_ffi(progress));
 }
 
+void EventHandlerBridge::on_room_list_state(std::uint8_t state) const {
+    if (!handler_) return;
+    // Clamp unknown codes back to Init so the C++ side never sees an
+    // out-of-range enum value if the Rust protocol ever adds a state we
+    // don't know yet. The exhaustive Rust mapper makes this a defensive
+    // belt-and-braces — there's no path that produces an invalid code today.
+    tesseract::RoomListState rls = (state <= static_cast<std::uint8_t>(
+                                        tesseract::RoomListState::Terminated))
+        ? static_cast<tesseract::RoomListState>(state)
+        : tesseract::RoomListState::Init;
+    handler_->on_room_list_state(rls);
+}
+
 void EventHandlerBridge::on_image_packs_updated() const {
     if (!handler_) return;
     handler_->on_image_packs_updated();

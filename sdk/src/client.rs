@@ -85,6 +85,28 @@ fn backup_state_code(s: matrix_sdk::encryption::backups::BackupState) -> u8 {
     }
 }
 
+// `on_room_list_state` payload encoding — kept in sync with the
+// `RoomListState` enum in `client/include/tesseract/types.h`. Mirrors
+// `matrix_sdk_ui::room_list_service::State`.
+pub(crate) const ROOM_LIST_STATE_INIT:       u8 = 0;
+pub(crate) const ROOM_LIST_STATE_SETTING_UP: u8 = 1;
+pub(crate) const ROOM_LIST_STATE_RECOVERING: u8 = 2;
+pub(crate) const ROOM_LIST_STATE_RUNNING:    u8 = 3;
+pub(crate) const ROOM_LIST_STATE_ERROR:      u8 = 4;
+pub(crate) const ROOM_LIST_STATE_TERMINATED: u8 = 5;
+
+fn room_list_state_code(s: &matrix_sdk_ui::room_list_service::State) -> u8 {
+    use matrix_sdk_ui::room_list_service::State as S;
+    match s {
+        S::Init             => ROOM_LIST_STATE_INIT,
+        S::SettingUp        => ROOM_LIST_STATE_SETTING_UP,
+        S::Recovering       => ROOM_LIST_STATE_RECOVERING,
+        S::Running          => ROOM_LIST_STATE_RUNNING,
+        S::Error { .. }     => ROOM_LIST_STATE_ERROR,
+        S::Terminated { .. } => ROOM_LIST_STATE_TERMINATED,
+    }
+}
+
 #[cfg(test)]
 fn backup_progress_default() -> BackupProgress {
     BackupProgress { state: BACKUP_STATE_UNKNOWN, imported_keys: 0, total_keys: 0 }
@@ -653,6 +675,52 @@ impl ClientFfi {
             });
         }
 
+        // RoomListService state watcher.
+        //
+        // Surfaces the high-level sliding-sync phases (Init → SettingUp →
+        // Running, plus Recovering on reconnect) so the UI can show a
+        // "Syncing rooms…" status while the joined-room set is still being
+        // hydrated. The SyncService itself only exposes Idle/Running/Error;
+        // the room-list service is where the actually-interesting transitions
+        // live.
+        //
+        // Emits an initial snapshot before the recv loop so a UI that opens
+        // before the first transition still has a starting value, matching
+        // the backup-state watcher above.
+        {
+            let h            = Arc::clone(&handler);
+            let svc_clone    = Arc::clone(&sync_service);
+            let mut stop_rx  = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                let rls          = svc_clone.room_list_service();
+                let mut state_rx = rls.state();
+
+                // Initial snapshot.
+                {
+                    let s = room_list_state_code(&state_rx.next_now());
+                    if let Ok(guard) = h.lock() {
+                        guard.on_room_list_state(s);
+                    }
+                }
+
+                loop {
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { break; }
+                        }
+                        Some(state) = state_rx.next() => {
+                            let s = room_list_state_code(&state);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_room_list_state(s);
+                            }
+                        }
+                        else => break,
+                    }
+                }
+            });
+        }
+
         // Start SyncService and monitor state.
         let svc_clone      = Arc::clone(&sync_service);
         let h_state        = Arc::clone(&handler);
@@ -701,6 +769,7 @@ impl ClientFfi {
         // second time (after ~MainWindow has already run) is a no-op.  If the
         // handler is already gone we skip the session flush on the second call
         // rather than calling back into a partially-destroyed C++ object.
+        #[cfg(not(test))]
         let handler = self.handler.take();
         // Flush the latest OAuth session to disk before tearing down the
         // runtime.  The session-watcher task (spawned in start_sync) saves
@@ -3185,6 +3254,30 @@ mod tests {
         assert_eq!(visible_len(&[false, false]), 0);
         assert_eq!(visible_len(&[true, false, true, false, true]), 3);
         assert_eq!(visible_len(&[true, true, true]), 3);
+    }
+
+    // ---------------------------------------------------------------------
+    // RoomListService state mapper — guards the u8 protocol encoding the
+    // C++ side decodes into `tesseract::RoomListState`. If matrix-sdk-ui
+    // adds a variant, the exhaustive match below stops compiling and we
+    // get a clear signal to extend the C++ enum in lock-step.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn room_list_state_code_maps_every_variant() {
+        use matrix_sdk_ui::room_list_service::State as S;
+        assert_eq!(room_list_state_code(&S::Init),                ROOM_LIST_STATE_INIT);
+        assert_eq!(room_list_state_code(&S::SettingUp),           ROOM_LIST_STATE_SETTING_UP);
+        assert_eq!(room_list_state_code(&S::Recovering),          ROOM_LIST_STATE_RECOVERING);
+        assert_eq!(room_list_state_code(&S::Running),             ROOM_LIST_STATE_RUNNING);
+        assert_eq!(
+            room_list_state_code(&S::Error { from: Box::new(S::Running) }),
+            ROOM_LIST_STATE_ERROR,
+        );
+        assert_eq!(
+            room_list_state_code(&S::Terminated { from: Box::new(S::Running) }),
+            ROOM_LIST_STATE_TERMINATED,
+        );
     }
 
     // ---------------------------------------------------------------------

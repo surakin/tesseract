@@ -51,6 +51,7 @@ public:
                        bool soft_logout) override;
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
+    void on_room_list_state(tesseract::RoomListState state) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
     void on_notification(const std::string& room_id, const std::string& room_name,
@@ -85,6 +86,7 @@ public:
     void handle_reconnect();
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
+    void push_room_list_state(tesseract::RoomListState state);
     void push_image_packs_updated();
     void push_account_prefs_updated(const std::string& json);
     void push_notification(const std::string& room_id, const std::string& room_name,
@@ -255,6 +257,17 @@ private:
     std::string     ctx_sticker_mxc_url_;
     std::string     ctx_sticker_body_;
     GtkWidget*      status_bar_         = nullptr;
+
+    // Sync-progress status (initial room hydration + key backfill).
+    tesseract::RoomListState last_room_list_state_ = tesseract::RoomListState::Init;
+    tesseract::BackupState   last_backup_state_    = tesseract::BackupState::Unknown;
+    std::uint64_t            last_imported_keys_   = 0;
+    // 300 ms debounce so an already-warm session doesn't flash
+    // "Syncing rooms…" on the way from Init → Running.
+    guint                    sync_status_debounce_id_ = 0;
+    bool                     sync_progress_shown_     = false;
+    void                     refresh_sync_status();
+    static gboolean          on_sync_status_debounce_(gpointer user_data);
 
     // Recovery banner — shared widget hosted in a tk::gtk4::Surface.
     // Visibility is toggled at the Surface widget level; the password
