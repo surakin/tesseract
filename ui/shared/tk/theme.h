@@ -22,6 +22,7 @@ struct Palette {
     Color compose_card_bg;
     Color border;
     Color separator;
+    Color popup_border;         // outer frame of floating pickers
 
     // Text
     Color text_primary;

@@ -15,6 +15,7 @@ constexpr Palette light_palette() {
     p.compose_card_bg  = Color::rgb(0xF0F2F5);
     p.border           = Color::rgb(0xD0D3D8);
     p.separator        = Color::rgb(0xD0D3D8);
+    p.popup_border     = Color::rgb(0xBBBEC4);
 
     // Text
     p.text_primary     = Color::rgb(0x111111);
@@ -59,6 +60,7 @@ constexpr Palette dark_palette() {
     p.compose_card_bg  = Color::rgb(0x202327);
     p.border           = Color::rgb(0x33363B);
     p.separator        = Color::rgb(0x33363B);
+    p.popup_border     = Color::rgb(0x50535A);
 
     p.text_primary     = Color::rgb(0xF0F0F2);
     p.text_secondary   = Color::rgb(0xA0A0A8);

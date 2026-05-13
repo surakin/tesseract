@@ -324,7 +324,7 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
     // Backdrop + 1 px border so the picker reads as a card on any host
     // overlay style.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
-    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.border, 1.0f);
+    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
 
     // Search-row affordance behind the host's NativeTextField overlay.
     ctx.canvas.fill_rounded_rect(search_rect_, 6.0f,
