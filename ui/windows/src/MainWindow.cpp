@@ -1014,7 +1014,22 @@ void MainWindow::on_create(HWND hwnd) {
     {
         auto bar = std::make_unique<tesseract::views::ComposeBar>();
         compose_shared_ = bar.get();
-        compose_shared_->on_send  = [this](const std::string&) { on_send_clicked(); };
+        compose_shared_->on_send  = [this](const std::string& body) {
+            std::string trimmed = body;
+            auto l = trimmed.find_first_not_of(" \t\n\r");
+            auto r = trimmed.find_last_not_of(" \t\n\r");
+            if (l == std::string::npos) return;
+            trimmed = trimmed.substr(l, r - l + 1);
+            if (trimmed.empty() || current_room_id_.empty()) return;
+            auto res = client_.send_message(current_room_id_, trimmed);
+            if (res) {
+                if (compose_text_area_) compose_text_area_->set_text("");
+                compose_shared_->set_current_text({});
+            } else {
+                MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
+                             L"Send failed", MB_ICONWARNING);
+            }
+        };
         compose_shared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
                                                   std::string mime,
                                                   std::string filename,
@@ -1425,39 +1440,7 @@ void MainWindow::on_auth_error(bool soft_logout) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::on_send_clicked() {
-    if (current_room_id_.empty() || !compose_text_area_) return;
-
-    std::string body = compose_text_area_->text();
-
-    // Trim leading/trailing whitespace.
-    auto l = body.find_first_not_of(" \t\n\r");
-    auto r = body.find_last_not_of(" \t\n\r");
-    if (l == std::string::npos) return;
-    body = body.substr(l, r - l + 1);
-    if (body.empty()) return;
-
-    if (compose_shared_ && compose_shared_->has_editing()) {
-        std::string ev = compose_shared_->edit_event_id();
-        compose_shared_->clear_editing();
-        client_.send_edit(current_room_id_, ev, body);
-        compose_text_area_->set_text("");
-        compose_shared_->set_current_text({});
-    } else if (compose_shared_ && compose_shared_->has_reply()) {
-        std::string reply_id = compose_shared_->reply_event_id();
-        compose_shared_->clear_reply();
-        client_.send_reply(current_room_id_, reply_id, body);
-        compose_text_area_->set_text("");
-        compose_shared_->set_current_text({});
-    } else {
-        auto res = client_.send_message(current_room_id_, body);
-        if (res) {
-            compose_text_area_->set_text("");
-            if (compose_shared_) compose_shared_->set_current_text({});
-        } else {
-            MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
-                         L"Send failed", MB_ICONWARNING);
-        }
-    }
+    if (compose_shared_) compose_shared_->trigger_send();
 }
 
 // ---------------------------------------------------------------------------

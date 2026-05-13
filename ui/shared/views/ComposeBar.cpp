@@ -81,55 +81,7 @@ ComposeBar::ComposeBar() {
         "Send",
         std::function<void()>{},
         tk::Button::Variant::Primary);
-    send->set_on_click([this] {
-        if (pending_.has_value()) {
-            std::string reply_id = reply_event_id_;
-            if (pending_->kind == PendingAttachment::Kind::Image) {
-                // Image send: hand off the raw bytes; integration re-encodes
-                // per the user's image-quality setting.
-                if (on_send_image) {
-                    on_send_image(std::move(pending_->bytes),
-                                  std::move(pending_->mime),
-                                  std::move(pending_->filename),
-                                  current_text_,
-                                  pending_->width,
-                                  pending_->height,
-                                  std::move(reply_id));
-                }
-            } else {
-                // File send: pass through unmodified; matrix-sdk uploads
-                // and posts m.file.
-                if (on_send_file) {
-                    on_send_file(std::move(pending_->bytes),
-                                 std::move(pending_->mime),
-                                 std::move(pending_->filename),
-                                 current_text_,
-                                 std::move(reply_id));
-                }
-            }
-            pending_.reset();
-            file_name_layout_.reset();
-            file_size_layout_.reset();
-            file_layout_key_.clear();
-            clear_reply();
-            recompute_height();
-            if (remove_btn_) remove_btn_->set_visible(false);
-            refresh_send_enabled();
-            if (on_size_changed) on_size_changed();
-        } else if (has_editing()) {
-            std::string ev   = edit_event_id_;
-            std::string text = current_text_;
-            clear_editing();
-            if (on_send_edit) on_send_edit(ev, text);
-        } else if (has_reply()) {
-            std::string id   = reply_event_id_;
-            std::string text = current_text_;
-            clear_reply();
-            if (on_send_reply) on_send_reply(id, text);
-        } else {
-            if (on_send) on_send(current_text_);
-        }
-    });
+    send->set_on_click([this] { trigger_send(); });
     send->set_min_size({ kSendWidth, kButtonSide });
     send_btn_ = add_child(std::move(send));
 
@@ -144,6 +96,52 @@ ComposeBar::ComposeBar() {
     remove_btn_ = add_child(std::move(remove));
 
     refresh_send_enabled();
+}
+
+void ComposeBar::trigger_send() {
+    if (pending_.has_value()) {
+        std::string reply_id = reply_event_id_;
+        if (pending_->kind == PendingAttachment::Kind::Image) {
+            if (on_send_image) {
+                on_send_image(std::move(pending_->bytes),
+                              std::move(pending_->mime),
+                              std::move(pending_->filename),
+                              current_text_,
+                              pending_->width,
+                              pending_->height,
+                              std::move(reply_id));
+            }
+        } else {
+            if (on_send_file) {
+                on_send_file(std::move(pending_->bytes),
+                             std::move(pending_->mime),
+                             std::move(pending_->filename),
+                             current_text_,
+                             std::move(reply_id));
+            }
+        }
+        pending_.reset();
+        file_name_layout_.reset();
+        file_size_layout_.reset();
+        file_layout_key_.clear();
+        clear_reply();
+        recompute_height();
+        if (remove_btn_) remove_btn_->set_visible(false);
+        refresh_send_enabled();
+        if (on_size_changed) on_size_changed();
+    } else if (has_editing()) {
+        std::string ev   = edit_event_id_;
+        std::string text = current_text_;
+        clear_editing();
+        if (on_send_edit) on_send_edit(ev, text);
+    } else if (has_reply()) {
+        std::string id   = reply_event_id_;
+        std::string text = current_text_;
+        clear_reply();
+        if (on_send_reply) on_send_reply(id, text);
+    } else {
+        if (on_send) on_send(current_text_);
+    }
 }
 
 void ComposeBar::set_text_area_natural_height(float h) {

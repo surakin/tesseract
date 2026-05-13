@@ -294,7 +294,8 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     // overflowing; once content fits at full height, the header stays
     // hidden whether or not we showed it last frame.
     list_->arrange(ctx, bounds);
-    bool wants_search = list_->content_height() > bounds.h;
+    bool wants_search = list_->content_height() > bounds.h
+                        || !search_text_.empty();
     search_field_visible_ = wants_search;
 
     if (wants_search) {

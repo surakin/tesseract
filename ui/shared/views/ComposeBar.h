@@ -96,11 +96,16 @@ public:
     /// Back-compat alias — same as `has_pending()`.
     bool has_pending_image() const { return pending_.has_value(); }
 
-    /// Fires when the send button is clicked or NativeTextArea's submit
-    /// callback fires (host wires both to the same target). Only fires
-    /// for text-only sends — when a pending image or file is attached,
-    /// the bar fires `on_send_image` / `on_send_file` instead and clears
-    /// the attachment afterward.
+    /// Execute the same dispatch as the send button: pending attachment →
+    /// `on_send_image`/`on_send_file`; edit mode → `on_send_edit`; reply
+    /// mode → `on_send_reply`; otherwise → `on_send`. Hosts wire both the
+    /// send-button click and the NativeTextArea submit to this method so
+    /// that attachments and reply/edit state are handled correctly on
+    /// Enter key as well as button click.
+    void trigger_send();
+
+    /// Fires when `trigger_send()` runs in plain text mode (no attachment,
+    /// no reply, no edit). The host sends the text as a plain message.
     std::function<void(const std::string&)> on_send;
 
     /// Fires when send runs with a pending image attached. The host

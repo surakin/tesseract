@@ -496,7 +496,18 @@ MainWindow::MainWindow(QWidget* parent)
             composeTextArea_->set_rect(composeShared_->text_area_rect());
     });
 
-    composeShared_->on_send  = [this](const std::string&) { onSendClicked(); };
+    composeShared_->on_send  = [this](const std::string& body) {
+        if (currentRoomId_.empty()) return;
+        std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
+        if (trimmed.empty()) return;
+        auto res = client_.send_message(currentRoomId_, trimmed);
+        if (res) {
+            if (composeTextArea_) composeTextArea_->set_text("");
+            if (composeShared_)   composeShared_->set_current_text({});
+        } else {
+            statusBar()->showMessage(QString::fromStdString(res.message), 4000);
+        }
+    };
     composeShared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
                                              std::string mime,
                                              std::string filename,
@@ -794,32 +805,7 @@ void MainWindow::onLoginSucceeded() {
 }
 
 void MainWindow::onSendClicked() {
-    if (currentRoomId_.empty() || !composeTextArea_) return;
-
-    std::string body = QString::fromStdString(composeTextArea_->text()).trimmed().toStdString();
-    if (body.empty()) return;
-
-    if (composeShared_ && composeShared_->has_editing()) {
-        std::string ev = composeShared_->edit_event_id();
-        composeShared_->clear_editing();
-        client_.send_edit(currentRoomId_, ev, body);
-        composeTextArea_->set_text("");
-        composeShared_->set_current_text({});
-    } else if (composeShared_ && composeShared_->has_reply()) {
-        std::string reply_id = composeShared_->reply_event_id();
-        composeShared_->clear_reply();
-        client_.send_reply(currentRoomId_, reply_id, body);
-        composeTextArea_->set_text("");
-        composeShared_->set_current_text({});
-    } else {
-        auto res = client_.send_message(currentRoomId_, body);
-        if (res) {
-            composeTextArea_->set_text("");
-            if (composeShared_) composeShared_->set_current_text({});
-        } else {
-            statusBar()->showMessage(QString::fromStdString(res.message), 4000);
-        }
-    }
+    if (composeShared_) composeShared_->trigger_send();
 }
 
 void MainWindow::onRoomSelected(const std::string& room_id) {

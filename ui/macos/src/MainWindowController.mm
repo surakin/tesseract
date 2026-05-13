@@ -691,9 +691,16 @@ void EventBridge::on_image_packs_updated() {
         auto bar = std::make_unique<tesseract::views::ComposeBar>();
         _composeShared = bar.get();
         __weak MainWindowController* weakSelf = self;
-        _composeShared->on_send = [weakSelf](const std::string&) {
+        _composeShared->on_send = [weakSelf](const std::string& body) {
             MainWindowController* s = weakSelf;
-            if (s) [s _onComposeSend];
+            if (!s || s->_currentRoomId.empty()) return;
+            std::string trimmed = trim(body);
+            if (trimmed.empty()) return;
+            auto res = s->_client.send_message(s->_currentRoomId, trimmed);
+            if (res) {
+                if (s->_composeTextArea) s->_composeTextArea->set_text("");
+                if (s->_composeShared)   s->_composeShared->set_current_text({});
+            }
         };
         _composeShared->on_send_image =
             [weakSelf](std::vector<std::uint8_t> bytes,
@@ -952,29 +959,7 @@ void EventBridge::on_image_packs_updated() {
 }
 
 - (void)_onComposeSend {
-    if (_currentRoomId.empty() || !_composeTextArea) return;
-    std::string body = trim(_composeTextArea->text());
-    if (body.empty()) return;
-
-    if (_composeShared && _composeShared->has_editing()) {
-        std::string ev = _composeShared->edit_event_id();
-        _composeShared->clear_editing();
-        _client.send_edit(_currentRoomId, ev, body);
-        _composeTextArea->set_text("");
-        _composeShared->set_current_text({});
-    } else if (_composeShared && _composeShared->has_reply()) {
-        std::string reply_id = _composeShared->reply_event_id();
-        _composeShared->clear_reply();
-        _client.send_reply(_currentRoomId, reply_id, body);
-        _composeTextArea->set_text("");
-        _composeShared->set_current_text({});
-    } else {
-        auto res = _client.send_message(_currentRoomId, body);
-        if (res) {
-            _composeTextArea->set_text("");
-            if (_composeShared) _composeShared->set_current_text({});
-        }
-    }
+    if (_composeShared) _composeShared->trigger_send();
 }
 
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
