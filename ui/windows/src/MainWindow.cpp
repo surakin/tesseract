@@ -1690,6 +1690,16 @@ void MainWindow::start_login() {
 
         sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
             tesseract::SessionStore::account_dir(uid) / "avatars");
+        {
+            auto* cache_ptr  = sess->avatar_disk_cache.get();
+            auto* client_ptr = sess->client.get();
+            run_async_([cache_ptr, client_ptr]() {
+                for (const auto& mxc : cache_ptr->all_keys()) {
+                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                        cache_ptr->remove(mxc);
+                }
+            });
+        }
 
         accounts_.push_back(std::move(sess));
     }
@@ -1774,6 +1784,16 @@ void MainWindow::on_login_succeeded() {
 
     sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
         tesseract::SessionStore::account_dir(new_uid) / "avatars");
+    {
+        auto* cache_ptr  = sess->avatar_disk_cache.get();
+        auto* client_ptr = sess->client.get();
+        run_async_([cache_ptr, client_ptr]() {
+            for (const auto& mxc : cache_ptr->all_keys()) {
+                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                    cache_ptr->remove(mxc);
+            }
+        });
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -2327,16 +2347,11 @@ void MainWindow::request_room_avatar(const std::string& room_id,
         if (cache) {
             auto bytes = cache->get(mxc);
             if (!bytes.empty()) {
-                bool decoded = false;
                 if (room_surface_) {
-                    if (auto img = room_surface_->factory().decode_image(bytes)) {
+                    if (auto img = room_surface_->factory().decode_image(bytes))
                         tk_avatars_.emplace(mxc, std::move(img));
-                        decoded = true;
-                    }
                 }
-                if (decoded) return;
-                // Decode failed: remove the corrupt entry and fall through to fetch.
-                cache->remove(mxc);
+                return;
             }
         }
     }
@@ -2366,16 +2381,11 @@ void MainWindow::request_user_avatar(const std::string& mxc) {
         if (cache) {
             auto bytes = cache->get(mxc);
             if (!bytes.empty()) {
-                bool decoded = false;
                 if (msg_surface_) {
-                    if (auto img = msg_surface_->factory().decode_image(bytes)) {
+                    if (auto img = msg_surface_->factory().decode_image(bytes))
                         tk_avatars_.emplace(mxc, std::move(img));
-                        decoded = true;
-                    }
                 }
-                if (decoded) return;
-                // Decode failed: remove the corrupt entry and fall through to fetch.
-                cache->remove(mxc);
+                return;
             }
         }
     }

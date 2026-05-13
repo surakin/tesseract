@@ -288,6 +288,11 @@ public:
     /// the leading `mxc://` prefix. Returns an empty vector on any failure.
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
+    /// Returns true if `mxc_url` is present in the local Matrix SDK media
+    /// cache (SQLite). A cache miss triggers a network fetch that re-warms the
+    /// L2 cache. Use from a background worker only — not the UI thread.
+    bool is_avatar_in_sdk_cache(const std::string& mxc_url);
+
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // ------------------------------------------------------------------

@@ -1722,6 +1722,23 @@ impl ClientFfi {
     /// the cache first and only goes to the network on a miss. A network miss
     /// re-warms the L2 cache (correct and harmless for a startup eviction
     /// check). Returns `false` on invalid URL, network failure, or empty body.
+    pub fn is_avatar_in_sdk_cache(&mut self, mxc_url: &str) -> bool {
+        use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+        use matrix_sdk::ruma::events::room::MediaSource;
+        use matrix_sdk::ruma::OwnedMxcUri;
+        let Some(client) = self.client.clone() else { return false };
+        let uri = OwnedMxcUri::from(mxc_url);
+        if !uri.is_valid() { return false; }
+        let request = MediaRequestParameters {
+            source: MediaSource::Plain(uri.into()),
+            format: MediaFormat::File,
+        };
+        !self.rt
+            .block_on(client.media().get_media_content(&request, true))
+            .unwrap_or_default()
+            .is_empty()
+    }
+
     // -----------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // -----------------------------------------------------------------------

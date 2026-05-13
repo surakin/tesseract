@@ -1001,6 +1001,16 @@ void MainWindow::doLogin() {
 
         session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
             tesseract::SessionStore::account_dir(uid) / "avatars");
+        {
+            auto* cache_ptr  = session->avatar_disk_cache.get();
+            auto* client_ptr = session->client.get();
+            runOnPool_([cache_ptr, client_ptr]() {
+                for (const auto& mxc : cache_ptr->all_keys()) {
+                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                        cache_ptr->remove(mxc);
+                }
+            });
+        }
 
         if (uid == idx.active_user_id) target_active = static_cast<int>(accounts_.size());
         accounts_.push_back(std::move(session));
@@ -1165,6 +1175,16 @@ void MainWindow::onLoginSucceeded() {
 
     session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
         tesseract::SessionStore::account_dir(user_id) / "avatars");
+    {
+        auto* cache_ptr  = session->avatar_disk_cache.get();
+        auto* client_ptr = session->client.get();
+        runOnPool_([cache_ptr, client_ptr]() {
+            for (const auto& mxc : cache_ptr->all_keys()) {
+                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                    cache_ptr->remove(mxc);
+            }
+        });
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(session));
@@ -1607,10 +1627,8 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
                                                Qt::KeepAspectRatio,
                                                Qt::SmoothTransformation);
                     tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
-                    return;
                 }
-                // Decode failed: remove the corrupt entry and fall through to fetch.
-                cache->remove(mxc);
+                return;
             }
         }
     }
@@ -1645,10 +1663,8 @@ void MainWindow::requestUserAvatar_(const std::string& mxc) {
                                                Qt::KeepAspectRatio,
                                                Qt::SmoothTransformation);
                     tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
-                    return;
                 }
-                // Decode failed: remove the corrupt entry and fall through to fetch.
-                cache->remove(mxc);
+                return;
             }
         }
     }
