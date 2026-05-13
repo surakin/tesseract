@@ -482,7 +482,8 @@ MainWindow::MainWindow(QWidget* parent)
                                              std::string filename,
                                              std::string caption,
                                              std::uint32_t /*src_w*/,
-                                             std::uint32_t /*src_h*/) {
+                                             std::uint32_t /*src_h*/,
+                                             std::string reply_event_id) {
         if (currentRoomId_.empty()) return;
         const bool compress =
             tesseract::Settings::instance().image_quality
@@ -502,7 +503,8 @@ MainWindow::MainWindow(QWidget* parent)
         }
         auto res = client_.send_image(currentRoomId_, enc.bytes, enc.mime,
                                         out_name, caption,
-                                        enc.width, enc.height);
+                                        enc.width, enc.height,
+                                        reply_event_id);
         if (!res) {
             statusBar()->showMessage(
                 "Send image failed: " + QString::fromStdString(res.message),
@@ -516,10 +518,11 @@ MainWindow::MainWindow(QWidget* parent)
     composeShared_->on_send_file = [this](std::vector<std::uint8_t> bytes,
                                             std::string mime,
                                             std::string filename,
-                                            std::string caption) {
+                                            std::string caption,
+                                            std::string reply_event_id) {
         if (currentRoomId_.empty()) return;
         auto res = client_.send_file(currentRoomId_, bytes, mime,
-                                      filename, caption);
+                                      filename, caption, reply_event_id);
         if (!res) {
             statusBar()->showMessage(
                 "Send file failed: " + QString::fromStdString(res.message),
@@ -544,6 +547,18 @@ MainWindow::MainWindow(QWidget* parent)
         if (!stickerPicker_) return;
         if (stickerPicker_->isVisible()) stickerPicker_->hide();
         else                              stickerPicker_->popupAt(composeSurface_);
+    };
+    composeShared_->on_send_reply = [this](const std::string& reply_event_id,
+                                            const std::string& body) {
+        if (body.empty() || currentRoomId_.empty()) return;
+        auto res = client_.send_reply(currentRoomId_, reply_event_id, body);
+        if (!res) {
+            statusBar()->showMessage(
+                "Send reply failed: " + QString::fromStdString(res.message), 4000);
+            return;
+        }
+        if (composeTextArea_) composeTextArea_->set_text("");
+        if (composeShared_)   composeShared_->set_current_text({});
     };
 
     vLayout->addWidget(composeSurface_);
@@ -607,6 +622,46 @@ MainWindow::MainWindow(QWidget* parent)
             // widget coords.
             emojiPicker_->popupAtRect(msgSurface_, anchor);
         };
+
+    // "↩" hover button → enter reply mode in the compose bar.
+    messageListView_->on_reply_requested =
+        [this](const std::string& event_id,
+               const std::string& sender_name,
+               const std::string& body_preview) {
+            if (!composeShared_) return;
+            composeShared_->set_reply_to(event_id, sender_name, body_preview);
+            if (composeTextArea_) composeTextArea_->set_focused(true);
+        };
+
+    // "✏" hover button → enter edit mode in the compose bar.
+    messageListView_->on_edit_requested =
+        [this](const std::string& event_id, const std::string& current_body) {
+            if (!composeShared_) return;
+            composeShared_->set_editing(event_id);
+            if (composeTextArea_) {
+                composeTextArea_->set_text(current_body);
+                composeShared_->set_current_text(current_body);
+                composeTextArea_->set_focused(true);
+            }
+        };
+
+    composeShared_->on_send_edit = [this](const std::string& event_id,
+                                           const std::string& new_body) {
+        if (new_body.empty() || currentRoomId_.empty()) return;
+        auto res = client_.send_edit(currentRoomId_, event_id, new_body);
+        if (!res) {
+            statusBar()->showMessage(
+                "Edit failed: " + QString::fromStdString(res.message), 4000);
+            return;
+        }
+        if (composeTextArea_) composeTextArea_->set_text("");
+        if (composeShared_)   composeShared_->set_current_text({});
+    };
+
+    composeShared_->on_edit_cancelled = [this] {
+        if (composeTextArea_) composeTextArea_->set_text("");
+        if (composeShared_)   composeShared_->set_current_text({});
+    };
 
     statusBar()->showMessage("Not logged in");
     // Room selection is delivered through RoomListView's on_room_selected
@@ -740,6 +795,10 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         client_.unsubscribe_room(currentRoomId_);
 
     currentRoomId_ = room_id;
+    if (composeShared_) {
+        composeShared_->clear_reply();
+        composeShared_->clear_editing();
+    }
 
     for (const auto& r : rooms_)
         if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
@@ -1118,6 +1177,11 @@ tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& e
     row.is_own            = (ev.sender == myUserId_);
     row.reactions         = ev.reactions;
     row.read_receipts     = ev.read_receipts;
+
+    row.in_reply_to_id          = ev.in_reply_to_id;
+    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
+    row.in_reply_to_body        = ev.in_reply_to_body;
+    row.is_edited               = ev.is_edited;
 
     switch (ev.type) {
         case tesseract::EventType::Text:

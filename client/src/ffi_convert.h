@@ -112,6 +112,11 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e) {
             std::string(rr.avatar_url),
         });
     }
+
+    ev.in_reply_to_id          = std::string(e.in_reply_to_id);
+    ev.in_reply_to_sender_name = std::string(e.in_reply_to_sender_name);
+    ev.in_reply_to_body        = std::string(e.in_reply_to_body);
+    ev.is_edited               = e.is_edited;
 }
 
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) {

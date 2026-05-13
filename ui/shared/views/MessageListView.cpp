@@ -55,6 +55,19 @@ constexpr float kVoiceDurationW   = 40.0f;  // reserved for "0:00" label
 constexpr float kVoiceSpeedPillW  = 30.0f;  // "1×" / "1.5×" / "2×"
 constexpr float kVoiceSpeedPillH  = 20.0f;
 
+// Reply quote block — painted above the body block when m.has_reply().
+constexpr float kQuoteBlockH   = 38.0f;  // total height of the quote band
+constexpr float kQuoteAccentW  =  3.0f;  // left accent stripe width
+constexpr float kQuotePadX     =  8.0f;
+constexpr float kQuoteGapAfter =  4.0f;  // gap between quote and body
+// Reply hover button ("↩") — right-aligned in the chip strip.
+constexpr float kReplyBtnW     = 28.0f;
+constexpr float kReplyBtnPadX  =  8.0f;
+// Edit hover button ("✏") — left of the reply button in the chip strip.
+constexpr float kEditBtnW      = 28.0f;
+// "(edited)" badge — appended after the body text of an edited message.
+constexpr float kEditedBadgeGap =  4.0f;
+
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
     std::uint64_t total_s = ms / 1000;
@@ -145,11 +158,13 @@ public:
             // Reset the per-row chip cache for the hovered row. We
             // rebuild it below as the chip strip paints, then the
             // owner's pointer handlers hit-test against it.
-            owner_.hovered_row_geom_.row_index   = index;
-            owner_.hovered_row_geom_.row_bounds  = bounds;
+            owner_.hovered_row_geom_.row_index    = index;
+            owner_.hovered_row_geom_.row_bounds   = bounds;
             owner_.hovered_row_geom_.chips.clear();
-            owner_.hovered_row_geom_.add_button  = tk::Rect{};
-            owner_.hovered_row_geom_.add_visible = false;
+            owner_.hovered_row_geom_.add_button   = tk::Rect{};
+            owner_.hovered_row_geom_.add_visible  = false;
+            owner_.hovered_row_geom_.reply_button = tk::Rect{};
+            owner_.hovered_row_geom_.edit_button  = tk::Rect{};
         }
 
         // Avatar (top-left, vertically pinned to the sender row).
@@ -287,6 +302,51 @@ public:
                     owner_.hovered_row_geom_.add_visible = true;
                     chip_x += w + chip_gap();
                 }
+
+                // Reply button "↩" — painted immediately after the "+" chip.
+                {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Title;
+                    auto layout = ctx.factory.build_text("↩", st);  // ↩
+                    if (layout) {
+                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
+                                            chip_h() + 4.0f);
+                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                                                      ctx.theme.palette.subtle_hover);
+                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                                                        ctx.theme.palette.border, 1.0f);
+                        ctx.canvas.draw_text(
+                            *layout,
+                            { pill.x + kReplyBtnPadX,
+                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                            ctx.theme.palette.text_secondary);
+                        owner_.hovered_row_geom_.reply_button = pill;
+                        chip_x += w + chip_gap();
+                    }
+                }
+
+                // Edit button "✏" — only for own text messages.
+                if (m.is_own && m.kind == MessageRowData::Kind::Text) {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Title;
+                    auto layout = ctx.factory.build_text("\xE2\x9C\x8F", st);  // ✏
+                    if (layout) {
+                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
+                                            chip_h() + 4.0f);
+                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                                                      ctx.theme.palette.subtle_hover);
+                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                                                        ctx.theme.palette.border, 1.0f);
+                        ctx.canvas.draw_text(
+                            *layout,
+                            { pill.x + kReplyBtnPadX,
+                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                            ctx.theme.palette.text_secondary);
+                        owner_.hovered_row_geom_.edit_button = pill;
+                    }
+                }
             }
 
             // Read-receipt cluster — bottom-right of the strip, capped at
@@ -382,11 +442,23 @@ private:
     float measure_body_block_height(const MessageRowData& m,
                                      tk::LayoutCtx& ctx,
                                      float col_w) const {
+        float quote_h = m.has_reply() ? (kQuoteBlockH + kQuoteGapAfter) : 0.0f;
         switch (m.kind) {
             case MessageRowData::Kind::Text:
+            case MessageRowData::Kind::Unhandled: {
+                float th = measure_text_height(m.body.empty()
+                    ? std::string("(empty message)")
+                    : m.body,
+                    ctx, col_w);
+                float badge_h = 0.0f;
+                if (m.is_edited) {
+                    // Reserve space for "(edited)" on its own line.
+                    badge_h = kEditedBadgeGap + measure_text_height("(edited)", ctx, col_w);
+                }
+                return quote_h + th + badge_h;
+            }
             case MessageRowData::Kind::Redacted:
-            case MessageRowData::Kind::Unhandled:
-                return measure_text_height(m.body.empty()
+                return quote_h + measure_text_height(m.body.empty()
                     ? std::string("(empty message)")
                     : m.body,
                     ctx, col_w);
@@ -399,28 +471,47 @@ private:
                 if (m.has_filename_caption && !m.body.empty()) {
                     h += 4.0f + measure_text_height(m.body, ctx, col_w);
                 }
-                return h;
+                return quote_h + h;
             }
             case MessageRowData::Kind::Sticker: {
                 float side = std::min({ kStickerSize, col_w, kStickerSize });
-                return side;
+                return quote_h + side;
             }
             case MessageRowData::Kind::File:
-                return kFileCardH;
+                return quote_h + kFileCardH;
             case MessageRowData::Kind::Voice:
-                return kVoiceCardH;
+                return quote_h + kVoiceCardH;
         }
-        return 0;
+        return quote_h;
     }
 
     float paint_body_block(const MessageRowData& m, tk::PaintCtx& ctx,
                             float x, float y, float col_w) const {
+        if (m.has_reply()) {
+            y = paint_quote_block(m, ctx, x, y, col_w);
+            y += kQuoteGapAfter;
+        }
         switch (m.kind) {
             case MessageRowData::Kind::Text:
             case MessageRowData::Kind::Unhandled: {
                 float h = paint_wrapped_text(m.body, ctx, x, y, col_w,
                                               ctx.theme.palette.text_primary);
-                return y + h;
+                float end_y = y + h;
+                // "(edited)" badge on a new inline line below the body.
+                if (m.is_edited) {
+                    tk::TextStyle st{};
+                    st.role      = tk::FontRole::Small;
+                    st.trim      = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo) {
+                        ctx.canvas.draw_text(*lo,
+                            { x, end_y + kEditedBadgeGap },
+                            ctx.theme.palette.text_muted);
+                        end_y += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
+                return end_y;
             }
             case MessageRowData::Kind::Redacted: {
                 float h = paint_wrapped_text("Message deleted", ctx, x, y,
@@ -469,6 +560,58 @@ private:
             }
         }
         return y;
+    }
+
+    // Paint the reply quote block (left accent stripe + sender + snippet).
+    // Returns the y-coordinate directly below the block (y + kQuoteBlockH).
+    float paint_quote_block(const MessageRowData& m, tk::PaintCtx& ctx,
+                             float x, float y, float col_w) const {
+        tk::Rect card{ x, y, col_w, kQuoteBlockH };
+
+        // Record world-coord rect so on_pointer_down can hit-test it.
+        owner_.quote_block_geom_[m.event_id] = card;
+
+        // Background + border
+        ctx.canvas.fill_rounded_rect(card, 4.0f, ctx.theme.palette.subtle_hover);
+        ctx.canvas.stroke_rounded_rect(card, 4.0f, ctx.theme.palette.border, 1.0f);
+
+        // Left accent stripe (3 px, full height of the card, rounded left edge)
+        tk::Rect stripe{ x, y, kQuoteAccentW, kQuoteBlockH };
+        ctx.canvas.fill_rounded_rect(stripe, 4.0f, ctx.theme.palette.accent);
+
+        // Text column starts to the right of the stripe + gap
+        float tx   = x + kQuoteAccentW + kQuotePadX;
+        float tw   = std::max(0.0f, col_w - kQuoteAccentW - kQuotePadX * 2);
+
+        // Sender name — upper half
+        const std::string& sname = m.in_reply_to_sender_name.empty()
+            ? m.in_reply_to_id : m.in_reply_to_sender_name;
+        if (!sname.empty()) {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::UiSemibold;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = tw;
+            auto lo = ctx.factory.build_text(sname, st);
+            if (lo) {
+                ctx.canvas.draw_text(*lo, { tx, y + 4.0f },
+                                      ctx.theme.palette.text_secondary);
+            }
+        }
+
+        // Body snippet — lower half
+        if (!m.in_reply_to_body.empty()) {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = tw;
+            auto lo = ctx.factory.build_text(m.in_reply_to_body, st);
+            if (lo) {
+                ctx.canvas.draw_text(*lo, { tx, y + kQuoteBlockH * 0.5f + 2.0f },
+                                      ctx.theme.palette.text_muted);
+            }
+        }
+
+        return y + kQuoteBlockH;
     }
 
     float measure_text_height(const std::string& text, tk::LayoutCtx& ctx,
@@ -1056,6 +1199,46 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         }
     }
 
+    // Reply button hit-test — check before reaction chips so it has priority.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        const tk::Rect& rb = hovered_row_geom_.reply_button;
+        if (rb.w > 0 && rect_contains(rb, world)) {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size()) {
+                press_reply_btn_      = true;
+                press_reply_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
+    // Edit button hit-test.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        const tk::Rect& eb = hovered_row_geom_.edit_button;
+        if (eb.w > 0 && rect_contains(eb, world)) {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size()) {
+                press_edit_btn_      = true;
+                press_edit_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
+    // Quote-block hit-test — lets the user jump to the original message.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        for (const auto& [eid, rect] : quote_block_geom_) {
+            if (rect_contains(rect, world)) {
+                press_quote_          = true;
+                press_quote_event_id_ = eid;
+                return true;
+            }
+        }
+    }
+
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
                                  local, chip_idx);
@@ -1113,6 +1296,72 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
         }
         return;
     }
+    if (press_reply_btn_) {
+        bool  fire = inside_self && !press_reply_event_id_.empty();
+        std::string ev = std::move(press_reply_event_id_);
+        press_reply_btn_      = false;
+        press_reply_event_id_.clear();
+        if (fire) {
+            // Confirm the pointer is still over the reply button.
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            const tk::Rect& rb = hovered_row_geom_.reply_button;
+            if (rb.w > 0 && rect_contains(rb, world)) {
+                // Find the row to get sender_name + body_preview.
+                for (const auto& row : messages_) {
+                    if (row.event_id == ev) {
+                        if (on_reply_requested) {
+                            on_reply_requested(ev, row.sender_name, row.body);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        return;
+    }
+    if (press_edit_btn_) {
+        bool  fire = inside_self && !press_edit_event_id_.empty();
+        std::string ev = std::move(press_edit_event_id_);
+        press_edit_btn_      = false;
+        press_edit_event_id_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            const tk::Rect& eb = hovered_row_geom_.edit_button;
+            if (eb.w > 0 && rect_contains(eb, world)) {
+                for (const auto& row : messages_) {
+                    if (row.event_id == ev) {
+                        if (on_edit_requested) on_edit_requested(ev, row.body);
+                        break;
+                    }
+                }
+            }
+        }
+        return;
+    }
+    if (press_quote_) {
+        bool  fire = inside_self && !press_quote_event_id_.empty();
+        std::string ev = std::move(press_quote_event_id_);
+        press_quote_          = false;
+        press_quote_event_id_.clear();
+        if (fire) {
+            for (std::size_t i = 0; i < messages_.size(); ++i) {
+                if (messages_[i].event_id == ev) {
+                    const std::string& orig_id = messages_[i].in_reply_to_id;
+                    if (orig_id.empty()) break;
+                    for (std::size_t j = 0; j < messages_.size(); ++j) {
+                        if (messages_[j].event_id == orig_id) {
+                            scroll_to_index(static_cast<int>(j));
+                            return;
+                        }
+                    }
+                    if (on_scroll_to_original) on_scroll_to_original(orig_id);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
     if (press_target_ == HoverTarget::None) {
         tk::ListView::on_pointer_up(local, inside_self);
         return;
@@ -1153,10 +1402,11 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 }
 
 void MessageListView::paint(tk::PaintCtx& ctx) {
-    // Sticker rects are rebuilt per-paint by Adapter::paint_row.
+    // Sticker, voice, and quote rects are rebuilt per-paint by Adapter::paint_row.
     // Clear here so entries scrolled offscreen don't linger.
     sticker_geom_.clear();
     voice_card_geom_.clear();
+    quote_block_geom_.clear();
     tk::ListView::paint(ctx);
 
     // Scroll-to-bottom pill — overlays the bottom-right corner of the

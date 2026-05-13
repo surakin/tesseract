@@ -155,20 +155,22 @@ Result Client::send_image(const std::string& room_id,
                           const std::string& filename,
                           const std::string& caption,
                           std::uint32_t width,
-                          std::uint32_t height) {
+                          std::uint32_t height,
+                          const std::string& reply_event_id) {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_image(
-        room_id, slice, mime_type, filename, caption, width, height));
+        room_id, slice, mime_type, filename, caption, width, height, reply_event_id));
 }
 
 Result Client::send_file(const std::string& room_id,
                          const std::vector<uint8_t>& bytes,
                          const std::string& mime_type,
                          const std::string& filename,
-                         const std::string& caption) {
+                         const std::string& caption,
+                         const std::string& reply_event_id) {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_file(
-        room_id, slice, mime_type, filename, caption));
+        room_id, slice, mime_type, filename, caption, reply_event_id));
 }
 
 std::uint64_t Client::media_upload_limit() {
@@ -185,6 +187,18 @@ Result Client::redact_event(const std::string& room_id,
                             const std::string& event_id,
                             const std::string& reason) {
     return from_ffi(impl_->ffi->redact_event(room_id, event_id, reason));
+}
+
+Result Client::send_reply(const std::string& room_id,
+                          const std::string& event_id,
+                          const std::string& body) {
+    return from_ffi(impl_->ffi->send_reply(room_id, event_id, body));
+}
+
+Result Client::send_edit(const std::string& room_id,
+                         const std::string& event_id,
+                         const std::string& new_body) {
+    return from_ffi(impl_->ffi->send_edit(room_id, event_id, new_body));
 }
 
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n) {

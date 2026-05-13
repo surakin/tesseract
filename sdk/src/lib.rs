@@ -68,6 +68,10 @@ pub mod ffi {
         pub audio_mime:        String,
         pub reactions:         Vec<ReactionGroup>,
         pub read_receipts:     Vec<ReadReceipt>,
+        pub in_reply_to_id:          String,
+        pub in_reply_to_sender_name: String,
+        pub in_reply_to_body:        String,
+        pub is_edited:               bool,
     }
 
     #[derive(Debug, PartialEq, Default)]

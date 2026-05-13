@@ -36,6 +36,10 @@ public:
     static constexpr float kPreviewBandH    = 96.0f;
     static constexpr float kFileBandH       = 48.0f;
     static constexpr float kPreviewBandGap  =  8.0f;
+    static constexpr float kReplyBandH      = 44.0f;
+    static constexpr float kReplyBandGap    =  4.0f;
+    static constexpr float kEditBandH       = 44.0f;
+    static constexpr float kEditBandGap     =  4.0f;
 
     /// Rect inside the compose bar (widget-local coordinates, same space
     /// `root->arrange` operates in) for the host to overlay a
@@ -101,24 +105,28 @@ public:
 
     /// Fires when send runs with a pending image attached. The host
     /// receives the raw clipboard bytes, the source mime, the generated
-    /// filename, the trimmed caption (may be empty), and the source
-    /// dimensions. The host re-encodes per `Settings::image_quality`,
-    /// uploads, and posts the `m.image` event.
+    /// filename, the trimmed caption (may be empty), the source dimensions,
+    /// and the reply_event_id (empty when no reply is pending). The host
+    /// re-encodes per `Settings::image_quality`, uploads, and posts the
+    /// `m.image` event.
     std::function<void(std::vector<std::uint8_t> bytes,
                        std::string mime,
                        std::string filename,
                        std::string caption,
                        std::uint32_t width,
-                       std::uint32_t height)> on_send_image;
+                       std::uint32_t height,
+                       std::string reply_event_id)> on_send_image;
 
     /// Fires when send runs with a pending non-image file attached. The
     /// host receives the raw bytes, the OS-supplied (or guessed) mime,
-    /// the file's basename, and the trimmed caption (may be empty). The
-    /// host uploads as-is and posts the `m.file` event.
+    /// the file's basename, the trimmed caption (may be empty), and the
+    /// reply_event_id (empty when no reply is pending). The host uploads
+    /// as-is and posts the `m.file` event.
     std::function<void(std::vector<std::uint8_t> bytes,
                        std::string mime,
                        std::string filename,
-                       std::string caption)> on_send_file;
+                       std::string caption,
+                       std::string reply_event_id)> on_send_file;
 
     /// Fires when the emoji button is clicked.
     std::function<void()>                    on_emoji;
@@ -133,9 +141,51 @@ public:
     /// fixed-height envelope and re-run `relayout()`.
     std::function<void()>                    on_size_changed;
 
+    /// Enter reply mode. Displays a "Replying to <sender_name>" banner
+    /// with `body_preview` above the text input. Grows `natural_height()`
+    /// by `kReplyBandH + kReplyBandGap` and fires `on_size_changed`.
+    void set_reply_to(std::string event_id,
+                      std::string sender_name,
+                      std::string body_preview);
+
+    /// Exit reply mode. Clears the reply banner, shrinks `natural_height()`,
+    /// and fires `on_size_changed`. No-op when not in reply mode.
+    void  clear_reply();
+    bool  has_reply()              const { return !reply_event_id_.empty(); }
+    const std::string& reply_event_id() const { return reply_event_id_; }
+
+    /// Fires in place of `on_send` when a reply is pending. The host should
+    /// call `Client::send_reply(current_room_, reply_event_id, body)`.
+    std::function<void(const std::string& reply_event_id,
+                        const std::string& body)> on_send_reply;
+
+    /// Enter edit mode. Displays an "Editing message" banner above the text
+    /// input (replaces any active reply mode). Grows `natural_height()` by
+    /// `kEditBandH + kEditBandGap` and fires `on_size_changed`.
+    void set_editing(std::string event_id);
+
+    /// Exit edit mode. Clears the edit banner, shrinks `natural_height()`,
+    /// and fires `on_size_changed`. No-op when not in edit mode.
+    void  clear_editing();
+    bool  has_editing()              const { return !edit_event_id_.empty(); }
+    const std::string& edit_event_id() const { return edit_event_id_; }
+
+    /// Fires in place of `on_send` when edit mode is active. The host should
+    /// call `Client::send_edit(current_room_, event_id, new_body)`.
+    std::function<void(const std::string& event_id,
+                        const std::string& new_body)> on_send_edit;
+
+    /// Fires when the user cancels an in-progress edit via the "×" button
+    /// in the edit banner. The host should restore the original text to the
+    /// compose field and call `clear_editing()`.
+    std::function<void()> on_edit_cancelled;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
+    bool     on_pointer_down(tk::Point local)              override;
+    void     on_pointer_up  (tk::Point local,
+                              bool inside_self)            override;
 
 private:
     struct PendingAttachment {
@@ -187,6 +237,21 @@ private:
     bool        enabled_ = true;
 
     std::optional<PendingAttachment> pending_;
+
+    // Reply state. reply_event_id_ is empty when not in reply mode.
+    std::string reply_event_id_;
+    std::string reply_sender_name_;
+    std::string reply_body_preview_;
+    tk::Rect    reply_band_rect_{};
+    tk::Rect    reply_cancel_rect_{};
+    bool        press_reply_cancel_ = false;
+
+    // Edit state. edit_event_id_ is empty when not in edit mode.
+    // Edit mode and reply mode are mutually exclusive.
+    std::string edit_event_id_;
+    tk::Rect    edit_band_rect_{};
+    tk::Rect    edit_cancel_rect_{};
+    bool        press_edit_cancel_ = false;
 };
 
 } // namespace tesseract::views

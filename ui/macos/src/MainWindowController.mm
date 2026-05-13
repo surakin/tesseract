@@ -542,6 +542,28 @@ void EventBridge::on_image_packs_updated() {
                 // flipped so the rect maps directly to view-local.
                 [s showEmojiPickerAtRect:anchor];
             };
+        _messageListView->on_reply_requested =
+            [weakSelf](const std::string& event_id,
+                       const std::string& sender_name,
+                       const std::string& body_preview) {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_composeShared) return;
+                s->_composeShared->set_reply_to(event_id, sender_name,
+                                                body_preview);
+                if (s->_composeTextArea) s->_composeTextArea->focus();
+            };
+        _messageListView->on_edit_requested =
+            [weakSelf](const std::string& event_id,
+                       const std::string& current_body) {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_composeShared) return;
+                s->_composeShared->set_editing(event_id);
+                if (s->_composeTextArea) {
+                    s->_composeTextArea->set_text(current_body);
+                    s->_composeShared->set_current_text(current_body);
+                    s->_composeTextArea->focus();
+                }
+            };
         _messageListView->on_near_top = [weakSelf]{
             MainWindowController* s = weakSelf;
             if (!s) return;
@@ -645,13 +667,15 @@ void EventBridge::on_image_packs_updated() {
                         std::string mime,
                         std::string filename,
                         std::string caption,
-                        std::uint32_t /*src_w*/, std::uint32_t /*src_h*/) {
+                        std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
+                        std::string reply_event_id) {
                 MainWindowController* s = weakSelf;
                 if (!s) return;
                 [s _sendComposedImage:std::move(bytes)
                                    mime:std::move(mime)
                                 filename:std::move(filename)
-                                  caption:std::move(caption)];
+                                  caption:std::move(caption)
+                           replyEventId:std::move(reply_event_id)];
             };
         _composeShared->on_size_changed = [weakSelf] {
             MainWindowController* c = weakSelf;
@@ -720,14 +744,40 @@ void EventBridge::on_image_packs_updated() {
             [weakSelf](std::vector<std::uint8_t> bytes,
                         std::string mime,
                         std::string filename,
-                        std::string caption) {
+                        std::string caption,
+                        std::string reply_event_id) {
                 MainWindowController* s = weakSelf;
                 if (!s) return;
                 [s _sendComposedFile:std::move(bytes)
                                   mime:std::move(mime)
                               filename:std::move(filename)
-                                caption:std::move(caption)];
+                                caption:std::move(caption)
+                          replyEventId:std::move(reply_event_id)];
             };
+        _composeShared->on_send_reply =
+            [weakSelf](const std::string& reply_event_id,
+                       const std::string& body) {
+                MainWindowController* s = weakSelf;
+                if (!s || body.empty() || s->_currentRoomId.empty()) return;
+                s->_client.send_reply(s->_currentRoomId, reply_event_id, body);
+                if (s->_composeTextArea) s->_composeTextArea->set_text("");
+                if (s->_composeShared)   s->_composeShared->set_current_text({});
+            };
+        _composeShared->on_send_edit =
+            [weakSelf](const std::string& event_id,
+                       const std::string& new_body) {
+                MainWindowController* s = weakSelf;
+                if (!s || new_body.empty() || s->_currentRoomId.empty()) return;
+                s->_client.send_edit(s->_currentRoomId, event_id, new_body);
+                if (s->_composeTextArea) s->_composeTextArea->set_text("");
+                if (s->_composeShared)   s->_composeShared->set_current_text({});
+            };
+        _composeShared->on_edit_cancelled = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            if (s->_composeTextArea) s->_composeTextArea->set_text("");
+            if (s->_composeShared)   s->_composeShared->set_current_text({});
+        };
 
         _composeSurface->set_on_layout([weakSelf] {
             MainWindowController* c = weakSelf;
@@ -882,7 +932,8 @@ void EventBridge::on_image_packs_updated() {
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
                        mime:(std::string)mime
                    filename:(std::string)filename
-                    caption:(std::string)caption {
+                    caption:(std::string)caption
+               replyEventId:(std::string)reply_event_id {
     if (_currentRoomId.empty() || !_composeSurface) return;
     const bool compress =
         tesseract::Settings::instance().image_quality
@@ -898,7 +949,8 @@ void EventBridge::on_image_packs_updated() {
     }
     auto res = _client.send_image(_currentRoomId, enc.bytes, enc.mime,
                                     out_name, caption,
-                                    enc.width, enc.height);
+                                    enc.width, enc.height,
+                                    reply_event_id);
     if (res) {
         if (_composeTextArea) _composeTextArea->set_text("");
         if (_composeShared)   _composeShared->set_current_text({});
@@ -908,10 +960,11 @@ void EventBridge::on_image_packs_updated() {
 - (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
                       mime:(std::string)mime
                   filename:(std::string)filename
-                   caption:(std::string)caption {
+                   caption:(std::string)caption
+             replyEventId:(std::string)reply_event_id {
     if (_currentRoomId.empty()) return;
     auto res = _client.send_file(_currentRoomId, bytes, mime,
-                                  filename, caption);
+                                  filename, caption, reply_event_id);
     if (res) {
         if (_composeTextArea) _composeTextArea->set_text("");
         if (_composeShared)   _composeShared->set_current_text({});
@@ -1356,6 +1409,10 @@ void EventBridge::on_image_packs_updated() {
         _client.unsubscribe_room(_currentRoomId);
     }
     _currentRoomId = roomId;
+    if (_composeShared) {
+        _composeShared->clear_reply();
+        _composeShared->clear_editing();
+    }
     for (const auto& r : _rooms) {
         if (r.id == _currentRoomId) { [self _setRoomHeader:r]; break; }
     }
@@ -1408,6 +1465,11 @@ void EventBridge::on_image_packs_updated() {
     row.is_own            = (ev.sender == _myUserId);
     row.reactions         = ev.reactions;
     row.read_receipts     = ev.read_receipts;
+
+    row.in_reply_to_id          = ev.in_reply_to_id;
+    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
+    row.in_reply_to_body        = ev.in_reply_to_body;
+    row.is_edited               = ev.is_edited;
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;

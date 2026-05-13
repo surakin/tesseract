@@ -918,6 +918,40 @@ impl ClientFfi {
         }
     }
 
+    /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
+    /// `m.in_reply_to` relation and sends via `room.send()`. Does not require
+    /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
+    /// renders its own quote block).
+    #[cfg(not(test))]
+    pub fn send_reply(&mut self, room_id: &str, event_id: &str, body: &str) -> OpResult {
+        use matrix_sdk::ruma::events::room::message::Relation;
+        use matrix_sdk::ruma::events::relation::{InReplyTo, Reply};
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let mut content = RoomMessageEventContent::text_plain(body);
+        content.relates_to = Some(Relation::Reply(
+            Reply::new(InReplyTo::new(event_id)),
+        ));
+        match self.rt.block_on(async move { room.send(content).await }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_reply(&mut self, _room_id: &str, _event_id: &str, _body: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Upload `bytes` (already encoded as `mime_type`) and send an `m.image`
     /// event. Caption/filename handling follows MSC2530 — see the FFI doc
     /// comment in `bridge.rs`. Returns `OpResult` with `ok=false` for
@@ -933,10 +967,13 @@ impl ClientFfi {
         caption: &str,
         width: u32,
         height: u32,
+        reply_event_id: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
         use matrix_sdk::ruma::UInt;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::AddMentions;
 
         let Some(client) = self.client.clone() else { return err("not logged in") };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
@@ -960,6 +997,13 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
+        if !reply_event_id.is_empty() {
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            };
+            config = config.reply(Some(Reply { event_id: reply_id, enforce_thread: EnforceThread::Unthreaded, add_mentions: AddMentions::No }));
+        }
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
@@ -982,6 +1026,7 @@ impl ClientFfi {
         _caption: &str,
         _width: u32,
         _height: u32,
+        _reply_event_id: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -999,9 +1044,12 @@ impl ClientFfi {
         mime_type: &str,
         filename: &str,
         caption: &str,
+        reply_event_id: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::AttachmentConfig;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::AddMentions;
 
         let Some(client) = self.client.clone() else { return err("not logged in") };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
@@ -1017,6 +1065,13 @@ impl ClientFfi {
         let mut config = AttachmentConfig::new();
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
+        }
+        if !reply_event_id.is_empty() {
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            };
+            config = config.reply(Some(Reply { event_id: reply_id, enforce_thread: EnforceThread::Unthreaded, add_mentions: AddMentions::No }));
         }
 
         let data = bytes.to_vec();
@@ -1038,6 +1093,7 @@ impl ClientFfi {
         _mime_type: &str,
         _filename: &str,
         _caption: &str,
+        _reply_event_id: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -1140,6 +1196,43 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn redact_event(&mut self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Edit `event_id` in `room_id` replacing its body with `new_body`.
+    /// Uses `Room::make_edit_event` (builds the `m.replace` Replacement
+    /// relation) then sends via `RoomSendQueue`. Only own `m.text` events
+    /// can be edited; the SDK returns an error for non-own or non-text
+    /// events. Does not require `subscribe_room`.
+    #[cfg(not(test))]
+    pub fn send_edit(&mut self, room_id: &str, event_id: &str, new_body: &str) -> OpResult {
+        use matrix_sdk::room::edit::EditedContent;
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let new_content = RoomMessageEventContent::text_plain(new_body);
+        match self.rt.block_on(async move {
+            let edit_event = room
+                .make_edit_event(&event_id, EditedContent::RoomMessage(new_content.into()))
+                .await
+                .map_err(|e| e.to_string())?;
+            room.send_queue().send(edit_event).await.map_err(|e| e.to_string())
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_edit(&mut self, _room_id: &str, _event_id: &str, _new_body: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -2111,7 +2204,11 @@ async fn timeline_item_to_ffi(
             // Receipts on a tombstone are meaningless — the original event
             // is gone; the redacted placeholder doesn't carry a reading
             // audience worth surfacing.
-            read_receipts:     Vec::new(),
+            read_receipts:        Vec::new(),
+            in_reply_to_id:          String::new(),
+            in_reply_to_sender_name: String::new(),
+            in_reply_to_body:        String::new(),
+            is_edited:               false,
         });
     }
 
@@ -2168,6 +2265,10 @@ async fn timeline_item_to_ffi(
             audio_mime:        String::new(),
             reactions,
             read_receipts,
+            in_reply_to_id:          String::new(),
+            in_reply_to_sender_name: String::new(),
+            in_reply_to_body:        String::new(),
+            is_edited:               false,
         });
     }
 
@@ -2279,6 +2380,50 @@ async fn timeline_item_to_ffi(
             (String::new(), String::new())
         };
 
+    // m.in_reply_to — extract the event_id and, when the replied-to item is
+    // present in the local timeline cache, its sender display name and a brief
+    // body snippet for the UI's quote block.
+    let (in_reply_to_id, in_reply_to_sender_name, in_reply_to_body) =
+        match event_item.content().in_reply_to() {
+            None => (String::new(), String::new(), String::new()),
+            Some(details) => {
+                let id = details.event_id.to_string();
+                let (rname, rbody) = match &details.event {
+                    TimelineDetails::Ready(replied) => {
+                        let name = match &replied.sender_profile {
+                            TimelineDetails::Ready(p) =>
+                                p.display_name.clone().unwrap_or_default(),
+                            _ => String::new(),
+                        };
+                        let snippet = match &replied.content {
+                            TimelineItemContent::MsgLike(MsgLikeContent {
+                                kind: MsgLikeKind::Message(m), ..
+                            }) => {
+                                use matrix_sdk::ruma::events::room::message::MessageType;
+                                match m.msgtype() {
+                                    MessageType::Text(t) => t.body.clone(),
+                                    MessageType::Image(_) => "(image)".to_owned(),
+                                    MessageType::File(_)  => "(file)".to_owned(),
+                                    MessageType::Audio(_) => "(voice)".to_owned(),
+                                    _                     => "(message)".to_owned(),
+                                }
+                            }
+                            TimelineItemContent::MsgLike(MsgLikeContent {
+                                kind: MsgLikeKind::Sticker(_), ..
+                            }) => "(sticker)".to_owned(),
+                            TimelineItemContent::MsgLike(MsgLikeContent {
+                                kind: MsgLikeKind::Redacted, ..
+                            }) => "(deleted)".to_owned(),
+                            _ => String::new(),
+                        };
+                        (name, snippet)
+                    }
+                    _ => (String::new(), String::new()),
+                };
+                (id, rname, rbody)
+            }
+        };
+
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
 
@@ -2306,6 +2451,10 @@ async fn timeline_item_to_ffi(
         audio_mime,
         reactions,
         read_receipts,
+        in_reply_to_id,
+        in_reply_to_sender_name,
+        in_reply_to_body,
+        is_edited: msg_content.is_edited(),
     })
 }
 
@@ -2710,5 +2859,33 @@ mod tests {
         // Sender out-of-spec value > 1024 must clamp to 1024 (the spec ceiling).
         let amp = UnstableAmplitude::new(9999);
         assert_eq!(u64::from(amp.get()), 1024);
+    }
+
+    #[test]
+    fn send_reply_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.send_reply("!room:example.com", "$event:example.com", "reply body");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn send_reply_invalid_room_id() {
+        let mut c = ClientFfi::new();
+        let r = c.send_reply("not-a-room-id", "$event:example.com", "reply body");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn send_edit_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.send_edit("!room:example.com", "$event:example.com", "new body");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn send_edit_invalid_room_id() {
+        let mut c = ClientFfi::new();
+        let r = c.send_edit("not-a-room-id", "$event:example.com", "new body");
+        assert!(!r.ok);
     }
 }

@@ -47,6 +47,16 @@ struct Event {
     EventType   type = EventType::Unhandled;
     std::vector<Reaction> reactions;
     std::vector<ReadReceipt> read_receipts;
+    /// Event ID being replied to. Empty when this event is not a reply.
+    std::string in_reply_to_id;
+    /// Resolved display name of the replied-to sender (bare Matrix ID as fallback).
+    std::string in_reply_to_sender_name;
+    /// Short body snippet of the replied-to message. "(image)" / "(file)" /
+    /// "(voice)" / "(sticker)" / "(deleted)" for non-text / redacted originals.
+    std::string in_reply_to_body;
+    /// True when the body has been superseded by an m.replace edit.
+    /// Only set for TextEvent; always false for other types.
+    bool is_edited = false;
     virtual ~Event() = default;
 };
 

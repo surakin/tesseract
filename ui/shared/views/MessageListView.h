@@ -64,6 +64,15 @@ struct MessageRowData {
     /// on this event. The view renders up to a small cap of mini-avatars
     /// at the bottom-right of the row; the rest fall into a "+N" overflow.
     std::vector<tesseract::ReadReceipt> read_receipts;
+
+    // Reply reference (m.in_reply_to). All three are empty when not a reply.
+    std::string in_reply_to_id;
+    std::string in_reply_to_sender_name;
+    std::string in_reply_to_body;
+    bool has_reply() const { return !in_reply_to_id.empty(); }
+
+    // Set when the message has been superseded by an m.replace edit.
+    bool is_edited = false;
 };
 
 class MessageListView : public tk::ListView {
@@ -132,6 +141,25 @@ public:
     std::function<void(const std::string& event_id,
                         tk::Rect anchor)>             on_add_reaction_requested;
 
+    // Reply affordance — fires when the user clicks the "↩" reply button
+    // that appears on hover. The host should call
+    // `compose_bar_->set_reply_to(event_id, sender_name, body_preview)`.
+    std::function<void(const std::string& event_id,
+                        const std::string& sender_name,
+                        const std::string& body_preview)> on_reply_requested;
+
+    // Fires when the user clicks the quote block of a reply to scroll to
+    // the original message. If the event is currently loaded the view scrolls
+    // to it internally; this callback fires only when the original is not found
+    // in the current message list (host should back-paginate + scroll).
+    std::function<void(const std::string& original_event_id)> on_scroll_to_original;
+
+    // Edit affordance — fires when the user clicks the "✏" edit button on a
+    // hover row they own. Only fires for Kind::Text rows. The host should call
+    // `compose_bar_->set_editing(event_id)`, then pre-fill the text area.
+    std::function<void(const std::string& event_id,
+                        const std::string& current_body)> on_edit_requested;
+
     // Sticker right-click hit. Native shells call this with the world-coord
     // pointer position from their secondary-click handler. Returns the
     // sticker event metadata when the click lands on a Kind::Sticker rect,
@@ -164,6 +192,8 @@ public:
         std::vector<tk::Rect> chips;       // one per Reaction in row
         tk::Rect          add_button{};    // 0-area when not painted
         bool              add_visible = false;
+        tk::Rect          reply_button{};  // 0-area when not painted
+        tk::Rect          edit_button{};   // 0-area when not painted
         tk::Rect          row_bounds{};
     };
 
@@ -210,6 +240,23 @@ private:
     HoverTarget                    press_target_  = HoverTarget::None;
     int                            press_chip_idx_ = -1;
     std::string                    press_event_id_;
+
+    // Reply button press state. Tracks a clean down-up on the hover reply btn.
+    bool                           press_reply_btn_      = false;
+    std::string                    press_reply_event_id_;
+
+    // Edit button press state (own text messages only).
+    bool                           press_edit_btn_       = false;
+    std::string                    press_edit_event_id_;
+
+    // Quote-block press state. Fires on_scroll_to_original (or internal
+    // scroll_to_index) when the user clicks the quote block of a reply.
+    bool                           press_quote_          = false;
+    std::string                    press_quote_event_id_;
+
+    // Per-frame quote-block rects in world coordinates, keyed by event_id.
+    // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
+    mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
 
     // Scroll-to-bottom pill. Geometry is recomputed in paint() (after
     // ListView::paint has updated scroll state), so the rect + visible

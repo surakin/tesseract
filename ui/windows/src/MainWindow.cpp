@@ -890,6 +890,26 @@ void MainWindow::on_create(HWND hwnd) {
                 else
                     toggle_emoji_picker();
             };
+        message_list_view_->on_reply_requested =
+            [this](const std::string& event_id,
+                   const std::string& sender_name,
+                   const std::string& body_preview) {
+                if (!compose_shared_) return;
+                compose_shared_->set_reply_to(event_id, sender_name,
+                                              body_preview);
+                if (compose_text_area_) compose_text_area_->focus();
+            };
+        message_list_view_->on_edit_requested =
+            [this](const std::string& event_id,
+                   const std::string& current_body) {
+                if (!compose_shared_) return;
+                compose_shared_->set_editing(event_id);
+                if (compose_text_area_) {
+                    compose_text_area_->set_text(current_body);
+                    compose_shared_->set_current_text(current_body);
+                    compose_text_area_->focus();
+                }
+            };
         message_list_view_->on_near_top = [this]{
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);
@@ -915,7 +935,8 @@ void MainWindow::on_create(HWND hwnd) {
                                                   std::string filename,
                                                   std::string caption,
                                                   std::uint32_t /*src_w*/,
-                                                  std::uint32_t /*src_h*/) {
+                                                  std::uint32_t /*src_h*/,
+                                                  std::string reply_event_id) {
             if (current_room_id_.empty() || !compose_surface_) return;
             const bool compress =
                 tesseract::Settings::instance().image_quality
@@ -931,7 +952,8 @@ void MainWindow::on_create(HWND hwnd) {
             }
             auto res = client_.send_image(current_room_id_, enc.bytes, enc.mime,
                                             out_name, caption,
-                                            enc.width, enc.height);
+                                            enc.width, enc.height,
+                                            reply_event_id);
             if (res) {
                 if (compose_text_area_) compose_text_area_->set_text("");
                 if (compose_shared_)    compose_shared_->set_current_text({});
@@ -944,6 +966,13 @@ void MainWindow::on_create(HWND hwnd) {
         };
         compose_shared_->on_emoji   = [this] { toggle_emoji_picker(); };
         compose_shared_->on_sticker = [this] { toggle_sticker_picker(); };
+        compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
+                                                 const std::string& body) {
+            if (body.empty() || current_room_id_.empty()) return;
+            client_.send_reply(current_room_id_, reply_event_id, body);
+            if (compose_text_area_) compose_text_area_->set_text("");
+            if (compose_shared_)    compose_shared_->set_current_text({});
+        };
         compose_surface_->set_root(std::move(bar));
 
         compose_text_area_ = compose_surface_->host().make_text_area();
@@ -997,16 +1026,28 @@ void MainWindow::on_create(HWND hwnd) {
             [this](std::vector<std::uint8_t> bytes,
                    std::string mime,
                    std::string filename,
-                   std::string caption) {
+                   std::string caption,
+                   std::string reply_event_id) {
             if (current_room_id_.empty()) return;
             auto res = client_.send_file(current_room_id_, bytes, mime,
-                                          filename, caption);
+                                          filename, caption, reply_event_id);
             if (res) {
                 if (compose_text_area_) compose_text_area_->set_text("");
                 if (compose_shared_)    compose_shared_->set_current_text({});
             } else {
                 if (hStatus_) SetWindowTextW(hStatus_, L"Send file failed");
             }
+        };
+        compose_shared_->on_send_edit = [this](const std::string& event_id,
+                                                const std::string& new_body) {
+            if (new_body.empty() || current_room_id_.empty()) return;
+            client_.send_edit(current_room_id_, event_id, new_body);
+            if (compose_text_area_) compose_text_area_->set_text("");
+            if (compose_shared_)    compose_shared_->set_current_text({});
+        };
+        compose_shared_->on_edit_cancelled = [this] {
+            if (compose_text_area_) compose_text_area_->set_text("");
+            if (compose_shared_)    compose_shared_->set_current_text({});
         };
 
         compose_surface_->set_on_layout([this] {
@@ -1334,6 +1375,10 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_.unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    if (compose_shared_) {
+        compose_shared_->clear_reply();
+        compose_shared_->clear_editing();
+    }
     for (const auto& r : rooms_) {
         if (r.id == current_room_id_) {
             current_room_info_ = r;
@@ -1619,6 +1664,11 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
     row.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
     row.reactions         = ev.reactions;
     row.read_receipts     = ev.read_receipts;
+
+    row.in_reply_to_id          = ev.in_reply_to_id;
+    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
+    row.in_reply_to_body        = ev.in_reply_to_body;
+    row.is_edited               = ev.is_edited;
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;

@@ -171,7 +171,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears the
                              std::string mime,
                              std::string filename,
                              std::string caption,
-                             std::uint32_t, std::uint32_t) {
+                             std::uint32_t, std::uint32_t, std::string) {
         image_fired = true;
         got_mime    = std::move(mime);
         got_caption = std::move(caption);
@@ -220,7 +220,7 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
                              std::string /*mime*/,
                              std::string filename,
                              std::string /*caption*/,
-                             std::uint32_t, std::uint32_t) {
+                             std::uint32_t, std::uint32_t, std::string) {
         got_filename = std::move(filename);
         (void)bytes;
     };
@@ -295,7 +295,8 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
     bar.on_send_file = [&](std::vector<std::uint8_t> bytes,
                             std::string mime,
                             std::string filename,
-                            std::string caption) {
+                            std::string caption,
+                            std::string) {
         fired = true;
         got_size = bytes.size();
         got_mime = std::move(mime);
@@ -305,7 +306,7 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
     int image_fires = 0;
     bar.on_send_image = [&](std::vector<std::uint8_t>, std::string,
                               std::string, std::string,
-                              std::uint32_t, std::uint32_t) { ++image_fires; };
+                              std::uint32_t, std::uint32_t, std::string) { ++image_fires; };
     int plain_send = 0;
     bar.on_send = [&](const std::string&) { ++plain_send; };
 

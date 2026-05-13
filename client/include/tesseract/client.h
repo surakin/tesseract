@@ -143,7 +143,8 @@ public:
                       const std::string& filename,
                       const std::string& caption,
                       std::uint32_t width,
-                      std::uint32_t height);
+                      std::uint32_t height,
+                      const std::string& reply_event_id = "");
 
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
     /// the raw file payload (no re-encoding); `mime_type` is best-effort —
@@ -155,7 +156,8 @@ public:
                      const std::vector<uint8_t>& bytes,
                      const std::string& mime_type,
                      const std::string& filename,
-                     const std::string& caption);
+                     const std::string& caption,
+                     const std::string& reply_event_id = "");
 
     /// Homeserver-reported maximum upload size, in bytes. Cached after the
     /// first successful call. Returns 0 when not yet fetched, the server
@@ -182,6 +184,18 @@ public:
     Result redact_event(const std::string& room_id,
                         const std::string& event_id,
                         const std::string& reason = "");
+
+    /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds
+    /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
+    Result send_reply(const std::string& room_id,
+                      const std::string& event_id,
+                      const std::string& body);
+
+    /// Edit `event_id` in `room_id` replacing its body with `new_body`.
+    /// Only works on own `m.text` events. Does not require `subscribe_room`.
+    Result send_edit(const std::string& room_id,
+                     const std::string& event_id,
+                     const std::string& new_body);
 
     // ------------------------------------------------------------------
     // Recent emoji ("io.element.recent_emoji" global account-data)

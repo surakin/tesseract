@@ -68,6 +68,11 @@ pub mod ffi {
     ///                   audio_mime are populated (MSC3245 voice messages).
     ///                   Non-voice `m.audio` events are converted to "m.file"
     ///                   on the Rust side so the file-card path renders them.
+    /// Reply fields   → in_reply_to_id is non-empty when this event is a reply.
+    ///                   in_reply_to_sender_name and in_reply_to_body carry the
+    ///                   replied-to event's display name and body snippet (populated
+    ///                   only when the replied-to item is present in the local cache;
+    ///                   both are empty strings when the cache doesn't have it yet).
     struct TimelineEvent {
         event_id:          String,
         room_id:           String,
@@ -110,6 +115,18 @@ pub mod ffi {
         /// Users (other than the current user) whose latest read receipt
         /// landed on this event. Order matches the SDK's iteration order.
         read_receipts:     Vec<ReadReceipt>,
+        /// Event ID of the message being replied to. Empty when this is not a reply.
+        in_reply_to_id:          String,
+        /// Display name of the replied-to sender (room profile, or bare Matrix ID
+        /// as fallback). Empty when not a reply or the event isn't cached yet.
+        in_reply_to_sender_name: String,
+        /// Short body snippet of the replied-to message. For non-text types this is
+        /// "(image)", "(file)", "(voice)", "(sticker)", or "(deleted)" for redacted.
+        /// Empty when not a reply.
+        in_reply_to_body:        String,
+        /// True when the body has been superseded by an `m.replace` edit.
+        /// Only set for `msg_type == "m.text"`; always false for other types.
+        is_edited:               bool,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -311,6 +328,15 @@ pub mod ffi {
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
 
+        /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
+        /// `m.in_reply_to` relation and sends via `room.send()`. Does not require
+        /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
+        /// renders its own quote block for the reply indicator).
+        fn send_reply(self: &mut ClientFfi,
+                      room_id:  &str,
+                      event_id: &str,
+                      body:     &str) -> OpResult;
+
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK
         /// uploads them via the homeserver's media repository and posts an
@@ -328,7 +354,9 @@ pub mod ffi {
                       filename: &str,
                       caption: &str,
                       width: u32,
-                      height: u32) -> OpResult;
+                      height: u32,
+                      /// When non-empty, adds an `m.in_reply_to` relation.
+                      reply_event_id: &str) -> OpResult;
 
         /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes`
         /// are the raw file payload (no client-side re-encoding); `mime_type`
@@ -343,7 +371,19 @@ pub mod ffi {
                      bytes: &[u8],
                      mime_type: &str,
                      filename: &str,
-                     caption: &str) -> OpResult;
+                     caption: &str,
+                     /// When non-empty, adds an `m.in_reply_to` relation.
+                     reply_event_id: &str) -> OpResult;
+
+        /// Edit `event_id` in `room_id` replacing its body with `new_body`.
+        /// Uses `Room::make_edit_event` + `RoomSendQueue::send` so the edit
+        /// is correctly formatted (Replacement relation + fallback body). Only
+        /// works on own `m.text` events; returns `ok=false` for non-own or
+        /// non-text events.
+        fn send_edit(self: &mut ClientFfi,
+                     room_id:   &str,
+                     event_id:  &str,
+                     new_body:  &str) -> OpResult;
 
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful

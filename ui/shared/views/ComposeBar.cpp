@@ -83,6 +83,7 @@ ComposeBar::ComposeBar() {
         tk::Button::Variant::Primary);
     send->set_on_click([this] {
         if (pending_.has_value()) {
+            std::string reply_id = reply_event_id_;
             if (pending_->kind == PendingAttachment::Kind::Image) {
                 // Image send: hand off the raw bytes; integration re-encodes
                 // per the user's image-quality setting.
@@ -92,7 +93,8 @@ ComposeBar::ComposeBar() {
                                   std::move(pending_->filename),
                                   current_text_,
                                   pending_->width,
-                                  pending_->height);
+                                  pending_->height,
+                                  std::move(reply_id));
                 }
             } else {
                 // File send: pass through unmodified; matrix-sdk uploads
@@ -101,17 +103,29 @@ ComposeBar::ComposeBar() {
                     on_send_file(std::move(pending_->bytes),
                                  std::move(pending_->mime),
                                  std::move(pending_->filename),
-                                 current_text_);
+                                 current_text_,
+                                 std::move(reply_id));
                 }
             }
             pending_.reset();
             file_name_layout_.reset();
             file_size_layout_.reset();
             file_layout_key_.clear();
+            clear_reply();
             recompute_height();
             if (remove_btn_) remove_btn_->set_visible(false);
             refresh_send_enabled();
             if (on_size_changed) on_size_changed();
+        } else if (has_editing()) {
+            std::string ev   = edit_event_id_;
+            std::string text = current_text_;
+            clear_editing();
+            if (on_send_edit) on_send_edit(ev, text);
+        } else if (has_reply()) {
+            std::string id   = reply_event_id_;
+            std::string text = current_text_;
+            clear_reply();
+            if (on_send_reply) on_send_reply(id, text);
         } else {
             if (on_send) on_send(current_text_);
         }
@@ -138,8 +152,13 @@ void ComposeBar::set_text_area_natural_height(float h) {
 }
 
 void ComposeBar::recompute_height() {
-    float text_h = std::clamp(text_area_natural_ + kPadY * 2,
-                               kMinHeight, kMaxHeight);
+    float text_h   = std::clamp(text_area_natural_ + kPadY * 2,
+                                 kMinHeight, kMaxHeight);
+    float top_h    = 0.0f;
+    if (has_editing())
+        top_h = kEditBandH + kEditBandGap;
+    else if (has_reply())
+        top_h = kReplyBandH + kReplyBandGap;
     float band_h = 0.0f;
     if (pending_.has_value()) {
         band_h = pending_->kind == PendingAttachment::Kind::Image
@@ -147,7 +166,50 @@ void ComposeBar::recompute_height() {
             : kFileBandH;
         band_h += kPreviewBandGap;
     }
-    natural_height_ = text_h + band_h;
+    natural_height_ = text_h + top_h + band_h;
+}
+
+void ComposeBar::set_reply_to(std::string event_id,
+                               std::string sender_name,
+                               std::string body_preview) {
+    reply_event_id_     = std::move(event_id);
+    reply_sender_name_  = std::move(sender_name);
+    reply_body_preview_ = std::move(body_preview);
+    recompute_height();
+    if (on_size_changed) on_size_changed();
+}
+
+void ComposeBar::clear_reply() {
+    if (reply_event_id_.empty()) return;
+    reply_event_id_.clear();
+    reply_sender_name_.clear();
+    reply_body_preview_.clear();
+    reply_band_rect_   = {};
+    reply_cancel_rect_ = {};
+    recompute_height();
+    if (on_size_changed) on_size_changed();
+}
+
+void ComposeBar::set_editing(std::string event_id) {
+    // Edit mode and reply mode are mutually exclusive — silently drop reply.
+    reply_event_id_.clear();
+    reply_sender_name_.clear();
+    reply_body_preview_.clear();
+    reply_band_rect_   = {};
+    reply_cancel_rect_ = {};
+
+    edit_event_id_  = std::move(event_id);
+    recompute_height();
+    if (on_size_changed) on_size_changed();
+}
+
+void ComposeBar::clear_editing() {
+    if (edit_event_id_.empty()) return;
+    edit_event_id_.clear();
+    edit_band_rect_   = {};
+    edit_cancel_rect_ = {};
+    recompute_height();
+    if (on_size_changed) on_size_changed();
 }
 
 void ComposeBar::set_current_text(std::string text) {
@@ -268,14 +330,59 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         }
     }
 
-    // ── Preview band on top (when an attachment is pending) ───────────
+    // ── Top banner (edit mode XOR reply mode — topmost when active) ──
     float text_top = bounds.y;
+    if (has_editing()) {
+        edit_band_rect_ = {
+            bounds.x + kPadX,
+            bounds.y + kPadY,
+            std::max(0.0f, bounds.w - kPadX * 2),
+            kEditBandH
+        };
+        constexpr float kCancelSide   = 20.0f;
+        constexpr float kCancelInsetX =  8.0f;
+        edit_cancel_rect_ = {
+            edit_band_rect_.x + edit_band_rect_.w - kCancelSide - kCancelInsetX,
+            edit_band_rect_.y + (kEditBandH - kCancelSide) * 0.5f,
+            kCancelSide, kCancelSide
+        };
+        text_top = edit_band_rect_.y + edit_band_rect_.h + kEditBandGap;
+        reply_band_rect_   = {};
+        reply_cancel_rect_ = {};
+    } else if (has_reply()) {
+        reply_band_rect_ = {
+            bounds.x + kPadX,
+            bounds.y + kPadY,
+            std::max(0.0f, bounds.w - kPadX * 2),
+            kReplyBandH
+        };
+        constexpr float kCancelSide   = 20.0f;
+        constexpr float kCancelInsetX =  8.0f;
+        reply_cancel_rect_ = {
+            reply_band_rect_.x + reply_band_rect_.w - kCancelSide - kCancelInsetX,
+            reply_band_rect_.y + (kReplyBandH - kCancelSide) * 0.5f,
+            kCancelSide, kCancelSide
+        };
+        text_top = reply_band_rect_.y + reply_band_rect_.h + kReplyBandGap;
+        edit_band_rect_   = {};
+        edit_cancel_rect_ = {};
+    } else {
+        reply_band_rect_   = {};
+        reply_cancel_rect_ = {};
+        edit_band_rect_    = {};
+        edit_cancel_rect_  = {};
+    }
+
+    // ── Attachment band (below reply band, or at top when no reply) ───
     if (pending_.has_value()) {
         float band_h = pending_->kind == PendingAttachment::Kind::Image
             ? kPreviewBandH : kFileBandH;
+        // When a reply band already consumed kPadY, start immediately after it.
+        // Otherwise, inset the first band by kPadY from the widget top.
+        float band_y = has_reply() ? text_top : bounds.y + kPadY;
         preview_band_rect_ = {
             bounds.x + kPadX,
-            bounds.y + kPadY,
+            band_y,
             std::max(0.0f, bounds.w - kPadX * 2),
             band_h
         };
@@ -405,6 +512,103 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
         }
     }
 
+    // ── Edit mode banner ─────────────────────────────────────────────
+    if (has_editing() && !edit_band_rect_.empty()) {
+        constexpr float kAccentW   =  3.0f;
+        constexpr float kEditPadX  =  8.0f;
+        constexpr float kEditPadY  =  5.0f;
+
+        ctx.canvas.fill_rounded_rect(edit_band_rect_, 6.0f,
+                                      card_bg(ctx.theme));
+        ctx.canvas.fill_rect(
+            { edit_band_rect_.x, edit_band_rect_.y,
+              kAccentW, edit_band_rect_.h },
+            ctx.theme.palette.accent);
+
+        float text_x = edit_band_rect_.x + kAccentW + kEditPadX;
+
+        tk::TextStyle label_style{};
+        label_style.role = tk::FontRole::Small;
+        auto label_layout = ctx.factory.build_text("Editing message", label_style);
+        if (label_layout) {
+            ctx.canvas.draw_text(*label_layout,
+                { text_x, edit_band_rect_.y + kEditPadY },
+                ctx.theme.palette.text_secondary);
+        }
+
+        if (!edit_cancel_rect_.empty()) {
+            tk::TextStyle x_style{};
+            x_style.role = tk::FontRole::Body;
+            auto x_layout = ctx.factory.build_text(
+                std::string("\xC3\x97"), x_style);
+            if (x_layout) {
+                tk::Size sz = x_layout->measure();
+                ctx.canvas.draw_text(*x_layout,
+                    { edit_cancel_rect_.x + (edit_cancel_rect_.w - sz.w) * 0.5f,
+                      edit_cancel_rect_.y + (edit_cancel_rect_.h - sz.h) * 0.5f },
+                    press_edit_cancel_
+                        ? ctx.theme.palette.text_primary
+                        : ctx.theme.palette.text_muted);
+            }
+        }
+    }
+
+    // ── Reply preview banner ──────────────────────────────────────────
+    if (has_reply() && !reply_band_rect_.empty()) {
+        constexpr float kAccentW      =  3.0f;
+        constexpr float kReplyPadX    =  8.0f;
+        constexpr float kReplyPadY    =  5.0f;
+
+        ctx.canvas.fill_rounded_rect(reply_band_rect_, 6.0f,
+                                      card_bg(ctx.theme));
+        ctx.canvas.fill_rect(
+            { reply_band_rect_.x, reply_band_rect_.y,
+              kAccentW, reply_band_rect_.h },
+            ctx.theme.palette.accent);
+
+        float text_x = reply_band_rect_.x + kAccentW + kReplyPadX;
+
+        // "Replying to <sender>" on the first line
+        tk::TextStyle label_style{};
+        label_style.role = tk::FontRole::Small;
+        auto label_layout = ctx.factory.build_text(
+            "Replying to " + reply_sender_name_, label_style);
+        if (label_layout) {
+            ctx.canvas.draw_text(*label_layout,
+                { text_x, reply_band_rect_.y + kReplyPadY },
+                ctx.theme.palette.text_secondary);
+        }
+
+        // Body preview on the second line
+        tk::TextStyle body_style{};
+        body_style.role = tk::FontRole::Small;
+        auto body_layout = ctx.factory.build_text(
+            reply_body_preview_, body_style);
+        if (body_layout) {
+            ctx.canvas.draw_text(*body_layout,
+                { text_x, reply_band_rect_.y + kReplyBandH * 0.5f + 2.0f },
+                ctx.theme.palette.text_muted);
+        }
+
+        // "×" cancel glyph centred in reply_cancel_rect_
+        if (!reply_cancel_rect_.empty()) {
+            tk::TextStyle x_style{};
+            x_style.role = tk::FontRole::Body;
+            // U+00D7 MULTIPLICATION SIGN: C3 97
+            auto x_layout = ctx.factory.build_text(
+                std::string("\xC3\x97"), x_style);
+            if (x_layout) {
+                tk::Size sz = x_layout->measure();
+                ctx.canvas.draw_text(*x_layout,
+                    { reply_cancel_rect_.x + (reply_cancel_rect_.w - sz.w) * 0.5f,
+                      reply_cancel_rect_.y + (reply_cancel_rect_.h - sz.h) * 0.5f },
+                    press_reply_cancel_
+                        ? ctx.theme.palette.text_primary
+                        : ctx.theme.palette.text_muted);
+            }
+        }
+    }
+
     // Outline the text-area rect so its placement is visible even before
     // the host overlay has rendered (avoids a "missing input" feeling on
     // the first frame).
@@ -446,6 +650,57 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
     if (sticker_btn_)
         paint_glyph_over(sticker_rect_, sticker_layout_,
                          "\xF0\x9F\x96\xBC\xEF\xB8\x8F");
+}
+
+bool ComposeBar::on_pointer_down(tk::Point local) {
+    press_reply_cancel_ = false;
+    press_edit_cancel_  = false;
+    if (has_editing() && !edit_cancel_rect_.empty()) {
+        if (local.x >= edit_cancel_rect_.x
+            && local.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
+            && local.y >= edit_cancel_rect_.y
+            && local.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
+            press_edit_cancel_ = true;
+            return true;
+        }
+    }
+    if (has_reply() && !reply_cancel_rect_.empty()) {
+        if (local.x >= reply_cancel_rect_.x
+            && local.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
+            && local.y >= reply_cancel_rect_.y
+            && local.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
+            press_reply_cancel_ = true;
+            return true;
+        }
+    }
+    return tk::Widget::on_pointer_down(local);
+}
+
+void ComposeBar::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_edit_cancel_) {
+        press_edit_cancel_ = false;
+        if (inside_self
+            && local.x >= edit_cancel_rect_.x
+            && local.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
+            && local.y >= edit_cancel_rect_.y
+            && local.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
+            clear_editing();
+            if (on_edit_cancelled) on_edit_cancelled();
+            return;
+        }
+    }
+    if (press_reply_cancel_) {
+        press_reply_cancel_ = false;
+        if (inside_self
+            && local.x >= reply_cancel_rect_.x
+            && local.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
+            && local.y >= reply_cancel_rect_.y
+            && local.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
+            clear_reply();
+            return;
+        }
+    }
+    tk::Widget::on_pointer_up(local, inside_self);
 }
 
 } // namespace tesseract::views
