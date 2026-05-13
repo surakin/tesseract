@@ -11,6 +11,7 @@
 //   - native edit-control overlays for text input, since IME stays
 //     native until tk::TextField + the IME-passthrough hybrid lands
 
+#include "audio.h"
 #include "canvas.h"
 
 #include <cstdint>
@@ -140,6 +141,13 @@ public:
     // Multi-line variant — IME-friendly, expanding inside the host's
     // clamp. Used by the shared ComposeBar for the message-input row.
     virtual std::unique_ptr<NativeTextArea>  make_text_area()  = 0;
+
+    // Create an `AudioPlayer` backed by the platform's native audio stack
+    // (QMediaPlayer / GStreamer / AVAudioPlayer / Media Foundation). The
+    // caller owns the returned player and may destroy it at any time. May
+    // return `nullptr` on platforms that do not yet ship a backend; callers
+    // must check before invoking.
+    virtual std::unique_ptr<AudioPlayer>     make_audio_player() = 0;
 
     // Decode `data[0..len)` and produce a payload ready to upload to the
     // homeserver. `compress=true` caps the image at 1600×1200 (preserving

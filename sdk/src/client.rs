@@ -2052,6 +2052,10 @@ async fn timeline_item_to_ffi(
             file_name:         String::new(),
             file_size:         0u64,
             image_filename:    String::new(),
+            audio_source_json: String::new(),
+            audio_duration_ms: 0u64,
+            audio_waveform:    Vec::new(),
+            audio_mime:        String::new(),
             reactions:         Vec::new(),
             // Receipts on a tombstone are meaningless — the original event
             // is gone; the redacted placeholder doesn't carry a reading
@@ -2107,6 +2111,10 @@ async fn timeline_item_to_ffi(
             file_name:         String::new(),
             file_size:         0u64,
             image_filename:    String::new(),
+            audio_source_json: String::new(),
+            audio_duration_ms: 0u64,
+            audio_waveform:    Vec::new(),
+            audio_mime:        String::new(),
             reactions,
             read_receipts,
         });
@@ -2117,7 +2125,9 @@ async fn timeline_item_to_ffi(
         _ => return None,
     };
 
-    let (body, msg_type, source_json, width, height, file_json, file_name, file_size, image_filename) =
+    let (body, msg_type, source_json, width, height,
+         file_json, file_name, file_size, image_filename,
+         audio_source_json, audio_duration_ms, audio_waveform, audio_mime) =
         match msg_content.msgtype() {
             MessageType::Text(t) => (
                 t.body.clone(),
@@ -2128,6 +2138,10 @@ async fn timeline_item_to_ffi(
                 String::new(),
                 String::new(),
                 0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::<u16>::new(),
                 String::new(),
             ),
             MessageType::Image(i) => {
@@ -2146,7 +2160,8 @@ async fn timeline_item_to_ffi(
                 // MSC2530: filename field signals that body is a user caption.
                 let img_filename = i.filename.clone().unwrap_or_default();
                 (i.body.clone(), "m.image".to_owned(), source_str, w, h,
-                 String::new(), String::new(), 0u64, img_filename)
+                 String::new(), String::new(), 0u64, img_filename,
+                 String::new(), 0u64, Vec::new(), String::new())
             }
             MessageType::File(f) => {
                 let file_str = match &f.source {
@@ -2161,7 +2176,44 @@ async fn timeline_item_to_ffi(
                     .map(|v| u64::from(v))
                     .unwrap_or(0u64);
                 (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
-                 file_str, name, size, String::new())
+                 file_str, name, size, String::new(),
+                 String::new(), 0u64, Vec::new(), String::new())
+            }
+            // MSC3245: voice messages are `m.audio` events tagged with
+            // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
+            // duration + waveform. Plain `m.audio` (no voice marker) folds
+            // into the file-card path so the UI still surfaces them.
+            MessageType::Audio(a) => {
+                let source_str = serde_json::to_string(&a.source).unwrap_or_default();
+                let info_mime = a.info.as_deref().and_then(|i| i.mimetype.clone()).unwrap_or_default();
+                let info_duration_ms = a.info.as_deref()
+                    .and_then(|i| i.duration)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0u64);
+                if a.voice.is_some() {
+                    let (duration_ms, waveform) = match &a.audio {
+                        Some(block) => {
+                            let dur = block.duration.as_millis() as u64;
+                            let wf: Vec<u16> = block.waveform.iter()
+                                .map(|amp| u16::try_from(u64::from(amp.get())).unwrap_or(0))
+                                .collect();
+                            (if dur != 0 { dur } else { info_duration_ms }, wf)
+                        }
+                        None => (info_duration_ms, Vec::new()),
+                    };
+                    (a.body.clone(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
+                     String::new(), String::new(), 0u64, String::new(),
+                     source_str, duration_ms, waveform, info_mime)
+                } else {
+                    let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
+                    let size = a.info.as_deref()
+                        .and_then(|i| i.size)
+                        .map(u64::from)
+                        .unwrap_or(0u64);
+                    (a.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
+                     source_str, name, size, String::new(),
+                     String::new(), 0u64, Vec::new(), String::new())
+                }
             }
             _ => return None,
         };
@@ -2197,6 +2249,10 @@ async fn timeline_item_to_ffi(
         file_name,
         file_size,
         image_filename,
+        audio_source_json,
+        audio_duration_ms,
+        audio_waveform,
+        audio_mime,
         reactions,
         read_receipts,
     })
@@ -2542,5 +2598,66 @@ mod tests {
         assert_eq!(visible_len(&[false, false]), 0);
         assert_eq!(visible_len(&[true, false, true, false, true]), 3);
         assert_eq!(visible_len(&[true, true, true]), 3);
+    }
+
+    // ---------------------------------------------------------------------
+    // MSC3245 — voice message parsing.
+    //
+    // These tests verify that the `unstable-msc3245-v1-compat` feature is
+    // active on the linked ruma so the dispatcher in `timeline_item_to_ffi`
+    // can read `audio.voice` / `audio.audio`. Regression guard: if a future
+    // dep bump drops the feature, the `voice`/`audio` fields disappear and
+    // these tests stop compiling.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn audio_event_with_voice_marker_parses_msc3245_fields() {
+        use matrix_sdk::ruma::events::room::message::AudioMessageEventContent;
+        let json = serde_json::json!({
+            "body": "Voice message",
+            "msgtype": "m.audio",
+            "url": "mxc://example.org/abc123",
+            "info": { "mimetype": "audio/ogg", "size": 12345, "duration": 4200 },
+            "org.matrix.msc3245.voice": {},
+            "org.matrix.msc1767.audio": {
+                "duration": 4200,
+                "waveform": [0, 256, 512, 1024, 512, 256, 0]
+            }
+        });
+        let content: AudioMessageEventContent =
+            serde_json::from_value(json).expect("AudioMessageEventContent deserialises");
+        assert!(content.voice.is_some(), "voice marker must round-trip");
+        let block = content.audio.as_ref().expect("audio details block present");
+        assert_eq!(block.duration.as_millis() as u64, 4200);
+        assert_eq!(block.waveform.len(), 7);
+        let max = block.waveform.iter().map(|a| u64::from(a.get())).max().unwrap_or(0);
+        assert_eq!(max, 1024);
+        assert_eq!(
+            content.info.as_deref().and_then(|i| i.mimetype.clone()).as_deref(),
+            Some("audio/ogg")
+        );
+    }
+
+    #[test]
+    fn audio_event_without_voice_marker_has_no_voice() {
+        use matrix_sdk::ruma::events::room::message::AudioMessageEventContent;
+        let json = serde_json::json!({
+            "body": "song.mp3",
+            "msgtype": "m.audio",
+            "url": "mxc://example.org/song",
+            "info": { "mimetype": "audio/mpeg", "size": 4_400_000 }
+        });
+        let content: AudioMessageEventContent =
+            serde_json::from_value(json).expect("AudioMessageEventContent deserialises");
+        assert!(content.voice.is_none(), "plain audio must not carry the voice marker");
+        assert!(content.audio.is_none(), "plain audio carries no MSC1767 details");
+    }
+
+    #[test]
+    fn unstable_amplitude_saturates_above_max() {
+        use matrix_sdk::ruma::events::room::message::UnstableAmplitude;
+        // Sender out-of-spec value > 1024 must clamp to 1024 (the spec ceiling).
+        let amp = UnstableAmplitude::new(9999);
+        assert_eq!(u64::from(amp.get()), 1024);
     }
 }

@@ -242,6 +242,64 @@ TEST_CASE("StickerEvent fields are settable", "[types]") {
 }
 
 // ---------------------------------------------------------------------------
+// tesseract::VoiceEvent (MSC3245)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("VoiceEvent default-initialised fields", "[types][voice]") {
+    tesseract::VoiceEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Voice);
+    CHECK(ev.audio_source.empty());
+    CHECK(ev.mime_type.empty());
+    CHECK(ev.duration_ms == 0u);
+    CHECK(ev.waveform.empty());
+}
+
+TEST_CASE("VoiceEvent fields round-trip", "[types][voice]") {
+    tesseract::VoiceEvent ev{};
+    ev.event_id     = "$voice-evt:example.org";
+    ev.room_id      = "!room:example.org";
+    ev.sender       = "@alice:example.org";
+    ev.body         = "Voice message";
+    ev.timestamp    = 1700000000000ull;
+    ev.audio_source = "mxc://example.org/voice.ogg";
+    ev.mime_type    = "audio/ogg";
+    ev.duration_ms  = 4200;
+    ev.waveform     = {0, 256, 512, 1024, 512, 256, 0};
+
+    CHECK(ev.event_id     == "$voice-evt:example.org");
+    CHECK(ev.body         == "Voice message");
+    CHECK(ev.audio_source == "mxc://example.org/voice.ogg");
+    CHECK(ev.mime_type    == "audio/ogg");
+    CHECK(ev.duration_ms  == 4200u);
+    REQUIRE(ev.waveform.size() == 7);
+    CHECK(ev.waveform.front() == 0);
+    CHECK(ev.waveform[3]      == 1024);
+    CHECK(ev.type == tesseract::EventType::Voice);
+}
+
+TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)", "[types][voice]") {
+    // Missing MSC1767 waveform → empty vector; the UI renders flat bars.
+    tesseract::VoiceEvent ev{};
+    ev.duration_ms = 3000;
+    ev.audio_source = "mxc://example.org/x";
+    CHECK(ev.waveform.empty());
+    CHECK(ev.duration_ms == 3000u);
+}
+
+TEST_CASE("VoiceEvent carries reactions like other Event subtypes", "[types][voice][reactions]") {
+    tesseract::VoiceEvent ev{};
+    ev.reactions.push_back({"🔥", 2, true, "", {"@alice", "@bob"}});
+    REQUIRE(ev.reactions.size() == 1);
+    CHECK(ev.reactions[0].key == "🔥");
+    CHECK(ev.reactions[0].reacted_by_me);
+}
+
+// ---------------------------------------------------------------------------
 // tesseract::EventType enum
 // ---------------------------------------------------------------------------
 
@@ -335,8 +393,9 @@ TEST_CASE("EventType enum values are correct", "[types]") {
     CHECK(static_cast<int>(tesseract::EventType::Image)     == 1);
     CHECK(static_cast<int>(tesseract::EventType::File)      == 2);
     CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
-    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 4);
-    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 5);
+    CHECK(static_cast<int>(tesseract::EventType::Voice)     == 4);
+    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 5);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 6);
 }
 
 // ---------------------------------------------------------------------------

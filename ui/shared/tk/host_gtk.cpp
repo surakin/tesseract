@@ -377,6 +377,8 @@ public:
         return std::make_unique<GtkNativeTextArea>(overlay_);
     }
 
+    std::unique_ptr<AudioPlayer> make_audio_player() override;
+
     EncodedImage encode_for_send(const std::uint8_t* data,
                                  std::size_t         len,
                                  bool                compress) override {
@@ -888,6 +890,13 @@ void Surface::set_on_layout(std::function<void()> cb) {
 
 void Surface::set_on_file_drop(FileDropHandler cb) {
     host_->set_on_file_drop(std::move(cb));
+}
+
+// Defined in audio_gtk.cpp.
+std::unique_ptr<tk::AudioPlayer> make_audio_player_gtk();
+
+std::unique_ptr<tk::AudioPlayer> Host::make_audio_player() {
+    return make_audio_player_gtk();
 }
 
 } // namespace tk::gtk4

@@ -39,6 +39,7 @@ public:
     void post_to_ui(std::function<void()> task) override;
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea>  make_text_area () override;
+    std::unique_ptr<AudioPlayer>     make_audio_player() override;
     EncodedImage encode_for_send(const std::uint8_t* data,
                                  std::size_t         len,
                                  bool                compress) override;
@@ -649,6 +650,13 @@ std::unique_ptr<NativeTextField> Host::make_text_field() {
 std::unique_ptr<NativeTextArea> Host::make_text_area() {
     if (!view_) return nullptr;
     return std::make_unique<NSTextViewNative>(view_);
+}
+
+// Defined in audio_macos.mm.
+std::unique_ptr<tk::AudioPlayer> make_audio_player_macos();
+
+std::unique_ptr<tk::AudioPlayer> Host::make_audio_player() {
+    return make_audio_player_macos();
 }
 
 EncodedImage Host::encode_for_send(const std::uint8_t* data,

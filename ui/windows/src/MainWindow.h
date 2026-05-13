@@ -274,6 +274,10 @@ private:
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
 
+    // Voice-message source tokens already prefetched (or in flight). The
+    // SDK media cache owns the bytes; this set just dedupes worker spawns.
+    std::unordered_set<std::string> voice_prefetched_;
+
     // Animated inline-media entries (GIF / APNG / animated WebP). Frames
     // are eager-decoded by tk::d2d::decode_animation; `next_advance_ms`
     // is a monotonic wall-clock deadline driven by a 60 Hz WM_TIMER on

@@ -27,6 +27,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class EmojiPicker;
@@ -209,6 +210,11 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
+
+    // Voice-message bytes that have been (or are being) prefetched. The
+    // SDK caches the decoded blob, so we only need to mark which source
+    // tokens we've already kicked a worker off for to avoid duplicates.
+    std::unordered_set<std::string> voice_prefetched_;
 
     /// Animated inline-media entries for the timeline (GIF / animated
     /// WebP / APNG). Same shape as `StickerPicker::AnimatedEntry`; kept

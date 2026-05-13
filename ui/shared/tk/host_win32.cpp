@@ -495,6 +495,15 @@ public:
         return area;
     }
 
+    // Voice-message playback is not yet wired on Win32. A real backend
+    // would use Media Foundation (`IMFSourceReader`) + XAudio2; for now we
+    // return `nullptr` so the MessageListView paints the voice card but the
+    // play button is a no-op. Tracked under "Win32 inline images" /
+    // "Decisions still open" in the roadmap.
+    std::unique_ptr<AudioPlayer> make_audio_player() override {
+        return nullptr;
+    }
+
     EncodedImage encode_for_send(const std::uint8_t* data,
                                  std::size_t         len,
                                  bool                compress) override {

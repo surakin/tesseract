@@ -64,6 +64,10 @@ pub mod ffi {
     ///                   an explicit MSC2530 filename; in that case `body` is a caption.
     /// For `m.file`    → file_json, file_name, file_size are populated.
     /// For `m.sticker` → source_json, width, height are populated (same as m.image).
+    /// For `m.voice`   → audio_source_json, audio_duration_ms, audio_waveform,
+    ///                   audio_mime are populated (MSC3245 voice messages).
+    ///                   Non-voice `m.audio` events are converted to "m.file"
+    ///                   on the Rust side so the file-card path renders them.
     struct TimelineEvent {
         event_id:          String,
         room_id:           String,
@@ -73,7 +77,7 @@ pub mod ffi {
         body:              String,
         /// Unix timestamp in milliseconds.
         timestamp:         u64,
-        /// "m.text" | "m.image" | "m.file" | "m.sticker" | "m.redacted" | …
+        /// "m.text" | "m.image" | "m.file" | "m.sticker" | "m.voice" | "m.redacted" | …
         /// "m.redacted" → body is empty; render as a tombstone placeholder.
         msg_type:          String,
         /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
@@ -89,6 +93,18 @@ pub mod ffi {
         /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
         /// user-written caption and should be displayed below the image.
         image_filename:    String,
+        /// JSON-serialised `MediaSource` for the voice clip (plain mxc:// or
+        /// encrypted `EncryptedFile`). Non-empty when `msg_type == "m.voice"`.
+        audio_source_json: String,
+        /// Duration of the voice clip in milliseconds (MSC1767 `audio.duration`,
+        /// falling back to `info.duration`). 0 when neither is provided.
+        audio_duration_ms: u64,
+        /// MSC1767 waveform samples, each clamped to 0..=1024. Empty when the
+        /// sender did not include one (the UI renders flat placeholder bars).
+        audio_waveform:    Vec<u16>,
+        /// MIME type advertised by the sender (typically "audio/ogg"). May be
+        /// empty when missing from `info.mimetype`.
+        audio_mime:        String,
         /// Aggregated reactions, grouped by key. May be empty.
         reactions:         Vec<ReactionGroup>,
         /// Users (other than the current user) whose latest read receipt

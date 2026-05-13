@@ -157,6 +157,17 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         return ev;
     }
 
+    if (msg_type == "m.voice") {
+        auto ev = std::make_unique<VoiceEvent>();
+        assign_base(*ev, e);
+        ev->audio_source = std::string(e.audio_source_json);
+        ev->mime_type    = std::string(e.audio_mime);
+        ev->duration_ms  = e.audio_duration_ms;
+        ev->waveform.reserve(e.audio_waveform.size());
+        for (uint16_t amp : e.audio_waveform) ev->waveform.push_back(amp);
+        return ev;
+    }
+
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);

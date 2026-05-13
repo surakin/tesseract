@@ -5,7 +5,7 @@
 
 namespace tesseract {
 
-enum class EventType { Text, Image, File, Sticker, Redacted, Unhandled };
+enum class EventType { Text, Image, File, Sticker, Voice, Redacted, Unhandled };
 
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
@@ -85,6 +85,21 @@ struct FileEvent : public Event {
     uint64_t    file_size = 0;
 
     FileEvent() { type = EventType::File; }
+};
+
+/// MSC3245 voice message. `audio_source` carries the full JSON-serialised
+/// `MediaSource` (plain mxc:// or encrypted), suitable for
+/// `Client::fetch_source_bytes`. `waveform` holds the sender-supplied
+/// MSC1767 samples (each clamped to 0..=1024); when empty the UI renders
+/// flat placeholder bars. Plain `m.audio` events (without the voice marker)
+/// surface as `FileEvent`, not `VoiceEvent`.
+struct VoiceEvent : public Event {
+    std::string audio_source;          // JSON MediaSource for fetch_source_bytes
+    std::string mime_type;             // e.g. "audio/ogg"; may be empty
+    uint64_t    duration_ms = 0;
+    std::vector<uint16_t> waveform;    // MSC1767 amplitudes, 0..=1024
+
+    VoiceEvent() { type = EventType::Voice; }
 };
 
 /// Fallback for message types we don't handle yet (reactions, polls, etc.)

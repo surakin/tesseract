@@ -236,6 +236,11 @@ private:
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
 
+    // Voice-message source tokens already prefetched (or in flight).
+    // The SDK's media cache holds the bytes; we just remember which we've
+    // dispatched workers for to dedupe.
+    std::unordered_set<std::string>                              voice_prefetched_;
+
     /// Animated inline-media entries (GIF / animated WebP / APNG). Same
     /// shape as the Qt port's `AnimatedImage`. Decoded eagerly: each
     /// frame is a fully-baked cairo surface wrapped in `tk::Image`. The

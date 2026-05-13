@@ -9,6 +9,7 @@
 // SDK's polymorphic Event hierarchy into MessageRowData on the UI
 // thread so the shared view doesn't see virtual Events.
 
+#include "tk/audio.h"
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 
@@ -25,7 +26,7 @@
 namespace tesseract::views {
 
 struct MessageRowData {
-    enum class Kind { Text, Image, Sticker, File, Redacted, Unhandled };
+    enum class Kind { Text, Image, Sticker, File, Voice, Redacted, Unhandled };
 
     Kind        kind          = Kind::Text;
     std::string event_id;
@@ -48,6 +49,15 @@ struct MessageRowData {
     // File card
     std::string file_name;
     std::uint64_t file_size = 0;
+
+    // Voice (MSC3245). `audio_source` is the JSON-serialised MediaSource
+    // passed straight to `Client::fetch_source_bytes`. `waveform` is the
+    // MSC1767 amplitude list (each 0..=1024); when empty the view paints
+    // flat placeholder bars.
+    std::string                audio_source;
+    std::string                audio_mime;
+    std::uint64_t              duration_ms = 0;
+    std::vector<std::uint16_t> waveform;
 
     std::vector<tesseract::Reaction> reactions;
     /// Users (excluding the current user) whose latest read receipt landed
@@ -96,6 +106,17 @@ public:
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
 
+    // Voice-message playback (MSC3245). Shells wire all three after
+    // construction; the view stays inert (clicks become no-ops) when any
+    // of them is missing — Win32 currently lacks an audio backend, so
+    // `make_audio_player()` returns nullptr there and the player handle
+    // is never set.
+    using VoiceBytesProvider =
+        std::function<std::vector<std::uint8_t>(const std::string& source_json)>;
+    void set_audio_player        (std::unique_ptr<tk::AudioPlayer> player);
+    void set_voice_bytes_provider(VoiceBytesProvider provider);
+    void set_repaint_requester   (std::function<void()> request_repaint);
+
     // Click hooks. on_message_clicked fires on row click.
     std::function<void(const std::string& event_id)> on_message_clicked;
 
@@ -129,6 +150,7 @@ public:
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up  (tk::Point local, bool inside_self) override;
     void on_pointer_move(tk::Point local) override;
+    void on_pointer_drag(tk::Point local) override;
     void on_pointer_leave()                override;
     void paint          (tk::PaintCtx&)    override;
 
@@ -197,6 +219,47 @@ private:
     bool                           press_pill_   = false;
 
     bool should_show_pill() const;
+
+    // Voice playback. The view owns a single AudioPlayer — at most one
+    // voice clip plays at a time. The host hands ownership in via
+    // `set_audio_player` after construction; until then click-to-play is
+    // a no-op. `voice_card_geom_` is rebuilt every paint pass (world
+    // coords, keyed by event_id) so `on_pointer_down` can hit-test the
+    // play button, waveform strip, and speed pill without touching the
+    // painter again.
+    struct VoiceCardGeom {
+        std::string event_id;
+        tk::Rect    play_button{};   // play/pause hit rect
+        tk::Rect    waveform_strip{};// scrub hit rect
+        tk::Rect    speed_pill{};    // playback-rate cycle hit rect
+        tk::Rect    card_bounds{};
+    };
+    mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
+
+    std::unique_ptr<tk::AudioPlayer> audio_player_;
+    VoiceBytesProvider               voice_bytes_provider_;
+    std::function<void()>            request_repaint_;
+
+    // The event_id of the currently-loaded clip in `audio_player_`. Empty
+    // when nothing is loaded.
+    std::string                      playing_event_id_;
+    // Mirror of `audio_player_->position_ms()` — refreshed from the
+    // AudioPlayer's on_progress callback so paint doesn't have to call
+    // back into the player.
+    std::uint64_t                    playing_position_ms_ = 0;
+    bool                             playing_is_active_   = false;
+    // Global playback rate. Cycles 1.0 → 1.5 → 2.0 → 1.0 via the per-row
+    // speed pill. Applied to every play()/resume()/seek().
+    float                            playback_rate_       = 1.0f;
+
+    enum class VoicePressKind { None, PlayButton, Waveform, SpeedPill };
+    VoicePressKind                   press_voice_kind_    = VoicePressKind::None;
+    std::string                      press_voice_event_id_;
+
+    void handle_voice_play_click (const MessageRowData& row);
+    void handle_voice_scrub_at   (const MessageRowData& row, float local_x);
+    void handle_voice_speed_click();
+    void on_audio_progress();
 };
 
 } // namespace tesseract::views

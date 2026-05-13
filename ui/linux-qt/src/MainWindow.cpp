@@ -11,6 +11,7 @@
 #include <QAction>
 #include <QBuffer>
 #include <QImageReader>
+#include <QPointer>
 
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
@@ -354,6 +355,23 @@ MainWindow::MainWindow(QWidget* parent)
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
+    // Voice (MSC3245) playback wiring. The Qt backend builds a QMediaPlayer
+    // when `make_audio_player()` is called; the bytes provider piggybacks
+    // on the SDK media cache via fetch_source_bytes (synchronous; empty on
+    // cache miss, in which case the view stays in its idle state).
+    if (auto player = msgSurface_->host().make_audio_player()) {
+        messageListView_->set_audio_player(std::move(player));
+    }
+    messageListView_->set_voice_bytes_provider(
+        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+            return client_.fetch_source_bytes(source_json);
+        });
+    {
+        QPointer<tk::qt6::Surface> sfp = msgSurface_;
+        messageListView_->set_repaint_requester([sfp]() {
+            if (sfp) sfp->update();
+        });
+    }
     msgSurface_->set_root(std::move(msg_view_owner));
     vLayout->addWidget(msgSurface_, 1);
 
@@ -1130,6 +1148,15 @@ tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& e
             row.media_url = f.file_url;
             break;
         }
+        case tesseract::EventType::Voice: {
+            row.kind = Kind::Voice;
+            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+            row.audio_source = v.audio_source;
+            row.audio_mime   = v.mime_type;
+            row.duration_ms  = v.duration_ms;
+            row.waveform     = v.waveform;
+            break;
+        }
         case tesseract::EventType::Redacted:
             row.kind = Kind::Redacted;
             break;
@@ -1154,6 +1181,20 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
     } else if (ev.type == tesseract::EventType::Sticker) {
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
         ensureMediaImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
+    } else if (ev.type == tesseract::EventType::Voice) {
+        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+        if (!v.audio_source.empty() &&
+            voice_prefetched_.insert(v.audio_source).second) {
+            // Pull the clip into the SDK media cache on a worker so the
+            // first play-button tap is instant. We discard the bytes —
+            // the next synchronous `fetch_source_bytes` (driven by the
+            // view) reads them straight back out of the cache.
+            std::string src = v.audio_source;
+            auto* runner = QRunnable::create([this, src = std::move(src)]() {
+                (void)client_.fetch_source_bytes(src);
+            });
+            QThreadPool::globalInstance()->start(runner);
+        }
     }
     for (const auto& r : ev.reactions) {
         if (!r.source_json.empty())

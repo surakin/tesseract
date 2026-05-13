@@ -61,6 +61,10 @@ pub mod ffi {
         pub file_name:         String,
         pub file_size:         u64,
         pub image_filename:    String,
+        pub audio_source_json: String,
+        pub audio_duration_ms: u64,
+        pub audio_waveform:    Vec<u16>,
+        pub audio_mime:        String,
         pub reactions:         Vec<ReactionGroup>,
         pub read_receipts:     Vec<ReadReceipt>,
     }

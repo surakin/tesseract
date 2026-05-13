@@ -8,6 +8,7 @@ cmake_minimum_required(VERSION 3.25)
 # compiled conditionally based on TESSERACT_UI.
 
 set(_tk_sources
+    tk/audio.h
     tk/canvas.h
     tk/host.h
     tk/theme.h
@@ -51,6 +52,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/canvas_qpainter.cpp
         tk/host_qt.h
         tk/host_qt.cpp
+        tk/audio_qt.cpp
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     list(APPEND _tk_sources
@@ -58,6 +60,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/canvas_cairo.cpp
         tk/host_gtk.h
         tk/host_gtk.cpp
+        tk/audio_gtk.cpp
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     list(APPEND _tk_sources
@@ -65,6 +68,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
         tk/canvas_cg.cpp
         tk/host_macos.h
         tk/host_macos.mm
+        tk/audio_macos.mm
     )
 endif()
 
@@ -99,11 +103,14 @@ if(TESSERACT_UI STREQUAL "win32")
         user32
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+    # Multimedia is used by audio_qt.cpp for MSC3245 voice playback
+    # (QMediaPlayer + QAudioOutput).
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia)
     target_link_libraries(tesseract_tk PUBLIC
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
+        Qt6::Multimedia
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     find_package(PkgConfig REQUIRED)
@@ -112,8 +119,16 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         pangocairo
         gdk-pixbuf-2.0
     )
+    # GStreamer + gstreamer-app for MSC3245 voice playback (audio_gtk.cpp).
+    # The opus decoder is provided by gst-plugins-base; package this runtime
+    # dependency in installer manifests.
+    pkg_check_modules(TK_GST REQUIRED IMPORTED_TARGET
+        gstreamer-1.0
+        gstreamer-app-1.0
+    )
     target_link_libraries(tesseract_tk PUBLIC
         PkgConfig::TK_GTK4
+        PkgConfig::TK_GST
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     target_link_libraries(tesseract_tk PUBLIC
@@ -123,5 +138,8 @@ elseif(TESSERACT_UI STREQUAL "macos")
         "-framework ImageIO"
         "-framework AppKit"
         "-framework Foundation"
+        # MSC3245 voice playback (audio_macos.mm) uses AVAudioPlayer.
+        "-framework AVFoundation"
+        "-framework AudioToolbox"
     )
 endif()

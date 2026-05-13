@@ -1647,6 +1647,15 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
             row.media_url = f.file_url;
             break;
         }
+        case tesseract::EventType::Voice: {
+            row.kind = Kind::Voice;
+            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+            row.audio_source = v.audio_source;
+            row.audio_mime   = v.mime_type;
+            row.duration_ms  = v.duration_ms;
+            row.waveform     = v.waveform;
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -1668,6 +1677,17 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         ensure_media_image(s.image_url,
                             tesseract::visual::kStickerSize,
                             tesseract::visual::kStickerSize);
+    } else if (ev.type == tesseract::EventType::Voice) {
+        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+        if (!v.audio_source.empty() &&
+            voice_prefetched_.insert(v.audio_source).second) {
+            // Win32 has no audio backend yet (`make_audio_player()`
+            // returns nullptr) — prefetch is still worth doing so the
+            // bytes land in the SDK cache for whenever a backend lands.
+            std::thread([this, src = v.audio_source]() mutable {
+                (void)client_.fetch_source_bytes(src);
+            }).detach();
+        }
     }
     for (const auto& r : ev.reactions) {
         if (!r.source_json.empty())

@@ -533,6 +533,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
+    // Voice (MSC3245) playback — GStreamer playbin via tk::gtk4::Host.
+    if (auto player = msg_surface_->host().make_audio_player()) {
+        message_list_view_->set_audio_player(std::move(player));
+    }
+    message_list_view_->set_voice_bytes_provider(
+        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+            return client_.fetch_source_bytes(source_json);
+        });
+    {
+        tk::gtk4::Surface* sfp = msg_surface_.get();
+        message_list_view_->set_repaint_requester([sfp]() {
+            if (sfp) gtk_widget_queue_draw(sfp->widget());
+        });
+    }
     msg_surface_->set_root(std::move(msg_view_owner));
 
     GtkWidget* msg_surface_widget = msg_surface_->widget();
@@ -1402,6 +1416,15 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
             row.media_url = f.file_url;
             break;
         }
+        case tesseract::EventType::Voice: {
+            row.kind = Kind::Voice;
+            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+            row.audio_source = v.audio_source;
+            row.audio_mime   = v.mime_type;
+            row.duration_ms  = v.duration_ms;
+            row.waveform     = v.waveform;
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -1425,6 +1448,17 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         ensure_media_image(s.image_url,
                             tesseract::visual::kStickerSize,
                             tesseract::visual::kStickerSize);
+    } else if (ev.type == tesseract::EventType::Voice) {
+        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+        if (!v.audio_source.empty() &&
+            voice_prefetched_.insert(v.audio_source).second) {
+            // Background-prime the SDK media cache so the first play tap
+            // is instant. We discard the bytes — the view's synchronous
+            // fetch on click reads them straight out of the cache.
+            std::thread([this, src = v.audio_source]() mutable {
+                (void)client_.fetch_source_bytes(src);
+            }).detach();
+        }
     }
     for (const auto& r : ev.reactions) {
         if (!r.source_json.empty())

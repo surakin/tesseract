@@ -296,6 +296,8 @@ public:
         return std::make_unique<QtNativeTextArea>(surface_);
     }
 
+    std::unique_ptr<AudioPlayer> make_audio_player() override;
+
     EncodedImage encode_for_send(const std::uint8_t* data,
                                  std::size_t         len,
                                  bool                compress) override {
@@ -694,6 +696,14 @@ void Surface::dropEvent(QDropEvent* e) {
     } else {
         e->ignore();
     }
+}
+
+// Defined in audio_qt.cpp; wired here so Host::make_audio_player() lives
+// next to the rest of the host implementation.
+std::unique_ptr<tk::AudioPlayer> make_audio_player_qt();
+
+std::unique_ptr<tk::AudioPlayer> Host::make_audio_player() {
+    return make_audio_player_qt();
 }
 
 } // namespace tk::qt6

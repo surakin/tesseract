@@ -279,6 +279,9 @@ void EventBridge::on_image_packs_updated() {
     tesseract::views::MessageListView*              _messageListView;  // borrowed
     std::unordered_map<std::string, TkImagePtr>     _tkAvatars;
     std::unordered_map<std::string, TkImagePtr>     _tkImages;
+    // Voice-message source tokens already prefetched (or in flight). The
+    // SDK media cache owns the bytes; this set just dedupes worker spawns.
+    std::unordered_set<std::string>                 _voicePrefetched;
 
     // AppKit chrome.
     NSSplitView*   _splitView;
@@ -545,6 +548,23 @@ void EventBridge::on_image_packs_updated() {
             if (s->_currentRoomId.empty()) return;
             [s requestMoreHistoryForRoom:s->_currentRoomId];
         };
+    }
+    // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
+    if (auto player = _msgSurface->host().make_audio_player()) {
+        _messageListView->set_audio_player(std::move(player));
+    }
+    _messageListView->set_voice_bytes_provider(
+        [self](const std::string& source_json) -> std::vector<std::uint8_t> {
+            return _client.fetch_source_bytes(source_json);
+        });
+    {
+        __weak MainWindowController* weakSelf = self;
+        _messageListView->set_repaint_requester([weakSelf]() {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_msgSurface) return;
+            NSView* v = (__bridge NSView*)s->_msgSurface->view_handle();
+            [v setNeedsDisplay:YES];
+        });
     }
     _msgSurface->set_root(std::move(msg_view));
     {
@@ -1416,6 +1436,15 @@ void EventBridge::on_image_packs_updated() {
             row.media_url = f.file_url;
             break;
         }
+        case tesseract::EventType::Voice: {
+            row.kind = Kind::Voice;
+            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+            row.audio_source = v.audio_source;
+            row.audio_mime   = v.mime_type;
+            row.duration_ms  = v.duration_ms;
+            row.waveform     = v.waveform;
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -1436,6 +1465,18 @@ void EventBridge::on_image_packs_updated() {
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
         [self _ensureMediaImage:s.image_url
                             cap:tesseract::visual::kStickerSize];
+    } else if (ev.type == tesseract::EventType::Voice) {
+        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+        if (!v.audio_source.empty() &&
+            _voicePrefetched.insert(v.audio_source).second) {
+            // Pull the clip into the SDK media cache on a background
+            // queue so the first play tap is instant. Bytes are discarded;
+            // the next synchronous fetch reads them out of cache.
+            std::string src = v.audio_source;
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                (void)_client.fetch_source_bytes(src);
+            });
+        }
     }
     for (const auto& r : ev.reactions) {
         if (!r.source_json.empty()) {
