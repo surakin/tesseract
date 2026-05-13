@@ -878,7 +878,15 @@ MainWindow::~MainWindow() {
         if (a && a->client) a->client->stop_sync();
     }
     if (pending_login_client_) pending_login_client_->stop_sync();
-    mediaPool_.waitForDone(5000); // 5 s safety-net; matches GTK4 / Win32
+    // Wait indefinitely: shuttingDown_ is already true so no new work can be
+    // queued, and clear() above removed pending runnables.  Only in-flight
+    // workers remain; we must not destroy ClientFfi (via accounts_ RAII)
+    // while a worker holds Pin<&mut ClientFfi> — that data race causes a
+    // panic_in_cleanup abort through Rust's drop chain.  A bounded wait was
+    // the original intent but a timeout that fires early is strictly worse
+    // than waiting: workers call reqwest-backed futures that complete in
+    // <1 s on a healthy network and are bounded by reqwest's own timeout.
+    mediaPool_.waitForDone(-1);
 
     client_ = nullptr;
     bridge_ = nullptr;
