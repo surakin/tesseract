@@ -3,6 +3,7 @@
 mod client;
 mod image_packs;
 mod oauth;
+mod recent_emoji;
 
 // Production cxx bridge — skipped during `cargo test` to avoid needing C++ linked.
 // Tests use the pure-Rust stub module below instead.

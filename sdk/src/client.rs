@@ -1143,42 +1143,65 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    /// Top-N glyphs from the user's `io.element.recent_emoji` account-data,
-    /// ordered by count desc (Element Web's format; matrix-sdk-base ships
-    /// `RecentEmojisContent` and sorts by count for us). Reads the local
-    /// sync cache only — no network roundtrip. Returns an empty vec when
-    /// not logged in, when account-data has never been written for this
-    /// user, or on any deserialization error: a broken blob should never
-    /// stall the picker.
+    /// Top-N glyphs from the user's MSC4356 `recent_emoji` account-data,
+    /// ordered by `total` desc. Reads with the precedence stable
+    /// (`m.recent_emoji`) → unstable
+    /// (`io.github.johennes.msc4356.recent_emoji`) → legacy
+    /// (`io.element.recent_emoji`) so existing Element users see their
+    /// historical history on the first MSC4356 run without losing it. Reads
+    /// the local sync cache only — no network roundtrip. Returns an empty
+    /// vec when not logged in, when no blob has ever been written, or on
+    /// any deserialization error: a broken blob never stalls the picker.
     #[cfg(not(test))]
     pub fn recent_emoji_top(&mut self, n: u32) -> Vec<String> {
         let Some(client) = self.client.clone() else { return Vec::new(); };
-        let result = self.rt.block_on(async move {
-            client.account().get_recent_emojis(false).await
+        let entries = self.rt.block_on(async move {
+            read_recent_emoji_entries(&client).await
         });
-        match result {
-            Ok(list) => list.into_iter().take(n as usize).map(|(g, _)| g).collect(),
-            Err(_) => Vec::new(),
-        }
+        crate::recent_emoji::top_by_count(&entries, n as usize)
     }
 
     #[cfg(test)]
     pub fn recent_emoji_top(&mut self, _n: u32) -> Vec<String> { Vec::new() }
 
     /// Record one use of `glyph` in the user's account-data. Fire-and-forget
-    /// against the homeserver: `Account::add_recent_emoji` does a
-    /// GET-modify-PUT (account.rs:1329), so blocking the UI would charge
-    /// the click two round-trips. We spawn onto the runtime instead and
-    /// let the SDK's local cache update via the normal sync path. Matrix's
-    /// last-write-wins account-data semantics make a few dropped bumps on
-    /// rapid clicks acceptable.
+    /// against the homeserver: the GET-modify-PUT round-trips would
+    /// otherwise stall every emoji click, and the picker's "most used"
+    /// ranking tolerates the occasional dropped bump on rapid input
+    /// (matrix's last-write-wins account-data semantics merge cleanly on
+    /// the next sync). Dual-writes the canonical `m.recent_emoji` and the
+    /// unstable `io.github.johennes.msc4356.recent_emoji` so other MSC4356
+    /// clients pick the data up regardless of which side has reached
+    /// stable yet. The legacy `io.element.recent_emoji` blob is read on
+    /// fallback but never written, leaving Element / other clients to
+    /// manage their own copy.
     #[cfg(not(test))]
     pub fn recent_emoji_bump(&mut self, glyph: &str) {
         if glyph.is_empty() { return; }
         let Some(client) = self.client.clone() else { return; };
         let glyph = glyph.to_owned();
         self.rt.spawn(async move {
-            let _ = client.account().add_recent_emoji(&glyph).await;
+            use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+            use matrix_sdk::ruma::serde::Raw;
+
+            let entries = read_recent_emoji_entries(&client).await;
+            let bumped  = crate::recent_emoji::bump(entries, &glyph);
+            let content = crate::recent_emoji::serialize_msc4356(&bumped);
+            let raw = match Raw::new(&content) {
+                Ok(r)  => r.cast_unchecked(),
+                Err(_) => return,
+            };
+            // Dual-write to stable + unstable types. Errors are swallowed
+            // by the fire-and-forget contract.
+            for ty in [
+                crate::recent_emoji::TYPE_STABLE,
+                crate::recent_emoji::TYPE_UNSTABLE,
+            ] {
+                let ev_type = GlobalAccountDataEventType::from(ty);
+                let _ = client.account()
+                    .set_account_data_raw(ev_type, raw.clone())
+                    .await;
+            }
         });
     }
 
@@ -1817,6 +1840,34 @@ fn image_entry_to_ffi(
 /// pack from account_data, read the enabled-rooms list, and for each
 /// referenced (room_id, state_key) read the room state event. Tries the
 /// unstable type names first (everything in the wild today) and falls back
+/// Read the user's MSC4356 recent-emoji blob with stable → unstable →
+/// legacy precedence. Returns an empty Vec if no blob exists, the client
+/// is in a fresh-login state, or every parse path errors out.
+#[cfg(not(test))]
+async fn read_recent_emoji_entries(client: &Client) -> Vec<crate::recent_emoji::Entry> {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    use serde_json::Value;
+
+    async fn fetch(client: &Client, ty: &str) -> Option<Value> {
+        let et = GlobalAccountDataEventType::from(ty);
+        let raw = client.account().account_data_raw(et).await.ok().flatten()?;
+        serde_json::from_str::<Value>(raw.json().get()).ok()
+    }
+
+    if let Some(v) = fetch(client, crate::recent_emoji::TYPE_STABLE).await {
+        let entries = crate::recent_emoji::parse_msc4356(&v);
+        if !entries.is_empty() { return entries; }
+    }
+    if let Some(v) = fetch(client, crate::recent_emoji::TYPE_UNSTABLE).await {
+        let entries = crate::recent_emoji::parse_msc4356(&v);
+        if !entries.is_empty() { return entries; }
+    }
+    if let Some(v) = fetch(client, crate::recent_emoji::TYPE_LEGACY).await {
+        return crate::recent_emoji::parse_legacy_element(&v);
+    }
+    Vec::new()
+}
+
 /// to the stable names. Returns an empty Vec when not logged in.
 #[cfg(not(test))]
 async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePack> {
