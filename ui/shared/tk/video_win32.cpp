@@ -364,7 +364,7 @@ private:
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                 0, &stream_idx, &flags, &ts, sample.GetAddressOf());
 
-            if (FAILED(hr) || (flags & MF_SOURCE_READER_FLAG_ENDOFSTREAM))
+            if (FAILED(hr) || (flags & MF_SOURCE_READERF_ENDOFSTREAM))
                 break;
             if (!sample) continue;
 
