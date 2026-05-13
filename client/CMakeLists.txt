@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.25)
 # tesseract_client – common C++20 static library
 # ---------------------------------------------------------------------------
 add_library(tesseract_client STATIC
+    src/avatar_disk_cache.cpp
     src/client.cpp
     src/event_handler_bridge.cpp
     src/session_store.cpp

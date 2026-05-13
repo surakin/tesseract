@@ -999,6 +999,19 @@ void MainWindow::doLogin() {
                 navigate_to_room(std::move(room_id));
             });
 
+        session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
+            tesseract::SessionStore::account_dir(uid) / "avatars");
+        {
+            auto* cache_ptr  = session->avatar_disk_cache.get();
+            auto* client_ptr = session->client.get();
+            runOnPool_([cache_ptr, client_ptr]() {
+                for (const auto& mxc : cache_ptr->all_keys()) {
+                    if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                        cache_ptr->remove(mxc);
+                }
+            });
+        }
+
         if (uid == idx.active_user_id) target_active = static_cast<int>(accounts_.size());
         accounts_.push_back(std::move(session));
     }
@@ -1159,6 +1172,19 @@ void MainWindow::onLoginSucceeded() {
             }
             navigate_to_room(std::move(room_id));
         });
+
+    session->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
+        tesseract::SessionStore::account_dir(user_id) / "avatars");
+    {
+        auto* cache_ptr  = session->avatar_disk_cache.get();
+        auto* client_ptr = session->client.get();
+        runOnPool_([cache_ptr, client_ptr]() {
+            for (const auto& mxc : cache_ptr->all_keys()) {
+                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                    cache_ptr->remove(mxc);
+            }
+        });
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(session));
@@ -1573,6 +1599,26 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
                                       const std::string& mxc) {
     if (room_id.empty() || mxc.empty()) return;
     if (tk_avatars_.count(mxc)) return;
+
+    // L1 check: synchronous disk read before touching the network/SDK.
+    if (active_account_index_ >= 0) {
+        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
+        if (cache) {
+            auto bytes = cache->get(mxc);
+            if (!bytes.empty()) {
+                QImage img;
+                if (img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                     static_cast<int>(bytes.size()))) {
+                    QImage scaled = img.scaled(kRoomAvatarSize, kRoomAvatarSize,
+                                               Qt::KeepAspectRatio,
+                                               Qt::SmoothTransformation);
+                    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+                }
+                return;
+            }
+        }
+    }
+
     if (!mediaFetchesInFlight_.insert(mxc).second) return;
 
     QString qkey = QString::fromStdString(mxc);
@@ -1589,6 +1635,26 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
 void MainWindow::requestUserAvatar_(const std::string& mxc) {
     if (mxc.empty()) return;
     if (tk_avatars_.count(mxc)) return;
+
+    // L1 check: synchronous disk read before touching the network/SDK.
+    if (active_account_index_ >= 0) {
+        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
+        if (cache) {
+            auto bytes = cache->get(mxc);
+            if (!bytes.empty()) {
+                QImage img;
+                if (img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                     static_cast<int>(bytes.size()))) {
+                    QImage scaled = img.scaled(kMsgAvatarSize, kMsgAvatarSize,
+                                               Qt::KeepAspectRatio,
+                                               Qt::SmoothTransformation);
+                    tk_avatars_.emplace(mxc, tk::qt6::make_image(std::move(scaled)));
+                }
+                return;
+            }
+        }
+    }
+
     if (!mediaFetchesInFlight_.insert(mxc).second) return;
 
     QString qkey = QString::fromStdString(mxc);
@@ -1636,6 +1702,12 @@ void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
     const MediaKind k = static_cast<MediaKind>(kind);
     if (k == MediaKind::RoomAvatar || k == MediaKind::UserAvatar) {
         if (tk_avatars_.count(key)) return;
+        // L1 write: persist raw bytes so future launches skip the SDK fetch.
+        if (active_account_index_ >= 0) {
+            if (auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get())
+                cache->put(key, {reinterpret_cast<const uint8_t*>(bytes.constData()),
+                                  static_cast<std::size_t>(bytes.size())});
+        }
         QImage img;
         if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
                               bytes.size()))

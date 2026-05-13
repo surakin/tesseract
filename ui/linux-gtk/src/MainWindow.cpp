@@ -1163,6 +1163,19 @@ void MainWindow::do_login() {
                     navigate_to_room(std::move(room_id));
                 });
 
+            sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
+                tesseract::SessionStore::account_dir(uid) / "avatars");
+            {
+                auto* cache_ptr  = sess->avatar_disk_cache.get();
+                auto* client_ptr = sess->client.get();
+                run_async_([cache_ptr, client_ptr]() {
+                    for (const auto& mxc : cache_ptr->all_keys()) {
+                        if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                            cache_ptr->remove(mxc);
+                    }
+                });
+            }
+
             int idx = static_cast<int>(accounts_.size());
             if (uid == index.active_user_id) first_active = idx;
             accounts_.push_back(std::move(sess));
@@ -1251,6 +1264,19 @@ void MainWindow::on_login_succeeded() {
             }
             navigate_to_room(std::move(room_id));
         });
+
+    sess->avatar_disk_cache = std::make_unique<tesseract::AvatarDiskCache>(
+        tesseract::SessionStore::account_dir(uid) / "avatars");
+    {
+        auto* cache_ptr  = sess->avatar_disk_cache.get();
+        auto* client_ptr = sess->client.get();
+        run_async_([cache_ptr, client_ptr]() {
+            for (const auto& mxc : cache_ptr->all_keys()) {
+                if (!client_ptr->is_avatar_in_sdk_cache(mxc))
+                    cache_ptr->remove(mxc);
+            }
+        });
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -1744,6 +1770,23 @@ gboolean MainWindow::on_tk_anim_tick_(gpointer user_data) {
 void MainWindow::request_room_avatar_async(const std::string& room_id,
                                               const std::string& mxc) {
     if (room_id.empty() || mxc.empty() || tk_avatars_.count(mxc)) return;
+
+    // L1 check: synchronous disk read before touching the network/SDK.
+    if (active_account_index_ >= 0) {
+        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
+        if (cache) {
+            auto bytes = cache->get(mxc);
+            if (!bytes.empty()) {
+                if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    tk_avatars_.emplace(mxc, std::move(img));
+                }
+                return;
+            }
+        }
+    }
+
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     struct IdleData {
@@ -1759,6 +1802,12 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
             auto* d = static_cast<IdleData*>(p);
             d->self->media_fetches_in_flight_.erase(d->mxc);
             if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
+                // L1 write: persist bytes for future launches.
+                if (d->self->active_account_index_ >= 0) {
+                    if (auto* c = d->self->accounts_[d->self->active_account_index_]
+                                      ->avatar_disk_cache.get())
+                        c->put(d->mxc, d->bytes);
+                }
                 if (cairo_surface_t* surface =
                         decode_image_to_cairo_surface(d->bytes))
                 {
@@ -1777,6 +1826,23 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
 
 void MainWindow::request_user_avatar_async(const std::string& mxc) {
     if (mxc.empty() || tk_avatars_.count(mxc)) return;
+
+    // L1 check: synchronous disk read before touching the network/SDK.
+    if (active_account_index_ >= 0) {
+        auto* cache = accounts_[active_account_index_]->avatar_disk_cache.get();
+        if (cache) {
+            auto bytes = cache->get(mxc);
+            if (!bytes.empty()) {
+                if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    tk_avatars_.emplace(mxc, std::move(img));
+                }
+                return;
+            }
+        }
+    }
+
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     struct IdleData {
@@ -1792,6 +1858,12 @@ void MainWindow::request_user_avatar_async(const std::string& mxc) {
             auto* d = static_cast<IdleData*>(p);
             d->self->media_fetches_in_flight_.erase(d->mxc);
             if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
+                // L1 write: persist bytes for future launches.
+                if (d->self->active_account_index_ >= 0) {
+                    if (auto* c = d->self->accounts_[d->self->active_account_index_]
+                                      ->avatar_disk_cache.get())
+                        c->put(d->mxc, d->bytes);
+                }
                 if (cairo_surface_t* surface =
                         decode_image_to_cairo_surface(d->bytes))
                 {
