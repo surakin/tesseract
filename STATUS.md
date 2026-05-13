@@ -18,7 +18,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Linux | Qt6 Widgets | QPainter | primary dev target — verified end-to-end |
 | Linux | GTK4 | Cairo + Pango | verified end-to-end |
 | macOS | AppKit (`NSWindowController`, `NSView`) | CoreGraphics + CoreText | verified on macOS 15; opus playback requires macOS 14+ |
-| Windows | Win32 + COM | Direct2D + DirectWrite + WIC | MSVC verified; MinGW unverified; no audio backend yet |
+| Windows | Win32 + COM | Direct2D + DirectWrite + WIC | MSVC verified; MinGW cross-compile verified; audio via IMFMediaEngine |
 
 ---
 
@@ -29,6 +29,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **`logout`** — wipes Rust session, C++ wrapper state, and the SQLite store; surfaces back through the FFI.
 - **Soft logout** — `SessionChange::UnknownToken` threaded through `on_error` with a `soft_logout` flag so the UI can retry restore without clearing the store.
 - **Recovery key / device verification (Step 6)** — `needs_recovery`, `recover(key_or_passphrase)`, `backup_state` FFI; `on_backup_progress` callback; per-platform `RecoveryBanner` (in-toolkit; not a modal dialog).
+- **Shutdown stability** — background workers are drained before the tokio runtime tears down, preventing use-after-free when a worker posts back to the UI thread after the EventHandler is destroyed; a separate guard prevents a double-callback segfault when `stop_sync` is called re-entrantly.
 - **Identity strip in sidebar** — circular avatar + display name + right-click "Log Out" on every platform.
 
 ## Sync & rooms
@@ -89,7 +90,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Scrubbable waveform** — click or drag anywhere on the bars to seek; clicking on a non-active row starts playback at the chosen position.
 - **Speed pill** — `1×` / `1.5×` / `2×` on the active row; cycles the global playback rate.
 - **Background prefetch** — each shell kicks off a worker thread when a Voice row is first seen, warming the SDK media cache so the first play tap is instant.
-- **Per-platform `tk::AudioPlayer` backend** — Qt6 `QMediaPlayer` + `QAudioOutput`; GTK4 GStreamer pipeline (`giostreamsrc` ! `decodebin` ! `audioconvert` ! `autoaudiosink`); macOS `AVAudioPlayer`; Win32 returns `nullptr` (card renders but play is a no-op pending a future Media Foundation + XAudio2 backend).
+- **Per-platform `tk::AudioPlayer` backend** — Qt6 `QMediaPlayer` + `QAudioOutput`; GTK4 GStreamer pipeline (`giostreamsrc` ! `decodebin` ! `audioconvert` ! `autoaudiosink`); macOS `AVAudioPlayer`; Win32 `tk::audio_win32.cpp` using `IMFMediaEngine` — in-memory `IStream` avoids disk spillage; 60 ms timer-pool tick drives progress; callbacks marshalled back to the UI thread via `post_to_ui`.
 
 ## Pickers
 
@@ -132,6 +133,16 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **GTK4** — `libayatana-appindicator3` (probed via `org.kde.StatusNotifierWatcher`). Built in a separate `tesseract_gtk_tray` static lib so GTK3 headers stay isolated from the GTK4 shell. Requires `libayatana-appindicator3-dev`.
 - **Win32** — `Shell_NotifyIcon` against a hidden helper HWND; `TrackPopupMenuEx` for the right-click menu; `WM_CLOSE` intercepted in `MainWindow`'s wnd_proc.
 - **macOS** — `NSStatusItem` with a template menu-bar icon; `windowShouldClose:` hides the window; Quit calls `[NSApp terminate:nil]`.
+
+## Notifications (foreground toasts)
+
+- Cross-platform `tesseract::INotifier` / `Notification` abstraction; per-platform impls created after login.
+- Push-rule evaluation via `evaluate_push_rules` in `sdk/src/client.rs`; fires on `VectorDiff::PushBack` (live events only); `is_mention` from `Action::is_highlight()`.
+- **Win32** — WinRT `Windows.UI.Notifications.ToastNotificationManager`; `ToastGeneric` XML with sender, optional room name (omitted for DMs), 120-char body preview; `WM_TESSERACT_NOTIFY_CLICK` navigates to the room.
+- **Qt6** — `QDBusInterface` against `org.freedesktop.Notifications`; replace-per-room; Flatpak portal path supported; click navigates + raises window.
+- **GTK4** — `GDBusConnection` (session bus); same replace-per-room and Flatpak portal patterns as Qt6.
+- **macOS** — `UNUserNotificationCenter`; `UNUserNotificationCenterDelegate` on `MainWindowController`; in-foreground suppression when the source room is active; click navigates to the room.
+- All platforms suppress the notification when the window is focused and the target room is already open.
 
 ## Build & packaging
 
