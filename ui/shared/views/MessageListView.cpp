@@ -233,7 +233,14 @@ public:
             float btn_y = cont
                 ? (bounds.y + kContPadY)
                 : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
+            // Leave room on the right for any read-receipt cluster.
             float btn_right = bounds.x + bounds.w - kPadX;
+            if (!m.read_receipts.empty()) {
+                const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
+                float cluster_w = kReceiptSize
+                                  + static_cast<float>(n - 1) * kReceiptStride;
+                btn_right -= cluster_w + chip_gap();
+            }
 
             auto paint_btn = [&](const char* glyph, tk::Rect& geom_out) {
                 tk::TextStyle st{};
@@ -286,11 +293,17 @@ public:
             }
         }
 
+        // Disc centre Y for receipts. Default: aligned with the bottom of the
+        // body block. Overridden below when a chip strip is also present so
+        // the receipt cluster shares the strip row instead of stacking above it.
+        float receipt_disc_cy = cursor - kReceiptSize * 0.5f;
+
         // ── Bottom chip strip (reactions) ────────────────────────────────────
         // Only created when there are persistent reaction chips to show.
         if (!m.reactions.empty()) {
             float chip_y = cursor;
             float chip_x = col_x;
+            receipt_disc_cy = chip_y + chip_h() * 0.5f;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
                 const auto& r = m.reactions[ri];
                 tk::TextStyle est{};
@@ -433,7 +446,7 @@ public:
             const std::size_t total    = m.read_receipts.size();
             const std::size_t visible  = std::min(total, kReceiptCap);
             const std::size_t overflow = total - visible;
-            const float disc_cy = cursor - kReceiptSize * 0.5f;
+            const float disc_cy = receipt_disc_cy;
 
             float right_edge = bounds.x + bounds.w - kPadX;
             for (std::size_t i = 0; i < visible; ++i) {
