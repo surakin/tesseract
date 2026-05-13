@@ -1965,16 +1965,18 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the Win32 message pump stays responsive.
+    auto visible_ids = room_list_view_ ? room_list_view_->visible_room_ids()
+                                       : std::vector<std::string>{};
     HWND hwnd = hwnd_;
     std::string sub_room = current_room_id_;
     tesseract::Client* cl = client_;
-    run_async_([this, sub_room, hwnd, cl]{
+    run_async_([this, sub_room, hwnd, cl, visible_ids = std::move(visible_ids)]{
         auto res = cl->subscribe_room(sub_room);
         bool reached = false;
         if (res) {
             auto pr = cl->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            cl->start_background_backfill();
+            cl->start_background_backfill(visible_ids);
         }
         auto* p = new std::string(sub_room);
         PostMessageW(hwnd, WM_TESSERACT_SUBSCRIBE_DONE,

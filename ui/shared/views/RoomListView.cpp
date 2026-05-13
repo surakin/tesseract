@@ -340,6 +340,23 @@ void RoomListView::set_search_text(std::string q) {
     set_selected_room(selected_room_id_cache_);
 }
 
+std::vector<std::string> RoomListView::visible_room_ids() const {
+    if (!list_) return {};
+    auto [first, last] = list_->visible_range();
+    if (last < first) return {};
+    std::vector<std::string> ids;
+    for (int i = first; i <= last; ++i) {
+        const auto& item = items_[static_cast<std::size_t>(i)];
+        if (item.kind == Item::Kind::Room) {
+            const auto& rooms = section_rooms_[item.section];
+            if (item.room_idx >= 0 &&
+                item.room_idx < static_cast<int>(rooms.size()))
+                ids.push_back(rooms[item.room_idx]->id);
+        }
+    }
+    return ids;
+}
+
 void RoomListView::rebuild_items() {
     // 1. Clear buckets.
     for (auto& sr : section_rooms_) sr.clear();

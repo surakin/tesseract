@@ -168,6 +168,10 @@ public:
     // viewport).
     int index_at(Point local) const;
 
+    // First and last item indices currently intersecting the viewport,
+    // inclusive. Returns {0, -1} when the list is empty or not yet laid out.
+    std::pair<int, int> visible_range() const;
+
     // Widget overrides
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds)      override;

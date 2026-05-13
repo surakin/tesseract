@@ -117,13 +117,12 @@ public:
     PaginateResult paginate_back_with_status(const std::string& room_id,
                                              std::uint16_t count);
 
-    /// Kick off a background pass that paginates every joined room not
-    /// currently subscribed, up to ~50 events each, with bounded
-    /// concurrency. Idempotent — safe to call from every room-open path.
-    /// Silent: no event callbacks fire for the rooms it visits; only the
-    /// SDK's persistent event cache is warmed, so the next time the user
-    /// opens any of those rooms its history paints from cache.
-    Result start_background_backfill();
+    /// Kick off a background pass that paginates the given rooms (those
+    /// currently visible in the room list), up to ~50 events each, with
+    /// bounded concurrency. Idempotent — safe to call from every room-open
+    /// path. Silent: no event callbacks fire for the rooms it visits; only
+    /// the SDK's persistent event cache is warmed.
+    Result start_background_backfill(const std::vector<std::string>& room_ids);
 
     /// Cancel an in-progress background backfill (also called automatically
     /// on stop_sync / destruction). No-op if none is running.

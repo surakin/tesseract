@@ -2250,6 +2250,9 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a background queue so the main thread stays responsive.
+    std::vector<std::string> visibleIds =
+        _roomListView ? _roomListView->visible_room_ids()
+                      : std::vector<std::string>{};
     std::string subRoom = _currentRoomId;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         auto res = self->_client->subscribe_room(subRoom);
@@ -2257,7 +2260,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         if (res) {
             auto pr = self->_client->paginate_back_with_status(subRoom, 50);
             reached = pr.ok && pr.reached_start;
-            self->_client->start_background_backfill();
+            self->_client->start_background_backfill(visibleIds);
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             [self handleSubscribeResultForRoom:subRoom reached:reached];

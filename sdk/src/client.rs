@@ -1100,7 +1100,10 @@ impl ClientFfi {
     // the loop completes; only the persistent event-cache rows remain.
 
     #[cfg(not(test))]
-    pub fn start_background_backfill(&mut self) -> OpResult {
+    pub fn start_background_backfill(
+        &mut self,
+        room_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> OpResult {
         // Idempotent: if a previous orchestrator is still running, leave it
         // alone. Finished/aborted handles can be replaced.
         if let Some(h) = self.backfill_task.as_ref() {
@@ -1121,11 +1124,15 @@ impl ClientFfi {
             self.timelines.keys().cloned().collect();
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
-        for room in client.joined_rooms() {
-            if room.is_tombstoned() { continue; }
-            let id = room.room_id().to_owned();
+        for id_cxx in room_ids {
+            let Ok(id_str) = id_cxx.to_str() else { continue };
+            let Ok(id) = OwnedRoomId::try_from(id_str) else { continue };
             if skip.contains(&id) { continue; }
-            to_backfill.push(id);
+            if let Some(room) = client.get_room(&id) {
+                if !room.is_tombstoned() {
+                    to_backfill.push(id);
+                }
+            }
         }
 
         if to_backfill.is_empty() {

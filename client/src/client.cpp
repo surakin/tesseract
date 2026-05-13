@@ -141,8 +141,10 @@ PaginateResult Client::paginate_back_with_status(const std::string& room_id,
     return from_ffi(impl_->ffi->paginate_back_with_status(room_id, count));
 }
 
-Result Client::start_background_backfill() {
-    return from_ffi(impl_->ffi->start_background_backfill());
+Result Client::start_background_backfill(
+    const std::vector<std::string>& room_ids)
+{
+    return from_ffi(impl_->ffi->start_background_backfill(room_ids));
 }
 
 void Client::stop_background_backfill() {

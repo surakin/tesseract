@@ -68,6 +68,10 @@ public:
     void                set_search_text(std::string q);
     const std::string&  search_text() const { return search_text_; }
 
+    // Room IDs of all room rows currently visible in the viewport.
+    // Headers are excluded. Empty when no rows are visible or laid out.
+    std::vector<std::string> visible_room_ids() const;
+
     // Fires when the user clicks a room row (selection moves to that row).
     std::function<void(const std::string& /*room_id*/)> on_room_selected;
 

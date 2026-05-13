@@ -1305,14 +1305,16 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the GTK main loop stays responsive.
+    auto visible_ids = room_list_view_ ? room_list_view_->visible_room_ids()
+                                       : std::vector<std::string>{};
     std::string sub_room = current_room_id_;
-    run_async_([this, sub_room]{
+    run_async_([this, sub_room, visible_ids = std::move(visible_ids)]{
         auto res = client_->subscribe_room(sub_room);
         bool reached = false;
         if (res) {
             auto pr = client_->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_->start_background_backfill();
+            client_->start_background_backfill(visible_ids);
         }
         auto* d = new IdleSubscribeResult{this, sub_room, reached};
         g_idle_add([](gpointer data) -> gboolean {

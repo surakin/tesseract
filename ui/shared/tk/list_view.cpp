@@ -68,6 +68,28 @@ float ListView::content_height() const {
     return row_offsets_.empty() ? 0.0f : row_offsets_.back();
 }
 
+std::pair<int, int> ListView::visible_range() const {
+    const std::size_t n = adapter_ ? adapter_->count() : 0;
+    if (n == 0 || heights_dirty_ || row_offsets_.size() < n + 1)
+        return {0, -1};
+
+    float viewport_top = scroll_y_;
+    float viewport_bot = scroll_y_ + bounds_.h;
+
+    auto first_it = std::upper_bound(row_offsets_.begin(),
+                                      row_offsets_.end(), viewport_top);
+    std::size_t first = first_it == row_offsets_.begin()
+        ? 0
+        : static_cast<std::size_t>(first_it - row_offsets_.begin() - 1);
+
+    int last = -1;
+    for (std::size_t i = first; i < n; ++i) {
+        if (row_offsets_[i] >= viewport_bot) break;
+        last = static_cast<int>(i);
+    }
+    return {static_cast<int>(first), last};
+}
+
 int ListView::index_at(Point local) const {
     if (!adapter_ || row_offsets_.empty()) return kInvalidIndex;
     float content_y = local.y + scroll_y_;

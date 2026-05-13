@@ -366,7 +366,8 @@ pub mod ffi {
         /// path. Silent: emits no `on_message_event` / `on_timeline_reset`
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
-        fn start_background_backfill(self: &mut ClientFfi) -> OpResult;
+        fn start_background_backfill(self: &mut ClientFfi,
+                                     room_ids: &CxxVector<CxxString>) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.

@@ -1291,8 +1291,10 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the UI stays responsive during the
     // first-load network round-trip.
+    auto visible_ids = roomListView_ ? roomListView_->visible_room_ids()
+                                     : std::vector<std::string>{};
     std::string sub_room = currentRoomId_;
-    runOnPool_([this, sub_room]{
+    runOnPool_([this, sub_room, visible_ids = std::move(visible_ids)]{
         auto res = client_->subscribe_room(sub_room);
         bool ok  = res.ok;
         std::string msg = res.message;
@@ -1300,7 +1302,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         if (ok) {
             auto pr = client_->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_->start_background_backfill();
+            client_->start_background_backfill(visible_ids);
         }
         QMetaObject::invokeMethod(
             this,
