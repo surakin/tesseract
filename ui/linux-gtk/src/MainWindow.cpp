@@ -965,7 +965,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             gtk_widget_grab_focus(vid_viewer_surface_->widget());
             // Async byte fetch on a detached thread.
             std::string src = hit.source_json;
-            std::thread([this, src = std::move(src)]() mutable {
+            run_async_([this, src = std::move(src)]() mutable {
                 auto bytes = client_.fetch_source_bytes(src);
                 struct Ctx { MainWindow* self; std::vector<uint8_t> bytes; };
                 auto* ctx = new Ctx{ this, std::move(bytes) };
@@ -976,7 +976,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                     delete c;
                     return G_SOURCE_REMOVE;
                 }, ctx);
-            }).detach();
+            });
         };
 
     // Escape key: close the image viewer if it's open. Attached to the
@@ -1042,11 +1042,41 @@ MainWindow::~MainWindow() {
         g_source_remove(search_debounce_id_);
         search_debounce_id_ = 0;
     }
+    // Drain background workers BEFORE tearing the client down. Each
+    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // Rust side); racing one against `~ClientFfi` is a data race that
+    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
+    // Order: flip the flag → wait (bounded) for in-flight ones →
+    // only then stop_sync + destroy members.
+    shutting_down_.store(true, std::memory_order_release);
+    {
+        std::unique_lock<std::mutex> lk(workers_mu_);
+        workers_cv_.wait_for(lk, std::chrono::seconds(5),
+                              [this]{ return workers_in_flight_ == 0; });
+    }
     client_.stop_sync();
     // login_view_ holds a reference to client_ and calls cancel_oauth() +
     // joins its worker on destruction. Tear it down here so client_ is
     // still alive when ~LoginView runs.
     login_view_.reset();
+}
+
+void MainWindow::run_async_(std::function<void()> fn) {
+    if (shutting_down_.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> lk(workers_mu_);
+        ++workers_in_flight_;
+    }
+    std::thread([this, fn = std::move(fn)]() mutable {
+        // Recheck after the thread starts — flag may have flipped
+        // while we were waiting to be scheduled.  Without this the
+        // worker would still cross the FFI on a dying ClientFfi.
+        if (!shutting_down_.load(std::memory_order_acquire)) {
+            fn();
+        }
+        std::lock_guard<std::mutex> lk(workers_mu_);
+        if (--workers_in_flight_ == 0) workers_cv_.notify_all();
+    }).detach();
 }
 
 // ---------------------------------------------------------------------------
@@ -1131,7 +1161,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the GTK main loop stays responsive.
     std::string sub_room = current_room_id_;
-    std::thread([this, sub_room]{
+    run_async_([this, sub_room]{
         auto res = client_.subscribe_room(sub_room);
         bool reached = false;
         if (res) {
@@ -1147,7 +1177,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
             delete dd;
             return G_SOURCE_REMOVE;
         }, d);
-    }).detach();
+    });
 }
 
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
@@ -1174,7 +1204,7 @@ void MainWindow::request_more_history(const std::string& room_id) {
 
     // Worker thread: invoke the blocking SDK call, marshal the result
     // back via g_idle_add on the main loop.
-    std::thread([this, room_id]{
+    run_async_([this, room_id]{
         auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
         auto* p = new IdlePaginateResult{
             this, room_id, pr.ok && pr.reached_start
@@ -1186,7 +1216,7 @@ void MainWindow::request_more_history(const std::string& room_id) {
             delete d;
             return G_SOURCE_REMOVE;
         }, p);
-    }).detach();
+    });
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
@@ -1571,7 +1601,7 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
         std::vector<uint8_t>  bytes;
     };
 
-    std::thread([this, room_id, mxc]() mutable {
+    run_async_([this, room_id, mxc]() mutable {
         auto bytes = client_.fetch_avatar_bytes(room_id);
         auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
@@ -1591,7 +1621,7 @@ void MainWindow::request_room_avatar_async(const std::string& room_id,
             delete d;
             return G_SOURCE_REMOVE;
         }, data);
-    }).detach();
+    });
 }
 
 void MainWindow::request_user_avatar_async(const std::string& mxc) {
@@ -1604,7 +1634,7 @@ void MainWindow::request_user_avatar_async(const std::string& mxc) {
         std::vector<uint8_t>  bytes;
     };
 
-    std::thread([this, mxc]() mutable {
+    run_async_([this, mxc]() mutable {
         auto bytes = client_.fetch_media_bytes(mxc);
         auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
@@ -1624,7 +1654,7 @@ void MainWindow::request_user_avatar_async(const std::string& mxc) {
             delete d;
             return G_SOURCE_REMOVE;
         }, data);
-    }).detach();
+    });
 }
 
 void MainWindow::request_media_image_async(const std::string& url) {
@@ -1638,7 +1668,7 @@ void MainWindow::request_media_image_async(const std::string& url) {
         std::vector<uint8_t>  bytes;
     };
 
-    std::thread([this, url]() mutable {
+    run_async_([this, url]() mutable {
         // `url` may be plain mxc (plain images/stickers) or a JSON
         // MediaSource (encrypted images/stickers + reaction sources).
         // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
@@ -1686,7 +1716,7 @@ void MainWindow::request_media_image_async(const std::string& url) {
             delete d;
             return G_SOURCE_REMOVE;
         }, data);
-    }).detach();
+    });
 }
 
 void MainWindow::ensure_sticker_image_async(std::string url) {
@@ -1703,7 +1733,7 @@ void MainWindow::ensure_sticker_image_async(std::string url) {
     // Detached worker — `client_` is thread-safe (the SDK runs on its own
     // tokio runtime; FFI calls are sync wrappers). The picker outlives
     // any in-flight fetch.
-    std::thread([this, url]() mutable {
+    run_async_([this, url]() mutable {
         auto bytes = client_.fetch_source_bytes(url);
         auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
@@ -1752,7 +1782,7 @@ void MainWindow::ensure_sticker_image_async(std::string url) {
             delete d;
             return G_SOURCE_REMOVE;
         }, data);
-    }).detach();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1915,9 +1945,9 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
             // Background-prime the SDK media cache so the first play tap
             // is instant. We discard the bytes — the view's synchronous
             // fetch on click reads them straight out of the cache.
-            std::thread([this, src = v.audio_source]() mutable {
+            run_async_([this, src = v.audio_source]() mutable {
                 (void)client_.fetch_source_bytes(src);
-            }).detach();
+            });
         }
     } else if (ev.type == tesseract::EventType::Video) {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
@@ -1929,7 +1959,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
             video_thumb_in_flight_.insert(ev.event_id).second) {
             const std::string eid = ev.event_id;
-            std::thread([this, eid, src = vid.video_url]() mutable {
+            run_async_([this, eid, src = vid.video_url]() mutable {
                 auto bytes = client_.fetch_source_bytes(src);
                 if (bytes.empty()) return;
                 // Extract first frame via GStreamer appsink.
@@ -2030,7 +2060,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
                     delete c;
                     return G_SOURCE_REMOVE;
                 }, ctx);
-            }).detach();
+            });
         }
     }
     for (const auto& r : ev.reactions) {
@@ -2090,7 +2120,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
         bool        ok;
         std::string message;
     };
-    std::thread([self, key]() {
+    self->run_async_([self, key]() {
         auto res = self->client_.recover(key);
         auto* p  = new RecoverDone{ self, res.ok, res.message };
         g_idle_add([](gpointer data) -> gboolean {
@@ -2116,7 +2146,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
             delete d;
             return G_SOURCE_REMOVE;
         }, p);
-    }).detach();
+    });
 }
 
 void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data) {

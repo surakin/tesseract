@@ -1430,13 +1430,13 @@ void MainWindow::on_create(HWND hwnd) {
             // Async byte fetch via PostMessage.
             HWND target = hwnd_;
             std::string src = hit.source_json;
-            std::thread([this, target, src = std::move(src)]() mutable {
+            run_async_([this, target, src = std::move(src)]() mutable {
                 auto bytes = client_.fetch_source_bytes(src);
                 auto* p = new VideoBytesPayload{ src, std::move(bytes) };
                 if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
                                   reinterpret_cast<LPARAM>(p)))
                     delete p;
-            }).detach();
+            });
         };
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
@@ -1451,7 +1451,34 @@ void MainWindow::on_destroy() {
         KillTimer(hwnd_, kAnimTimerId);
         anim_timer_running_ = false;
     }
+    // Drain background workers BEFORE tearing the client down.  Each
+    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // Rust side); racing one against `~ClientFfi` is a data race that
+    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
+    shutting_down_.store(true, std::memory_order_release);
+    {
+        std::unique_lock<std::mutex> lk(workers_mu_);
+        workers_cv_.wait_for(lk, std::chrono::seconds(5),
+                              [this]{ return workers_in_flight_ == 0; });
+    }
     client_.stop_sync();
+}
+
+void MainWindow::run_async_(std::function<void()> fn) {
+    if (shutting_down_.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> lk(workers_mu_);
+        ++workers_in_flight_;
+    }
+    std::thread([this, fn = std::move(fn)]() mutable {
+        // Recheck after the thread starts — flag may have flipped
+        // while we were waiting to be scheduled.
+        if (!shutting_down_.load(std::memory_order_acquire)) {
+            fn();
+        }
+        std::lock_guard<std::mutex> lk(workers_mu_);
+        if (--workers_in_flight_ == 0) workers_cv_.notify_all();
+    }).detach();
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,7 +1805,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     // run them on a worker thread so the Win32 message pump stays responsive.
     HWND hwnd = hwnd_;
     std::string sub_room = current_room_id_;
-    std::thread([this, sub_room, hwnd]{
+    run_async_([this, sub_room, hwnd]{
         auto res = client_.subscribe_room(sub_room);
         bool reached = false;
         if (res) {
@@ -1789,7 +1816,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         auto* p = new std::string(sub_room);
         PostMessageW(hwnd, WM_TESSERACT_SUBSCRIBE_DONE,
                       static_cast<WPARAM>(reached), reinterpret_cast<LPARAM>(p));
-    }).detach();
+    });
 }
 
 void MainWindow::request_more_history(const std::string& room_id) {
@@ -1799,13 +1826,13 @@ void MainWindow::request_more_history(const std::string& room_id) {
     state.in_flight = true;
 
     HWND hwnd = hwnd_;
-    std::thread([this, room_id, hwnd]{
+    run_async_([this, room_id, hwnd]{
         auto pr = client_.paginate_back_with_status(room_id, kPaginationBatch);
         auto* p = new std::string(room_id);
         PostMessageW(hwnd, WM_TESSERACT_PAGINATE_DONE,
                       static_cast<WPARAM>(pr.ok && pr.reached_start),
                       reinterpret_cast<LPARAM>(p));
-    }).detach();
+    });
 }
 
 void MainWindow::on_tesseract_paginate_done(std::string* room_id,
@@ -2091,7 +2118,7 @@ void MainWindow::request_sticker_image(const std::string& cache_key) {
     if (!sticker_fetches_in_flight_.insert(cache_key).second) return;
 
     HWND target = hwnd_;
-    std::thread([this, target, cache_key]() {
+    run_async_([this, target, cache_key]() {
         auto bytes = client_.fetch_source_bytes(cache_key);
         auto* p    = new StickerBytesPayload{ cache_key, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_STICKER_BYTES, 0,
@@ -2099,7 +2126,7 @@ void MainWindow::request_sticker_image(const std::string& cache_key) {
         {
             delete p;   // window already gone; drop the payload.
         }
-    }).detach();
+    });
 }
 
 void MainWindow::request_room_avatar(const std::string& room_id,
@@ -2109,7 +2136,7 @@ void MainWindow::request_room_avatar(const std::string& room_id,
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     HWND target = hwnd_;
-    std::thread([this, target, room_id, mxc]() {
+    run_async_([this, target, room_id, mxc]() {
         auto bytes = client_.fetch_avatar_bytes(room_id);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::RoomAvatar, mxc, std::move(bytes) };
@@ -2118,7 +2145,7 @@ void MainWindow::request_room_avatar(const std::string& room_id,
         {
             delete p;
         }
-    }).detach();
+    });
 }
 
 void MainWindow::request_user_avatar(const std::string& mxc) {
@@ -2127,7 +2154,7 @@ void MainWindow::request_user_avatar(const std::string& mxc) {
     if (!media_fetches_in_flight_.insert(mxc).second) return;
 
     HWND target = hwnd_;
-    std::thread([this, target, mxc]() {
+    run_async_([this, target, mxc]() {
         auto bytes = client_.fetch_media_bytes(mxc);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::UserAvatar, mxc, std::move(bytes) };
@@ -2136,7 +2163,7 @@ void MainWindow::request_user_avatar(const std::string& mxc) {
         {
             delete p;
         }
-    }).detach();
+    });
 }
 
 void MainWindow::request_media_image(const std::string& url) {
@@ -2145,7 +2172,7 @@ void MainWindow::request_media_image(const std::string& url) {
     if (!media_fetches_in_flight_.insert(url).second) return;
 
     HWND target = hwnd_;
-    std::thread([this, target, url]() {
+    run_async_([this, target, url]() {
         // `url` may be a plain `mxc://` (plain images/stickers) or a JSON
         // MediaSource (encrypted images, stickers, reaction sources).
         // `fetch_source_bytes` accepts both shapes; `fetch_media_bytes`
@@ -2158,7 +2185,7 @@ void MainWindow::request_media_image(const std::string& url) {
         {
             delete p;
         }
-    }).detach();
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2259,9 +2286,9 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
         if (!v.audio_source.empty() &&
             voice_prefetched_.insert(v.audio_source).second) {
-            std::thread([this, src = v.audio_source]() mutable {
+            run_async_([this, src = v.audio_source]() mutable {
                 (void)client_.fetch_source_bytes(src);
-            }).detach();
+            });
         }
     } else if (ev.type == tesseract::EventType::Video) {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
@@ -2364,13 +2391,13 @@ void MainWindow::on_recovery_verify_clicked() {
     recovery_in_flight_ = true;
 
     HWND target = hwnd_;
-    std::thread([this, target, key]() {
+    run_async_([this, target, key]() {
         auto res = client_.recover(key);
         WPARAM ok = res.ok ? 1 : 0;
         auto*  p  = new std::wstring(widen_utf8(res.message));
         PostMessageW(target, WM_TESSERACT_RECOVER_DONE,
                      ok, reinterpret_cast<LPARAM>(p));
-    }).detach();
+    });
 }
 
 void MainWindow::on_recover_done(bool ok, std::wstring msg) {

@@ -28,8 +28,12 @@
 #include "views/RoomListView.h"
 #include "views/StickerPicker.h"
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -400,6 +404,20 @@ private:
     std::string pending_search_text_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
     std::unordered_set<std::string> media_fetches_in_flight_;
+
+    /// Spawn `fn` on a detached worker thread.  No-ops when shutdown is
+    /// in progress, and the worker itself rechecks the flag before
+    /// calling `client_.fetch_*`.  Bumps `workers_in_flight_` so
+    /// `WM_DESTROY` can wait (bounded) for in-flight workers to drain
+    /// before `stop_sync()` runs.  Required: without this, a worker
+    /// mid-FFI racing against `~ClientFfi` is a data race on `&mut self`
+    /// in Rust that surfaces as `panic_in_cleanup` through cxx.
+    void run_async_(std::function<void()> fn);
+
+    std::atomic<bool>        shutting_down_{false};
+    std::mutex               workers_mu_;
+    std::condition_variable  workers_cv_;
+    int                      workers_in_flight_ = 0;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;

@@ -29,11 +29,15 @@
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
 
+#include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <QThreadPool>
 
 class EmojiPicker;
 class StickerPicker;
@@ -199,6 +203,20 @@ private:
                              const std::string& mxc);
     void requestUserAvatar_(const std::string& mxc);
     void requestMediaImage_(const std::string& url, int max_w, int max_h);
+    /// Run `fn` on `mediaPool_`. No-ops when shutdown is in progress, and
+    /// the runnable itself rechecks the flag before invoking `fn` so a
+    /// worker that pulled from the queue just after the flag flipped
+    /// bails before crossing the FFI boundary into `client_`.
+    void runOnPool_(std::function<void()> fn);
+
+    /// Shutdown coordination. `~MainWindow` flips this flag, clears the
+    /// pool of queued runnables, and waits (bounded) for in-flight
+    /// workers to drain before calling `client_.stop_sync()`. Without
+    /// this, a worker mid-`client_.fetch_*` racing against `~ClientFfi`
+    /// is a data race on `&mut self` in Rust that surfaces as a
+    /// `panic_in_cleanup` abort through cxx's `prevent_unwind` guard.
+    std::atomic<bool>               shuttingDown_{false};
+    QThreadPool                     mediaPool_;
     std::unordered_set<std::string> mediaFetchesInFlight_;
     /// Pinned `(max_w, max_h)` for in-flight `MediaImage` fetches so the
     /// UI-thread decode can scale them. RoomAvatar / UserAvatar use the

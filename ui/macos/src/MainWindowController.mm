@@ -37,8 +37,12 @@
 #endif
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <thread>
@@ -167,6 +171,14 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
+/// Spawn `fn` on a detached worker thread.  No-ops when shutdown is in
+/// progress, and the worker itself rechecks the flag before calling
+/// `_client.fetch_*`.  Bumps `_workersInFlight` so `stopSync` can wait
+/// (bounded) for in-flight workers to drain before the FFI runtime is
+/// torn down.  Required: without this, a worker mid-FFI racing against
+/// `~ClientFfi` is a data race on `&mut self` in Rust that surfaces as
+/// `panic_in_cleanup` through cxx.
+- (void)runAsync:(std::function<void()>)fn;
 @end
 
 namespace {
@@ -407,6 +419,12 @@ void EventBridge::on_notification(const std::string& room_id,
     NSLayoutConstraint*  _userStripHeightCon;
     std::string          _myDisplayName;
     std::string          _myAvatarUrl;
+
+    // Background-worker coordination — see `runAsync:` for context.
+    std::atomic<bool>           _shuttingDown;
+    std::mutex                  _workersMu;
+    std::condition_variable     _workersCv;
+    int                         _workersInFlight;
 }
 
 - (instancetype)init {
@@ -708,7 +726,7 @@ void EventBridge::on_notification(const std::string& room_id,
                 tesseract::Client* clientPtr = &s->_client;
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
                 std::string src = hit.source_json;
-                std::thread([clientPtr, weakSelf, src, bytes_holder]() {
+                [self runAsync:[clientPtr, weakSelf, src, bytes_holder]() {
                     *bytes_holder = clientPtr->fetch_source_bytes(src);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         MainWindowController* s2 = weakSelf;
@@ -716,7 +734,7 @@ void EventBridge::on_notification(const std::string& room_id,
                         s2->_vidViewer->load_bytes(bytes_holder->data(),
                                                     bytes_holder->size());
                     });
-                }).detach();
+                }];
             };
     }
     // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
@@ -1102,7 +1120,36 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)stopSync {
+    // Drain background workers BEFORE tearing the client down.  Each
+    // worker calls `_client.fetch_*` (which takes `&mut self` on the
+    // Rust side); racing one against `~ClientFfi` is a data race that
+    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
+    _shuttingDown.store(true, std::memory_order_release);
+    {
+        std::unique_lock<std::mutex> lk(_workersMu);
+        _workersCv.wait_for(lk, std::chrono::seconds(5),
+                             [self]{ return self->_workersInFlight == 0; });
+    }
     _client.stop_sync();
+}
+
+- (void)runAsync:(std::function<void()>)fn {
+    if (_shuttingDown.load(std::memory_order_acquire)) return;
+    {
+        std::lock_guard<std::mutex> lk(_workersMu);
+        ++_workersInFlight;
+    }
+    __weak MainWindowController* weakSelf = self;
+    std::thread([weakSelf, fn = std::move(fn)]() mutable {
+        MainWindowController* strong = weakSelf;
+        if (strong && !strong->_shuttingDown.load(std::memory_order_acquire)) {
+            fn();
+        }
+        if (strong) {
+            std::lock_guard<std::mutex> lk(strong->_workersMu);
+            if (--strong->_workersInFlight == 0) strong->_workersCv.notify_all();
+        }
+    }).detach();
 }
 
 - (void)showEmojiPicker:(id)sender {
@@ -1497,7 +1544,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     std::string mxc    = r.avatar_url;
     auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
 
-    std::thread([clientPtr, weakSelf, roomId, mxc, bytes_holder]() {
+    [self runAsync:[clientPtr, weakSelf, roomId, mxc, bytes_holder]() {
         *bytes_holder = clientPtr->fetch_avatar_bytes(roomId);
         dispatch_async(dispatch_get_main_queue(), ^{
             MainWindowController* s = weakSelf;
@@ -1510,7 +1557,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                              cap:tesseract::visual::kRoomAvatarSize];
             if (s->_roomSurface) s->_roomSurface->relayout();
         });
-    }).detach();
+    }];
 }
 
 - (void)_ensureUserAvatar:(const std::string&)mxc {
@@ -1522,7 +1569,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     std::string key = mxc;
     auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
 
-    std::thread([clientPtr, weakSelf, key, bytes_holder]() {
+    [self runAsync:[clientPtr, weakSelf, key, bytes_holder]() {
         *bytes_holder = clientPtr->fetch_media_bytes(key);
         dispatch_async(dispatch_get_main_queue(), ^{
             MainWindowController* s = weakSelf;
@@ -1535,7 +1582,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                              cap:tesseract::visual::kMsgAvatarSize];
             if (s->_msgSurface) s->_msgSurface->relayout();
         });
-    }).detach();
+    }];
 }
 
 - (void)_ensureMediaImage:(const std::string&)url cap:(int)cap {
@@ -1547,7 +1594,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     std::string key = url;
     auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
 
-    std::thread([clientPtr, weakSelf, key, bytes_holder]() {
+    [self runAsync:[clientPtr, weakSelf, key, bytes_holder]() {
         // `key` may be plain mxc (plain images/stickers) or a JSON
         // MediaSource (encrypted images/stickers + reaction sources).
         // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
@@ -1563,7 +1610,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             [s _decodeMediaBytes:*bytes_holder forKey:key];
             if (s->_msgSurface) s->_msgSurface->relayout();
         });
-    }).detach();
+    }];
 }
 
 - (void)_ensureReplyDetails:(const std::string&)eventId {
@@ -1739,7 +1786,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (_recoverySurface)  _recoverySurface->relayout();
 
     __weak MainWindowController* weakSelf = self;
-    std::thread([weakSelf, key]() {
+    [self runAsync:[weakSelf, key]() {
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf) return;
         auto res = strongSelf->_client.recover(key);
@@ -1765,7 +1812,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             }
             if (s->_recoverySurface) s->_recoverySurface->relayout();
         });
-    }).detach();
+    }];
 }
 
 - (void)_onRecoveryDismiss {
@@ -2000,9 +2047,10 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             // queue so the first play tap is instant. Bytes are discarded;
             // the next synchronous fetch reads them out of cache.
             std::string src = v.audio_source;
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                (void)_client.fetch_source_bytes(src);
-            });
+            tesseract::Client* clientPtr = &_client;
+            [self runAsync:[clientPtr, src]() {
+                (void)clientPtr->fetch_source_bytes(src);
+            }];
         }
     } else if (ev.type == tesseract::EventType::Video) {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
@@ -2019,7 +2067,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                 std::string src = vid.video_url;
                 std::string eid = ev.event_id;
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-                std::thread([clientPtr, weakSelf, src, eid, bytes_holder]() {
+                [self runAsync:[clientPtr, weakSelf, src, eid, bytes_holder]() {
                     *bytes_holder = clientPtr->fetch_source_bytes(src);
                     if (bytes_holder->empty()) return;
                     // Write bytes to a temp file for AVURLAsset.
@@ -2053,7 +2101,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                         s->_tkImages.emplace(key, std::move(*img_holder));
                         if (s->_msgSurface) s->_msgSurface->relayout();
                     });
-                }).detach();
+                }];
             }
         }
     }
@@ -2196,7 +2244,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     auto bytes_holder =
         std::make_shared<std::vector<uint8_t>>();
 
-    std::thread([clientPtr, weakSelf, url, bytes_holder]() {
+    [self runAsync:[clientPtr, weakSelf, url, bytes_holder]() {
         *bytes_holder = clientPtr->fetch_source_bytes(url);
         dispatch_async(dispatch_get_main_queue(), ^{
             MainWindowController* s = weakSelf;
@@ -2209,7 +2257,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
             if (panel.isVisible) [panel invalidateImageCache];
         });
-    }).detach();
+    }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────

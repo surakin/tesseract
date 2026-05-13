@@ -521,14 +521,13 @@ MainWindow::MainWindow(QWidget* parent)
             vidViewerHost_->setFocus();
             // Async byte fetch on a worker thread.
             std::string src = hit.source_json;
-            auto* runner = QRunnable::create([this, src = std::move(src)]() {
+            runOnPool_([this, src = std::move(src)]() {
                 auto bytes = client_.fetch_source_bytes(src);
                 QMetaObject::invokeMethod(this, [this, bytes = std::move(bytes)]() mutable {
                     if (vidViewer_)
                         vidViewer_->load_bytes(bytes.data(), bytes.size());
                 }, Qt::QueuedConnection);
             });
-            QThreadPool::globalInstance()->start(runner);
         };
 
     // Compose bar — shared widget on a tk::qt6::Surface. The text input
@@ -859,6 +858,16 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+    // Drain background workers BEFORE tearing the client down.  Each
+    // worker calls `client_.fetch_*` (which takes `&mut self` on the
+    // Rust side); racing one against `~ClientFfi` is a data race that
+    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
+    // Order: flip the flag → drop queued runnables → wait (bounded)
+    // for in-flight ones → only then stop_sync + destroy members.
+    shuttingDown_.store(true, std::memory_order_release);
+    mediaPool_.clear();
+    mediaPool_.waitForDone(5000);
+
     client_.stop_sync();
     // LoginView is a child widget, normally destroyed during ~QMainWindow
     // — but that runs *after* client_ has been destroyed, and ~LoginView
@@ -866,6 +875,15 @@ MainWindow::~MainWindow() {
     // still alive.
     delete loginView_;
     loginView_ = nullptr;
+}
+
+void MainWindow::runOnPool_(std::function<void()> fn) {
+    if (shuttingDown_.load(std::memory_order_acquire)) return;
+    auto* runner = QRunnable::create([this, fn = std::move(fn)]() mutable {
+        if (shuttingDown_.load(std::memory_order_acquire)) return;
+        fn();
+    });
+    mediaPool_.start(runner);
 }
 
 // ---------------------------------------------------------------------------
@@ -1013,7 +1031,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     // run them on a worker thread so the UI stays responsive during the
     // first-load network round-trip.
     std::string sub_room = currentRoomId_;
-    std::thread([this, sub_room]{
+    runOnPool_([this, sub_room]{
         auto res = client_.subscribe_room(sub_room);
         bool ok  = res.ok;
         std::string msg = res.message;
@@ -1039,7 +1057,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
                 }
             },
             Qt::QueuedConnection);
-    }).detach();
+    });
 }
 
 void MainWindow::onTimelineReset(
@@ -1104,7 +1122,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
     // Run the blocking SDK call off the UI thread; bounce the result back
     // via a queued connection. `client_` is thread-safe (Rust runtime
     // serialises concurrent calls).
-    std::thread([this, room_id]{
+    runOnPool_([this, room_id]{
         auto res = client_.paginate_back_with_status(room_id, kPaginationBatch);
         bool reached = res.ok && res.reached_start;
         QMetaObject::invokeMethod(
@@ -1113,7 +1131,7 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
             Qt::QueuedConnection,
             Q_ARG(QString, QString::fromStdString(room_id)),
             Q_ARG(bool, reached));
-    }).detach();
+    });
 }
 
 void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
@@ -1271,7 +1289,7 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
     if (!mediaFetchesInFlight_.insert(mxc).second) return;
 
     QString qkey = QString::fromStdString(mxc);
-    auto* runner = QRunnable::create([this, room_id, qkey]() {
+    runOnPool_([this, room_id, qkey]() {
         auto bytes = client_.fetch_avatar_bytes(room_id);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
@@ -1279,7 +1297,6 @@ void MainWindow::requestRoomAvatar_(const std::string& room_id,
                                 static_cast<int>(MediaKind::RoomAvatar),
                                 qb);
     });
-    QThreadPool::globalInstance()->start(runner);
 }
 
 void MainWindow::requestUserAvatar_(const std::string& mxc) {
@@ -1288,7 +1305,7 @@ void MainWindow::requestUserAvatar_(const std::string& mxc) {
     if (!mediaFetchesInFlight_.insert(mxc).second) return;
 
     QString qkey = QString::fromStdString(mxc);
-    auto* runner = QRunnable::create([this, key = mxc, qkey]() {
+    runOnPool_([this, key = mxc, qkey]() {
         auto bytes = client_.fetch_media_bytes(key);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
@@ -1296,7 +1313,6 @@ void MainWindow::requestUserAvatar_(const std::string& mxc) {
                                 static_cast<int>(MediaKind::UserAvatar),
                                 qb);
     });
-    QThreadPool::globalInstance()->start(runner);
 }
 
 void MainWindow::requestMediaImage_(const std::string& url,
@@ -1307,7 +1323,7 @@ void MainWindow::requestMediaImage_(const std::string& url,
     mediaImageSizes_[url] = { max_w, max_h };
 
     QString qkey = QString::fromStdString(url);
-    auto* runner = QRunnable::create([this, key = url, qkey]() {
+    runOnPool_([this, key = url, qkey]() {
         // `key` may be plain mxc (plain images/stickers) or a JSON
         // MediaSource (encrypted images/stickers + reaction sources).
         // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
@@ -1319,7 +1335,6 @@ void MainWindow::requestMediaImage_(const std::string& url,
                                 static_cast<int>(MediaKind::MediaImage),
                                 qb);
     });
-    QThreadPool::globalInstance()->start(runner);
 }
 
 void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
@@ -1591,10 +1606,9 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
             // the next synchronous `fetch_source_bytes` (driven by the
             // view) reads them straight back out of the cache.
             std::string src = v.audio_source;
-            auto* runner = QRunnable::create([this, src = std::move(src)]() {
+            runOnPool_([this, src = std::move(src)]() {
                 (void)client_.fetch_source_bytes(src);
             });
-            QThreadPool::globalInstance()->start(runner);
         }
     } else if (ev.type == tesseract::EventType::Video) {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
@@ -1606,7 +1620,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
             video_thumb_in_flight_.insert(ev.event_id).second) {
             const std::string eid = ev.event_id;
             std::string src = vid.video_url;
-            auto* runner = QRunnable::create(
+            runOnPool_(
                 [this, eid, src = std::move(src)]() {
                     auto bytes = client_.fetch_source_bytes(src);
                     if (bytes.empty()) return;
@@ -1647,7 +1661,6 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
                             player->play();
                         }, Qt::QueuedConnection);
                 });
-            QThreadPool::globalInstance()->start(runner);
         }
     }
     for (const auto& r : ev.reactions) {
@@ -1703,11 +1716,10 @@ void MainWindow::onRecoveryVerifyClicked() {
     if (recoveryKeyField_) recoveryKeyField_->set_enabled(false);
     recoverySurface_->relayout();
 
-    auto* runner = QRunnable::create([this, k = key]() {
+    runOnPool_([this, k = key]() {
         auto res = client_.recover(k);
         emit recoverFinished(res.ok, QString::fromStdString(res.message));
     });
-    QThreadPool::globalInstance()->start(runner);
 }
 
 void MainWindow::onRecoverFinished(bool ok, QString error) {
