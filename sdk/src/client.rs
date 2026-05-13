@@ -697,6 +697,11 @@ impl ClientFfi {
     }
 
     pub fn stop_sync(&mut self) {
+        // Take the handler here so that the Drop impl calling stop_sync a
+        // second time (after ~MainWindow has already run) is a no-op.  If the
+        // handler is already gone we skip the session flush on the second call
+        // rather than calling back into a partially-destroyed C++ object.
+        let handler = self.handler.take();
         // Flush the latest OAuth session to disk before tearing down the
         // runtime.  The session-watcher task (spawned in start_sync) saves
         // new tokens whenever TokensRefreshed fires, but its JoinHandle is
@@ -704,7 +709,7 @@ impl ClientFfi {
         // Saving here, while the C++ EventHandler is still alive, ensures the
         // most recent refresh token is always persisted on clean shutdown.
         #[cfg(not(test))]
-        if let (Some(client), Some(handler)) = (&self.client, &self.handler) {
+        if let (Some(client), Some(handler)) = (&self.client, &handler) {
             if let Some(full) = client.oauth().full_session() {
                 let persisted = PersistedSession { client_id: full.client_id, user: full.user };
                 if let Ok(json) = serde_json::to_string(&persisted) {
