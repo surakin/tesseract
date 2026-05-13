@@ -861,15 +861,16 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow() {
     // Drain background workers BEFORE tearing the clients down.  Each
-    // worker calls `client_->fetch_*` (which takes `&mut self` on the
-    // Rust side); racing one against `~ClientFfi` is a data race that
-    // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    // Order: flip the flag → drop queued runnables → wait (bounded) for
-    // in-flight ones → only then stop_sync on every account + destroy
-    // members.
+    // worker calls `client_->fetch_*` which does a tokio block_on; racing
+    // one against ~ClientFfi drops the tokio Runtime mid-block_on, which
+    // causes panic_in_cleanup through cxx's prevent_unwind guard.
+    // Order: flip flag → drop queued runnables → wait (unbounded) for any
+    // already-running workers → only then stop_sync + destroy members.
+    // No timeout: the underlying reqwest stack has TCP-level timeouts so
+    // this cannot hang indefinitely on a dead server.
     shuttingDown_.store(true, std::memory_order_release);
     mediaPool_.clear();
-    mediaPool_.waitForDone(5000);
+    mediaPool_.waitForDone();
 
     // Stop sync on every signed-in account. The ~ClientFfi destructor
     // calls stop_sync again as a safety net, but doing it here drains
