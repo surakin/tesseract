@@ -40,3 +40,10 @@ qt_add_resources(tesseract_qt "tesseract_icons"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/../icons"
     FILES  "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
 )
+
+install(TARGETS tesseract_qt
+        RUNTIME DESTINATION bin)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
+        DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES "${CMAKE_SOURCE_DIR}/packaging/tesseract.desktop"
+        DESTINATION share/applications)

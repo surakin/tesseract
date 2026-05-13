@@ -1,0 +1,41 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# Rust's aws-lc-sys CMake builder writes to $HOME/.cargo; point it at a
+# writable path inside the build tree instead.
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	cmake -B debian/build-qt -G Ninja \
+	      -DCMAKE_BUILD_TYPE=Release \
+	      -DCMAKE_INSTALL_PREFIX=/usr \
+	      -DTESSERACT_UI=qt6
+	cmake -B debian/build-gtk -G Ninja \
+	      -DCMAKE_BUILD_TYPE=Release \
+	      -DCMAKE_INSTALL_PREFIX=/usr \
+	      -DTESSERACT_UI=gtk
+
+override_dh_auto_build:
+	cmake --build debian/build-qt
+	cmake --build debian/build-gtk
+
+override_dh_auto_test:
+	ctest --test-dir debian/build-qt --output-on-failure
+
+override_dh_auto_install:
+	DESTDIR=$(CURDIR)/debian/tesseract     cmake --install debian/build-qt
+	DESTDIR=$(CURDIR)/debian/tesseract-gtk cmake --install debian/build-gtk
+	# The GTK binary is also named "tesseract"; rename it to avoid conflict.
+	mv debian/tesseract-gtk/usr/bin/tesseract \
+	   debian/tesseract-gtk/usr/bin/tesseract-gtk
+	# Adjust the GTK desktop file to reflect the renamed binary.
+	sed -i 's|^Exec=tesseract$$|Exec=tesseract-gtk|' \
+	    debian/tesseract-gtk/usr/share/applications/tesseract.desktop
+	mv debian/tesseract-gtk/usr/share/applications/tesseract.desktop \
+	   debian/tesseract-gtk/usr/share/applications/tesseract-gtk.desktop
+
+override_dh_auto_clean:
+	rm -rf debian/build-qt debian/build-gtk debian/.cargo

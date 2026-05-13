@@ -1,0 +1,48 @@
+# Maintainer: Marco Antonio Alvarez <surakus@pm.me>
+pkgname=tesseract
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Cross-platform Matrix chat client"
+arch=('x86_64' 'aarch64')
+url="https://gitlab.westeros.lan/surak/matrix-client"
+license=('MIT')
+depends=(
+    'qt6-base'
+    'qt6-multimedia'
+    'gst-plugins-base'   # opus decoder for MSC3245 voice messages
+    'gst-plugins-good'   # additional codec support
+)
+makedepends=(
+    'cmake'
+    'ninja'
+    'rust'
+    'go'
+    'perl'
+    'qt6-base'
+    'qt6-multimedia'
+)
+# Update source and sha256sums when a versioned tag exists.
+# For development builds replace with:
+#   source=("git+$url.git")
+#   sha256sums=('SKIP')
+source=("$pkgname-$pkgver.tar.gz::$url/-/archive/v$pkgver/$pkgname-v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-v$pkgver"
+    cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr \
+          -DTESSERACT_UI=qt6
+    cmake --build build
+}
+
+check() {
+    cd "$srcdir/$pkgname-v$pkgver"
+    ctest --test-dir build --output-on-failure
+}
+
+package() {
+    cd "$srcdir/$pkgname-v$pkgver"
+    DESTDIR="$pkgdir" cmake --install build
+}

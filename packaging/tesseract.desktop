@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Tesseract
+Comment=Matrix chat client
+Exec=tesseract
+Icon=tesseract
+Categories=Network;InstantMessaging;Chat;
+StartupNotify=true
+StartupWMClass=tesseract

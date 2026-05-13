@@ -5,11 +5,12 @@ produce native installers. Configuration lives in
 [cmake/Installers.cmake](cmake/Installers.cmake) and is included from the root
 `CMakeLists.txt` only on Windows and macOS.
 
-| Platform | Generator   | Output                                      |
-| -------- | ----------- | ------------------------------------------- |
-| Windows  | `NSIS`      | `Tesseract-<version>-<arch>.exe`            |
-| macOS    | `DragNDrop` | `Tesseract-<version>-<arch>.dmg`            |
-| Linux    | — (out of scope; use distro-native packaging) |
+| Platform   | Generator           | Output                                                           |
+| ---------- | ------------------- | ---------------------------------------------------------------- |
+| Windows    | `NSIS`              | `Tesseract-<version>-<arch>.exe`                                 |
+| macOS      | `DragNDrop`         | `Tesseract-<version>-<arch>.dmg`                                 |
+| Debian     | `dpkg-buildpackage` | `tesseract_<ver>_<arch>.deb` + `tesseract-gtk_<ver>_<arch>.deb`  |
+| Arch Linux | `makepkg`           | `tesseract-<ver>-<pkgrel>-<arch>.pkg.tar.zst`                    |
 
 The Rust SDK is built as a `staticlib`, so installers carry no runtime DLLs
 or dylibs — just the executable (Windows) or the `.app` bundle (macOS).
@@ -133,6 +134,89 @@ cmake --build build/macos-appkit-arm64-release --target notarize
 `xcrun notarytool store-credentials`. The `notarize` target runs
 `xcrun notarytool submit --wait` followed by `xcrun stapler staple` against
 the DMG.
+
+---
+
+## Debian / Ubuntu: `.deb`
+
+Packaging files live in [packaging/debian/](packaging/debian/). The source
+package produces two binary packages: `tesseract` (Qt6) and `tesseract-gtk`
+(GTK4), built in the same `dpkg-buildpackage` run.
+
+### Prerequisites
+
+Requires Rust ≥ 1.75, available in Debian Trixie and Ubuntu 24.10+. On older
+releases install Rust via `rustup` before building.
+
+```bash
+# Debian/Ubuntu build deps
+sudo apt install debhelper cmake ninja-build \
+                 qt6-base-dev qt6-multimedia-dev \
+                 libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+                 golang-go perl cargo rustc
+```
+
+### Build
+
+```bash
+# Copy the packaging directory into the source tree as debian/
+cp -r packaging/debian debian
+dpkg-buildpackage -us -uc -b
+```
+
+The `.deb` files land one level above the source tree. Install with:
+
+```bash
+sudo apt install ../tesseract_0.1.0-1_amd64.deb
+# or the GTK4 variant:
+sudo apt install ../tesseract-gtk_0.1.0-1_amd64.deb
+```
+
+### Runtime dependencies installed automatically
+
+| Package                     | Needed for                              |
+| --------------------------- | --------------------------------------- |
+| `libqt6core6t64`            | Qt6 runtime (`tesseract`)               |
+| `libqt6multimedia6`         | Voice message playback (`tesseract`)    |
+| `libgtk-4-1`                | GTK4 runtime (`tesseract-gtk`)          |
+| `gstreamer1.0-plugins-base` | Opus audio codec (both variants)        |
+
+---
+
+## Arch Linux: `PKGBUILD`
+
+The PKGBUILD lives in [packaging/arch/PKGBUILD](packaging/arch/PKGBUILD) and
+targets the Qt6 variant.
+
+### Arch prerequisites
+
+```bash
+sudo pacman -S cmake ninja rust go perl qt6-base qt6-multimedia
+```
+
+### Arch build
+
+```bash
+cp packaging/arch/PKGBUILD .
+# Update sha256sums before publishing — while developing use sha256sums=('SKIP')
+makepkg -si
+```
+
+For a development/HEAD build, switch the `source` line in the PKGBUILD to the
+git variant:
+
+```bash
+# In PKGBUILD, replace:
+#   source=("$pkgname-$pkgver.tar.gz::…")
+# with:
+#   source=("git+https://gitlab.westeros.lan/surak/matrix-client.git")
+#   sha256sums=('SKIP')
+# and rename the package to tesseract-git.
+```
+
+### Arch runtime dependencies
+
+`qt6-base`, `qt6-multimedia`, `gst-plugins-base`, `gst-plugins-good`.
 
 ---
 

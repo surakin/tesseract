@@ -57,12 +57,7 @@
       "Bash(/home/rayden/src/tesseract/build/linux-qt6-debug/tests/tesseract_tests \"ListView::on_near_top fires on threshold crossing and re-arms\")",
       "Bash(cargo check *)",
       "Bash(cargo build *)",
-      "Bash(git diff *)",
-      "Read(//tmp/**)",
-      "Bash(git checkout *)",
-      "Bash(git apply *)",
-      "Bash(ls C:/Users/surak/AppData/Local/Temp/client_rs_oauth.patch 2>&1)",
-      "Read(//c/Users/surak/AppData/Local/Temp/**)"
+      "WebFetch(domain:github.com)"
     ]
   }
 }

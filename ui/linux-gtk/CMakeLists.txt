@@ -47,3 +47,10 @@ configure_file(
 target_compile_definitions(tesseract_gtk PRIVATE
     TESSERACT_ICON_SEARCH_PATH="${TESSERACT_ICON_SEARCH_PATH}"
 )
+
+install(TARGETS tesseract_gtk
+        RUNTIME DESTINATION bin)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg"
+        DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES "${CMAKE_SOURCE_DIR}/packaging/tesseract.desktop"
+        DESTINATION share/applications)
