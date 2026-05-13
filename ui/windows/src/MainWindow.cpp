@@ -946,7 +946,7 @@ void MainWindow::on_create(HWND hwnd) {
                 if (!compose_shared_) return;
                 compose_shared_->set_reply_to(event_id, sender_name,
                                               body_preview);
-                if (compose_text_area_) compose_text_area_->focus();
+                if (compose_text_area_) compose_text_area_->set_focused(true);
             };
         message_list_view_->on_edit_requested =
             [this](const std::string& event_id,
@@ -956,7 +956,7 @@ void MainWindow::on_create(HWND hwnd) {
                 if (compose_text_area_) {
                     compose_text_area_->set_text(current_body);
                     compose_shared_->set_current_text(current_body);
-                    compose_text_area_->focus();
+                    compose_text_area_->set_focused(true);
                 }
             };
         message_list_view_->on_near_top = [this]{

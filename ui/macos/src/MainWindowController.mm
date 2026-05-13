@@ -556,7 +556,7 @@ void EventBridge::on_image_packs_updated() {
                 if (!s || !s->_composeShared) return;
                 s->_composeShared->set_reply_to(event_id, sender_name,
                                                 body_preview);
-                if (s->_composeTextArea) s->_composeTextArea->focus();
+                if (s->_composeTextArea) s->_composeTextArea->set_focused(true);
             };
         _messageListView->on_edit_requested =
             [weakSelf](const std::string& event_id,
@@ -567,7 +567,7 @@ void EventBridge::on_image_packs_updated() {
                 if (s->_composeTextArea) {
                     s->_composeTextArea->set_text(current_body);
                     s->_composeShared->set_current_text(current_body);
-                    s->_composeTextArea->focus();
+                    s->_composeTextArea->set_focused(true);
                 }
             };
         _messageListView->on_near_top = [weakSelf]{

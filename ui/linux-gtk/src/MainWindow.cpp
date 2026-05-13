@@ -710,7 +710,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                const std::string& body_preview) {
             if (!compose_shared_) return;
             compose_shared_->set_reply_to(event_id, sender_name, body_preview);
-            if (compose_text_area_) compose_text_area_->focus();
+            if (compose_text_area_) compose_text_area_->set_focused(true);
         };
 
     // "✏" hover button → enter edit mode in the compose bar.
@@ -721,7 +721,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (compose_text_area_) {
                 compose_text_area_->set_text(current_body);
                 compose_shared_->set_current_text(current_body);
-                compose_text_area_->focus();
+                compose_text_area_->set_focused(true);
             }
         };
 
