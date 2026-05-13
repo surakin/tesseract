@@ -478,6 +478,11 @@ private:
     ImagePasteHandler                        on_image_paste_;
 };
 
+// Defined in audio_win32.cpp — wired here so Host::make_audio_player() can
+// call it without a separate header (mirrors the qt6 / gtk / macos pattern).
+std::unique_ptr<tk::AudioPlayer>
+make_audio_player_win32(std::function<void(std::function<void()>)> post);
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
@@ -519,13 +524,9 @@ public:
         return area;
     }
 
-    // Voice-message playback is not yet wired on Win32. A real backend
-    // would use Media Foundation (`IMFSourceReader`) + XAudio2; for now we
-    // return `nullptr` so the MessageListView paints the voice card but the
-    // play button is a no-op. Tracked under "Win32 inline images" /
-    // "Decisions still open" in the roadmap.
     std::unique_ptr<AudioPlayer> make_audio_player() override {
-        return nullptr;
+        return make_audio_player_win32(
+            [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
     }
 
     EncodedImage encode_for_send(const std::uint8_t* data,

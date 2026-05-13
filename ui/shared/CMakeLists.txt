@@ -45,6 +45,7 @@ if(TESSERACT_UI STREQUAL "win32")
         tk/canvas_d2d.cpp
         tk/host_win32.h
         tk/host_win32.cpp
+        tk/audio_win32.cpp
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
     list(APPEND _tk_sources
@@ -101,6 +102,10 @@ if(TESSERACT_UI STREQUAL "win32")
         ole32
         comctl32         # SetWindowSubclass, EM_SETCUEBANNER, etc.
         user32
+        mf               # Media Foundation: IMFMediaEngine (audio_win32.cpp)
+        mfplat
+        mfuuid
+        shlwapi          # SHCreateMemStream (also used in host_win32.cpp)
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
     # Multimedia is used by audio_qt.cpp for MSC3245 voice playback

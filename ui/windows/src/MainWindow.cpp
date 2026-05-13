@@ -1046,6 +1046,13 @@ void MainWindow::on_create(HWND hwnd) {
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);
         };
+        if (auto player = msg_surface_->host().make_audio_player()) {
+            message_list_view_->set_audio_player(std::move(player));
+        }
+        message_list_view_->set_voice_bytes_provider(
+            [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+                return client_.fetch_source_bytes(source_json);
+            });
         msg_surface_->set_root(std::move(view));
     }
     if (HWND ms = msg_surface_->hwnd()) {
@@ -1999,9 +2006,6 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
         const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
         if (!v.audio_source.empty() &&
             voice_prefetched_.insert(v.audio_source).second) {
-            // Win32 has no audio backend yet (`make_audio_player()`
-            // returns nullptr) — prefetch is still worth doing so the
-            // bytes land in the SDK cache for whenever a backend lands.
             std::thread([this, src = v.audio_source]() mutable {
                 (void)client_.fetch_source_bytes(src);
             }).detach();
