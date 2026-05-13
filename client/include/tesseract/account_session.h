@@ -2,6 +2,7 @@
 
 #include "tesseract/client.h"
 #include "tesseract/event_handler.h"
+#include "tesseract/notifier.h"
 
 #include <memory>
 #include <string>
@@ -28,6 +29,10 @@ struct AccountSession {
     // entire duration of rt.drop(). Declaring client second guarantees that.
     std::unique_ptr<IEventHandler> bridge;
     std::unique_ptr<Client>        client;
+    // notifier is declared after client so it is destroyed first (before
+    // client teardown), stopping incoming notifications before the SDK tears
+    // down. bridge is still declared first so it outlives both.
+    std::unique_ptr<INotifier>     notifier;
 
     /// Canonical Matrix ID, e.g. `@alice:example.org`. Used as the key in
     /// `accounts.json` and as the parent of `SessionStore::account_dir`.

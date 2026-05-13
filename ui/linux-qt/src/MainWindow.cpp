@@ -831,8 +831,7 @@ MainWindow::MainWindow(QWidget* parent)
     // `wireBridge` when an account is attached. Slots filter on `sender()`
     // so callbacks from inactive accounts don't reach the UI surfaces.
 
-    notifier_ = std::make_unique<LinuxNotifierQt>(
-        [this](std::string room_id) { navigate_to_room(std::move(room_id)); }, this);
+    // Notifiers are created per-account in doLogin / onLoginSucceeded.
 
     // Animation frame-tick for inline media in the timeline (GIF /
     // animated WebP / APNG). 60 Hz; the timer self-stops in
@@ -990,6 +989,15 @@ void MainWindow::doLogin() {
         session->sync_started = true;
         session->bridge = std::move(bridge);
 
+        // Per-account notifier: click switches to this account then navigates.
+        session->notifier = std::make_unique<LinuxNotifierQt>(
+            [this, uid](std::string room_id) {
+                for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                    if (accounts_[i]->user_id == uid) { switchActiveAccount(i); break; }
+                }
+                navigate_to_room(std::move(room_id));
+            });
+
         if (uid == idx.active_user_id) target_active = static_cast<int>(accounts_.size());
         accounts_.push_back(std::move(session));
     }
@@ -1132,6 +1140,15 @@ void MainWindow::onLoginSucceeded() {
     session->sync_started = true;
     session->bridge = std::move(bridge);
 
+    // Per-account notifier: click switches to this account then navigates.
+    session->notifier = std::make_unique<LinuxNotifierQt>(
+        [this, uid = user_id](std::string room_id) {
+            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                if (accounts_[i]->user_id == uid) { switchActiveAccount(i); break; }
+            }
+            navigate_to_room(std::move(room_id));
+        });
+
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(session));
 
@@ -1197,13 +1214,23 @@ void MainWindow::onNotificationTriggered(
         QString body, bool is_mention)
 {
     const std::string rid = roomId.toStdString();
-    if (isActiveWindow() && currentRoomId_ == rid) return;
-    if (notifier_)
-        notifier_->notify({ rid,
-                             roomName.toStdString(),
-                             sender.toStdString(),
-                             body.toStdString(),
-                             is_mention });
+    // Find the account that owns this notification via the emitting bridge.
+    auto* b = qobject_cast<EventBridge*>(QObject::sender());
+    const std::string uid = b ? b->user_id() : std::string{};
+    for (auto& sess : accounts_) {
+        if (sess->user_id != uid) continue;
+        // Suppress only when this account is active and its room is open.
+        if (isActiveWindow()
+                && active_account_index_ >= 0
+                && accounts_[active_account_index_]->user_id == uid
+                && currentRoomId_ == rid)
+            return;
+        if (sess->notifier)
+            sess->notifier->notify({ rid, roomName.toStdString(),
+                                     sender.toStdString(), body.toStdString(),
+                                     is_mention });
+        return;
+    }
 }
 
 void MainWindow::onSendClicked() {

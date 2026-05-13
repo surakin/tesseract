@@ -511,7 +511,7 @@ void EventHandler::on_notification(const std::string& room_id,
                                     bool is_mention)
 {
     auto* p = new MainWindow::NotificationPayload{
-        room_id, room_name, sender, body, is_mention
+        room_id, room_name, sender, body, user_id_, is_mention
     };
     PostMessage(hwnd_, WM_TESSERACT_NOTIFY,
                 static_cast<WPARAM>(is_mention ? 1 : 0),
@@ -805,11 +805,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
     }
     case WM_TESSERACT_NOTIFY_CLICK: {
-        auto* room_id = reinterpret_cast<std::string*>(lParam);
+        auto* payload = reinterpret_cast<win32::NotifyClickPayload*>(lParam);
         if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
         SetForegroundWindow(hwnd);
-        self->navigate_to_room(*room_id);
-        delete room_id;
+        // Switch to the account that owns this notification before navigating.
+        for (int i = 0; i < static_cast<int>(self->accounts_.size()); ++i) {
+            if (self->accounts_[i]->user_id == payload->user_id) {
+                self->switch_active_account(i);
+                break;
+            }
+        }
+        self->navigate_to_room(payload->room_id);
+        delete payload;
         return 0;
     }
     case WM_TESSERACT_STICKER_BYTES: {
@@ -996,7 +1003,6 @@ bool MainWindow::create(int nCmdShow) {
 }
 
 void MainWindow::on_create(HWND hwnd) {
-    notifier_ = std::make_unique<Win32Notifier>(hwnd);
 
     Gdiplus::GdiplusStartupInput gsi;
     Gdiplus::GdiplusStartup(&gdiplus_token_, &gsi, nullptr);
@@ -1666,6 +1672,10 @@ void MainWindow::start_login() {
         sess->client->start_sync(sess->bridge.get());
         sess->sync_started = true;
 
+        // Per-account notifier: click switches to this account then navigates.
+        const std::string uid = sess->user_id;
+        sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, uid);
+
         accounts_.push_back(std::move(sess));
     }
 
@@ -1742,6 +1752,10 @@ void MainWindow::on_login_succeeded() {
     sess->bridge = std::move(bridge);
     sess->client->start_sync(sess->bridge.get());
     sess->sync_started = true;
+
+    // Per-account notifier: click switches to this account then navigates.
+    const std::string new_uid = sess->user_id;
+    sess->notifier = std::make_unique<win32::Win32Notifier>(hwnd_, new_uid);
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -1887,11 +1901,21 @@ void MainWindow::on_send_clicked() {
 
 void MainWindow::on_tesseract_notify(const NotificationPayload* p)
 {
-    // Suppress if the window is focused and the active room is the source room.
-    if (GetForegroundWindow() == hwnd_ && current_room_id_ == p->room_id)
+    // Find which account fired this notification by user_id.
+    for (auto& sess : accounts_) {
+        if (sess->user_id != p->user_id) continue;
+        // Suppress if the window is focused and the active room is the source room
+        // for the active account.
+        if (GetForegroundWindow() == hwnd_
+                && active_account_index_ >= 0
+                && accounts_[active_account_index_]->user_id == p->user_id
+                && current_room_id_ == p->room_id)
+            return;
+        if (sess->notifier)
+            sess->notifier->notify({ p->room_id, p->room_name,
+                                     p->sender, p->body, p->is_mention });
         return;
-    if (notifier_)
-        notifier_->notify({ p->room_id, p->room_name, p->sender, p->body, p->is_mention });
+    }
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)
@@ -2742,9 +2766,6 @@ void MainWindow::switch_active_account(int new_idx) {
                      if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
                      SetForegroundWindow(hwnd_); },
             [this]{ quitting_ = true; DestroyWindow(hwnd_); });
-    }
-    if (!notifier_) {
-        notifier_ = std::make_unique<Win32Notifier>(hwnd_);
     }
 }
 

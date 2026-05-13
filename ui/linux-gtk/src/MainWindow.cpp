@@ -312,6 +312,7 @@ void EventHandler::on_account_prefs_updated(const std::string& json) {
 namespace {
 struct IdleNotif {
     MainWindow* window;
+    std::string user_id;
     std::string room_id, room_name, sender, body;
     bool        is_mention;
 };
@@ -323,11 +324,12 @@ void EventHandler::on_notification(
 {
     auto* p = new IdleNotif{
         cpp_window_for(window_),
+        user_id_,
         room_id, room_name, sender, body, is_mention
     };
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleNotif*>(data);
-        d->window->push_notification(d->room_id, d->room_name,
+        d->window->push_notification(d->user_id, d->room_id, d->room_name,
                                       d->sender, d->body, d->is_mention);
         delete d;
         return G_SOURCE_REMOVE;
@@ -1030,8 +1032,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
     gtk_widget_set_visible(window_, TRUE);
 
-    notifier_ = std::make_unique<LinuxNotifierGtk>(
-        [this](std::string room_id) { navigate_to_room(std::move(room_id)); });
+    // Notifiers are created per-account in do_login / on_login_succeeded.
 
     g_signal_connect(window_, "close-request",
                      G_CALLBACK(&MainWindow::on_window_close_request_), this);
@@ -1150,6 +1151,18 @@ void MainWindow::do_login() {
             sess->bridge       = std::move(bridge);
             sess->sync_started = true;
 
+            // Per-account notifier: click switches to this account then navigates.
+            const std::string notif_uid = sess->user_id;
+            sess->notifier = std::make_unique<LinuxNotifierGtk>(
+                [this, notif_uid](std::string room_id) {
+                    for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                        if (accounts_[i]->user_id == notif_uid) {
+                            switch_active_account(i); break;
+                        }
+                    }
+                    navigate_to_room(std::move(room_id));
+                });
+
             int idx = static_cast<int>(accounts_.size());
             if (uid == index.active_user_id) first_active = idx;
             accounts_.push_back(std::move(sess));
@@ -1226,6 +1239,18 @@ void MainWindow::on_login_succeeded() {
     sess->client->start_sync(bridge.get());
     sess->bridge       = std::move(bridge);
     sess->sync_started = true;
+
+    // Per-account notifier: click switches to this account then navigates.
+    const std::string notif_uid = sess->user_id;
+    sess->notifier = std::make_unique<LinuxNotifierGtk>(
+        [this, notif_uid](std::string room_id) {
+            for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
+                if (accounts_[i]->user_id == notif_uid) {
+                    switch_active_account(i); break;
+                }
+            }
+            navigate_to_room(std::move(room_id));
+        });
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));
@@ -2293,20 +2318,30 @@ void MainWindow::push_account_prefs_updated(const std::string& json) {
 }
 
 void MainWindow::push_notification(
+        const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
         const std::string& sender, const std::string& body, bool is_mention)
 {
-    handle_notification(room_id, room_name, sender, body, is_mention);
+    handle_notification(user_id, room_id, room_name, sender, body, is_mention);
 }
 
 void MainWindow::handle_notification(
+        const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
         const std::string& sender,  const std::string& body, bool is_mention)
 {
-    if (gtk_window_is_active(GTK_WINDOW(window_)) && current_room_id_ == room_id)
+    for (auto& sess : accounts_) {
+        if (sess->user_id != user_id) continue;
+        // Suppress only when this account is active and its room is already open.
+        if (gtk_window_is_active(GTK_WINDOW(window_))
+                && active_account_index_ >= 0
+                && accounts_[active_account_index_]->user_id == user_id
+                && current_room_id_ == room_id)
+            return;
+        if (sess->notifier)
+            sess->notifier->notify({ room_id, room_name, sender, body, is_mention });
         return;
-    if (notifier_)
-        notifier_->notify({ room_id, room_name, sender, body, is_mention });
+    }
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id) {

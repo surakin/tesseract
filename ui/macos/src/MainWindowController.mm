@@ -174,6 +174,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                   roomName:(std::string)roomName
                     sender:(std::string)sender
                       body:(std::string)body
+                    userId:(std::string)userId
                  isMention:(BOOL)isMention;
 - (void)_navigateToRoom:(std::string)roomId;
 
@@ -325,9 +326,11 @@ void EventBridge::on_notification(const std::string& room_id,
     std::string rnam = room_name;
     std::string sndr = sender;
     std::string bd   = body;
+    std::string uid  = user_id_;
     BOOL mention     = is_mention;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleNotification:rid roomName:rnam sender:sndr body:bd isMention:mention];
+        [c handleNotification:rid roomName:rnam sender:sndr body:bd
+                     userId:uid isMention:mention];
     });
 }
 
@@ -1745,10 +1748,15 @@ void EventBridge::on_notification(const std::string& room_id,
                   roomName:(std::string)roomName
                     sender:(std::string)sender
                       body:(std::string)body
+                    userId:(std::string)userId
                  isMention:(BOOL)isMention {
     (void)isMention;
-    // Suppress if the window is focused and this is the active room.
-    if (self.window.isKeyWindow && _currentRoomId == roomId) return;
+    // Suppress if the window is focused, this account is active, and room is open.
+    if (self.window.isKeyWindow
+            && _activeAccountIndex >= 0
+            && (int)_accounts.size() > _activeAccountIndex
+            && _accounts[_activeAccountIndex]->user_id == userId
+            && _currentRoomId == roomId) return;
 
     UNMutableNotificationContent* content =
         [[UNMutableNotificationContent alloc] init];
@@ -1756,14 +1764,15 @@ void EventBridge::on_notification(const std::string& room_id,
     if (roomName != sender) {
         content.subtitle = [NSString stringWithUTF8String:roomName.c_str()] ?: @"";
     }
-    // Truncate body to 120 UTF-8 chars for the preview.
     std::string preview = body.size() > 120
         ? body.substr(0, 120) + "\xe2\x80\xa6"
         : body;
-    content.body            = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
-    content.sound           = [UNNotificationSound defaultSound];
+    content.body             = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
+    content.sound            = [UNNotificationSound defaultSound];
     content.threadIdentifier = [NSString stringWithUTF8String:roomId.c_str()] ?: @"";
-    content.userInfo        = @{ @"room_id": content.threadIdentifier };
+    NSString* nsRoomId = content.threadIdentifier;
+    NSString* nsUserId = [NSString stringWithUTF8String:userId.c_str()] ?: @"";
+    content.userInfo = @{ @"room_id": nsRoomId, @"user_id": nsUserId };
 
     UNNotificationRequest* req =
         [UNNotificationRequest requestWithIdentifier:
@@ -1780,10 +1789,14 @@ void EventBridge::on_notification(const std::string& room_id,
        willPresentNotification:(UNNotification*)notification
          withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
     (void)center;
-    NSString* rid = notification.request.content.userInfo[@"room_id"];
-    if (self.window.isKeyWindow
-            && rid
-            && _currentRoomId == std::string(rid.UTF8String ?: "")) {
+    NSDictionary* info = notification.request.content.userInfo;
+    NSString* rid = info[@"room_id"];
+    NSString* uid = info[@"user_id"];
+    BOOL activeAccount = uid && _activeAccountIndex >= 0
+        && (int)_accounts.size() > _activeAccountIndex
+        && _accounts[_activeAccountIndex]->user_id == std::string(uid.UTF8String ?: "");
+    if (self.window.isKeyWindow && activeAccount
+            && rid && _currentRoomId == std::string(rid.UTF8String ?: "")) {
         completionHandler(UNNotificationPresentationOptionNone);
     } else {
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
@@ -1801,7 +1814,19 @@ void EventBridge::on_notification(const std::string& room_id,
 didReceiveNotificationResponse:(UNNotificationResponse*)response
          withCompletionHandler:(void (^)(void))completionHandler {
     (void)center;
-    NSString* rid = response.notification.request.content.userInfo[@"room_id"];
+    NSDictionary* info = response.notification.request.content.userInfo;
+    NSString* rid = info[@"room_id"];
+    NSString* uid = info[@"user_id"];
+    // Switch to the account that owns this notification before navigating.
+    if (uid) {
+        std::string target_uid(uid.UTF8String ?: "");
+        for (int i = 0; i < (int)_accounts.size(); ++i) {
+            if (_accounts[i]->user_id == target_uid) {
+                [self _switchActiveAccount:i];
+                break;
+            }
+        }
+    }
     if (rid) {
         [self _navigateToRoom:std::string(rid.UTF8String ?: "")];
     }

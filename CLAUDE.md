@@ -228,16 +228,14 @@ Goal: a visually polished, modern chat layout that forms the shell for threads, 
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
 
-**Step 13 — Multi-account support (in progress)**
+**Step 13 — Multi-account support ✓ done**
 
-Infrastructure done; per-platform shell wiring pending. The goal is to let
-the user run N accounts side-by-side: every signed-in account syncs in the
-background so notifications fire for any of them; **left-click** on the
-sidebar avatar opens an account-picker popover (gated on `accounts >= 2`);
-**right-click** opens a menu with `Add Account…` (launches the shared
-`LoginView` in `Mode::AddAccount`) and `Log Out <display_name>`. The very
-first login (no accounts on disk) is `Mode::Initial` so the Cancel button is
-hidden.
+Every signed-in account syncs in the background so notifications fire for
+any of them; **left-click** on the sidebar avatar opens an account-picker
+popover (gated on `accounts >= 2`); **right-click** opens a menu with
+`Add Account…` (launches the shared `LoginView` in `Mode::AddAccount`) and
+`Log Out <display_name>`. The very first login (no accounts on disk) is
+`Mode::Initial` so the Cancel button is hidden.
 
 **Infrastructure done:**
 - **`Client::set_data_dir`** — per-instance matrix-sdk store path on the
@@ -335,28 +333,36 @@ hidden.
   by MainWindow before each login attempt. Added a `loginCancelled`
   signal alongside the existing `loginSucceeded`.
 
-**Still pending — GTK4 / macOS / Win32 mirror Qt6:** the legacy
-single-account `SessionStore::load()` / `save()` / `clear()` shims are
-still in place specifically so those three shells keep building until
-they're rewired. The Qt6 pattern is the template for each.
+**GTK4 / macOS / Win32 shells — all wired:** all three shells mirror
+the Qt6 pattern; the legacy single-account `SessionStore` shims have
+been removed.
 
-**Known gaps even on Qt6:**
+**Per-account notifier wiring — all four platforms done:**
+`AccountSession` gained a `std::unique_ptr<INotifier> notifier` field
+(declared after `client` so it is destroyed first — stops incoming
+notifications before SDK teardown). Each shell creates a
+per-`AccountSession` notifier whose click callback closes over the
+account's `user_id`, loops `accounts_` to find the matching index,
+calls `switch_active_account` / `switchActiveAccount` / `_switchActiveAccount`,
+then navigates to the notified room. Account-aware suppression: a
+notification is suppressed only when the window is focused *and* the
+active account matches the notifier's `user_id` *and* the current room
+is the source room. macOS threads `user_id` through
+`UNMutableNotificationContent.userInfo[@"user_id"]` rather than a
+class-based `INotifier`; Win32 extends `WM_TESSERACT_NOTIFY_CLICK`'s
+payload to the new `NotifyClickPayload { room_id, user_id }` struct.
+219/219 ctest pass.
 
-- The single shared `notifier_` fires for every account but the click
-  callback only navigates inside the active account. Per-account
-  notifier wiring (each `AccountSession` owns its own `INotifier`
-  closing over the session pointer so toast-click switches active
-  account before navigating) is the natural follow-up.
+**Remaining cosmetic / hardening gaps:**
+
 - `tk_avatars_` / `tk_images_` are not yet keyed by `(user_id, mxc)`.
   Two accounts viewing rooms with overlapping avatar mxc URLs will
   share cache entries. Harmless when both URLs resolve to the same
-  bytes (typical homeserver-hosted avatars); cosmetic ghosting risk
-  when they don't.
+  bytes; cosmetic ghosting risk when they don't.
 - The sidebar user strip remains native (QLabel-based composite) on
   Qt6. The full `tk::qt6::Surface + UserInfo` swap of the strip
   itself is a cosmetic refactor tracked as a follow-up; the shared
-  `UserInfo` widget is already used inside the account-picker
-  popover.
+  `UserInfo` widget is already used inside the account-picker popover.
 
 ### Known gaps from the shared-toolkit migration
 

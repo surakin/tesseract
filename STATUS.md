@@ -1,22 +1,18 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-13**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-14**.
 
-> **Multi-account support — Qt6 canary landed; GTK4 / macOS / Win32 follow.**
-> Infrastructure is in: per-instance SDK data directory
-> (`Client::set_data_dir`), directory-per-account on-disk layout
-> (`accounts.json` index + `accounts/<sanitized-uid>/session.json` +
-> `accounts/<sanitized-uid>/matrix-store/`) with a one-shot legacy migration
-> that moves both files atomically with rollback on failure, shared `UserInfo`
-> and `AccountPicker` widgets reusable across the sidebar strip and the
-> account-switcher popover, and `LoginView::Mode { Initial, AddAccount }`.
-> The **Qt6 shell** runs N accounts concurrently: every signed-in account
-> calls `start_sync()` on its own `Client` + `EventBridge`, the sidebar
-> avatar's two-line strip shows display name + Matrix ID, left-click on the
-> avatar opens an `AccountPicker` popover (no-op when fewer than two
-> accounts), right-click opens `Add Account…` + `Log Out <name>` menu, and
-> `switchActiveAccount` is the single chokepoint for foreground swaps.
-> GTK4 / macOS / Win32 mirror Qt6 next.
+> **Multi-account support — done on all four platforms.**
+> N accounts run concurrently, each on its own `Client` + `EventBridge` +
+> `INotifier`, scoped to its own `accounts/<sanitized-uid>/` on-disk directory.
+> Per-instance SDK data directory (`Client::set_data_dir`), one-shot legacy
+> migration (atomic move of `session.json` + `matrix-store/` with rollback),
+> shared `UserInfo` + `AccountPicker` widgets, `LoginView::Mode { Initial,
+> AddAccount }`. All four shells (Qt6, GTK4, macOS, Win32) wire
+> `accounts_` + `switch_active_account` + `begin_add_account` +
+> `logout_active_account`. Per-account `INotifier` lives in `AccountSession`;
+> toast-click switches the active account before navigating to the room on
+> every platform. 219/219 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 

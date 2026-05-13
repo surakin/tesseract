@@ -396,7 +396,6 @@ private:
     tesseract::Client*  client_ = nullptr;
     EventBridge*        bridge_ = nullptr;
 
-    std::unique_ptr<LinuxNotifierQt>    notifier_;
     std::unique_ptr<LinuxQtTrayIcon>    tray_;
     std::vector<tesseract::RoomInfo> rooms_;
     std::string                   currentRoomId_;

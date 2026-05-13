@@ -1,5 +1,4 @@
 #include "Win32Notifier.h"
-#include "MainWindow.h"
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Notifications.h>
@@ -11,6 +10,10 @@ namespace WUN = winrt::Windows::UI::Notifications;
 namespace WDX = winrt::Windows::Data::Xml::Dom;
 
 namespace win32 {
+
+Win32Notifier::Win32Notifier(HWND hwnd, std::string user_id)
+    : hwnd_(hwnd), user_id_(std::move(user_id))
+{}
 
 // Converts a UTF-8 std::string to std::wstring via Win32 MultiByteToWideChar.
 static std::wstring to_wide(const std::string& s)
@@ -45,10 +48,8 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
                                              const std::string& room_name,
                                              const std::string& body)
 {
-    // Truncate preview to 120 UTF-8 bytes (safe to truncate at byte boundary
-    // for display purposes; WinRT clips further if needed).
     const std::string preview_u8 = body.size() > 120
-        ? body.substr(0, 120) + "\xe2\x80\xa6"  // U+2026 HORIZONTAL ELLIPSIS
+        ? body.substr(0, 120) + "\xe2\x80\xa6"
         : body;
 
     const std::wstring wsender    = xml_escape(to_wide(sender));
@@ -59,7 +60,6 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
     xml << L"<toast>"
            L"<visual><binding template=\"ToastGeneric\">"
         << L"<text>" << wsender << L"</text>";
-    // Omit room line for DMs (where room_name matches sender display name).
     if (room_name != sender)
         xml << L"<text>" << wroom << L"</text>";
     xml << L"<text>" << wpreview << L"</text>"
@@ -77,17 +77,19 @@ void Win32Notifier::notify(const tesseract::Notification& n)
         L"io.gnomos.Tesseract");
     auto toast = WUN::ToastNotification(doc);
 
-    // Capture data for the click handler (runs on a WinRT thread-pool thread).
-    HWND hwnd      = hwnd_;
-    auto room_id   = n.room_id;
+    // Capture room_id + user_id for the click handler (runs on a WinRT thread-pool thread).
+    HWND        hwnd    = hwnd_;
+    std::string room_id = n.room_id;
+    std::string user_id = user_id_;
     toast.Activated(
         winrt::Windows::Foundation::TypedEventHandler<
             WUN::ToastNotification,
             winrt::Windows::Foundation::IInspectable>{
-            [hwnd, room_id](const WUN::ToastNotification&,
-                            const winrt::Windows::Foundation::IInspectable&) {
+            [hwnd, room_id, user_id](const WUN::ToastNotification&,
+                                      const winrt::Windows::Foundation::IInspectable&) {
                 PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                            reinterpret_cast<LPARAM>(new std::string(room_id)));
+                            reinterpret_cast<LPARAM>(
+                                new NotifyClickPayload{room_id, user_id}));
             }});
 
     notifier.Show(toast);

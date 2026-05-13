@@ -163,6 +163,7 @@ private:
         std::string room_name;
         std::string sender;
         std::string body;
+        std::string user_id;   // which AccountSession fired this
         bool        is_mention;
     };
     struct RoomsPayload {
@@ -350,7 +351,6 @@ private:
     std::unique_ptr<tk::win32::Surface>          account_picker_surface_;
     tesseract::views::AccountPicker*             account_picker_  = nullptr;  // borrowed
 
-    std::unique_ptr<Win32Notifier>   notifier_;
     std::unique_ptr<Win32TrayIcon>   tray_;
     bool                              quitting_ = false;
     std::vector<tesseract::RoomInfo> rooms_;

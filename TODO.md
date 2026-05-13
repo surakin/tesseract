@@ -54,5 +54,7 @@
 - [ ] Win32: `NativeTextArea::natural_height()` undercounts wrapped lines (`EM_GETLINECOUNT × tmHeight` ignores soft-wrap)
 - [ ] macOS: initial-sync progress not shown (`on_room_list_state` not wired — add status label or window-title update)
 - [ ] `TestSurface` Catch2 backend tests don't cover CoreGraphics (macOS canvas untested)
+- [ ] Multi-account: `tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)` — cosmetic ghosting if two accounts share an mxc URL that resolves differently
+- [ ] Multi-account: Qt6 sidebar user strip is still a native QLabel composite — swap for `tk::qt6::Surface + UserInfo` (cosmetic refactor; `UserInfo` is already used inside the account-picker popover)
 - [ ] Open decision: timeline persistence (SQLite-backed `Timeline::with_focus` vs memory-only)
 - [ ] Open decision: pack-entry encrypted badging (lock glyph on encrypted packs in picker)
