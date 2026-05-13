@@ -350,10 +350,12 @@ NSTextFieldNative::~NSTextFieldNative() {
 
 void NSTextFieldNative::set_rect(Rect r) {
     // Superview reports `isFlipped == YES`, so y grows downward —
-    // matches the toolkit convention. AppKit positions subviews by
-    // their `frame.origin` in the superview's coordinate system.
-    field_.frame = NSMakeRect(std::floor(r.x), std::floor(r.y),
-                                std::round(r.w), std::round(r.h));
+    // matches the toolkit convention. Use the field's intrinsic height
+    // and centre it vertically within the allocated rect.
+    CGFloat nat_h = field_.intrinsicContentSize.height;
+    CGFloat h = (nat_h > 0) ? nat_h : std::round(r.h);
+    CGFloat y = std::floor(r.y) + (std::round(r.h) - h) / 2.0;
+    field_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
 }
 
 void NSTextFieldNative::set_text(std::string text) {

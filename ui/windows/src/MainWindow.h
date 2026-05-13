@@ -63,7 +63,7 @@ constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
 constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
 constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
-constexpr UINT WM_TESSERACT_NOTIFY_CLICK     = WM_APP + 18;
+// WM_APP + 18 = WM_TESSERACT_NOTIFY_CLICK, defined in Win32Notifier.h
 constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE  = WM_APP + 21;

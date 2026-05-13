@@ -3,6 +3,10 @@
 #include <windows.h>
 #include <string>
 
+// Posted by Win32Notifier to the main window when a toast is activated.
+// lParam is a heap-allocated NotifyClickPayload* (deleted by wnd_proc).
+constexpr UINT WM_TESSERACT_NOTIFY_CLICK = WM_APP + 18;
+
 namespace win32 {
 
 // Payload for WM_TESSERACT_NOTIFY_CLICK. Allocated on the heap by
