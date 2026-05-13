@@ -91,6 +91,32 @@ if(APPLE)
     )
 endif()
 
+# MinGW cross-compilation on a case-sensitive host (Linux): Rust crates emit
+# Windows-style mixed-case link library names (e.g. "Bcrypt", "Ws2_32") via
+# `cargo:rustc-link-lib=`. MinGW's import stubs are lowercase on disk
+# (libbcrypt.a, libws2_32.a), so the linker fails on Linux.
+# Fix: lowercase every entry in the Rust target's INTERFACE_LINK_LIBRARIES
+# that looks like a bare library name or a -l flag.
+if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    get_target_property(_rust_iface tesseract_sdk_ffi-static INTERFACE_LINK_LIBRARIES)
+    if(_rust_iface)
+        set(_fixed "")
+        foreach(_entry IN LISTS _rust_iface)
+            if(_entry MATCHES "^-l(.+)$")
+                string(TOLOWER "${CMAKE_MATCH_1}" _lower)
+                list(APPEND _fixed "-l${_lower}")
+            elseif(_entry MATCHES "^[A-Za-z][A-Za-z0-9_]+$")
+                string(TOLOWER "${_entry}" _lower)
+                list(APPEND _fixed "${_lower}")
+            else()
+                list(APPEND _fixed "${_entry}")
+            endif()
+        endforeach()
+        set_target_properties(tesseract_sdk_ffi-static PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${_fixed}")
+    endif()
+endif()
+
 # ---------------------------------------------------------------------------
 # MSVC environment forwarding via .cargo/config.toml
 # ---------------------------------------------------------------------------

@@ -30,7 +30,9 @@ target_link_libraries(tesseract_client
 
 # Platform link requirements for the Rust static lib + the browser launcher.
 if(WIN32)
+    # Use lowercase names: MinGW on Linux stores import libs as libws2_32.a etc.
+    # (case-sensitive filesystem), while MSVC on Windows is case-insensitive.
     target_link_libraries(tesseract_client PUBLIC
-        Ws2_32 Bcrypt Userenv Ntdll
-        Shell32)               # ShellExecuteA in open_in_browser()
+        ws2_32 bcrypt userenv ntdll
+        shell32)               # ShellExecuteA in open_in_browser()
 endif()

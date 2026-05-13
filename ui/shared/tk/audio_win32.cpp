@@ -32,6 +32,13 @@
 #include <mfmediaengine.h>
 #include <wrl/client.h>
 
+#if defined(__MINGW32__) || defined(__MINGW64__)
+// MFCreateMFByteStreamOnStream is exported by mfplat.dll and present in
+// MinGW's libmfplat.a import stub but absent from older mfapi.h headers.
+extern "C" HRESULT STDAPICALLTYPE MFCreateMFByteStreamOnStream(
+    IStream* pStream, IMFByteStream** ppByteStream);
+#endif
+
 #include "audio.h"
 
 #include <atomic>
