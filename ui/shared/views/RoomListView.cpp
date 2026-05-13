@@ -264,6 +264,7 @@ RoomListView::RoomListView()
         selected_room_id_cache_ = rooms[item.room_idx]->id;
         if (on_room_selected) on_room_selected(rooms[item.room_idx]->id);
     };
+    list->on_scroll = [this] { if (on_scroll) on_scroll(); };
     list_ = add_child(std::move(list));
 }
 

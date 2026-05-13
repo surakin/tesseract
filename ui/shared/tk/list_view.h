@@ -130,6 +130,9 @@ public:
     // on_pointer_down/up/move so these fire automatically.
     std::function<void(int /*index*/)> on_row_clicked;
 
+    // Fired whenever scroll_y_ changes due to user input (wheel or scrollbar drag).
+    std::function<void()> on_scroll;
+
     // Fired exactly once each time the viewport's top edge first enters the
     // `near_top_threshold_px` zone (default 200px). Re-arms when the user
     // scrolls back above the threshold, or when new rows are prepended (so

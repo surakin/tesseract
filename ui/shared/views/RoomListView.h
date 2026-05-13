@@ -72,6 +72,9 @@ public:
     // Headers are excluded. Empty when no rows are visible or laid out.
     std::vector<std::string> visible_room_ids() const;
 
+    // Fired whenever the room list is scrolled by user input.
+    std::function<void()> on_scroll;
+
     // Fires when the user clicks a room row (selection moves to that row).
     std::function<void(const std::string& /*room_id*/)> on_room_selected;
 

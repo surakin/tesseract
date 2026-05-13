@@ -294,7 +294,9 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
     stick_to_bottom_ = false;
     clamp_scroll();
     maybe_fire_near_top();
-    return scroll_y_ != prev;
+    bool changed = (scroll_y_ != prev);
+    if (changed && on_scroll) on_scroll();
+    return changed;
 }
 
 bool ListView::on_pointer_down(Point local) {
@@ -321,6 +323,7 @@ void ListView::on_pointer_drag(Point local) {
     float total = content_height();
     float travel = g.track_h - g.thumb_h;
     if (travel <= 0 || total <= bounds_.h) return;
+    float prev = scroll_y_;
     float wanted_thumb_top = (local.y + bounds_.y) - drag_anchor_y_;
     float t = (wanted_thumb_top - g.track_top) / travel;
     if (t < 0) t = 0;
@@ -328,6 +331,7 @@ void ListView::on_pointer_drag(Point local) {
     scroll_y_ = t * (total - bounds_.h);
     clamp_scroll();
     maybe_fire_near_top();
+    if (scroll_y_ != prev && on_scroll) on_scroll();
 }
 
 void ListView::on_pointer_up(Point local, bool inside_self) {
