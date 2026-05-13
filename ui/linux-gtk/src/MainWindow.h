@@ -11,6 +11,8 @@
 #include "views/ComposeBar.h"
 #include "views/EmojiPicker.h"
 #include "views/format.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
@@ -113,6 +115,10 @@ private:
                                               gpointer user_data);
     static void    on_logout_activate_(GSimpleAction* action,
                                        GVariant* parameter, gpointer user_data);
+    static gboolean on_window_key_pressed_(GtkEventControllerKey*,
+                                            guint keyval, guint,
+                                            GdkModifierType,
+                                            gpointer user_data);
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
     void refresh_room_list();
@@ -214,6 +220,14 @@ private:
     tesseract::views::StickerPicker*        sticker_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
 
+    // Full-window image/sticker lightbox overlay — GtkOverlay child.
+    std::unique_ptr<tk::gtk4::Surface>       img_viewer_surface_;
+    tesseract::views::ImageViewerOverlay*    img_viewer_ = nullptr;  // borrowed
+
+    // Full-window video lightbox overlay — GtkOverlay child.
+    std::unique_ptr<tk::gtk4::Surface>       vid_viewer_surface_;
+    tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
+
     // Right-click context menu on the message surface — shown when a
     // right-click lands on a sticker that isn't yet in the user's
     // Saved Stickers pack. Built once; pointed_to + activated per-click.
@@ -263,6 +277,7 @@ private:
     // The SDK's media cache holds the bytes; we just remember which we've
     // dispatched workers for to dedupe.
     std::unordered_set<std::string>                              voice_prefetched_;
+    std::unordered_set<std::string> video_thumb_in_flight_;
 
     /// Animated inline-media entries (GIF / animated WebP / APNG). Same
     /// shape as the Qt port's `AnimatedImage`. Decoded eagerly: each

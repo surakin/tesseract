@@ -16,11 +16,14 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 #include <optional>
 #include <string>
 #include <unordered_set>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gst/gst.h>
+#include <gst/app/gstappsink.h>
 #include <libintl.h>
 #define _(s) gettext(s)
 
@@ -370,7 +373,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
     GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     main_content_ = hbox;
-    gtk_stack_add_named(GTK_STACK(content_stack_), hbox, "main");
+    GtkWidget* main_overlay = gtk_overlay_new();
+    gtk_overlay_set_child(GTK_OVERLAY(main_overlay), hbox);
+    gtk_stack_add_named(GTK_STACK(content_stack_), main_overlay, "main");
 
     // Sidebar (nav bar + room list, wrapped in a vertical box)
     GtkWidget* side_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -840,6 +845,101 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                          G_CALLBACK(on_msg_right_click_), this);
         gtk_widget_add_controller(msg_surface_->widget(),
                                    GTK_EVENT_CONTROLLER(gesture));
+    }
+
+    // Image / sticker lightbox overlay — an extra GtkOverlay child that
+    // paints a dark backdrop + the selected image over the entire main area.
+    // Shown on `on_image_clicked`, hidden on `on_close` or Escape.
+    {
+        img_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+        auto img_viewer_owner = std::make_unique<tesseract::views::ImageViewerOverlay>();
+        img_viewer_ = img_viewer_owner.get();
+        img_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto ait = tk_anim_images_.find(url);
+                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                    return ait->second.frames[ait->second.current].get();
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        img_viewer_->on_close = [this] {
+            if (img_viewer_surface_)
+                gtk_widget_set_visible(img_viewer_surface_->widget(), FALSE);
+        };
+        img_viewer_surface_->set_root(std::move(img_viewer_owner));
+
+        GtkWidget* overlay_widget = img_viewer_surface_->widget();
+        gtk_widget_set_hexpand(overlay_widget, TRUE);
+        gtk_widget_set_vexpand(overlay_widget, TRUE);
+        gtk_overlay_add_overlay(GTK_OVERLAY(main_overlay), overlay_widget);
+        gtk_widget_set_visible(overlay_widget, FALSE);
+    }
+
+    message_list_view_->on_image_clicked =
+        [this](const tesseract::views::MessageListView::ImageHit& hit) {
+            if (!img_viewer_ || !img_viewer_surface_) return;
+            img_viewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
+            gtk_widget_set_visible(img_viewer_surface_->widget(), TRUE);
+            gtk_widget_grab_focus(img_viewer_surface_->widget());
+        };
+
+    // Video lightbox overlay — full-window surface for m.video playback.
+    {
+        vid_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+        auto vid_viewer_owner = std::make_unique<tesseract::views::VideoViewerOverlay>();
+        vid_viewer_ = vid_viewer_owner.get();
+        vid_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        vid_viewer_->set_video_player(msg_surface_->host().make_video_player());
+        vid_viewer_->set_repaint_requester([this] {
+            if (vid_viewer_surface_) vid_viewer_surface_->relayout();
+        });
+        vid_viewer_->on_close = [this] {
+            if (vid_viewer_surface_)
+                gtk_widget_set_visible(vid_viewer_surface_->widget(), FALSE);
+        };
+        vid_viewer_surface_->set_root(std::move(vid_viewer_owner));
+
+        GtkWidget* vid_overlay_widget = vid_viewer_surface_->widget();
+        gtk_widget_set_hexpand(vid_overlay_widget, TRUE);
+        gtk_widget_set_vexpand(vid_overlay_widget, TRUE);
+        gtk_overlay_add_overlay(GTK_OVERLAY(main_overlay), vid_overlay_widget);
+        gtk_widget_set_visible(vid_overlay_widget, FALSE);
+    }
+
+    message_list_view_->on_video_clicked =
+        [this](const tesseract::views::MessageListView::VideoHit& hit) {
+            if (!vid_viewer_ || !vid_viewer_surface_) return;
+            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                             hit.duration_ms, hit.natural_w, hit.natural_h);
+            gtk_widget_set_visible(vid_viewer_surface_->widget(), TRUE);
+            gtk_widget_grab_focus(vid_viewer_surface_->widget());
+            // Async byte fetch on a detached thread.
+            std::string src = hit.source_json;
+            std::thread([this, src = std::move(src)]() mutable {
+                auto bytes = client_.fetch_source_bytes(src);
+                struct Ctx { MainWindow* self; std::vector<uint8_t> bytes; };
+                auto* ctx = new Ctx{ this, std::move(bytes) };
+                g_idle_add([](gpointer p) -> gboolean {
+                    auto* c = static_cast<Ctx*>(p);
+                    if (c->self->vid_viewer_)
+                        c->self->vid_viewer_->load_bytes(c->bytes.data(), c->bytes.size());
+                    delete c;
+                    return G_SOURCE_REMOVE;
+                }, ctx);
+            }).detach();
+        };
+
+    // Escape key: close the image viewer if it's open. Attached to the
+    // window so it fires regardless of which widget holds focus.
+    {
+        GtkEventController* key_ctl = gtk_event_controller_key_new();
+        g_signal_connect(key_ctl, "key-pressed",
+                         G_CALLBACK(on_window_key_pressed_), this);
+        gtk_widget_add_controller(window_, key_ctl);
     }
 
     status_bar_ = gtk_label_new(_("Not logged in"));
@@ -1689,6 +1789,19 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
             row.waveform     = v.waveform;
             break;
         }
+        case tesseract::EventType::Video: {
+            row.kind = Kind::Video;
+            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+            row.media_url         = vid.video_url;
+            row.video_thumb_url   = vid.thumbnail_url.empty()
+                                    ? ("thumb::" + ev.event_id)
+                                    : vid.thumbnail_url;
+            row.media_w           = static_cast<int>(vid.width);
+            row.media_h           = static_cast<int>(vid.height);
+            row.duration_ms       = vid.duration_ms;
+            row.has_filename_caption = !vid.filename.empty();
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -1721,6 +1834,119 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
             // fetch on click reads them straight out of the cache.
             std::thread([this, src = v.audio_source]() mutable {
                 (void)client_.fetch_source_bytes(src);
+            }).detach();
+        }
+    } else if (ev.type == tesseract::EventType::Video) {
+        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+        if (!vid.thumbnail_url.empty())
+            ensure_media_image(vid.thumbnail_url,
+                                tesseract::visual::kMaxInlineImageWidth,
+                                tesseract::visual::kMaxInlineImageHeight);
+        // Client-side first-frame generation when no server thumbnail.
+        if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
+            video_thumb_in_flight_.insert(ev.event_id).second) {
+            const std::string eid = ev.event_id;
+            std::thread([this, eid, src = vid.video_url]() mutable {
+                auto bytes = client_.fetch_source_bytes(src);
+                if (bytes.empty()) return;
+                // Extract first frame via GStreamer appsink.
+                GstElement* pipe  = gst_pipeline_new(nullptr);
+                GstElement* gsrc  = gst_element_factory_make("giostreamsrc",  nullptr);
+                GstElement* dec   = gst_element_factory_make("decodebin",     nullptr);
+                GstElement* vconv = gst_element_factory_make("videoconvert",  nullptr);
+                GstElement* vsink = gst_element_factory_make("appsink",       nullptr);
+                if (!pipe || !gsrc || !dec || !vconv || !vsink) {
+                    if (pipe)  gst_object_unref(pipe);
+                    if (gsrc)  gst_object_unref(gsrc);
+                    if (dec)   gst_object_unref(dec);
+                    if (vconv) gst_object_unref(vconv);
+                    if (vsink) gst_object_unref(vsink);
+                    return;
+                }
+                GstCaps* caps = gst_caps_from_string("video/x-raw,format=BGRA");
+                gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
+                gst_caps_unref(caps);
+                gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
+                gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
+                GInputStream* mem_stream = g_memory_input_stream_new_from_data(
+                    bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+                g_object_set(gsrc, "stream", mem_stream, nullptr);
+                g_object_unref(mem_stream);
+                gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink, nullptr);
+                gst_element_link(gsrc, dec);
+                gst_element_link(vconv, vsink);
+                struct PadCtx { GstElement* vconv; };
+                auto* pad_ctx = new PadCtx{ vconv };
+                g_signal_connect(dec, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud){
+                    auto* pc = static_cast<PadCtx*>(ud);
+                    GstCaps* c2 = gst_pad_get_current_caps(pad);
+                    if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
+                    GstStructure* st = gst_caps_get_structure(c2, 0);
+                    if (g_str_has_prefix(gst_structure_get_name(st), "video")) {
+                        GstPad* sp = gst_element_get_static_pad(pc->vconv, "sink");
+                        if (sp && !gst_pad_is_linked(sp)) gst_pad_link(pad, sp);
+                        if (sp) gst_object_unref(sp);
+                    }
+                    gst_caps_unref(c2);
+                }), pad_ctx);
+                gst_element_set_state(pipe, GST_STATE_PLAYING);
+                // Pull exactly one preroll frame.
+                GstSample* sample = gst_app_sink_pull_preroll(GST_APP_SINK(vsink));
+                gst_element_set_state(pipe, GST_STATE_NULL);
+                delete pad_ctx;
+                gst_object_unref(pipe);
+                if (!sample) return;
+                GstBuffer* buf  = gst_sample_get_buffer(sample);
+                GstCaps*   scaps = gst_sample_get_caps(sample);
+                int w = 0, h = 0;
+                if (scaps) {
+                    GstStructure* st = gst_caps_get_structure(scaps, 0);
+                    gst_structure_get_int(st, "width",  &w);
+                    gst_structure_get_int(st, "height", &h);
+                }
+                if (!buf || w <= 0 || h <= 0) { gst_sample_unref(sample); return; }
+                GstMapInfo map;
+                if (!gst_buffer_map(buf, &map, GST_MAP_READ)) {
+                    gst_sample_unref(sample); return;
+                }
+                std::vector<uint8_t> frame_bytes(map.data, map.data + map.size);
+                gst_buffer_unmap(buf, &map);
+                gst_sample_unref(sample);
+                // BGRA → cairo surface on the main thread.
+                struct Ctx {
+                    MainWindow*          self;
+                    std::string          key;
+                    std::vector<uint8_t> pixels;
+                    int w, h;
+                };
+                auto* ctx = new Ctx{ this, "thumb::" + eid, std::move(frame_bytes), w, h };
+                g_idle_add([](gpointer p) -> gboolean {
+                    auto* c = static_cast<Ctx*>(p);
+                    if (!c->self->tk_images_.count(c->key)) {
+                        // Create an owned cairo surface and blit the BGRA pixels in.
+                        cairo_surface_t* surf =
+                            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, c->w, c->h);
+                        if (surf && cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS) {
+                            int dst_stride = cairo_image_surface_get_stride(surf);
+                            unsigned char* dst = cairo_image_surface_get_data(surf);
+                            int src_stride = c->w * 4;
+                            for (int row = 0; row < c->h; ++row) {
+                                std::memcpy(dst + row * dst_stride,
+                                             c->pixels.data() + row * src_stride,
+                                             static_cast<std::size_t>(src_stride));
+                            }
+                            cairo_surface_mark_dirty(surf);
+                            c->self->tk_images_.emplace(
+                                c->key, tk::cairo_pango::make_image(surf));
+                            cairo_surface_destroy(surf);
+                            if (c->self->msg_surface_) c->self->msg_surface_->relayout();
+                        } else if (surf) {
+                            cairo_surface_destroy(surf);
+                        }
+                    }
+                    delete c;
+                    return G_SOURCE_REMOVE;
+                }, ctx);
             }).detach();
         }
     }
@@ -2125,6 +2351,22 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
     };
     gtk_popover_set_pointing_to(GTK_POPOVER(self->sticker_ctx_menu_), &r);
     gtk_popover_popup(GTK_POPOVER(self->sticker_ctx_menu_));
+}
+
+gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
+                                              guint keyval, guint,
+                                              GdkModifierType,
+                                              gpointer user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (keyval == GDK_KEY_Escape) {
+        if (self->vid_viewer_ && self->vid_viewer_->is_open()) {
+            self->vid_viewer_->close(); return TRUE;
+        }
+        if (self->img_viewer_ && self->img_viewer_->is_open()) {
+            self->img_viewer_->close(); return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,

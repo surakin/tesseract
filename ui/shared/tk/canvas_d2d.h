@@ -103,6 +103,13 @@ struct AnimatedFrame {
     int                    delay_ms;
 };
 
+// Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
+// no padding required). Pixels are copied into an `IWICBitmap` so the
+// resulting Image outlives `pixels`. Returns nullptr on failure.
+std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
+                                             const std::uint8_t* pixels,
+                                             int w, int h);
+
 // Decode a multi-frame image (GIF natively, APNG on Win10 1809+,
 // animated WebP if the Microsoft Store WebP Image Extension is
 // installed) into a list of frames + per-frame delays. Returns an

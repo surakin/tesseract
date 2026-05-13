@@ -20,6 +20,8 @@
 #include "tk/host_qt.h"
 #include "views/ComposeBar.h"
 #include "views/format.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
@@ -92,6 +94,8 @@ public:
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
+    void keyPressEvent(QKeyEvent* ev) override;
+    void resizeEvent(QResizeEvent* ev) override;
 
 private slots:
     void onLoginSucceeded();
@@ -219,6 +223,16 @@ private:
     EmojiPicker*                            emojiPicker_     = nullptr;
     ::StickerPicker*                        stickerPicker_   = nullptr;
 
+    // Full-window image/sticker lightbox overlay.
+    QWidget*                                imgViewerHost_    = nullptr;
+    tk::qt6::Surface*                       imgViewerSurface_ = nullptr;
+    tesseract::views::ImageViewerOverlay*   imgViewer_        = nullptr;  // borrowed
+
+    // Full-window video lightbox overlay.
+    QWidget*                                vidViewerHost_    = nullptr;
+    tk::qt6::Surface*                       vidViewerSurface_ = nullptr;
+    tesseract::views::VideoViewerOverlay*   vidViewer_        = nullptr;  // borrowed
+
     // When the user opens the emoji picker from a message's "+" chip
     // (rather than from the compose bar), this holds the target event
     // id. The picker's `onSelected` checks this — non-empty routes the
@@ -250,6 +264,9 @@ private:
     // SDK caches the decoded blob, so we only need to mark which source
     // tokens we've already kicked a worker off for to avoid duplicates.
     std::unordered_set<std::string> voice_prefetched_;
+
+    // Video thumbnails being generated client-side (event_id set).
+    std::unordered_set<std::string> video_thumb_in_flight_;
 
     // Replied-to event IDs for which we have already called
     // fetch_reply_details this subscription session. Cleared on room switch

@@ -83,6 +83,10 @@ struct MediaBytesPayload {
     std::string                  cache_key;   // mxc (room/user avatar) or url
     std::vector<std::uint8_t>    bytes;
 };
+struct VideoBytesPayload {
+    std::string                 source_json;  // original request key
+    std::vector<std::uint8_t>   bytes;
+};
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -822,6 +826,26 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_VIDEO_BYTES: {
+        auto* p = reinterpret_cast<VideoBytesPayload*>(lParam);
+        if (self->vid_viewer_ && !p->bytes.empty())
+            self->vid_viewer_->load_bytes(p->bytes.data(), p->bytes.size());
+        delete p;
+        return 0;
+    }
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) {
+            if (self->vid_viewer_ && self->vid_viewer_->is_open()) {
+                self->vid_viewer_->close();
+                return 0;
+            }
+            if (self->img_viewer_ && self->img_viewer_->is_open()) {
+                self->img_viewer_->close();
+                return 0;
+            }
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
     case WM_TIMER:
         if (wParam == kSearchDebounceTimer) {
             KillTimer(hwnd, kSearchDebounceTimer);
@@ -1288,6 +1312,99 @@ void MainWindow::on_create(HWND hwnd) {
         ShowWindow(rb, SW_HIDE);
     }
 
+    // Image/sticker lightbox overlay — WS_CHILD Surface that covers the
+    // entire content area when open. Created hidden; shown/hidden by
+    // on_image_clicked / ImageViewerOverlay::on_close.
+    img_viewer_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto viewer = std::make_unique<tesseract::views::ImageViewerOverlay>();
+        img_viewer_ = viewer.get();
+        img_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto ait = tk_anim_images_.find(url);
+                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                    return ait->second.frames[ait->second.current].get();
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        img_viewer_->on_close = [this] {
+            if (img_viewer_surface_ && img_viewer_surface_->hwnd())
+                ShowWindow(img_viewer_surface_->hwnd(), SW_HIDE);
+        };
+        img_viewer_surface_->set_root(std::move(viewer));
+    }
+    if (HWND iv = img_viewer_surface_->hwnd())
+        ShowWindow(iv, SW_HIDE);
+
+    message_list_view_->on_image_clicked =
+        [this](const tesseract::views::MessageListView::ImageHit& hit) {
+            if (!img_viewer_ || !img_viewer_surface_) return;
+            img_viewer_->open(hit.media_url, hit.body,
+                               hit.natural_w, hit.natural_h);
+            RECT cr; GetClientRect(hwnd_, &cr);
+            constexpr int STATUS_H = 24;
+            if (HWND iv = img_viewer_surface_->hwnd()) {
+                SetWindowPos(iv, HWND_TOP,
+                              0, 0, cr.right, cr.bottom - STATUS_H,
+                              SWP_NOACTIVATE);
+                ShowWindow(iv, SW_SHOWNOACTIVATE);
+                SetFocus(iv);
+                InvalidateRect(iv, nullptr, FALSE);
+            }
+        };
+
+    // Video lightbox overlay — WS_CHILD Surface covering the full content area.
+    vid_viewer_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto vid_viewer = std::make_unique<tesseract::views::VideoViewerOverlay>();
+        vid_viewer_ = vid_viewer.get();
+        vid_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        vid_viewer_->set_video_player(msg_surface_->host().make_video_player());
+        vid_viewer_->set_repaint_requester([this] {
+            if (vid_viewer_surface_) vid_viewer_surface_->relayout();
+        });
+        vid_viewer_->on_close = [this] {
+            if (vid_viewer_surface_ && vid_viewer_surface_->hwnd())
+                ShowWindow(vid_viewer_surface_->hwnd(), SW_HIDE);
+        };
+        vid_viewer_surface_->set_root(std::move(vid_viewer));
+    }
+    if (HWND vv = vid_viewer_surface_->hwnd())
+        ShowWindow(vv, SW_HIDE);
+
+    message_list_view_->on_video_clicked =
+        [this](const tesseract::views::MessageListView::VideoHit& hit) {
+            if (!vid_viewer_ || !vid_viewer_surface_) return;
+            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                              hit.duration_ms, hit.natural_w, hit.natural_h);
+            RECT cr; GetClientRect(hwnd_, &cr);
+            constexpr int STATUS_H = 24;
+            if (HWND vv = vid_viewer_surface_->hwnd()) {
+                SetWindowPos(vv, HWND_TOP,
+                              0, 0, cr.right, cr.bottom - STATUS_H,
+                              SWP_NOACTIVATE);
+                ShowWindow(vv, SW_SHOWNOACTIVATE);
+                SetFocus(vv);
+                InvalidateRect(vv, nullptr, FALSE);
+            }
+            // Async byte fetch via PostMessage.
+            HWND target = hwnd_;
+            std::string src = hit.source_json;
+            std::thread([this, target, src = std::move(src)]() mutable {
+                auto bytes = client_.fetch_source_bytes(src);
+                auto* p = new VideoBytesPayload{ src, std::move(bytes) };
+                if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
+                                  reinterpret_cast<LPARAM>(p)))
+                    delete p;
+            }).detach();
+        };
+
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd, client_);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
     ShowWindow(login_view_->hwnd(), SW_HIDE);
@@ -1395,6 +1512,20 @@ void MainWindow::on_size(int w, int h) {
                       CHAT_X, msg_h, w - CHAT_X, compose_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    // Image viewer overlay — keep it sized to the full content area
+    // whenever it is visible so it tracks window resizes.
+    if (img_viewer_surface_ && img_viewer_surface_->hwnd()
+        && IsWindowVisible(img_viewer_surface_->hwnd())) {
+        SetWindowPos(img_viewer_surface_->hwnd(), HWND_TOP,
+                      0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
+    }
+    // Video viewer overlay — same full-area tracking.
+    if (vid_viewer_surface_ && vid_viewer_surface_->hwnd()
+        && IsWindowVisible(vid_viewer_surface_->hwnd())) {
+        SetWindowPos(vid_viewer_surface_->hwnd(), HWND_TOP,
+                      0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
+    }
+
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
 
@@ -2034,6 +2165,19 @@ tesseract::views::MessageRowData MainWindow::to_row_data(
             row.waveform     = v.waveform;
             break;
         }
+        case tesseract::EventType::Video: {
+            row.kind = Kind::Video;
+            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+            row.media_url         = vid.video_url;
+            row.video_thumb_url   = vid.thumbnail_url.empty()
+                                    ? ("thumb::" + ev.event_id)
+                                    : vid.thumbnail_url;
+            row.media_w           = static_cast<int>(vid.width);
+            row.media_h           = static_cast<int>(vid.height);
+            row.duration_ms       = vid.duration_ms;
+            row.has_filename_caption = !vid.filename.empty();
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -2063,6 +2207,17 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
                 (void)client_.fetch_source_bytes(src);
             }).detach();
         }
+    } else if (ev.type == tesseract::EventType::Video) {
+        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+        if (!vid.thumbnail_url.empty())
+            ensure_media_image(vid.thumbnail_url,
+                                tesseract::visual::kMaxInlineImageWidth,
+                                tesseract::visual::kMaxInlineImageHeight);
+        // No server thumbnail: record the event as seen so we don't retry.
+        // Win32 has no GStreamer/AVFoundation for first-frame extraction;
+        // the view shows a play-button placeholder over a grey card.
+        if (vid.thumbnail_url.empty() && !vid.video_url.empty())
+            video_thumb_in_flight_.insert(ev.event_id);
     }
     for (const auto& r : ev.reactions) {
         if (!r.source_json.empty())

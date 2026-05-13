@@ -394,8 +394,9 @@ TEST_CASE("EventType enum values are correct", "[types]") {
     CHECK(static_cast<int>(tesseract::EventType::File)      == 2);
     CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
     CHECK(static_cast<int>(tesseract::EventType::Voice)     == 4);
-    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 5);
-    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 6);
+    CHECK(static_cast<int>(tesseract::EventType::Video)     == 5);
+    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 6);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 7);
 }
 
 // ---------------------------------------------------------------------------

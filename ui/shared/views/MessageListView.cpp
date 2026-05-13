@@ -1,4 +1,5 @@
 #include "MessageListView.h"
+#include "media_utils.h"
 
 #include "tk/theme.h"
 #include <tesseract/settings.h>
@@ -105,16 +106,6 @@ std::string format_size(std::uint64_t bytes) {
     return std::to_string(bytes / (1024ull * 1024 * 1024)) + " GB";
 }
 
-// Inline-media draw size that fits inside (max_w, max_h) preserving
-// aspect ratio. Returns natural (clamped) media size when the sender
-// didn't supply intrinsic dimensions.
-tk::Size fit_media(float natural_w, float natural_h, float max_w, float max_h) {
-    if (natural_w <= 0 || natural_h <= 0) return { max_w, max_h * 0.5f };
-    float sx = max_w / natural_w;
-    float sy = max_h / natural_h;
-    float s  = std::min({ sx, sy, 1.0f });
-    return { natural_w * s, natural_h * s };
-}
 
 float body_text_max_width(float row_width) {
     return std::max(0.0f,
@@ -573,6 +564,18 @@ private:
                 return quote_h + kFileCardH;
             case MessageRowData::Kind::Voice:
                 return quote_h + kVoiceCardH;
+            case MessageRowData::Kind::Video: {
+                int vw = m.media_w, vh = m.media_h;
+                tk::Size sz = (vw > 0 && vh > 0)
+                    ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
+                    : tk::Size{ std::min(col_w, kImageMaxW),
+                                std::min(col_w, kImageMaxW) * 9.0f / 16.0f };
+                float h = sz.h;
+                if (m.has_filename_caption && !m.body.empty()) {
+                    h += 4.0f + measure_text_height(m.body, ctx, col_w);
+                }
+                return quote_h + h;
+            }
         }
         return quote_h;
     }
@@ -617,6 +620,12 @@ private:
                                          kImageMaxH);
                 tk::Rect r{ x, y, sz.w, sz.h };
                 paint_inline_media(m, ctx, r);
+                if (!m.event_id.empty()) {
+                    owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
+                        m.event_id, m.media_url, m.body,
+                        m.media_w, m.media_h, r
+                    };
+                }
                 float cursor = y + sz.h;
                 if (m.has_filename_caption && !m.body.empty()) {
                     cursor += 4.0f;
@@ -635,6 +644,10 @@ private:
                     owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
                         m.event_id, m.media_url, m.body, r
                     };
+                    owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
+                        m.event_id, m.media_url, m.body,
+                        m.media_w, m.media_h, r
+                    };
                 }
                 return y + side;
             }
@@ -649,6 +662,32 @@ private:
                 tk::Rect r{ x, y, card_w, kVoiceCardH };
                 paint_voice_card(m, ctx, r);
                 return y + kVoiceCardH;
+            }
+            case MessageRowData::Kind::Video: {
+                int vw = m.media_w, vh = m.media_h;
+                tk::Size sz = (vw > 0 && vh > 0)
+                    ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
+                    : tk::Size{ std::min(col_w, kImageMaxW),
+                                std::min(col_w, kImageMaxW) * 9.0f / 16.0f };
+                tk::Rect r{ x, y, sz.w, sz.h };
+                paint_video_card(m, ctx, r);
+                if (!m.event_id.empty()) {
+                    const std::string& thumb = m.video_thumb_url.empty()
+                        ? m.media_url : m.video_thumb_url;
+                    owner_.video_geom_[m.event_id] = MessageListView::VideoHit{
+                        m.event_id, m.media_url, thumb, "",
+                        m.media_w, m.media_h, m.duration_ms, r
+                    };
+                }
+                float cursor = y + sz.h;
+                if (m.has_filename_caption && !m.body.empty()) {
+                    cursor += 4.0f;
+                    float ch = paint_wrapped_text(m.body, ctx, x, cursor,
+                                                    col_w,
+                                                    ctx.theme.palette.text_primary);
+                    cursor += ch;
+                }
+                return cursor;
             }
         }
         return y;
@@ -948,6 +987,68 @@ private:
         }
     }
 
+    void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx,
+                          tk::Rect dst) const {
+        // Thumbnail (or placeholder).
+        const std::string& thumb_key = m.video_thumb_url.empty()
+            ? m.media_url : m.video_thumb_url;
+        const tk::Image* thumb = nullptr;
+        if (owner_.image_provider_ && !thumb_key.empty())
+            thumb = owner_.image_provider_(thumb_key);
+
+        if (thumb) {
+            ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
+            ctx.canvas.draw_image(*thumb, dst);
+            ctx.canvas.pop_clip();
+        } else {
+            ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
+            ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
+        }
+
+        // Centred play disc.
+        constexpr float kDiscD = 48.0f;
+        const float disc_cx = dst.x + dst.w * 0.5f;
+        const float disc_cy = dst.y + dst.h * 0.5f;
+        tk::Rect disc{ disc_cx - kDiscD * 0.5f, disc_cy - kDiscD * 0.5f,
+                       kDiscD, kDiscD };
+        ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
+                                     tk::Color{ 0, 0, 0, 120 });
+
+        // Play triangle (same stacked-rect technique as voice card).
+        const float tri_h = kDiscD * 0.45f;
+        const float tri_w = kDiscD * 0.35f;
+        const float tri_x = disc.x + (kDiscD - tri_w) * 0.5f + 2.0f;
+        const float tri_y = disc.y + (kDiscD - tri_h) * 0.5f;
+        constexpr int steps = 8;
+        for (int i = 0; i < steps; ++i) {
+            const float t     = static_cast<float>(i) / static_cast<float>(steps - 1);
+            const float row_h = tri_h / static_cast<float>(steps);
+            const float row_w = tri_w * (1.0f - t);
+            ctx.canvas.fill_rect({ tri_x, tri_y + i * row_h, row_w, row_h },
+                                  tk::Color{ 255, 255, 255, 230 });
+        }
+
+        // Duration badge at bottom-right (only when known).
+        if (m.duration_ms > 0) {
+            std::string label = format_mmss(m.duration_ms);
+            tk::TextStyle ts{}; ts.role = tk::FontRole::Timestamp;
+            auto lo = ctx.factory.build_text(label, ts);
+            if (lo) {
+                tk::Size lsz = lo->measure();
+                constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
+                float bx = dst.x + dst.w - lsz.w - kBadgePadX * 2 - 4.0f;
+                float by = dst.y + dst.h - lsz.h - kBadgePadY * 2 - 4.0f;
+                tk::Rect badge{ bx, by,
+                                lsz.w + kBadgePadX * 2,
+                                lsz.h + kBadgePadY * 2 };
+                ctx.canvas.fill_rounded_rect(badge, 4.0f,
+                                             tk::Color{ 0, 0, 0, 140 });
+                ctx.canvas.draw_text(*lo, { bx + kBadgePadX, by + kBadgePadY },
+                                     tk::Color{ 255, 255, 255, 230 });
+            }
+        }
+    }
+
     MessageListView& owner_;
 };
 
@@ -970,6 +1071,32 @@ MessageListView::sticker_hit_at(tk::Point world) const {
     // paint pass. We linearly search — a sticker viewport rarely exceeds
     // a handful of visible rows so a hash lookup by point isn't worth it.
     for (const auto& [event_id, hit] : sticker_geom_) {
+        if (world.x >= hit.world_rect.x &&
+            world.y >= hit.world_rect.y &&
+            world.x <  hit.world_rect.x + hit.world_rect.w &&
+            world.y <  hit.world_rect.y + hit.world_rect.h) {
+            return hit;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<MessageListView::ImageHit>
+MessageListView::image_hit_at(tk::Point world) const {
+    for (const auto& [eid, hit] : image_geom_) {
+        if (world.x >= hit.world_rect.x &&
+            world.y >= hit.world_rect.y &&
+            world.x <  hit.world_rect.x + hit.world_rect.w &&
+            world.y <  hit.world_rect.y + hit.world_rect.h) {
+            return hit;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<MessageListView::VideoHit>
+MessageListView::video_hit_at(tk::Point world) const {
+    for (const auto& [eid, hit] : video_geom_) {
         if (world.x >= hit.world_rect.x &&
             world.y >= hit.world_rect.y &&
             world.x <  hit.world_rect.x + hit.world_rect.w &&
@@ -1176,15 +1303,6 @@ void MessageListView::handle_voice_play_click(const MessageRowData& row) {
     on_audio_progress();
 }
 
-namespace {
-
-bool rect_contains(const tk::Rect& r, tk::Point p) {
-    return p.x >= r.x && p.y >= r.y &&
-           p.x <  r.x + r.w && p.y <  r.y + r.h;
-}
-
-} // namespace
-
 // Resolve which chip (if any) is under a widget-local point. `local`
 // is in widget-local coordinates (relative to MessageListView::bounds_);
 // the cached geometry is in world coordinates, so we add the widget
@@ -1335,6 +1453,31 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         }
     }
 
+    // Video thumbnail click-to-view hit-test (before image so it wins when
+    // video_geom_ and image_geom_ happen to overlap for the same event_id).
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        for (const auto& [eid, hit] : video_geom_) {
+            if (rect_contains(hit.world_rect, world)) {
+                press_video_     = true;
+                press_video_eid_ = eid;
+                return true;
+            }
+        }
+    }
+
+    // Image / sticker click-to-view hit-test.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        for (const auto& [eid, hit] : image_geom_) {
+            if (rect_contains(hit.world_rect, world)) {
+                press_image_     = true;
+                press_image_eid_ = eid;
+                return true;
+            }
+        }
+    }
+
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
                                  local, chip_idx);
@@ -1458,6 +1601,40 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
         return;
     }
 
+    if (press_video_) {
+        bool fire = inside_self && !press_video_eid_.empty();
+        std::string eid = std::move(press_video_eid_);
+        press_video_     = false;
+        press_video_eid_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            auto it = video_geom_.find(eid);
+            if (it != video_geom_.end() &&
+                rect_contains(it->second.world_rect, world) &&
+                on_video_clicked) {
+                on_video_clicked(it->second);
+            }
+        }
+        return;
+    }
+
+    if (press_image_) {
+        bool fire = inside_self && !press_image_eid_.empty();
+        std::string eid = std::move(press_image_eid_);
+        press_image_     = false;
+        press_image_eid_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            auto it = image_geom_.find(eid);
+            if (it != image_geom_.end() &&
+                rect_contains(it->second.world_rect, world) &&
+                on_image_clicked) {
+                on_image_clicked(it->second);
+            }
+        }
+        return;
+    }
+
     if (press_target_ == HoverTarget::None) {
         tk::ListView::on_pointer_up(local, inside_self);
         return;
@@ -1498,9 +1675,11 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 }
 
 void MessageListView::paint(tk::PaintCtx& ctx) {
-    // Sticker, voice, and quote rects are rebuilt per-paint by Adapter::paint_row.
+    // Sticker, voice, quote, and video rects are rebuilt per-paint by Adapter::paint_row.
     // Clear here so entries scrolled offscreen don't linger.
     sticker_geom_.clear();
+    image_geom_.clear();
+    video_geom_.clear();
     voice_card_geom_.clear();
     quote_block_geom_.clear();
     tk::ListView::paint(ctx);

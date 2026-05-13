@@ -659,6 +659,34 @@ Factories factories(Backend& b) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+//  make_image_from_bgra — create tk::Image from raw BGRA pixel buffer
+// ─────────────────────────────────────────────────────────────────────────
+
+std::unique_ptr<Image> make_image_from_bgra(Backend& b,
+                                             const std::uint8_t* pixels,
+                                             int w, int h) {
+    if (!pixels || w <= 0 || h <= 0) return nullptr;
+    Backend::Impl& impl = b.impl();
+    if (!impl.wic) return nullptr;
+
+    const UINT stride = static_cast<UINT>(w) * 4u;
+    const UINT size   = stride * static_cast<UINT>(h);
+
+    // IWICImagingFactory::CreateBitmapFromMemory copies the pixel data into
+    // a new IWICBitmap, so the caller's buffer may be freed immediately.
+    ComPtr<IWICBitmap> bmp;
+    HRESULT hr = impl.wic->CreateBitmapFromMemory(
+        static_cast<UINT>(w), static_cast<UINT>(h),
+        GUID_WICPixelFormat32bppBGRA,
+        stride, size,
+        const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)),
+        bmp.GetAddressOf());
+    if (FAILED(hr) || !bmp) return nullptr;
+
+    return std::make_unique<D2DImage>(std::move(bmp), w, h);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 //  decode_animation — multi-frame WIC decode (GIF/APNG/animated WebP)
 // ─────────────────────────────────────────────────────────────────────────
 

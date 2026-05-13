@@ -5,7 +5,7 @@
 
 namespace tesseract {
 
-enum class EventType { Text, Image, File, Sticker, Voice, Redacted, Unhandled };
+enum class EventType { Text, Image, File, Sticker, Voice, Video, Redacted, Unhandled };
 
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
@@ -110,6 +110,24 @@ struct VoiceEvent : public Event {
     std::vector<uint16_t> waveform;    // MSC1767 amplitudes, 0..=1024
 
     VoiceEvent() { type = EventType::Voice; }
+};
+
+/// `m.video` message. `video_url` carries the full JSON-serialised
+/// `MediaSource` (plain mxc:// or encrypted), suitable for
+/// `Client::fetch_source_bytes`. `thumbnail_url` carries the thumbnail
+/// MediaSource JSON; empty when the server omits it (client generates one
+/// from the first frame). `filename` is the MSC2530 caption filename;
+/// empty → no caption below the card.
+struct VideoEvent : public Event {
+    std::string video_url;       // JSON MediaSource for fetch_source_bytes
+    std::string thumbnail_url;   // thumbnail MediaSource JSON; empty when absent
+    std::string mime_type;       // e.g. "video/mp4", "video/webm"
+    uint64_t    width       = 0;
+    uint64_t    height      = 0;
+    uint64_t    duration_ms = 0;
+    std::string filename;        // MSC2530 caption filename; empty → no caption
+
+    VideoEvent() { type = EventType::Video; }
 };
 
 /// Fallback for message types we don't handle yet (reactions, polls, etc.)

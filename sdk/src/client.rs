@@ -2453,10 +2453,13 @@ async fn timeline_item_to_ffi(
             file_name:         String::new(),
             file_size:         0u64,
             image_filename:    String::new(),
-            audio_source_json: String::new(),
-            audio_duration_ms: 0u64,
-            audio_waveform:    Vec::new(),
-            audio_mime:        String::new(),
+            audio_source_json:    String::new(),
+            audio_duration_ms:    0u64,
+            audio_waveform:       Vec::new(),
+            audio_mime:           String::new(),
+            video_thumbnail_json: String::new(),
+            video_duration_ms:    0u64,
+            video_mime:           String::new(),
             reactions:         Vec::new(),
             // Receipts on a tombstone are meaningless — the original event
             // is gone; the redacted placeholder doesn't carry a reading
@@ -2516,10 +2519,13 @@ async fn timeline_item_to_ffi(
             file_name:         String::new(),
             file_size:         0u64,
             image_filename:    String::new(),
-            audio_source_json: String::new(),
-            audio_duration_ms: 0u64,
-            audio_waveform:    Vec::new(),
-            audio_mime:        String::new(),
+            audio_source_json:    String::new(),
+            audio_duration_ms:    0u64,
+            audio_waveform:       Vec::new(),
+            audio_mime:           String::new(),
+            video_thumbnail_json: String::new(),
+            video_duration_ms:    0u64,
+            video_mime:           String::new(),
             reactions,
             read_receipts,
             in_reply_to_id:          String::new(),
@@ -2536,22 +2542,15 @@ async fn timeline_item_to_ffi(
 
     let (body, msg_type, source_json, width, height,
          file_json, file_name, file_size, image_filename,
-         audio_source_json, audio_duration_ms, audio_waveform, audio_mime) =
+         audio_source_json, audio_duration_ms, audio_waveform, audio_mime,
+         video_thumbnail_json, video_duration_ms, video_mime) =
         match msg_content.msgtype() {
             MessageType::Text(t) => (
-                t.body.clone(),
-                "m.text".to_owned(),
-                String::new(),
-                0u64,
-                0u64,
-                String::new(),
-                String::new(),
-                0u64,
-                String::new(),
-                String::new(),
-                0u64,
-                Vec::<u16>::new(),
-                String::new(),
+                t.body.clone(), "m.text".to_owned(),
+                String::new(), 0u64, 0u64,
+                String::new(), String::new(), 0u64, String::new(),
+                String::new(), 0u64, Vec::<u16>::new(), String::new(),
+                String::new(), 0u64, String::new(),
             ),
             MessageType::Image(i) => {
                 // Plain → plain mxc URI string; encrypted → full MediaSource
@@ -2574,7 +2573,8 @@ async fn timeline_item_to_ffi(
                 let img_filename = i.filename.clone().unwrap_or_default();
                 (i.body.clone(), "m.image".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, img_filename,
-                 String::new(), 0u64, Vec::new(), String::new())
+                 String::new(), 0u64, Vec::new(), String::new(),
+                 String::new(), 0u64, String::new())
             }
             MessageType::File(f) => {
                 let file_str = match &f.source {
@@ -2591,7 +2591,8 @@ async fn timeline_item_to_ffi(
                     .unwrap_or(0u64);
                 (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                  file_str, name, size, String::new(),
-                 String::new(), 0u64, Vec::new(), String::new())
+                 String::new(), 0u64, Vec::new(), String::new(),
+                 String::new(), 0u64, String::new())
             }
             // MSC3245: voice messages are `m.audio` events tagged with
             // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
@@ -2617,7 +2618,8 @@ async fn timeline_item_to_ffi(
                     };
                     (a.body.clone(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
                      String::new(), String::new(), 0u64, String::new(),
-                     source_str, duration_ms, waveform, info_mime)
+                     source_str, duration_ms, waveform, info_mime,
+                     String::new(), 0u64, String::new())
                 } else {
                     let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
                     let size = a.info.as_deref()
@@ -2626,8 +2628,36 @@ async fn timeline_item_to_ffi(
                         .unwrap_or(0u64);
                     (a.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                      source_str, name, size, String::new(),
-                     String::new(), 0u64, Vec::new(), String::new())
+                     String::new(), 0u64, Vec::new(), String::new(),
+                     String::new(), 0u64, String::new())
                 }
+            }
+            MessageType::Video(v) => {
+                let source_str = match &v.source {
+                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
+                        serde_json::to_string(&v.source).unwrap_or_default(),
+                };
+                let (w, h, dur_ms, mime, thumb_json) = v.info.as_ref().map(|info| {
+                    let w    = info.width   .map(u64::from).unwrap_or(0u64);
+                    let h    = info.height  .map(u64::from).unwrap_or(0u64);
+                    let dur  = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0u64);
+                    let mime = info.mimetype.clone().unwrap_or_default();
+                    let thumb = info.thumbnail_source.as_ref()
+                        .map(|ts| match ts {
+                            matrix_sdk::ruma::events::room::MediaSource::Plain(uri) =>
+                                uri.to_string(),
+                            matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
+                                serde_json::to_string(ts).unwrap_or_default(),
+                        })
+                        .unwrap_or_default();
+                    (w, h, dur, mime, thumb)
+                }).unwrap_or_default();
+                let vid_filename = v.filename.clone().unwrap_or_default();
+                (v.body.clone(), "m.video".to_owned(), source_str, w, h,
+                 String::new(), String::new(), 0u64, vid_filename,
+                 String::new(), 0u64, Vec::new(), String::new(),
+                 thumb_json, dur_ms, mime)
             }
             _ => return None,
         };
@@ -2667,6 +2697,7 @@ async fn timeline_item_to_ffi(
                                     MessageType::Image(_) => "(image)".to_owned(),
                                     MessageType::File(_)  => "(file)".to_owned(),
                                     MessageType::Audio(_) => "(voice)".to_owned(),
+                                    MessageType::Video(_) => "(video)".to_owned(),
                                     _                     => "(message)".to_owned(),
                                 }
                             }
@@ -2711,6 +2742,9 @@ async fn timeline_item_to_ffi(
         audio_duration_ms,
         audio_waveform,
         audio_mime,
+        video_thumbnail_json,
+        video_duration_ms,
+        video_mime,
         reactions,
         read_receipts,
         in_reply_to_id,

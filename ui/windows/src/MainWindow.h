@@ -21,6 +21,8 @@
 #include "views/ComposeBar.h"
 #include "views/EmojiPicker.h"
 #include "views/format.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
@@ -53,6 +55,7 @@ constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
 constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
 constexpr UINT WM_TESSERACT_NOTIFY_CLICK     = WM_APP + 18;
+constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 
 namespace win32 {
 
@@ -269,6 +272,15 @@ private:
     std::unique_ptr<tk::win32::Surface>     sticker_picker_surface_;
     tesseract::views::StickerPicker*         sticker_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+
+    // Full-window image/sticker lightbox overlay (WS_CHILD of hwnd_).
+    std::unique_ptr<tk::win32::Surface>      img_viewer_surface_;
+    tesseract::views::ImageViewerOverlay*    img_viewer_ = nullptr;  // borrowed
+
+    // Full-window video lightbox overlay (WS_CHILD of hwnd_).
+    std::unique_ptr<tk::win32::Surface>      vid_viewer_surface_;
+    tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
+
     HWND      hStatus_     = nullptr;
 
     // Recovery banner — shared widget on a tk::win32::Surface. Key
@@ -315,6 +327,7 @@ private:
     // Voice-message source tokens already prefetched (or in flight). The
     // SDK media cache owns the bytes; this set just dedupes worker spawns.
     std::unordered_set<std::string> voice_prefetched_;
+    std::unordered_set<std::string> video_thumb_in_flight_;
 
     // Replied-to event IDs for which we have already called
     // fetch_reply_details this subscription session. Cleared on room switch.

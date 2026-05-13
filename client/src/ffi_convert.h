@@ -174,6 +174,19 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         return ev;
     }
 
+    if (msg_type == "m.video") {
+        auto ev = std::make_unique<VideoEvent>();
+        assign_base(*ev, e);
+        ev->video_url     = std::string(e.source_json);
+        ev->thumbnail_url = std::string(e.video_thumbnail_json);
+        ev->mime_type     = std::string(e.video_mime);
+        ev->width         = e.width;
+        ev->height        = e.height;
+        ev->duration_ms   = e.video_duration_ms;
+        ev->filename      = std::string(e.image_filename);
+        return ev;
+    }
+
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);

@@ -441,6 +441,87 @@ MainWindow::MainWindow(QWidget* parent)
         menu.exec(msgSurface_->mapToGlobal(pos));
     });
 
+    // Image / sticker lightbox overlay — full-window surface that paints a
+    // dark backdrop + the selected image. Shown on `on_image_clicked`,
+    // hidden on `on_close` or Escape. Host is a bare QWidget that we
+    // manually position over `mainContent_`; it is not in any layout.
+    {
+        auto viewer_owner = std::make_unique<tesseract::views::ImageViewerOverlay>();
+        imgViewer_        = viewer_owner.get();
+        imgViewerHost_    = new QWidget(mainContent_);
+        imgViewerHost_->setGeometry(mainContent_->rect());
+        imgViewerHost_->hide();
+        imgViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), imgViewerHost_);
+        auto* ovLayout = new QVBoxLayout(imgViewerHost_);
+        ovLayout->setContentsMargins(0, 0, 0, 0);
+        ovLayout->addWidget(imgViewerSurface_);
+        imgViewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto ait = tk_anim_images_.find(url);
+                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
+                    return ait->second.frames[ait->second.current].get();
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        imgViewer_->on_close = [this] { imgViewerHost_->hide(); };
+        imgViewerSurface_->set_root(std::move(viewer_owner));
+    }
+
+    messageListView_->on_image_clicked =
+        [this](const tesseract::views::MessageListView::ImageHit& hit) {
+            if (!imgViewer_ || !imgViewerHost_) return;
+            imgViewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
+            imgViewerHost_->setGeometry(mainContent_->rect());
+            imgViewerHost_->raise();
+            imgViewerHost_->show();
+            imgViewerHost_->setFocus();
+        };
+
+    // Video lightbox overlay — full-window surface for m.video playback.
+    {
+        auto viewer_owner = std::make_unique<tesseract::views::VideoViewerOverlay>();
+        vidViewer_        = viewer_owner.get();
+        vidViewerHost_    = new QWidget(mainContent_);
+        vidViewerHost_->setGeometry(mainContent_->rect());
+        vidViewerHost_->hide();
+        vidViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), vidViewerHost_);
+        auto* ovLayout = new QVBoxLayout(vidViewerHost_);
+        ovLayout->setContentsMargins(0, 0, 0, 0);
+        ovLayout->addWidget(vidViewerSurface_);
+        vidViewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        vidViewer_->set_video_player(msgSurface_->host().make_video_player());
+        vidViewer_->set_repaint_requester([this] {
+            if (vidViewerSurface_) vidViewerSurface_->relayout();
+        });
+        vidViewer_->on_close = [this] { vidViewerHost_->hide(); };
+        vidViewerSurface_->set_root(std::move(viewer_owner));
+    }
+
+    messageListView_->on_video_clicked =
+        [this](const tesseract::views::MessageListView::VideoHit& hit) {
+            if (!vidViewer_ || !vidViewerHost_) return;
+            vidViewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                             hit.duration_ms, hit.natural_w, hit.natural_h);
+            vidViewerHost_->setGeometry(mainContent_->rect());
+            vidViewerHost_->raise();
+            vidViewerHost_->show();
+            vidViewerHost_->setFocus();
+            // Async byte fetch on a worker thread.
+            std::string src = hit.source_json;
+            auto* runner = QRunnable::create([this, src = std::move(src)]() {
+                auto bytes = client_.fetch_source_bytes(src);
+                QMetaObject::invokeMethod(this, [this, bytes = std::move(bytes)]() mutable {
+                    if (vidViewer_)
+                        vidViewer_->load_bytes(bytes.data(), bytes.size());
+                }, Qt::QueuedConnection);
+            });
+            QThreadPool::globalInstance()->start(runner);
+        };
+
     // Compose bar — shared widget on a tk::qt6::Surface. The text input
     // is a NativeTextArea overlaid on the shared ComposeBar's
     // text_area_rect; the emoji + send buttons paint into the toolkit.
@@ -777,6 +858,22 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
         updateTopicElision();
     }
     return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* ev) {
+    if (ev->key() == Qt::Key_Escape) {
+        if (vidViewer_ && vidViewer_->is_open()) { vidViewer_->close(); ev->accept(); return; }
+        if (imgViewer_ && imgViewer_->is_open()) { imgViewer_->close(); ev->accept(); return; }
+    }
+    QMainWindow::keyPressEvent(ev);
+}
+
+void MainWindow::resizeEvent(QResizeEvent* ev) {
+    QMainWindow::resizeEvent(ev);
+    if (imgViewerHost_ && mainContent_)
+        imgViewerHost_->setGeometry(mainContent_->rect());
+    if (vidViewerHost_ && mainContent_)
+        vidViewerHost_->setGeometry(mainContent_->rect());
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,6 +1485,22 @@ tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& e
             row.waveform     = v.waveform;
             break;
         }
+        case tesseract::EventType::Video: {
+            row.kind = Kind::Video;
+            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+            row.media_url         = vid.video_url;
+            // Use server thumbnail when available; otherwise fall back to the
+            // client-generated key so the image provider will find the frame
+            // once ensureRowMedia() finishes generating it.
+            row.video_thumb_url   = vid.thumbnail_url.empty()
+                                    ? ("thumb::" + ev.event_id)
+                                    : vid.thumbnail_url;
+            row.media_w           = static_cast<int>(vid.width);
+            row.media_h           = static_cast<int>(vid.height);
+            row.duration_ms       = vid.duration_ms;
+            row.has_filename_caption = !vid.filename.empty();
+            break;
+        }
         case tesseract::EventType::Redacted:
             row.kind = Kind::Redacted;
             break;
@@ -1424,6 +1537,59 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
             auto* runner = QRunnable::create([this, src = std::move(src)]() {
                 (void)client_.fetch_source_bytes(src);
             });
+            QThreadPool::globalInstance()->start(runner);
+        }
+    } else if (ev.type == tesseract::EventType::Video) {
+        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+        // Fetch server thumbnail when available.
+        if (!vid.thumbnail_url.empty())
+            ensureMediaImage(vid.thumbnail_url, kMaxImageWidth, kMaxImageHeight);
+        // Client-side first-frame generation when no server thumbnail.
+        if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
+            video_thumb_in_flight_.insert(ev.event_id).second) {
+            const std::string eid = ev.event_id;
+            std::string src = vid.video_url;
+            auto* runner = QRunnable::create(
+                [this, eid, src = std::move(src)]() {
+                    auto bytes = client_.fetch_source_bytes(src);
+                    if (bytes.empty()) return;
+                    // Decode the first frame on the UI thread — Qt multimedia
+                    // objects (QMediaPlayer, QVideoSink) must live there.
+                    QMetaObject::invokeMethod(this,
+                        [this, eid, bytes = std::move(bytes)]() mutable {
+                            const std::string key = "thumb::" + eid;
+                            if (tk_images_.count(key)) return;
+                            auto* player = new QMediaPlayer(this);
+                            auto* sink   = new QVideoSink(player);
+                            player->setVideoSink(sink);
+                            auto* buf = new QBuffer(player);
+                            QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                                          static_cast<qsizetype>(bytes.size()));
+                            buf->setData(ba);
+                            buf->open(QIODevice::ReadOnly);
+                            player->setSourceDevice(buf);
+                            QObject::connect(
+                                sink, &QVideoSink::videoFrameChanged,
+                                sink, [this, key, player](const QVideoFrame& frame) {
+                                    if (!frame.isValid()) return;
+                                    player->stop();
+                                    player->deleteLater();
+                                    if (tk_images_.count(key)) return;
+                                    QImage img = frame.toImage(QImage::Format_ARGB32);
+                                    if (img.isNull()) return;
+                                    QByteArray enc;
+                                    QBuffer encbuf(&enc);
+                                    encbuf.open(QIODevice::WriteOnly);
+                                    img.save(&encbuf, "JPEG", 85);
+                                    if (!enc.isEmpty())
+                                        emit mediaBytesLoaded_(
+                                            QString::fromStdString(key),
+                                            static_cast<int>(MediaKind::MediaImage),
+                                            enc);
+                                });
+                            player->play();
+                        }, Qt::QueuedConnection);
+                });
             QThreadPool::globalInstance()->start(runner);
         }
     }

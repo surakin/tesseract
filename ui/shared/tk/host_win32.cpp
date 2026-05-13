@@ -498,6 +498,11 @@ private:
 std::unique_ptr<tk::AudioPlayer>
 make_audio_player_win32(std::function<void(std::function<void()>)> post);
 
+// Defined in video_win32.cpp.
+std::unique_ptr<tk::VideoPlayer>
+make_video_player_win32(std::function<void(std::function<void()>)> post,
+                        tk::d2d::Backend* backend);
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
@@ -542,6 +547,11 @@ public:
     std::unique_ptr<AudioPlayer> make_audio_player() override {
         return make_audio_player_win32(
             [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
+    }
+    std::unique_ptr<VideoPlayer> make_video_player() override {
+        return make_video_player_win32(
+            [this](std::function<void()> fn) { post_to_ui(std::move(fn)); },
+            &backend_singleton());
     }
 
     EncodedImage encode_for_send(const std::uint8_t* data,

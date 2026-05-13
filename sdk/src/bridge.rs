@@ -70,6 +70,9 @@ pub mod ffi {
     ///                   audio_mime are populated (MSC3245 voice messages).
     ///                   Non-voice `m.audio` events are converted to "m.file"
     ///                   on the Rust side so the file-card path renders them.
+    /// For `m.video`   → source_json (video MediaSource), width, height,
+    ///                   image_filename (MSC2530 caption filename),
+    ///                   video_thumbnail_json, video_duration_ms, video_mime.
     /// Reply fields   → in_reply_to_id is non-empty when this event is a reply.
     ///                   in_reply_to_sender_name and in_reply_to_body carry the
     ///                   replied-to event's display name and body snippet (populated
@@ -112,6 +115,13 @@ pub mod ffi {
         /// MIME type advertised by the sender (typically "audio/ogg"). May be
         /// empty when missing from `info.mimetype`.
         audio_mime:        String,
+        /// Thumbnail MediaSource JSON for `m.video` events (plain mxc:// or
+        /// encrypted JSON). Empty when the server omits a thumbnail.
+        video_thumbnail_json: String,
+        /// Duration of the video in milliseconds. 0 when not provided.
+        video_duration_ms:    u64,
+        /// MIME type of the video (e.g. "video/mp4"). May be empty.
+        video_mime:           String,
         /// Aggregated reactions, grouped by key. May be empty.
         reactions:         Vec<ReactionGroup>,
         /// Users (other than the current user) whose latest read receipt

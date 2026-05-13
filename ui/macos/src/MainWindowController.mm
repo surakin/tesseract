@@ -15,11 +15,14 @@
 #include "tk/host_macos.h"
 #include "tk/theme.h"
 #include "views/ComposeBar.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
 
 #include <ImageIO/ImageIO.h>
+#import <AVFoundation/AVFoundation.h>
 
 // Animated WebP properties landed in macOS 11 SDK; define them ourselves
 // when building against an older SDK so we can still attempt WebP delay
@@ -337,6 +340,18 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
     // fetch_reply_details this subscription session. Cleared on room switch.
     std::set<std::string>                            _replyDetailsRequested;
 
+    // Image/sticker lightbox overlay.
+    std::unique_ptr<tk::macos::Surface>              _imgViewerSurface;
+    tesseract::views::ImageViewerOverlay*            _imgViewer;  // borrowed
+    NSView*                                          _imgViewerView;
+    id                                               _escapeMonitor;
+
+    // Video lightbox overlay.
+    std::unique_ptr<tk::macos::Surface>              _vidViewerSurface;
+    tesseract::views::VideoViewerOverlay*            _vidViewer;  // borrowed
+    NSView*                                          _vidViewerView;
+    NSMutableSet*                                    _videoThumbInFlight;
+
     // Right-click context menu sticker state.
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
@@ -376,6 +391,7 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
     self = [super initWithWindow:window];
     if (!self) return nil;
 
+    _videoThumbInFlight = [NSMutableSet set];
     _bridge = std::make_unique<EventBridge>(self);
     [self _buildChrome];
     return self;
@@ -621,6 +637,38 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
             if (s->_currentRoomId.empty()) return;
             [s requestMoreHistoryForRoom:s->_currentRoomId];
         };
+        _messageListView->on_image_clicked =
+            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_imgViewer || !s->_imgViewerView) return;
+                s->_imgViewer->open(hit.media_url, hit.body,
+                                    hit.natural_w, hit.natural_h);
+                [s->_imgViewerView setHidden:NO];
+                [s->_imgViewerView.window makeFirstResponder:s->_imgViewerView];
+            };
+        _messageListView->on_video_clicked =
+            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit) {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_vidViewer || !s->_vidViewerView) return;
+                s->_vidViewer->open(hit.source_json, hit.thumbnail_url,
+                                    hit.mime_type, hit.duration_ms,
+                                    hit.natural_w, hit.natural_h);
+                [s->_vidViewerView setHidden:NO];
+                [s->_vidViewerView.window makeFirstResponder:s->_vidViewerView];
+                // Async byte fetch.
+                tesseract::Client* clientPtr = &s->_client;
+                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+                std::string src = hit.source_json;
+                std::thread([clientPtr, weakSelf, src, bytes_holder]() {
+                    *bytes_holder = clientPtr->fetch_source_bytes(src);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s2 = weakSelf;
+                        if (!s2 || !s2->_vidViewer) return;
+                        s2->_vidViewer->load_bytes(bytes_holder->data(),
+                                                    bytes_holder->size());
+                    });
+                }).detach();
+            };
     }
     // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
     if (auto player = _msgSurface->host().make_audio_player()) {
@@ -907,10 +955,101 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
         [_loginView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
     ]];
     _splitView.hidden = YES;
+
+    // ── Image / sticker lightbox overlay ─────────────────────────────
+    {
+        __weak MainWindowController* weakSelf = self;
+        _imgViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        auto img_view = std::make_unique<tesseract::views::ImageViewerOverlay>();
+        _imgViewer = img_view.get();
+        _imgViewer->set_image_provider(
+            [weakSelf](const std::string& url) -> const tk::Image* {
+                MainWindowController* s = weakSelf;
+                if (!s) return nullptr;
+                auto ait = s->_tkAnimImages.find(url);
+                if (ait != s->_tkAnimImages.end() && !ait->second.frames.empty())
+                    return ait->second.frames[ait->second.current].get();
+                auto it = s->_tkImages.find(url);
+                return it == s->_tkImages.end() ? nullptr : it->second.get();
+            });
+        _imgViewer->on_close = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s->_imgViewerView setHidden:YES];
+        };
+        _imgViewerSurface->set_root(std::move(img_view));
+
+        _imgViewerView = (__bridge NSView*)_imgViewerSurface->view_handle();
+        _imgViewerView.translatesAutoresizingMaskIntoConstraints = NO;
+        _imgViewerView.hidden = YES;
+        [content addSubview:_imgViewerView];
+        [NSLayoutConstraint activateConstraints:@[
+            [_imgViewerView.topAnchor      constraintEqualToAnchor:content.topAnchor],
+            [_imgViewerView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
+            [_imgViewerView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+            [_imgViewerView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
+        ]];
+
+        // Escape key monitor: close the overlay when it's open.
+        _escapeMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                                               handler:^(NSEvent* event) {
+            MainWindowController* s = weakSelf;
+            if (s && event.keyCode == 53) {  // Escape
+                if (s->_vidViewer && s->_vidViewer->is_open()) {
+                    s->_vidViewer->close();
+                    return (NSEvent*)nil;
+                }
+                if (s->_imgViewer && s->_imgViewer->is_open()) {
+                    s->_imgViewer->close();
+                    return (NSEvent*)nil;
+                }
+            }
+            return event;
+        }];
+    }
+
+    // ── Video lightbox overlay ────────────────────────────────────────
+    {
+        __weak MainWindowController* weakSelf = self;
+        _vidViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        auto vid_view = std::make_unique<tesseract::views::VideoViewerOverlay>();
+        _vidViewer = vid_view.get();
+        _vidViewer->set_image_provider(
+            [weakSelf](const std::string& url) -> const tk::Image* {
+                MainWindowController* s = weakSelf;
+                if (!s) return nullptr;
+                auto it = s->_tkImages.find(url);
+                return it == s->_tkImages.end() ? nullptr : it->second.get();
+            });
+        _vidViewer->set_video_player(_msgSurface->host().make_video_player());
+        _vidViewer->set_repaint_requester([weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_vidViewerSurface) s->_vidViewerSurface->relayout();
+        });
+        _vidViewer->on_close = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s->_vidViewerView setHidden:YES];
+        };
+        _vidViewerSurface->set_root(std::move(vid_view));
+
+        _vidViewerView = (__bridge NSView*)_vidViewerSurface->view_handle();
+        _vidViewerView.translatesAutoresizingMaskIntoConstraints = NO;
+        _vidViewerView.hidden = YES;
+        [content addSubview:_vidViewerView];
+        [NSLayoutConstraint activateConstraints:@[
+            [_vidViewerView.topAnchor      constraintEqualToAnchor:content.topAnchor],
+            [_vidViewerView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
+            [_vidViewerView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+            [_vidViewerView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
+        ]];
+    }
 }
 
 - (void)dealloc {
     [self stopSync];
+    if (_escapeMonitor) {
+        [NSEvent removeMonitor:_escapeMonitor];
+        _escapeMonitor = nil;
+    }
 }
 
 - (void)stopSync {
@@ -1666,6 +1805,19 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
             row.waveform     = v.waveform;
             break;
         }
+        case tesseract::EventType::Video: {
+            row.kind = Kind::Video;
+            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+            row.media_url         = vid.video_url;
+            row.video_thumb_url   = vid.thumbnail_url.empty()
+                                    ? ("thumb::" + ev.event_id)
+                                    : vid.thumbnail_url;
+            row.media_w           = static_cast<int>(vid.width);
+            row.media_h           = static_cast<int>(vid.height);
+            row.duration_ms       = vid.duration_ms;
+            row.has_filename_caption = !vid.filename.empty();
+            break;
+        }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
         case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
     }
@@ -1697,6 +1849,58 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                 (void)_client.fetch_source_bytes(src);
             });
+        }
+    } else if (ev.type == tesseract::EventType::Video) {
+        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+        if (!vid.thumbnail_url.empty())
+            [self _ensureMediaImage:vid.thumbnail_url
+                                cap:tesseract::visual::kMaxInlineImageWidth];
+        // Client-side first-frame via AVAssetImageGenerator when no server thumbnail.
+        if (vid.thumbnail_url.empty() && !vid.video_url.empty()) {
+            NSString* eidStr = [NSString stringWithUTF8String:ev.event_id.c_str()];
+            if (![_videoThumbInFlight containsObject:eidStr]) {
+                [_videoThumbInFlight addObject:eidStr];
+                tesseract::Client* clientPtr = &_client;
+                __weak MainWindowController* weakSelf = self;
+                std::string src = vid.video_url;
+                std::string eid = ev.event_id;
+                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+                std::thread([clientPtr, weakSelf, src, eid, bytes_holder]() {
+                    *bytes_holder = clientPtr->fetch_source_bytes(src);
+                    if (bytes_holder->empty()) return;
+                    // Write bytes to a temp file for AVURLAsset.
+                    NSString* tmpDir = NSTemporaryDirectory();
+                    NSString* eidNS = [NSString stringWithUTF8String:eid.c_str()];
+                    NSString* tmpPath = [tmpDir stringByAppendingPathComponent:
+                                         [NSString stringWithFormat:@"vtmp_%@.mp4", eidNS]];
+                    NSData* data = [NSData dataWithBytes:bytes_holder->data()
+                                                  length:bytes_holder->size()];
+                    [data writeToFile:tmpPath atomically:YES];
+                    NSURL* url = [NSURL fileURLWithPath:tmpPath];
+                    AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+                    AVAssetImageGenerator* gen =
+                        [[AVAssetImageGenerator alloc] initWithAsset:asset];
+                    gen.appliesPreferredTrackTransform = YES;
+                    CMTime t = CMTimeMake(0, 1);
+                    NSError* err = nil;
+                    CGImageRef frame = [gen copyCGImageAtTime:t
+                                                  actualTime:nil
+                                                       error:&err];
+                    [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+                    if (!frame) return;
+                    auto img_holder =
+                        std::make_shared<std::unique_ptr<tk::Image>>(
+                            tk::cg::make_image(frame));
+                    CGImageRelease(frame);
+                    std::string key = "thumb::" + eid;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s = weakSelf;
+                        if (!s || s->_tkImages.count(key)) return;
+                        s->_tkImages.emplace(key, std::move(*img_holder));
+                        if (s->_msgSurface) s->_msgSurface->relayout();
+                    });
+                }).detach();
+            }
         }
     }
     for (const auto& r : ev.reactions) {

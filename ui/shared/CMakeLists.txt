@@ -9,6 +9,7 @@ cmake_minimum_required(VERSION 3.25)
 
 set(_tk_sources
     tk/audio.h
+    tk/video.h
     tk/canvas.h
     tk/host.h
     tk/theme.h
@@ -37,6 +38,10 @@ set(_tk_sources
     views/RecoveryBanner.cpp
     views/ComposeBar.h
     views/ComposeBar.cpp
+    views/ImageViewerOverlay.h
+    views/ImageViewerOverlay.cpp
+    views/VideoViewerOverlay.h
+    views/VideoViewerOverlay.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")
@@ -46,6 +51,7 @@ if(TESSERACT_UI STREQUAL "win32")
         tk/host_win32.h
         tk/host_win32.cpp
         tk/audio_win32.cpp
+        tk/video_win32.cpp
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
     list(APPEND _tk_sources
@@ -54,6 +60,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/host_qt.h
         tk/host_qt.cpp
         tk/audio_qt.cpp
+        tk/video_qt.cpp
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
     list(APPEND _tk_sources
@@ -62,6 +69,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/host_gtk.h
         tk/host_gtk.cpp
         tk/audio_gtk.cpp
+        tk/video_gtk.cpp
     )
 elseif(TESSERACT_UI STREQUAL "macos")
     list(APPEND _tk_sources
@@ -70,6 +78,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
         tk/host_macos.h
         tk/host_macos.mm
         tk/audio_macos.mm
+        tk/video_macos.mm
     )
 endif()
 

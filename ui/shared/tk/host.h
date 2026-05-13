@@ -13,6 +13,7 @@
 
 #include "audio.h"
 #include "canvas.h"
+#include "video.h"
 
 #include <cstdint>
 #include <cstddef>
@@ -148,6 +149,11 @@ public:
     // return `nullptr` on platforms that do not yet ship a backend; callers
     // must check before invoking.
     virtual std::unique_ptr<AudioPlayer>     make_audio_player() = 0;
+
+    // Create a `VideoPlayer` backed by the platform's native media stack.
+    // Returns `nullptr` on platforms without a video backend; callers must
+    // check before invoking.
+    virtual std::unique_ptr<VideoPlayer>     make_video_player() = 0;
 
     // Decode `data[0..len)` and produce a payload ready to upload to the
     // homeserver. `compress=true` caps the image at 1600×1200 (preserving

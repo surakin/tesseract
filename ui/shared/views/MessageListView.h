@@ -26,7 +26,7 @@
 namespace tesseract::views {
 
 struct MessageRowData {
-    enum class Kind { Text, Image, Sticker, File, Voice, Redacted, Unhandled };
+    enum class Kind { Text, Image, Sticker, File, Voice, Video, Redacted, Unhandled };
 
     Kind        kind          = Kind::Text;
     std::string event_id;
@@ -58,6 +58,14 @@ struct MessageRowData {
     std::string                audio_mime;
     std::uint64_t              duration_ms = 0;
     std::vector<std::uint16_t> waveform;
+
+    // Video (m.video). `media_url` carries the video MediaSource JSON for
+    // `fetch_source_bytes`; `media_w`/`media_h`/`duration_ms` are reused
+    // from the shared slots above. `video_thumb_url` is the thumbnail
+    // MediaSource JSON (pass to `image_provider_`); empty when the server
+    // omits a thumbnail and the client-side first-frame generator fills it
+    // in with the key `"thumb::" + event_id`.
+    std::string video_thumb_url;
 
     std::vector<tesseract::Reaction> reactions;
     /// Users (excluding the current user) whose latest read receipt landed
@@ -173,6 +181,39 @@ public:
     };
     std::optional<StickerHit> sticker_hit_at(tk::Point world) const;
 
+    // Image / sticker left-click hit — fires `on_image_clicked`. Recorded
+    // per paint pass (same pattern as sticker_geom_). Exposed for tests.
+    struct ImageHit {
+        std::string event_id;
+        std::string media_url;   // source_json — pass to image_provider_
+        std::string body;        // MSC2530 caption, may be empty
+        int         natural_w   = 0;
+        int         natural_h   = 0;
+        tk::Rect    world_rect;
+    };
+    std::optional<ImageHit> image_hit_at(tk::Point world) const;
+
+    /// Fires when the user left-clicks an image or sticker thumbnail.
+    std::function<void(const MessageListView::ImageHit&)> on_image_clicked;
+
+    // Video thumbnail left-click hit — fires `on_video_clicked`. Parallel
+    // to ImageHit / on_image_clicked. `source_json` is the video MediaSource
+    // JSON to pass to `fetch_source_bytes` for the overlay.
+    struct VideoHit {
+        std::string event_id;
+        std::string source_json;   // video MediaSource JSON for fetch_source_bytes
+        std::string thumbnail_url; // thumbnail cache key (image_provider_)
+        std::string mime_type;
+        int         natural_w   = 0;
+        int         natural_h   = 0;
+        std::uint64_t duration_ms = 0;
+        tk::Rect    world_rect;
+    };
+    std::optional<VideoHit> video_hit_at(tk::Point world) const;
+
+    /// Fires when the user left-clicks a video thumbnail card.
+    std::function<void(const MessageListView::VideoHit&)> on_video_clicked;
+
     // Widget overrides — own pointer-move/down/up so we can hit-test
     // reaction chips before the ListView base sees the event.
     bool on_pointer_down(tk::Point local) override;
@@ -248,6 +289,16 @@ private:
     // Edit button press state (own text messages only).
     bool                           press_edit_btn_       = false;
     std::string                    press_edit_event_id_;
+
+    // Image / sticker click-to-view press state.
+    mutable std::unordered_map<std::string, ImageHit> image_geom_;
+    bool                           press_image_          = false;
+    std::string                    press_image_eid_;
+
+    // Video thumbnail click-to-view press state (parallel to image).
+    mutable std::unordered_map<std::string, VideoHit> video_geom_;
+    bool                           press_video_          = false;
+    std::string                    press_video_eid_;
 
     // Quote-block press state. Fires on_scroll_to_original (or internal
     // scroll_to_index) when the user clicks the quote block of a reply.

@@ -378,6 +378,7 @@ public:
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override;
+    std::unique_ptr<VideoPlayer> make_video_player() override;
 
     EncodedImage encode_for_send(const std::uint8_t* data,
                                  std::size_t         len,
@@ -897,6 +898,13 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_gtk();
 
 std::unique_ptr<tk::AudioPlayer> Host::make_audio_player() {
     return make_audio_player_gtk();
+}
+
+// Defined in video_gtk.cpp.
+std::unique_ptr<tk::VideoPlayer> make_video_player_gtk();
+
+std::unique_ptr<tk::VideoPlayer> Host::make_video_player() {
+    return make_video_player_gtk();
 }
 
 } // namespace tk::gtk4
