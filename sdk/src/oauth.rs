@@ -92,6 +92,7 @@ pub async fn begin(
     let client = Client::builder()
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(sqlite_path, None)
+        .handle_refresh_tokens()
         .build()
         .await
         .context("build matrix-sdk Client")?;

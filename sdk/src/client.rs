@@ -247,8 +247,15 @@ impl ClientFfi {
         };
 
         match self.rt.block_on(oauth::await_callback(flow)) {
-            Ok(client) => { self.client = Some(client); ok("") }
-            Err(e)     => err(format!("{e:#}")),
+            Ok(client) => {
+                // Enter the runtime so any prior Client we're overwriting drops
+                // with a tokio context in TLS — matrix-sdk's SqliteStateStore /
+                // deadpool tear-down calls Handle::current() in its Drop impl.
+                let _guard = self.rt.enter();
+                self.client = Some(client);
+                ok("")
+            }
+            Err(e) => err(format!("{e:#}")),
         }
     }
 
@@ -275,6 +282,7 @@ impl ClientFfi {
             let client = Client::builder()
                 .server_name_or_homeserver_url(homeserver)
                 .sqlite_store(&path, None)
+                .handle_refresh_tokens()
                 .build()
                 .await
                 .context("build client")?;
@@ -290,7 +298,15 @@ impl ClientFfi {
         });
 
         match result {
-            Ok(c)  => { self.client = Some(c); ok("") }
+            Ok(c) => {
+                // Enter the runtime so the previous Client (still in self.client
+                // after an auth-error → re-restore path) drops with a tokio
+                // context in TLS — matrix-sdk's SqliteStateStore / deadpool
+                // tear-down calls Handle::current() in its Drop impl.
+                let _guard = self.rt.enter();
+                self.client = Some(c);
+                ok("")
+            }
             Err(e) => err(e.to_string()),
         }
     }
