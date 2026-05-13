@@ -315,11 +315,7 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
         // name as a fallback affordance so empty packs still get clicked.
         if (i == 0) {
             tk::TextStyle st{};
-            st.role   = tk::FontRole::Title;
-            st.halign = tk::TextHAlign::Center;
-            st.valign = tk::TextVAlign::Center;
-            st.max_width  = tab.w;
-            st.max_height = tab.h;
+            st.role = tk::FontRole::Title;
             auto layout = ctx.factory.build_text(
                 std::string("\xE2\xAD\x90"), st);
             if (layout) {
@@ -351,11 +347,7 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
                 : std::string(1, std::toupper(static_cast<unsigned char>(
                     pack.display_name[0])));
             tk::TextStyle st{};
-            st.role   = tk::FontRole::Title;
-            st.halign = tk::TextHAlign::Center;
-            st.valign = tk::TextVAlign::Center;
-            st.max_width  = tab.w;
-            st.max_height = tab.h;
+            st.role = tk::FontRole::Title;
             auto layout = ctx.factory.build_text(initial, st);
             if (layout) {
                 tk::Size sz = layout->measure();

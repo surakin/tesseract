@@ -36,6 +36,7 @@
 #include <QStandardItem>
 #include <algorithm>
 #include <thread>
+#include <unordered_set>
 
 Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
@@ -1050,7 +1051,18 @@ void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
 void MainWindow::refreshRoomList() {
     if (spaceStack_.empty()) {
-        showRooms(rooms_);
+        std::unordered_set<std::string> in_space;
+        for (const auto& r : rooms_) {
+            if (!r.is_space) continue;
+            for (const auto& id : client_.space_children(r.id))
+                in_space.insert(id);
+        }
+        std::vector<tesseract::RoomInfo> filtered;
+        for (const auto& r : rooms_)
+            if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
+        for (const auto& r : rooms_)
+            if ( r.is_space) filtered.push_back(r);
+        showRooms(filtered);
         roomNavBar_->setVisible(false);
     } else {
         const std::string& space_id = spaceStack_.back();

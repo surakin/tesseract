@@ -363,11 +363,7 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
 
         if (i < kBuiltinTabCount) {
             tk::TextStyle st{};
-            st.role   = tk::FontRole::Body;
-            st.halign = tk::TextHAlign::Center;
-            st.valign = tk::TextVAlign::Center;
-            st.max_width  = tab.w;
-            st.max_height = tab.h;
+            st.role = tk::FontRole::Body;
             auto layout = ctx.factory.build_text(builtin_tab_glyph(i), st);
             if (!layout) continue;
             tk::Size sz = layout->measure();
@@ -397,11 +393,7 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
                     : std::string(1, std::toupper(static_cast<unsigned char>(
                         pack.display_name[0])));
                 tk::TextStyle st{};
-                st.role   = tk::FontRole::Body;
-                st.halign = tk::TextHAlign::Center;
-                st.valign = tk::TextVAlign::Center;
-                st.max_width  = tab.w;
-                st.max_height = tab.h;
+                st.role = tk::FontRole::Body;
                 auto layout = ctx.factory.build_text(initial, st);
                 if (!layout) continue;
                 tk::Size sz = layout->measure();

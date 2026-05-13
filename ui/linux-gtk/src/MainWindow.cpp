@@ -18,6 +18,7 @@
 #include <ctime>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
 namespace gtk4 {
@@ -1319,7 +1320,18 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
 void MainWindow::refresh_room_list() {
     if (space_stack_.empty()) {
-        show_rooms(rooms_);
+        std::unordered_set<std::string> in_space;
+        for (const auto& r : rooms_) {
+            if (!r.is_space) continue;
+            for (const auto& id : client_.space_children(r.id))
+                in_space.insert(id);
+        }
+        std::vector<tesseract::RoomInfo> filtered;
+        for (const auto& r : rooms_)
+            if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
+        for (const auto& r : rooms_)
+            if ( r.is_space) filtered.push_back(r);
+        show_rooms(filtered);
         gtk_widget_set_visible(room_nav_bar_, FALSE);
     } else {
         const std::string& space_id = space_stack_.back();

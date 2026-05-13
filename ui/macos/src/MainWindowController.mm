@@ -37,6 +37,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 @class MainWindowController;
@@ -311,6 +312,20 @@ void EventBridge::on_image_packs_updated() {
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
     std::string                                      _ctxStickerBody;
+
+    // Space navigation chrome (top of sidebar, shown when drilling into a space).
+    NSView*              _spaceNavBar;
+    NSButton*            _spaceBackButton;
+    NSTextField*         _spaceNameLabel;
+    NSLayoutConstraint*  _spaceNavHeightCon;
+
+    // User identity strip (bottom of sidebar, shown after login).
+    NSView*              _userStrip;
+    NSImageView*         _userAvatarView;
+    NSTextField*         _userNameLabel;
+    NSLayoutConstraint*  _userStripHeightCon;
+    std::string          _myDisplayName;
+    std::string          _myAvatarUrl;
 }
 
 - (instancetype)init {
@@ -350,6 +365,39 @@ void EventBridge::on_image_packs_updated() {
                                      blue:0xF5/255.0
                                     alpha:1.0].CGColor;
 
+    // ── Space nav bar (top of sidebar; hidden until drilled into a space) ──
+    _spaceNavBar = [[NSView alloc] initWithFrame:NSZeroRect];
+    _spaceNavBar.wantsLayer = YES;
+    _spaceNavBar.layer.backgroundColor =
+        [NSColor colorWithCalibratedRed:0xE8/255.0
+                                    green:0xEA/255.0
+                                     blue:0xEE/255.0
+                                    alpha:1.0].CGColor;
+    _spaceBackButton = [NSButton buttonWithTitle:@"←"
+                                          target:self
+                                          action:@selector(_onSpaceBack)];
+    _spaceBackButton.bezelStyle = NSBezelStyleRounded;
+    _spaceBackButton.font = [NSFont systemFontOfSize:14];
+    _spaceBackButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [_spaceNavBar addSubview:_spaceBackButton];
+    _spaceNameLabel = [NSTextField labelWithString:@""];
+    _spaceNameLabel.font = [NSFont systemFontOfSize:11 weight:NSFontWeightBold];
+    _spaceNameLabel.textColor = [NSColor labelColor];
+    _spaceNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    _spaceNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [_spaceNavBar addSubview:_spaceNameLabel];
+    [NSLayoutConstraint activateConstraints:@[
+        [_spaceBackButton.leadingAnchor  constraintEqualToAnchor:_spaceNavBar.leadingAnchor constant:4],
+        [_spaceBackButton.centerYAnchor  constraintEqualToAnchor:_spaceNavBar.centerYAnchor],
+        [_spaceBackButton.widthAnchor    constraintEqualToConstant:32],
+        [_spaceNameLabel.leadingAnchor   constraintEqualToAnchor:_spaceBackButton.trailingAnchor constant:4],
+        [_spaceNameLabel.trailingAnchor  constraintEqualToAnchor:_spaceNavBar.trailingAnchor constant:-4],
+        [_spaceNameLabel.centerYAnchor   constraintEqualToAnchor:_spaceNavBar.centerYAnchor],
+    ]];
+    _spaceNavBar.translatesAutoresizingMaskIntoConstraints = NO;
+    _spaceNavHeightCon = [_spaceNavBar.heightAnchor constraintEqualToConstant:0];
+
+    // ── Room list surface ─────────────────────────────────────────────
     _roomSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     auto room_view = std::make_unique<tesseract::views::RoomListView>();
     _roomListView  = room_view.get();
@@ -364,12 +412,74 @@ void EventBridge::on_image_packs_updated() {
 
     NSView* roomSurfaceView = (__bridge NSView*)_roomSurface->view_handle();
     roomSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
-    [_sidebar addSubview:roomSurfaceView];
+
+    // ── User identity strip (bottom of sidebar; hidden until login) ───
+    _userStrip = [[NSView alloc] initWithFrame:NSZeroRect];
+    _userStrip.wantsLayer = YES;
+    _userStrip.layer.backgroundColor =
+        [NSColor colorWithCalibratedRed:0xE8/255.0
+                                    green:0xEA/255.0
+                                     blue:0xEE/255.0
+                                    alpha:1.0].CGColor;
+    NSBox* stripSeparator = [[NSBox alloc] init];
+    stripSeparator.boxType = NSBoxSeparator;
+    stripSeparator.translatesAutoresizingMaskIntoConstraints = NO;
+    [_userStrip addSubview:stripSeparator];
+    _userAvatarView = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    _userAvatarView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _userAvatarView.wantsLayer = YES;
+    _userAvatarView.layer.cornerRadius = 16;
+    _userAvatarView.layer.masksToBounds = YES;
+    _userAvatarView.translatesAutoresizingMaskIntoConstraints = NO;
+    [_userStrip addSubview:_userAvatarView];
+    _userNameLabel = [NSTextField labelWithString:@""];
+    _userNameLabel.font = [NSFont systemFontOfSize:12 weight:NSFontWeightBold];
+    _userNameLabel.textColor = [NSColor labelColor];
+    _userNameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    _userNameLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [_userStrip addSubview:_userNameLabel];
     [NSLayoutConstraint activateConstraints:@[
-        [roomSurfaceView.topAnchor      constraintEqualToAnchor:_sidebar.topAnchor],
+        [stripSeparator.topAnchor      constraintEqualToAnchor:_userStrip.topAnchor],
+        [stripSeparator.leadingAnchor  constraintEqualToAnchor:_userStrip.leadingAnchor],
+        [stripSeparator.trailingAnchor constraintEqualToAnchor:_userStrip.trailingAnchor],
+        [_userAvatarView.leadingAnchor  constraintEqualToAnchor:_userStrip.leadingAnchor constant:8],
+        [_userAvatarView.centerYAnchor  constraintEqualToAnchor:_userStrip.centerYAnchor],
+        [_userAvatarView.widthAnchor    constraintEqualToConstant:32],
+        [_userAvatarView.heightAnchor   constraintEqualToConstant:32],
+        [_userNameLabel.leadingAnchor   constraintEqualToAnchor:_userAvatarView.trailingAnchor constant:8],
+        [_userNameLabel.trailingAnchor  constraintEqualToAnchor:_userStrip.trailingAnchor constant:-8],
+        [_userNameLabel.centerYAnchor   constraintEqualToAnchor:_userStrip.centerYAnchor],
+    ]];
+    _userStrip.translatesAutoresizingMaskIntoConstraints = NO;
+    _userStripHeightCon = [_userStrip.heightAnchor constraintEqualToConstant:0];
+
+    // Add right-click logout menu to the user strip via a click gesture.
+    NSClickGestureRecognizer* stripClick =
+        [[NSClickGestureRecognizer alloc] initWithTarget:self
+                                                   action:@selector(_onUserStripRightClick:)];
+    stripClick.buttonMask = 0x2;  // right mouse button
+    [_userStrip addGestureRecognizer:stripClick];
+
+    // ── Assemble sidebar with the three zones ─────────────────────────
+    [_sidebar addSubview:_spaceNavBar];
+    [_sidebar addSubview:roomSurfaceView];
+    [_sidebar addSubview:_userStrip];
+    [NSLayoutConstraint activateConstraints:@[
+        // Space nav bar: pinned to top, full width
+        [_spaceNavBar.topAnchor      constraintEqualToAnchor:_sidebar.topAnchor],
+        [_spaceNavBar.leadingAnchor  constraintEqualToAnchor:_sidebar.leadingAnchor],
+        [_spaceNavBar.trailingAnchor constraintEqualToAnchor:_sidebar.trailingAnchor],
+        _spaceNavHeightCon,
+        // Room surface: fills the middle
+        [roomSurfaceView.topAnchor      constraintEqualToAnchor:_spaceNavBar.bottomAnchor],
         [roomSurfaceView.leadingAnchor  constraintEqualToAnchor:_sidebar.leadingAnchor],
         [roomSurfaceView.trailingAnchor constraintEqualToAnchor:_sidebar.trailingAnchor],
-        [roomSurfaceView.bottomAnchor   constraintEqualToAnchor:_sidebar.bottomAnchor],
+        [roomSurfaceView.bottomAnchor   constraintEqualToAnchor:_userStrip.topAnchor],
+        // User strip: pinned to bottom, full width
+        [_userStrip.bottomAnchor   constraintEqualToAnchor:_sidebar.bottomAnchor],
+        [_userStrip.leadingAnchor  constraintEqualToAnchor:_sidebar.leadingAnchor],
+        [_userStrip.trailingAnchor constraintEqualToAnchor:_sidebar.trailingAnchor],
+        _userStripHeightCon,
     ]];
 
     // ── Content area ──────────────────────────────────────────────────
@@ -660,6 +770,7 @@ void EventBridge::on_image_packs_updated() {
     _loginView = [[LoginView alloc] initWithClient:&_client];
     _loginView.delegate = self;
     _loginView.translatesAutoresizingMaskIntoConstraints = NO;
+    _loginView.hidden = YES;
     [content addSubview:_loginView];
     [NSLayoutConstraint activateConstraints:@[
         [_loginView.topAnchor      constraintEqualToAnchor:content.topAnchor],
@@ -803,14 +914,116 @@ void EventBridge::on_image_packs_updated() {
 }
 
 - (void)loginViewDidSucceed:(LoginView*)view {
+    tesseract::SessionStore::save(_client.export_session());
     [self _afterAuthSucceeded];
 }
 
 - (void)_afterAuthSucceeded {
-    _myUserId = _client.get_user_id();
+    _myUserId      = _client.get_user_id();
+    _myDisplayName = _client.get_display_name();
+    _myAvatarUrl   = _client.get_avatar_url();
     _client.start_sync(_bridge.get());
     _splitView.hidden = NO;
     _loginView.hidden = YES;
+    [self _populateUserStrip];
+}
+
+- (void)_populateUserStrip {
+    NSString* shown = _myDisplayName.empty()
+        ? [NSString stringWithUTF8String:_myUserId.c_str()]
+        : [NSString stringWithUTF8String:_myDisplayName.c_str()];
+    _userNameLabel.stringValue = shown ?: @"";
+    _userStrip.hidden = NO;
+    _userStripHeightCon.constant = 48;
+
+    if (!_myAvatarUrl.empty()) {
+        std::string url = _myAvatarUrl;
+        __weak MainWindowController* weakSelf = self;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            auto bytes = s->_client.fetch_media_bytes(url);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MainWindowController* s2 = weakSelf;
+                if (!s2 || bytes.empty()) return;
+                [s2 _setUserAvatarBytes:bytes];
+            });
+        });
+    } else {
+        [self _setUserAvatarInitials:shown];
+    }
+}
+
+- (void)_setUserAvatarBytes:(const std::vector<uint8_t>&)bytes {
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
+                                  bytes.data(),
+                                  static_cast<CFIndex>(bytes.size()));
+    if (!data) return;
+    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
+    CFRelease(data);
+    if (!src) return;
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return;
+    NSImage* ns = [[NSImage alloc] initWithCGImage:img size:NSMakeSize(32, 32)];
+    CGImageRelease(img);
+    _userAvatarView.image = ns;
+}
+
+- (void)_setUserAvatarInitials:(NSString*)name {
+    NSSize sz = NSMakeSize(32, 32);
+    NSImage* img = [[NSImage alloc] initWithSize:sz];
+    [img lockFocus];
+    NSRect r = NSMakeRect(0, 0, sz.width, sz.height);
+    [[NSColor colorWithCalibratedRed:0x6C/255.0
+                               green:0x8E/255.0
+                                blue:0xBF/255.0 alpha:1.0] setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:r] fill];
+    NSString* letter = name.length > 0 ? [name substringToIndex:1].uppercaseString : @"?";
+    NSDictionary* attrs = @{
+        NSFontAttributeName:            [NSFont systemFontOfSize:14 weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: [NSColor whiteColor],
+    };
+    NSSize ts = [letter sizeWithAttributes:attrs];
+    [letter drawAtPoint:NSMakePoint((sz.width - ts.width) * 0.5f,
+                                    (sz.height - ts.height) * 0.5f)
+         withAttributes:attrs];
+    [img unlockFocus];
+    _userAvatarView.image = img;
+}
+
+- (void)_onSpaceBack {
+    if (!_spaceStack.empty()) _spaceStack.pop_back();
+    [self _refreshRoomList];
+}
+
+- (void)_onUserStripRightClick:(NSGestureRecognizer*)gr {
+    if (gr.state != NSGestureRecognizerStateEnded) return;
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+    [menu addItemWithTitle:@"Log Out"
+                   action:@selector(_doLogout)
+            keyEquivalent:@""];
+    [NSMenu popUpContextMenu:menu withEvent:NSApp.currentEvent forView:_userStrip];
+}
+
+- (void)_doLogout {
+    _client.logout();
+    tesseract::SessionStore::clear();
+    _client.stop_sync();
+    if (!_currentRoomId.empty()) _client.unsubscribe_room(_currentRoomId);
+    _currentRoomId.clear();
+    _myUserId.clear();
+    _myDisplayName.clear();
+    _myAvatarUrl.clear();
+    _rooms.clear();
+    _spaceStack.clear();
+    [self _refreshRoomList];
+    _messageListView->set_messages({});
+    _msgSurface->relayout();
+    _userStrip.hidden = YES;
+    _userStripHeightCon.constant = 0;
+    _splitView.hidden = YES;
+    _loginView.hidden = NO;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1061,9 +1274,19 @@ void EventBridge::on_image_packs_updated() {
 - (void)_refreshRoomList {
     std::vector<tesseract::RoomInfo> filtered;
     if (_spaceStack.empty()) {
+        std::unordered_set<std::string> in_space;
+        for (const auto& r : _rooms) {
+            if (!r.is_space) continue;
+            for (const auto& id : _client.space_children(r.id))
+                in_space.insert(id);
+        }
         filtered.reserve(_rooms.size());
-        for (const auto& r : _rooms) if (!r.is_space) filtered.push_back(r);
-        for (const auto& r : _rooms) if ( r.is_space) filtered.push_back(r);
+        for (const auto& r : _rooms)
+            if (!r.is_space && !in_space.count(r.id)) filtered.push_back(r);
+        for (const auto& r : _rooms)
+            if ( r.is_space) filtered.push_back(r);
+        _spaceNavBar.hidden = YES;
+        _spaceNavHeightCon.constant = 0;
     } else {
         auto child_ids = _client.space_children(_spaceStack.back());
         for (const auto& r : _rooms) {
@@ -1072,6 +1295,15 @@ void EventBridge::on_image_packs_updated() {
                 filtered.push_back(r);
             }
         }
+        for (const auto& r : _rooms) {
+            if (r.id == _spaceStack.back()) {
+                _spaceNameLabel.stringValue =
+                    [NSString stringWithUTF8String:r.name.c_str()] ?: @"";
+                break;
+            }
+        }
+        _spaceNavBar.hidden = NO;
+        _spaceNavHeightCon.constant = 36;
     }
     for (const auto& r : filtered) [self _ensureRoomAvatar:r];
 

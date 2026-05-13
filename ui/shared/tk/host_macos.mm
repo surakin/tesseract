@@ -5,7 +5,9 @@
 #import <AppKit/AppKit.h>
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -881,6 +883,7 @@ NSArray<NSURL*>* all_file_urls(NSPasteboard* pb) {
 std::string mime_for_url(NSURL* url) {
     NSString* ext = url.pathExtension.lowercaseString;
     if (ext.length > 0) {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
         if (@available(macOS 11.0, *)) {
             UTType* type = [UTType typeWithFilenameExtension:ext];
             if (type) {
@@ -888,6 +891,7 @@ std::string mime_for_url(NSURL* url) {
                 if (mime.length > 0) return mime.UTF8String;
             }
         }
+#endif
         if (const char* m = mime_from_extension_lower(ext)) return m;
     }
     return "application/octet-stream";
