@@ -2106,6 +2106,12 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .latest_event_timestamp()
             .map(|t| u64::from(t.0))
             .unwrap_or(0);
+        let is_favorite = room.tags().await
+            .ok()
+            .flatten()
+            .map(|tags| tags.contains_key(
+                &matrix_sdk::ruma::events::tag::TagName::Favorite))
+            .unwrap_or(false);
         result.push(crate::ffi::RoomInfo {
             id:                room.room_id().to_string(),
             name,
@@ -2118,6 +2124,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             last_message_body: String::new(),
             last_activity_ts,
             is_space,
+            is_favorite,
         });
     }
     // Activity sort: unread rooms first, then by newest last-event timestamp.

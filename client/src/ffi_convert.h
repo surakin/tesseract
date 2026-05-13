@@ -70,6 +70,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r) {
         .last_message_body = std::string(r.last_message_body),
         .last_activity_ts  = r.last_activity_ts,
         .is_space          = r.is_space,
+        .is_favorite       = r.is_favorite,
     };
 }
 

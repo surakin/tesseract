@@ -171,11 +171,14 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     std::string selected;
     view.on_room_selected = [&](const std::string& id) { selected = id; };
 
-    st.run(view, { 0, 0, 260, 200 });
+    // Use a 400 px tall viewport so the search bar stays hidden and the
+    // section header sits at y=0..28 with room rows directly below it.
+    st.run(view, { 0, 0, 260, 400 });
 
-    // Each row is 62 px tall; the click at y=70 lands inside row 1.
-    REQUIRE(view.on_pointer_down({ 10, 70 }));
-    view.on_pointer_up({ 10, 70 }, true);
+    // Layout: 28 px section header + 62 px per room row.
+    // y=110 lands inside room row 1 (y=90..152) → "Beta room".
+    REQUIRE(view.on_pointer_down({ 10, 110 }));
+    view.on_pointer_up({ 10, 110 }, true);
     CHECK(selected == "!b:example.org");
     CHECK(view.selected_room_id() == "!b:example.org");
 
@@ -314,6 +317,132 @@ TEST_CASE("RoomListView preserves selection by id across search filter",
     st.run(view, { 0, 0, 260, 600 });
     CHECK(view.selected_room_id() == "!b:x");
     CHECK(view.selected_index() == 1);
+}
+
+TEST_CASE("RoomListView sections classify Favorites / DMs / Rooms / Spaces",
+          "[tk][view][roomlist][sections]") {
+    RoomListView view;
+    std::vector<RoomInfo> rooms = {
+        { "!fav:x", "Fav",   "", 0, false, "", "", 0, false, true  }, // favorite
+        { "!dm:x",  "DM",    "", 0, true,  "", "", 0, false, false }, // direct
+        { "!r:x",   "Room",  "", 0, false, "", "", 0, false, false }, // regular
+        { "!sp:x",  "Space", "", 0, false, "", "", 0, true,  false }, // space
+    };
+    view.set_rooms(rooms);
+    // Each room type lands in its own section; all selectable by ID.
+    // Room-only indices: fav=0, dm=1, r=2, sp=3.
+    view.set_selected_room("!fav:x");
+    CHECK(view.selected_room_id() == "!fav:x");
+    CHECK(view.selected_index() == 0);
+
+    view.set_selected_room("!dm:x");
+    CHECK(view.selected_room_id() == "!dm:x");
+    CHECK(view.selected_index() == 1);
+
+    view.set_selected_room("!r:x");
+    CHECK(view.selected_room_id() == "!r:x");
+    CHECK(view.selected_index() == 2);
+
+    view.set_selected_room("!sp:x");
+    CHECK(view.selected_room_id() == "!sp:x");
+    CHECK(view.selected_index() == 3);
+}
+
+TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
+          "[tk][view][roomlist][sections]") {
+    Stage st;
+    RoomListView view;
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "A", "", 0, false, "", "", 0, false },
+        { "!b:x", "B", "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    std::string selected;
+    view.on_room_selected = [&](const std::string& id) { selected = id; };
+    st.run(view, { 0, 0, 260, 400 });
+
+    // Layout: header 0..28, !a 28..90, !b 90..152.
+    // y=50 hits !a.
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
+    CHECK(selected == "!a:x");
+    selected.clear();
+
+    // Click the section header (y=14) to collapse.
+    REQUIRE(view.on_pointer_down({ 10, 14 }));
+    view.on_pointer_up({ 10, 14 }, true);
+    CHECK(selected.empty()); // header click must not fire on_room_selected
+    st.run(view, { 0, 0, 260, 400 });
+
+    // After collapse: only the 28 px header remains.
+    // Click where !a used to be — no row there now.
+    view.on_pointer_down({ 10, 50 });
+    view.on_pointer_up({ 10, 50 }, true);
+    CHECK(selected.empty());
+
+    // Click header again to expand.
+    REQUIRE(view.on_pointer_down({ 10, 14 }));
+    view.on_pointer_up({ 10, 14 }, true);
+    st.run(view, { 0, 0, 260, 400 });
+
+    // !a is back at y=28..90.
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
+    CHECK(selected == "!a:x");
+}
+
+TEST_CASE("RoomListView search shows rooms in collapsed sections",
+          "[tk][view][roomlist][sections]") {
+    Stage st;
+    RoomListView view;
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "Alpha", "", 0, false, "", "", 0, false },
+        { "!b:x", "Beta",  "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    st.run(view, { 0, 0, 260, 400 });
+
+    // Collapse the Rooms section via the header at y=14.
+    REQUIRE(view.on_pointer_down({ 10, 14 }));
+    view.on_pointer_up({ 10, 14 }, true);
+    st.run(view, { 0, 0, 260, 400 });
+
+    // Search overrides collapsed state — both matches visible.
+    std::string selected;
+    view.on_room_selected = [&](const std::string& id) { selected = id; };
+    view.set_search_text("a");
+    st.run(view, { 0, 0, 260, 400 });
+
+    // Header 0..28, "Alpha" 28..90 — y=50 should select !a.
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
+    CHECK(selected == "!a:x");
+}
+
+TEST_CASE("RoomListView empty sections produce no header row",
+          "[tk][view][roomlist][sections]") {
+    Stage st;
+    RoomListView view;
+    // One regular room → only "Rooms" section has content; others absent.
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "A", "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    std::string selected;
+    view.on_room_selected = [&](const std::string& id) { selected = id; };
+    st.run(view, { 0, 0, 260, 400 });
+
+    // Layout: Rooms header 0..28, !a 28..90.
+    // y=50 hits the room row directly.
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
+    CHECK(selected == "!a:x");
+
+    // Header click at y=14 must not fire on_room_selected (collapses section).
+    selected.clear();
+    REQUIRE(view.on_pointer_down({ 10, 14 }));
+    view.on_pointer_up({ 10, 14 }, true);
+    CHECK(selected.empty());
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -576,9 +705,10 @@ TEST_CASE("MessageListView read receipts paint inside existing row bounds",
     st.run(view, { 0, 0, 320, 400 });
     float with_h = view.content_height();
 
-    // Receipts share the existing chip-row strip — they must not push the
-    // row taller than a plain row carrying the same body.
-    CHECK(with_h == plain_h);
+    // In the compact-row design, a plain row has no chip strip. Adding
+    // read receipts introduces one, so the receipts row is taller.
+    CHECK(plain_h > 0.0f);
+    CHECK(with_h > plain_h);
 }
 
 TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-right",

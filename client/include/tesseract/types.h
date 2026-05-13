@@ -130,6 +130,7 @@ struct RoomInfo {
     std::string last_message_body;
     uint64_t    last_activity_ts   = 0;
     bool        is_space           = false;
+    bool        is_favorite        = false;
 };
 
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed

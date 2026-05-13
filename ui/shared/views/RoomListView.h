@@ -1,14 +1,16 @@
 #pragma once
 
-// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as
-// rows of avatar + name + last-message preview + unread badge.
+// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as four
+// collapsible sections — Favorites / Direct Messages / Rooms / Spaces —
+// each showing avatar + name + last-message preview + unread badge per row.
 //
 // Composition: this widget owns a child `tk::ListView` and an optional
 // search header strip that the host overlays a `NativeTextField` on
 // top of. The search strip is shown only when the total content height
-// exceeds the viewport — accounts with a handful of rooms don't get a
-// useless input bar. Filtering by display name is case-insensitive and
-// happens inside the view (filtered_rooms_ feeds the adapter).
+// exceeds the viewport. Filtering by display name is case-insensitive and
+// happens inside the view (section_rooms_ feeds the adapter). When a
+// search query is active the collapsed state is ignored so all matches
+// are visible.
 //
 // Avatar bytes live in a host-side cache; pass a provider lambda that
 // returns the decoded tk::Image* for a given mxc_url (or nullptr for
@@ -51,9 +53,9 @@ public:
     void                set_selected_room(const std::string& room_id);
     std::string         selected_room_id() const;
 
-    // Index into the currently visible (filtered) row set, or -1 when
-    // nothing is selected. Exposed mostly for tests; production code
-    // should prefer `selected_room_id()`.
+    // Position among all currently visible room rows (headers excluded),
+    // or -1 when nothing is selected. Preserved across search / collapse
+    // changes as long as the selected room remains visible.
     int                 selected_index() const;
 
     // Search header: host-overlaid NativeTextField. The view exposes the
@@ -66,7 +68,7 @@ public:
     void                set_search_text(std::string q);
     const std::string&  search_text() const { return search_text_; }
 
-    // Fires when the user clicks a row (selection moves to that row).
+    // Fires when the user clicks a room row (selection moves to that row).
     std::function<void(const std::string& /*room_id*/)> on_room_selected;
 
     // Widget overrides
@@ -79,22 +81,51 @@ public:
 private:
     class Adapter;
 
-    void rebuild_filtered();
+    // Section indices (matches array positions throughout the class).
+    static constexpr int kSecFavorites = 0;
+    static constexpr int kSecDMs       = 1;
+    static constexpr int kSecRooms     = 2;
+    static constexpr int kSecSpaces    = 3;
+    static constexpr int kNumSections  = 4;
+
+    static constexpr const char* kSectionTitles[kNumSections] = {
+        "Favorites", "Direct Messages", "Rooms", "Spaces"
+    };
+
+    // Flat item list fed to the inner ListView. Each item is either a
+    // collapsible section header or a pointer into section_rooms_[s].
+    struct Item {
+        enum class Kind : uint8_t { Header, Room } kind = Kind::Room;
+        int section  = 0;  // which section (0-3)
+        int room_idx = 0;  // index within section_rooms_[section] (Room only)
+    };
+
+    // Rebuild section_rooms_[4] from rooms_ + search filter, then
+    // rebuild items_ from those buckets + collapsed_[] state.
+    void rebuild_items();
+
     float search_header_h() const;
 
-    std::vector<tesseract::RoomInfo> rooms_;
-    std::vector<tesseract::RoomInfo> filtered_rooms_;
-    std::string                      search_text_;
-    AvatarProvider                   avatar_provider_;
+    std::vector<tesseract::RoomInfo>         rooms_;
+    // Per-section filtered room pointers (into rooms_); rebuilt by
+    // rebuild_items(). Invalidated whenever rooms_ is replaced.
+    std::vector<const tesseract::RoomInfo*>  section_rooms_[kNumSections];
+    // Flat item list the adapter iterates over.
+    std::vector<Item>                        items_;
+    // Collapsed state per section (false = expanded by default).
+    bool                                     collapsed_[kNumSections] = {};
 
-    std::unique_ptr<Adapter>         adapter_;
-    tk::ListView*                    list_                  = nullptr; // borrowed
-    tk::Rect                         search_field_rect_     {};
-    bool                             search_field_visible_  = false;
+    std::string                              search_text_;
+    AvatarProvider                           avatar_provider_;
 
-    // Last-known selected room ID, preserved across filter changes when
-    // the filter temporarily hides the selected row.
-    std::string                      selected_room_id_cache_;
+    std::unique_ptr<Adapter>                 adapter_;
+    tk::ListView*                            list_                  = nullptr;
+    tk::Rect                                 search_field_rect_     {};
+    bool                                     search_field_visible_  = false;
+
+    // Last-known selected room ID, preserved across filter/collapse changes
+    // when the selection is temporarily hidden.
+    std::string                              selected_room_id_cache_;
 };
 
 } // namespace tesseract::views

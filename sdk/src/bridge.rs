@@ -25,6 +25,8 @@ pub mod ffi {
         last_activity_ts:  u64,
         /// True when this room's type is "m.space".
         is_space:          bool,
+        /// True when the room is tagged `m.favourite` by the current user.
+        is_favorite:       bool,
     }
 
     /// One aggregated reaction key on a `TimelineEvent`.

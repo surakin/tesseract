@@ -27,6 +27,7 @@ pub mod ffi {
         pub last_message_body: String,
         pub last_activity_ts:  u64,
         pub is_space:          bool,
+        pub is_favorite:       bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
