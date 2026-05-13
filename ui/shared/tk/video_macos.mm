@@ -20,14 +20,15 @@
 #include <mutex>
 #include <vector>
 
-namespace tk::macos {
-
 // ─────────────────────────────────────────────────────────────────────────
 //  AVPlayer KVO helper (mirrors TkAvDelegate in audio_macos.mm)
+//  Must be at global scope — Obj-C declarations can't live inside a namespace.
 // ─────────────────────────────────────────────────────────────────────────
 @interface TkVideoDelegate : NSObject
 @property (nonatomic) std::function<void()> onEnded;
 @property (nonatomic) std::function<void()> onProgress;
+- (void)observeEndOfStream:(AVPlayer*)player;
+- (void)stopObserving;
 @end
 
 @implementation TkVideoDelegate {
@@ -55,6 +56,8 @@ namespace tk::macos {
 
 - (void)dealloc { [self stopObserving]; }
 @end
+
+namespace tk::macos {
 
 // ─────────────────────────────────────────────────────────────────────────
 //  MacosVideoPlayer
@@ -111,14 +114,10 @@ public:
 
         if (!delegate_) delegate_ = [[TkVideoDelegate alloc] init];
         [delegate_ stopObserving];
-        __weak MacosVideoPlayer* weak_self = (__bridge MacosVideoPlayer*)
-            (__bridge void*)([NSValue valueWithPointer:this].pointerValue);
-        // Use a direct pointer — we own delegate_ lifetime.
         MacosVideoPlayer* raw = this;
         delegate_.onEnded    = [raw]() { if (raw->on_progress) raw->on_progress(); };
         delegate_.onProgress = [raw]() { if (raw->on_progress) raw->on_progress(); };
         [delegate_ observeEndOfStream:player_];
-        (void)weak_self;
 
         start_timer();
     }
@@ -139,8 +138,7 @@ public:
         stop_timer();
         if (player_) {
             [player_ pause];
-            [player_ seekToTime:kCMTimeZero
-                completionHandler:nil];
+            [player_ seekToTime:kCMTimeZero];
         }
         {
             std::lock_guard lk(frame_mutex_);
@@ -154,8 +152,7 @@ public:
             static_cast<Float64>(ms) / 1000.0, NSEC_PER_SEC);
         [player_ seekToTime:t
             toleranceBefore:kCMTimeZero
-             toleranceAfter:kCMTimeZero
-           completionHandler:nil];
+             toleranceAfter:kCMTimeZero];
         if (on_progress) on_progress();
     }
 
@@ -163,7 +160,7 @@ public:
         if (rate < 0.25f) rate = 0.25f;
         if (rate > 4.0f)  rate = 4.0f;
         rate_ = rate;
-        if (player_ && !player_.rate == 0.0f) {
+        if (player_ && player_.rate != 0.0f) {
             player_.rate = static_cast<float>(rate_);
         }
     }

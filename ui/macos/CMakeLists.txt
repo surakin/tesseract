@@ -61,6 +61,10 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework Foundation"
     "-framework QuartzCore"
     "-framework CoreGraphics"
+    "-framework CoreMedia"
+    "-framework AVFoundation"
+    "-framework CoreVideo"
+    "-framework UserNotifications"
 )
 
 # ---------------------------------------------------------------------------

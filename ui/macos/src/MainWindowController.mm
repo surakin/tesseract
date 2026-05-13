@@ -23,6 +23,7 @@
 
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
+#import <UserNotifications/UserNotifications.h>
 
 // Animated WebP properties landed in macOS 11 SDK; define them ourselves
 // when building against an older SDK so we can still attempt WebP delay
@@ -84,6 +85,11 @@ public:
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
+    void on_notification(const std::string& room_id,
+                         const std::string& room_name,
+                         const std::string& sender,
+                         const std::string& body,
+                         bool is_mention) override;
 
 private:
     MainWindowController* __weak controller_;
@@ -106,7 +112,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 //  Internal IBO that the C++ EventBridge calls back into.
 // ─────────────────────────────────────────────────────────────────────────
 
-@interface MainWindowController () <LoginViewDelegate>
+@interface MainWindowController () <LoginViewDelegate, UNUserNotificationCenterDelegate>
 - (void)handleTimelineReset:(NSString*)roomId
                     snapshot:(std::vector<tesseract::Event*>)snapshot;
 - (void)handleMessageInserted:(NSString*)roomId
@@ -140,6 +146,14 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       mime:(std::string)mime
                   filename:(std::string)filename
                    caption:(std::string)caption;
+
+// Notifications.
+- (void)handleNotification:(std::string)roomId
+                  roomName:(std::string)roomName
+                    sender:(std::string)sender
+                      body:(std::string)body
+                 isMention:(BOOL)isMention;
+- (void)_navigateToRoom:(std::string)roomId;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
@@ -264,6 +278,23 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
     NSString* ns = [NSString stringWithUTF8String:json.c_str()];
     dispatch_async(dispatch_get_main_queue(), ^{
         [c handleAccountPrefsUpdated:ns];
+    });
+}
+
+void EventBridge::on_notification(const std::string& room_id,
+                                   const std::string& room_name,
+                                   const std::string& sender,
+                                   const std::string& body,
+                                   bool is_mention) {
+    MainWindowController* c = controller_;
+    if (!c) return;
+    std::string rid  = room_id;
+    std::string rnam = room_name;
+    std::string sndr = sender;
+    std::string bd   = body;
+    BOOL mention     = is_mention;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c handleNotification:rid roomName:rnam sender:sndr body:bd isMention:mention];
     });
 }
 
@@ -1190,6 +1221,16 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
     _splitView.hidden = NO;
     _loginView.hidden = YES;
     [self _populateUserStrip];
+
+    UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+    center.delegate = self;
+    UNAuthorizationOptions opts = UNAuthorizationOptionAlert
+                                | UNAuthorizationOptionSound
+                                | UNAuthorizationOptionBadge;
+    [center requestAuthorizationWithOptions:opts
+                          completionHandler:^(BOOL granted, NSError* err) {
+        (void)granted; (void)err;
+    }];
 }
 
 - (void)_populateUserStrip {
@@ -1292,6 +1333,83 @@ void EventBridge::on_account_prefs_updated(const std::string& json) {
     _userStripHeightCon.constant = 0;
     _splitView.hidden = YES;
     _loginView.hidden = NO;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Notifications (UNUserNotificationCenter)
+// ─────────────────────────────────────────────────────────────────────────
+
+- (void)handleNotification:(std::string)roomId
+                  roomName:(std::string)roomName
+                    sender:(std::string)sender
+                      body:(std::string)body
+                 isMention:(BOOL)isMention {
+    (void)isMention;
+    // Suppress if the window is focused and this is the active room.
+    if (self.window.isKeyWindow && _currentRoomId == roomId) return;
+
+    UNMutableNotificationContent* content =
+        [[UNMutableNotificationContent alloc] init];
+    content.title = [NSString stringWithUTF8String:sender.c_str()] ?: @"";
+    if (roomName != sender) {
+        content.subtitle = [NSString stringWithUTF8String:roomName.c_str()] ?: @"";
+    }
+    // Truncate body to 120 UTF-8 chars for the preview.
+    std::string preview = body.size() > 120
+        ? body.substr(0, 120) + "\xe2\x80\xa6"
+        : body;
+    content.body            = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
+    content.sound           = [UNNotificationSound defaultSound];
+    content.threadIdentifier = [NSString stringWithUTF8String:roomId.c_str()] ?: @"";
+    content.userInfo        = @{ @"room_id": content.threadIdentifier };
+
+    UNNotificationRequest* req =
+        [UNNotificationRequest requestWithIdentifier:
+            [NSUUID UUID].UUIDString
+                                             content:content
+                                             trigger:nil];
+    [[UNUserNotificationCenter currentNotificationCenter]
+        addNotificationRequest:req withCompletionHandler:nil];
+}
+
+// Suppress banner when the app is in the foreground and the relevant room
+// is already open.
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+       willPresentNotification:(UNNotification*)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+    (void)center;
+    NSString* rid = notification.request.content.userInfo[@"room_id"];
+    if (self.window.isKeyWindow
+            && rid
+            && _currentRoomId == std::string(rid.UTF8String ?: "")) {
+        completionHandler(UNNotificationPresentationOptionNone);
+    } else {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
+        completionHandler(UNNotificationPresentationOptionBanner
+                        | UNNotificationPresentationOptionSound);
+#else
+        completionHandler(UNNotificationPresentationOptionAlert
+                        | UNNotificationPresentationOptionSound);
+#endif
+    }
+}
+
+// Navigate to the room when the user taps/clicks the notification.
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+didReceiveNotificationResponse:(UNNotificationResponse*)response
+         withCompletionHandler:(void (^)(void))completionHandler {
+    (void)center;
+    NSString* rid = response.notification.request.content.userInfo[@"room_id"];
+    if (rid) {
+        [self _navigateToRoom:std::string(rid.UTF8String ?: "")];
+    }
+    completionHandler();
+}
+
+- (void)_navigateToRoom:(std::string)roomId {
+    [self.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+    [self onRoomSelected:roomId];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
