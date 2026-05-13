@@ -68,6 +68,7 @@ public:
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
+    void on_account_prefs_updated(const std::string& json) override;
 
 signals:
     void timelineReset(QString roomId, std::vector<tesseract::Event*> snapshot);
@@ -78,6 +79,7 @@ signals:
     void syncError(QString context, QString description, bool soft_logout);
     void backupProgress(tesseract::BackupProgress progress);
     void imagePacksUpdated();
+    void accountPrefsUpdated(QString json);
 };
 
 // ---------------------------------------------------------------------------

@@ -137,5 +137,6 @@ pub mod ffi {
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
         pub fn on_image_packs_updated(&self) {}
+        pub fn on_account_prefs_updated(&self, _json: &str) {}
     }
 }

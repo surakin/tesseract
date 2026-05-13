@@ -83,4 +83,9 @@ void EventHandlerBridge::on_image_packs_updated() const {
     handler_->on_image_packs_updated();
 }
 
+void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const {
+    if (!handler_) return;
+    handler_->on_account_prefs_updated(std::string(json));
+}
+
 } // namespace tesseract_ffi

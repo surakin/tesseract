@@ -425,6 +425,14 @@ impl ClientFfi {
                 if let Ok(guard) = h.lock() {
                     guard.on_rooms_updated(&rooms);
                 }
+                // Initial prefs snapshot — fired BEFORE on_rooms_updated so
+                // the UI has pendingRestoreRoom_ set when the room list
+                // arrives and can navigate immediately on first paint.
+                let mut prev_prefs = read_prefs_json(&client_clone).await;
+                if let Ok(guard) = h.lock() {
+                    guard.on_account_prefs_updated(&prev_prefs);
+                }
+
                 // Initial image-pack snapshot, same reasoning as for the
                 // room list: piggy-back on the same wakeup channel so
                 // both lists arrive together after every notable
@@ -460,6 +468,17 @@ impl ClientFfi {
                             if let Ok(mut g) = packs_cache.lock() { *g = pks; }
                             if let Ok(guard) = h.lock() {
                                 guard.on_image_packs_updated();
+                            }
+                            // Check for prefs changes on the same tick.
+                            // `save_prefs` does a fire-and-forget PUT which
+                            // echoes back as an account-data event in the
+                            // next sync, triggering a notable update.
+                            let cur_prefs = read_prefs_json(&client_clone).await;
+                            if cur_prefs != prev_prefs {
+                                if let Ok(guard) = h.lock() {
+                                    guard.on_account_prefs_updated(&cur_prefs);
+                                }
+                                prev_prefs = cur_prefs;
                             }
                         }
                     }
@@ -1349,6 +1368,44 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn recent_emoji_bump(&mut self, _glyph: &str) {}
 
+    // ----- Application prefs (im.gnomos.tesseract global account-data) -----
+
+    #[cfg(not(test))]
+    pub fn load_prefs(&mut self) -> String {
+        let Some(client) = self.client.clone() else { return "{}".to_owned(); };
+        self.rt.block_on(async move {
+            use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+            let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
+            client.account()
+                .account_data_raw(et).await
+                .ok().flatten()
+                .map(|r| r.json().get().to_owned())
+                .unwrap_or_else(|| "{}".to_owned())
+        })
+    }
+
+    #[cfg(test)]
+    pub fn load_prefs(&mut self) -> String { "{}".to_owned() }
+
+    #[cfg(not(test))]
+    pub fn save_prefs(&mut self, json: &str) {
+        let Some(client) = self.client.clone() else { return; };
+        let json = json.to_owned();
+        self.rt.spawn(async move {
+            use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+            use matrix_sdk::ruma::serde::Raw;
+            let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&json) else { return; };
+            let Ok(raw) = Raw::new(&raw_value) else { return; };
+            let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
+            let _ = client.account()
+                .set_account_data_raw(et, raw.cast_unchecked())
+                .await;
+        });
+    }
+
+    #[cfg(test)]
+    pub fn save_prefs(&mut self, _json: &str) {}
+
     pub fn user_id(&self) -> String {
         self.client
             .as_ref()
@@ -2007,6 +2064,19 @@ async fn read_recent_emoji_entries(client: &Client) -> Vec<crate::recent_emoji::
         return crate::recent_emoji::parse_legacy_element(&v);
     }
     Vec::new()
+}
+
+/// Read the raw JSON content of the `im.gnomos.tesseract` account-data event
+/// from the SDK's local sync cache. Returns `"{}"` when missing or on error.
+#[cfg(not(test))]
+async fn read_prefs_json(client: &Client) -> String {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
+    client.account()
+        .account_data_raw(et).await
+        .ok().flatten()
+        .map(|r| r.json().get().to_owned())
+        .unwrap_or_else(|| "{}".to_owned())
 }
 
 /// to the stable names. Returns an empty Vec when not logged in.
@@ -2965,5 +3035,17 @@ mod tests {
         let mut c = ClientFfi::new();
         let r = c.send_edit("not-a-room-id", "$event:example.com", "new body");
         assert!(!r.ok);
+    }
+
+    #[test]
+    fn load_prefs_returns_empty_object_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        assert_eq!(c.load_prefs(), "{}");
+    }
+
+    #[test]
+    fn save_prefs_is_noop_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        c.save_prefs("{\"last_room\":\"!r:example.com\"}");
     }
 }

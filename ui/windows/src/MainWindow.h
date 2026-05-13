@@ -50,6 +50,7 @@ constexpr UINT WM_TESSERACT_IMAGE_PACKS      = WM_APP + 12;
 constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
 constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
 constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
+constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
 
 namespace win32 {
 
@@ -77,6 +78,7 @@ public:
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
+    void on_account_prefs_updated(const std::string& json) override;
 
 private:
     HWND hwnd_;

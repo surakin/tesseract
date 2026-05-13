@@ -206,6 +206,20 @@ public:
                      const std::string& new_body);
 
     // ------------------------------------------------------------------
+    // Application prefs ("im.gnomos.tesseract" global account-data)
+    // ------------------------------------------------------------------
+
+    /// Read the raw JSON content of the `im.gnomos.tesseract` account-data
+    /// event from the SDK's local sync cache. Returns `"{}"` when the event
+    /// has never been written or the client is not logged in. No network
+    /// roundtrip. Not const: drives the tokio runtime via `block_on`.
+    std::string load_prefs_json();
+
+    /// Write `json` (full content object) to the homeserver as the
+    /// `im.gnomos.tesseract` account-data event. Fire-and-forget — returns
+    /// immediately; errors are silently swallowed.
+    void save_prefs_json(const std::string& json);
+
     // Recent emoji ("io.element.recent_emoji" global account-data)
     // ------------------------------------------------------------------
 

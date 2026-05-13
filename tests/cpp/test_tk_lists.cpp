@@ -269,17 +269,18 @@ TEST_CASE("RoomListView set_search_text filters rows by name case-insensitively"
     // Substring + case-insensitive: "alp" matches "Alpha room" and "Alpine".
     view.set_search_text("alp");
     st.run(view, { 0, 0, 260, 600 });
-    // Click row 0 (62-px tall) — first filtered match should be "Alpha room".
+    // Layout when searching: search bar (36 px) + "Rooms" header (28 px) +
+    // room rows (62 px each). First room starts at y = 64.
     std::string selected;
     view.on_room_selected = [&](const std::string& id) { selected = id; };
-    REQUIRE(view.on_pointer_down({ 10, 30 }));
-    view.on_pointer_up({ 10, 30 }, true);
+    REQUIRE(view.on_pointer_down({ 10, 74 }));
+    view.on_pointer_up({ 10, 74 }, true);
     CHECK(selected == "!a:x");
 
     // Row 1 → "Alpine".
     selected.clear();
-    REQUIRE(view.on_pointer_down({ 10, 90 }));
-    view.on_pointer_up({ 10, 90 }, true);
+    REQUIRE(view.on_pointer_down({ 10, 136 }));
+    view.on_pointer_up({ 10, 136 }, true);
     CHECK(selected == "!d:x");
 
     // Clearing the search text restores every room.
@@ -413,9 +414,10 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
     view.set_search_text("a");
     st.run(view, { 0, 0, 260, 400 });
 
-    // Header 0..28, "Alpha" 28..90 — y=50 should select !a.
-    REQUIRE(view.on_pointer_down({ 10, 50 }));
-    view.on_pointer_up({ 10, 50 }, true);
+    // With search active: search bar (36 px) + "Rooms" header (28 px) +
+    // "Alpha" starts at y=64. y=74 is well inside the first row.
+    REQUIRE(view.on_pointer_down({ 10, 74 }));
+    view.on_pointer_up({ 10, 74 }, true);
     CHECK(selected == "!a:x");
 }
 

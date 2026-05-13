@@ -48,6 +48,7 @@ public:
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
+    void on_account_prefs_updated(const std::string& json) override;
 
     GtkWindow* window_;
 };
@@ -78,6 +79,7 @@ public:
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_image_packs_updated();
+    void push_account_prefs_updated(const std::string& json);
 
 private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);

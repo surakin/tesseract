@@ -80,6 +80,7 @@ public:
     void on_session_saved(const std::string& session_json) override;
     void on_backup_progress(const tesseract::BackupProgress& progress) override;
     void on_image_packs_updated() override;
+    void on_account_prefs_updated(const std::string& json) override;
 
 private:
     MainWindowController* __weak controller_;
@@ -139,6 +140,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
+- (void)handleAccountPrefsUpdated:(NSString*)json;
 - (void)_showStickerPicker;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
 - (void)_onStickerSave:(id)sender;
@@ -250,6 +252,15 @@ void EventBridge::on_image_packs_updated() {
     if (!c) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         [c handleImagePacksUpdated];
+    });
+}
+
+void EventBridge::on_account_prefs_updated(const std::string& json) {
+    MainWindowController* c = controller_;
+    if (!c) return;
+    NSString* ns = [NSString stringWithUTF8String:json.c_str()];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [c handleAccountPrefsUpdated:ns];
     });
 }
 
@@ -1035,7 +1046,7 @@ void EventBridge::on_image_packs_updated() {
     _myUserId           = _client.get_user_id();
     _myDisplayName      = _client.get_display_name();
     _myAvatarUrl        = _client.get_avatar_url();
-    _pendingRestoreRoom = tesseract::Prefs::load_last_room();
+    _pendingRestoreRoom = tesseract::Prefs::parse(_client.load_prefs_json()).last_room;
     _client.start_sync(_bridge.get());
     _splitView.hidden = NO;
     _loginView.hidden = YES;
@@ -1537,7 +1548,11 @@ void EventBridge::on_image_packs_updated() {
     }
     _currentRoomId = roomId;
     _replyDetailsRequested.clear();
-    tesseract::Prefs::save_last_room(roomId);
+    {
+        auto prefs = tesseract::Prefs::parse(_client.load_prefs_json());
+        prefs.last_room = roomId;
+        _client.save_prefs_json(tesseract::Prefs::serialize(prefs));
+    }
     if (_composeShared) {
         _composeShared->clear_reply();
         _composeShared->clear_editing();
@@ -1847,6 +1862,12 @@ void EventBridge::on_image_packs_updated() {
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = &_client;
     [panel refreshPacks];
+}
+
+- (void)handleAccountPrefsUpdated:(NSString*)json {
+    auto prefs = tesseract::Prefs::parse(json.UTF8String);
+    if (!prefs.last_room.empty() && _pendingRestoreRoom.empty() && _currentRoomId.empty())
+        _pendingRestoreRoom = prefs.last_room;
 }
 
 - (void)_showStickerPicker {

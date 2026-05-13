@@ -66,6 +66,14 @@ public:
     /// referenced room). UIs re-query via `Client::list_image_packs` and
     /// repaint any open StickerPicker / EmojiPicker custom tabs.
     virtual void on_image_packs_updated() {}
+
+    /// Fired once at startup (after `start_sync` initialises the room-info
+    /// watcher) and again whenever the `im.gnomos.tesseract` global
+    /// account-data event changes. `json` is the raw event content object,
+    /// or `"{}"` when the event has never been written. UIs re-read
+    /// `Client::load_prefs_json()` and apply the updated fields (e.g. the
+    /// last-opened room).
+    virtual void on_account_prefs_updated(const std::string& /*json*/) {}
 };
 
 } // namespace tesseract

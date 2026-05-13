@@ -1,48 +1,33 @@
 #include "tesseract/prefs.h"
-#include "tesseract/paths.h"
-
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <system_error>
 
 namespace tesseract {
+namespace Prefs {
 
-namespace fs = std::filesystem;
-
-static fs::path last_room_path() {
-    return config_dir() / "last_room.txt";
+// Minimal extractor for a single string value by key from a flat JSON object.
+// Handles {"last_room":"!id:host"} — room IDs never contain '"' or '\'.
+static std::string extract_string(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string::npos) return {};
+    pos += needle.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
+        ++pos;
+    if (pos >= json.size() || json[pos] != '"') return {};
+    ++pos;
+    auto end = json.find('"', pos);
+    if (end == std::string::npos) return {};
+    return json.substr(pos, end - pos);
 }
 
-std::string Prefs::load_last_room() {
-    std::error_code ec;
-    fs::path p = last_room_path();
-    if (!fs::exists(p, ec) || ec) return {};
-
-    std::ifstream in(p, std::ios::binary);
-    if (!in) return {};
-
-    std::ostringstream buf;
-    buf << in.rdbuf();
-    std::string s = buf.str();
-    // Strip trailing newline / whitespace.
-    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' '))
-        s.pop_back();
-    return s;
+PrefsData parse(const std::string& json) {
+    PrefsData p;
+    p.last_room = extract_string(json, "last_room");
+    return p;
 }
 
-void Prefs::save_last_room(const std::string& room_id) {
-    if (room_id.empty()) return;
-
-    std::error_code ec;
-    fs::path p = last_room_path();
-    fs::create_directories(p.parent_path(), ec);
-    if (ec) return;
-
-    std::ofstream out(p, std::ios::binary | std::ios::trunc);
-    if (!out) return;
-    out.write(room_id.data(), static_cast<std::streamsize>(room_id.size()));
-    out.put('\n');
+std::string serialize(const PrefsData& p) {
+    return "{\"last_room\":\"" + p.last_room + "\"}";
 }
 
+} // namespace Prefs
 } // namespace tesseract

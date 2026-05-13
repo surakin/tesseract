@@ -459,6 +459,12 @@ void EventHandler::on_image_packs_updated() {
     PostMessage(hwnd_, WM_TESSERACT_IMAGE_PACKS, 0, 0);
 }
 
+void EventHandler::on_account_prefs_updated(const std::string& json) {
+    auto* s = new std::string(json);
+    PostMessage(hwnd_, WM_TESSERACT_ACCOUNT_PREFS, 0,
+                reinterpret_cast<LPARAM>(s));
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -705,6 +711,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_TESSERACT_IMAGE_PACKS:
         self->refresh_sticker_picker();
         return 0;
+    case WM_TESSERACT_ACCOUNT_PREFS: {
+        auto* s = reinterpret_cast<std::string*>(lParam);
+        auto prefs = tesseract::Prefs::parse(*s);
+        delete s;
+        if (!prefs.last_room.empty() &&
+            self->pending_restore_room_.empty() &&
+            self->current_room_id_.empty())
+        {
+            self->pending_restore_room_ = prefs.last_room;
+        }
+        return 0;
+    }
     case WM_TESSERACT_STICKER_BYTES: {
         auto* p = reinterpret_cast<StickerBytesPayload*>(lParam);
         self->sticker_fetches_in_flight_.erase(p->cache_key);
@@ -1356,7 +1374,7 @@ void MainWindow::start_login() {
             my_user_id_       = client_.get_user_id();
             my_display_name_  = client_.get_display_name();
             my_avatar_url_    = client_.get_avatar_url();
-            pending_restore_room_ = tesseract::Prefs::load_last_room();
+            pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
             populate_user_strip();
             event_handler_ = std::make_unique<EventHandler>(hwnd_);
             client_.start_sync(event_handler_.get());
@@ -1384,7 +1402,7 @@ void MainWindow::on_login_succeeded() {
     my_user_id_       = client_.get_user_id();
     my_display_name_  = client_.get_display_name();
     my_avatar_url_    = client_.get_avatar_url();
-    pending_restore_room_ = tesseract::Prefs::load_last_room();
+    pending_restore_room_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
     populate_user_strip();
     tesseract::SessionStore::save(client_.export_session());
     event_handler_ = std::make_unique<EventHandler>(hwnd_);
@@ -1499,7 +1517,11 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     reply_details_requested_.clear();
-    tesseract::Prefs::save_last_room(room_id);
+    {
+        auto prefs = tesseract::Prefs::parse(client_.load_prefs_json());
+        prefs.last_room = room_id;
+        client_.save_prefs_json(tesseract::Prefs::serialize(prefs));
+    }
     if (compose_shared_) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();

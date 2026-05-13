@@ -114,6 +114,10 @@ void EventBridge::on_image_packs_updated() {
     emit imagePacksUpdated();
 }
 
+void EventBridge::on_account_prefs_updated(const std::string& json) {
+    emit accountPrefsUpdated(QString::fromStdString(json));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -722,6 +726,13 @@ MainWindow::MainWindow(QWidget* parent)
     connect(bridge_.get(), &EventBridge::imagePacksUpdated,
             this, [this]{ if (stickerPicker_) stickerPicker_->refreshPacks(); },
             Qt::QueuedConnection);
+    connect(bridge_.get(), &EventBridge::accountPrefsUpdated,
+            this, [this](const QString& json) {
+                auto prefs = tesseract::Prefs::parse(json.toStdString());
+                if (!prefs.last_room.empty() && pendingRestoreRoom_.empty() && currentRoomId_.empty())
+                    pendingRestoreRoom_ = prefs.last_room;
+            },
+            Qt::QueuedConnection);
 
     // Animation frame-tick for inline media in the timeline (GIF /
     // animated WebP / APNG). 60 Hz; the timer self-stops in
@@ -778,7 +789,7 @@ void MainWindow::doLogin() {
             myUserId_          = client_.get_user_id();
             myDisplayName_     = client_.get_display_name();
             myAvatarUrl_       = client_.get_avatar_url();
-            pendingRestoreRoom_ = tesseract::Prefs::load_last_room();
+            pendingRestoreRoom_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
             populateUserStrip();
             client_.start_sync(bridge_.get());
             statusBar()->showMessage(tr("Connected"));
@@ -801,7 +812,7 @@ void MainWindow::onLoginSucceeded() {
     myUserId_          = client_.get_user_id();
     myDisplayName_     = client_.get_display_name();
     myAvatarUrl_       = client_.get_avatar_url();
-    pendingRestoreRoom_ = tesseract::Prefs::load_last_room();
+    pendingRestoreRoom_ = tesseract::Prefs::parse(client_.load_prefs_json()).last_room;
     populateUserStrip();
     tesseract::SessionStore::save(client_.export_session());
     client_.start_sync(bridge_.get());
@@ -831,7 +842,11 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
 
     currentRoomId_ = room_id;
     reply_details_requested_.clear();
-    tesseract::Prefs::save_last_room(room_id);
+    {
+        auto prefs = tesseract::Prefs::parse(client_.load_prefs_json());
+        prefs.last_room = room_id;
+        client_.save_prefs_json(tesseract::Prefs::serialize(prefs));
+    }
     if (composeShared_) {
         composeShared_->clear_reply();
         composeShared_->clear_editing();

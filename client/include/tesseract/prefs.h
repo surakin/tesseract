@@ -3,22 +3,24 @@
 
 namespace tesseract {
 
-/// Lightweight key/value store for non-sensitive user preferences that
-/// should survive restarts. Each preference is a plain UTF-8 text file
-/// in `config_dir()`. Currently stores:
-///
-///   last_room.txt  — the Matrix room-ID the user had open when they quit.
-///
-/// Unlike `SessionStore`, nothing here is secret — no atomic-rename dance
-/// is needed; a direct overwrite is acceptable.
-class Prefs {
-public:
-    /// Returns the last-open room ID, or an empty string if not set.
-    static std::string load_last_room();
-
-    /// Persists `room_id` as the last-open room. A no-op (but safe) if
-    /// `room_id` is empty. Creates the config directory if missing.
-    static void save_last_room(const std::string& room_id);
+/// Per-account user preferences, persisted as the `im.gnomos.tesseract`
+/// Matrix global account-data event so they follow the user across devices.
+struct PrefsData {
+    std::string last_room;  ///< Room ID to reopen on next launch. Empty when none.
 };
+
+/// Parse / serialize helpers for the `im.gnomos.tesseract` JSON content object.
+/// Only needs to handle the simple `{"last_room":"!id:host"}` shape; no external
+/// JSON library is required because room IDs never contain `"` or `\`.
+namespace Prefs {
+
+/// Decode `json` (raw event content) into a `PrefsData`.
+/// Unknown keys are silently ignored; missing keys use zero-values.
+PrefsData   parse(const std::string& json);
+
+/// Encode `p` as a JSON object suitable for `Client::save_prefs_json()`.
+std::string serialize(const PrefsData& p);
+
+} // namespace Prefs
 
 } // namespace tesseract

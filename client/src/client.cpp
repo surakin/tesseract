@@ -206,6 +206,14 @@ Result Client::send_edit(const std::string& room_id,
     return from_ffi(impl_->ffi->send_edit(room_id, event_id, new_body));
 }
 
+std::string Client::load_prefs_json() {
+    return std::string(impl_->ffi->load_prefs());
+}
+
+void Client::save_prefs_json(const std::string& json) {
+    impl_->ffi->save_prefs(json);
+}
+
 std::vector<std::string> Client::recent_emoji_top(std::uint32_t n) {
     // cxx returns rust::Vec<rust::String>; copy each into std::string so
     // callers don't have to know about the cxx types.

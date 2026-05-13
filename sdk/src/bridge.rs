@@ -258,6 +258,11 @@ pub mod ffi {
         /// update on a referenced room). The UI re-queries via
         /// `list_image_packs` / `list_pack_images`.
         fn on_image_packs_updated(self: &EventHandlerBridge);
+        /// Fired when the `im.gnomos.tesseract` global account-data event
+        /// changes (either on first sync or after `save_prefs` writes a new
+        /// value). `json` is the raw event content, or `"{}"` when missing.
+        /// The UI re-reads via `load_prefs` and applies any changed fields.
+        fn on_account_prefs_updated(self: &EventHandlerBridge, json: &str);
     }
 
     // -------------------------------------------------------------------------
@@ -484,6 +489,20 @@ pub mod ffi {
             self: &mut ClientFfi,
             image_url: &str,
         ) -> OpResult;
+
+        // ----- Application prefs (im.gnomos.tesseract global account-data) -----
+
+        /// Read the current `im.gnomos.tesseract` account-data event from
+        /// the SDK's local sync cache. Returns the raw JSON content object,
+        /// or `"{}"` when the event has never been written or the client is
+        /// not logged in. No network roundtrip.
+        fn load_prefs(self: &mut ClientFfi) -> String;
+
+        /// Write `json` (the full content object) back to the homeserver as
+        /// the `im.gnomos.tesseract` account-data event. Fire-and-forget —
+        /// returns immediately; errors are silently swallowed. The next sync
+        /// deliver of the event will trigger `on_account_prefs_updated`.
+        fn save_prefs(self: &mut ClientFfi, json: &str);
 
         // ----- Recent emoji (io.element.recent_emoji global account-data) -----
 

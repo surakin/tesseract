@@ -48,6 +48,7 @@ public:
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;
     void on_image_packs_updated() const;
+    void on_account_prefs_updated(rust::Str json) const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning
