@@ -1138,7 +1138,7 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme) {
     HWND hwnd = CreateWindowExW(
         0,
         kSurfaceClass, L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         0, 0, 100, 100,
         parent, nullptr, inst,
         /*lpCreateParams=*/nullptr);

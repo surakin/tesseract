@@ -2066,20 +2066,38 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .map(|n| n.to_string())
             .unwrap_or_else(|_| room.room_id().to_string());
         let is_space = room.is_space();
+        // `num_unread_messages()` is client-computed from read receipts and
+        // stays accurate in E2E rooms where the server can't see the body —
+        // unlike `unread_notification_counts().notification_count`.
+        let unread_count = room.num_unread_messages();
+        let last_activity_ts = room
+            .latest_event_timestamp()
+            .map(|t| u64::from(t.0))
+            .unwrap_or(0);
         result.push(crate::ffi::RoomInfo {
             id:                room.room_id().to_string(),
             name,
             topic:             room.topic().unwrap_or_default(),
-            unread_count:      room.unread_notification_counts().notification_count,
+            unread_count,
             is_direct:         room.is_direct().await.unwrap_or(false),
             avatar_url:        room.avatar_url()
                                    .map(|u| u.to_string())
                                    .unwrap_or_default(),
             last_message_body: String::new(),
-            last_activity_ts:  0,
+            last_activity_ts,
             is_space,
         });
     }
+    // Activity sort: unread rooms first, then by newest last-event timestamp.
+    // Per-shell space partitioning runs after this and preserves the order
+    // within each (non-space / space) bucket.
+    result.sort_by(|a, b| {
+        let a_unread = a.unread_count > 0;
+        let b_unread = b.unread_count > 0;
+        b_unread
+            .cmp(&a_unread)
+            .then_with(|| b.last_activity_ts.cmp(&a.last_activity_ts))
+    });
     result
 }
 

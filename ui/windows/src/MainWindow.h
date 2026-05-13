@@ -226,6 +226,7 @@ private:
     bool      login_visible_ = false;
     std::unique_ptr<tk::win32::Surface>            room_surface_;
     tesseract::views::RoomListView*                room_list_view_   = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField>           room_search_field_;
     HWND      hSideSep_    = nullptr;   // 1px vertical separator at x=ROOM_W
     HWND      hRoomHeader_ = nullptr;
     std::unique_ptr<tk::win32::Surface>            msg_surface_;

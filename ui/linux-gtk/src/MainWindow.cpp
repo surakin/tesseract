@@ -381,6 +381,25 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         [this](const std::string& room_id) { on_room_selected(room_id); };
     room_surface_->set_root(std::move(room_view_owner));
 
+    // Search field — host-overlaid NativeTextField (a GtkEntry under
+    // the hood) shown only when the list overflows the viewport; the
+    // RoomListView itself decides visibility in its arrange() pass.
+    room_search_field_ = room_surface_->host().make_text_field();
+    room_search_field_->set_placeholder("Search rooms");
+    room_search_field_->set_visible(false);
+    room_search_field_->set_on_changed([this](const std::string& q) {
+        if (room_list_view_) room_list_view_->set_search_text(q);
+    });
+    room_surface_->set_on_layout([this] {
+        if (!room_list_view_ || !room_search_field_) return;
+        bool visible = room_list_view_->search_field_visible();
+        room_search_field_->set_visible(visible);
+        if (visible) {
+            room_search_field_->set_rect(
+                room_list_view_->search_field_rect());
+        }
+    });
+
     GtkWidget* room_surface_widget = room_surface_->widget();
     gtk_widget_set_vexpand(room_surface_widget, TRUE);
     gtk_widget_set_hexpand(room_surface_widget, TRUE);
@@ -848,10 +867,24 @@ void MainWindow::on_send_clicked() {
     body = body.substr(l, r - l + 1);
     if (body.empty()) return;
 
-    auto res = client_.send_message(current_room_id_, body);
-    if (res) {
+    if (compose_shared_ && compose_shared_->has_editing()) {
+        std::string ev = compose_shared_->edit_event_id();
+        compose_shared_->clear_editing();
+        client_.send_edit(current_room_id_, ev, body);
         compose_text_area_->set_text("");
-        if (compose_shared_) compose_shared_->set_current_text({});
+        compose_shared_->set_current_text({});
+    } else if (compose_shared_ && compose_shared_->has_reply()) {
+        std::string reply_id = compose_shared_->reply_event_id();
+        compose_shared_->clear_reply();
+        client_.send_reply(current_room_id_, reply_id, body);
+        compose_text_area_->set_text("");
+        compose_shared_->set_current_text({});
+    } else {
+        auto res = client_.send_message(current_room_id_, body);
+        if (res) {
+            compose_text_area_->set_text("");
+            if (compose_shared_) compose_shared_->set_current_text({});
+        }
     }
 }
 

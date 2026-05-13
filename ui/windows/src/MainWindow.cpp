@@ -97,68 +97,79 @@ LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
-        Gdiplus::Graphics g(hdc);
+
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+
+        // Double-buffer through a memory DC. on_rooms_updated fires on every
+        // sync delta (one per incoming event across any room), so without
+        // a back-buffer the user sees the chrome_bg fill flash before the
+        // avatar/name/topic redraw — a strobe-like flicker that visually
+        // looks like the banner is overlapping the message list below.
+        HDC     mem_dc  = CreateCompatibleDC(hdc);
+        HBITMAP mem_bmp = CreateCompatibleBitmap(hdc, w, h);
+        HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
+
+        Gdiplus::Graphics g(mem_dc);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
         g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
 
         const auto& pal = theme::palette();
 
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        int x0 = rc.left, y0 = rc.top;
-        int w = rc.right - rc.left, h = rc.bottom - rc.top;
-
         // Background
         Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
-        g.FillRectangle(&bg, x0, y0, w, h);
+        g.FillRectangle(&bg, 0, 0, w, h);
 
         // Bottom border
         Gdiplus::Pen border(theme::gpc(pal.separator), 1.0f);
-        g.DrawLine(&border, (float)x0, (float)(rc.bottom - 1), (float)rc.right, (float)(rc.bottom - 1));
+        g.DrawLine(&border, 0.0f, (float)(h - 1), (float)w, (float)(h - 1));
 
         const auto& info = self->current_room_info_;
-        if (info.id.empty()) {
-            EndPaint(hwnd, &ps);
-            return 0;
-        }
+        if (!info.id.empty()) {
+            // Avatar
+            Gdiplus::Bitmap* bmp = self->get_room_avatar(info.id);
+            int ax = 16;
+            int ay = (h - MainWindow::kRoomAvatarSize) / 2;
+            if (bmp)
+                self->draw_circle_bitmap(g, bmp, ax, ay, MainWindow::kRoomAvatarSize);
+            else
+                self->draw_initials_circle(g, info.name, ax, ay, MainWindow::kRoomAvatarSize);
 
-        // Avatar
-        Gdiplus::Bitmap* bmp = self->get_room_avatar(info.id);
-        int ax = x0 + 16;
-        int ay = y0 + (h - MainWindow::kRoomAvatarSize) / 2;
-        if (bmp)
-            self->draw_circle_bitmap(g, bmp, ax, ay, MainWindow::kRoomAvatarSize);
-        else
-            self->draw_initials_circle(g, info.name, ax, ay, MainWindow::kRoomAvatarSize);
+            // Name + topic — DirectWrite/D2D so emoji in room names/topics
+            // render in color via Segoe UI Emoji's COLR layers.
+            int tx     = ax + MainWindow::kRoomAvatarSize + 12;
+            int text_w = w - tx - 16;
 
-        // Name + topic — DirectWrite/D2D so emoji in room names/topics render
-        // in color via Segoe UI Emoji's COLR layers.
-        int tx = ax + MainWindow::kRoomAvatarSize + 12;
-        int text_w = rc.right - tx - 16;
-
-        auto wname = utf8_to_wstr(info.name);
-        RECT name_rc{ tx, y0 + 12, tx + text_w, y0 + 12 + 22 };
-        win32::text::draw(hdc, name_rc, wname.c_str(), -1,
-            win32::text::Style{
-                .family = L"Segoe UI",
-                .size   = 13.5f,
-                .weight = win32::text::Weight::Bold,
-                .color  = pal.text_primary,
-                .trim   = win32::text::Trim::EllipsisChar,
-            });
-
-        // Topic
-        if (!info.topic.empty()) {
-            auto wtopic = utf8_to_wstr(info.topic);
-            RECT topic_rc{ tx, y0 + 34, tx + text_w, y0 + 34 + 18 };
-            win32::text::draw(hdc, topic_rc, wtopic.c_str(), -1,
+            auto wname = utf8_to_wstr(info.name);
+            RECT name_rc{ tx, 12, tx + text_w, 12 + 22 };
+            win32::text::draw(mem_dc, name_rc, wname.c_str(), -1,
                 win32::text::Style{
                     .family = L"Segoe UI",
-                    .size   = 10.0f,
-                    .color  = pal.text_secondary,
+                    .size   = 13.5f,
+                    .weight = win32::text::Weight::Bold,
+                    .color  = pal.text_primary,
                     .trim   = win32::text::Trim::EllipsisChar,
                 });
+
+            if (!info.topic.empty()) {
+                auto wtopic = utf8_to_wstr(info.topic);
+                RECT topic_rc{ tx, 34, tx + text_w, 34 + 18 };
+                win32::text::draw(mem_dc, topic_rc, wtopic.c_str(), -1,
+                    win32::text::Style{
+                        .family = L"Segoe UI",
+                        .size   = 10.0f,
+                        .color  = pal.text_secondary,
+                        .trim   = win32::text::Trim::EllipsisChar,
+                    });
+            }
         }
+
+        BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
+
+        SelectObject(mem_dc, old_bmp);
+        DeleteObject(mem_bmp);
+        DeleteDC(mem_dc);
 
         EndPaint(hwnd, &ps);
         return 0;
@@ -817,7 +828,7 @@ MainWindow::~MainWindow() {
 bool MainWindow::create(int nCmdShow) {
     hwnd_ = CreateWindowExW(
         0, CLASS_NAME, L"Tesseract",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768,
         nullptr, nullptr, hInst_, this);
     if (!hwnd_) return false;
@@ -855,6 +866,24 @@ void MainWindow::on_create(HWND hwnd) {
         room_list_view_->on_room_selected =
             [this](const std::string& room_id) { on_room_selected(room_id); };
         room_surface_->set_root(std::move(view));
+
+        // Search field — host-overlaid NativeTextField shown when the
+        // list overflows the viewport (decided inside RoomListView).
+        room_search_field_ = room_surface_->host().make_text_field();
+        room_search_field_->set_placeholder("Search rooms");
+        room_search_field_->set_visible(false);
+        room_search_field_->set_on_changed([this](const std::string& q) {
+            if (room_list_view_) room_list_view_->set_search_text(q);
+        });
+        room_surface_->set_on_layout([this] {
+            if (!room_list_view_ || !room_search_field_) return;
+            bool visible = room_list_view_->search_field_visible();
+            room_search_field_->set_visible(visible);
+            if (visible) {
+                room_search_field_->set_rect(
+                    room_list_view_->search_field_rect());
+            }
+        });
     }
     if (HWND rs = room_surface_->hwnd()) {
         SetWindowPos(rs, nullptr, 0, 0, 240, 600,
@@ -879,7 +908,7 @@ void MainWindow::on_create(HWND hwnd) {
 
     hRoomHeader_ = CreateWindowExW(
         0, L"TesseractRoomHeader", nullptr,
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
         240, 0, 784, kRoomHeaderH,
         hwnd, nullptr, hInst_, nullptr);
     SetWindowLongPtrW(hRoomHeader_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -1175,8 +1204,6 @@ void MainWindow::on_size(int w, int h) {
     constexpr int ROOM_W   = 240;
     constexpr int SEP_W    = 1;
     constexpr int CHAT_X   = ROOM_W + SEP_W;
-    constexpr int SEND_W   = 100;
-    constexpr int INPUT_H  = 60;
     constexpr int STATUS_H = 24;
 
     // Custom status bar is anchored to the bottom. Position it explicitly.
@@ -1193,7 +1220,16 @@ void MainWindow::on_size(int w, int h) {
     }
 
     int content_h = h - STATUS_H;
-    int msg_h     = content_h - INPUT_H;
+    // Drive layout from the compose bar's actual height so it never
+    // overflows below the window when a reply/edit banner or attachment
+    // is shown.
+    int compose_h = compose_shared_
+        ? static_cast<int>(compose_shared_->natural_height())
+        : static_cast<int>(tesseract::views::ComposeBar::kMinHeight);
+    compose_h = std::clamp(compose_h,
+                           static_cast<int>(tesseract::views::ComposeBar::kMinHeight),
+                           content_h / 2);
+    int msg_h = content_h - compose_h;
 
     constexpr int BANNER_H = 48;
 
@@ -1215,10 +1251,9 @@ void MainWindow::on_size(int w, int h) {
 
     // Sidebar fills the full content height (status bar excluded): the
     // user strip sits flush against the bottom, with the room list above.
-    // `msg_h` already subtracts the compose-bar envelope on the right —
-    // but the compose bar lives at x=CHAT_X, so the left sidebar must
-    // continue all the way down to content_h to avoid an empty band
-    // beneath the user strip.
+    // The compose bar lives at x=CHAT_X so the left sidebar continues
+    // all the way down to content_h to avoid an empty band beneath the
+    // user strip.
     bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
     int sidebar_h  = content_h;
     int room_list_h = user_strip_visible ? sidebar_h - kUserStripH : sidebar_h;
@@ -1242,9 +1277,6 @@ void MainWindow::on_size(int w, int h) {
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
     if (compose_surface_ && compose_surface_->hwnd()) {
-        int compose_h = compose_shared_
-            ? static_cast<int>(compose_shared_->natural_height())
-            : static_cast<int>(tesseract::views::ComposeBar::kMinHeight);
         SetWindowPos(compose_surface_->hwnd(), nullptr,
                       CHAT_X, msg_h, w - CHAT_X, compose_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1395,13 +1427,27 @@ void MainWindow::on_send_clicked() {
     body = body.substr(l, r - l + 1);
     if (body.empty()) return;
 
-    auto res = client_.send_message(current_room_id_, body);
-    if (res) {
+    if (compose_shared_ && compose_shared_->has_editing()) {
+        std::string ev = compose_shared_->edit_event_id();
+        compose_shared_->clear_editing();
+        client_.send_edit(current_room_id_, ev, body);
         compose_text_area_->set_text("");
-        if (compose_shared_) compose_shared_->set_current_text({});
+        compose_shared_->set_current_text({});
+    } else if (compose_shared_ && compose_shared_->has_reply()) {
+        std::string reply_id = compose_shared_->reply_event_id();
+        compose_shared_->clear_reply();
+        client_.send_reply(current_room_id_, reply_id, body);
+        compose_text_area_->set_text("");
+        compose_shared_->set_current_text({});
     } else {
-        MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
-                     L"Send failed", MB_ICONWARNING);
+        auto res = client_.send_message(current_room_id_, body);
+        if (res) {
+            compose_text_area_->set_text("");
+            if (compose_shared_) compose_shared_->set_current_text({});
+        } else {
+            MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
+                         L"Send failed", MB_ICONWARNING);
+        }
     }
 }
 
@@ -1474,12 +1520,21 @@ void MainWindow::on_tesseract_paginate_done(std::string* room_id,
 }
 
 void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
+    bool was_visible = hRoomHeader_ && IsWindowVisible(hRoomHeader_);
     if (info.id.empty()) {
         ShowWindow(hRoomHeader_, SW_HIDE);
+        if (was_visible && hwnd_) {
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
+        }
         return;
     }
     ShowWindow(hRoomHeader_, SW_SHOW);
     InvalidateRect(hRoomHeader_, nullptr, FALSE);
+    if (!was_visible && hwnd_) {
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+    }
 }
 
 // ---------------------------------------------------------------------------

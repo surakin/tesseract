@@ -194,6 +194,8 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
     };
     view.set_rooms(rooms);
     view.set_selected_room("!b:x");
+    // Layout once so the inner ListView resolves its selection index.
+    st.run(view, { 0, 0, 260, 200 });
     CHECK(view.selected_index() == 1);
 
     // Re-order; "b" is now index 0.
@@ -202,8 +204,116 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
         { "!a:x", "A", "", 0, false, "", "", 0, false },
     };
     view.set_rooms(rooms2);
+    st.run(view, { 0, 0, 260, 200 });
     CHECK(view.selected_index() == 0);
     CHECK(view.selected_room_id() == "!b:x");
+}
+
+TEST_CASE("RoomListView search field hidden when content fits viewport",
+          "[tk][view][roomlist][search]") {
+    Stage st;
+    RoomListView view;
+    // Two rooms, 62-px row each = 124 px content < 600 px viewport.
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "Alpha",   "", 0, false, "", "", 0, false },
+        { "!b:x", "Beta",    "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    st.run(view, { 0, 0, 260, 600 });
+
+    CHECK_FALSE(view.search_field_visible());
+    auto r = view.search_field_rect();
+    CHECK(r.w == 0.0f);
+    CHECK(r.h == 0.0f);
+}
+
+TEST_CASE("RoomListView search field visible when content overflows viewport",
+          "[tk][view][roomlist][search]") {
+    Stage st;
+    RoomListView view;
+    // Six rooms × 62 = 372 px > 200 px viewport → overflow.
+    std::vector<RoomInfo> rooms;
+    for (int i = 0; i < 6; ++i) {
+        rooms.push_back({ "!" + std::to_string(i) + ":x",
+                          "Room " + std::to_string(i),
+                          "", 0, false, "", "", 0, false });
+    }
+    view.set_rooms(rooms);
+    st.run(view, { 0, 0, 260, 200 });
+
+    CHECK(view.search_field_visible());
+    auto r = view.search_field_rect();
+    CHECK(r.w > 0.0f);
+    CHECK(r.h > 0.0f);
+    // Header sits inside the top 36-px strip of the view.
+    CHECK(r.y < 36.0f);
+}
+
+TEST_CASE("RoomListView set_search_text filters rows by name case-insensitively",
+          "[tk][view][roomlist][search]") {
+    Stage st;
+    RoomListView view;
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "Alpha room", "", 0, false, "", "", 0, false },
+        { "!b:x", "Beta room",  "", 0, false, "", "", 0, false },
+        { "!c:x", "Gamma room", "", 0, false, "", "", 0, false },
+        { "!d:x", "Alpine",     "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    st.run(view, { 0, 0, 260, 600 });
+    CHECK(view.rooms().size() == 4);
+
+    // Substring + case-insensitive: "alp" matches "Alpha room" and "Alpine".
+    view.set_search_text("alp");
+    st.run(view, { 0, 0, 260, 600 });
+    // Click row 0 (62-px tall) — first filtered match should be "Alpha room".
+    std::string selected;
+    view.on_room_selected = [&](const std::string& id) { selected = id; };
+    REQUIRE(view.on_pointer_down({ 10, 30 }));
+    view.on_pointer_up({ 10, 30 }, true);
+    CHECK(selected == "!a:x");
+
+    // Row 1 → "Alpine".
+    selected.clear();
+    REQUIRE(view.on_pointer_down({ 10, 90 }));
+    view.on_pointer_up({ 10, 90 }, true);
+    CHECK(selected == "!d:x");
+
+    // Clearing the search text restores every room.
+    view.set_search_text("");
+    st.run(view, { 0, 0, 260, 600 });
+    selected.clear();
+    REQUIRE(view.on_pointer_down({ 10, 30 + 62 * 2 })); // row 2 in full set
+    view.on_pointer_up({ 10, 30 + 62 * 2 }, true);
+    CHECK(selected == "!c:x");
+}
+
+TEST_CASE("RoomListView preserves selection by id across search filter",
+          "[tk][view][roomlist][search]") {
+    Stage st;
+    RoomListView view;
+    std::vector<RoomInfo> rooms = {
+        { "!a:x", "Alpha", "", 0, false, "", "", 0, false },
+        { "!b:x", "Beta",  "", 0, false, "", "", 0, false },
+        { "!c:x", "Gamma", "", 0, false, "", "", 0, false },
+    };
+    view.set_rooms(rooms);
+    view.set_selected_room("!b:x");
+    st.run(view, { 0, 0, 260, 600 });
+    CHECK(view.selected_room_id() == "!b:x");
+
+    // Filter out "Beta" — selection is no longer visible.
+    view.set_search_text("Alp");
+    st.run(view, { 0, 0, 260, 600 });
+    CHECK(view.selected_index() == -1);
+    // …but the id is remembered.
+    CHECK(view.selected_room_id() == "!b:x");
+
+    // Clearing the filter brings it back into view.
+    view.set_search_text("");
+    st.run(view, { 0, 0, 260, 600 });
+    CHECK(view.selected_room_id() == "!b:x");
+    CHECK(view.selected_index() == 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

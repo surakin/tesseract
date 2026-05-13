@@ -219,6 +219,25 @@ MainWindow::MainWindow(QWidget* parent)
     roomSurface_->set_root(std::move(room_view_owner));
     sideLayout->addWidget(roomSurface_, 1);
 
+    // Search field — host-overlaid NativeTextField (a QLineEdit under
+    // the hood) shown only when the list overflows the viewport; the
+    // RoomListView itself decides visibility in its arrange() pass.
+    roomSearchField_ = roomSurface_->host().make_text_field();
+    roomSearchField_->set_placeholder("Search rooms");
+    roomSearchField_->set_visible(false);
+    roomSearchField_->set_on_changed([this](const std::string& q) {
+        if (roomListView_) roomListView_->set_search_text(q);
+    });
+    roomSurface_->set_on_layout([this] {
+        if (!roomListView_ || !roomSearchField_) return;
+        bool visible = roomListView_->search_field_visible();
+        roomSearchField_->set_visible(visible);
+        if (visible) {
+            roomSearchField_->set_rect(
+                roomListView_->search_field_rect());
+        }
+    });
+
     // ---- User identity strip (footer) ----
     userStrip_ = new QWidget(sidePanel);
     userStrip_->setObjectName("userStrip");
@@ -774,15 +793,29 @@ void MainWindow::onLoginSucceeded() {
 void MainWindow::onSendClicked() {
     if (currentRoomId_.empty() || !composeTextArea_) return;
 
-    QString text = QString::fromStdString(composeTextArea_->text()).trimmed();
-    if (text.isEmpty()) return;
+    std::string body = QString::fromStdString(composeTextArea_->text()).trimmed().toStdString();
+    if (body.empty()) return;
 
-    auto res = client_.send_message(currentRoomId_, text.toStdString());
-    if (res) {
+    if (composeShared_ && composeShared_->has_editing()) {
+        std::string ev = composeShared_->edit_event_id();
+        composeShared_->clear_editing();
+        client_.send_edit(currentRoomId_, ev, body);
         composeTextArea_->set_text("");
-        if (composeShared_) composeShared_->set_current_text({});
+        composeShared_->set_current_text({});
+    } else if (composeShared_ && composeShared_->has_reply()) {
+        std::string reply_id = composeShared_->reply_event_id();
+        composeShared_->clear_reply();
+        client_.send_reply(currentRoomId_, reply_id, body);
+        composeTextArea_->set_text("");
+        composeShared_->set_current_text({});
     } else {
-        statusBar()->showMessage(QString::fromStdString(res.message), 4000);
+        auto res = client_.send_message(currentRoomId_, body);
+        if (res) {
+            composeTextArea_->set_text("");
+            if (composeShared_) composeShared_->set_current_text({});
+        } else {
+            statusBar()->showMessage(QString::fromStdString(res.message), 4000);
+        }
     }
 }
 

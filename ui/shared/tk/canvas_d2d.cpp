@@ -117,6 +117,9 @@ struct Backend::Impl {
     ComPtr<ID2D1Factory1>     d2d;
     ComPtr<IDWriteFactory2>   dwrite;
     ComPtr<IWICImagingFactory> wic;
+    // Cached system font fallback — applied to every IDWriteTextLayout so
+    // emoji sequences (especially flag RIS pairs) shape via Segoe UI Emoji.
+    ComPtr<IDWriteFontFallback> font_fallback;
     bool                      com_initialised_here = false;
 
     // IDWriteTextFormat is cheap to keep around; one per FontRole.
@@ -164,6 +167,7 @@ Backend::Backend() : impl_(std::make_unique<Impl>()) {
                               __uuidof(IDWriteFactory2),
                               reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
     check(hr, "DWriteCreateFactory");
+    impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
 
     hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                           CLSCTX_INPROC_SERVER,
@@ -599,6 +603,12 @@ public:
             wide.c_str(), static_cast<UINT32>(wide.size()),
             tf, max_w, max_h, layout.GetAddressOf());
         if (FAILED(hr) || !layout) return nullptr;
+
+        if (backend_.font_fallback) {
+            ComPtr<IDWriteTextLayout2> layout2;
+            if (SUCCEEDED(layout.As(&layout2)))
+                layout2->SetFontFallback(backend_.font_fallback.Get());
+        }
 
         DWRITE_TEXT_ALIGNMENT a = DWRITE_TEXT_ALIGNMENT_LEADING;
         switch (s.halign) {

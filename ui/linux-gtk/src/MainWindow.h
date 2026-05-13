@@ -182,6 +182,7 @@ private:
     GtkWidget*      space_name_lbl_     = nullptr;
     std::unique_ptr<tk::gtk4::Surface>            room_surface_;
     tesseract::views::RoomListView*               room_list_view_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField>          room_search_field_;
     GtkWidget*      room_header_        = nullptr;
     GtkWidget*      room_header_avatar_ = nullptr;
     GtkWidget*      room_header_name_   = nullptr;

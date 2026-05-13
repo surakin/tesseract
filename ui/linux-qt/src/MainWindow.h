@@ -198,6 +198,7 @@ private:
 
     tk::qt6::Surface*               roomSurface_    = nullptr;
     tesseract::views::RoomListView* roomListView_   = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextField> roomSearchField_;
     QWidget*             roomNavBar_      = nullptr;
     QPushButton*         backButton_      = nullptr;
     QLabel*              spaceNameLabel_  = nullptr;

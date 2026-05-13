@@ -16,10 +16,11 @@ using Microsoft::WRL::ComPtr;
 namespace win32::text {
 namespace {
 
-ComPtr<ID2D1Factory1>      g_d2d;
-ComPtr<IDWriteFactory2>    g_dw;
+ComPtr<ID2D1Factory1>       g_d2d;
+ComPtr<IDWriteFactory2>     g_dw;
+ComPtr<IDWriteFontFallback> g_font_fallback;
 ComPtr<ID2D1DCRenderTarget> g_rt;
-UINT                       g_dpi = 96;
+UINT                        g_dpi = 96;
 
 struct FormatKey {
     std::wstring family;
@@ -191,6 +192,12 @@ ComPtr<IDWriteTextLayout> make_layout(const wchar_t* text, UINT32 len,
     HRESULT hr = g_dw->CreateTextLayout(text, len, fmt,
                                         max_w_dip, max_h_dip, &layout);
     if (FAILED(hr) || !layout) return nullptr;
+
+    if (g_font_fallback) {
+        ComPtr<IDWriteTextLayout2> layout2;
+        if (SUCCEEDED(layout.As(&layout2)))
+            layout2->SetFontFallback(g_font_fallback.Get());
+    }
     return layout;
 }
 
@@ -218,6 +225,7 @@ bool init() {
     }
 
     if (!create_render_target(g_dpi)) return false;
+    g_dw->GetSystemFontFallback(&g_font_fallback);
     return true;
 }
 
@@ -225,6 +233,7 @@ void shutdown() {
     g_brush_cache.clear();
     g_format_cache.clear();
     g_rt.Reset();
+    g_font_fallback.Reset();
     g_dw.Reset();
     g_d2d.Reset();
 }

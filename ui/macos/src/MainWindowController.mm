@@ -276,6 +276,7 @@ void EventBridge::on_image_packs_updated() {
     std::unique_ptr<tk::macos::Surface>             _roomSurface;
     std::unique_ptr<tk::macos::Surface>             _msgSurface;
     tesseract::views::RoomListView*                 _roomListView;     // borrowed
+    std::unique_ptr<tk::NativeTextField>            _roomSearchField;
     tesseract::views::MessageListView*              _messageListView;  // borrowed
     std::unordered_map<std::string, TkImagePtr>     _tkAvatars;
     std::unordered_map<std::string, TkImagePtr>     _tkImages;
@@ -418,6 +419,25 @@ void EventBridge::on_image_packs_updated() {
     _roomListView->on_room_selected =
         [self](const std::string& room_id) { [self onRoomSelected:room_id]; };
     _roomSurface->set_root(std::move(room_view));
+
+    // Search field — host-overlaid NativeTextField (an NSTextField under
+    // the hood) shown only when the list overflows the viewport; the
+    // RoomListView itself decides visibility in its arrange() pass.
+    _roomSearchField = _roomSurface->host().make_text_field();
+    _roomSearchField->set_placeholder("Search rooms");
+    _roomSearchField->set_visible(false);
+    _roomSearchField->set_on_changed([self](const std::string& q) {
+        if (_roomListView) _roomListView->set_search_text(q);
+    });
+    _roomSurface->set_on_layout([self] {
+        if (!_roomListView || !_roomSearchField) return;
+        bool visible = _roomListView->search_field_visible();
+        _roomSearchField->set_visible(visible);
+        if (visible) {
+            _roomSearchField->set_rect(
+                _roomListView->search_field_rect());
+        }
+    });
 
     NSView* roomSurfaceView = (__bridge NSView*)_roomSurface->view_handle();
     roomSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -928,10 +948,25 @@ void EventBridge::on_image_packs_updated() {
     if (_currentRoomId.empty() || !_composeTextArea) return;
     std::string body = trim(_composeTextArea->text());
     if (body.empty()) return;
-    auto res = _client.send_message(_currentRoomId, body);
-    if (res) {
+
+    if (_composeShared && _composeShared->has_editing()) {
+        std::string ev = _composeShared->edit_event_id();
+        _composeShared->clear_editing();
+        _client.send_edit(_currentRoomId, ev, body);
         _composeTextArea->set_text("");
-        if (_composeShared) _composeShared->set_current_text({});
+        _composeShared->set_current_text({});
+    } else if (_composeShared && _composeShared->has_reply()) {
+        std::string reply_id = _composeShared->reply_event_id();
+        _composeShared->clear_reply();
+        _client.send_reply(_currentRoomId, reply_id, body);
+        _composeTextArea->set_text("");
+        _composeShared->set_current_text({});
+    } else {
+        auto res = _client.send_message(_currentRoomId, body);
+        if (res) {
+            _composeTextArea->set_text("");
+            if (_composeShared) _composeShared->set_current_text({});
+        }
     }
 }
 
