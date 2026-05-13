@@ -152,9 +152,8 @@ public:
         bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h = (!m.reactions.empty()
-                            || !m.read_receipts.empty()
-                            || m.timestamp_ms != 0) ? chip_h() : 0.0f;
+        float chips_h = (!m.reactions.empty() || !m.read_receipts.empty())
+                            ? chip_h() : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
         return top_pad + header_h + body_h + chips_h + kPadY;
@@ -223,10 +222,74 @@ public:
                             : (bounds.y + kPadY + kAvatarSize);
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
 
-        // Reactions row + read-receipt cluster. The strip exists when the
-        // row has either, or while the row is hovered (so the trailing
-        // "+" add-reaction button has a place to land).
-        if (!m.reactions.empty() || !m.read_receipts.empty() || hovered) {
+        // ── Hover-button overlay (no reactions / no receipts) ───────────────
+        // When there is nothing to permanently show below the body, the row
+        // is compact (chips_h == 0). In that case the +/↩/✏ hover buttons
+        // float right-aligned at the avatar-band height so they never push
+        // the row taller. Built right-to-left so the cluster stays flush with
+        // the right edge regardless of which buttons are present.
+        if (hovered && m.reactions.empty() && m.read_receipts.empty()) {
+            // Vertical centre: inside the avatar band for full rows, top of
+            // body for continuation rows (no avatar band).
+            float btn_y = cont
+                ? (bounds.y + kContPadY)
+                : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
+            float btn_right = bounds.x + bounds.w - kPadX;
+
+            auto paint_btn = [&](const char* glyph, tk::Rect& geom_out) {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Title;
+                auto l = ctx.factory.build_text(glyph, st);
+                if (!l) return;
+                float w = std::max(l->measure().w + kReplyBtnPadX * 2,
+                                    chip_h() + 4.0f);
+                tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
+                ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                                              ctx.theme.palette.subtle_hover);
+                ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                                                ctx.theme.palette.border, 1.0f);
+                ctx.canvas.draw_text(*l,
+                    { pill.x + kReplyBtnPadX,
+                      pill.y + (pill.h - l->measure().h) * 0.5f },
+                    ctx.theme.palette.text_secondary);
+                geom_out = pill;
+                btn_right -= w + chip_gap();
+            };
+
+            // Right-to-left: edit (rightmost), reply, add-reaction.
+            if (m.is_own && m.kind == MessageRowData::Kind::Text)
+                paint_btn("\xE2\x9C\x8F", owner_.hovered_row_geom_.edit_button); // ✏
+            paint_btn("\xE2\x86\xA9", owner_.hovered_row_geom_.reply_button);    // ↩
+            {
+                // "+" — needs HoverTarget::AddButton tracking.
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Title;
+                auto l = ctx.factory.build_text("+", st);
+                if (l) {
+                    float w = std::max(l->measure().w + kChipPadX * 2,
+                                        chip_h() + 8.0f);
+                    tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
+                    bool add_hov = owner_.hover_target_ == HoverTarget::AddButton;
+                    ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                        add_hov ? ctx.theme.palette.subtle_pressed
+                                : ctx.theme.palette.subtle_hover);
+                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                        add_hov ? ctx.theme.palette.accent
+                                : ctx.theme.palette.border,
+                        add_hov ? 1.5f : 1.0f);
+                    ctx.canvas.draw_text(*l,
+                        { pill.x + kChipPadX,
+                          pill.y + (pill.h - l->measure().h) * 0.5f },
+                        ctx.theme.palette.text_secondary);
+                    owner_.hovered_row_geom_.add_button  = pill;
+                    owner_.hovered_row_geom_.add_visible = true;
+                }
+            }
+        }
+
+        // ── Bottom chip strip (reactions and/or read-receipt cluster) ────────
+        // Only created when there is persistent content that needs its own row.
+        if (!m.reactions.empty() || !m.read_receipts.empty()) {
             float chip_y = cursor;
             float chip_x = col_x;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
