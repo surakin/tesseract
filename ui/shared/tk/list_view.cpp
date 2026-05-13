@@ -211,6 +211,10 @@ void ListView::paint(PaintCtx& ctx) {
     if (heights_dirty_) {
         LayoutCtx lctx{ ctx.factory, ctx.theme };
         rebuild_heights(lctx, measured_width_);
+        if (stick_to_bottom_) {
+            scroll_y_ = std::max(0.0f, content_height() - bounds_.h);
+            clamp_scroll();
+        }
     }
 
     ctx.canvas.push_clip_rect(bounds_);
