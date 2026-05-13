@@ -97,7 +97,7 @@ public:
     // user_id identifies which account's snapshot this is (for caching).
     void push_rooms(std::string user_id, std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
-    void handle_reconnect();
+    void handle_reconnect(const std::string& user_id);
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_room_list_state(tesseract::RoomListState state);

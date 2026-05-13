@@ -1461,8 +1461,22 @@ void MainWindow::onSyncError(
 
     if (context == "sync_reconnect") {
         statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
-        if (affected && affected->client) affected->client->stop_sync();
-        doLogin();
+        if (affected && affected->client) {
+            affected->client->stop_sync();
+            affected->sync_started = false;
+            // Restart only the affected account's sync — do not tear down and
+            // rebuild all sessions via doLogin(), which causes a tight loop when
+            // the server rejects one-time key uploads on every new session.
+            QTimer::singleShot(5000, this, [this, uid = affected->user_id]() {
+                for (auto& a : accounts_) {
+                    if (a->user_id == uid && !a->sync_started && a->client) {
+                        a->sync_started = true;
+                        a->client->start_sync(
+                            static_cast<EventBridge*>(a->bridge.get()));
+                    }
+                }
+            });
+        }
     } else if (context == "sync_auth_error") {
         if (soft_logout && affected) {
             if (auto saved = tesseract::SessionStore::load_account(affected->user_id)) {

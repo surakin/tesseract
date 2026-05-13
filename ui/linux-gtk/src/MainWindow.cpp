@@ -219,7 +219,7 @@ void EventHandler::on_sync_error(
     g_idle_add([](gpointer data) -> gboolean {
         auto* d = static_cast<IdleError*>(data);
         if (d->context == "sync_reconnect")
-            d->window->handle_reconnect();
+            d->window->handle_reconnect(d->user_id);
         else if (d->context == "sync_auth_error")
             d->window->handle_auth_error(d->soft_logout);
         else
@@ -1431,10 +1431,31 @@ void MainWindow::push_rooms(std::string user_id,
     }
 }
 
-void MainWindow::handle_reconnect() {
+void MainWindow::handle_reconnect(const std::string& user_id) {
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Sync error: reconnecting\xe2\x80\xa6"));
-    if (client_) client_->stop_sync();
-    do_login();
+    for (auto& sess : accounts_) {
+        if (sess->user_id == user_id && sess->client) {
+            sess->client->stop_sync();
+            sess->sync_started = false;
+            break;
+        }
+    }
+    // Restart the affected account's sync after a short delay.  do not
+    // call do_login() (which rebuilds all sessions), as that causes a tight
+    // loop when the server rejects key uploads on every new session.
+    struct DelayData { MainWindow* w; std::string uid; };
+    auto* dd = new DelayData{ this, user_id };
+    g_timeout_add(5000, [](gpointer data) -> gboolean {
+        auto* d = static_cast<DelayData*>(data);
+        for (auto& s : d->w->accounts_) {
+            if (s->user_id == d->uid && !s->sync_started && s->client) {
+                s->sync_started = true;
+                s->client->start_sync(s->bridge.get());
+            }
+        }
+        delete d;
+        return G_SOURCE_REMOVE;
+    }, dd);
 }
 
 void MainWindow::handle_auth_error(bool soft_logout) {

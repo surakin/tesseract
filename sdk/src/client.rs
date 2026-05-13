@@ -755,13 +755,13 @@ impl ClientFfi {
         let svc_clone      = Arc::clone(&sync_service);
         let h_state        = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
-        let data_dir_sv    = self.data_dir.clone();
 
         self.rt.spawn(async move {
             svc_clone.start().await;
 
             use matrix_sdk_ui::sync_service::State as SyncServiceState;
             let mut state_stream = svc_clone.state();
+            let mut consecutive_errors: u32 = 0;
 
             loop {
                 tokio::select! {
@@ -772,22 +772,36 @@ impl ClientFfi {
                         }
                     }
                     Some(state) = state_stream.next() => {
-                        if matches!(state, SyncServiceState::Error(_)) {
-                            // Clear the local SQLite store — the most common
-                            // cause of State::Error is a stale to_device.since
-                            // token accumulated across SDK upgrades or server
-                            // migrations.  Deleting the store lets the next
-                            // restore_session() start from scratch.
-                            let _ = std::fs::remove_dir_all(&data_dir_sv);
-                            if let Ok(guard) = h_state.lock() {
-                                guard.on_error(
-                                    "sync_reconnect",
-                                    "Sync state corrupted; reconnecting automatically…",
-                                    false,
-                                );
+                        match state {
+                            SyncServiceState::Running => {
+                                consecutive_errors = 0;
                             }
-                            let _ = svc_clone.stop().await;
-                            break;
+                            SyncServiceState::Error(_) => {
+                                let _ = svc_clone.stop().await;
+                                consecutive_errors += 1;
+                                if consecutive_errors >= 5 {
+                                    // Persistent error after multiple retries — report to C++
+                                    if let Ok(guard) = h_state.lock() {
+                                        guard.on_error(
+                                            "sync_reconnect",
+                                            "Sync service failed repeatedly; reconnecting…",
+                                            false,
+                                        );
+                                    }
+                                    break;
+                                }
+                                // Exponential backoff: 5s, 10s, 20s, 40s
+                                let delay = std::time::Duration::from_secs(
+                                    5 * (1u64 << consecutive_errors.saturating_sub(1).min(3)));
+                                tokio::select! {
+                                    _ = tokio::time::sleep(delay) => {}
+                                    _ = stop_rx_sv.changed() => {}
+                                }
+                                if *stop_rx_sv.borrow() { break; }
+                                svc_clone.start().await;
+                                state_stream = svc_clone.state();
+                            }
+                            _ => {}
                         }
                     }
                 }
