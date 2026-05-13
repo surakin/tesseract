@@ -2,6 +2,8 @@
 #include "canvas_d2d.h"
 #include "controls.h"
 
+#include <tesseract/settings.h>
+
 #include <commctrl.h>
 #include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM
 #include <wincodec.h>
@@ -44,22 +46,27 @@ UINT post_to_ui_message() {
     return msg;
 }
 
-// Process-wide UI font for native EDIT overlays. Without an explicit
-// font, Win32 EDIT controls render in SYSTEM_FONT — a bitmap font that
-// looks alien next to the rest of the UI. Pull lfMessageFont from
-// NONCLIENTMETRICS so we match the OS shell font (Segoe UI 9pt on
-// Vista+) at the right DPI.
-HFONT ui_font() {
+// Process-wide font for native EDIT overlays — matches FontRole::Body
+// ("Segoe UI Variable Text", Settings::font_body pt, regular weight) so
+// text input fields render in the same face and size as message body text.
+// On systems without "Segoe UI Variable Text" (pre-Win11) GDI silently
+// substitutes "Segoe UI" at the same size, which is visually identical.
+HFONT body_font() {
     static HFONT cached = []() -> HFONT {
-        NONCLIENTMETRICSW ncm{};
-        ncm.cbSize = sizeof(ncm);
-        if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,
-                                    sizeof(ncm), &ncm, 0)) {
-            return reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        }
-        HFONT h = CreateFontIndirectW(&ncm.lfMessageFont);
-        return h ? h
-                 : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        const int pt = tesseract::Settings::instance().font_body;
+        HDC hdc = GetDC(nullptr);
+        int h = -MulDiv(pt, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+        ReleaseDC(nullptr, hdc);
+        LOGFONTW lf{};
+        lf.lfHeight         = h;
+        lf.lfWeight         = FW_REGULAR;
+        lf.lfCharSet        = DEFAULT_CHARSET;
+        lf.lfQuality        = CLEARTYPE_QUALITY;
+        lf.lfPitchAndFamily = DEFAULT_PITCH | FF_SWISS;
+        wcscpy_s(lf.lfFaceName, L"Segoe UI Variable Text");
+        HFONT font = CreateFontIndirectW(&lf);
+        return font ? font
+                    : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     }();
     return cached;
 }
@@ -210,7 +217,7 @@ public:
             nullptr);
         if (!hwnd_) return;
         SendMessageW(hwnd_, WM_SETFONT,
-                      reinterpret_cast<WPARAM>(ui_font()), FALSE);
+                      reinterpret_cast<WPARAM>(body_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
         SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
@@ -342,7 +349,7 @@ public:
             nullptr);
         if (!hwnd_) return;
         SendMessageW(hwnd_, WM_SETFONT,
-                      reinterpret_cast<WPARAM>(ui_font()), FALSE);
+                      reinterpret_cast<WPARAM>(body_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
         SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
