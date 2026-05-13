@@ -1070,7 +1070,11 @@ void MainWindow::requestMediaImage_(const std::string& url,
 
     QString qkey = QString::fromStdString(url);
     auto* runner = QRunnable::create([this, key = url, qkey]() {
-        auto bytes = client_.fetch_media_bytes(key);
+        // `key` may be plain mxc (plain images/stickers) or a JSON
+        // MediaSource (encrypted images/stickers + reaction sources).
+        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
+        // only handles plain mxc and would return empty for encrypted.
+        auto bytes = client_.fetch_source_bytes(key);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
         emit mediaBytesLoaded_(qkey,

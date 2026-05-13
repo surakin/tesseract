@@ -2313,9 +2313,13 @@ async fn timeline_item_to_ffi(
                 String::new(),
             ),
             MessageType::Image(i) => {
+                // Plain → plain mxc URI string; encrypted → full MediaSource
+                // serialised as JSON so `fetch_source_bytes` can decrypt it.
+                // Matches the sticker handler above (no point of difference).
                 let source_str = match &i.source {
                     matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => String::new(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
+                        serde_json::to_string(&i.source).unwrap_or_default(),
                 };
                 let (w, h) = i
                     .info
@@ -2334,7 +2338,8 @@ async fn timeline_item_to_ffi(
             MessageType::File(f) => {
                 let file_str = match &f.source {
                     matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => String::new(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
+                        serde_json::to_string(&f.source).unwrap_or_default(),
                 };
                 let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
                 let size = f

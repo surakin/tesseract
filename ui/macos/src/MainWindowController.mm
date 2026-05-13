@@ -1205,7 +1205,11 @@ void EventBridge::on_image_packs_updated() {
     auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
 
     std::thread([clientPtr, weakSelf, key, bytes_holder]() {
-        *bytes_holder = clientPtr->fetch_media_bytes(key);
+        // `key` may be plain mxc (plain images/stickers) or a JSON
+        // MediaSource (encrypted images/stickers + reaction sources).
+        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
+        // only handles plain mxc and would return empty for encrypted.
+        *bytes_holder = clientPtr->fetch_source_bytes(key);
         dispatch_async(dispatch_get_main_queue(), ^{
             MainWindowController* s = weakSelf;
             if (!s) return;

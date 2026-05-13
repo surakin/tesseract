@@ -1350,7 +1350,11 @@ void MainWindow::request_media_image_async(const std::string& url) {
     };
 
     std::thread([this, url]() mutable {
-        auto bytes = client_.fetch_media_bytes(url);
+        // `url` may be plain mxc (plain images/stickers) or a JSON
+        // MediaSource (encrypted images/stickers + reaction sources).
+        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
+        // only handles plain mxc and would return empty for encrypted.
+        auto bytes = client_.fetch_source_bytes(url);
         auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
         g_idle_add([](gpointer p) -> gboolean {
             auto* d = static_cast<IdleData*>(p);

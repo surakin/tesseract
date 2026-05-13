@@ -1728,7 +1728,11 @@ void MainWindow::request_media_image(const std::string& url) {
 
     HWND target = hwnd_;
     std::thread([this, target, url]() {
-        auto bytes = client_.fetch_media_bytes(url);
+        // `url` may be a plain `mxc://` (plain images/stickers) or a JSON
+        // MediaSource (encrypted images, stickers, reaction sources).
+        // `fetch_source_bytes` accepts both shapes; `fetch_media_bytes`
+        // only handles plain mxc and would return empty for encrypted.
+        auto bytes = client_.fetch_source_bytes(url);
         auto* p    = new MediaBytesPayload{
             MainWindow::MediaKind::MediaImage, url, std::move(bytes) };
         if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
