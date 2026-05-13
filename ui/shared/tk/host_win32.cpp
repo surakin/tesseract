@@ -44,6 +44,26 @@ UINT post_to_ui_message() {
     return msg;
 }
 
+// Process-wide UI font for native EDIT overlays. Without an explicit
+// font, Win32 EDIT controls render in SYSTEM_FONT — a bitmap font that
+// looks alien next to the rest of the UI. Pull lfMessageFont from
+// NONCLIENTMETRICS so we match the OS shell font (Segoe UI 9pt on
+// Vista+) at the right DPI.
+HFONT ui_font() {
+    static HFONT cached = []() -> HFONT {
+        NONCLIENTMETRICSW ncm{};
+        ncm.cbSize = sizeof(ncm);
+        if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,
+                                    sizeof(ncm), &ncm, 0)) {
+            return reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        }
+        HFONT h = CreateFontIndirectW(&ncm.lfMessageFont);
+        return h ? h
+                 : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    }();
+    return cached;
+}
+
 // Converters.
 inline std::wstring utf8_to_wide(const std::string& s) {
     if (s.empty()) return {};
@@ -189,6 +209,8 @@ public:
                 GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
             nullptr);
         if (!hwnd_) return;
+        SendMessageW(hwnd_, WM_SETFONT,
+                      reinterpret_cast<WPARAM>(ui_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
     }
@@ -315,6 +337,8 @@ public:
                 GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
             nullptr);
         if (!hwnd_) return;
+        SendMessageW(hwnd_, WM_SETFONT,
+                      reinterpret_cast<WPARAM>(ui_font()), FALSE);
         SetWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc,
                            1, reinterpret_cast<DWORD_PTR>(this));
     }
