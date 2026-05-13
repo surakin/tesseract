@@ -2138,35 +2138,72 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         break;
     }
 
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     for (room_id_str, state_key) in room_refs {
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else { continue };
-        let Some(room) = client.get_room(&room_id) else { continue };
-        for ev_type_str in [
-            crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
-            crate::image_packs::TYPE_ROOM_PACK_STABLE,
-        ] {
-            let et = StateEventType::from(ev_type_str);
-            let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else { continue };
-            // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
-            // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
-            // variants are envelopes carrying `{type, content, state_key,...}`;
-            // pull the `content` subobject without doing a full deserialize.
-            use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
-            let content_opt: Option<Value> = match &raw_state {
+
+        // Helper: extract content Value from a state event envelope.
+        let extract_content = |raw_state: &RawAnySyncOrStrippedState| -> Option<Value> {
+            match raw_state {
                 RawAnySyncOrStrippedState::Sync(raw)     => raw.get_field("content").ok().flatten(),
                 RawAnySyncOrStrippedState::Stripped(raw) => raw.get_field("content").ok().flatten(),
-            };
-            let Some(content) = content_opt else { continue };
-            let source = crate::image_packs::PackSource::Room {
-                room_id:   room_id_str.clone(),
-                state_key: state_key.clone(),
-            };
-            let id = crate::image_packs::pack_id_for(&source);
-            if let Some(pack) =
-                crate::image_packs::parse_pack_content(id, source, &content)
-            {
-                packs.push(pack);
-                break;
+            }
+        };
+
+        let mut found = false;
+
+        // Fast path: local SSS cache.
+        if let Some(room) = client.get_room(&room_id) {
+            for ev_type_str in [
+                crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
+                crate::image_packs::TYPE_ROOM_PACK_STABLE,
+            ] {
+                let et = StateEventType::from(ev_type_str);
+                // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
+                // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
+                // variants carry `{type, content, state_key,...}`.
+                let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else { continue };
+                let Some(content) = extract_content(&raw_state) else { continue };
+                let source = crate::image_packs::PackSource::Room {
+                    room_id:   room_id_str.clone(),
+                    state_key: state_key.clone(),
+                };
+                let id = crate::image_packs::pack_id_for(&source);
+                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                    packs.push(pack);
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        // HTTP fallback: SSS required_state does not include custom event types
+        // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
+        // the local cache. For explicitly subscribed rooms the number is small,
+        // so one HTTP round-trip per missing room is acceptable.
+        if !found {
+            use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
+            for ev_type_str in [
+                crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
+                crate::image_packs::TYPE_ROOM_PACK_STABLE,
+            ] {
+                let et = StateEventType::from(ev_type_str);
+                let req = get_state_event_for_key::v3::Request::new(
+                    room_id.clone(),
+                    et,
+                    state_key.clone(),
+                );
+                let Ok(response) = client.send(req).await else { continue };
+                let Ok(content) = serde_json::from_str::<Value>(response.event_or_content.get()) else { continue };
+                let source = crate::image_packs::PackSource::Room {
+                    room_id:   room_id_str.clone(),
+                    state_key: state_key.clone(),
+                };
+                let id = crate::image_packs::pack_id_for(&source);
+                if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                    packs.push(pack);
+                    break;
+                }
             }
         }
     }
@@ -2179,7 +2216,6 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     let mut added_ids: std::collections::HashSet<String> =
         packs.iter().map(|p| p.id.clone()).collect();
 
-    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     for room in client.joined_rooms() {
         let room_id_str = room.room_id().to_string();
         for ev_type_str in [
