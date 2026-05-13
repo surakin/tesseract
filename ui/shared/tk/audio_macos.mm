@@ -164,8 +164,8 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_macos() {
 } // namespace tk::macos
 
 @implementation TkAvDelegate
-- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)/*player*/
-                       successfully:(BOOL)/*flag*/ {
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)__unused player
+                       successfully:(BOOL)__unused flag {
     if (self.owner) self.owner->on_finished();
 }
 @end
