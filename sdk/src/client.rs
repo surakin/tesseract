@@ -171,6 +171,11 @@ struct PersistedSession {
 pub struct ClientFfi {
     client:     Option<Client>,
     stop_tx:    Option<watch::Sender<bool>>,
+    /// Persistent receiver clone used by `paginate_back_with_status` to race
+    /// the network call against shutdown. Set in `start_sync`; survives until
+    /// the `ClientFfi` is dropped so the cancel arm fires even if the call
+    /// starts just before `stop_sync` takes `stop_tx`.
+    stop_rx:    Option<watch::Receiver<bool>>,
     oauth_flow: Option<oauth::PendingFlow>,
     #[cfg(not(test))]
     handler:      Option<Arc<Mutex<SendHandler>>>,
@@ -233,6 +238,7 @@ impl ClientFfi {
         Self {
             client:     None,
             stop_tx:    None,
+            stop_rx:    None,
             oauth_flow: None,
             #[cfg(not(test))]
             handler:      None,
@@ -380,6 +386,7 @@ impl ClientFfi {
 
         let (stop_tx, stop_rx) = watch::channel(false);
         let stop_tx_auth = stop_tx.clone();
+        self.stop_rx = Some(stop_rx.clone());
         self.stop_tx = Some(stop_tx);
 
         let handler = Arc::new(Mutex::new(SendHandler(handler)));
@@ -964,15 +971,38 @@ impl ClientFfi {
             };
         };
 
-        let tl = Arc::clone(&handle.timeline);
-        // `paginate_backwards` returns `Ok(true)` once the timeline reports
-        // that its earliest event has been seen (no further history can be
-        // fetched). UIs latch their scroll-up trigger off this signal.
-        match self.rt.block_on(tl.paginate_backwards(count)) {
-            Ok(reached_start) => PaginateResult {
+        let tl      = Arc::clone(&handle.timeline);
+        let stop_rx = self.stop_rx.clone();
+
+        // Race the network round-trip against the shutdown signal so that
+        // `stop_sync()` unblocks any worker threads waiting in this call.
+        match self.rt.block_on(async move {
+            let paginate = tl.paginate_backwards(count);
+            if let Some(mut rx) = stop_rx {
+                tokio::select! {
+                    result = paginate => result.map(Some),
+                    _ = async {
+                        loop {
+                            match rx.changed().await {
+                                Ok(()) => { if *rx.borrow() { return; } }
+                                Err(_) => return, // sender dropped = shutdown
+                            }
+                        }
+                    } => Ok(None),
+                }
+            } else {
+                paginate.await.map(Some)
+            }
+        }) {
+            Ok(Some(reached_start)) => PaginateResult {
                 ok: true,
                 message: String::new(),
                 reached_start,
+            },
+            Ok(None) => PaginateResult {
+                ok: false,
+                message: "shutdown in progress".into(),
+                reached_start: false,
             },
             Err(e) => PaginateResult {
                 ok: false,

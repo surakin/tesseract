@@ -6,10 +6,12 @@
 #include <QIcon>
 
 LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
+                                 std::function<void()> on_toggle,
                                  std::function<void()> on_quit,
                                  QObject* parent)
     : QObject(parent),
       on_show_(std::move(on_show)),
+      on_toggle_(std::move(on_toggle)),
       on_quit_(std::move(on_quit))
 {
     if (!QSystemTrayIcon::isSystemTrayAvailable()) {
@@ -32,7 +34,7 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
     QObject::connect(tray_.get(), &QSystemTrayIcon::activated,
                      this, [this](QSystemTrayIcon::ActivationReason r) {
         if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick) {
-            if (on_show_) on_show_();
+            if (on_toggle_) on_toggle_();
         }
     });
 

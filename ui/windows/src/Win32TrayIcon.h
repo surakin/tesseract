@@ -22,6 +22,7 @@ class Win32TrayIcon final : public tesseract::ITrayIcon {
 public:
     Win32TrayIcon(HINSTANCE hInst,
                   std::function<void()> on_show,
+                  std::function<void()> on_toggle,
                   std::function<void()> on_quit);
     ~Win32TrayIcon() override;
 
@@ -42,6 +43,7 @@ private:
     HINSTANCE             hInst_      = nullptr;
     HWND                  hwnd_       = nullptr;
     std::function<void()> on_show_;
+    std::function<void()> on_toggle_;
     std::function<void()> on_quit_;
     bool                  added_      = false;
 };

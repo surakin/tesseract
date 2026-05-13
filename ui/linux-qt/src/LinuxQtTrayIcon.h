@@ -12,6 +12,7 @@ class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon {
     Q_OBJECT
 public:
     LinuxQtTrayIcon(std::function<void()> on_show,
+                    std::function<void()> on_toggle,
                     std::function<void()> on_quit,
                     QObject* parent = nullptr);
     ~LinuxQtTrayIcon() override;
@@ -21,6 +22,7 @@ public:
 
 private:
     std::function<void()>            on_show_;
+    std::function<void()>            on_toggle_;
     std::function<void()>            on_quit_;
     std::unique_ptr<QSystemTrayIcon> tray_;
     std::unique_ptr<QMenu>           menu_;

@@ -2765,6 +2765,10 @@ void MainWindow::switch_active_account(int new_idx) {
             [this]{ ShowWindow(hwnd_, SW_SHOW);
                      if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
                      SetForegroundWindow(hwnd_); },
+            [this]{ if (IsWindowVisible(hwnd_)) { ShowWindow(hwnd_, SW_HIDE); }
+                     else { ShowWindow(hwnd_, SW_SHOW);
+                            if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+                            SetForegroundWindow(hwnd_); } },
             [this]{ quitting_ = true; DestroyWindow(hwnd_); });
     }
 }

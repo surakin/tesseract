@@ -860,26 +860,26 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
-    // Drain background workers BEFORE tearing the clients down.  Each
-    // worker calls `client_->fetch_*` which does a tokio block_on; racing
-    // one against ~ClientFfi drops the tokio Runtime mid-block_on, which
-    // causes panic_in_cleanup through cxx's prevent_unwind guard.
-    // Order: flip flag → drop queued runnables → wait (unbounded) for any
-    // already-running workers → only then stop_sync + destroy members.
-    // No timeout: the underlying reqwest stack has TCP-level timeouts so
-    // this cannot hang indefinitely on a dead server.
+    // Drain background workers BEFORE tearing the clients down.  Workers
+    // call `client_->paginate_back_with_status` which does a tokio block_on
+    // over a network round-trip; we must not destroy the Runtime while that
+    // is in flight (causes panic_in_cleanup through cxx's prevent_unwind).
+    //
+    // stop_sync() is called BEFORE waitForDone so the Rust-side select! in
+    // paginate_back_with_status sees the cancellation signal and returns
+    // immediately, unblocking any worker threads blocked inside it.
+    // The ~ClientFfi destructor calls stop_sync() again as a no-op safety
+    // net; stop_sync() is idempotent (handler.take() returns None on the
+    // second call). Calling it here while the bridges are still alive also
+    // ensures the final session-refresh callback can reach the handler.
     shuttingDown_.store(true, std::memory_order_release);
     mediaPool_.clear();
-    mediaPool_.waitForDone();
-
-    // Stop sync on every signed-in account. The ~ClientFfi destructor
-    // calls stop_sync again as a safety net, but doing it here drains
-    // tokio workers while the bridges are still alive to receive the
-    // final session-refreshed callback (so the latest refresh token
-    // makes it to disk before shutdown).
     for (auto& a : accounts_) {
         if (a && a->client) a->client->stop_sync();
     }
+    if (pending_login_client_) pending_login_client_->stop_sync();
+    mediaPool_.waitForDone(5000); // 5 s safety-net; matches GTK4 / Win32
+
     client_ = nullptr;
     bridge_ = nullptr;
 
@@ -1032,6 +1032,7 @@ void MainWindow::doLogin() {
     if (!tray_) {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]{ show(); raise(); activateWindow(); },
+            [this]{ if (isVisible()) hide(); else { show(); raise(); activateWindow(); } },
             []{ qApp->quit(); },
             this);
         if (tray_->is_available())
@@ -1179,6 +1180,7 @@ void MainWindow::onLoginSucceeded() {
     if (!tray_) {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
             [this]{ show(); raise(); activateWindow(); },
+            [this]{ if (isVisible()) hide(); else { show(); raise(); activateWindow(); } },
             []{ qApp->quit(); },
             this);
         if (tray_->is_available())

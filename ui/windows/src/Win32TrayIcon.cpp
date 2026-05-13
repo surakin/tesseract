@@ -55,9 +55,11 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg,
 
 Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst,
                              std::function<void()> on_show,
+                             std::function<void()> on_toggle,
                              std::function<void()> on_quit)
     : hInst_(hInst),
       on_show_(std::move(on_show)),
+      on_toggle_(std::move(on_toggle)),
       on_quit_(std::move(on_quit))
 {
     if (!class_registered_) {
@@ -142,7 +144,7 @@ void Win32TrayIcon::on_tray_message(WPARAM /*icon_id*/, LPARAM lParam) {
     switch (event) {
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
-        if (on_show_) on_show_();
+        if (on_toggle_) on_toggle_();
         return;
     case WM_RBUTTONUP:
     case WM_CONTEXTMENU:
