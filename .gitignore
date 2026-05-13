@@ -2,6 +2,7 @@ build/
 target/
 .cargo/config.toml
 .claude/settings.local.json
+.vscode/
 .cache/
 _deps/
 CMakeFiles/
