@@ -1225,6 +1225,7 @@ void MainWindow::navigate_to_room(const std::string& room_id) {
     if (room_id.empty()) return;
     if (roomListView_) roomListView_->set_selected_room(room_id);
     onRoomSelected(room_id);
+    show();
     raise();
     activateWindow();
 }

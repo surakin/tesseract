@@ -218,11 +218,23 @@ impl Drop for ClientFfi {
         self.stop_sync();
         #[cfg(not(test))]
         if let Some(h) = self.backfill_task.take() { h.abort(); }
-        #[cfg(not(test))]
-        for (_, th) in self.timelines.drain() {
-            for h in th.abort_tasks { h.abort(); }
+        // Drop SDK objects that call Handle::current() in their Drop impls
+        // (SqliteStateStore via matrix_sdk::Client, Timeline) with the runtime
+        // handle in TLS.  Without enter() here, dropping pending_login_client_
+        // from C++ (Qt event loop, no tokio context) causes a panic_in_cleanup
+        // abort — the same hazard oauth_await_callback / restore_session guard
+        // against with their own `let _guard = self.rt.enter()` blocks.
+        {
+            let _guard = self.rt.enter();
+            #[cfg(not(test))]
+            for (_, th) in self.timelines.drain() {
+                for h in th.abort_tasks { h.abort(); }
+            }
+            // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
+            // rather than in the implicit field-drop pass after this fn returns.
+            let _ = self.client.take();
         }
-        // Field drops proceed: client → … → rt (runtime drops last)
+        // Remaining fields are all None/empty; rt drops last (declared last).
     }
 }
 
@@ -443,6 +455,52 @@ impl ClientFfi {
                     }
                 }
             });
+        }
+
+        // Global notification handler — fires for every room on every sync
+        // response, without requiring a per-room subscribe_room call.
+        {
+            use matrix_sdk::ruma::events::room::message::MessageType;
+            use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            client.add_event_handler(
+                move |ev: OriginalSyncMessageLikeEvent<RoomMessageEventContent>,
+                      room: Room| {
+                    let h            = Arc::clone(&h);
+                    let client_clone = client_clone.clone();
+                    async move {
+                        let (body, msg_type_str) = match &ev.content.msgtype {
+                            MessageType::Text(t)  => (t.body.trim().to_owned(), "m.text"),
+                            MessageType::Image(i) => (i.body.trim().to_owned(), "m.image"),
+                            MessageType::File(f)  => (f.body.trim().to_owned(), "m.file"),
+                            MessageType::Audio(a) => (a.body.trim().to_owned(), "m.audio"),
+                            MessageType::Video(v) => (v.body.trim().to_owned(), "m.video"),
+                            _ => return,
+                        };
+                        if body.is_empty() { return; }
+                        let me = client_clone.user_id().map(|u| u.to_owned());
+                        let sender = ev.sender.as_str().to_owned();
+                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) { return; }
+                        let room_id  = room.room_id().as_str().to_owned();
+                        let event_id = ev.event_id.as_str();
+                        let ts: u64  = ev.origin_server_ts.get().into();
+                        let synthetic = build_push_rule_json(
+                            &room_id, event_id, &sender, &body, msg_type_str, ts);
+                        let (should_notify, is_mention) =
+                            evaluate_push_rules(&client_clone, &room, &synthetic).await;
+                        if should_notify {
+                            let room_name = room.display_name().await
+                                .map(|n| n.to_string())
+                                .unwrap_or_else(|_| room_id.clone());
+                            if let Ok(g) = h.lock() {
+                                g.on_notification(&room_id, &room_name,
+                                                  &sender, &body, is_mention);
+                            }
+                        }
+                    }
+                },
+            );
         }
 
         // Build SyncService.
@@ -2907,21 +2965,25 @@ fn visible_len(visible: &[bool]) -> u64 {
     visible.iter().filter(|b| **b).count() as u64
 }
 
-/// Builds a minimal raw Matrix event JSON envelope from a `TimelineEvent`
-/// suitable for passing to `Ruleset::get_actions`. The `source_json` field on
-/// `TimelineEvent` is the image MediaSource blob, NOT the raw event — so we
-/// synthesise the envelope from the fields that drive push-rule conditions
-/// (type, sender, content.body, content.msgtype).
+/// Builds a minimal raw Matrix event JSON envelope suitable for passing to
+/// `Ruleset::get_actions`. Uses `serde_json::to_string` for string fields so
+/// control characters (\n, \r, \t, …) are escaped correctly.
 #[cfg(not(test))]
-fn build_push_rule_json(room_id: &str, ev: &TimelineEvent) -> String {
-    let msg_type = if ev.msg_type.is_empty() { "m.text" } else { &ev.msg_type };
-    let body_escaped = ev.body.replace('\\', "\\\\").replace('"', "\\\"");
-    let sender_escaped = ev.sender.replace('\\', "\\\\").replace('"', "\\\"");
-    let event_id = if ev.event_id.is_empty() { "$unknown" } else { &ev.event_id };
-    let room_id_escaped = room_id.replace('\\', "\\\\").replace('"', "\\\"");
+fn build_push_rule_json(
+    room_id:   &str,
+    event_id:  &str,
+    sender:    &str,
+    body:      &str,
+    msg_type:  &str,
+    timestamp: u64,
+) -> String {
+    let msg_type  = if msg_type.is_empty()  { "m.text"    } else { msg_type  };
+    let event_id  = if event_id.is_empty()  { "$unknown"  } else { event_id  };
+    let body_json   = serde_json::to_string(body)   .unwrap_or_else(|_| "\"\"".into());
+    let sender_json = serde_json::to_string(sender) .unwrap_or_else(|_| "\"\"".into());
+    let rid_json    = serde_json::to_string(room_id).unwrap_or_else(|_| "\"\"".into());
     format!(
-        r#"{{"type":"m.room.message","event_id":"{event_id}","sender":"{sender_escaped}","room_id":"{room_id_escaped}","origin_server_ts":{ts},"content":{{"msgtype":"{msg_type}","body":"{body_escaped}"}}}}"#,
-        ts = ev.timestamp,
+        r#"{{"type":"m.room.message","event_id":"{event_id}","sender":{sender_json},"room_id":{rid_json},"origin_server_ts":{timestamp},"content":{{"msgtype":"{msg_type}","body":{body_json}}}}}"#,
     )
 }
 
@@ -2982,7 +3044,7 @@ async fn handle_timeline_diff(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    client: &Client,
+    _client: &Client,
 ) {
     match diff {
         VectorDiff::Append { values } => {
@@ -3006,24 +3068,6 @@ async fn handle_timeline_diff(
                 visible.push(true);
                 if let Ok(g) = handler.lock() {
                     g.on_message_inserted(room_id, idx, &ev);
-                }
-                // Fire notification for live arrivals only (not self, not empty body).
-                if !ev.sender.is_empty()
-                    && me.map(|u| u.as_str()) != Some(ev.sender.as_str())
-                    && !ev.body.is_empty()
-                {
-                    let synthetic = build_push_rule_json(room_id, &ev);
-                    let (should_notify, is_mention) =
-                        evaluate_push_rules(client, room, &synthetic).await;
-                    if should_notify {
-                        let room_name = room.display_name().await
-                            .map(|n| n.to_string())
-                            .unwrap_or_else(|_| room_id.to_string());
-                        if let Ok(g) = handler.lock() {
-                            g.on_notification(room_id, &room_name,
-                                              &ev.sender_name, &ev.body, is_mention);
-                        }
-                    }
                 }
             } else {
                 visible.push(false);
