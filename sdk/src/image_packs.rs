@@ -12,7 +12,50 @@
 //! Per spec: when `pack.usage` is absent/empty, BOTH `sticker` and `emoticon`
 //! are allowed. Per-image `usage` overrides pack-level `usage` when present.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+fn empty_object() -> Value {
+    Value::Object(serde_json::Map::new())
+}
+
+/// Wire representation of a single image entry in an MSC2545 image pack
+/// (`images.<shortcode>`). Unknown keys are round-tripped through `extra`
+/// so data written by other clients survives a Tesseract upsert.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PackImage {
+    pub url: String,
+
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub body: String,
+
+    #[serde(default = "empty_object")]
+    pub info: Value,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub usage: Option<Vec<String>>,
+
+    #[serde(rename = "im.tesseract.favorite",
+            skip_serializing_if = "Option::is_none", default)]
+    pub favorite: Option<bool>,
+
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+/// Convert a `usage` array of strings (from `PackImage`) to a bitmask.
+fn usage_strs_to_mask(strs: &[String]) -> u8 {
+    if strs.is_empty() { return USAGE_ANY; }
+    let mut mask = 0u8;
+    for s in strs {
+        match s.as_str() {
+            "sticker"  => mask |= USAGE_STICKER,
+            "emoticon" => mask |= USAGE_EMOTICON,
+            _ => {}
+        }
+    }
+    if mask == 0 { USAGE_ANY } else { mask }
+}
 
 pub const USAGE_STICKER:  u8 = 1 << 0;
 pub const USAGE_EMOTICON: u8 = 1 << 1;
@@ -122,24 +165,19 @@ pub fn parse_pack_content(
 
     let mut entries: Vec<ImageEntry> = Vec::with_capacity(images_obj.len());
     for (shortcode, img) in images_obj {
-        let Some(url) = img.get("url").and_then(Value::as_str) else { continue };
-        if url.is_empty() { continue; }
-        let body = img.get("body").and_then(Value::as_str).unwrap_or("").to_owned();
-        let info = img.get("info").cloned().unwrap_or_else(|| {
-            Value::Object(serde_json::Map::new())
-        });
-        let info_json = serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_owned());
-        let usage = img.get("usage").and_then(Value::as_array)
-            .map(|a| usage_array_to_mask(a.as_slice()))
+        let Ok(pack_img) = serde_json::from_value::<PackImage>(img.clone()) else { continue };
+        if pack_img.url.is_empty() { continue; }
+        let info_json = serde_json::to_string(&pack_img.info).unwrap_or_else(|_| "{}".to_owned());
+        let usage = pack_img.usage.as_deref()
+            .map(usage_strs_to_mask)
             .unwrap_or(pack_usage);
-        let favorite = img.get(FAVORITE_KEY).and_then(Value::as_bool).unwrap_or(false);
         entries.push(ImageEntry {
             shortcode: shortcode.clone(),
-            url:       url.to_owned(),
-            body,
+            url:       pack_img.url,
+            body:      pack_img.body,
             info_json,
             usage,
-            favorite,
+            favorite:  pack_img.favorite.unwrap_or(false),
         });
     }
 
@@ -224,18 +262,22 @@ pub fn upsert_image_into_user_pack(
         return content;
     };
 
-    let new_img_entry = images.entry(shortcode.to_owned())
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if let Some(map) = new_img_entry.as_object_mut() {
-        map.insert("url".to_owned(), Value::String(url.to_owned()));
-        if !body.is_empty() {
-            map.insert("body".to_owned(), Value::String(body.to_owned()));
-        }
-        map.insert("info".to_owned(), info);
-        if let Some(fav) = favorite {
-            map.insert(FAVORITE_KEY.to_owned(), Value::Bool(fav));
-        }
-    }
+    // Read the existing entry so unknown keys written by other clients survive
+    // the round-trip. Then overwrite only the fields we own.
+    let mut pack_img: PackImage = images
+        .get(shortcode)
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    pack_img.url  = url.to_owned();
+    if !body.is_empty() { pack_img.body = body.to_owned(); }
+    pack_img.info = info;
+    if let Some(fav) = favorite { pack_img.favorite = Some(fav); }
+
+    images.insert(
+        shortcode.to_owned(),
+        serde_json::to_value(pack_img).expect("PackImage is always serialisable"),
+    );
 
     content
 }
