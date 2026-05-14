@@ -209,7 +209,7 @@ void UpSharedBusGtk::distributor_call(GDBusConnection* bus, const char* method,
         bus, svc,
         "/org/unifiedpush/Distributor",
         "org.unifiedpush.Distributor1", method,
-        g_variant_new("(sss)", "im.gnomos.Tesseract", token.c_str(), "Tesseract"),
+        g_variant_new("(ss)", "im.gnomos.Tesseract", token.c_str()),
         nullptr,
         G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
 }
@@ -253,7 +253,6 @@ void LinuxUpConnectorGtk::start(tesseract::Client* client,
     std::string dist = shared.find_distributor(bus);
     if (!dist.empty()) {
         distributor_service_ = dist;
-        // Register uses (service, token, description); Unregister uses (service, token).
         shared.distributor_call(bus, "Register", dist.c_str(), token_);
     }
     g_object_unref(bus);

@@ -104,8 +104,7 @@ public:
             QDBusConnection::sessionBus());
         dist.call(QStringLiteral("Register"),
                   QStringLiteral("im.gnomos.Tesseract"),
-                  QString::fromStdString(token),
-                  QStringLiteral("Tesseract"));
+                  QString::fromStdString(token));
     }
 
     void distributor_unregister(const QString& svc, const std::string& token) {
