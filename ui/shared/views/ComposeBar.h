@@ -226,6 +226,7 @@ private:
     std::unique_ptr<tk::TextLayout> emoji_layout_;
     std::unique_ptr<tk::TextLayout> sticker_layout_;
     tk::Rect    text_area_rect_{};
+    tk::Rect    compose_card_rect_{};   // card outline wrapping text + icon buttons
     tk::Rect    emoji_rect_{};
     tk::Rect    sticker_rect_{};
     tk::Rect    send_rect_{};

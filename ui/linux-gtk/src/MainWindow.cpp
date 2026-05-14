@@ -414,6 +414,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                 room_list_view_->search_field_rect());
         }
     });
+    room_list_view_->on_search_clear = [this] {
+        if (search_debounce_id_) {
+            g_source_remove(search_debounce_id_);
+            search_debounce_id_ = 0;
+        }
+        search_pending_text_.clear();
+        room_search_field_->set_text("");
+        room_list_view_->set_search_text("");
+        refresh_room_list();
+    };
 
     GtkWidget* room_surface_widget = room_surface_->widget();
     gtk_widget_set_vexpand(room_surface_widget, TRUE);
@@ -1267,6 +1277,9 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();
     }
+    if (compose_text_area_) compose_text_area_->set_text("");
+    if (compose_shared_)    compose_shared_->set_current_text({});
+
     for (const auto& r : rooms_)
         if (r.id == current_room_id_) { update_room_header(r); break; }
 

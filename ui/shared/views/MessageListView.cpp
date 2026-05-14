@@ -1024,20 +1024,24 @@ private:
             ctx.canvas.fill_rect({ cx - gap * 0.5f - bar_w, cy, bar_w, bar_h }, glyph_col);
             ctx.canvas.fill_rect({ cx + gap * 0.5f,         cy, bar_w, bar_h }, glyph_col);
         } else {
-            // Play triangle: drawn as a stack of thin centred rects, the
-            // poor-cousin substitute for a path primitive that tk::Canvas
-            // doesn't expose. Visually adequate for a 32 px button.
+            // Play triangle (▶): stacked horizontal rects, symmetric about
+            // the vertical centre so it actually points right.  Row widths
+            // are maximum at the midpoint and taper to near-zero at the top
+            // and bottom, forming the two slanted edges of the triangle.
+            // The horizontal left edge (flat face) is aligned to tri_x;
+            // tri_x is shifted so the visual centroid (1/3 from the base)
+            // sits at the button centre.
             const float tri_h = btn_d * 0.50f;
             const float tri_w = btn_d * 0.38f;
-            const float tri_x = btn_x + (btn_d - tri_w) * 0.5f + 1.5f;
+            const float tri_x = btn_x + btn_d * 0.5f - tri_w / 3.0f;
             const float tri_y = btn_y + (btn_d - tri_h) * 0.5f;
             const int   steps = 8;
             for (int i = 0; i < steps; ++i) {
-                const float t   = static_cast<float>(i) / static_cast<float>(steps - 1);
+                const float t     = (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
                 const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - t);
-                const float ry  = tri_y + i * row_h;
-                ctx.canvas.fill_rect({ tri_x, ry, row_w, row_h }, glyph_col);
+                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
+                const float ry    = tri_y + i * row_h;
+                ctx.canvas.fill_rect({ tri_x, ry, std::max(1.0f, row_w), row_h }, glyph_col);
             }
         }
 
@@ -1206,18 +1210,20 @@ private:
             ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
                                          tk::Color{ 0, 0, 0, 120 });
 
-            // Play triangle (same stacked-rect technique as voice card).
+            // Play triangle (▶): same symmetric stacked-rect approach as
+            // the voice card — centroid-shifted so the glyph is centred.
             const float tri_h = kDiscD * 0.45f;
             const float tri_w = kDiscD * 0.35f;
-            const float tri_x = disc.x + (kDiscD - tri_w) * 0.5f + 2.0f;
+            const float tri_x = disc.x + kDiscD * 0.5f - tri_w / 3.0f;
             const float tri_y = disc.y + (kDiscD - tri_h) * 0.5f;
             constexpr int steps = 8;
             for (int i = 0; i < steps; ++i) {
-                const float t     = static_cast<float>(i) / static_cast<float>(steps - 1);
+                const float t     = (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
                 const float row_h = tri_h / static_cast<float>(steps);
-                const float row_w = tri_w * (1.0f - t);
-                ctx.canvas.fill_rect({ tri_x, tri_y + i * row_h, row_w, row_h },
-                                      tk::Color{ 255, 255, 255, 230 });
+                const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
+                ctx.canvas.fill_rect({ tri_x, tri_y + i * row_h,
+                                       std::max(1.0f, row_w), row_h },
+                                     tk::Color{ 255, 255, 255, 230 });
             }
         }
 

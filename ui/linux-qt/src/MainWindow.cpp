@@ -198,6 +198,12 @@ MainWindow::MainWindow(QWidget* parent)
                 roomListView_->search_field_rect());
         }
     });
+    roomListView_->on_search_clear = [this] {
+        roomSearchField_->set_text("");
+        roomSearchPendingText_.clear();
+        if (roomListView_) roomListView_->set_search_text("");
+        refreshRoomList();
+    };
 
     // ---- User identity strip (footer) ----
     //
@@ -1277,6 +1283,8 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         composeShared_->clear_reply();
         composeShared_->clear_editing();
     }
+    if (composeTextArea_) composeTextArea_->set_text("");
+    if (composeShared_)   composeShared_->set_current_text({});
 
     for (const auto& r : rooms_)
         if (r.id == current_room_id_) { updateRoomHeader(r); break; }

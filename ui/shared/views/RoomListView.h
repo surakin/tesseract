@@ -78,6 +78,10 @@ public:
     // Fires when the user clicks a room row (selection moves to that row).
     std::function<void(const std::string& /*room_id*/)> on_room_selected;
 
+    // Fires when the user clicks the × clear button in the search header.
+    // The host should clear the NativeTextField text and reset the search.
+    std::function<void()> on_search_clear;
+
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
@@ -128,7 +132,9 @@ private:
     std::unique_ptr<Adapter>                 adapter_;
     tk::ListView*                            list_                  = nullptr;
     tk::Rect                                 search_field_rect_     {};
+    tk::Rect                                 search_clear_rect_     {};
     bool                                     search_field_visible_  = false;
+    bool                                     press_search_clear_    = false;
 
     // Last-known selected room ID, preserved across filter/collapse changes
     // when the selection is temporarily hidden.

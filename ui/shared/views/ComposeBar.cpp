@@ -434,20 +434,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 
     float text_strip_h = bounds.y + bounds.h - text_top;
 
-    emoji_rect_ = {
-        bounds.x + kPadX,
-        text_top + (text_strip_h - kButtonSide) * 0.5f,
-        kButtonSide,
-        kButtonSide
-    };
-
-    sticker_rect_ = {
-        emoji_rect_.x + emoji_rect_.w + kGap,
-        emoji_rect_.y,
-        kButtonSide,
-        kButtonSide
-    };
-
+    // Send button sits to the right, outside the input card.
     send_rect_ = {
         bounds.x + bounds.w - kPadX - kSendWidth,
         text_top + (text_strip_h - kButtonSide) * 0.5f,
@@ -455,12 +442,38 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         kButtonSide
     };
 
-    float left  = sticker_rect_.x + sticker_rect_.w + kGap;
-    float right = send_rect_.x - kGap;
-    text_area_rect_ = {
-        left,
+    // The compose card spans from the left edge to just before the send button.
+    // Emoji and sticker buttons live inside the card on the right; the text
+    // area fills the left portion of the card.
+    const float card_left  = bounds.x + kPadX;
+    const float card_right = send_rect_.x - kGap;
+    compose_card_rect_ = {
+        card_left,
         text_top + kPadY,
-        std::max(0.0f, right - left),
+        std::max(0.0f, card_right - card_left),
+        std::max(0.0f, text_strip_h - kPadY * 2)
+    };
+
+    const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
+    sticker_rect_ = {
+        card_right - kButtonSide,
+        btn_y,
+        kButtonSide,
+        kButtonSide
+    };
+    emoji_rect_ = {
+        sticker_rect_.x - kGap - kButtonSide,
+        btn_y,
+        kButtonSide,
+        kButtonSide
+    };
+
+    // Text area occupies the left portion of the card, leaving room for
+    // the emoji/sticker buttons on the right with a small gap.
+    text_area_rect_ = {
+        card_left + kPadX,
+        text_top + kPadY,
+        std::max(0.0f, emoji_rect_.x - kGap - (card_left + kPadX)),
         std::max(0.0f, text_strip_h - kPadY * 2)
     };
 
@@ -616,13 +629,14 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
         }
     }
 
-    // Outline the text-area rect so its placement is visible even before
-    // the host overlay has rendered (avoids a "missing input" feeling on
-    // the first frame).
-    if (!text_area_rect_.empty()) {
-        ctx.canvas.fill_rounded_rect(text_area_rect_, 6.0f,
+    // Draw the compose card: a rounded rect that contains both the text
+    // area (left) and the emoji/sticker icon buttons (right).  The host
+    // overlays the NativeTextArea on top of text_area_rect_ which lives
+    // inside this card, so the card fill provides the input background.
+    if (!compose_card_rect_.empty()) {
+        ctx.canvas.fill_rounded_rect(compose_card_rect_, 6.0f,
                                        card_bg(ctx.theme));
-        ctx.canvas.stroke_rounded_rect(text_area_rect_, 6.0f,
+        ctx.canvas.stroke_rounded_rect(compose_card_rect_, 6.0f,
                                          ctx.theme.palette.border, 1.0f);
     }
 

@@ -406,6 +406,24 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
             std::max(0.0f, bounds.w - 2 * kSearchBarInsetX),
             std::max(0.0f, kSearchBarH - 2 * kSearchBarInsetY),
         };
+
+        // Clear (×) button: shown on the right when the search query is
+        // non-empty.  Shrink the text field rect to leave room for it.
+        if (!search_text_.empty()) {
+            const float btn_side = kSearchBarH - 2.0f * kSearchBarInsetY;
+            const float btn_x    = bounds.x + bounds.w - kSearchBarInsetX - btn_side;
+            search_clear_rect_ = {
+                btn_x,
+                bounds.y + kSearchBarInsetY,
+                btn_side,
+                btn_side
+            };
+            search_field_rect_.w = std::max(0.0f,
+                btn_x - kSearchBarInsetX - search_field_rect_.x);
+        } else {
+            search_clear_rect_ = {};
+        }
+
         tk::Rect list_bounds{
             bounds.x,
             bounds.y + kSearchBarH,
@@ -415,6 +433,7 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         list_->arrange(ctx, list_bounds);
     } else {
         search_field_rect_ = {};
+        search_clear_rect_ = {};
     }
 }
 
@@ -426,18 +445,60 @@ void RoomListView::paint(tk::PaintCtx& ctx) {
             bounds_.x, bounds_.y + kSearchBarH - 1.0f, bounds_.w, 1.0f
         };
         ctx.canvas.fill_rect(sep, ctx.theme.palette.border);
+
+        // Clear (×) button — shown only when the search query is non-empty.
+        if (!search_clear_rect_.empty()) {
+            tk::TextStyle xs{};
+            xs.role = tk::FontRole::Body;
+            // U+00D7 MULTIPLICATION SIGN (×)
+            auto x_lo = ctx.factory.build_text(std::string("\xC3\x97"), xs);
+            if (x_lo) {
+                tk::Size sz = x_lo->measure();
+                tk::Color col = press_search_clear_
+                    ? ctx.theme.palette.text_primary
+                    : ctx.theme.palette.text_muted;
+                ctx.canvas.draw_text(*x_lo,
+                    { search_clear_rect_.x + (search_clear_rect_.w - sz.w) * 0.5f,
+                      search_clear_rect_.y + (search_clear_rect_.h - sz.h) * 0.5f },
+                    col);
+            }
+        }
     }
     if (list_ && list_->visible()) list_->paint(ctx);
 }
 
 bool RoomListView::on_pointer_down(tk::Point local) {
     if (!list_) return false;
+    press_search_clear_ = false;
+
+    // Give the clear button priority over the header early-return.
+    if (!search_clear_rect_.empty()
+        && local.x >= search_clear_rect_.x
+        && local.x <  search_clear_rect_.x + search_clear_rect_.w
+        && local.y >= search_clear_rect_.y
+        && local.y <  search_clear_rect_.y + search_clear_rect_.h) {
+        press_search_clear_ = true;
+        return true;
+    }
+
     if (local.y < search_header_h()) return false;
     tk::Point list_local{ local.x, local.y - search_header_h() };
     return list_->on_pointer_down(list_local);
 }
 
 void RoomListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_search_clear_) {
+        press_search_clear_ = false;
+        if (inside_self
+            && !search_clear_rect_.empty()
+            && local.x >= search_clear_rect_.x
+            && local.x <  search_clear_rect_.x + search_clear_rect_.w
+            && local.y >= search_clear_rect_.y
+            && local.y <  search_clear_rect_.y + search_clear_rect_.h) {
+            if (on_search_clear) on_search_clear();
+        }
+        return;
+    }
     if (!list_) return;
     tk::Point list_local{ local.x, local.y - search_header_h() };
     bool inside_list = inside_self && local.y >= search_header_h();

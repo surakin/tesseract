@@ -1015,6 +1015,13 @@ void MainWindow::on_create(HWND hwnd) {
                     room_list_view_->search_field_rect());
             }
         });
+        room_list_view_->on_search_clear = [this] {
+            KillTimer(hwnd_, kSearchDebounceTimer);
+            pending_search_text_.clear();
+            room_search_field_->set_text("");
+            room_list_view_->set_search_text("");
+            refresh_room_list();
+        };
     }
     if (HWND rs = room_surface_->hwnd()) {
         SetWindowPos(rs, nullptr, 0, 0, 240, 600,
@@ -1970,6 +1977,9 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         compose_shared_->clear_reply();
         compose_shared_->clear_editing();
     }
+    if (compose_text_area_) compose_text_area_->set_text("");
+    if (compose_shared_)    compose_shared_->set_current_text({});
+
     for (const auto& r : rooms_) {
         if (r.id == current_room_id_) {
             current_room_info_ = r;
