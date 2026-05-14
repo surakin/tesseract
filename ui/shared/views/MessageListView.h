@@ -259,7 +259,8 @@ public:
     // events. Stored in world coordinates. Public for tests.
     struct RowChipGeom {
         std::size_t       row_index = static_cast<std::size_t>(-1);
-        std::vector<tk::Rect> chips;       // one per Reaction in row
+        std::vector<tk::Rect> chips;          // one per Reaction in row
+        std::vector<tk::Rect> receipt_discs;  // one per visible read-receipt disc
         tk::Rect          add_button{};    // 0-area when not painted
         bool              add_visible = false;
         tk::Rect          reply_button{};  // 0-area when not painted
@@ -267,7 +268,7 @@ public:
         tk::Rect          row_bounds{};
     };
 
-    enum class HoverTarget { None, Chip, AddButton };
+    enum class HoverTarget { None, Chip, AddButton, Receipt };
 
     // Test introspection: the chip geometry recorded by the most
     // recent paint of the hovered row, and the resolved hover target.

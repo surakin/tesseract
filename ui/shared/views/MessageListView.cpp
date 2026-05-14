@@ -305,13 +305,14 @@ public:
 
         if (hovered) {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.subtle_hover);
-            owner_.hovered_row_geom_.row_index    = index;
-            owner_.hovered_row_geom_.row_bounds   = bounds;
+            owner_.hovered_row_geom_.row_index      = index;
+            owner_.hovered_row_geom_.row_bounds     = bounds;
             owner_.hovered_row_geom_.chips.clear();
-            owner_.hovered_row_geom_.add_button   = tk::Rect{};
-            owner_.hovered_row_geom_.add_visible  = false;
-            owner_.hovered_row_geom_.reply_button = tk::Rect{};
-            owner_.hovered_row_geom_.edit_button  = tk::Rect{};
+            owner_.hovered_row_geom_.receipt_discs.clear();
+            owner_.hovered_row_geom_.add_button     = tk::Rect{};
+            owner_.hovered_row_geom_.add_visible    = false;
+            owner_.hovered_row_geom_.reply_button   = tk::Rect{};
+            owner_.hovered_row_geom_.edit_button    = tk::Rect{};
         }
 
         // Avatar column centre — used both for painting and for the
@@ -598,6 +599,13 @@ public:
                 float cx = right_edge - kReceiptSize * 0.5f
                             - static_cast<float>(i) * kReceiptStride;
                 tk::Point centre{ cx, disc_cy };
+                if (hovered) {
+                    owner_.hovered_row_geom_.receipt_discs.push_back({
+                        centre.x - kReceiptSize * 0.5f,
+                        centre.y - kReceiptSize * 0.5f,
+                        kReceiptSize, kReceiptSize
+                    });
+                }
                 const tk::Image* img = nullptr;
                 if (owner_.avatar_provider_ && !rr.avatar_url.empty()) {
                     img = owner_.avatar_provider_(rr.avatar_url);
@@ -1578,6 +1586,12 @@ static MessageListView::HoverTarget chip_hit_at(
     if (g.add_visible && rect_contains(g.add_button, world)) {
         return MessageListView::HoverTarget::AddButton;
     }
+    for (std::size_t i = 0; i < g.receipt_discs.size(); ++i) {
+        if (rect_contains(g.receipt_discs[i], world)) {
+            out_chip_idx = static_cast<int>(i);
+            return MessageListView::HoverTarget::Receipt;
+        }
+    }
     return MessageListView::HoverTarget::None;
 }
 
@@ -1592,6 +1606,7 @@ void MessageListView::on_pointer_move(tk::Point local) {
         static_cast<std::size_t>(row) != hovered_row_geom_.row_index) {
         hovered_row_geom_.row_index   = static_cast<std::size_t>(-1);
         hovered_row_geom_.chips.clear();
+        hovered_row_geom_.receipt_discs.clear();
         hovered_row_geom_.add_visible = false;
     }
     int chip_idx = -1;
@@ -1607,6 +1622,7 @@ void MessageListView::on_pointer_leave() {
     tk::ListView::on_pointer_leave();
     hovered_row_geom_.row_index   = static_cast<std::size_t>(-1);
     hovered_row_geom_.chips.clear();
+    hovered_row_geom_.receipt_discs.clear();
     hovered_row_geom_.add_visible = false;
     hover_target_   = HoverTarget::None;
     hover_chip_idx_ = -1;
@@ -1962,8 +1978,50 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     }
 
     // Tooltip overlay: paint a small panel listing senders of the
-    // hovered reaction chip. We paint after rows so the panel sits on
-    // top of subsequent rows when it dips below the chip.
+    // hovered reaction chip, or the display name of the hovered read-receipt
+    // disc. We paint after rows so the panel sits on top of subsequent rows.
+    if (hover_target_ == HoverTarget::Receipt) {
+        if (hover_chip_idx_ < 0) return;
+        std::size_t row = hovered_row_geom_.row_index;
+        if (row >= messages_.size()) return;
+        const auto& rrs = messages_[row].read_receipts;
+        const std::size_t total   = rrs.size();
+        const std::size_t visible = std::min(total, kReceiptCap);
+        if (static_cast<std::size_t>(hover_chip_idx_) >= visible) return;
+        // receipt_discs[i] corresponds to rrs[total - 1 - i] (newest first).
+        const auto& rr = rrs[total - 1 - static_cast<std::size_t>(hover_chip_idx_)];
+        const std::string& label = rr.display_name.empty() ? rr.user_id : rr.display_name;
+
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        auto layout = ctx.factory.build_text(label, st);
+        if (!layout) return;
+        tk::Size sz = layout->measure();
+
+        constexpr float kTipPadX = 8.0f;
+        constexpr float kTipPadY = 6.0f;
+        float panel_w = sz.w + kTipPadX * 2;
+        float panel_h = sz.h + kTipPadY * 2;
+
+        tk::Rect disc = hovered_row_geom_.receipt_discs[hover_chip_idx_];
+        tk::Rect view = bounds();
+
+        float panel_y = disc.y - panel_h - 4.0f;
+        if (panel_y < view.y) panel_y = disc.y + disc.h + 4.0f;
+        float panel_x = disc.x + disc.w * 0.5f - panel_w * 0.5f;
+        if (panel_x + panel_w > view.x + view.w) panel_x = view.x + view.w - panel_w - 4.0f;
+        if (panel_x < view.x + 4.0f) panel_x = view.x + 4.0f;
+
+        tk::Rect panel{ panel_x, panel_y, panel_w, panel_h };
+        ctx.canvas.fill_rounded_rect  (panel, 6.0f, ctx.theme.palette.chrome_bg);
+        ctx.canvas.stroke_rounded_rect(panel, 6.0f, ctx.theme.palette.border, 1.0f);
+        ctx.canvas.draw_text(*layout,
+                              { panel.x + kTipPadX, panel.y + kTipPadY },
+                              ctx.theme.palette.text_primary);
+        return;
+    }
+
     if (hover_target_ != HoverTarget::Chip) return;
     if (hover_chip_idx_ < 0) return;
     std::size_t row = hovered_row_geom_.row_index;
