@@ -577,14 +577,16 @@ void Surface::resizeEvent(QResizeEvent*) {
 }
 
 void Surface::mousePressEvent(QMouseEvent* e) {
-    host_->on_pointer_down({ static_cast<float>(e->position().x()),
-                               static_cast<float>(e->position().y()) });
+    if (e->button() == Qt::LeftButton)
+        host_->on_pointer_down({ static_cast<float>(e->position().x()),
+                                  static_cast<float>(e->position().y()) });
     QWidget::mousePressEvent(e);
 }
 
 void Surface::mouseReleaseEvent(QMouseEvent* e) {
-    host_->on_pointer_up({ static_cast<float>(e->position().x()),
-                             static_cast<float>(e->position().y()) });
+    if (e->button() == Qt::LeftButton)
+        host_->on_pointer_up({ static_cast<float>(e->position().x()),
+                                static_cast<float>(e->position().y()) });
     QWidget::mouseReleaseEvent(e);
 }
 

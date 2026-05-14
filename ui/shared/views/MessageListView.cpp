@@ -864,10 +864,8 @@ private:
                 return quote_h + h;
             }
             case MessageRowData::Kind::Sticker: {
-                tk::Size sz = fit_media(m.media_w, m.media_h,
-                                         std::min(col_w, kStickerSize),
-                                         kStickerSize);
-                return quote_h + sz.h;
+                float side = std::min(col_w, kStickerSize);
+                return quote_h + side;
             }
             case MessageRowData::Kind::File:
                 return quote_h + kFileCardH;
@@ -950,10 +948,8 @@ private:
                 return cursor;
             }
             case MessageRowData::Kind::Sticker: {
-                tk::Size sz = fit_media(m.media_w, m.media_h,
-                                         std::min(col_w, kStickerSize),
-                                         kStickerSize);
-                tk::Rect r{ x, y, sz.w, sz.h };
+                float side = std::min(col_w, kStickerSize);
+                tk::Rect r{ x, y, side, side };
                 paint_inline_media(m, ctx, r);
                 if (!m.event_id.empty()) {
                     owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
@@ -961,10 +957,10 @@ private:
                     };
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
                         m.event_id, m.media_url, m.body,
-                        m.media_w, m.media_h, r
+                        static_cast<int>(side), static_cast<int>(side), r
                     };
                 }
-                return y + sz.h;
+                return y + side;
             }
             case MessageRowData::Kind::File: {
                 float card_w = std::min(kFileCardW, col_w);

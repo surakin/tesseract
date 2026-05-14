@@ -624,7 +624,33 @@ impl ClientFfi {
                             // a polling timer and out of the event
                             // handler machinery.
                             let pks = rebuild_image_packs(&client_clone).await;
-                            if let Ok(mut g) = packs_cache.lock() { *g = pks; }
+                            if let Ok(mut g) = packs_cache.lock() {
+                                // Rebuild reads the SDK state store, which doesn't
+                                // reflect set_account_data_raw until the server echo
+                                // arrives in a sync response. If we just saved a
+                                // sticker, the cache has the new user pack but the
+                                // state store is still stale. room_info_notable_update
+                                // doesn't fire for account_data events, so this may
+                                // be the only rebuild before the echo — preserve the
+                                // cached user pack so it doesn't vanish from the picker.
+                                let has_user = pks.iter().any(|p| {
+                                    p.source == crate::image_packs::PackSource::User
+                                });
+                                if !has_user {
+                                    if let Some(cached) = g.iter()
+                                        .find(|p| p.source == crate::image_packs::PackSource::User)
+                                        .cloned()
+                                    {
+                                        let mut merged = pks;
+                                        merged.insert(0, cached);
+                                        *g = merged;
+                                    } else {
+                                        *g = pks;
+                                    }
+                                } else {
+                                    *g = pks;
+                                }
+                            }
                             if let Ok(guard) = h.lock() {
                                 guard.on_image_packs_updated();
                             }
