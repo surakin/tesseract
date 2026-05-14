@@ -207,15 +207,21 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
 void LinuxUpConnectorQt::stop() {
     if (!client_) return;
     UpSharedBusQt& bus = UpSharedBusQt::get();
+    bus.remove_route(token_);
+    bus.release();
+    distributor_service_.clear();
+    client_ = nullptr;
+}
+
+void LinuxUpConnectorQt::logout() {
+    if (!client_) return;
+    UpSharedBusQt& bus = UpSharedBusQt::get();
     if (!distributor_service_.empty()) {
         bus.distributor_unregister(
             QString::fromStdString(distributor_service_), token_);
-        distributor_service_.clear();
-        client_->remove_pusher(token_, "im.gnomos.tesseract");
     }
-    bus.remove_route(token_);
-    bus.release();
-    client_ = nullptr;
+    client_->remove_pusher(token_, "im.gnomos.tesseract");
+    stop();
 }
 
 void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint) {

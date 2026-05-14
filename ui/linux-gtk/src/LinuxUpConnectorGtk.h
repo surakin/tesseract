@@ -10,6 +10,7 @@ public:
 
     void start(tesseract::Client* client, const std::string& user_id) override;
     void stop() override;
+    void logout() override;
 
     // Called by the shared GDBus vtable on the UI thread.
     void on_new_endpoint(const std::string& endpoint);

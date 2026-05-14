@@ -13,6 +13,7 @@ public:
 
     void start(tesseract::Client* client, const std::string& user_id) override;
     void stop() override;
+    void logout() override;
 
     // Called by UpSharedBusQt when the distributor fires callbacks for our token.
     void on_new_endpoint(const std::string& endpoint);

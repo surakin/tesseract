@@ -2676,6 +2676,7 @@ void MainWindow::logout_active_account() {
         current_room_id_.clear();
     }
 
+    if (sess.up_connector) sess.up_connector->logout();
     auto res = client_->logout();
     client_->stop_sync();
 

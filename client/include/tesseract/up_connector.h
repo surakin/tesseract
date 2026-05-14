@@ -18,8 +18,14 @@ public:
     /// used to derive a stable per-account push token.
     virtual void start(Client* client, const std::string& user_id) = 0;
 
-    /// Unregister from the distributor and tear down the D-Bus listener.
+    /// Release local D-Bus state on normal shutdown. The distributor and
+    /// homeserver registrations are intentionally left intact so pushes
+    /// continue to arrive while the app is closed.
     virtual void stop() = 0;
+
+    /// Unregister from the distributor and remove the homeserver pusher.
+    /// Call only on explicit user logout, not on normal app exit.
+    virtual void logout() = 0;
 };
 
 } // namespace tesseract

@@ -260,24 +260,30 @@ void LinuxUpConnectorGtk::start(tesseract::Client* client,
 
 void LinuxUpConnectorGtk::stop() {
     if (!client_) return;
-
     GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
     UpSharedBusGtk& shared = UpSharedBusGtk::get();
-
-    if (!distributor_service_.empty() && bus) {
-        g_dbus_connection_call(
-            bus, distributor_service_.c_str(),
-            "/org/unifiedpush/Distributor",
-            "org.unifiedpush.Distributor1", "Unregister",
-            g_variant_new("(s)", token_.c_str()),
-            nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
-        client_->remove_pusher(token_, "im.gnomos.tesseract");
-        distributor_service_.clear();
-    }
-
     shared.remove_route(token_);
+    distributor_service_.clear();
     if (bus) { shared.release(bus); g_object_unref(bus); }
     client_ = nullptr;
+}
+
+void LinuxUpConnectorGtk::logout() {
+    if (!client_) return;
+    if (!distributor_service_.empty()) {
+        GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+        if (bus) {
+            g_dbus_connection_call(
+                bus, distributor_service_.c_str(),
+                "/org/unifiedpush/Distributor",
+                "org.unifiedpush.Distributor1", "Unregister",
+                g_variant_new("(s)", token_.c_str()),
+                nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
+            g_object_unref(bus);
+        }
+    }
+    client_->remove_pusher(token_, "im.gnomos.tesseract");
+    stop();
 }
 
 void LinuxUpConnectorGtk::on_new_endpoint(const std::string& endpoint) {

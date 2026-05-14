@@ -2180,6 +2180,7 @@ void MainWindow::logoutActiveAccount() {
     auto& a = *accounts_[active_account_index_];
     const std::string uid = a.user_id;
 
+    if (a.up_connector) a.up_connector->logout();
     a.client->logout();
     a.client->stop_sync();
     tesseract::SessionStore::clear_account(uid);
