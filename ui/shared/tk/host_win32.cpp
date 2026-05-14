@@ -391,6 +391,11 @@ public:
         std::wstring w = utf8_to_wide(text);
         SetWindowTextW(hwnd_, w.c_str());
         suppress_changed_ = false;
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_) {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
     }
     std::string text() const override {
         if (!hwnd_) return {};

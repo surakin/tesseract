@@ -194,6 +194,11 @@ public:
         gtk_text_buffer_set_text(buffer_, text.c_str(),
                                   static_cast<int>(text.size()));
         g_signal_handler_unblock(buffer_, changed_id_);
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_) {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
     }
     std::string text() const override {
         if (!buffer_) return {};

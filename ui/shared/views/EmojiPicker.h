@@ -78,6 +78,7 @@ public:
     void     paint  (tk::PaintCtx&)                        override;
     bool     on_pointer_down(tk::Point local)                      override;
     void     on_pointer_up  (tk::Point local, bool inside_self)    override;
+    bool     on_wheel       (tk::Point local, float dx, float dy)  override;
 
 private:
     class GridAdapter;
@@ -120,6 +121,7 @@ private:
     tk::Rect                             tab_rect_{};
     int                                  pressed_tab_idx_ = -1;
     int                                  hovered_tab_idx_ = -1;
+    float                                tab_scroll_offset_ = 0.0f;
 };
 
 } // namespace tesseract::views

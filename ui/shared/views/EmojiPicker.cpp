@@ -350,9 +350,10 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
         case Page::CustomPack: active = kBuiltinTabCount + custom_pack_idx_; break;
         default:               active = -1; break;
     }
+    ctx.canvas.push_clip_rect(tab_rect_);
     for (int i = 0; i < total; ++i) {
         tk::Rect tab{
-            tab_rect_.x + i * tab_w,
+            tab_rect_.x + i * tab_w - tab_scroll_offset_,
             tab_rect_.y,
             tab_w,
             tab_rect_.h
@@ -408,6 +409,7 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
             }
         }
     }
+    ctx.canvas.pop_clip();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -425,7 +427,8 @@ int EmojiPicker::tab_at(tk::Point local) const {
     if (total == 0) return -1;
     float tab_w = std::max(kTabSlotMin,
                             tab_rect_.w / static_cast<float>(total));
-    int idx = static_cast<int>(lx / tab_w);
+    // Account for scroll: shift x back by the current offset before dividing.
+    int idx = static_cast<int>((lx + tab_scroll_offset_) / tab_w);
     if (idx < 0 || idx >= total) return -1;
     return idx;
 }
@@ -453,6 +456,30 @@ void EmojiPicker::on_pointer_up(tk::Point local, bool inside_self) {
     } else {
         switch_to_custom_pack(hit - kBuiltinTabCount);
     }
+}
+
+bool EmojiPicker::on_wheel(tk::Point local, float dx, float dy) {
+    // Only handle wheel events that land in the tab strip.
+    float lx = local.x - (tab_rect_.x - bounds_.x);
+    float ly = local.y - (tab_rect_.y - bounds_.y);
+    if (lx < 0 || ly < 0 || lx >= tab_rect_.w || ly >= tab_rect_.h)
+        return false;
+
+    int total = total_tab_count();
+    if (total == 0) return false;
+    float tab_w = std::max(kTabSlotMin,
+                            tab_rect_.w / static_cast<float>(total));
+    float total_content_w = tab_w * static_cast<float>(total);
+    float max_offset = std::max(0.0f, total_content_w - tab_rect_.w);
+    if (max_offset == 0.0f) return false;  // all tabs already visible
+
+    // Use horizontal delta when available; fall back to vertical so a
+    // plain mouse wheel still scrolls the tab strip left/right.
+    float delta = (dx != 0.0f) ? dx : dy;
+    tab_scroll_offset_ += delta;
+    if (tab_scroll_offset_ < 0.0f)         tab_scroll_offset_ = 0.0f;
+    if (tab_scroll_offset_ > max_offset)   tab_scroll_offset_ = max_offset;
+    return true;  // host repaints on true
 }
 
 } // namespace tesseract::views

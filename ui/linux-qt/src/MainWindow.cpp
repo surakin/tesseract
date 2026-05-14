@@ -777,6 +777,15 @@ MainWindow::MainWindow(QWidget* parent)
         client_->recent_emoji_bump(glyph.toStdString());
     };
 
+    emojiPicker_->onEmoticonSelected = [this](const tesseract::ImagePackImage& img) {
+        if (!composeTextArea_) return;
+        std::string cur = composeTextArea_->text();
+        cur += ":" + img.shortcode + ":";
+        composeTextArea_->set_text(cur);
+        if (composeShared_) composeShared_->set_current_text(cur);
+        composeTextArea_->set_focused(true);
+    };
+
     // Sticker picker: floating panel anchored at the compose-bar sticker
     // button. On selection, send `m.sticker` to the current room (matrix-
     // sdk encrypts transparently in E2EE rooms).
@@ -2008,7 +2017,8 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 
 void MainWindow::handle_image_packs_updated_ui_()
 {
-    if (stickerPicker_) stickerPicker_->refreshPacks();
+    if (stickerPicker_)  stickerPicker_->refreshPacks();
+    if (emojiPicker_)    emojiPicker_->refreshEmoticonPacks();
 }
 
 void MainWindow::handle_account_prefs_updated_ui_(

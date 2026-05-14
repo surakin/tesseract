@@ -221,6 +221,11 @@ public:
         if (!edit_) return;
         const QSignalBlocker block(edit_);
         edit_->setPlainText(QString::fromStdString(text));
+        float h = natural_height();
+        if (h != last_height_ && on_height_changed_) {
+            last_height_ = h;
+            on_height_changed_(h);
+        }
     }
     std::string text() const override {
         return edit_ ? edit_->toPlainText().toStdString() : std::string{};
