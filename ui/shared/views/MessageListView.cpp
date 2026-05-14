@@ -548,21 +548,37 @@ public:
             receipt_disc_cy = chip_y + chip_h() * 0.5f;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
                 const auto& r = m.reactions[ri];
-                tk::TextStyle est{};
-                est.role = tk::FontRole::Title;
-                auto emoji_layout = ctx.factory.build_text(r.key, est);
+                constexpr float kChipInnerGap = 4.0f;
+                constexpr float kImgPad       = 4.0f;
+                const bool is_img = !r.source_json.empty();
+
                 tk::TextStyle cst{};
                 cst.role = tk::FontRole::UiSemibold;
                 auto count_layout =
                     ctx.factory.build_text(std::to_string(r.count), cst);
-                if (!emoji_layout || !count_layout) {
+                if (!count_layout) {
                     if (hovered) owner_.hovered_row_geom_.chips.push_back({});
                     continue;
                 }
-                tk::Size esz = emoji_layout->measure();
                 tk::Size csz = count_layout->measure();
-                constexpr float kChipInnerGap = 4.0f;
-                float content_w = esz.w + kChipInnerGap + csz.w;
+
+                std::unique_ptr<tk::TextLayout> emoji_layout;
+                tk::Size esz{};
+                float content_w;
+                if (is_img) {
+                    float img_side = chip_h() - kImgPad * 2;
+                    content_w = img_side + kChipInnerGap + csz.w;
+                } else {
+                    tk::TextStyle est{};
+                    est.role = tk::FontRole::Title;
+                    emoji_layout = ctx.factory.build_text(r.key, est);
+                    if (!emoji_layout) {
+                        if (hovered) owner_.hovered_row_geom_.chips.push_back({});
+                        continue;
+                    }
+                    esz = emoji_layout->measure();
+                    content_w = esz.w + kChipInnerGap + csz.w;
+                }
                 float w = std::max(content_w + kChipPadX * 2,
                                     chip_h() + 8.0f);
                 tk::Rect pill{ chip_x, chip_y, w, chip_h() };
@@ -581,21 +597,37 @@ public:
                 ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
                 ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
                                                 chip_hovered ? 1.5f : 1.0f);
-                // Centre the emoji by its *ascent* (top of layout box to
-                // baseline), not its full line-height: colour-emoji glyphs
-                // fill the ascent region and leave the descender empty, so
-                // box-centring leaves them visually high in the chip.
-                constexpr float kAscentRatio = 0.78f;
-                float emoji_y = pill.y
-                              + (pill.h - esz.h * kAscentRatio) * 0.5f;
+
+                float left_x  = pill.x + kChipPadX;
                 float count_y = pill.y + (pill.h - csz.h) * 0.5f;
-                float emoji_x = pill.x + kChipPadX;
-                ctx.canvas.draw_text(
-                    *emoji_layout, { emoji_x, emoji_y }, text);
-                ctx.canvas.draw_text(
-                    *count_layout,
-                    { emoji_x + esz.w + kChipInnerGap, count_y },
-                    text);
+                if (is_img) {
+                    float img_side = chip_h() - kImgPad * 2;
+                    tk::Rect img_dst{ left_x, pill.y + kImgPad, img_side, img_side };
+                    const tk::Image* img =
+                        owner_.image_provider_ ? owner_.image_provider_(r.source_json) : nullptr;
+                    if (img) {
+                        ctx.canvas.draw_image(*img, img_dst);
+                    } else {
+                        ctx.canvas.fill_rect(img_dst, tk::Color{0xCC, 0xCC, 0xCC});
+                    }
+                    ctx.canvas.draw_text(
+                        *count_layout,
+                        { left_x + img_side + kChipInnerGap, count_y },
+                        text);
+                } else {
+                    // Centre the emoji by its *ascent* (top of layout box to
+                    // baseline), not its full line-height: colour-emoji glyphs
+                    // fill the ascent region and leave the descender empty, so
+                    // box-centring leaves them visually high in the chip.
+                    constexpr float kAscentRatio = 0.78f;
+                    float emoji_y = pill.y
+                                  + (pill.h - esz.h * kAscentRatio) * 0.5f;
+                    ctx.canvas.draw_text(*emoji_layout, { left_x, emoji_y }, text);
+                    ctx.canvas.draw_text(
+                        *count_layout,
+                        { left_x + esz.w + kChipInnerGap, count_y },
+                        text);
+                }
                 if (hovered) owner_.hovered_row_geom_.chips.push_back(pill);
                 chip_x += w + chip_gap();
             }

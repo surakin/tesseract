@@ -1682,6 +1682,56 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
+    pub fn send_reaction_custom(
+        &mut self,
+        room_id: &str,
+        event_id: &str,
+        key: &str,
+        shortcode: &str,
+    ) -> OpResult {
+        if self.client.is_none() { return err("not logged in"); }
+        if key.is_empty() { return err("reaction key is empty"); }
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id = event_id.to_owned();
+        let key = key.to_owned();
+        let shortcode = shortcode.to_owned();
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+
+        match self.rt.block_on(async move {
+            let mut content = serde_json::json!({
+                "m.relates_to": {
+                    "rel_type": "m.annotation",
+                    "event_id": event_id,
+                    "key": key,
+                }
+            });
+            if !shortcode.is_empty() {
+                content["com.beeper.reaction.shortcode"] =
+                    serde_json::Value::String(shortcode);
+            }
+            room.send_raw("m.reaction", content).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_reaction_custom(
+        &mut self,
+        _room_id: &str,
+        _event_id: &str,
+        _key: &str,
+        _shortcode: &str,
+    ) -> OpResult { err("not logged in") }
+
+    #[cfg(not(test))]
     pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
         if self.client.is_none() { return err("not logged in"); }
         let room_id: OwnedRoomId = match room_id.parse() {
@@ -3105,15 +3155,18 @@ async fn collect_reactions(
             senders.push(label);
         }
 
+        // MSC4027: when the reaction key is an mxc:// URI it IS the image URL.
+        // No raw-event lookup needed — the key string is sufficient to fetch.
+        let source_json = if key.starts_with("mxc://") {
+            key.clone()
+        } else {
+            String::new()
+        };
         out.push(ReactionGroup {
             key: key.clone(),
             count,
             reacted_by_me,
-            // MSC 4027 surfaces would be filled in here. matrix-sdk-ui's
-            // ReactionsByKeyBySender does not currently carry the source
-            // MediaSource, so we leave `source_json` empty and rely on a
-            // future raw-event lookup pass for custom-image reactions.
-            source_json: String::new(),
+            source_json,
             senders,
         });
     }

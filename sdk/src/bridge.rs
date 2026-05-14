@@ -537,6 +537,17 @@ pub mod ffi {
                          event_id: &str,
                          key: &str) -> OpResult;
 
+        /// Send an MSC4027 custom-image reaction. `key` is the mxc:// URI of
+        /// the image; `shortcode` is the optional human-readable fallback
+        /// (e.g. `:partyparrot:`) stored as `com.beeper.reaction.shortcode`.
+        /// Omit shortcode (pass "") to skip the field. Unlike `send_reaction`
+        /// this always sends (not toggles); redaction uses `send_reaction`.
+        fn send_reaction_custom(self: &mut ClientFfi,
+                                room_id: &str,
+                                event_id: &str,
+                                key: &str,
+                                shortcode: &str) -> OpResult;
+
         /// Send public `m.read` and private `m.read.private` receipts for
         /// `event_id` in `room_id`. Does not require the room to be subscribed.
         fn send_read_receipt(self: &mut ClientFfi,

@@ -205,6 +205,13 @@ Result Client::send_reaction(const std::string& room_id,
     return from_ffi(impl_->ffi->send_reaction(room_id, event_id, key));
 }
 
+Result Client::send_reaction_custom(const std::string& room_id,
+                                    const std::string& event_id,
+                                    const std::string& key,
+                                    const std::string& shortcode) {
+    return from_ffi(impl_->ffi->send_reaction_custom(room_id, event_id, key, shortcode));
+}
+
 Result Client::redact_event(const std::string& room_id,
                             const std::string& event_id,
                             const std::string& reason) {

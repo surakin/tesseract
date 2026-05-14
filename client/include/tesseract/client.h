@@ -196,11 +196,19 @@ public:
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a
-    /// Unicode emoji (e.g. "👍") or, in a future MSC 4027 send pass, a
-    /// shortcode like ":partyparrot:".
+    /// Unicode emoji (e.g. "👍") or an mxc:// URI for MSC4027 image reactions.
     Result send_reaction(const std::string& room_id,
                          const std::string& event_id,
                          const std::string& key);
+
+    /// Send an MSC4027 custom-image reaction (always adds, never toggles).
+    /// `key` is the mxc:// URI; `shortcode` is stored as
+    /// `com.beeper.reaction.shortcode` and may be empty. Use `send_reaction`
+    /// (with the same mxc:// key) to redact/toggle.
+    Result send_reaction_custom(const std::string& room_id,
+                                const std::string& event_id,
+                                const std::string& key,
+                                const std::string& shortcode);
 
     /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
     /// Requires that the room is currently subscribed via `subscribe_room`.
