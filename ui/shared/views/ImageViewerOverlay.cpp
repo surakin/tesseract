@@ -190,13 +190,12 @@ void ImageViewerOverlay::on_pointer_up(tk::Point local, bool inside_self) {
     }
 }
 
-void ImageViewerOverlay::on_pointer_move(tk::Point local) {
+void ImageViewerOverlay::on_pointer_drag(tk::Point local) {
     if (!press_drag_) return;
     pan_x_ += local.x - drag_last_.x;
     pan_y_ += local.y - drag_last_.y;
     drag_last_ = local;
     clamp_pan();
-    // Host repaints after every pointer_move dispatch.
 }
 
 bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy) {
