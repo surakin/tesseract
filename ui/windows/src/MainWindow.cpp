@@ -588,6 +588,28 @@ void MainWindow::update_typing_bar_(const std::string& text, bool visible)
     SetWindowTextW(hTypingBar_, wide.c_str());
 }
 
+void MainWindow::on_url_preview_ready_(const std::string& url,
+                                        const tesseract::Client::UrlPreview& preview)
+{
+    tesseract::views::UrlPreviewData d;
+    d.title       = preview.title;
+    d.description = preview.description;
+    d.image_mxc   = preview.image_mxc;
+    d.image_w     = preview.image_w;
+    d.image_h     = preview.image_h;
+    url_preview_data_.emplace(url, std::move(d));
+
+    if (!preview.image_mxc.empty())
+        ensure_media_image_(preview.image_mxc, 64, 64);
+
+    if (message_list_view_) message_list_view_->invalidate_data();
+    if (msg_surface_) {
+        msg_surface_->relayout();
+        if (HWND ms = msg_surface_->hwnd())
+            InvalidateRect(ms, nullptr, FALSE);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -1171,6 +1193,19 @@ void MainWindow::on_create(HWND hwnd) {
             [this](const std::string& source_json) -> std::vector<std::uint8_t> {
                 return client_->fetch_source_bytes(source_json);
             });
+        message_list_view_->set_preview_provider(
+            [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+                auto it = url_preview_data_.find(url);
+                if (it == url_preview_data_.end()) return nullptr;
+                if (!it->second.image_mxc.empty()
+                    && !tk_images_.count(it->second.image_mxc)
+                    && !anim_cache_.has(it->second.image_mxc))
+                    ensure_media_image_(it->second.image_mxc, 64, 64);
+                return &it->second;
+            });
+        message_list_view_->on_link_clicked = [](const std::string& url) {
+            tesseract::Client::open_in_browser(url);
+        };
         msg_surface_->set_root(std::move(view));
     }
     if (HWND ms = msg_surface_->hwnd()) {

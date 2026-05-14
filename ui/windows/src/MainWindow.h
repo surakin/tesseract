@@ -136,6 +136,8 @@ public:
         std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
+    void on_url_preview_ready_(const std::string& url,
+                               const tesseract::Client::UrlPreview& preview) override;
 
 private:
     void on_create(HWND hwnd);
@@ -360,6 +362,9 @@ private:
     // inline media flow through the tk::Image caches below.
     std::unordered_map<std::string, Gdiplus::Bitmap*> avatar_cache_;
     std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
+
+    // URL preview cache: keyed by URL, populated by on_url_preview_ready_.
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 
     // tk_avatars_, tk_images_, anim_cache_, voice_prefetched_,
     // video_thumb_in_flight_, reply_details_requested_, media_fetches_in_flight_,
