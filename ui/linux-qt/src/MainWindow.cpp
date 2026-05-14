@@ -179,7 +179,7 @@ MainWindow::MainWindow(QWidget* parent)
     // RoomListView itself decides visibility in its arrange() pass.
     roomSearchField_ = roomSurface_->host().make_text_field();
     roomSearchField_->set_placeholder("Search rooms");
-    roomSearchField_->set_visible(false);
+    roomSearchField_->set_visible(true);
     auto* searchDebounce = new QTimer(this);
     searchDebounce->setSingleShot(true);
     roomSearchField_->set_on_changed([this, searchDebounce](const std::string& q) {
@@ -192,12 +192,7 @@ MainWindow::MainWindow(QWidget* parent)
     });
     roomSurface_->set_on_layout([this] {
         if (!roomListView_ || !roomSearchField_) return;
-        bool visible = roomListView_->search_field_visible();
-        roomSearchField_->set_visible(visible);
-        if (visible) {
-            roomSearchField_->set_rect(
-                roomListView_->search_field_rect());
-        }
+        roomSearchField_->set_rect(roomListView_->search_field_rect());
     });
     roomListView_->on_search_clear = [this] {
         roomSearchField_->set_text("");

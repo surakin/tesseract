@@ -395,8 +395,7 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     if (!list_) return;
 
     list_->arrange(ctx, bounds);
-    bool wants_search = list_->content_height() > bounds.h
-                        || !search_text_.empty();
+    bool wants_search = true;
     search_field_visible_ = wants_search;
 
     if (wants_search) {
