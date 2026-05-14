@@ -1,0 +1,41 @@
+# Completed Work
+
+## Core / Infrastructure
+
+- **Step 1 — OAuth fix-ups**: real `logout`, `SessionStore` + restore-or-login on startup, full `PersistedSession` on token refresh, `WHOLE_ARCHIVE` link visibility on Win32/GTK, `tracing_subscriber` hardening.
+- **Step 2 — Sliding-sync**: `SyncService` + `RoomListService` replace `sync_once`; per-room `Timeline` in a `HashMap`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back`.
+- **Step 3 — Room avatar polish**: `kRoomAvatarSize = 36`; uniform icon slot on room-list cells.
+- **Step 4 — Sender identity + media infrastructure**: `sender_name` / `sender_avatar_url` in `TimelineEvent`; `ImageEvent` / `FileEvent` types; `fetch_media_bytes` / `fetch_source_bytes` FFI (handles encrypted files transparently); 21 C++ tests.
+- **Stability hardening**: `soft_logout` threaded to all UIs; tombstoned rooms filtered; `Drop` on `ClientFfi` calls `stop_sync`; matrix-sdk upgraded to 0.16.1.
+- **OAuth session flush on shutdown**: `stop_sync()` persists the full session before tearing down SyncService, preventing `invalid_grant` on next startup.
+- **Shutdown stability hardening**: two-phase fix drains background workers before tokio teardown; re-entrant `stop_sync` no longer double-frees.
+- **Media fetches off UI thread — all four platforms**: per-miss worker threads + platform post-back (Win32 `WM_TESSERACT_MEDIA_BYTES`, Qt6 signal, GTK4 `g_idle_add`, macOS `dispatch_async`); room list renders instantly, avatars fade in.
+- **Account-data prefs (`im.gnomos.tesseract`) — all four platforms**: `last_room` and future prefs stored as Matrix account-data instead of a local file; `load_prefs` / `save_prefs` / `on_account_prefs_updated` FFI; 6 C++ tests + 2 Rust tests.
+- **Recent emoji (MSC4356)**: `m.recent_emoji` account-data with stable → unstable → legacy read precedence; `sdk/src/recent_emoji.rs` with move-to-front, 100-entry cap; 16 Rust unit tests.
+- **Initial-sync + key-backfill progress in status bar — Qt6 / GTK4 / Win32**: `room_list_state_code()` FFI; `on_room_list_state` callback; "Syncing rooms…" / "Downloading encryption keys (N)…" status text with 300 ms debounce.
+- **i18n — Qt6 + GTK4**: Qt6 uses `QObject::tr()` + `QTranslator`; GTK4 uses GNU gettext; all user-visible shell strings wrapped; CMake extract targets.
+
+## UI Toolkit (`tesseract_tk`)
+
+- **Step 5a — Shared UI toolkit**: `tk::Canvas` abstract 2D backend (D2D / QPainter / Cairo / CG); `tk::Widget` measure/arrange/paint + pointer dispatch; `tk::Host` per-platform integration; `NativeTextField` / `NativeTextArea` native text overlays; all four platforms mount shared views.
+- **macOS migration**: moved from Mac Catalyst to native AppKit; `macos-appkit-arm64/x86_64` presets; `tk::macos::Surface` as `NSView` subclass (`isFlipped = YES`); legacy Obj-C view controllers deleted.
+- **macOS shell stabilisation**: SDK compat guard for 10.15; user identity strip + space back-button bar; session-restore fix; login flash fix; emoji/sticker tab centering fix; space children hidden from root list.
+
+## Features
+
+- **Step 5 (partial) — Inline images + stickers**: `m.image` thumbnail (max 320×200, MSC2530 caption rule); `m.sticker` borderless 256×256 thumbnail; scroll-to-bottom timing fixed on Qt6 + GTK4.
+- **Step 5 — Reply-to indicator + message editing — all four platforms**: `in_reply_to_*` FFI fields, quote block, hover "↩ Reply", `ComposeBar` reply-preview banner, `send_reply` FFI; `send_edit` FFI, `(edited)` badge, hover "✏", edit-mode banner; 19 C++ tests.
+- **Step 5 — ComposeBar**: shared `tesseract::views::ComposeBar`; multi-line `NativeTextArea` (56→160 px); send-on-Enter, Shift+Enter newline; emoji + send buttons.
+- **Step 6 — Device verification + key backup**: `needs_recovery` / `recover` / `backup_state` FFI; `on_backup_progress` callback; `RecoveryBanner` widget shown after login; all 4 shells wired.
+- **Step 7 — Spaces**: `is_space` in `RoomInfo`; `space_children` FFI; stack-based drill-in navigation; Back button + space name label; space children hidden from root list; all 4 shells wired.
+- **Step 8 (partial) — MSC2545 receive + send**: `sdk/src/image_packs.rs` aggregator (16 Rust tests); encrypted-sticker decryption; `list_image_packs` / `send_sticker` / `save_sticker_to_user_pack` / `toggle_favorite_sticker` FFI; `StickerPicker` shared view; `EmojiPicker` custom-pack tabs; Qt6 + GTK4 + Win32 wired end-to-end; macOS `StickerPickerPanel` wired.
+- **Step 9 (partial) — MSC2545 send**: `send_sticker` FFI landed; `:shortcode:` plain-text insertion from EmojiPicker custom tabs landed.
+- **Step 10 (partial) — Pack management**: `save_sticker_to_user_pack` / `toggle_favorite_sticker` / `user_pack_has_sticker` FFI + Qt6 + GTK4 right-click "Add to Saved Stickers" wired.
+- **Read receipts + hover timestamps — all four platforms**: `ReadReceipt` FFI struct; up-to-5 mini-avatar disc cluster (16 px, 5 px overlap) + `+N` overflow pill per row; hover-only `HH:MM` timestamp under sender avatar; 3 Catch2 tests.
+- **Voice messages (MSC3245) — receive + playback**: `m.voice` card (280×48); scrubbable waveform; `1×`/`1.5×`/`2×` speed pill; per-platform `tk::AudioPlayer` (Qt6 / GTK4 / macOS / Win32); background prefetch; 4 C++ tests + 3 Rust tests.
+- **Animated stickers (GIF / APNG / animated WebP) — all four platforms**: per-URL animated frame cache; 60 Hz tick; per-platform decode (Qt6 `QImageReader`, GTK4 `GdkPixbufAnimationIter`, Win32 WIC, macOS `CGImageSource`).
+- **Video messages (`m.video`) — receive + playback, all four platforms**: thumbnail card with play-triangle + duration badge; `tk::VideoPlayer` interface; `VideoViewerOverlay` lightbox with scrub bar + speed pill; client-side first-frame thumbnail generation; all four shells wired; 10 Catch2 tests.
+- **Room list sections — all four platforms**: Favorites / Direct Messages / Rooms / Spaces collapsible sections; `▾`/`▸` chevron headers; `is_favorite` FFI field; 4 Catch2 tests.
+- **System tray + minimize-to-tray — all four platforms**: `ITrayIcon` interface; hide-on-close when tray is available; Qt6 `QSystemTrayIcon`, GTK4 `libayatana-appindicator3`, Win32 `Shell_NotifyIcon`, macOS `NSStatusItem`.
+- **Step 11 — Foreground notifications — all four platforms**: `INotifier` + `Notification`; push-rule evaluation via `Ruleset::get_actions()`; Win32 WinRT toasts, Qt6 D-Bus, GTK4 D-Bus, macOS `UNUserNotificationCenter`; account-aware suppression; click navigates to room.
+- **Step 13 — Multi-account support — all four platforms**: `AccountSession` type; per-account directory layout + one-shot legacy migration; `AccountPicker` + `UserInfo` shared widgets; `LoginView::Mode { Initial, AddAccount }`; left-click avatar opens picker, right-click opens add/logout menu; per-account notifier wiring; 219 ctest pass.
