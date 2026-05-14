@@ -119,4 +119,15 @@ void ShellBase::push_room_list_state_(RoomListState state) {
     last_room_list_state_ = state;
 }
 
+void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
+                                          const std::string& event_id) {
+    if (room_id.empty() || event_id.empty()) return;
+    auto& last = last_sent_receipt_[room_id];
+    if (last == event_id) return;
+    last = event_id;
+    run_async_([this, room_id, event_id]() {
+        if (client_) client_->send_read_receipt(room_id, event_id);
+    });
+}
+
 } // namespace tesseract

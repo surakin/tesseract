@@ -162,6 +162,7 @@ public:
     using ShellBase::push_rooms_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
+    using ShellBase::maybe_send_read_receipt_;
 
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
@@ -865,6 +866,11 @@ void MacShell::on_room_list_state_ui_() {
             if (!s) return;
             if (s->_shell->current_room_id_.empty()) return;
             [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
+        };
+        _messageListView->on_receipt_needed = [weakSelf](const std::string& eid) {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_, eid);
         };
         _messageListView->on_image_clicked =
             [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {

@@ -247,6 +247,11 @@ public:
     /// Fires when the user left-clicks a video thumbnail card.
     std::function<void(const MessageListView::VideoHit&)> on_video_clicked;
 
+    // Fired with the event_id of the newest real (non-virtual) message
+    // visible in the viewport when that id changes. The host should call
+    // Client::send_read_receipt for the active room.
+    std::function<void(const std::string& event_id)> on_receipt_needed;
+
     // Widget overrides — own pointer-move/down/up so we can hit-test
     // reaction chips before the ListView base sees the event.
     bool on_pointer_down(tk::Point local) override;
@@ -351,6 +356,13 @@ private:
     bool                           press_pill_   = false;
 
     bool should_show_pill() const;
+
+    // Read receipt viewport tracking. Fires on_receipt_needed at most once
+    // per distinct event_id; last_receipt_event_id_ guards against re-firing
+    // on every paint when the scroll position is unchanged.
+    mutable std::string            last_receipt_event_id_;
+    std::string newest_visible_real_event_id() const;
+    void        maybe_notify_receipt_() const;
 
     // Voice playback. The view owns a single AudioPlayer — at most one
     // voice clip plays at a time. The host hands ownership in via

@@ -2144,6 +2144,29 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
     }
 }
 
+std::string MessageListView::newest_visible_real_event_id() const {
+    auto [first, last] = visible_range();
+    if (last < 0) return {};
+    using Kind = MessageRowData::Kind;
+    for (int i = last; i >= first; --i) {
+        const auto& row = messages_[static_cast<std::size_t>(i)];
+        if (row.kind != Kind::DaySeparator &&
+            row.kind != Kind::ReadMarker   &&
+            row.kind != Kind::TimelineStart &&
+            !row.event_id.empty())
+            return row.event_id;
+    }
+    return {};
+}
+
+void MessageListView::maybe_notify_receipt_() const {
+    if (!on_receipt_needed) return;
+    auto eid = newest_visible_real_event_id();
+    if (eid.empty() || eid == last_receipt_event_id_) return;
+    last_receipt_event_id_ = eid;
+    on_receipt_needed(eid);
+}
+
 void MessageListView::paint(tk::PaintCtx& ctx) {
     // Sticker, voice, quote, and video rects are rebuilt per-paint by Adapter::paint_row.
     // Clear here so entries scrolled offscreen don't linger.
@@ -2153,6 +2176,7 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     voice_card_geom_.clear();
     quote_block_geom_.clear();
     tk::ListView::paint(ctx);
+    maybe_notify_receipt_();
 
     // Scroll-to-bottom pill — overlays the bottom-right corner of the
     // viewport when the user is not pinned to the live tail. Painted

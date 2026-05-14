@@ -183,6 +183,11 @@ std::uint64_t Client::media_upload_limit() {
     return impl_->ffi->media_upload_limit();
 }
 
+Result Client::send_read_receipt(const std::string& room_id,
+                                  const std::string& event_id) {
+    return from_ffi(impl_->ffi->send_read_receipt(room_id, event_id));
+}
+
 Result Client::send_reaction(const std::string& room_id,
                              const std::string& event_id,
                              const std::string& key) {

@@ -176,6 +176,11 @@ public:
     /// a long upload to fail server-side.
     std::uint64_t media_upload_limit();
 
+    /// Send a public `m.read` receipt for `event_id` in `room_id`. Blocks
+    /// until the server acknowledges. Does not require `subscribe_room`.
+    Result send_read_receipt(const std::string& room_id,
+                             const std::string& event_id);
+
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a

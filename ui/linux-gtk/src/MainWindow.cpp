@@ -880,6 +880,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         request_more_history(current_room_id_);
     };
 
+    message_list_view_->on_receipt_needed = [this](const std::string& eid) {
+        maybe_send_read_receipt_(current_room_id_, eid);
+    };
+
     // Lazily build the picker — the popover is parented to the compose
     // surface widget. Recents live in account-data now
     // (io.element.recent_emoji); no local-disk load.

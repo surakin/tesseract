@@ -94,6 +94,10 @@ protected:
     // ── Pagination ────────────────────────────────────────────────────────────
     struct PaginationState { bool in_flight = false; bool reached_start = false; };
     std::unordered_map<std::string, PaginationState> pagination_;
+
+    // ── Read receipts ─────────────────────────────────────────────────────────
+    // room_id → last event_id for which a receipt was sent in this session.
+    std::unordered_map<std::string, std::string> last_sent_receipt_;
     static constexpr std::uint16_t kPaginationBatch = 50;
 
     // ── Worker threads ────────────────────────────────────────────────────────
@@ -195,6 +199,11 @@ protected:
 
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
+
+    // Send a public m.read receipt for event_id in room_id if it differs
+    // from the last one sent in this session. No-op when either arg is empty.
+    void maybe_send_read_receipt_(const std::string& room_id,
+                                   const std::string& event_id);
 
     // Update last_room_list_state_.  Shells call their own refresh_sync_status
     // implementation after this to update native UI.

@@ -1578,6 +1578,43 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    #[cfg(not(test))]
+    pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
+        if self.client.is_none() { return err("not logged in"); }
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let client = self.client.as_ref().unwrap();
+        let room = match client.get_room(&room_id) {
+            Some(r) => r,
+            None    => return err("room not found"),
+        };
+        match self.rt.block_on(async move {
+            use matrix_sdk::ruma::{
+                api::client::receipt::create_receipt,
+                events::receipt::ReceiptThread,
+            };
+            room.send_single_receipt(
+                create_receipt::v3::ReceiptType::Read,
+                ReceiptThread::Unthreaded,
+                event_id,
+            ).await
+        }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_read_receipt(&mut self, _room_id: &str, _event_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
     /// Wraps matrix-sdk-ui's `Timeline::redact`. The room must currently
     /// be subscribed via `subscribe_room`. Server-side permission errors

@@ -1144,6 +1144,9 @@ void MainWindow::on_create(HWND hwnd) {
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);
         };
+        message_list_view_->on_receipt_needed = [this](const std::string& eid) {
+            maybe_send_read_receipt_(current_room_id_, eid);
+        };
         if (auto player = msg_surface_->host().make_audio_player()) {
             message_list_view_->set_audio_player(std::move(player));
         }

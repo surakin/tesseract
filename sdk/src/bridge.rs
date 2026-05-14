@@ -525,6 +525,12 @@ pub mod ffi {
                          event_id: &str,
                          key: &str) -> OpResult;
 
+        /// Send a public `m.read` receipt for `event_id` in `room_id`.
+        /// Does not require the room to be subscribed via `subscribe_room`.
+        fn send_read_receipt(self: &mut ClientFfi,
+                             room_id:  &str,
+                             event_id: &str) -> OpResult;
+
         /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
         /// is currently subscribed via `subscribe_room`. Server-side

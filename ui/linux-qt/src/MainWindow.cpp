@@ -882,6 +882,10 @@ MainWindow::MainWindow(QWidget* parent)
         requestMoreHistory(current_room_id_);
     };
 
+    messageListView_->on_receipt_needed = [this](const std::string& eid) {
+        maybe_send_read_receipt_(current_room_id_, eid);
+    };
+
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
 }
 
