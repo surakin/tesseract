@@ -157,6 +157,12 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::update_typing_bar_(const std::string& text)
+{
+    if (typing_bar_)
+        gtk_label_set_text(GTK_LABEL(typing_bar_), text.c_str());
+}
+
 void MainWindow::handle_verification_state_ui_(bool is_verified)
 {
     if (!verif_surface_) return;
@@ -672,6 +678,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_hexpand(msg_surface_widget, TRUE);
     gtk_box_append(GTK_BOX(vbox), msg_surface_widget);
 
+    typing_bar_ = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(typing_bar_), 0.0f);
+    gtk_widget_set_margin_start(typing_bar_, 8);
+    gtk_widget_set_size_request(typing_bar_, -1, 20);
+    gtk_box_append(GTK_BOX(vbox), typing_bar_);
+
     // Compose bar — shared widget on a tk::gtk4::Surface. Text input is
     // a NativeTextArea overlay on the bar's text_area_rect; emoji + send
     // buttons paint into the toolkit.
@@ -689,6 +701,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_text_area_ = compose_surface_->host().make_text_area();
     compose_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
     compose_text_area_->set_on_changed([this](const std::string& s) {
+        handle_compose_text_changed_(s);
         if (compose_shared_) compose_shared_->set_current_text(s);
     });
     compose_text_area_->set_on_submit([this] { on_send_clicked(); });
@@ -1267,10 +1280,12 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         }
     }
 
+    handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id)
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    update_typing_bar_({});
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());

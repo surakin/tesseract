@@ -92,6 +92,7 @@ private:
         std::string body, bool is_mention,
         std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
+    void update_typing_bar_(const std::string& text) override;
 
     // ── Internal push helpers (called from handle_*_ui_ and async workers) ────
     void push_timeline_reset(std::string room_id,
@@ -219,6 +220,7 @@ private:
     std::unique_ptr<tk::gtk4::Surface>            compose_surface_;
     tesseract::views::ComposeBar*                  compose_shared_   = nullptr;
     std::unique_ptr<tk::NativeTextArea>            compose_text_area_;
+    GtkWidget*      typing_bar_         = nullptr;
     GtkWidget*      emoji_popover_      = nullptr;
     std::unique_ptr<tk::gtk4::Surface>      emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr;

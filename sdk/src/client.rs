@@ -520,6 +520,31 @@ impl ClientFfi {
             );
         }
 
+        // Global typing-notification handler. Fires for every room whenever
+        // the set of typing users changes. Self is filtered out so the UI
+        // never shows the local user in the typing bar.
+        {
+            use matrix_sdk::ruma::events::typing::SyncTypingEvent;
+            let h    = Arc::clone(&handler);
+            let me   = client.user_id().map(|u| u.to_owned());
+            client.add_event_handler(
+                move |ev: SyncTypingEvent, room: Room| {
+                    let h  = Arc::clone(&h);
+                    let me = me.clone();
+                    async move {
+                        let rid  = room.room_id().to_string();
+                        let uids: Vec<String> = ev.content.user_ids.iter()
+                            .filter(|u| me.as_deref() != Some(u.as_ref()))
+                            .map(|u| u.localpart().to_string())
+                            .collect();
+                        if let Ok(g) = h.lock() {
+                            g.on_typing_changed(&rid, &uids);
+                        }
+                    }
+                },
+            );
+        }
+
         // Build SyncService.
         let sync_service = match self.rt.block_on(
             SyncService::builder(client.clone()).build()
@@ -1302,6 +1327,23 @@ impl ClientFfi {
             Err(e) => err(e.to_string()),
         }
     }
+
+    /// Send a typing notice to `room_id`. Fire-and-forget; errors are swallowed.
+    #[cfg(not(test))]
+    pub fn send_typing_notice(&mut self, room_id: &str, typing: bool) {
+        let Some(client) = self.client.clone() else { return };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        self.rt.spawn(async move {
+            let Some(room) = client.get_room(&room_id) else { return };
+            let _ = room.typing_notice(typing).await;
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_typing_notice(&mut self, _room_id: &str, _typing: bool) {}
 
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
     /// `m.in_reply_to` relation and sends via `room.send()`. Does not require

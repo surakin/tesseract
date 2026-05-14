@@ -65,6 +65,7 @@ protected:
     std::string           current_room_id_;
     std::string           pending_restore_room_;
     std::vector<std::string> space_stack_;
+    bool                  compose_typing_active_ = false;
 
     // ── Image caches ──────────────────────────────────────────────────────────
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
@@ -175,6 +176,21 @@ protected:
     virtual void handle_verification_cancelled_ui_(
         std::string /*flow_id*/, std::string /*reason*/) {}
     virtual void handle_verification_state_ui_(bool /*is_verified*/) {}
+
+    // ── Typing notification hooks ─────────────────────────────────────────────
+    // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
+    // formats the display text, and calls update_typing_bar_.
+    void handle_typing_changed_ui_(std::string room_id,
+                                    std::vector<std::string> names);
+    // Override in each shell to push text into the platform typing-bar widget.
+    // text is empty when no one is typing.
+    virtual void update_typing_bar_(const std::string& /*text*/) {}
+
+    // ── Compose typing send helpers ───────────────────────────────────────────
+    // Call from the shell's NativeTextArea on_changed callback.
+    void handle_compose_text_changed_(const std::string& text);
+    // Call BEFORE updating current_room_id_ on room switch / account switch.
+    void handle_compose_room_leaving_(const std::string& old_room_id);
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 

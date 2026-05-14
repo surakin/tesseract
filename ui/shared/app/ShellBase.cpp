@@ -130,4 +130,33 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
     });
 }
 
+static std::string format_typing_text(const std::vector<std::string>& names) {
+    if (names.empty()) return {};
+    if (names.size() == 1) return names[0] + " is typing\xe2\x80\xa6";
+    if (names.size() == 2)
+        return names[0] + " and " + names[1] + " are typing\xe2\x80\xa6";
+    return names[0] + ", " + names[1] + ", and "
+         + std::to_string(names.size() - 2) + " others are typing\xe2\x80\xa6";
+}
+
+void ShellBase::handle_typing_changed_ui_(std::string room_id,
+                                           std::vector<std::string> names) {
+    if (room_id != current_room_id_) return;
+    update_typing_bar_(format_typing_text(names));
+}
+
+void ShellBase::handle_compose_text_changed_(const std::string& text) {
+    bool typing = !text.empty();
+    if (typing == compose_typing_active_) return;
+    compose_typing_active_ = typing;
+    if (!current_room_id_.empty() && client_)
+        client_->send_typing_notice(current_room_id_, typing);
+}
+
+void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id) {
+    if (!compose_typing_active_ || old_room_id.empty() || !client_) return;
+    compose_typing_active_ = false;
+    client_->send_typing_notice(old_room_id, false);
+}
+
 } // namespace tesseract

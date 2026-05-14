@@ -135,6 +135,7 @@ public:
         std::string body, bool is_mention,
         std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
+    void update_typing_bar_(const std::string& text) override;
 
 private:
     void on_create(HWND hwnd);
@@ -310,6 +311,7 @@ private:
     std::unique_ptr<tk::win32::Surface>      vid_viewer_surface_;
     tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
 
+    HWND      hTypingBar_  = nullptr;
     HWND      hStatus_     = nullptr;
 
     // Recovery banner — shared widget on a tk::win32::Surface. Key

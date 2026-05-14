@@ -362,6 +362,12 @@ pub mod ffi {
         /// are consistent and confirmed). Use this to show/hide the
         /// "Verify this device" banner.
         fn on_verification_state_changed(self: &EventHandlerBridge, verified: bool);
+
+        /// Fired when the set of typing users in `room_id` changes. `typing_user_ids`
+        /// contains the localpart of each typing user (excluding the local user).
+        /// An empty vec means no one is typing.
+        fn on_typing_changed(self: &EventHandlerBridge, room_id: &str,
+                             typing_user_ids: &Vec<String>);
     }
 
     // -------------------------------------------------------------------------
@@ -443,6 +449,10 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+
+        /// Send a typing notice to `room_id`. Fire-and-forget — errors are
+        /// silently swallowed. Does not require `subscribe_room`.
+        fn send_typing_notice(self: &mut ClientFfi, room_id: &str, typing: bool);
 
         /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds the
         /// `m.in_reply_to` relation and sends via `room.send()`. Does not require

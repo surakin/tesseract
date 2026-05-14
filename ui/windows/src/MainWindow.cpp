@@ -571,6 +571,22 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::update_typing_bar_(const std::string& text)
+{
+    if (!hTypingBar_) return;
+    if (text.empty()) {
+        SetWindowTextW(hTypingBar_, L"");
+        return;
+    }
+    int len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
+                                   static_cast<int>(text.size()), nullptr, 0);
+    if (len <= 0) return;
+    std::wstring wide(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
+                         static_cast<int>(text.size()), wide.data(), len);
+    SetWindowTextW(hTypingBar_, wide.c_str());
+}
+
 // ---------------------------------------------------------------------------
 // GDI+ helpers
 // ---------------------------------------------------------------------------
@@ -1233,6 +1249,7 @@ void MainWindow::on_create(HWND hwnd) {
         compose_text_area_ = compose_surface_->host().make_text_area();
         compose_text_area_->set_placeholder("Message…");
         compose_text_area_->set_on_changed([this](const std::string& s) {
+            handle_compose_text_changed_(s);
             if (compose_shared_) compose_shared_->set_current_text(s);
         });
         compose_text_area_->set_on_submit([this] { on_send_clicked(); });
@@ -1323,6 +1340,12 @@ void MainWindow::on_create(HWND hwnd) {
         WS_CHILD | WS_VISIBLE,
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
+
+    hTypingBar_ = CreateWindowExW(0, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        0, 0, 0, 0,
+        hwnd, nullptr, hInst_, nullptr);
+    apply_default_font(hTypingBar_);
 
     // Recovery banner — shared widget on a tk::win32::Surface. Initially
     // hidden; toggled by maybe_show_recovery_banner() after start_sync.
@@ -1547,7 +1570,8 @@ void MainWindow::on_size(int w, int h) {
     constexpr int ROOM_W   = 240;
     constexpr int SEP_W    = 1;
     constexpr int CHAT_X   = ROOM_W + SEP_W;
-    constexpr int STATUS_H = 24;
+    constexpr int STATUS_H  = 24;
+    constexpr int TYPING_H  = 20;
 
     // Custom status bar is anchored to the bottom. Position it explicitly.
     if (hStatus_) {
@@ -1572,7 +1596,7 @@ void MainWindow::on_size(int w, int h) {
     compose_h = std::clamp(compose_h,
                            static_cast<int>(tesseract::views::ComposeBar::kMinHeight),
                            content_h / 2);
-    int msg_h = content_h - compose_h;
+    int msg_h = content_h - compose_h - TYPING_H;
 
     constexpr int BANNER_H = 48;
 
@@ -1637,9 +1661,14 @@ void MainWindow::on_size(int w, int h) {
                       CHAT_X, msg_area_y, w - CHAT_X, msg_area_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    if (hTypingBar_) {
+        SetWindowPos(hTypingBar_, nullptr,
+                      CHAT_X, msg_h, w - CHAT_X, TYPING_H,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     if (compose_surface_ && compose_surface_->hwnd()) {
         SetWindowPos(compose_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_h, w - CHAT_X, compose_h,
+                      CHAT_X, msg_h + TYPING_H, w - CHAT_X, compose_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
     // Image viewer overlay — keep it sized to the full content area
@@ -1966,6 +1995,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         }
     }
 
+    handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id)
         client_->unsubscribe_room(current_room_id_);
 
@@ -1982,6 +2012,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
     if (compose_text_area_) compose_text_area_->set_text("");
     if (compose_shared_)    compose_shared_->set_current_text({});
+    update_typing_bar_({});
 
     for (const auto& r : rooms_) {
         if (r.id == current_room_id_) {

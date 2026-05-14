@@ -422,6 +422,13 @@ MainWindow::MainWindow(QWidget* parent)
     msgSurface_->set_root(std::move(msg_view_owner));
     vLayout->addWidget(msgSurface_, 1);
 
+    typingBar_ = new QLabel(chatPanel);
+    typingBar_->setFixedHeight(20);
+    typingBar_->setContentsMargins(8, 0, 8, 0);
+    typingBar_->setStyleSheet(QStringLiteral("QLabel{color:palette(mid);font-size:11px;}"));
+    vLayout->addWidget(typingBar_);
+
+
     // Right-click context menu on sticker rows. The shared
     // MessageListView records sticker rects per-paint (world coords);
     // we feed the QContextMenuEvent's local-widget position to
@@ -598,6 +605,7 @@ MainWindow::MainWindow(QWidget* parent)
     composeTextArea_ = composeSurface_->host().make_text_area();
     composeTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     composeTextArea_->set_on_changed([this](const std::string& s) {
+        handle_compose_text_changed_(s);
         if (composeShared_) composeShared_->set_current_text(s);
     });
     composeTextArea_->set_on_submit([this] { onSendClicked(); });
@@ -1282,10 +1290,12 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         }
     }
 
+    handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id)
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    update_typing_bar_({});
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
@@ -2069,6 +2079,12 @@ void MainWindow::handle_notification_ui_(
 void MainWindow::on_room_list_state_ui_()
 {
     refreshSyncStatus();
+}
+
+void MainWindow::update_typing_bar_(const std::string& text)
+{
+    if (typingBar_)
+        typingBar_->setText(QString::fromStdString(text));
 }
 
 // ---------------------------------------------------------------------------

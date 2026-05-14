@@ -169,4 +169,17 @@ void EventHandlerBase::on_verification_state_changed(bool is_verified)
         });
 }
 
+void EventHandlerBase::on_typing_changed(
+    const std::string& room_id,
+    const std::vector<std::string>& names)
+{
+    struct Payload { std::string rid; std::vector<std::string> ns; };
+    auto p = std::make_shared<Payload>(Payload{room_id, names});
+    shell_->post_to_ui_(
+        [shell = shell_, p]() mutable {
+            shell->handle_typing_changed_ui_(std::move(p->rid),
+                                              std::move(p->ns));
+        });
+}
+
 } // namespace tesseract

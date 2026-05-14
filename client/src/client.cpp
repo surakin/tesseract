@@ -155,6 +155,10 @@ Result Client::send_message(const std::string& room_id, const std::string& body)
     return from_ffi(impl_->ffi->send_message(room_id, body));
 }
 
+void Client::send_typing_notice(const std::string& room_id, bool typing) {
+    impl_->ffi->send_typing_notice(room_id, typing);
+}
+
 Result Client::send_image(const std::string& room_id,
                           const std::vector<uint8_t>& bytes,
                           const std::string& mime_type,

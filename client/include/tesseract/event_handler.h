@@ -127,6 +127,12 @@ public:
     /// is true when the device is now fully cross-signed. Called once at
     /// startup with the current state and again on every transition.
     virtual void on_verification_state_changed(bool /*is_verified*/) {}
+
+    /// Fired when the set of typing users in `room_id` changes. `names`
+    /// contains the localpart of each typing user (excluding the local user).
+    /// Empty `names` means no one is typing. Called on a background thread.
+    virtual void on_typing_changed(const std::string& /*room_id*/,
+                                    const std::vector<std::string>& /*names*/) {}
 };
 
 } // namespace tesseract

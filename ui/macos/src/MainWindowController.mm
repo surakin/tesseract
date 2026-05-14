@@ -115,11 +115,15 @@ protected:
         std::string room_name, std::string sender, std::string body,
         bool is_mention, std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
+    void update_typing_bar_(const std::string& text) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
 public:
     using ShellBase::client_;
+    using ShellBase::compose_typing_active_;
+    using ShellBase::handle_compose_text_changed_;
+    using ShellBase::handle_compose_room_leaving_;
     using ShellBase::event_handler_;
     using ShellBase::current_room_id_;
     using ShellBase::space_stack_;
@@ -257,6 +261,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
+- (void)_updateTypingBar:(NSString*)text;
 @end
 
 namespace {
@@ -479,6 +484,13 @@ void MacShell::on_room_list_state_ui_() {
     if (c) [c _onRoomListStateChanged];
 }
 
+void MacShell::update_typing_bar_(const std::string& text) {
+    MainWindowController* c = ctrl_;
+    if (!c) return;
+    NSString* ns = [NSString stringWithUTF8String:text.c_str()] ?: @"";
+    [c _updateTypingBar:ns];
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -507,6 +519,8 @@ void MacShell::on_room_list_state_ui_() {
     NSTextField*   _roomTitleLabel;
     LoginView*     _loginView;
     NSStackView*   _contentStack;
+
+    NSTextField*   _typingBar;
 
     // Compose bar — tk::macos::Surface hosting the shared ComposeBar
     // with a NativeTextArea overlay (NSTextView under the hood).
@@ -1118,6 +1132,7 @@ void MacShell::on_room_list_state_ui_() {
         _composeTextArea->set_placeholder("Message…");
         _composeTextArea->set_on_changed([weakSelf](const std::string& s) {
             MainWindowController* c = weakSelf;
+            if (c) c->_shell->handle_compose_text_changed_(s);
             if (c && c->_composeShared) c->_composeShared->set_current_text(s);
         });
         _composeTextArea->set_on_submit([weakSelf] {
@@ -1210,8 +1225,19 @@ void MacShell::on_room_list_state_ui_() {
     NSView* composeView = (__bridge NSView*)_composeSurface->view_handle();
     composeView.translatesAutoresizingMaskIntoConstraints = NO;
 
+    _typingBar = [NSTextField labelWithString:@""];
+    _typingBar.textColor = NSColor.secondaryLabelColor;
+    _typingBar.font = [NSFont systemFontOfSize:11];
+    _typingBar.editable = NO;
+    _typingBar.bordered = NO;
+    _typingBar.drawsBackground = NO;
+    _typingBar.translatesAutoresizingMaskIntoConstraints = NO;
+    [_typingBar addConstraint:
+        [_typingBar.heightAnchor constraintEqualToConstant:20]];
+
     _contentStack = [NSStackView stackViewWithViews:@[header, recoveryView, verifView,
-                                                       msgSurfaceView, composeView]];
+                                                       msgSurfaceView, _typingBar,
+                                                       composeView]];
     _contentStack.orientation     = NSUserInterfaceLayoutOrientationVertical;
     _contentStack.alignment       = NSLayoutAttributeLeading;
     _contentStack.distribution    = NSStackViewDistributionFill;
@@ -1233,6 +1259,9 @@ void MacShell::on_room_list_state_ui_() {
         [verifView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [msgSurfaceView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [msgSurfaceView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
+        [_typingBar.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor
+                                                 constant:8],
+        [_typingBar.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [composeView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [composeView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
     ]];
@@ -2226,6 +2255,10 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (_msgSurface) _msgSurface->relayout();
 }
 
+- (void)_updateTypingBar:(NSString*)text {
+    _typingBar.stringValue = text ?: @"";
+}
+
 - (void)_onRoomListStateChanged {
     // Update window title with sync progress (no status bar on macOS).
     // Priority: Init/SettingUp → "Syncing rooms…",
@@ -2419,6 +2452,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             return;
         }
     }
+    _shell->handle_compose_room_leaving_(_shell->current_room_id_);
     if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId) {
         _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
@@ -2433,6 +2467,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _composeShared->clear_reply();
         _composeShared->clear_editing();
     }
+    _shell->update_typing_bar_({});
     for (const auto& r : _shell->rooms_) {
         if (r.id == _shell->current_room_id_) { [self _setRoomHeader:r]; break; }
     }

@@ -140,6 +140,7 @@ private:
         std::string body, bool is_mention,
         std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
+    void update_typing_bar_(const std::string& text) override;
 
     // ---- Multi-account orchestration ----
 
@@ -267,6 +268,8 @@ private:
     QLabel*              roomHeaderTopic_ = nullptr;
     tk::qt6::Surface*                  msgSurface_      = nullptr;
     tesseract::views::MessageListView* messageListView_ = nullptr;  // borrowed
+    // Typing bar — fixed-height label between the message list and compose bar.
+    QLabel*                                 typingBar_       = nullptr;
     // Compose bar — tk::qt6::Surface hosting the shared ComposeBar widget
     // with a NativeTextArea overlaid on its text_area_rect.
     tk::qt6::Surface*                       composeSurface_  = nullptr;

@@ -150,4 +150,15 @@ void EventHandlerBridge::on_verification_state_changed(bool verified) const {
     handler_->on_verification_state_changed(verified);
 }
 
+void EventHandlerBridge::on_typing_changed(
+    rust::Str room_id,
+    const rust::Vec<rust::String>& user_ids) const
+{
+    if (!handler_) return;
+    std::vector<std::string> ids;
+    ids.reserve(user_ids.size());
+    for (const auto& uid : user_ids) ids.push_back(std::string(uid));
+    handler_->on_typing_changed(std::string(room_id), std::move(ids));
+}
+
 } // namespace tesseract_ffi

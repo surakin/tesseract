@@ -63,6 +63,9 @@ public:
     void on_verification_cancelled(rust::Str flow_id, rust::Str reason) const;
     void on_verification_state_changed(bool verified) const;
 
+    void on_typing_changed(rust::Str room_id,
+                           const rust::Vec<rust::String>& user_ids) const;
+
 private:
     tesseract::IEventHandler* handler_; // non-owning
 };

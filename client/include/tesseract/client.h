@@ -134,6 +134,11 @@ public:
 
     Result send_message(const std::string& room_id, const std::string& body);
 
+    /// Send a typing notice to `room_id`. Fire-and-forget — returns immediately;
+    /// errors are silently swallowed. Pass `typing=true` when the compose field
+    /// transitions to non-empty, `typing=false` when it clears or on room leave.
+    void send_typing_notice(const std::string& room_id, bool typing);
+
     /// Send an image to `room_id`. `bytes` is the already-encoded image
     /// payload (PNG/JPEG/etc. — identified by `mime_type`, e.g. "image/png"
     /// or "image/jpeg"). `filename` is the user-visible file name shown in
