@@ -171,14 +171,13 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     std::string selected;
     view.on_room_selected = [&](const std::string& id) { selected = id; };
 
-    // Use a 400 px tall viewport so the search bar stays hidden and the
-    // section header sits at y=0..28 with room rows directly below it.
+    // 400 px viewport.  Layout: search bar 0..36, section header 36..64,
+    // room rows 62 px each (row 0 at 64..126, row 1 at 126..188, …).
     st.run(view, { 0, 0, 260, 400 });
 
-    // Layout: 28 px section header + 62 px per room row.
-    // y=110 lands inside room row 1 (y=90..152) → "Beta room".
-    REQUIRE(view.on_pointer_down({ 10, 110 }));
-    view.on_pointer_up({ 10, 110 }, true);
+    // y=146 lands inside room row 1 (y=126..188) → "Beta room".
+    REQUIRE(view.on_pointer_down({ 10, 146 }));
+    view.on_pointer_up({ 10, 146 }, true);
     CHECK(selected == "!b:example.org");
     CHECK(view.selected_room_id() == "!b:example.org");
 
@@ -212,11 +211,12 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
     CHECK(view.selected_room_id() == "!b:x");
 }
 
-TEST_CASE("RoomListView search field hidden when content fits viewport",
+TEST_CASE("RoomListView search field always visible",
           "[tk][view][roomlist][search]") {
     Stage st;
     RoomListView view;
-    // Two rooms, 62-px row each = 124 px content < 600 px viewport.
+    // Two rooms — content fits easily in a 600 px viewport, but the
+    // search bar is unconditionally shown.
     std::vector<RoomInfo> rooms = {
         { "!a:x", "Alpha",   "", 0, false, "", "", 0, false },
         { "!b:x", "Beta",    "", 0, false, "", "", 0, false },
@@ -224,10 +224,10 @@ TEST_CASE("RoomListView search field hidden when content fits viewport",
     view.set_rooms(rooms);
     st.run(view, { 0, 0, 260, 600 });
 
-    CHECK_FALSE(view.search_field_visible());
+    CHECK(view.search_field_visible());
     auto r = view.search_field_rect();
-    CHECK(r.w == 0.0f);
-    CHECK(r.h == 0.0f);
+    CHECK(r.w > 0.0f);
+    CHECK(r.h > 0.0f);
 }
 
 TEST_CASE("RoomListView search field visible when content overflows viewport",
@@ -287,8 +287,9 @@ TEST_CASE("RoomListView set_search_text filters rows by name case-insensitively"
     view.set_search_text("");
     st.run(view, { 0, 0, 260, 600 });
     selected.clear();
-    REQUIRE(view.on_pointer_down({ 10, 30 + 62 * 2 })); // row 2 in full set
-    view.on_pointer_up({ 10, 30 + 62 * 2 }, true);
+    // search bar (36) + header (28) + row 2 offset (2*62) + mid-row (10) = 198
+    REQUIRE(view.on_pointer_down({ 10, 198 })); // row 2 in full set
+    view.on_pointer_up({ 10, 198 }, true);
     CHECK(selected == "!c:x");
 }
 
@@ -362,33 +363,33 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
     view.on_room_selected = [&](const std::string& id) { selected = id; };
     st.run(view, { 0, 0, 260, 400 });
 
-    // Layout: header 0..28, !a 28..90, !b 90..152.
-    // y=50 hits !a.
-    REQUIRE(view.on_pointer_down({ 10, 50 }));
-    view.on_pointer_up({ 10, 50 }, true);
+    // Layout: search bar 0..36, header 36..64, !a 64..126, !b 126..188.
+    // y=80 hits !a.
+    REQUIRE(view.on_pointer_down({ 10, 80 }));
+    view.on_pointer_up({ 10, 80 }, true);
     CHECK(selected == "!a:x");
     selected.clear();
 
-    // Click the section header (y=14) to collapse.
-    REQUIRE(view.on_pointer_down({ 10, 14 }));
-    view.on_pointer_up({ 10, 14 }, true);
+    // Click the section header (y=50) to collapse.
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
     CHECK(selected.empty()); // header click must not fire on_room_selected
     st.run(view, { 0, 0, 260, 400 });
 
-    // After collapse: only the 28 px header remains.
+    // After collapse: search bar + 28 px header; no room rows.
     // Click where !a used to be — no row there now.
-    view.on_pointer_down({ 10, 50 });
-    view.on_pointer_up({ 10, 50 }, true);
+    view.on_pointer_down({ 10, 80 });
+    view.on_pointer_up({ 10, 80 }, true);
     CHECK(selected.empty());
 
     // Click header again to expand.
-    REQUIRE(view.on_pointer_down({ 10, 14 }));
-    view.on_pointer_up({ 10, 14 }, true);
-    st.run(view, { 0, 0, 260, 400 });
-
-    // !a is back at y=28..90.
     REQUIRE(view.on_pointer_down({ 10, 50 }));
     view.on_pointer_up({ 10, 50 }, true);
+    st.run(view, { 0, 0, 260, 400 });
+
+    // !a is back at y=64..126.
+    REQUIRE(view.on_pointer_down({ 10, 80 }));
+    view.on_pointer_up({ 10, 80 }, true);
     CHECK(selected == "!a:x");
 }
 
@@ -403,9 +404,9 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
     view.set_rooms(rooms);
     st.run(view, { 0, 0, 260, 400 });
 
-    // Collapse the Rooms section via the header at y=14.
-    REQUIRE(view.on_pointer_down({ 10, 14 }));
-    view.on_pointer_up({ 10, 14 }, true);
+    // Collapse the Rooms section via the header at y=50 (search bar 0..36, header 36..64).
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
     st.run(view, { 0, 0, 260, 400 });
 
     // Search overrides collapsed state — both matches visible.
@@ -434,16 +435,16 @@ TEST_CASE("RoomListView empty sections produce no header row",
     view.on_room_selected = [&](const std::string& id) { selected = id; };
     st.run(view, { 0, 0, 260, 400 });
 
-    // Layout: Rooms header 0..28, !a 28..90.
-    // y=50 hits the room row directly.
-    REQUIRE(view.on_pointer_down({ 10, 50 }));
-    view.on_pointer_up({ 10, 50 }, true);
+    // Layout: search bar 0..36, Rooms header 36..64, !a 64..126.
+    // y=80 hits the room row directly.
+    REQUIRE(view.on_pointer_down({ 10, 80 }));
+    view.on_pointer_up({ 10, 80 }, true);
     CHECK(selected == "!a:x");
 
-    // Header click at y=14 must not fire on_room_selected (collapses section).
+    // Header click at y=50 must not fire on_room_selected (collapses section).
     selected.clear();
-    REQUIRE(view.on_pointer_down({ 10, 14 }));
-    view.on_pointer_up({ 10, 14 }, true);
+    REQUIRE(view.on_pointer_down({ 10, 50 }));
+    view.on_pointer_up({ 10, 50 }, true);
     CHECK(selected.empty());
 }
 
