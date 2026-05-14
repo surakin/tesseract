@@ -2248,24 +2248,6 @@ impl ClientFfi {
         }
     }
 
-    /// Rebuild the image pack cache on the current runtime, blocking until
-    /// it completes. Used by FFI write paths to refresh the cache eagerly so
-    /// subsequent `list_*` calls reflect the just-written change without
-    /// waiting for the next sync round-trip.
-    #[cfg(not(test))]
-    fn refresh_image_packs_blocking(&self) {
-        let Some(client) = self.client.clone() else { return };
-        let cache = Arc::clone(&self.image_packs);
-        let handler = self.handler.clone();
-        self.rt.block_on(async move {
-            let packs = rebuild_image_packs(&client).await;
-            if let Ok(mut g) = cache.lock() { *g = packs; }
-            if let Some(h) = handler {
-                if let Ok(g) = h.lock() { g.on_image_packs_updated(); }
-            }
-        });
-    }
-
     // -----------------------------------------------------------------------
     // Recovery / key backup (Step 6)
     // -----------------------------------------------------------------------

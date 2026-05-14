@@ -376,7 +376,7 @@ void RoomListView::rebuild_items() {
     for (int s = 0; s < kNumSections; ++s) {
         if (section_rooms_[s].empty()) continue;
         items_.push_back({ Item::Kind::Header, s, 0 });
-        if (collapsed_[s]) continue;
+        if (collapsed_[s] && search_text_.empty()) continue;
         for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
             items_.push_back({ Item::Kind::Room, s, r });
     }

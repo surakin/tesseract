@@ -50,8 +50,10 @@ TEST_CASE("ComposeBar reserves a text-area rect between the emoji and send butto
     Rect r = bar.text_area_rect();
     CHECK(r.w > 100.0f);
     CHECK(r.h > 0.0f);
-    // Sits well inside the bar (not flush with the left/right edges).
-    CHECK(r.x > 30.0f);
+    // Sits inside the bar (not flush with the left/right edges).
+    // Emoji/sticker/send buttons are on the right; text area starts at
+    // card_left + kPadX = bounds.x + 2*kPadX = 16.
+    CHECK(r.x > 0.0f);
     CHECK(r.x + r.w < 640.0f - 30.0f);
 }
 
