@@ -46,6 +46,8 @@ public:
     explicit QtNativeTextField(QWidget* parent)
         : edit_(new QLineEdit(parent)) {
         edit_->setAttribute(Qt::WA_StyledBackground, true);
+        edit_->setFrame(false);
+        edit_->setStyleSheet("QLineEdit { background: transparent; }");
         edit_->show();
 
         QObject::connect(edit_, &QLineEdit::textChanged,
@@ -191,6 +193,8 @@ public:
         edit_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         edit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         edit_->setLineWrapMode(QTextEdit::WidgetWidth);
+        edit_->setStyleSheet("QTextEdit { background: transparent; }");
+        edit_->viewport()->setStyleSheet("background: transparent;");
         edit_->show();
 
         edit_->on_return_ = [this] { if (on_submit_) on_submit_(); };
