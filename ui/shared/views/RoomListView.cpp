@@ -96,8 +96,7 @@ private:
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
 
         const char* title = RoomListView::kSectionTitles[item.section];
-        bool collapsed = owner_.collapsed_[item.section]
-                         && owner_.search_text_.empty();
+        bool collapsed = owner_.collapsed_[item.section];
 
         // Section name (left-aligned, vertically centred).
         tk::TextStyle ts{};
@@ -246,15 +245,12 @@ RoomListView::RoomListView()
         const auto& item = items_[static_cast<std::size_t>(idx)];
 
         if (item.kind == Item::Kind::Header) {
-            // Toggle collapse only when not searching (search always shows all).
-            if (search_text_.empty()) {
-                collapsed_[item.section] = !collapsed_[item.section];
-                rebuild_items();
-                list_->invalidate_data();
-                // Re-apply selection — the selected room may have just been
-                // hidden or revealed by the toggle.
-                set_selected_room(selected_room_id_cache_);
-            }
+            collapsed_[item.section] = !collapsed_[item.section];
+            rebuild_items();
+            list_->invalidate_data();
+            // Re-apply selection — the selected room may have just been
+            // hidden or revealed by the toggle.
+            set_selected_room(selected_room_id_cache_);
             return;
         }
 
@@ -377,12 +373,10 @@ void RoomListView::rebuild_items() {
 
     // 3. Build flat item list.
     items_.clear();
-    bool searching = !search_text_.empty();
     for (int s = 0; s < kNumSections; ++s) {
         if (section_rooms_[s].empty()) continue;
         items_.push_back({ Item::Kind::Header, s, 0 });
-        // Respect collapsed state only when not actively searching.
-        if (!searching && collapsed_[s]) continue;
+        if (collapsed_[s]) continue;
         for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
             items_.push_back({ Item::Kind::Room, s, r });
     }
