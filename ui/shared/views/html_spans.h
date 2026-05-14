@@ -1,5 +1,6 @@
 #pragma once
 #include "tk/canvas.h"
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -8,7 +9,8 @@ namespace tesseract::views {
 // Parse the Matrix HTML formatted_body subset into a flat list of TextSpans.
 //
 // Recognised inline tags: <b>/<strong>, <i>/<em>, <code>, <del>/<s>/<strike>,
-//   <a> (text kept, href ignored), <u> (no underline yet, text kept).
+//   <a href="http(s)://..."> (text kept; url field populated on the span),
+//   <u> (no underline yet, text kept).
 // Block tags: <p> (paragraph break as '\n'), <br> (line break as '\n'),
 //   <pre> (treated as code block; inner <code> is redundant but harmless).
 // Unknown tags are stripped; their text content is preserved.
@@ -16,5 +18,15 @@ namespace tesseract::views {
 //
 // Returns a single plain-text span when `html` is empty.
 std::vector<tk::TextSpan> html_to_spans(std::string_view html);
+
+// Return the first http(s) URL found in an HTML formatted_body (the href
+// of the first <a> tag whose href starts with http:// or https://).
+// Returns empty when none is found.
+std::string first_url_from_html(std::string_view html);
+
+// Return the first http(s) URL found in a plain-text body by scanning for
+// "https://" or "http://" prefixes. Strips trailing prose punctuation.
+// Returns empty when none is found.
+std::string first_url_from_plain(std::string_view text);
 
 } // namespace tesseract::views

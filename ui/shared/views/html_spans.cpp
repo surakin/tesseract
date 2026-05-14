@@ -89,9 +89,60 @@ void decode_entity(const char*& p, const char* end, std::string& out) {
 
 struct Tag {
     std::string name;  // lower-cased tag name
-    bool closing     = false;
+    std::string href;  // non-empty only for <a href="http(s)://...">
+    bool closing      = false;
     bool self_closing = false;
 };
+
+// Scan [p, end) for the attribute named `target` (case-insensitive), return
+// its quoted value. Used only for <a href=...>.
+static std::string extract_attr(const char* p, const char* end,
+                                const char* target) {
+    const std::size_t tlen = std::strlen(target);
+    while (p < end) {
+        // Skip whitespace between attributes.
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        if (p >= end || *p == '>' || *p == '/') break;
+
+        // Read attribute name.
+        const char* name_start = p;
+        while (p < end && *p != '=' && *p != '>' && *p != '/'
+               && !std::isspace(static_cast<unsigned char>(*p)))
+            ++p;
+        const std::size_t name_len = static_cast<std::size_t>(p - name_start);
+
+        // Skip optional whitespace + '='.
+        while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        bool has_value = (p < end && *p == '=');
+        if (has_value) {
+            ++p; // skip '='
+            while (p < end && std::isspace(static_cast<unsigned char>(*p))) ++p;
+        }
+
+        // Read (quoted) value.
+        std::string value;
+        if (has_value && p < end && (*p == '"' || *p == '\'')) {
+            char qch = *p++;
+            while (p < end && *p != qch) value += *p++;
+            if (p < end) ++p; // closing quote
+        } else if (has_value) {
+            // Unquoted value.
+            while (p < end && !std::isspace(static_cast<unsigned char>(*p))
+                   && *p != '>' && *p != '/')
+                value += *p++;
+        }
+
+        // Case-insensitive name comparison.
+        if (name_len == tlen) {
+            bool match = true;
+            for (std::size_t i = 0; i < tlen && match; ++i)
+                match = (std::tolower(static_cast<unsigned char>(name_start[i]))
+                         == static_cast<unsigned char>(target[i]));
+            if (match) return value;
+        }
+    }
+    return {};
+}
 
 // Parse one tag starting at `p` (pointing at '<'). Advances `p` past '>'.
 Tag parse_tag(const char*& p, const char* end) {
@@ -108,7 +159,10 @@ Tag parse_tag(const char*& p, const char* end) {
     while (p < end && (std::isalnum(static_cast<unsigned char>(*p)) || *p == '-'))
         t.name += static_cast<char>(std::tolower(static_cast<unsigned char>(*p++)));
 
-    // Skip attributes, detect '/>' self-close
+    // Record attribute start for href extraction on <a> tags.
+    const char* attr_start = p;
+
+    // Skip attributes, detect '/>' self-close.
     bool in_quote = false;
     char quote_ch = 0;
     while (p < end) {
@@ -123,12 +177,22 @@ Tag parse_tag(const char*& p, const char* end) {
             break;
         }
     }
+
+    // For opening <a> tags extract the href attribute.
+    if (t.name == "a" && !t.closing) {
+        const char* attr_end = p - 1; // points just past '>'
+        std::string href = extract_attr(attr_start, attr_end, "href");
+        if (href.rfind("http://", 0) == 0 || href.rfind("https://", 0) == 0)
+            t.href = std::move(href);
+    }
+
     return t;
 }
 
 // ── Formatting state ──────────────────────────────────────────────────────
 
 struct FmtState {
+    std::string url;
     bool bold          = false;
     bool italic        = false;
     bool code          = false;
@@ -159,15 +223,22 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
         const FmtState& s = stack.back();
         if (!spans.empty()) {
             tk::TextSpan& prev = spans.back();
-            if (prev.bold == s.bold && prev.italic == s.italic &&
+            if (prev.url == s.url &&
+                prev.bold == s.bold && prev.italic == s.italic &&
                 prev.code == s.code && prev.strikethrough == s.strikethrough) {
                 prev.text += cur_text;
                 cur_text.clear();
                 return;
             }
         }
-        spans.push_back(tk::TextSpan{cur_text, s.bold, s.italic, s.code,
-                                      s.strikethrough});
+        tk::TextSpan sp;
+        sp.text          = cur_text;
+        sp.url           = s.url;
+        sp.bold          = s.bold;
+        sp.italic        = s.italic;
+        sp.code          = s.code;
+        sp.strikethrough = s.strikethrough;
+        spans.push_back(std::move(sp));
         cur_text.clear();
     };
 
@@ -185,6 +256,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
                 else if (tag.name == "pre")                        ns.code = true;
                 else if (tag.name == "del" || tag.name == "s"
                          || tag.name == "strike")                  ns.strikethrough = true;
+                else if (tag.name == "a" && !tag.href.empty())     ns.url = tag.href;
                 else if (tag.name == "p") {
                     // Paragraph separator — blank line between paras.
                     if (!first_block) {
@@ -195,7 +267,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
                     stack.push_back(ns);
                     continue;
                 }
-                // All other opening tags (a, u, span, h1-h6, li, …): preserve
+                // All other opening tags (u, span, h1-h6, li, …): preserve
                 // text content without changing formatting.
                 flush();
                 stack.push_back(ns);
@@ -231,6 +303,57 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
     }
 
     return spans;
+}
+
+// ── URL extraction helpers ────────────────────────────────────────────────
+
+std::string first_url_from_html(std::string_view html) {
+    // Walk the HTML looking for the first <a href="http(s)://..."> tag.
+    const char* p   = html.data();
+    const char* end = p + html.size();
+    while (p < end) {
+        if (*p == '<') {
+            Tag tag = parse_tag(p, end);
+            if (!tag.href.empty()) return tag.href;
+        } else {
+            ++p;
+        }
+    }
+    return {};
+}
+
+std::string first_url_from_plain(std::string_view text) {
+    // Scan for the first "https://" or "http://" prefix.
+    static constexpr std::string_view kHttps = "https://";
+    static constexpr std::string_view kHttp  = "http://";
+    const char* p   = text.data();
+    const char* end = p + text.size();
+    while (p < end) {
+        // Try https:// first (longer prefix wins).
+        auto try_prefix = [&](std::string_view prefix) -> std::string {
+            if (static_cast<std::size_t>(end - p) < prefix.size()) return {};
+            if (std::string_view(p, prefix.size()) != prefix) return {};
+            // Collect URL characters until whitespace or end.
+            const char* url_start = p;
+            const char* q = p + prefix.size();
+            while (q < end && !std::isspace(static_cast<unsigned char>(*q))) ++q;
+            // Strip common trailing punctuation that follows a URL in prose.
+            while (q > url_start + prefix.size()) {
+                char last = *(q - 1);
+                if (last == '.' || last == ',' || last == ':' || last == ';'
+                    || last == '!' || last == '?' || last == ')' || last == ']')
+                    --q;
+                else
+                    break;
+            }
+            return std::string(url_start, static_cast<std::size_t>(q - url_start));
+        };
+        std::string url = try_prefix(kHttps);
+        if (url.empty()) url = try_prefix(kHttp);
+        if (!url.empty()) return url;
+        ++p;
+    }
+    return {};
 }
 
 } // namespace tesseract::views

@@ -79,6 +79,10 @@ protected:
     std::unordered_set<std::string> media_fetches_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
 
+    // ── URL preview cache ─────────────────────────────────────────────────────
+    std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
+    std::unordered_set<std::string> url_preview_in_flight_;
+
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState  last_room_list_state_ = RoomListState::Init;
     BackupState    last_backup_state_    = BackupState::Unknown;
@@ -135,6 +139,12 @@ protected:
     // (GTK4/GStreamer, Qt6/QMediaPlayer, etc.) override this.
     virtual void generate_video_thumbnail_(const std::string& /*event_id*/,
                                             const std::string& /*video_url*/) {}
+
+    // Called on the UI thread when a URL preview fetch completes successfully.
+    // Default is a no-op; shells override to update their preview cache and
+    // request a repaint.
+    virtual void on_url_preview_ready_(const std::string& /*url*/,
+                                        const Client::UrlPreview& /*preview*/) {}
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
@@ -206,6 +216,10 @@ protected:
 
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);
+
+    // Fetch OpenGraph preview metadata for `url` from the homeserver.
+    // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.
+    void ensure_url_preview_(const std::string& url);
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);

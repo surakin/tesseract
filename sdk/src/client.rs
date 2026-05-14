@@ -2070,6 +2070,41 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // URL preview (homeserver og:* metadata fetch)
+    // -----------------------------------------------------------------------
+
+    #[cfg(not(test))]
+    pub fn get_url_preview(&mut self, url: &str) -> String {
+        use ruma::api::client::media::get_media_preview::v3::Request;
+
+        let Some(client) = self.client.clone() else { return String::new() };
+        if url.is_empty() { return String::new(); }
+
+        let url_str = url.to_owned();
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            #[allow(deprecated)]
+            let req = Request::new(url_str);
+            tokio::select! {
+                result = async { client.send(req).await } => {
+                    match result {
+                        Ok(resp) => resp.data
+                            .map(|v| v.get().to_owned())
+                            .unwrap_or_default(),
+                        Err(_) => String::new(),
+                    }
+                }
+                _ = stop_fut(stop_rx) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn get_url_preview(&mut self, _url: &str) -> String {
+        String::new()
+    }
+
+    // -----------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // -----------------------------------------------------------------------
 

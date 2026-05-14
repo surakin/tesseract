@@ -200,6 +200,10 @@ private:
                                 std::vector<uint8_t> bytes) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
+    void on_url_preview_ready_(const std::string& url,
+                                const tesseract::Client::UrlPreview& preview) override;
+
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 
     /// Run `fn` on `mediaPool_`. No-ops when shutdown is in progress, and
     /// the runnable itself rechecks the flag before invoking `fn` so a

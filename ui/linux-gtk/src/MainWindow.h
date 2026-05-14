@@ -193,6 +193,10 @@ private:
                                 std::vector<uint8_t> bytes) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
+    void on_url_preview_ready_(const std::string& url,
+                                const tesseract::Client::UrlPreview& preview) override;
+
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();

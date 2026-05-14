@@ -1,4 +1,5 @@
 #include "app/ShellBase.h"
+#include "views/html_spans.h"
 #include <tesseract/visual.h>
 #include <thread>
 
@@ -63,6 +64,20 @@ void ShellBase::ensure_reply_details_(const std::string& event_id) {
     client_->fetch_reply_details(current_room_id_, event_id);
 }
 
+void ShellBase::ensure_url_preview_(const std::string& url) {
+    if (url.empty() || url_previews_.count(url)) return;
+    if (!url_preview_in_flight_.insert(url).second) return;
+    run_async_([this, url]() {
+        auto preview = client_->get_url_preview(url);
+        post_to_ui_([this, url, preview = std::move(preview)]() mutable {
+            url_preview_in_flight_.erase(url);
+            url_previews_.emplace(url, std::move(preview));
+            if (!url_previews_.at(url).failed)
+                on_url_preview_ready_(url, url_previews_.at(url));
+        });
+    });
+}
+
 void ShellBase::ensure_row_media_(const Event& ev) {
     ensure_user_avatar_(ev.sender_avatar_url);
     for (const auto& rr : ev.read_receipts)
@@ -100,6 +115,16 @@ void ShellBase::ensure_row_media_(const Event& ev) {
     for (const auto& r : ev.reactions)
         if (!r.source_json.empty())
             ensure_media_image_(r.source_json, 20, 20);
+
+    if (ev.type == EventType::Text || ev.type == EventType::Unhandled) {
+        std::string url;
+        if (!ev.formatted_body.empty())
+            url = views::first_url_from_html(ev.formatted_body);
+        if (url.empty() && !ev.body.empty())
+            url = views::first_url_from_plain(ev.body);
+        if (!url.empty())
+            ensure_url_preview_(url);
+    }
 }
 
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms) {

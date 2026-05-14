@@ -681,6 +681,13 @@ pub mod ffi {
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
 
+        /// Fetch OpenGraph preview metadata for an http(s) URL from the
+        /// homeserver's `/_matrix/media/v3/preview_url` endpoint.
+        /// Returns the raw JSON response body on success, or an empty String
+        /// on any failure (not logged in, network error, rate-limit, no data).
+        /// Blocks the calling thread — call only from a worker thread.
+        fn get_url_preview(self: &mut ClientFfi, url: &str) -> String;
+
         // ----- Spaces -----
 
         /// Returns the room IDs of all direct children declared by a space

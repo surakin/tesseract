@@ -657,6 +657,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
+    message_list_view_->set_preview_provider(
+        [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+            auto it = url_preview_data_.find(url);
+            if (it == url_preview_data_.end()) return nullptr;
+            if (!it->second.image_mxc.empty()
+                && !tk_images_.count(it->second.image_mxc)
+                && !anim_cache_.has(it->second.image_mxc))
+                ensure_media_image_(it->second.image_mxc, 64, 64);
+            return &it->second;
+        });
+    message_list_view_->on_link_clicked = [](const std::string& url) {
+        tesseract::Client::open_in_browser(url);
+    };
     // Voice (MSC3245) playback — GStreamer playbin via tk::gtk4::Host.
     if (auto player = msg_surface_->host().make_audio_player()) {
         message_list_view_->set_audio_player(std::move(player));
@@ -2017,6 +2030,22 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
             return G_SOURCE_REMOVE;
         }, ctx);
     });
+}
+
+void MainWindow::on_url_preview_ready_(const std::string& url,
+                                        const tesseract::Client::UrlPreview& preview) {
+    tesseract::views::UrlPreviewData d;
+    d.title       = preview.title;
+    d.description = preview.description;
+    d.image_mxc   = preview.image_mxc;
+    d.image_w     = preview.image_w;
+    d.image_h     = preview.image_h;
+    url_preview_data_.emplace(url, std::move(d));
+
+    if (!preview.image_mxc.empty())
+        ensure_media_image_(preview.image_mxc, 64, 64);
+
+    if (msg_surface_) msg_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------

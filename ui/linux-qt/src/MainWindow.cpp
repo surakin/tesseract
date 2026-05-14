@@ -402,6 +402,19 @@ MainWindow::MainWindow(QWidget* parent)
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
+    messageListView_->set_preview_provider(
+        [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+            auto it = url_preview_data_.find(url);
+            if (it == url_preview_data_.end()) return nullptr;
+            if (!it->second.image_mxc.empty()
+                && !tk_images_.count(it->second.image_mxc)
+                && !anim_cache_.has(it->second.image_mxc))
+                ensure_media_image_(it->second.image_mxc, 64, 64);
+            return &it->second;
+        });
+    messageListView_->on_link_clicked = [](const std::string& url) {
+        tesseract::Client::open_in_browser(url);
+    };
     // Voice (MSC3245) playback wiring. The Qt backend builds a QMediaPlayer
     // when `make_audio_player()` is called; the bytes provider piggybacks
     // on the SDK media cache via fetch_source_bytes (synchronous; empty on
@@ -1615,6 +1628,25 @@ void MainWindow::onMessageAnimTick_() {
     }
     if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()) && msgSurface_)
         msgSurface_->update();
+}
+
+void MainWindow::on_url_preview_ready_(const std::string& url,
+                                        const tesseract::Client::UrlPreview& preview) {
+    tesseract::views::UrlPreviewData d;
+    d.title       = preview.title;
+    d.description = preview.description;
+    d.image_mxc   = preview.image_mxc;
+    d.image_w     = preview.image_w;
+    d.image_h     = preview.image_h;
+    url_preview_data_.emplace(url, std::move(d));
+
+    if (!preview.image_mxc.empty())
+        ensure_media_image_(preview.image_mxc, 64, 64);
+
+    if (msgSurface_) {
+        msgSurface_->relayout();
+        msgSurface_->update();
+    }
 }
 
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {

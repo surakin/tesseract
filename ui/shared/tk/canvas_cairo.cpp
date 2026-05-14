@@ -416,6 +416,9 @@ public:
             if (sp.strikethrough) t = "<s>"  + t + "</s>";
             if (sp.italic)        t = "<i>"  + t + "</i>";
             if (sp.bold)          t = "<b>"  + t + "</b>";
+            if (!sp.url.empty())
+                t = "<span underline=\"single\" foreground=\"#2563EB\">"
+                    + t + "</span>";
             markup += t;
         }
         PangoLayout* lay = pango_layout_new(ctx_);

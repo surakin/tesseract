@@ -414,6 +414,13 @@ public:
             if (sp.strikethrough) t = QLatin1String("<s>")    + t + QLatin1String("</s>");
             if (sp.italic)        t = QLatin1String("<i>")     + t + QLatin1String("</i>");
             if (sp.bold)          t = QLatin1String("<b>")     + t + QLatin1String("</b>");
+            if (!sp.url.empty()) {
+                QString href = QString::fromUtf8(sp.url.data(),
+                                                 static_cast<int>(sp.url.size()))
+                                   .toHtmlEscaped();
+                t = QLatin1String("<a href=\"") + href + QLatin1String("\">") +
+                    t + QLatin1String("</a>");
+            }
             html += t;
         }
 

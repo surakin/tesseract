@@ -97,6 +97,15 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
         case tesseract::EventType::ReadMarker:    row.kind = Kind::ReadMarker;    break;
         case tesseract::EventType::TimelineStart: row.kind = Kind::TimelineStart; break;
     }
+
+    // Extract the first URL from text messages for preview card display.
+    if (row.kind == Kind::Text || row.kind == Kind::Unhandled) {
+        if (!row.formatted_body.empty())
+            row.first_url = first_url_from_html(row.formatted_body);
+        if (row.first_url.empty() && !row.body.empty())
+            row.first_url = first_url_from_plain(row.body);
+    }
+
     return row;
 }
 
@@ -127,6 +136,13 @@ constexpr float kImageMaxH   = tesseract::visual::kMaxInlineImageHeight; // 200
 constexpr float kStickerSize = tesseract::visual::kStickerSize;          // 256
 constexpr float kFileCardH   = 56.0f;
 constexpr float kFileCardW   = 280.0f;
+
+// URL preview card dimensions.
+constexpr float kPreviewCardH      =  72.0f;
+constexpr float kPreviewCardW      = 280.0f;
+constexpr float kPreviewThumbSide  =  56.0f;
+constexpr float kPreviewCardPad    =  10.0f;
+constexpr float kPreviewCardGapTop =   6.0f;
 constexpr float kFileIconSize = 36.0f;
 constexpr float kFileIconPadL = 10.0f;
 constexpr float kFileTextOffX = kFileIconPadL + kFileIconSize + 8.0f; // 54px
@@ -845,7 +861,13 @@ private:
                 if (m.is_edited) {
                     badge_h = kEditedBadgeGap + measure_text_height("(edited)", ctx, col_w);
                 }
-                return quote_h + th + badge_h;
+                float preview_h = 0.0f;
+                if (!m.first_url.empty() && owner_.preview_provider_) {
+                    const auto* p = owner_.preview_provider_(m.first_url);
+                    if (p && p->has_content())
+                        preview_h = kPreviewCardGapTop + kPreviewCardH;
+                }
+                return quote_h + th + badge_h + preview_h;
             }
             case MessageRowData::Kind::Redacted:
                 return quote_h + measure_text_height(m.body.empty()
@@ -915,6 +937,14 @@ private:
                             { x, end_y + kEditedBadgeGap },
                             ctx.theme.palette.text_muted);
                         end_y += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
+                if (!m.first_url.empty() && owner_.preview_provider_) {
+                    const auto* p = owner_.preview_provider_(m.first_url);
+                    if (p && p->has_content()) {
+                        end_y += kPreviewCardGapTop;
+                        paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                        end_y += kPreviewCardH;
                     }
                 }
                 return end_y;
@@ -1066,6 +1096,76 @@ private:
                                   ctx.theme.palette.text_muted);
 
         return y + kQuoteBlockH;
+    }
+
+    void paint_preview_card_(const MessageRowData& m,
+                              const UrlPreviewData& p,
+                              tk::PaintCtx& ctx,
+                              float x, float y, float col_w) const {
+        float card_w = std::min(col_w, kPreviewCardW);
+        tk::Rect card{ x, y, card_w, kPreviewCardH };
+
+        ctx.canvas.fill_rounded_rect  (card, 8.0f, ctx.theme.palette.chrome_bg);
+        ctx.canvas.stroke_rounded_rect(card, 8.0f, ctx.theme.palette.border, 1.0f);
+
+        // Record world-coord rect for click-to-open hit-test.
+        owner_.preview_card_geom_[m.event_id] = { m.first_url, card };
+
+        float thumb_right = 0.0f;
+        if (!p.image_mxc.empty() && owner_.image_provider_) {
+            const tk::Image* img = owner_.image_provider_(p.image_mxc);
+            float tx = x + kPreviewCardPad;
+            float ty = y + (kPreviewCardH - kPreviewThumbSide) * 0.5f;
+            tk::Rect thumb{ tx, ty, kPreviewThumbSide, kPreviewThumbSide };
+            if (img)
+                ctx.canvas.draw_image(*img, thumb);
+            else
+                ctx.canvas.fill_rounded_rect(thumb, 4.0f,
+                                              ctx.theme.palette.border);
+            thumb_right = tx + kPreviewThumbSide + kPreviewCardPad;
+        } else {
+            thumb_right = x + kPreviewCardPad;
+        }
+
+        float text_x = thumb_right;
+        float text_w = std::max(0.0f, card.x + card.w - text_x - kPreviewCardPad);
+
+        float text_y = y + kPreviewCardPad;
+
+        if (!p.title.empty()) {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::UiSemibold;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = text_w;
+            auto lo = ctx.factory.build_text(p.title, st);
+            if (lo) {
+                ctx.canvas.draw_text(*lo, { text_x, text_y },
+                                      ctx.theme.palette.text_primary);
+                text_y += lo->measure().h + 2.0f;
+            }
+        }
+        if (!p.description.empty()) {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Body;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = text_w;
+            auto lo = ctx.factory.build_text(p.description, st);
+            if (lo) {
+                ctx.canvas.draw_text(*lo, { text_x, text_y },
+                                      ctx.theme.palette.text_secondary);
+                text_y += lo->measure().h + 2.0f;
+            }
+        }
+        {
+            tk::TextStyle st{};
+            st.role      = tk::FontRole::Small;
+            st.trim      = tk::TextTrim::Ellipsis;
+            st.max_width = text_w;
+            auto lo = ctx.factory.build_text(m.first_url, st);
+            if (lo)
+                ctx.canvas.draw_text(*lo, { text_x, text_y },
+                                      ctx.theme.palette.text_muted);
+        }
     }
 
     static tk::TextStyle body_style(float w) {
@@ -1587,6 +1687,10 @@ void MessageListView::set_image_provider(ImageProvider p) {
     image_provider_ = std::move(p);
 }
 
+void MessageListView::set_preview_provider(PreviewProvider p) {
+    preview_provider_ = std::move(p);
+}
+
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player) {
     audio_player_ = std::move(player);
     if (audio_player_) {
@@ -1919,6 +2023,18 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         }
     }
 
+    // URL preview card hit-test.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        for (const auto& [eid, hit] : preview_card_geom_) {
+            if (rect_contains(hit.rect, world)) {
+                press_preview_     = true;
+                press_preview_url_ = hit.url;
+                return true;
+            }
+        }
+    }
+
     // Video thumbnail click-to-view hit-test (before image so it wins when
     // video_geom_ and image_geom_ happen to overlap for the same event_id).
     {
@@ -2067,6 +2183,24 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
         return;
     }
 
+    if (press_preview_) {
+        bool fire = inside_self && !press_preview_url_.empty();
+        std::string url = std::move(press_preview_url_);
+        press_preview_     = false;
+        press_preview_url_.clear();
+        if (fire) {
+            // Confirm pointer is still inside the card rect on release.
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            for (const auto& [eid, hit] : preview_card_geom_) {
+                if (hit.url == url && rect_contains(hit.rect, world)) {
+                    if (on_link_clicked) on_link_clicked(url);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
     if (press_video_) {
         bool fire = inside_self && !press_video_eid_.empty();
         std::string eid = std::move(press_video_eid_);
@@ -2171,6 +2305,7 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     video_geom_.clear();
     voice_card_geom_.clear();
     quote_block_geom_.clear();
+    preview_card_geom_.clear();
     tk::ListView::paint(ctx);
     maybe_notify_receipt_();
 

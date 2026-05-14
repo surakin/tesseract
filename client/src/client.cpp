@@ -5,7 +5,9 @@
 #include "ffi_convert.h"
 
 #include <cassert>
+#include <cctype>
 #include <cstdlib>
+#include <string_view>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -272,6 +274,71 @@ std::vector<uint8_t> Client::fetch_media_bytes(const std::string& mxc_url) {
 std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source) {
     auto v = impl_->ffi->fetch_source_bytes(source);
     return std::vector<uint8_t>(v.begin(), v.end());
+}
+
+// ---------------------------------------------------------------------------
+// URL preview
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string json_string_field(std::string_view json, std::string_view key) {
+    std::string needle = "\"";
+    needle += key;
+    needle += "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string_view::npos) return {};
+    pos += needle.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    if (pos >= json.size() || json[pos] != '"') return {};
+    ++pos;
+    std::string out;
+    for (; pos < json.size() && json[pos] != '"'; ++pos) {
+        if (json[pos] == '\\' && pos + 1 < json.size()) {
+            ++pos;
+            switch (json[pos]) {
+                case '"':  out += '"';  break;
+                case '\\': out += '\\'; break;
+                case '/':  out += '/';  break;
+                case 'n':  out += '\n'; break;
+                case 'r':  out += '\r'; break;
+                case 't':  out += '\t'; break;
+                default:   out += json[pos]; break;
+            }
+        } else {
+            out += json[pos];
+        }
+    }
+    return out;
+}
+
+int json_int_field(std::string_view json, std::string_view key) {
+    std::string needle = "\"";
+    needle += key;
+    needle += "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string_view::npos) return 0;
+    pos += needle.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    int v = 0;
+    while (pos < json.size() && std::isdigit(static_cast<unsigned char>(json[pos])))
+        v = v * 10 + (json[pos++] - '0');
+    return v;
+}
+
+} // namespace
+
+Client::UrlPreview Client::get_url_preview(const std::string& url) {
+    std::string json = std::string(impl_->ffi->get_url_preview(url));
+    if (json.empty()) { UrlPreview p; p.failed = true; return p; }
+    UrlPreview p;
+    p.title       = json_string_field(json, "og:title");
+    p.description = json_string_field(json, "og:description");
+    p.image_mxc   = json_string_field(json, "og:image");
+    p.image_w     = json_int_field(json, "og:image:width");
+    p.image_h     = json_int_field(json, "og:image:height");
+    if (!p.has_content()) { p.failed = true; }
+    return p;
 }
 
 // ---------------------------------------------------------------------------

@@ -93,6 +93,10 @@ struct MessageRowData {
 
     // Set when the message has been superseded by an m.replace edit.
     bool is_edited = false;
+
+    // First http(s) URL found in the message body. Non-empty only for
+    // Kind::Text / Kind::Unhandled. Used to fetch and display a preview card.
+    std::string first_url;
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -100,10 +104,21 @@ struct MessageRowData {
 MessageRowData make_row_data(const tesseract::Event& ev,
                              const std::string&      my_user_id);
 
+struct UrlPreviewData {
+    std::string title;
+    std::string description;
+    std::string image_mxc;   // mxc:// URI, or empty
+    int image_w = 0;
+    int image_h = 0;
+    bool has_content() const { return !title.empty() || !description.empty(); }
+};
+
 class MessageListView : public tk::ListView {
 public:
     using ImageProvider =
         std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    using PreviewProvider =
+        std::function<const UrlPreviewData*(const std::string& url)>;
 
     MessageListView();
     ~MessageListView() override;   // out-of-line — Adapter is opaque here
@@ -139,6 +154,11 @@ public:
 
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
+
+    // URL preview cards. Returns UrlPreviewData* for the given URL or nullptr
+    // when data is not yet available (returning nullptr is a signal to the shell
+    // to trigger a fetch as a side-effect).
+    void set_preview_provider(PreviewProvider p);
 
     // Voice-message playback (MSC3245). Shells wire all three after
     // construction; the view stays inert (clicks become no-ops) when any
@@ -182,6 +202,9 @@ public:
     std::function<void(const std::string& event_id,
                         const std::string& sender_name,
                         const std::string& body_preview)> on_reply_requested;
+
+    // Fires when the user clicks a URL preview card or an inline hyperlink.
+    std::function<void(const std::string& url)> on_link_clicked;
 
     // Fires when the user clicks the quote block of a reply to scroll to
     // the original message. If the event is currently loaded the view scrolls
@@ -347,6 +370,13 @@ private:
     // Per-frame quote-block rects in world coordinates, keyed by event_id.
     // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
     mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
+
+    // URL preview card provider + press state.
+    PreviewProvider                preview_provider_;
+    struct PreviewCardHit { std::string url; tk::Rect rect; };
+    mutable std::unordered_map<std::string, PreviewCardHit> preview_card_geom_;
+    bool                           press_preview_        = false;
+    std::string                    press_preview_url_;
 
     // Scroll-to-bottom pill. Geometry is recomputed in paint() (after
     // ListView::paint has updated scroll state), so the rect + visible

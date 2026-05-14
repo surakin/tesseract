@@ -304,6 +304,27 @@ public:
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
     // ------------------------------------------------------------------
+    // URL preview
+    // ------------------------------------------------------------------
+
+    /// OpenGraph metadata fetched from the homeserver for a given URL.
+    struct UrlPreview {
+        std::string title;
+        std::string description;
+        std::string image_mxc;   ///< mxc:// URI of the og:image, or empty
+        int         image_w = 0;
+        int         image_h = 0;
+        bool        failed  = false; ///< true when server returned no data
+
+        bool has_content() const { return !title.empty() || !description.empty(); }
+    };
+
+    /// Fetch OpenGraph preview metadata for an http(s) URL from the homeserver.
+    /// Blocks the calling thread — invoke only from a worker thread.
+    /// Returns `UrlPreview{failed=true}` on any error.
+    UrlPreview get_url_preview(const std::string& url);
+
+    // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // ------------------------------------------------------------------
 

@@ -104,8 +104,11 @@ public:
 
 // One formatting run for rich text. Bold, italic, code, and strikethrough
 // may be combined; `text` is plain UTF-8 (no markup, newlines as '\n').
+// `url` is non-empty iff this run is a hyperlink — backends render it with
+// underline + link colour.
 struct TextSpan {
     std::string text;
+    std::string url;
     bool bold          = false;
     bool italic        = false;
     bool code          = false;   // render in monospace
