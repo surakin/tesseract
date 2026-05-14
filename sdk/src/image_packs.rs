@@ -286,6 +286,15 @@ pub fn upsert_image_into_user_pack(
     content
 }
 
+/// Return true if any entry in the `images` map of `content` already has `url`.
+pub fn pack_contains_url(content: &Value, url: &str) -> bool {
+    content
+        .get("images")
+        .and_then(Value::as_object)
+        .map(|imgs| imgs.values().any(|v| v.get("url").and_then(Value::as_str) == Some(url)))
+        .unwrap_or(false)
+}
+
 /// Reverse operation of `upsert_image_into_user_pack` for the favorite flag.
 /// Toggles `im.tesseract.favorite` on the first entry whose `url` matches.
 /// Returns `(new_content, new_state)`. When no matching entry exists, the
@@ -499,6 +508,19 @@ mod tests {
         m.insert("happy".into(), Value::Null);
         m.insert("happy_2".into(), Value::Null);
         assert_eq!(suggest_shortcode("happy", &m), "happy_3");
+    }
+
+    #[test]
+    fn pack_contains_url_detects_existing() {
+        let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
+        assert!(pack_contains_url(&c, "mxc://h/a"));
+        assert!(!pack_contains_url(&c, "mxc://h/b"));
+    }
+
+    #[test]
+    fn pack_contains_url_empty_pack() {
+        assert!(!pack_contains_url(&Value::Object(serde_json::Map::new()), "mxc://h/a"));
+        assert!(!pack_contains_url(&Value::Null, "mxc://h/a"));
     }
 
     #[test]

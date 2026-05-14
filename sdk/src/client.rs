@@ -2260,6 +2260,10 @@ impl ClientFfi {
             .cloned()
             .unwrap_or_default();
 
+        if crate::image_packs::pack_contains_url(&current_content, image_url) {
+            return ok("");
+        }
+
         let base = if shortcode.is_empty() { body } else { shortcode };
         let final_shortcode =
             crate::image_packs::suggest_shortcode(base, &existing_images);
