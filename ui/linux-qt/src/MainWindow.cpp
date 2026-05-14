@@ -1295,12 +1295,12 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
-    mark_room_read_(room_id);
+    mark_room_read_(current_room_id_);
     update_typing_bar_({});
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
-        prefs.last_room = room_id;
+        prefs.last_room = current_room_id_;
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (composeShared_) {
