@@ -582,6 +582,13 @@ public:
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(attr, max_w, max_h, elide);
     }
+
+    std::unique_ptr<TextLayout>
+    build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
+        std::string plain;
+        for (const auto& sp : spans) plain += sp.text;
+        return build_text(plain, s);
+    }
 };
 
 std::unique_ptr<CanvasFactory> make_factory() {

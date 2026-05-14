@@ -101,6 +101,16 @@ public:
     virtual int  line_count() const = 0;
 };
 
+// One formatting run for rich text. Bold, italic, code, and strikethrough
+// may be combined; `text` is plain UTF-8 (no markup, newlines as '\n').
+struct TextSpan {
+    std::string text;
+    bool bold          = false;
+    bool italic        = false;
+    bool code          = false;   // render in monospace
+    bool strikethrough = false;
+};
+
 // Per-platform factory for backend-owned resources. The platform host
 // owns one of these and hands it to the shared widget tree, which uses it
 // to decode avatars and build text layouts as widgets mount.
@@ -113,6 +123,12 @@ public:
 
     virtual std::unique_ptr<TextLayout>
         build_text(std::string_view utf8, const TextStyle&) = 0;
+
+    // Rich-text variant. All spans share the same base TextStyle (size,
+    // wrap, max_width). Falls back to concatenated plain text on backends
+    // that have not yet implemented inline formatting.
+    virtual std::unique_ptr<TextLayout>
+        build_rich_text(std::span<const TextSpan> spans, const TextStyle&) = 0;
 };
 
 // The drawing API the widget tree paints into. State is the current clip

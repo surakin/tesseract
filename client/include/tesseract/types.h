@@ -46,6 +46,8 @@ struct Event {
     std::string sender_name;
     std::string sender_avatar_url;
     std::string body;
+    /// HTML body when format == "org.matrix.custom.html"; empty for all other event types.
+    std::string formatted_body;
     uint64_t    timestamp = 0;
     EventType   type = EventType::Unhandled;
     std::vector<Reaction> reactions;

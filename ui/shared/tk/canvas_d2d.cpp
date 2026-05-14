@@ -641,6 +641,13 @@ public:
         return std::make_unique<DWriteLayout>(std::move(layout));
     }
 
+    std::unique_ptr<TextLayout>
+    build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
+        std::string plain;
+        for (const auto& sp : spans) plain += sp.text;
+        return build_text(plain, s);
+    }
+
 private:
     Backend::Impl& backend_;
 };

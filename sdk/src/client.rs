@@ -2991,7 +2991,8 @@ async fn timeline_item_to_ffi(
                 in_reply_to_id:          String::new(),
                 in_reply_to_sender_name: String::new(),
                 in_reply_to_body:        String::new(),
-                is_edited:            false,
+                is_edited:               false,
+                formatted_body:          String::new(),
             });
         }
     };
@@ -3049,6 +3050,7 @@ async fn timeline_item_to_ffi(
             in_reply_to_sender_name: String::new(),
             in_reply_to_body:        String::new(),
             is_edited:               false,
+            formatted_body:          String::new(),
         });
     }
 
@@ -3117,6 +3119,7 @@ async fn timeline_item_to_ffi(
             in_reply_to_sender_name: String::new(),
             in_reply_to_body:        String::new(),
             is_edited:               false,
+            formatted_body:          String::new(),
         });
     }
 
@@ -3125,20 +3128,29 @@ async fn timeline_item_to_ffi(
         _ => return None,
     };
 
-    let (body, msg_type, source_json, width, height,
+    let (body, formatted_body, msg_type, source_json, width, height,
          file_json, file_name, file_size, image_filename,
          audio_source_json, audio_duration_ms, audio_waveform, audio_mime,
          video_thumbnail_json, video_duration_ms, video_mime,
          video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif) =
         match msg_content.msgtype() {
-            MessageType::Text(t) => (
-                t.body.clone(), "m.text".to_owned(),
-                String::new(), 0u64, 0u64,
-                String::new(), String::new(), 0u64, String::new(),
-                String::new(), 0u64, Vec::<u16>::new(), String::new(),
-                String::new(), 0u64, String::new(),
-                false, false, false, false, false,
-            ),
+            MessageType::Text(t) => {
+                let fmt = t.formatted.as_ref()
+                    .filter(|f| matches!(
+                        f.format,
+                        matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                    ))
+                    .map(|f| f.body.clone())
+                    .unwrap_or_default();
+                (
+                    t.body.clone(), fmt, "m.text".to_owned(),
+                    String::new(), 0u64, 0u64,
+                    String::new(), String::new(), 0u64, String::new(),
+                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
+                    String::new(), 0u64, String::new(),
+                    false, false, false, false, false,
+                )
+            }
             MessageType::Image(i) => {
                 // Plain → plain mxc URI string; encrypted → full MediaSource
                 // serialised as JSON so `fetch_source_bytes` can decrypt it.
@@ -3158,7 +3170,7 @@ async fn timeline_item_to_ffi(
                     .unwrap_or((0u64, 0u64));
                 // MSC2530: filename field signals that body is a user caption.
                 let img_filename = i.filename.clone().unwrap_or_default();
-                (i.body.clone(), "m.image".to_owned(), source_str, w, h,
+                (i.body.clone(), String::new(), "m.image".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, img_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
                  String::new(), 0u64, String::new(),
@@ -3177,7 +3189,7 @@ async fn timeline_item_to_ffi(
                     .and_then(|info| info.size)
                     .map(|v| u64::from(v))
                     .unwrap_or(0u64);
-                (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
+                (f.body.clone(), String::new(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                  file_str, name, size, String::new(),
                  String::new(), 0u64, Vec::new(), String::new(),
                  String::new(), 0u64, String::new(),
@@ -3205,7 +3217,7 @@ async fn timeline_item_to_ffi(
                         }
                         None => (info_duration_ms, Vec::new()),
                     };
-                    (a.body.clone(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
+                    (a.body.clone(), String::new(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
                      String::new(), String::new(), 0u64, String::new(),
                      source_str, duration_ms, waveform, info_mime,
                      String::new(), 0u64, String::new(),
@@ -3216,7 +3228,7 @@ async fn timeline_item_to_ffi(
                         .and_then(|i| i.size)
                         .map(u64::from)
                         .unwrap_or(0u64);
-                    (a.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
+                    (a.body.clone(), String::new(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                      source_str, name, size, String::new(),
                      String::new(), 0u64, Vec::new(), String::new(),
                      String::new(), 0u64, String::new(),
@@ -3260,7 +3272,7 @@ async fn timeline_item_to_ffi(
                 let video_loop          = mau("fi.mau.loop")          || video_gif;
                 let video_no_audio      = mau("fi.mau.no_audio")      || video_gif;
                 let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
-                (v.body.clone(), "m.video".to_owned(), source_str, w, h,
+                (v.body.clone(), String::new(), "m.video".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, vid_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
                  thumb_json, dur_ms, mime,
@@ -3363,6 +3375,7 @@ async fn timeline_item_to_ffi(
         in_reply_to_sender_name,
         in_reply_to_body,
         is_edited: msg_content.is_edited(),
+        formatted_body,
     })
 }
 

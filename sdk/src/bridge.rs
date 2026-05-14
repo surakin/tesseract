@@ -154,6 +154,9 @@ pub mod ffi {
         /// True when the body has been superseded by an `m.replace` edit.
         /// Only set for `msg_type == "m.text"`; always false for other types.
         is_edited:               bool,
+        /// HTML body from `formatted_body` when `format == "org.matrix.custom.html"`.
+        /// Empty string for all non-text message types and plain-text messages.
+        formatted_body:          String,
     }
 
     /// Outcome of an asynchronous SDK operation.

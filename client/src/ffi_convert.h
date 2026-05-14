@@ -86,6 +86,7 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e) {
     ev.sender_name       = std::string(e.sender_name);
     ev.sender_avatar_url = std::string(e.sender_avatar_url);
     ev.body              = std::string(e.body);
+    ev.formatted_body    = std::string(e.formatted_body);
     ev.timestamp         = e.timestamp;
 
     ev.reactions.clear();

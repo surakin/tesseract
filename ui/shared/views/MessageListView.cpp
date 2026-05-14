@@ -1,4 +1,5 @@
 #include "MessageListView.h"
+#include "html_spans.h"
 #include "media_utils.h"
 
 #include "tk/theme.h"
@@ -24,6 +25,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.sender_name       = ev.sender_name;
     row.sender_avatar_url = ev.sender_avatar_url;
     row.body              = ev.body;
+    row.formatted_body    = ev.formatted_body;
     row.timestamp_ms      = ev.timestamp;
     row.is_own            = !my_user_id.empty() && ev.sender == my_user_id;
     row.reactions         = ev.reactions;
@@ -838,13 +840,9 @@ private:
         switch (m.kind) {
             case MessageRowData::Kind::Text:
             case MessageRowData::Kind::Unhandled: {
-                float th = measure_text_height(m.body.empty()
-                    ? std::string("(empty message)")
-                    : m.body,
-                    ctx, col_w);
+                float th = measure_body_text(m, ctx, col_w);
                 float badge_h = 0.0f;
                 if (m.is_edited) {
-                    // Reserve space for "(edited)" on its own line.
                     badge_h = kEditedBadgeGap + measure_text_height("(edited)", ctx, col_w);
                 }
                 return quote_h + th + badge_h;
@@ -903,8 +901,7 @@ private:
         switch (m.kind) {
             case MessageRowData::Kind::Text:
             case MessageRowData::Kind::Unhandled: {
-                float h = paint_wrapped_text(m.body, ctx, x, y, col_w,
-                                              ctx.theme.palette.text_primary);
+                float h = paint_body_text(m, ctx, x, y, col_w);
                 float end_y = y + h;
                 // "(edited)" badge on a new inline line below the body.
                 if (m.is_edited) {
@@ -1071,28 +1068,63 @@ private:
         return y + kQuoteBlockH;
     }
 
-    float measure_text_height(const std::string& text, tk::LayoutCtx& ctx,
-                                float w) const {
-        if (text.empty()) return 0;
+    static tk::TextStyle body_style(float w) {
         tk::TextStyle s{};
         s.role      = tk::FontRole::Body;
         s.wrap      = true;
         s.max_width = w;
-        auto layout = ctx.factory.build_text(text, s);
+        return s;
+    }
+
+    float measure_text_height(const std::string& text, tk::LayoutCtx& ctx,
+                                float w) const {
+        if (text.empty()) return 0;
+        auto layout = ctx.factory.build_text(text, body_style(w));
         return layout ? layout->measure().h : 0;
+    }
+
+    // Measure height for a text message body — uses rich text when
+    // formatted_body is present, otherwise falls back to plain text.
+    float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
+                             float w) const {
+        if (!m.formatted_body.empty()) {
+            auto spans = html_to_spans(m.formatted_body);
+            if (!spans.empty()) {
+                auto layout = ctx.factory.build_rich_text(spans, body_style(w));
+                if (layout) return layout->measure().h;
+            }
+        }
+        return measure_text_height(
+            m.body.empty() ? std::string("(empty message)") : m.body, ctx, w);
     }
 
     float paint_wrapped_text(const std::string& text, tk::PaintCtx& ctx,
                               float x, float y, float w, tk::Color color) const {
         if (text.empty()) return 0;
-        tk::TextStyle s{};
-        s.role      = tk::FontRole::Body;
-        s.wrap      = true;
-        s.max_width = w;
-        auto layout = ctx.factory.build_text(text, s);
+        auto layout = ctx.factory.build_text(text, body_style(w));
         if (!layout) return 0;
         ctx.canvas.draw_text(*layout, { x, y }, color);
         return layout->measure().h;
+    }
+
+    // Paint a text message body — uses rich text when formatted_body is
+    // present, otherwise falls back to plain text.
+    float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx,
+                           float x, float y, float w) const {
+        if (!m.formatted_body.empty()) {
+            auto spans = html_to_spans(m.formatted_body);
+            if (!spans.empty()) {
+                auto layout = ctx.factory.build_rich_text(spans, body_style(w));
+                if (layout) {
+                    ctx.canvas.draw_text(*layout, { x, y },
+                                          ctx.theme.palette.text_primary);
+                    return layout->measure().h;
+                }
+            }
+        }
+        return paint_wrapped_text(
+            m.body.empty() ? std::string("(empty message)") : m.body,
+            ctx, x, y, w, ctx.theme.palette.text_primary);
     }
 
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,

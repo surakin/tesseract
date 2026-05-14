@@ -406,8 +406,55 @@ public:
         return std::make_unique<PangoTextLayout>(lay);
     }
 
+    std::unique_ptr<TextLayout>
+    build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
+        std::string markup;
+        markup.reserve(256);
+        for (const auto& sp : spans) {
+            std::string t = pango_escape(sp.text);
+            if (sp.code)          t = "<tt>" + t + "</tt>";
+            if (sp.strikethrough) t = "<s>"  + t + "</s>";
+            if (sp.italic)        t = "<i>"  + t + "</i>";
+            if (sp.bold)          t = "<b>"  + t + "</b>";
+            markup += t;
+        }
+        PangoLayout* lay = pango_layout_new(ctx_);
+        PangoFontDescription* d = desc_for(s.role);
+        pango_layout_set_font_description(lay, d);
+        pango_font_description_free(d);
+        pango_layout_set_markup(lay, markup.c_str(),
+                                static_cast<int>(markup.size()));
+        if (s.max_width > 0)
+            pango_layout_set_width(lay,
+                static_cast<int>(s.max_width * PANGO_SCALE));
+        else
+            pango_layout_set_width(lay, -1);
+        pango_layout_set_wrap(lay, PANGO_WRAP_WORD_CHAR);
+        if (!s.wrap)
+            pango_layout_set_width(lay, -1);
+        pango_layout_set_single_paragraph_mode(
+            lay, !s.wrap || s.trim == TextTrim::Ellipsis);
+        return std::make_unique<PangoTextLayout>(lay);
+    }
+
 private:
     PangoContext* ctx_ = nullptr;
+
+    static std::string pango_escape(std::string_view s) {
+        std::string out;
+        out.reserve(s.size());
+        for (unsigned char c : s) {
+            switch (c) {
+                case '&':  out += "&amp;";  break;
+                case '<':  out += "&lt;";   break;
+                case '>':  out += "&gt;";   break;
+                case '"':  out += "&quot;"; break;
+                case '\'': out += "&apos;"; break;
+                default:   out += static_cast<char>(c);
+            }
+        }
+        return out;
+    }
 
     // Convert any GdkPixbuf (RGB or RGBA, 8-bit) to a 32-bit ARGB cairo
     // image surface with premultiplied alpha. We don't take the

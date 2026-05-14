@@ -38,6 +38,7 @@ struct MessageRowData {
     std::string sender_name;
     std::string sender_avatar_url; // mxc
     std::string body;
+    std::string formatted_body;  // HTML; empty when plain text only
     std::uint64_t timestamp_ms   = 0;
     bool          is_own         = false;
 

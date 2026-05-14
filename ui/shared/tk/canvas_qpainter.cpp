@@ -11,6 +11,9 @@
 #include <QtGui/QPainterPath>
 #include <QtGui/QPen>
 #include <QtGui/QTextOption>
+#include <QtGui/QTextDocument>
+#include <QtGui/QAbstractTextDocumentLayout>
+#include <QtGui/QPalette>
 #include <QtCore/QRectF>
 #include <QtCore/QSizeF>
 #include <QtCore/QString>
@@ -83,7 +86,16 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-//  QtTextLayout — tk::TextLayout
+//  QtTextLayoutBase — shared dispatch base for plain and rich layouts
+// ─────────────────────────────────────────────────────────────────────────
+
+class QtTextLayoutBase : public TextLayout {
+public:
+    virtual void draw(QPainter&, Point origin, Color) const = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+//  QtTextLayout — plain-text tk::TextLayout
 // ─────────────────────────────────────────────────────────────────────────
 //
 // Holds the immutable inputs needed to draw the text inside a rect:
@@ -92,7 +104,7 @@ private:
 // occupies inside max_width; draw goes through QPainter::drawText with
 // the same rect + option so what we measured is what we render.
 
-class QtTextLayout : public TextLayout {
+class QtTextLayout : public QtTextLayoutBase {
 public:
     QtTextLayout(QString text, QFont font, QTextOption option,
                  QSizeF measured, int line_count, qreal max_width,
@@ -109,7 +121,7 @@ public:
     }
     int  line_count() const override { return line_count_; }
 
-    void draw(QPainter& p, Point origin, Color c) const {
+    void draw(QPainter& p, Point origin, Color c) const override {
         p.save();
         p.setFont(font_);
         p.setPen(to_qcolor(c));
@@ -249,7 +261,7 @@ public:
 
     void draw_text(const TextLayout& layout, Point origin,
                     Color c) override {
-        static_cast<const QtTextLayout&>(layout).draw(p_, origin, c);
+        static_cast<const QtTextLayoutBase&>(layout).draw(p_, origin, c);
     }
 
     void push_clip_rect(Rect r) override {
@@ -277,6 +289,41 @@ private:
 std::unique_ptr<Canvas> make_canvas(QPainter& painter) {
     return std::make_unique<QtCanvas>(painter);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  QtRichTextLayout — rich-text tk::TextLayout backed by QTextDocument
+// ─────────────────────────────────────────────────────────────────────────
+
+class QtRichTextLayout : public QtTextLayoutBase {
+public:
+    explicit QtRichTextLayout(std::unique_ptr<QTextDocument> doc)
+        : doc_(std::move(doc)) {
+        sz_    = doc_->size();
+        lines_ = doc_->blockCount();
+    }
+
+    Size measure()    const override {
+        return { static_cast<float>(sz_.width()),
+                 static_cast<float>(sz_.height()) };
+    }
+    int line_count() const override { return lines_; }
+
+    void draw(QPainter& p, Point origin, Color c) const override {
+        p.save();
+        p.translate(static_cast<qreal>(origin.x),
+                    static_cast<qreal>(origin.y));
+        QAbstractTextDocumentLayout::PaintContext ctx;
+        ctx.palette.setColor(QPalette::Text,
+                              QColor(c.r, c.g, c.b, c.a));
+        doc_->documentLayout()->draw(&p, ctx);
+        p.restore();
+    }
+
+private:
+    std::unique_ptr<QTextDocument> doc_;
+    QSizeF sz_;
+    int    lines_ = 0;
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 //  QtFactory — tk::CanvasFactory
@@ -350,6 +397,34 @@ public:
         return std::make_unique<QtTextLayout>(
             std::move(text), std::move(f), opt, measured,
             line_count, max_w, max_h, elide_single_line);
+    }
+
+    std::unique_ptr<TextLayout>
+    build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
+        QFont base = font_for(s.role);
+
+        QString html;
+        html.reserve(256);
+        for (const auto& sp : spans) {
+            QString t = QString::fromUtf8(sp.text.data(),
+                                           static_cast<int>(sp.text.size()))
+                            .toHtmlEscaped();
+            t.replace(QLatin1Char('\n'), QLatin1String("<br>"));
+            if (sp.code)          t = QLatin1String("<code>") + t + QLatin1String("</code>");
+            if (sp.strikethrough) t = QLatin1String("<s>")    + t + QLatin1String("</s>");
+            if (sp.italic)        t = QLatin1String("<i>")     + t + QLatin1String("</i>");
+            if (sp.bold)          t = QLatin1String("<b>")     + t + QLatin1String("</b>");
+            html += t;
+        }
+
+        auto doc = std::make_unique<QTextDocument>();
+        doc->setDefaultFont(base);
+        doc->setDocumentMargin(0.0);
+        doc->setHtml(QLatin1String("<body>") + html + QLatin1String("</body>"));
+        if (s.max_width > 0)
+            doc->setTextWidth(static_cast<qreal>(s.max_width));
+
+        return std::make_unique<QtRichTextLayout>(std::move(doc));
     }
 };
 
