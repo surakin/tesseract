@@ -1487,6 +1487,19 @@ void MainWindow::on_create(HWND hwnd) {
             });
         };
 
+    message_list_view_->set_video_player_factory(
+        [this]() { return msg_surface_->host().make_video_player(); });
+    message_list_view_->set_video_fetch_provider(
+        [this](const std::string& src,
+               std::function<void(std::vector<std::uint8_t>)> on_ready) {
+            run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
+                auto bytes = client_->fetch_source_bytes(src);
+                post_to_ui_([on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
+                    on_ready(std::move(bytes));
+                });
+            });
+        });
+
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
     login_view_->set_on_cancel([this]() { on_login_cancelled(); });

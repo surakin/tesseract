@@ -900,6 +900,28 @@ void MacShell::on_room_list_state_ui_() {
                     });
                 });
             };
+        __weak MainWindowController* wkSelf = self;
+        _messageListView->set_video_player_factory(
+            [wkSelf]() -> std::unique_ptr<tk::VideoPlayer> {
+                MainWindowController* s = wkSelf;
+                if (!s || !s->_msgSurface) return nullptr;
+                return s->_msgSurface->host().make_video_player();
+            });
+        _messageListView->set_video_fetch_provider(
+            [wkSelf](const std::string& src,
+                     std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                MainWindowController* s = wkSelf;
+                if (!s) return;
+                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+                s->_shell->run_async_([wkSelf, src, bytes_holder,
+                                       on_ready = std::move(on_ready),
+                                       clientPtr = s->_shell->client_]() mutable {
+                    *bytes_holder = clientPtr->fetch_source_bytes(src);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        on_ready(std::move(*bytes_holder));
+                    });
+                });
+            });
     }
     // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
     if (auto player = _msgSurface->host().make_audio_player()) {

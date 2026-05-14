@@ -975,6 +975,27 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             });
         };
 
+    message_list_view_->set_video_player_factory(
+        [this]() { return msg_surface_->host().make_video_player(); });
+    message_list_view_->set_video_fetch_provider(
+        [this](const std::string& src,
+               std::function<void(std::vector<std::uint8_t>)> on_ready) {
+            run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
+                auto bytes = client_->fetch_source_bytes(src);
+                struct Ctx {
+                    std::function<void(std::vector<std::uint8_t>)> cb;
+                    std::vector<std::uint8_t> bytes;
+                };
+                auto* ctx = new Ctx{ std::move(on_ready), std::move(bytes) };
+                g_idle_add([](gpointer p) -> gboolean {
+                    auto* c = static_cast<Ctx*>(p);
+                    c->cb(std::move(c->bytes));
+                    delete c;
+                    return G_SOURCE_REMOVE;
+                }, ctx);
+            });
+        });
+
     // Escape key: close the image viewer if it's open. Attached to the
     // window so it fires regardless of which widget holds focus.
     {

@@ -3211,11 +3211,11 @@ async fn timeline_item_to_ffi(
                         .and_then(|json| json.pointer(&path)?.as_bool())
                         .unwrap_or(false)
                 };
-                let video_autoplay      = mau("fi.mau.autoplay");
-                let video_loop          = mau("fi.mau.loop");
-                let video_no_audio      = mau("fi.mau.no_audio");
-                let video_hide_controls = mau("fi.mau.hide_controls");
                 let video_gif           = mau("fi.mau.gif");
+                let video_autoplay      = mau("fi.mau.autoplay")      || video_gif;
+                let video_loop          = mau("fi.mau.loop")          || video_gif;
+                let video_no_audio      = mau("fi.mau.no_audio")      || video_gif;
+                let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
                 (v.body.clone(), "m.video".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, vid_filename,
                  String::new(), 0u64, Vec::new(), String::new(),

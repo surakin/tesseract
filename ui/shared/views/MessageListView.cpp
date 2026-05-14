@@ -76,6 +76,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.video_thumb_url      = vid.thumbnail_url.empty()
                                        ? ("thumb::" + ev.event_id)
                                        : vid.thumbnail_url;
+            row.video_mime           = vid.mime_type;
             row.media_w              = static_cast<int>(vid.width);
             row.media_h              = static_cast<int>(vid.height);
             row.duration_ms          = vid.duration_ms;
@@ -820,7 +821,7 @@ private:
                     const std::string& thumb = m.video_thumb_url.empty()
                         ? m.media_url : m.video_thumb_url;
                     owner_.video_geom_[m.event_id] = MessageListView::VideoHit{
-                        m.event_id, m.media_url, thumb, "",
+                        m.event_id, m.media_url, thumb, m.video_mime,
                         m.media_w, m.media_h, m.duration_ms,
                         m.video_autoplay, m.video_loop, m.video_no_audio,
                         m.video_hide_controls, m.video_gif,
@@ -1156,14 +1157,26 @@ private:
 
     void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx,
                           tk::Rect dst) const {
-        // Thumbnail (or placeholder).
+        // Live inline player frame takes priority over the static thumbnail.
+        const tk::Image* live_frame = nullptr;
+        {
+            auto it = owner_.inline_players_.find(m.event_id);
+            if (it != owner_.inline_players_.end() && it->second.player)
+                live_frame = it->second.player->current_frame();
+        }
+
+        // Thumbnail fallback (or placeholder when neither is available).
         const std::string& thumb_key = m.video_thumb_url.empty()
             ? m.media_url : m.video_thumb_url;
         const tk::Image* thumb = nullptr;
-        if (owner_.image_provider_ && !thumb_key.empty())
+        if (!live_frame && owner_.image_provider_ && !thumb_key.empty())
             thumb = owner_.image_provider_(thumb_key);
 
-        if (thumb) {
+        if (live_frame) {
+            ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
+            ctx.canvas.draw_image(*live_frame, dst);
+            ctx.canvas.pop_clip();
+        } else if (thumb) {
             ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
             ctx.canvas.draw_image(*thumb, dst);
             ctx.canvas.pop_clip();
@@ -1280,19 +1293,32 @@ MessageListView::video_hit_at(tk::Point world) const {
 }
 
 void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
+    inline_players_.clear();
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
+    // Start inline players for animated video rows near the bottom (most
+    // recently received), up to the cap.
+    for (auto it = messages_.rbegin(); it != messages_.rend(); ++it) {
+        if (static_cast<int>(inline_players_.size()) >= kMaxInlinePlayers) break;
+        if (it->kind == MessageRowData::Kind::Video &&
+            (it->video_autoplay || it->video_gif))
+            start_inline_video(*it);
+    }
 }
 
 void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
     if (index > messages_.size()) index = messages_.size();
+
+    const bool animated = msg.kind == MessageRowData::Kind::Video &&
+                          (msg.video_autoplay || msg.video_gif);
 
     // Insertion at (or past) the end is an append: follow the live tail
     // when the user is already pinned there.
     if (index == messages_.size()) {
         bool at_bottom =
             scroll_y() + bounds().h + 1.0f >= content_height();
+        if (animated) start_inline_video(msg);
         messages_.push_back(std::move(msg));
         invalidate_data();
         if (at_bottom) scroll_to_bottom();
@@ -1305,6 +1331,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
     // (the row the user is looking at stays under their cursor because
     // its row offset shifts by the new row's height, which is what
     // preserve_top_through compensates for).
+    if (animated) start_inline_video(msg);
     preserve_top_through([&]{
         messages_.insert(messages_.begin() + index, std::move(msg));
         invalidate_data();
@@ -1313,12 +1340,24 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
 void MessageListView::update_message(std::size_t index, MessageRowData msg) {
     if (index >= messages_.size()) return;
+    const std::string& old_eid = messages_[index].event_id;
+    const bool was_animated = messages_[index].kind == MessageRowData::Kind::Video &&
+                              (messages_[index].video_autoplay || messages_[index].video_gif);
+    const bool now_animated = msg.kind == MessageRowData::Kind::Video &&
+                              (msg.video_autoplay || msg.video_gif);
+    // Clean up player if no longer animated (e.g. redaction).
+    if (was_animated && !now_animated)
+        inline_players_.erase(old_eid);
+    // Start a new player if newly animated (rare: fi.mau.* edit).
+    if (now_animated && !inline_players_.count(msg.event_id))
+        start_inline_video(msg);
     messages_[index] = std::move(msg);
     invalidate_data();
 }
 
 void MessageListView::remove_message(std::size_t index) {
     if (index >= messages_.size()) return;
+    inline_players_.erase(messages_[index].event_id);
     preserve_top_through([&]{
         messages_.erase(messages_.begin() + index);
         invalidate_data();
@@ -1350,6 +1389,42 @@ void MessageListView::set_voice_bytes_provider(VoiceBytesProvider provider) {
 
 void MessageListView::set_repaint_requester(std::function<void()> request_repaint) {
     request_repaint_ = std::move(request_repaint);
+}
+
+void MessageListView::set_video_player_factory(VideoPlayerFactory f) {
+    video_player_factory_ = std::move(f);
+}
+
+void MessageListView::set_video_fetch_provider(VideoFetchProvider f) {
+    video_fetch_provider_ = std::move(f);
+}
+
+void MessageListView::start_inline_video(const MessageRowData& m) {
+    if (!video_player_factory_ || !video_fetch_provider_) return;
+    if (inline_players_.count(m.event_id)) return;
+    if (static_cast<int>(inline_players_.size()) >= kMaxInlinePlayers) return;
+
+    auto player = video_player_factory_();
+    if (!player) return;
+    player->set_loop(m.video_loop);
+    player->set_muted(m.video_no_audio);
+    player->on_frame = [this]{ if (request_repaint_) request_repaint_(); };
+    inline_players_[m.event_id] = { std::move(player) };
+
+    const std::string eid     = m.event_id;
+    const std::string src     = m.media_url;
+    const std::string mime    = m.video_mime;
+    const bool        autoplay = m.video_autoplay;
+
+    video_fetch_provider_(src,
+        [this, eid, mime, autoplay](std::vector<std::uint8_t> bytes) {
+            auto it = inline_players_.find(eid);
+            if (it == inline_players_.end() || !it->second.player) return;
+            if (bytes.empty()) { inline_players_.erase(eid); return; }
+            auto& p = *it->second.player;
+            p.play(bytes.data(), bytes.size(), mime);
+            if (!autoplay) p.pause();
+        });
 }
 
 void MessageListView::on_pointer_drag(tk::Point local) {

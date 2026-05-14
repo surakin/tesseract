@@ -531,6 +531,20 @@ MainWindow::MainWindow(QWidget* parent)
             });
         };
 
+    messageListView_->set_video_player_factory(
+        [this]() { return msgSurface_->host().make_video_player(); });
+    messageListView_->set_video_fetch_provider(
+        [this](const std::string& src,
+               std::function<void(std::vector<std::uint8_t>)> on_ready) {
+            runOnPool_([this, src, on_ready = std::move(on_ready)]() mutable {
+                auto bytes = client_->fetch_source_bytes(src);
+                QMetaObject::invokeMethod(this,
+                    [on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
+                        on_ready(std::move(bytes));
+                    }, Qt::QueuedConnection);
+            });
+        });
+
     // Compose bar — shared widget on a tk::qt6::Surface. The text input
     // is a NativeTextArea overlaid on the shared ComposeBar's
     // text_area_rect; the emoji + send buttons paint into the toolkit.

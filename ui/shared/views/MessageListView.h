@@ -12,6 +12,7 @@
 #include "tk/audio.h"
 #include "tk/canvas.h"
 #include "tk/list_view.h"
+#include "tk/video.h"
 
 #include <tesseract/types.h>
 
@@ -66,6 +67,7 @@ struct MessageRowData {
     // omits a thumbnail and the client-side first-frame generator fills it
     // in with the key `"thumb::" + event_id`.
     std::string video_thumb_url;
+    std::string video_mime;            // e.g. "video/mp4"; empty when absent
     // fi.mau.* hints — each false by default.
     bool video_autoplay      = false;
     bool video_loop          = false;
@@ -144,6 +146,16 @@ public:
     void set_audio_player        (std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(VoiceBytesProvider provider);
     void set_repaint_requester   (std::function<void()> request_repaint);
+
+    // Inline video playback for fi.mau.autoplay / fi.mau.gif rows.
+    // Both must be set for inline playback to activate; if either is missing
+    // the view falls back to the static thumbnail (clicks still open the overlay).
+    using VideoPlayerFactory = std::function<std::unique_ptr<tk::VideoPlayer>()>;
+    using VideoFetchProvider = std::function<void(
+        const std::string& source_json,
+        std::function<void(std::vector<std::uint8_t>)> on_ready)>;
+    void set_video_player_factory(VideoPlayerFactory f);
+    void set_video_fetch_provider(VideoFetchProvider f);
 
     // Click hooks. on_message_clicked fires on row click.
     std::function<void(const std::string& event_id)> on_message_clicked;
@@ -375,6 +387,14 @@ private:
     void handle_voice_scrub_at   (const MessageRowData& row, float local_x);
     void handle_voice_speed_click();
     void on_audio_progress();
+
+    // Inline video playback — at most kMaxInlinePlayers active simultaneously.
+    static constexpr int kMaxInlinePlayers = 10;
+    struct InlinePlayer { std::unique_ptr<tk::VideoPlayer> player; };
+    std::unordered_map<std::string, InlinePlayer> inline_players_;
+    VideoPlayerFactory  video_player_factory_;
+    VideoFetchProvider  video_fetch_provider_;
+    void start_inline_video(const MessageRowData& m);
 };
 
 } // namespace tesseract::views
