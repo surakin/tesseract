@@ -209,7 +209,7 @@ void UpSharedBusGtk::distributor_call(GDBusConnection* bus, const char* method,
         bus, svc,
         "/org/unifiedpush/Distributor",
         "org.unifiedpush.Distributor1", method,
-        g_variant_new("(ss)", "im.gnomos.Tesseract", token.c_str()),
+        g_variant_new("(sss)", "im.gnomos.Tesseract", token.c_str(), "Tesseract"),
         nullptr,
         G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
 }
@@ -265,12 +265,11 @@ void LinuxUpConnectorGtk::stop() {
     UpSharedBusGtk& shared = UpSharedBusGtk::get();
 
     if (!distributor_service_.empty() && bus) {
-        // Unregister only takes (service, token) — two args.
         g_dbus_connection_call(
             bus, distributor_service_.c_str(),
             "/org/unifiedpush/Distributor",
             "org.unifiedpush.Distributor1", "Unregister",
-            g_variant_new("(ss)", "im.gnomos.Tesseract", token_.c_str()),
+            g_variant_new("(s)", token_.c_str()),
             nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
         client_->remove_pusher(token_, "im.gnomos.tesseract");
         distributor_service_.clear();

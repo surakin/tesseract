@@ -54,7 +54,6 @@ public:
         return inst;
     }
 
-    // Request the bus name; return false if another process owns it.
     bool acquire();
 
     void release() {
@@ -104,7 +103,8 @@ public:
             QDBusConnection::sessionBus());
         dist.asyncCall(QStringLiteral("Register"),
                        QStringLiteral("im.gnomos.Tesseract"),
-                       QString::fromStdString(token));
+                       QString::fromStdString(token),
+                       QStringLiteral("Tesseract"));
     }
 
     void distributor_unregister(const QString& svc, const std::string& token) {
@@ -112,9 +112,8 @@ public:
             QStringLiteral("/org/unifiedpush/Distributor"),
             QStringLiteral("org.unifiedpush.Distributor1"),
             QDBusConnection::sessionBus());
-        dist.call(QStringLiteral("Unregister"),
-                  QStringLiteral("im.gnomos.Tesseract"),
-                  QString::fromStdString(token));
+        dist.asyncCall(QStringLiteral("Unregister"),
+                       QString::fromStdString(token));
     }
 
     void dispatch_new_endpoint(const QString& token, const QString& endpoint) {
