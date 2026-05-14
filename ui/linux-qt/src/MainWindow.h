@@ -25,6 +25,7 @@
 #include "tk/host.h"
 #include "tk/host_qt.h"
 #include "LinuxNotifier.h"
+#include "LinuxUpConnectorQt.h"
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
 #include "views/ComposeBar.h"

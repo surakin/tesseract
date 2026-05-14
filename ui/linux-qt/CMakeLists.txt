@@ -15,6 +15,7 @@ qt_add_executable(tesseract_qt
     src/StickerPicker.h       # MOC input
     src/LinuxNotifier.cpp
     src/LinuxNotifier.h       # MOC input
+    src/LinuxUpConnectorQt.cpp
     src/LinuxQtTrayIcon.cpp
     src/LinuxQtTrayIcon.h     # MOC input
 )

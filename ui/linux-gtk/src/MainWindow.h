@@ -7,6 +7,7 @@
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 #include "LinuxNotifier.h"
+#include "LinuxUpConnectorGtk.h"
 #include "LinuxGtkTrayIcon.h"
 
 #include "app/ShellBase.h"

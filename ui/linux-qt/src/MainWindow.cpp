@@ -1051,6 +1051,11 @@ void MainWindow::doLogin() {
                 navigate_to_room(std::move(room_id));
             });
 
+        // Per-account UnifiedPush connector (registers with distributor on start).
+        auto up = std::make_unique<LinuxUpConnectorQt>();
+        up->start(session->client.get(), uid);
+        session->up_connector = std::move(up);
+
         if (uid == idx.active_user_id) target_active = static_cast<int>(accounts_.size());
         accounts_.push_back(std::move(session));
     }
@@ -1210,6 +1215,13 @@ void MainWindow::onLoginSucceeded() {
             }
             navigate_to_room(std::move(room_id));
         });
+
+    // Per-account UnifiedPush connector.
+    {
+        auto up = std::make_unique<LinuxUpConnectorQt>();
+        up->start(session->client.get(), user_id);
+        session->up_connector = std::move(up);
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(session));

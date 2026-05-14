@@ -379,4 +379,18 @@ std::vector<VerificationEmoji> Client::get_sas_emojis(const std::string& flow_id
     return result;
 }
 
+Result Client::register_pusher(const std::string& pushkey,
+                                const std::string& app_id,
+                                const std::string& app_display_name,
+                                const std::string& device_display_name,
+                                const std::string& endpoint_url,
+                                const std::string& lang) {
+    return from_ffi(impl_->ffi->register_pusher(
+        pushkey, app_id, app_display_name, device_display_name, endpoint_url, lang));
+}
+
+Result Client::remove_pusher(const std::string& pushkey, const std::string& app_id) {
+    return from_ffi(impl_->ffi->remove_pusher(pushkey, app_id));
+}
+
 } // namespace tesseract

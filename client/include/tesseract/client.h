@@ -416,6 +416,24 @@ public:
     /// if the flow has no emoji yet (call too early) or is unknown.
     std::vector<VerificationEmoji> get_sas_emojis(const std::string& flow_id) const;
 
+    // ------------------------------------------------------------------
+    // Server pushers (Step 12)
+    // ------------------------------------------------------------------
+
+    /// Register (or update) an HTTP pusher on the homeserver for UnifiedPush.
+    /// `pushkey` is a unique per-account identifier (e.g. sanitised Matrix ID
+    /// + hostname). `endpoint_url` is the push gateway URL provided by the
+    /// UnifiedPush distributor. Blocks until the homeserver acknowledges.
+    Result register_pusher(const std::string& pushkey,
+                           const std::string& app_id,
+                           const std::string& app_display_name,
+                           const std::string& device_display_name,
+                           const std::string& endpoint_url,
+                           const std::string& lang);
+
+    /// Remove a pusher from the homeserver identified by `pushkey` / `app_id`.
+    Result remove_pusher(const std::string& pushkey, const std::string& app_id);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

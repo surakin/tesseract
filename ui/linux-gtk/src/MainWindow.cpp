@@ -1157,6 +1157,13 @@ void MainWindow::do_login() {
                     navigate_to_room(std::move(room_id));
                 });
 
+            // Per-account UnifiedPush connector.
+            {
+                auto up = std::make_unique<LinuxUpConnectorGtk>();
+                up->start(sess->client.get(), sess->user_id);
+                sess->up_connector = std::move(up);
+            }
+
             int idx = static_cast<int>(accounts_.size());
             if (uid == index.active_user_id) first_active = idx;
             accounts_.push_back(std::move(sess));
@@ -1245,6 +1252,13 @@ void MainWindow::on_login_succeeded() {
             }
             navigate_to_room(std::move(room_id));
         });
+
+    // Per-account UnifiedPush connector.
+    {
+        auto up = std::make_unique<LinuxUpConnectorGtk>();
+        up->start(sess->client.get(), sess->user_id);
+        sess->up_connector = std::move(up);
+    }
 
     int new_idx = static_cast<int>(accounts_.size());
     accounts_.push_back(std::move(sess));

@@ -732,6 +732,25 @@ pub mod ffi {
         /// Returns an empty Vec before the key exchange completes.
         fn get_sas_emojis(self: &ClientFfi, flow_id: &str) -> Vec<VerificationEmoji>;
 
+        // ----- Server pushers (Step 12) -----
+
+        /// Register (or update) an HTTP pusher on the homeserver.
+        /// `pushkey` uniquely identifies this pusher instance (e.g. sanitised
+        /// Matrix user ID + hostname). `endpoint_url` is the push gateway URL
+        /// provided by the UnifiedPush distributor.
+        fn register_pusher(self: &mut ClientFfi,
+                            pushkey:             &str,
+                            app_id:              &str,
+                            app_display_name:    &str,
+                            device_display_name: &str,
+                            endpoint_url:        &str,
+                            lang:                &str) -> OpResult;
+
+        /// Remove a pusher from the homeserver by `pushkey` / `app_id`.
+        fn remove_pusher(self: &mut ClientFfi,
+                         pushkey: &str,
+                         app_id:  &str) -> OpResult;
+
         // ----- Session teardown -----
 
         fn logout(self: &mut ClientFfi) -> OpResult;

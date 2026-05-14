@@ -40,10 +40,12 @@ use matrix_sdk::{Room, ruma::UserId};
 #[cfg(not(test))]
 use matrix_sdk::ruma::{
     events::AnySyncTimelineEvent,
-    push::{PushConditionRoomCtx, Ruleset},
+    push::{HttpPusherData, PushConditionRoomCtx, PushFormat, Ruleset},
     serde::Raw,
     UInt,
 };
+#[cfg(not(test))]
+use matrix_sdk::ruma::api::client::push::{PusherIds, PusherInit, PusherKind};
 
 // ---------------------------------------------------------------------------
 
@@ -3917,6 +3919,65 @@ async fn watch_sas(
 use matrix_sdk::encryption::verification::SasVerification;
 
 // ---------------------------------------------------------------------------
+// Server pushers (Step 12)
+// ---------------------------------------------------------------------------
+
+#[cfg(not(test))]
+impl ClientFfi {
+    pub fn register_pusher(
+        &mut self,
+        pushkey:             &str,
+        app_id:              &str,
+        app_display_name:    &str,
+        device_display_name: &str,
+        endpoint_url:        &str,
+        lang:                &str,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let mut http_data = HttpPusherData::new(endpoint_url.to_owned());
+        http_data.format = Some(PushFormat::EventIdOnly);
+        let pusher = PusherInit {
+            ids:                 PusherIds::new(pushkey.to_owned(), app_id.to_owned()),
+            app_display_name:    app_display_name.to_owned(),
+            kind:                PusherKind::Http(http_data),
+            lang:                lang.to_owned(),
+            device_display_name: device_display_name.to_owned(),
+            profile_tag:         None,
+        };
+        match self.rt.block_on(client.pusher().set(pusher.into())) {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    pub fn remove_pusher(&mut self, pushkey: &str, app_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let ids = PusherIds::new(pushkey.to_owned(), app_id.to_owned());
+        match self.rt.block_on(client.pusher().delete(ids)) {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl ClientFfi {
+    pub fn register_pusher(&mut self, _pushkey: &str, _app_id: &str,
+                            _app_display_name: &str, _device_display_name: &str,
+                            _endpoint_url: &str, _lang: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    pub fn remove_pusher(&mut self, _pushkey: &str, _app_id: &str) -> OpResult {
+        err("not logged in")
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -4231,5 +4292,23 @@ mod tests {
     fn save_prefs_is_noop_when_not_logged_in() {
         let mut c = ClientFfi::new();
         c.save_prefs("{\"last_room\":\"!r:example.com\"}");
+    }
+
+    #[test]
+    fn register_pusher_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.register_pusher("key", "im.gnomos.tesseract",
+                                   "Tesseract", "My Device",
+                                   "https://push.example.com/up", "en");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn remove_pusher_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.remove_pusher("key", "im.gnomos.tesseract");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
     }
 }

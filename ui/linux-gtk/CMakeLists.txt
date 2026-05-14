@@ -29,6 +29,7 @@ add_executable(tesseract_gtk
     src/MainWindow.cpp
     src/LoginView.cpp
     src/LinuxNotifier.cpp
+    src/LinuxUpConnectorGtk.cpp
 )
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)
