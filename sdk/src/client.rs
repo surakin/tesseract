@@ -2137,10 +2137,11 @@ impl ClientFfi {
 
         match write_result {
             Ok(_) => {
-                // Optimistically update the local cache so the UI sees the
-                // change before the next sync round-trip. The eventual
-                // sync-driven rebuild reconciles any drift.
-                self.refresh_image_packs_blocking();
+                // Directly update the in-memory cache from the new_content we
+                // already have — the state store won't reflect the write until
+                // the next sync cycle, so rebuild_image_packs would read stale
+                // data if we called refresh_image_packs_blocking here.
+                self.update_user_pack_in_cache(&new_content);
                 ok("")
             }
             Err(e) => err(e.to_string()),
@@ -2208,7 +2209,7 @@ impl ClientFfi {
 
         match write_result {
             Ok(_) => {
-                self.refresh_image_packs_blocking();
+                self.update_user_pack_in_cache(&new_content);
                 ok("")
             }
             Err(e) => err(e.to_string()),
@@ -2218,6 +2219,33 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn toggle_favorite_sticker(&mut self, _image_url: &str) -> OpResult {
         err("not logged in")
+    }
+
+    /// Update only the user pack slot in the in-memory cache from `content`
+    /// (already in memory — no state-store round-trip). Fires
+    /// `on_image_packs_updated` so the UI refreshes immediately.
+    #[cfg(not(test))]
+    fn update_user_pack_in_cache(&self, content: &serde_json::Value) {
+        let Some(mut pack) = crate::image_packs::parse_pack_content(
+            "user".to_owned(),
+            crate::image_packs::PackSource::User,
+            content,
+        ) else { return };
+        if pack.display_name.is_empty() {
+            pack.display_name = "Saved Stickers".to_owned();
+        }
+        if let Ok(mut cache) = self.image_packs.lock() {
+            if let Some(slot) = cache.iter_mut()
+                .find(|p| p.source == crate::image_packs::PackSource::User)
+            {
+                *slot = pack;
+            } else {
+                cache.insert(0, pack);
+            }
+        }
+        if let Some(h) = &self.handler {
+            if let Ok(g) = h.lock() { g.on_image_packs_updated(); }
+        }
     }
 
     /// Rebuild the image pack cache on the current runtime, blocking until

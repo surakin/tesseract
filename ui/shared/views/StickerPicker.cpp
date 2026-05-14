@@ -133,6 +133,7 @@ void StickerPicker::invalidate_image_cache() {
 }
 
 void StickerPicker::refresh_packs() {
+    tab_scroll_offset_ = 0.0f;
     packs_.clear();
     favorites_.clear();
     if (client_) {
@@ -295,9 +296,10 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
     if (total_tabs == 0) return;
     float tab_w = std::max(kTabSlotMin, tab_rect_.w / static_cast<float>(total_tabs));
     int active = (page_ == Page::Search) ? -1 : active_tab_;
+    ctx.canvas.push_clip_rect(tab_rect_);
     for (int i = 0; i < total_tabs; ++i) {
         tk::Rect tab{
-            tab_rect_.x + i * tab_w,
+            tab_rect_.x + i * tab_w - tab_scroll_offset_,
             tab_rect_.y,
             tab_w,
             tab_rect_.h
@@ -358,6 +360,7 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
             }
         }
     }
+    ctx.canvas.pop_clip();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -373,7 +376,7 @@ int StickerPicker::tab_at(tk::Point local) const {
     int total = tab_count();
     if (total == 0) return -1;
     float tab_w = std::max(kTabSlotMin, tab_rect_.w / static_cast<float>(total));
-    int idx = static_cast<int>(lx / tab_w);
+    int idx = static_cast<int>((lx + tab_scroll_offset_) / tab_w);
     if (idx < 0 || idx >= total) return -1;
     return idx;
 }
@@ -398,6 +401,24 @@ void StickerPicker::on_pointer_up(tk::Point local, bool inside_self) {
     } else {
         switch_to_pack(hit - 1);
     }
+}
+
+bool StickerPicker::on_wheel(tk::Point local, float dx, float dy) {
+    float lx = local.x - (tab_rect_.x - bounds_.x);
+    float ly = local.y - (tab_rect_.y - bounds_.y);
+    if (lx < 0 || ly < 0 || lx >= tab_rect_.w || ly >= tab_rect_.h)
+        return false;
+    int total = tab_count();
+    if (total == 0) return false;
+    float tab_w = std::max(kTabSlotMin, tab_rect_.w / static_cast<float>(total));
+    float total_content_w = tab_w * static_cast<float>(total);
+    float max_offset = std::max(0.0f, total_content_w - tab_rect_.w);
+    if (max_offset == 0.0f) return false;
+    float delta = (dx != 0.0f) ? dx : dy;
+    tab_scroll_offset_ += delta;
+    if (tab_scroll_offset_ < 0.0f)       tab_scroll_offset_ = 0.0f;
+    if (tab_scroll_offset_ > max_offset) tab_scroll_offset_ = max_offset;
+    return true;
 }
 
 } // namespace tesseract::views
