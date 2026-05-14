@@ -167,6 +167,7 @@ public:
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
     using ShellBase::maybe_send_read_receipt_;
+    using ShellBase::mark_room_read_;
 
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
@@ -2457,6 +2458,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
     _shell->current_room_id_ = roomId;
+    _shell->mark_room_read_(roomId);
     _shell->reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(_shell->client_->load_prefs_json());

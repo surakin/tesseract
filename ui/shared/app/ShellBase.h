@@ -216,10 +216,16 @@ protected:
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
 
-    // Send a public m.read receipt for event_id in room_id if it differs
-    // from the last one sent in this session. No-op when either arg is empty.
+    // Send public m.read and private m.read.private receipts for event_id in
+    // room_id if it differs from the last one sent this session. No-op when
+    // either arg is empty.
     void maybe_send_read_receipt_(const std::string& room_id,
                                    const std::string& event_id);
+
+    // Optimistically zero the unread count for room_id in the local room list
+    // and dispatch mark_room_as_read asynchronously. Call on room open so the
+    // unread badge clears immediately without waiting for a sync round-trip.
+    void mark_room_read_(const std::string& room_id);
 
     // Update last_room_list_state_.  Shells call their own refresh_sync_status
     // implementation after this to update native UI.

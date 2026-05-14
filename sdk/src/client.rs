@@ -249,6 +249,31 @@ impl Drop for ClientFfi {
     }
 }
 
+/// Send both public (`m.read`) and private (`m.read.private`) receipts for
+/// `event_id`. The private receipt advances the user's own read position
+/// across devices without broadcasting it to other room members (MSC2285).
+#[cfg(not(test))]
+async fn send_both_receipts(
+    room: &matrix_sdk::Room,
+    event_id: matrix_sdk::ruma::OwnedEventId,
+) -> matrix_sdk::Result<()> {
+    use matrix_sdk::ruma::{
+        api::client::receipt::create_receipt,
+        events::receipt::ReceiptThread,
+    };
+    room.send_single_receipt(
+        create_receipt::v3::ReceiptType::Read,
+        ReceiptThread::Unthreaded,
+        event_id.clone(),
+    ).await?;
+    room.send_single_receipt(
+        create_receipt::v3::ReceiptType::ReadPrivate,
+        ReceiptThread::Unthreaded,
+        event_id,
+    ).await?;
+    Ok(())
+}
+
 impl ClientFfi {
     pub fn new() -> Self {
         let _ = tracing_subscriber::fmt()
@@ -1662,17 +1687,7 @@ impl ClientFfi {
             Some(r) => r,
             None    => return err("room not found"),
         };
-        match self.rt.block_on(async move {
-            use matrix_sdk::ruma::{
-                api::client::receipt::create_receipt,
-                events::receipt::ReceiptThread,
-            };
-            room.send_single_receipt(
-                create_receipt::v3::ReceiptType::Read,
-                ReceiptThread::Unthreaded,
-                event_id,
-            ).await
-        }) {
+        match self.rt.block_on(send_both_receipts(&room, event_id)) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
         }
@@ -1680,6 +1695,40 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn send_read_receipt(&mut self, _room_id: &str, _event_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send public `m.read` and private `m.read.private` receipts for the
+    /// latest cached event in `room_id`. Clears the unread count without
+    /// requiring the room to be subscribed via `subscribe_room`.
+    #[cfg(not(test))]
+    pub fn mark_room_as_read(&mut self, room_id: &str) -> OpResult {
+        if self.client.is_none() { return err("not logged in"); }
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let client = self.client.as_ref().unwrap();
+        let room = match client.get_room(&room_id) {
+            Some(r) => r,
+            None    => return err("room not found"),
+        };
+        // Deref to the base room type to get the synchronous `latest_event()`
+        // with `event_id()`. The `RoomExt` trait (from matrix-sdk-ui, in scope
+        // for timeline features) would otherwise shadow it with an async version
+        // that doesn't carry the event ID.
+        let event_id = match std::ops::Deref::deref(&room).latest_event().event_id() {
+            Some(id) => id.to_owned(),
+            None     => return ok(""),
+        };
+        match self.rt.block_on(send_both_receipts(&room, event_id)) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn mark_room_as_read(&mut self, _room_id: &str) -> OpResult {
         err("not logged in")
     }
 

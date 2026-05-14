@@ -2000,6 +2000,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    mark_room_read_(room_id);
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());

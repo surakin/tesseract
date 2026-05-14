@@ -535,11 +535,16 @@ pub mod ffi {
                          event_id: &str,
                          key: &str) -> OpResult;
 
-        /// Send a public `m.read` receipt for `event_id` in `room_id`.
-        /// Does not require the room to be subscribed via `subscribe_room`.
+        /// Send public `m.read` and private `m.read.private` receipts for
+        /// `event_id` in `room_id`. Does not require the room to be subscribed.
         fn send_read_receipt(self: &mut ClientFfi,
                              room_id:  &str,
                              event_id: &str) -> OpResult;
+
+        /// Send public `m.read` and private `m.read.private` receipts for the
+        /// latest cached event in `room_id`. Used to clear the unread badge
+        /// when the user opens a room. Does not require a subscription.
+        fn mark_room_as_read(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
         /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room

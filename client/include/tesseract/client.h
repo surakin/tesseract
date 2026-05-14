@@ -181,10 +181,16 @@ public:
     /// a long upload to fail server-side.
     std::uint64_t media_upload_limit();
 
-    /// Send a public `m.read` receipt for `event_id` in `room_id`. Blocks
-    /// until the server acknowledges. Does not require `subscribe_room`.
+    /// Send public `m.read` and private `m.read.private` receipts for
+    /// `event_id` in `room_id`. Blocks until acknowledged. Does not require
+    /// `subscribe_room`.
     Result send_read_receipt(const std::string& room_id,
                              const std::string& event_id);
+
+    /// Send public `m.read` and private `m.read.private` receipts for the
+    /// latest cached event in `room_id`. Clears the unread count. Does not
+    /// require `subscribe_room`.
+    Result mark_room_as_read(const std::string& room_id);
 
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that the

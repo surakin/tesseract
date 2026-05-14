@@ -130,6 +130,23 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
     });
 }
 
+void ShellBase::mark_room_read_(const std::string& room_id) {
+    if (room_id.empty()) return;
+    for (auto& r : rooms_) {
+        if (r.id == room_id) { r.unread_count = 0; break; }
+    }
+    auto it = per_account_rooms_.find(my_user_id_);
+    if (it != per_account_rooms_.end()) {
+        for (auto& r : it->second) {
+            if (r.id == room_id) { r.unread_count = 0; break; }
+        }
+    }
+    on_rooms_updated_();
+    run_async_([this, room_id]() {
+        if (client_) client_->mark_room_as_read(room_id);
+    });
+}
+
 static std::string format_typing_text(const std::vector<std::string>& names) {
     if (names.empty()) return {};
     if (names.size() == 1) return names[0] + " is typing\xe2\x80\xa6";

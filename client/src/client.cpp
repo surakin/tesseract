@@ -192,6 +192,10 @@ Result Client::send_read_receipt(const std::string& room_id,
     return from_ffi(impl_->ffi->send_read_receipt(room_id, event_id));
 }
 
+Result Client::mark_room_as_read(const std::string& room_id) {
+    return from_ffi(impl_->ffi->mark_room_as_read(room_id));
+}
+
 Result Client::send_reaction(const std::string& room_id,
                              const std::string& event_id,
                              const std::string& key) {

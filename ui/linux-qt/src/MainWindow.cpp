@@ -1295,6 +1295,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    mark_room_read_(room_id);
     update_typing_bar_({});
     reply_details_requested_.clear();
     {
