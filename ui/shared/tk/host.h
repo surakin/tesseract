@@ -67,6 +67,12 @@ public:
     virtual void set_visible    (bool visible)        = 0;
     virtual void set_enabled    (bool enabled)        = 0;
 
+    // Set the font used to render and measure input text. Callers pass a
+    // FontRole so each backend can apply the role's metrics natively (QFont
+    // point size, GTK CSS font-size, etc.). Defaults to a no-op so backends
+    // that haven't implemented it yet compile without changes.
+    virtual void set_font_role(FontRole) {}
+
     // Push the natural content height up to the host on every change so
     // the parent layout can resize the compose envelope inside its
     // [min, max] clamp.

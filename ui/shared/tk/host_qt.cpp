@@ -2,6 +2,8 @@
 #include "canvas_qpainter.h"
 #include "controls.h"
 
+#include <tesseract/settings.h>
+
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
 #include <QtCore/QString>
@@ -14,6 +16,7 @@
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QTextEdit>
 #include <QtGui/QTextDocument>
+#include <QtGui/QFont>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QImage>
@@ -245,6 +248,19 @@ public:
     }
     void set_enabled(bool enabled) override {
         if (edit_) edit_->setEnabled(enabled);
+    }
+    void set_font_role(tk::FontRole role) override {
+        if (!edit_) return;
+        const auto& s = tesseract::Settings::instance();
+        QFont f;  // inherits app family
+        switch (role) {
+            case tk::FontRole::Body:       f.setPointSize(s.font_body);       f.setWeight(QFont::Normal);  break;
+            case tk::FontRole::Small:      f.setPointSize(s.font_small);      f.setWeight(QFont::Normal);  break;
+            case tk::FontRole::Title:      f.setPointSize(s.font_title);      f.setWeight(QFont::DemiBold); break;
+            case tk::FontRole::SidebarName:f.setPointSize(s.font_sidebar_name);f.setWeight(QFont::DemiBold);break;
+            default: return;
+        }
+        edit_->setFont(f);
     }
     float natural_height() const override {
         if (!edit_) return 0.f;

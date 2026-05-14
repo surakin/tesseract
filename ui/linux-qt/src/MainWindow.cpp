@@ -617,6 +617,7 @@ MainWindow::MainWindow(QWidget* parent)
     composeSurface_->set_root(std::move(compose_owner));
 
     composeTextArea_ = composeSurface_->host().make_text_area();
+    composeTextArea_->set_font_role(tk::FontRole::Body);
     composeTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     composeTextArea_->set_on_changed([this](const std::string& s) {
         handle_compose_text_changed_(s);
