@@ -1841,11 +1841,14 @@ impl ClientFfi {
             Err(_) => return Vec::new(),
         };
         let Some(room) = client.get_room(&room_id) else { return Vec::new() };
-        self.rt
-            .block_on(room.avatar(MediaFormat::File))
-            .ok()
-            .flatten()
-            .unwrap_or_default()
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            tokio::select! {
+                result = room.avatar(MediaFormat::File) =>
+                    result.ok().flatten().unwrap_or_default(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
     }
 
     pub fn fetch_media_bytes(&mut self, mxc_url: &str) -> Vec<u8> {
@@ -1859,9 +1862,15 @@ impl ClientFfi {
             source: MediaSource::Plain(uri.into()),
             format: MediaFormat::File,
         };
-        self.rt
-            .block_on(client.media().get_media_content(&request, true))
-            .unwrap_or_default()
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let media = client.media();
+            tokio::select! {
+                result = media.get_media_content(&request, true) =>
+                    result.unwrap_or_default(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
     }
 
     /// Download media from either a plain `mxc://` URI or a JSON-serialised
@@ -1893,9 +1902,15 @@ impl ClientFfi {
             source: media_source,
             format: MediaFormat::File,
         };
-        self.rt
-            .block_on(client.media().get_media_content(&request, true))
-            .unwrap_or_default()
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let media = client.media();
+            tokio::select! {
+                result = media.get_media_content(&request, true) =>
+                    result.unwrap_or_default(),
+                _ = stop_fut(stop_rx) => Vec::new(),
+            }
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -2498,6 +2513,22 @@ impl ClientFfi {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Resolves once the stop watch channel fires `true` or the sender is dropped.
+/// When `stop_rx` is `None` (sync not yet started) the future never resolves,
+/// so `tokio::select!` callers will just wait for the other branch.
+async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
+    let Some(mut rx) = stop_rx else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    loop {
+        match rx.changed().await {
+            Ok(()) => { if *rx.borrow() { return; } }
+            Err(_) => return,
+        }
+    }
+}
 
 /// Warm the SDK's event-cache for one room without surfacing anything to
 /// the UI. Builds a temporary `Timeline`, drops the live diff stream, and
