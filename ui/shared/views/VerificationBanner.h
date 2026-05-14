@@ -9,6 +9,7 @@
 #include "tk/controls.h"
 #include "tk/widget.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>

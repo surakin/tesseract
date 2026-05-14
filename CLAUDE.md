@@ -63,7 +63,7 @@ ui/
   shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
     tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
     views/     ← LoginView, RoomListView, MessageListView, EmojiPicker,
-                  RecoveryBanner, ComposeBar
+                  RecoveryBanner, VerificationBanner, ComposeBar
   windows/   ← Win32 executable (thin shell)
   macos/     ← AppKit executable (.app bundle, thin shell)
   linux-qt/  ← Qt6 Widgets executable (thin shell)
@@ -139,13 +139,13 @@ Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending 
 
 ### Step 5 — UI redesign (in progress)
 
-Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts, hover timestamps. Remaining:
+Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts (display + sending), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`. Remaining:
 
 - **Emoji reactions** — reaction bar below each message (emoji + count); tap to toggle; `send_reaction` / `redact_reaction` FFI; reactions in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Threaded reply panel** — slide-in sidebar (deferred from reply-to landing).
 - **Sidebar polish** — unread badge, last-message preview, last-activity sort; DM rooms show the other user's avatar.
-- **ComposeBar gaps** — `/` command hints; typing indicator sent to room; `NativeTextArea` placeholder on GTK4 + macOS (see Known gaps).
+- **ComposeBar gaps** — `/` command hints; `NativeTextArea` placeholder on GTK4 + macOS (see Known gaps).
 
 ### Step 8 — MSC2545 phase A: remaining items
 
@@ -172,8 +172,8 @@ Done: inline images, stickers, reply-to, message editing, voice messages, Compos
 
 ### Step 12 — Notifications, layer 2: server pushers
 
-- `register_pusher` / `remove_pusher` FFI wrapping `client.pusher().set(...)`.
-- Linux: UnifiedPush via D-Bus `org.unifiedpush.Connector1`.
+Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
+
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
 
