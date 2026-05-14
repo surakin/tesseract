@@ -135,7 +135,7 @@ public:
         std::string body, bool is_mention,
         std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
-    void update_typing_bar_(const std::string& text) override;
+    void update_typing_bar_(const std::string& text, bool visible) override;
 
 private:
     void on_create(HWND hwnd);

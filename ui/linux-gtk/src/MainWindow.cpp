@@ -158,10 +158,12 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text)
+void MainWindow::update_typing_bar_(const std::string& text, bool visible)
 {
-    if (typing_bar_)
+    if (typing_bar_) {
         gtk_label_set_text(GTK_LABEL(typing_bar_), text.c_str());
+        gtk_widget_set_visible(typing_bar_, visible);
+    }
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
@@ -1317,7 +1319,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     mark_room_read_(current_room_id_);
-    update_typing_bar_({});
+    update_typing_bar_({}, false);
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());

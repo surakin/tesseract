@@ -571,9 +571,10 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text)
+void MainWindow::update_typing_bar_(const std::string& text, bool visible)
 {
     if (!hTypingBar_) return;
+    ShowWindow(hTypingBar_, visible ? SW_SHOW : SW_HIDE);
     if (text.empty()) {
         SetWindowTextW(hTypingBar_, L"");
         return;
@@ -2013,7 +2014,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
     if (compose_text_area_) compose_text_area_->set_text("");
     if (compose_shared_)    compose_shared_->set_current_text({});
-    update_typing_bar_({});
+    update_typing_bar_({}, false);
 
     for (const auto& r : rooms_) {
         if (r.id == current_room_id_) {

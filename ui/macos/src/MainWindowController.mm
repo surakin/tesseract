@@ -115,7 +115,7 @@ protected:
         std::string room_name, std::string sender, std::string body,
         bool is_mention, std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
-    void update_typing_bar_(const std::string& text) override;
+    void update_typing_bar_(const std::string& text, bool visible) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -485,11 +485,12 @@ void MacShell::on_room_list_state_ui_() {
     if (c) [c _onRoomListStateChanged];
 }
 
-void MacShell::update_typing_bar_(const std::string& text) {
+void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     MainWindowController* c = ctrl_;
     if (!c) return;
     NSString* ns = [NSString stringWithUTF8String:text.c_str()] ?: @"";
     [c _updateTypingBar:ns];
+    _typingBar.hidden = !visible;
 }
 
 } // namespace
@@ -2469,7 +2470,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _composeShared->clear_reply();
         _composeShared->clear_editing();
     }
-    _shell->update_typing_bar_({});
+    _shell->update_typing_bar_({}, false);
     for (const auto& r : _shell->rooms_) {
         if (r.id == _shell->current_room_id_) { [self _setRoomHeader:r]; break; }
     }
