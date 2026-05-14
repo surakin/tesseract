@@ -89,6 +89,10 @@ pub mod ffi {
         timestamp:         u64,
         /// "m.text" | "m.image" | "m.file" | "m.sticker" | "m.voice" | "m.redacted" | …
         /// "m.redacted" → body is empty; render as a tombstone placeholder.
+        /// Virtual items passed through from matrix-sdk-ui:
+        ///   "virtual.date_divider"  → timestamp = day epoch in ms (local midnight).
+        ///   "virtual.read_marker"   → marks the user's last-read position.
+        ///   "virtual.timeline_start"→ no earlier history to paginate.
         msg_type:          String,
         /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
         source_json:       String,

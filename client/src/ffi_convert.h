@@ -192,6 +192,24 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         return ev;
     }
 
+    if (msg_type == "virtual.date_divider") {
+        auto ev = std::make_unique<DaySeparatorEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
+    if (msg_type == "virtual.read_marker") {
+        auto ev = std::make_unique<ReadMarkerEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
+    if (msg_type == "virtual.timeline_start") {
+        auto ev = std::make_unique<TimelineStartEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);

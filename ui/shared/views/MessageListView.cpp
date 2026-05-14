@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <string>
@@ -88,8 +89,11 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.video_gif            = vid.gif;
             break;
         }
-        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
-        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
+        case tesseract::EventType::Redacted:      row.kind = Kind::Redacted;      break;
+        case tesseract::EventType::Unhandled:     row.kind = Kind::Unhandled;     break;
+        case tesseract::EventType::DaySeparator:  row.kind = Kind::DaySeparator;  break;
+        case tesseract::EventType::ReadMarker:    row.kind = Kind::ReadMarker;    break;
+        case tesseract::EventType::TimelineStart: row.kind = Kind::TimelineStart; break;
     }
     return row;
 }
@@ -155,6 +159,11 @@ constexpr float kEditBtnW      = 28.0f;
 constexpr float kEditedBadgeGap =  4.0f;
 // Reduced top padding for continuation rows (no avatar/sender chrome).
 constexpr float kContPadY       =  2.0f;
+
+// Virtual timeline item heights.
+constexpr float kDaySepH        = 28.0f;
+constexpr float kReadMarkerH    = 20.0f;
+constexpr float kTimelineStartH = 20.0f;
 
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
@@ -258,6 +267,51 @@ float body_text_max_width(float row_width) {
                      row_width - kPadX - kAvatarSize - kAvatarGap - kPadX);
 }
 
+std::string format_day_label(std::uint64_t timestamp_ms) {
+    if (timestamp_ms == 0) return {};
+    std::time_t now_t = std::time(nullptr);
+    std::time_t t     = static_cast<std::time_t>(timestamp_ms / 1000);
+    std::tm now_tm{}, sep_tm{};
+#if defined(_WIN32)
+    localtime_s(&now_tm, &now_t);
+    localtime_s(&sep_tm, &t);
+#else
+    localtime_r(&now_t, &now_tm);
+    localtime_r(&t,     &sep_tm);
+#endif
+    if (sep_tm.tm_year == now_tm.tm_year &&
+        sep_tm.tm_mon  == now_tm.tm_mon  &&
+        sep_tm.tm_mday == now_tm.tm_mday)
+        return "Today";
+    std::time_t yest_t = now_t - 86400;
+    std::tm yest_tm{};
+#if defined(_WIN32)
+    localtime_s(&yest_tm, &yest_t);
+#else
+    localtime_r(&yest_t, &yest_tm);
+#endif
+    if (sep_tm.tm_year == yest_tm.tm_year &&
+        sep_tm.tm_mon  == yest_tm.tm_mon  &&
+        sep_tm.tm_mday == yest_tm.tm_mday)
+        return "Yesterday";
+    if (now_t > t &&
+        static_cast<std::uint64_t>(now_t - t) < 7u * 86400u) {
+        constexpr const char* kDays[] = {
+            "Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"
+        };
+        return kDays[sep_tm.tm_wday];
+    }
+    constexpr const char* kMonths[] = {
+        "January","February","March","April","May","June",
+        "July","August","September","October","November","December"
+    };
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%s %d, %d",
+                  kMonths[sep_tm.tm_mon], sep_tm.tm_mday,
+                  sep_tm.tm_year + 1900);
+    return buf;
+}
+
 } // namespace
 
 class MessageListView::Adapter : public tk::ListAdapter {
@@ -272,8 +326,16 @@ public:
     bool is_cont(std::size_t index) const {
         if (index == 0) return false;
         const auto& curr = owner_.messages_[index];
+        // Virtual rows are never continuations; nor is the row after one.
+        using Kind = MessageRowData::Kind;
+        if (curr.kind == Kind::DaySeparator ||
+            curr.kind == Kind::ReadMarker   ||
+            curr.kind == Kind::TimelineStart) return false;
         if (curr.has_reply()) return false;
         const auto& prev = owner_.messages_[index - 1];
+        if (prev.kind == Kind::DaySeparator ||
+            prev.kind == Kind::ReadMarker   ||
+            prev.kind == Kind::TimelineStart) return false;
         if (prev.sender != curr.sender) return false;
         int interval_s = tesseract::Settings::instance().message_group_interval_s;
         if (interval_s <= 0) return false;
@@ -286,6 +348,10 @@ public:
                               float width) override {
         if (index >= owner_.messages_.size()) return 0;
         const auto& m = owner_.messages_[index];
+        using Kind = MessageRowData::Kind;
+        if (m.kind == Kind::DaySeparator)  return kDaySepH;
+        if (m.kind == Kind::ReadMarker)    return kReadMarkerH;
+        if (m.kind == Kind::TimelineStart) return kTimelineStartH;
         bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
@@ -301,6 +367,22 @@ public:
                     bool /*selected*/, bool hovered) override {
         if (index >= owner_.messages_.size()) return;
         const auto& m = owner_.messages_[index];
+
+        // Virtual items get their own minimal rendering — no avatar/body layout.
+        using Kind = MessageRowData::Kind;
+        if (m.kind == Kind::DaySeparator) {
+            paint_day_separator(m, ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::ReadMarker) {
+            paint_read_marker(ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::TimelineStart) {
+            paint_timeline_start(ctx, bounds);
+            return;
+        }
+
         bool cont = is_cont(index);
 
         if (hovered) {
@@ -676,6 +758,79 @@ public:
     }
 
 private:
+    // ── Virtual timeline item paint helpers ──────────────────────────────────
+
+    void paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx,
+                              tk::Rect bounds) const {
+        std::string label = format_day_label(m.timestamp_ms);
+        if (label.empty()) return;
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        auto lo = ctx.factory.build_text(label, st);
+        if (!lo) return;
+        tk::Size sz = lo->measure();
+        constexpr float kLabelPadX = 8.0f;
+        float cx      = bounds.x + bounds.w * 0.5f;
+        float cy      = bounds.y + kDaySepH * 0.5f;
+        float label_l = cx - sz.w * 0.5f - kLabelPadX;
+        float label_r = cx + sz.w * 0.5f + kLabelPadX;
+        float line_y  = std::round(cy);
+        if (label_l > bounds.x + kPadX)
+            ctx.canvas.fill_rect(
+                { bounds.x + kPadX, line_y, label_l - bounds.x - kPadX, 1.0f },
+                ctx.theme.palette.border);
+        if (label_r < bounds.x + bounds.w - kPadX)
+            ctx.canvas.fill_rect(
+                { label_r, line_y, bounds.x + bounds.w - kPadX - label_r, 1.0f },
+                ctx.theme.palette.border);
+        ctx.canvas.draw_text(*lo,
+            { cx - sz.w * 0.5f, cy - sz.h * 0.5f },
+            ctx.theme.palette.text_muted);
+    }
+
+    void paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds) const {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        auto lo = ctx.factory.build_text("New messages", st);
+        if (!lo) return;
+        tk::Size sz = lo->measure();
+        constexpr float kLabelPadX = 8.0f;
+        float cx  = bounds.x + bounds.w * 0.5f;
+        float cy  = bounds.y + kReadMarkerH * 0.5f;
+        float lx  = cx - sz.w * 0.5f - kLabelPadX;
+        float rx  = cx + sz.w * 0.5f + kLabelPadX;
+        float ly  = std::round(cy);
+        if (lx > bounds.x + kPadX)
+            ctx.canvas.fill_rect(
+                { bounds.x + kPadX, ly, lx - bounds.x - kPadX, 1.0f },
+                ctx.theme.palette.accent);
+        if (rx < bounds.x + bounds.w - kPadX)
+            ctx.canvas.fill_rect(
+                { rx, ly, bounds.x + bounds.w - kPadX - rx, 1.0f },
+                ctx.theme.palette.accent);
+        ctx.canvas.draw_text(*lo,
+            { cx - sz.w * 0.5f, cy - sz.h * 0.5f },
+            ctx.theme.palette.accent);
+    }
+
+    void paint_timeline_start(tk::PaintCtx& ctx, tk::Rect bounds) const {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        auto lo = ctx.factory.build_text("Start of conversation", st);
+        if (!lo) return;
+        tk::Size sz = lo->measure();
+        float cx = bounds.x + bounds.w * 0.5f;
+        float cy = bounds.y + kTimelineStartH * 0.5f;
+        ctx.canvas.draw_text(*lo,
+            { cx - sz.w * 0.5f, cy - sz.h * 0.5f },
+            ctx.theme.palette.text_muted);
+    }
+
+    // ── Message row paint helpers ─────────────────────────────────────────────
+
     float measure_body_block_height(const MessageRowData& m,
                                      tk::LayoutCtx& ctx,
                                      float col_w) const {
@@ -730,6 +885,11 @@ private:
                 }
                 return quote_h + h;
             }
+            // Virtual items are handled before this function is called.
+            case MessageRowData::Kind::DaySeparator:
+            case MessageRowData::Kind::ReadMarker:
+            case MessageRowData::Kind::TimelineStart:
+                return 0.0f;
         }
         return quote_h;
     }
@@ -846,6 +1006,11 @@ private:
                 }
                 return cursor;
             }
+            // Virtual items are handled before this function is called.
+            case MessageRowData::Kind::DaySeparator:
+            case MessageRowData::Kind::ReadMarker:
+            case MessageRowData::Kind::TimelineStart:
+                break;
         }
         return y;
     }

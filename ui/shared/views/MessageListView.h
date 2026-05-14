@@ -27,7 +27,10 @@
 namespace tesseract::views {
 
 struct MessageRowData {
-    enum class Kind { Text, Image, Sticker, File, Voice, Video, Redacted, Unhandled };
+    enum class Kind {
+        Text, Image, Sticker, File, Voice, Video, Redacted, Unhandled,
+        DaySeparator, ReadMarker, TimelineStart,
+    };
 
     Kind        kind          = Kind::Text;
     std::string event_id;

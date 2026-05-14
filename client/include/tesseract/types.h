@@ -5,7 +5,10 @@
 
 namespace tesseract {
 
-enum class EventType { Text, Image, File, Sticker, Voice, Video, Redacted, Unhandled };
+enum class EventType {
+    Text, Image, File, Sticker, Voice, Video, Redacted, Unhandled,
+    DaySeparator, ReadMarker, TimelineStart,
+};
 
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
@@ -144,6 +147,14 @@ struct UnhandledEvent : public Event {
     UnhandledEvent() { type = EventType::Unhandled; }
     explicit UnhandledEvent(const std::string& t) : msg_type(t) { type = EventType::Unhandled; }
 };
+
+// Virtual timeline items forwarded from matrix-sdk-ui.
+// DaySeparatorEvent: `timestamp` = day epoch in ms (local midnight per SDK).
+// ReadMarkerEvent:   marks the user's last-read position in the room.
+// TimelineStartEvent: no earlier history to paginate (back-pagination complete).
+struct DaySeparatorEvent  : public Event { DaySeparatorEvent()  { type = EventType::DaySeparator;  } };
+struct ReadMarkerEvent    : public Event { ReadMarkerEvent()    { type = EventType::ReadMarker;    } };
+struct TimelineStartEvent : public Event { TimelineStartEvent() { type = EventType::TimelineStart; } };
 
 struct RoomInfo {
     std::string id;

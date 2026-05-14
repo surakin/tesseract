@@ -29,7 +29,7 @@ use matrix_sdk::SessionChange;
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
-    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind},
+    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
 };
 #[cfg(not(test))]
 use futures_util::StreamExt;
@@ -1072,10 +1072,10 @@ impl ClientFfi {
 
             // Build the visibility mirror + initial snapshot in one pass.
             // The mirror is `true` for every matrix-sdk-ui timeline slot
-            // whose `timeline_item_to_ffi` yields Some (i.e. is an event,
-            // not a virtual day-divider). It lets `handle_timeline_diff`
-            // translate raw matrix-sdk-ui indices to the visible indices
-            // that the C++ side mirrors.
+            // whose `timeline_item_to_ffi` yields Some — this covers both
+            // real message events and virtual items (day-dividers,
+            // read-markers, timeline-start). State events and membership
+            // changes remain `false` so they are silently filtered.
             let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
             let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in initial_items.iter() {
@@ -2949,7 +2949,51 @@ async fn timeline_item_to_ffi(
 
     let event_item = match item.kind() {
         TimelineItemKind::Event(e) => e,
-        _ => return None,
+        TimelineItemKind::Virtual(v) => {
+            let (msg_type, timestamp): (&str, u64) = match v {
+                VirtualTimelineItem::DateDivider(ts) =>
+                    ("virtual.date_divider", ts.get().into()),
+                VirtualTimelineItem::ReadMarker =>
+                    ("virtual.read_marker", 0),
+                VirtualTimelineItem::TimelineStart =>
+                    ("virtual.timeline_start", 0),
+            };
+            return Some(TimelineEvent {
+                room_id:              room_id.to_owned(),
+                msg_type:             msg_type.to_owned(),
+                timestamp,
+                event_id:             String::new(),
+                sender:               String::new(),
+                sender_name:          String::new(),
+                sender_avatar_url:    String::new(),
+                body:                 String::new(),
+                source_json:          String::new(),
+                width:                0,
+                height:               0,
+                file_json:            String::new(),
+                file_name:            String::new(),
+                file_size:            0,
+                image_filename:       String::new(),
+                audio_source_json:    String::new(),
+                audio_duration_ms:    0,
+                audio_waveform:       Vec::new(),
+                audio_mime:           String::new(),
+                video_thumbnail_json: String::new(),
+                video_duration_ms:    0,
+                video_mime:           String::new(),
+                video_autoplay:       false,
+                video_loop:           false,
+                video_no_audio:       false,
+                video_hide_controls:  false,
+                video_gif:            false,
+                reactions:            Vec::new(),
+                read_receipts:        Vec::new(),
+                in_reply_to_id:          String::new(),
+                in_reply_to_sender_name: String::new(),
+                in_reply_to_body:        String::new(),
+                is_edited:            false,
+            });
+        }
     };
 
     // Redactions: matrix-sdk-ui replaces the original item with
