@@ -169,6 +169,7 @@ void ListView::preserve_top_through(const std::function<void()>& mutate) {
 void ListView::maybe_fire_near_top() {
     if (!adapter_ || adapter_->count() == 0) return;
     if (stick_to_bottom_) return;
+    if (scrollbar_drag_) return;
     bool now_near = scroll_y_ < near_top_threshold_px_;
     if (now_near && !was_near_top_) {
         was_near_top_ = true;
@@ -337,6 +338,7 @@ void ListView::on_pointer_drag(Point local) {
 void ListView::on_pointer_up(Point local, bool inside_self) {
     if (scrollbar_drag_) {
         scrollbar_drag_ = false;
+        maybe_fire_near_top();  // check now that the drag guard is lifted
         return;     // drag releases never select a row
     }
     int idx = inside_self ? index_at(local) : kInvalidIndex;
