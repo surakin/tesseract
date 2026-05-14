@@ -102,9 +102,9 @@ public:
             QStringLiteral("/org/unifiedpush/Distributor"),
             QStringLiteral("org.unifiedpush.Distributor1"),
             QDBusConnection::sessionBus());
-        dist.call(QStringLiteral("Register"),
-                  QStringLiteral("im.gnomos.Tesseract"),
-                  QString::fromStdString(token));
+        dist.asyncCall(QStringLiteral("Register"),
+                       QStringLiteral("im.gnomos.Tesseract"),
+                       QString::fromStdString(token));
     }
 
     void distributor_unregister(const QString& svc, const std::string& token) {
