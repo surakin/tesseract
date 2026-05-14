@@ -2045,6 +2045,7 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
+    if (message_list_view_) message_list_view_->invalidate_data();
     if (msg_surface_) msg_surface_->relayout();
 }
 

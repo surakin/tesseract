@@ -1643,6 +1643,9 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
+    // Invalidate cached row heights so the preview card is included in the
+    // next measure pass, then relayout to apply the new heights.
+    if (messageListView_) messageListView_->invalidate_data();
     if (msgSurface_) {
         msgSurface_->relayout();
         msgSurface_->update();
