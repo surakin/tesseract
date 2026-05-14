@@ -187,7 +187,6 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 - **Win32 sticker right-click context menu missing** — `WM_RBUTTONUP` on the message surface should hit-test via `sticker_hit_at` and pop a `TrackPopupMenu` calling `save_sticker_to_user_pack`.
 - **`save_sticker_to_user_pack` posts empty `info`** — right-click handlers pass `"{}"` for `info_json`; fix: thread `info_json` through `MessageListView::StickerHit`.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
-- **Qt6 sidebar user strip not yet using shared `UserInfo` widget** — still QLabel-based; cosmetic refactor pending.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
 
 ### Decisions still open

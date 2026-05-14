@@ -90,7 +90,6 @@ private slots:
     void onRecoverFinished(bool ok, QString error);
     void onDismissRecoveryBanner();
     void onUserStripContextMenu(const QPoint& pos);
-    void onUserStripLeftClick(const QPoint& pos);
     void onLoginCancelled();
     void onAccountSelected(const std::string& user_id);
     void onPaginateFinished(QString roomId, bool reached_start);
@@ -256,10 +255,9 @@ private:
     QTimer*                  syncStatusDebounce_ = nullptr;
     void refreshSyncStatus();
 
-    QWidget*             userStrip_       = nullptr;
-    QLabel*              userAvatarLabel_ = nullptr;
-    QLabel*              userNameLabel_   = nullptr;
-    QLabel*              userIdLabel_     = nullptr;   // smaller, dimmer Matrix ID line under display name
+    QWidget*                          userStrip_        = nullptr;
+    tk::qt6::Surface*                 userStripSurface_ = nullptr;
+    tesseract::views::UserInfo*       userInfo_         = nullptr;  // borrowed
 
     tk::qt6::Surface*               roomSurface_    = nullptr;
     tesseract::views::RoomListView* roomListView_   = nullptr;  // borrowed

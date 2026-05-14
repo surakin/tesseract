@@ -208,12 +208,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // ---- User identity strip (footer) ----
     //
-    // Two-line layout: bold display name on top, smaller dimmer Matrix ID
-    // on the second line. Left-click opens the AccountPicker popover when
-    // there are ≥2 accounts; right-click pops the Add Account / Log Out
-    // context menu. The strip is intentionally still a native composite
-    // (QLabel + QLabel) rather than a tk::Surface — the canvas-painted
-    // strip migration is tracked as a follow-up cosmetic change.
+    // Shared UserInfo widget (avatar + display name + Matrix ID) mounted on
+    // a tk::qt6::Surface. Left-click → AccountPicker popover (≥2 accounts);
+    // right-click → Add Account / Log Out context menu.
     userStrip_ = new QWidget(sidePanel);
     userStrip_->setObjectName("userStrip");
     userStrip_->setStyleSheet(
@@ -222,32 +219,35 @@ MainWindow::MainWindow(QWidget* parent)
     userStrip_->setVisible(false);
     userStrip_->setContextMenuPolicy(Qt::CustomContextMenu);
     userStrip_->setCursor(Qt::PointingHandCursor);
-    userStrip_->installEventFilter(this);   // mouse-press for left-click → picker
     {
-        auto* uLayout = new QHBoxLayout(userStrip_);
-        uLayout->setContentsMargins(8, 8, 8, 8);
-        uLayout->setSpacing(10);
+        auto* lay = new QVBoxLayout(userStrip_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
 
-        userAvatarLabel_ = new QLabel(userStrip_);
-        userAvatarLabel_->setFixedSize(32, 32);
-        uLayout->addWidget(userAvatarLabel_);
-
-        auto* textCol = new QWidget(userStrip_);
-        auto* textBox = new QVBoxLayout(textCol);
-        textBox->setContentsMargins(0, 0, 0, 0);
-        textBox->setSpacing(2);
-
-        userNameLabel_ = new QLabel(textCol);
-        userNameLabel_->setStyleSheet("font-size:13px; font-weight:bold; color:#111111;");
-        userNameLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
-        textBox->addWidget(userNameLabel_);
-
-        userIdLabel_ = new QLabel(textCol);
-        userIdLabel_->setStyleSheet("font-size:11px; color:#888888;");
-        userIdLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
-        textBox->addWidget(userIdLabel_);
-
-        uLayout->addWidget(textCol, 1);
+        userStripSurface_ = new tk::qt6::Surface(tk::Theme::light(), userStrip_);
+        // Surface sets WA_OpaquePaintEvent by default; UserInfo doesn't fill
+        // its background, so we disable it and supply an explicit palette so
+        // Qt erases the surface with the correct sidebar colour before painting.
+        userStripSurface_->setAttribute(Qt::WA_OpaquePaintEvent, false);
+        userStripSurface_->setAutoFillBackground(true);
+        {
+            QPalette pal = userStripSurface_->palette();
+            pal.setColor(QPalette::Window, QColor(0xE8, 0xEA, 0xEE));
+            userStripSurface_->setPalette(pal);
+        }
+        auto info_owner = std::make_unique<tesseract::views::UserInfo>();
+        userInfo_ = info_owner.get();
+        userInfo_->set_image_provider([this](const std::string& mxc) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc);
+            return it != tk_avatars_.end() ? it->second.get() : nullptr;
+        });
+        userInfo_->on_primary = [this](tk::Point world) {
+            if (accounts_.size() < 2) return;
+            openAccountPicker(userStripSurface_->mapToGlobal(
+                QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
+        };
+        userStripSurface_->set_root(std::move(info_owner));
+        lay->addWidget(userStripSurface_);
     }
     sideLayout->addWidget(userStrip_);
     connect(userStrip_, &QWidget::customContextMenuRequested,
@@ -1516,7 +1516,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (kind == MediaKind::RoomAvatar) {
             if (roomSurface_) roomSurface_->update();
         } else {
-            if (msgSurface_) msgSurface_->update();
+            if (msgSurface_)       msgSurface_->update();
+            if (userStripSurface_) userStripSurface_->update();
         }
         return;
     }
@@ -1883,29 +1884,11 @@ void MainWindow::refreshSyncStatus() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populateUserStrip() {
-    QString shown = my_display_name_.empty()
-        ? QString::fromStdString(my_user_id_)
-        : QString::fromStdString(my_display_name_);
-    userNameLabel_->setText(shown);
-    if (userIdLabel_) userIdLabel_->setText(QString::fromStdString(my_user_id_));
-
-    QPixmap avatar;
-    if (!my_avatar_url_.empty() && client_) {
-        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
-        if (!bytes.empty()) {
-            QPixmap raw;
-            if (raw.loadFromData(bytes.data(), static_cast<int>(bytes.size()))) {
-                avatar = makeCirclePixmap(
-                    raw.scaled(32, 32, Qt::KeepAspectRatioByExpanding,
-                               Qt::SmoothTransformation),
-                    32);
-            }
-        }
-    }
-    if (avatar.isNull())
-        avatar = makeInitialsPixmap(shown, 32);
-    userAvatarLabel_->setPixmap(avatar);
-
+    userInfo_->set_display_name(my_display_name_);
+    userInfo_->set_user_id(my_user_id_);
+    userInfo_->set_avatar_url(my_avatar_url_);
+    ensure_user_avatar_(my_avatar_url_);
+    if (userStripSurface_) userStripSurface_->update();
     userStrip_->setVisible(true);
 }
 
@@ -1922,21 +1905,7 @@ void MainWindow::onUserStripContextMenu(const QPoint& pos) {
     else if (picked == logoutAct) logoutActiveAccount();
 }
 
-void MainWindow::onUserStripLeftClick(const QPoint& pos) {
-    // Left-click is a no-op when there's only one signed-in account —
-    // the picker would just show the active row and do nothing.
-    if (accounts_.size() < 2) return;
-    openAccountPicker(userStrip_->mapToGlobal(pos));
-}
-
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == userStrip_ && event->type() == QEvent::MouseButtonRelease) {
-        auto* me = static_cast<QMouseEvent*>(event);
-        if (me->button() == Qt::LeftButton) {
-            onUserStripLeftClick(me->pos());
-            return true;
-        }
-    }
     if (obj == roomHeaderTopic_ && event->type() == QEvent::Resize) {
         updateTopicElision();
     }
