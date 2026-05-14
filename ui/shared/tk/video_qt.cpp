@@ -75,6 +75,8 @@ public:
         buffer_.open(QIODevice::ReadOnly);
         player_.setSourceDevice(&buffer_);
         player_.setPlaybackRate(static_cast<qreal>(rate_));
+        player_.setLoops(loop_ ? QMediaPlayer::Infinite : 1);
+        audio_out_.setMuted(muted_);
         player_.play();
         ticker_.start();
     }
@@ -109,6 +111,16 @@ public:
     }
     float playback_rate() const override { return rate_; }
 
+    void set_loop(bool loop) override {
+        loop_ = loop;
+        player_.setLoops(loop ? QMediaPlayer::Infinite : 1);
+    }
+
+    void set_muted(bool muted) override {
+        muted_ = muted;
+        audio_out_.setMuted(muted);
+    }
+
     std::uint64_t position_ms() const override {
         const qint64 p = player_.position();
         return p < 0 ? 0u : static_cast<std::uint64_t>(p);
@@ -139,6 +151,8 @@ private:
 
     mutable std::mutex             frame_mutex_;
     std::unique_ptr<tk::Image>     current_frame_;
+    bool  loop_   = false;
+    bool  muted_  = false;
 };
 
 std::unique_ptr<tk::VideoPlayer> make_video_player_qt() {

@@ -66,6 +66,12 @@ struct MessageRowData {
     // omits a thumbnail and the client-side first-frame generator fills it
     // in with the key `"thumb::" + event_id`.
     std::string video_thumb_url;
+    // fi.mau.* hints — each false by default.
+    bool video_autoplay      = false;
+    bool video_loop          = false;
+    bool video_no_audio      = false;
+    bool video_hide_controls = false;
+    bool video_gif           = false;
 
     std::vector<tesseract::Reaction> reactions;
     /// Users (excluding the current user) whose latest read receipt landed
@@ -212,6 +218,12 @@ public:
         int         natural_w   = 0;
         int         natural_h   = 0;
         std::uint64_t duration_ms = 0;
+        // fi.mau.* hints forwarded to VideoViewerOverlay::open().
+        bool autoplay      = false;
+        bool loop          = false;
+        bool no_audio      = false;
+        bool hide_controls = false;
+        bool gif           = false;
         tk::Rect    world_rect;
     };
     std::optional<VideoHit> video_hit_at(tk::Point world) const;

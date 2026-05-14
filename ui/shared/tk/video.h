@@ -47,6 +47,14 @@ public:
     virtual void  set_playback_rate(float rate) = 0;
     virtual float playback_rate() const = 0;
 
+    // Loop: restart the clip at end-of-stream when true.
+    // Default no-op — backends that can't loop degrade gracefully.
+    virtual void set_loop (bool) {}
+
+    // Muted: silence the audio track when true.
+    // Default no-op — backends that can't mute degrade gracefully.
+    virtual void set_muted(bool) {}
+
     virtual std::uint64_t position_ms () const = 0;
     virtual std::uint64_t duration_ms () const = 0;
     virtual bool          is_playing  () const = 0;

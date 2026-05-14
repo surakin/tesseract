@@ -2960,6 +2960,11 @@ async fn timeline_item_to_ffi(
             video_thumbnail_json: String::new(),
             video_duration_ms:    0u64,
             video_mime:           String::new(),
+            video_autoplay:       false,
+            video_loop:           false,
+            video_no_audio:       false,
+            video_hide_controls:  false,
+            video_gif:            false,
             reactions:         Vec::new(),
             // Receipts on a tombstone are meaningless — the original event
             // is gone; the redacted placeholder doesn't carry a reading
@@ -3026,6 +3031,11 @@ async fn timeline_item_to_ffi(
             video_thumbnail_json: String::new(),
             video_duration_ms:    0u64,
             video_mime:           String::new(),
+            video_autoplay:       false,
+            video_loop:           false,
+            video_no_audio:       false,
+            video_hide_controls:  false,
+            video_gif:            false,
             reactions,
             read_receipts,
             in_reply_to_id:          String::new(),
@@ -3043,7 +3053,8 @@ async fn timeline_item_to_ffi(
     let (body, msg_type, source_json, width, height,
          file_json, file_name, file_size, image_filename,
          audio_source_json, audio_duration_ms, audio_waveform, audio_mime,
-         video_thumbnail_json, video_duration_ms, video_mime) =
+         video_thumbnail_json, video_duration_ms, video_mime,
+         video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif) =
         match msg_content.msgtype() {
             MessageType::Text(t) => (
                 t.body.clone(), "m.text".to_owned(),
@@ -3051,6 +3062,7 @@ async fn timeline_item_to_ffi(
                 String::new(), String::new(), 0u64, String::new(),
                 String::new(), 0u64, Vec::<u16>::new(), String::new(),
                 String::new(), 0u64, String::new(),
+                false, false, false, false, false,
             ),
             MessageType::Image(i) => {
                 // Plain → plain mxc URI string; encrypted → full MediaSource
@@ -3074,7 +3086,8 @@ async fn timeline_item_to_ffi(
                 (i.body.clone(), "m.image".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, img_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
-                 String::new(), 0u64, String::new())
+                 String::new(), 0u64, String::new(),
+                 false, false, false, false, false)
             }
             MessageType::File(f) => {
                 let file_str = match &f.source {
@@ -3092,7 +3105,8 @@ async fn timeline_item_to_ffi(
                 (f.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                  file_str, name, size, String::new(),
                  String::new(), 0u64, Vec::new(), String::new(),
-                 String::new(), 0u64, String::new())
+                 String::new(), 0u64, String::new(),
+                 false, false, false, false, false)
             }
             // MSC3245: voice messages are `m.audio` events tagged with
             // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
@@ -3119,7 +3133,8 @@ async fn timeline_item_to_ffi(
                     (a.body.clone(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
                      String::new(), String::new(), 0u64, String::new(),
                      source_str, duration_ms, waveform, info_mime,
-                     String::new(), 0u64, String::new())
+                     String::new(), 0u64, String::new(),
+                     false, false, false, false, false)
                 } else {
                     let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
                     let size = a.info.as_deref()
@@ -3129,7 +3144,8 @@ async fn timeline_item_to_ffi(
                     (a.body.clone(), "m.file".to_owned(), String::new(), 0u64, 0u64,
                      source_str, name, size, String::new(),
                      String::new(), 0u64, Vec::new(), String::new(),
-                     String::new(), 0u64, String::new())
+                     String::new(), 0u64, String::new(),
+                     false, false, false, false, false)
                 }
             }
             MessageType::Video(v) => {
@@ -3154,10 +3170,26 @@ async fn timeline_item_to_ffi(
                     (w, h, dur, mime, thumb)
                 }).unwrap_or_default();
                 let vid_filename = v.filename.clone().unwrap_or_default();
+                // Parse fi.mau.* vendor hints from the raw event JSON.
+                let mau = |key: &str| -> bool {
+                    let path = format!("/content/info/{}", key);
+                    event_item.original_json()
+                        .and_then(|raw| {
+                            serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
+                        })
+                        .and_then(|json| json.pointer(&path)?.as_bool())
+                        .unwrap_or(false)
+                };
+                let video_autoplay      = mau("fi.mau.autoplay");
+                let video_loop          = mau("fi.mau.loop");
+                let video_no_audio      = mau("fi.mau.no_audio");
+                let video_hide_controls = mau("fi.mau.hide_controls");
+                let video_gif           = mau("fi.mau.gif");
                 (v.body.clone(), "m.video".to_owned(), source_str, w, h,
                  String::new(), String::new(), 0u64, vid_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
-                 thumb_json, dur_ms, mime)
+                 thumb_json, dur_ms, mime,
+                 video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif)
             }
             _ => return None,
         };
@@ -3245,6 +3277,11 @@ async fn timeline_item_to_ffi(
         video_thumbnail_json,
         video_duration_ms,
         video_mime,
+        video_autoplay,
+        video_loop,
+        video_no_audio,
+        video_hide_controls,
+        video_gif,
         reactions,
         read_receipts,
         in_reply_to_id,

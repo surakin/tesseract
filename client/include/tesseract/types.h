@@ -127,6 +127,13 @@ struct VideoEvent : public Event {
     uint64_t    duration_ms = 0;
     std::string filename;        // MSC2530 caption filename; empty → no caption
 
+    // fi.mau.* vendor hints — each false when absent in content.info.
+    bool autoplay      = false;  // start playback immediately on load
+    bool loop          = false;  // restart at end-of-stream
+    bool no_audio      = false;  // mute the audio track
+    bool hide_controls = false;  // suppress player controls bar
+    bool gif           = false;  // composite: implies all four above
+
     VideoEvent() { type = EventType::Video; }
 };
 

@@ -184,6 +184,11 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         ev->height        = e.height;
         ev->duration_ms   = e.video_duration_ms;
         ev->filename      = std::string(e.image_filename);
+        ev->autoplay      = e.video_autoplay;
+        ev->loop          = e.video_loop;
+        ev->no_audio      = e.video_no_audio;
+        ev->hide_controls = e.video_hide_controls;
+        ev->gif           = e.video_gif;
         return ev;
     }
 

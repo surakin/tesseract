@@ -77,6 +77,11 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.media_h              = static_cast<int>(vid.height);
             row.duration_ms          = vid.duration_ms;
             row.has_filename_caption = !vid.filename.empty();
+            row.video_autoplay       = vid.autoplay;
+            row.video_loop           = vid.loop;
+            row.video_no_audio       = vid.no_audio;
+            row.video_hide_controls  = vid.hide_controls;
+            row.video_gif            = vid.gif;
             break;
         }
         case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
@@ -749,7 +754,10 @@ private:
                         ? m.media_url : m.video_thumb_url;
                     owner_.video_geom_[m.event_id] = MessageListView::VideoHit{
                         m.event_id, m.media_url, thumb, "",
-                        m.media_w, m.media_h, m.duration_ms, r
+                        m.media_w, m.media_h, m.duration_ms,
+                        m.video_autoplay, m.video_loop, m.video_no_audio,
+                        m.video_hide_controls, m.video_gif,
+                        r
                     };
                 }
                 float cursor = y + sz.h;
@@ -1078,31 +1086,36 @@ private:
             ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
         }
 
-        // Centred play disc.
-        constexpr float kDiscD = 48.0f;
-        const float disc_cx = dst.x + dst.w * 0.5f;
-        const float disc_cy = dst.y + dst.h * 0.5f;
-        tk::Rect disc{ disc_cx - kDiscD * 0.5f, disc_cy - kDiscD * 0.5f,
-                       kDiscD, kDiscD };
-        ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
-                                     tk::Color{ 0, 0, 0, 120 });
+        // Autoplay / GIF-mode clips play immediately — no play button needed.
+        const bool animated = m.video_gif || m.video_autoplay;
 
-        // Play triangle (same stacked-rect technique as voice card).
-        const float tri_h = kDiscD * 0.45f;
-        const float tri_w = kDiscD * 0.35f;
-        const float tri_x = disc.x + (kDiscD - tri_w) * 0.5f + 2.0f;
-        const float tri_y = disc.y + (kDiscD - tri_h) * 0.5f;
-        constexpr int steps = 8;
-        for (int i = 0; i < steps; ++i) {
-            const float t     = static_cast<float>(i) / static_cast<float>(steps - 1);
-            const float row_h = tri_h / static_cast<float>(steps);
-            const float row_w = tri_w * (1.0f - t);
-            ctx.canvas.fill_rect({ tri_x, tri_y + i * row_h, row_w, row_h },
-                                  tk::Color{ 255, 255, 255, 230 });
+        // Centred play disc — omitted for animated clips.
+        if (!animated) {
+            constexpr float kDiscD = 48.0f;
+            const float disc_cx = dst.x + dst.w * 0.5f;
+            const float disc_cy = dst.y + dst.h * 0.5f;
+            tk::Rect disc{ disc_cx - kDiscD * 0.5f, disc_cy - kDiscD * 0.5f,
+                           kDiscD, kDiscD };
+            ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
+                                         tk::Color{ 0, 0, 0, 120 });
+
+            // Play triangle (same stacked-rect technique as voice card).
+            const float tri_h = kDiscD * 0.45f;
+            const float tri_w = kDiscD * 0.35f;
+            const float tri_x = disc.x + (kDiscD - tri_w) * 0.5f + 2.0f;
+            const float tri_y = disc.y + (kDiscD - tri_h) * 0.5f;
+            constexpr int steps = 8;
+            for (int i = 0; i < steps; ++i) {
+                const float t     = static_cast<float>(i) / static_cast<float>(steps - 1);
+                const float row_h = tri_h / static_cast<float>(steps);
+                const float row_w = tri_w * (1.0f - t);
+                ctx.canvas.fill_rect({ tri_x, tri_y + i * row_h, row_w, row_h },
+                                      tk::Color{ 255, 255, 255, 230 });
+            }
         }
 
-        // Duration badge at bottom-right (only when known).
-        if (m.duration_ms > 0) {
+        // Duration badge at bottom-right — omitted for animated or hide_controls clips.
+        if (!animated && !m.video_hide_controls && m.duration_ms > 0) {
             std::string label = format_mmss(m.duration_ms);
             tk::TextStyle ts{}; ts.role = tk::FontRole::Timestamp;
             auto lo = ctx.factory.build_text(label, ts);

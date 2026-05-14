@@ -122,6 +122,17 @@ pub mod ffi {
         video_duration_ms:    u64,
         /// MIME type of the video (e.g. "video/mp4"). May be empty.
         video_mime:           String,
+        /// fi.mau.* vendor hints from content.info. All false when absent.
+        /// autoplay: start playback immediately on load.
+        /// loop: restart the clip at end-of-stream.
+        /// no_audio: mute the audio track.
+        /// hide_controls: suppress the player controls bar.
+        /// gif: composite marker — implies all four above.
+        video_autoplay:       bool,
+        video_loop:           bool,
+        video_no_audio:       bool,
+        video_hide_controls:  bool,
+        video_gif:            bool,
         /// Aggregated reactions, grouped by key. May be empty.
         reactions:         Vec<ReactionGroup>,
         /// Users (other than the current user) whose latest read receipt

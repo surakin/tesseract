@@ -955,7 +955,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         [this](const tesseract::views::MessageListView::VideoHit& hit) {
             if (!vid_viewer_ || !vid_viewer_surface_) return;
             vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                             hit.duration_ms, hit.natural_w, hit.natural_h);
+                             hit.duration_ms, hit.natural_w, hit.natural_h,
+                             hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
             gtk_widget_set_visible(vid_viewer_surface_->widget(), TRUE);
             gtk_widget_grab_focus(vid_viewer_surface_->widget());
             // Async byte fetch on a detached thread.

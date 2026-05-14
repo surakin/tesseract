@@ -881,7 +881,9 @@ void MacShell::on_room_list_state_ui_() {
                 if (!s || !s->_vidViewer || !s->_vidViewerView) return;
                 s->_vidViewer->open(hit.source_json, hit.thumbnail_url,
                                     hit.mime_type, hit.duration_ms,
-                                    hit.natural_w, hit.natural_h);
+                                    hit.natural_w, hit.natural_h,
+                                    hit.autoplay, hit.loop,
+                                    hit.no_audio, hit.hide_controls);
                 [s->_vidViewerView setHidden:NO];
                 [s->_vidViewerView.window makeFirstResponder:s->_vidViewerView];
                 // Async byte fetch.

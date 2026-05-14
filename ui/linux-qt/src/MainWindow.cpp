@@ -514,7 +514,8 @@ MainWindow::MainWindow(QWidget* parent)
         [this](const tesseract::views::MessageListView::VideoHit& hit) {
             if (!vidViewer_ || !vidViewerHost_) return;
             vidViewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                             hit.duration_ms, hit.natural_w, hit.natural_h);
+                             hit.duration_ms, hit.natural_w, hit.natural_h,
+                             hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
             vidViewerHost_->setGeometry(mainContent_->rect());
             vidViewerHost_->raise();
             vidViewerHost_->show();

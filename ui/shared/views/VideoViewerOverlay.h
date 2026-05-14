@@ -24,12 +24,17 @@ class VideoViewerOverlay : public tk::Widget {
 public:
     // Show the overlay for the given video. Transitions to the loading state
     // while waiting for load_bytes(). The thumbnail is shown immediately.
+    // The fi.mau.* params default to false so existing callers need no changes.
     void open(std::string source_json,
               std::string thumb_url,
               std::string mime_type,
               std::uint64_t duration_ms,
               int natural_w,
-              int natural_h);
+              int natural_h,
+              bool autoplay      = false,
+              bool loop          = false,
+              bool no_audio      = false,
+              bool hide_controls = false);
 
     // Hide the overlay. Stops playback and fires on_close.
     void close();
@@ -71,10 +76,15 @@ private:
     std::string   source_json_;
     std::string   thumb_url_;
     std::string   mime_type_;
-    std::uint64_t duration_ms_ = 0;
-    int           natural_w_   = 0;
-    int           natural_h_   = 0;
-    float         rate_        = 1.0f;
+    std::uint64_t duration_ms_    = 0;
+    int           natural_w_      = 0;
+    int           natural_h_      = 0;
+    float         rate_           = 1.0f;
+    // fi.mau.* playback hints — reset on each open().
+    bool          autoplay_       = false;
+    bool          loop_           = false;
+    bool          no_audio_       = false;
+    bool          hide_controls_  = false;
 
     std::unique_ptr<tk::VideoPlayer>                    video_player_;
     std::function<const tk::Image*(const std::string&)> image_provider_;

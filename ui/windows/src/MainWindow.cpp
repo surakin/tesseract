@@ -1463,7 +1463,8 @@ void MainWindow::on_create(HWND hwnd) {
         [this](const tesseract::views::MessageListView::VideoHit& hit) {
             if (!vid_viewer_ || !vid_viewer_surface_) return;
             vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                              hit.duration_ms, hit.natural_w, hit.natural_h);
+                              hit.duration_ms, hit.natural_w, hit.natural_h,
+                              hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
             RECT cr; GetClientRect(hwnd_, &cr);
             constexpr int STATUS_H = 24;
             if (HWND vv = vid_viewer_surface_->hwnd()) {

@@ -41,19 +41,29 @@ void VideoViewerOverlay::open(std::string source_json,
                                std::string mime_type,
                                std::uint64_t duration_ms,
                                int natural_w,
-                               int natural_h) {
-    source_json_ = std::move(source_json);
-    thumb_url_   = std::move(thumb_url);
-    mime_type_   = std::move(mime_type);
-    duration_ms_ = duration_ms;
-    natural_w_   = natural_w;
-    natural_h_   = natural_h;
-    rate_        = 1.0f;
-    is_loading_  = true;
-    is_open_     = true;
+                               int natural_h,
+                               bool autoplay,
+                               bool loop,
+                               bool no_audio,
+                               bool hide_controls) {
+    source_json_    = std::move(source_json);
+    thumb_url_      = std::move(thumb_url);
+    mime_type_      = std::move(mime_type);
+    duration_ms_    = duration_ms;
+    natural_w_      = natural_w;
+    natural_h_      = natural_h;
+    rate_           = 1.0f;
+    autoplay_       = autoplay;
+    loop_           = loop;
+    no_audio_       = no_audio;
+    hide_controls_  = hide_controls;
+    is_loading_     = true;
+    is_open_        = true;
 
     if (video_player_) {
         video_player_->stop();
+        video_player_->set_loop(loop_);
+        video_player_->set_muted(no_audio_);
         video_player_->set_playback_rate(1.0f);
     }
 }
@@ -68,7 +78,12 @@ void VideoViewerOverlay::close() {
 void VideoViewerOverlay::load_bytes(const std::uint8_t* data, std::size_t size) {
     is_loading_ = false;
     if (!data || size == 0 || !video_player_) return;
+    // Re-apply in case the player was replaced between open() and load_bytes().
+    video_player_->set_loop(loop_);
+    video_player_->set_muted(no_audio_);
     video_player_->play(data, size, mime_type_);
+    // Non-autoplay clips start paused so the user must press play.
+    if (!autoplay_) video_player_->pause();
 }
 
 void VideoViewerOverlay::set_video_player(
@@ -104,14 +119,15 @@ void VideoViewerOverlay::recompute_layout() {
     const tk::Rect b = bounds();
     if (b.w <= 0 || b.h <= 0) return;
 
-    const float avail_h = b.h - kMarginY - kCtrlBarH - 8.0f;
+    const float ctrl_h  = hide_controls_ ? 0.0f : kCtrlBarH;
+    const float avail_h = b.h - kMarginY - ctrl_h - 8.0f;
     const float avail_w = b.w - kMarginX;
 
     tk::Size vs = fit_media(static_cast<float>(natural_w_),
                              static_cast<float>(natural_h_),
                              avail_w, std::max(avail_h, 1.0f));
     const float vx = b.x + (b.w - vs.w) * 0.5f;
-    const float vy = b.y + (b.h - vs.h - kCtrlBarH - 16.0f) * 0.5f;
+    const float vy = b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
     video_rect_ = { vx, vy, vs.w, vs.h };
 
     const float bar_y = vy + vs.h + 8.0f;
@@ -182,7 +198,8 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx) {
         }
     }
 
-    // ── Controls bar ────────────────────────────────────────────────────
+    // ── Controls bar ── (hidden when hide_controls_ is set) ─────────────
+    if (!hide_controls_) {
 
     // Bar background
     cv.fill_rounded_rect(controls_bar_, 8.0f, tk::Color::rgba(0, 0, 0, 150));
@@ -267,7 +284,9 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx) {
                               kKnobD * 0.5f, glyph_col);
     }
 
-    // × close button
+    } // end if (!hide_controls_)
+
+    // × close button — always visible so the user can dismiss the overlay.
     cv.fill_rounded_rect(close_btn_, kCloseBtnS * 0.5f,
                           tk::Color::rgba(255, 255, 255, 30));
     {
@@ -296,29 +315,31 @@ bool VideoViewerOverlay::on_pointer_down(tk::Point local) {
         press_close_ = true;
         return true;
     }
-    if (rect_contains(play_btn_, w)) {
-        press_play_ = true;
-        return true;
-    }
-    if (rect_contains(speed_pill_, w)) {
-        press_speed_ = true;
-        return true;
-    }
-    if (rect_contains(scrub_bar_, w)) {
-        press_scrub_ = true;
-        // Immediate seek on press for snappy scrub-start.
-        if (video_player_ && scrub_bar_.w > 0) {
-            const float frac = std::clamp(
-                (w.x - scrub_bar_.x) / scrub_bar_.w, 0.0f, 1.0f);
-            const std::uint64_t dur = video_player_->duration_ms() > 0
-                                     ? video_player_->duration_ms()
-                                     : duration_ms_;
-            if (dur > 0) {
-                video_player_->seek(
-                    static_cast<std::uint64_t>(frac * static_cast<float>(dur)));
-            }
+    if (!hide_controls_) {
+        if (rect_contains(play_btn_, w)) {
+            press_play_ = true;
+            return true;
         }
-        return true;
+        if (rect_contains(speed_pill_, w)) {
+            press_speed_ = true;
+            return true;
+        }
+        if (rect_contains(scrub_bar_, w)) {
+            press_scrub_ = true;
+            // Immediate seek on press for snappy scrub-start.
+            if (video_player_ && scrub_bar_.w > 0) {
+                const float frac = std::clamp(
+                    (w.x - scrub_bar_.x) / scrub_bar_.w, 0.0f, 1.0f);
+                const std::uint64_t dur = video_player_->duration_ms() > 0
+                                         ? video_player_->duration_ms()
+                                         : duration_ms_;
+                if (dur > 0) {
+                    video_player_->seek(
+                        static_cast<std::uint64_t>(frac * static_cast<float>(dur)));
+                }
+            }
+            return true;
+        }
     }
     if (rect_contains(video_rect_, w) || rect_contains(controls_bar_, w)) {
         return true;
