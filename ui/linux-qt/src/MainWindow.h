@@ -218,6 +218,12 @@ private:
     /// shell-wide constants and don't need pinning.
     std::unordered_map<std::string, std::pair<int,int>> mediaImageSizes_;
 
+    /// Full-resolution images for the image viewer lightbox. Separate from
+    /// tk_images_ which stores inline-scaled (320×200) thumbnails. Keyed by
+    /// the same source URL / MediaSource JSON as tk_images_.
+    std::unordered_map<std::string, std::unique_ptr<tk::Image>> viewerFullresCache_;
+    std::unordered_set<std::string>                             viewerFullresInFlight_;
+
     static constexpr int kRoomAvatarSize  = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize   = tesseract::visual::kMsgAvatarSize;
     static constexpr int kMaxImageWidth   = tesseract::visual::kMaxInlineImageWidth;

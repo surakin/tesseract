@@ -468,6 +468,10 @@ MainWindow::MainWindow(QWidget* parent)
         ovLayout->addWidget(imgViewerSurface_);
         imgViewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
+                // Prefer the full-res decode; fall back to the inline thumbnail
+                // while the full-res fetch is still in flight.
+                if (auto it = viewerFullresCache_.find(url);
+                    it != viewerFullresCache_.end()) return it->second.get();
                 if (const auto* f = anim_cache_.current_frame(url)) return f;
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
@@ -484,6 +488,36 @@ MainWindow::MainWindow(QWidget* parent)
             imgViewerHost_->raise();
             imgViewerHost_->show();
             imgViewerHost_->setFocus();
+
+            // Fetch and decode at native resolution. The inline path stores a
+            // 320×200-capped copy in tk_images_; the viewer needs the original.
+            // Skip animated images — they're already playing from anim_cache_.
+            const std::string& url = hit.media_url;
+            if (!url.empty()
+                && !viewerFullresCache_.count(url)
+                && !anim_cache_.has(url)
+                && viewerFullresInFlight_.insert(url).second)
+            {
+                runOnPool_([this, url]() {
+                    auto bytes = client_->fetch_source_bytes(url);
+                    QMetaObject::invokeMethod(this,
+                        [this, url, bytes = std::move(bytes)]() mutable {
+                            viewerFullresInFlight_.erase(url);
+                            if (bytes.empty() || viewerFullresCache_.count(url)) return;
+                            QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                                          static_cast<int>(bytes.size()));
+                            QBuffer buf(&qb);
+                            buf.open(QIODevice::ReadOnly);
+                            QImageReader reader(&buf);
+                            reader.setAutoTransform(true);
+                            QImage img;
+                            if (!reader.read(&img)) return;
+                            viewerFullresCache_.emplace(url,
+                                tk::qt6::make_image(std::move(img)));
+                            if (imgViewerSurface_) imgViewerSurface_->update();
+                        });
+                });
+            }
         };
 
     // Video lightbox overlay — full-window surface for m.video playback.
