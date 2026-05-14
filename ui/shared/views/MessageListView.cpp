@@ -6,9 +6,12 @@
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 
 namespace tesseract::views {
 
@@ -117,6 +120,9 @@ constexpr float kImageMaxH   = tesseract::visual::kMaxInlineImageHeight; // 200
 constexpr float kStickerSize = tesseract::visual::kStickerSize;          // 256
 constexpr float kFileCardH   = 56.0f;
 constexpr float kFileCardW   = 280.0f;
+constexpr float kFileIconSize = 36.0f;
+constexpr float kFileIconPadL = 10.0f;
+constexpr float kFileTextOffX = kFileIconPadL + kFileIconSize + 8.0f; // 54px
 
 // MSC3245 voice card. Same width as the file card so the timeline stays
 // visually aligned, slightly shorter because there's no second line of
@@ -184,6 +190,67 @@ std::string format_size(std::uint64_t bytes) {
     return std::to_string(bytes / (1024ull * 1024 * 1024)) + " GB";
 }
 
+struct FileIconInfo {
+    tk::Color   color;
+    std::string label;  // uppercase extension, ≤4 chars
+};
+
+static FileIconInfo file_icon_info(std::string_view filename) {
+    auto dot = filename.rfind('.');
+    std::string ext;
+    if (dot != std::string_view::npos) {
+        ext = std::string(filename.substr(dot + 1));
+        for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    std::string label = ext.empty() ? "FILE" : ext;
+    for (auto& c : label) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (label.size() > 4) label.resize(4);
+
+    static const std::unordered_map<std::string, tk::Color> map = {
+        // images
+        {"png",  tk::Color::rgb(0x22A062)}, {"jpg",  tk::Color::rgb(0x22A062)},
+        {"jpeg", tk::Color::rgb(0x22A062)}, {"webp", tk::Color::rgb(0x22A062)},
+        {"gif",  tk::Color::rgb(0x22A062)}, {"bmp",  tk::Color::rgb(0x22A062)},
+        {"svg",  tk::Color::rgb(0x22A062)}, {"avif", tk::Color::rgb(0x22A062)},
+        // documents
+        {"pdf",  tk::Color::rgb(0x2B7DD4)}, {"doc",  tk::Color::rgb(0x2B7DD4)},
+        {"docx", tk::Color::rgb(0x2B7DD4)}, {"odt",  tk::Color::rgb(0x2B7DD4)},
+        {"txt",  tk::Color::rgb(0x2B7DD4)}, {"rtf",  tk::Color::rgb(0x2B7DD4)},
+        {"epub", tk::Color::rgb(0x2B7DD4)},
+        // spreadsheets
+        {"xls",  tk::Color::rgb(0x2E8B4A)}, {"xlsx", tk::Color::rgb(0x2E8B4A)},
+        {"ods",  tk::Color::rgb(0x2E8B4A)}, {"csv",  tk::Color::rgb(0x2E8B4A)},
+        // presentations
+        {"ppt",  tk::Color::rgb(0xC0572B)}, {"pptx", tk::Color::rgb(0xC0572B)},
+        {"odp",  tk::Color::rgb(0xC0572B)}, {"key",  tk::Color::rgb(0xC0572B)},
+        // archives
+        {"zip",  tk::Color::rgb(0xE07B1E)}, {"tar",  tk::Color::rgb(0xE07B1E)},
+        {"gz",   tk::Color::rgb(0xE07B1E)}, {"bz2",  tk::Color::rgb(0xE07B1E)},
+        {"xz",   tk::Color::rgb(0xE07B1E)}, {"7z",   tk::Color::rgb(0xE07B1E)},
+        {"rar",  tk::Color::rgb(0xE07B1E)}, {"zst",  tk::Color::rgb(0xE07B1E)},
+        // audio
+        {"mp3",  tk::Color::rgb(0x7C54C8)}, {"wav",  tk::Color::rgb(0x7C54C8)},
+        {"ogg",  tk::Color::rgb(0x7C54C8)}, {"flac", tk::Color::rgb(0x7C54C8)},
+        {"m4a",  tk::Color::rgb(0x7C54C8)}, {"aac",  tk::Color::rgb(0x7C54C8)},
+        {"opus", tk::Color::rgb(0x7C54C8)},
+        // video
+        {"mp4",  tk::Color::rgb(0xD13030)}, {"mkv",  tk::Color::rgb(0xD13030)},
+        {"avi",  tk::Color::rgb(0xD13030)}, {"mov",  tk::Color::rgb(0xD13030)},
+        {"webm", tk::Color::rgb(0xD13030)}, {"m4v",  tk::Color::rgb(0xD13030)},
+        // code
+        {"py",   tk::Color::rgb(0x1A8F8A)}, {"js",   tk::Color::rgb(0x1A8F8A)},
+        {"ts",   tk::Color::rgb(0x1A8F8A)}, {"cpp",  tk::Color::rgb(0x1A8F8A)},
+        {"h",    tk::Color::rgb(0x1A8F8A)}, {"rs",   tk::Color::rgb(0x1A8F8A)},
+        {"java", tk::Color::rgb(0x1A8F8A)}, {"json", tk::Color::rgb(0x1A8F8A)},
+        {"xml",  tk::Color::rgb(0x1A8F8A)}, {"html", tk::Color::rgb(0x1A8F8A)},
+        {"css",  tk::Color::rgb(0x1A8F8A)}, {"go",   tk::Color::rgb(0x1A8F8A)},
+        {"sh",   tk::Color::rgb(0x1A8F8A)}, {"rb",   tk::Color::rgb(0x1A8F8A)},
+    };
+    constexpr tk::Color kGeneric = tk::Color::rgb(0x7A7A8E);
+    auto it = map.find(ext);
+    return { it != map.end() ? it->second : kGeneric, std::move(label) };
+}
 
 float body_text_max_width(float row_width) {
     return std::max(0.0f,
@@ -878,27 +945,46 @@ private:
         ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
         ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
 
-        std::string name = m.file_name.empty() ? m.body : m.file_name;
-        std::string size = format_size(m.file_size);
+        const std::string name = m.file_name.empty() ? m.body : m.file_name;
+        const auto icon = file_icon_info(name);
+
+        // Coloured icon box, vertically centred in the card.
+        const float icon_y = dst.y + (dst.h - kFileIconSize) * 0.5f;
+        const tk::Rect icon_rect{ dst.x + kFileIconPadL, icon_y,
+                                   kFileIconSize, kFileIconSize };
+        ctx.canvas.fill_rounded_rect(icon_rect, 6.0f, icon.color);
+
+        // Extension label centred inside the icon box.
+        tk::TextStyle ls{};
+        ls.role      = tk::FontRole::UiSemibold;
+        ls.halign    = tk::TextHAlign::Center;
+        ls.max_width = kFileIconSize;
+        auto label_lo = ctx.factory.build_text(icon.label, ls);
+        if (label_lo) {
+            // UiSemibold ~11 pt; approximate cap-height ~13 px at 96 dpi.
+            const float label_y = icon_y + (kFileIconSize - 13.0f) * 0.5f;
+            ctx.canvas.draw_text(*label_lo, { icon_rect.x, label_y },
+                                  tk::Color{ 255, 255, 255, 255 });
+        }
+
+        // Filename + size shifted right of the icon box.
+        const float text_x = dst.x + kFileTextOffX;
+        const float text_w = dst.w - kFileTextOffX - 8.0f;
 
         tk::TextStyle ns{}; ns.role = tk::FontRole::UiSemibold;
         ns.trim = tk::TextTrim::Ellipsis;
-        ns.max_width = dst.w - 16.0f;
+        ns.max_width = text_w;
         auto name_lo = ctx.factory.build_text(name, ns);
 
         tk::TextStyle ss{}; ss.role = tk::FontRole::Timestamp;
-        auto size_lo = ctx.factory.build_text(size, ss);
+        auto size_lo = ctx.factory.build_text(format_size(m.file_size), ss);
 
-        if (name_lo) {
-            ctx.canvas.draw_text(*name_lo,
-                                  { dst.x + 12.0f, dst.y + 10.0f },
+        if (name_lo)
+            ctx.canvas.draw_text(*name_lo, { text_x, dst.y + 10.0f },
                                   ctx.theme.palette.text_primary);
-        }
-        if (size_lo) {
-            ctx.canvas.draw_text(*size_lo,
-                                  { dst.x + 12.0f, dst.y + 30.0f },
+        if (size_lo)
+            ctx.canvas.draw_text(*size_lo, { text_x, dst.y + 30.0f },
                                   ctx.theme.palette.text_secondary);
-        }
     }
 
     void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx,
