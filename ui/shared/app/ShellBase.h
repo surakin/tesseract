@@ -65,7 +65,8 @@ protected:
     std::string           current_room_id_;
     std::string           pending_restore_room_;
     std::vector<std::string> space_stack_;
-    bool                  compose_typing_active_ = false;
+    bool                  compose_typing_active_   = false;
+    bool                  typing_bar_visible_      = false;
 
     // ── Image caches ──────────────────────────────────────────────────────────
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
@@ -194,7 +195,7 @@ protected:
                                     std::vector<std::string> names);
     // Override in each shell to push text into the platform typing-bar widget.
     // text is empty when no one is typing.
-    virtual void update_typing_bar_(const std::string& /*text*/) {}
+    virtual void update_typing_bar_(const std::string& /*text*/, bool /*visible*/) {}
 
     // ── Compose typing send helpers ───────────────────────────────────────────
     // Call from the shell's NativeTextArea on_changed callback.

@@ -184,7 +184,8 @@ static std::string format_typing_text(const std::vector<std::string>& names) {
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                            std::vector<std::string> names) {
     if (room_id != current_room_id_) return;
-    update_typing_bar_(format_typing_text(names));
+    typing_bar_visible_ = !names.empty();
+    update_typing_bar_(format_typing_text(names), typing_bar_visible_);
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text) {

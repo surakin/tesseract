@@ -1321,7 +1321,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     mark_room_read_(current_room_id_);
-    update_typing_bar_({});
+    update_typing_bar_({}, false);
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
@@ -2098,10 +2098,12 @@ void MainWindow::on_room_list_state_ui_()
     refreshSyncStatus();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text)
+void MainWindow::update_typing_bar_(const std::string& text, bool visible)
 {
-    if (typingBar_)
+    if (typingBar_) {
         typingBar_->setText(QString::fromStdString(text));
+        typingBar_->setVisible(visible);
+    }
 }
 
 // ---------------------------------------------------------------------------
