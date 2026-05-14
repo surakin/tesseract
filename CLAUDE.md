@@ -63,7 +63,8 @@ ui/
   shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
     tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
     views/     ← LoginView, RoomListView, MessageListView, EmojiPicker,
-                  RecoveryBanner, VerificationBanner, ComposeBar
+                  RecoveryBanner, VerificationBanner, ComposeBar,
+                  markdown (Markdown→HTML), html_spans (HTML→TextSpan)
   windows/   ← Win32 executable (thin shell)
   macos/     ← AppKit executable (.app bundle, thin shell)
   linux-qt/  ← Qt6 Widgets executable (thin shell)
@@ -139,7 +140,7 @@ Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending 
 
 ### Step 5 — UI redesign (in progress)
 
-Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts (display + sending), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`. Remaining:
+Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts (display + sending), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6 + GTK4), Markdown-to-HTML for sent messages. Remaining:
 
 - **Emoji reactions** — reaction bar below each message (emoji + count); tap to toggle; `send_reaction` / `redact_reaction` FFI; reactions in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Message bubbles / cards** — visual polish pass on the message layout.
@@ -187,6 +188,7 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 - **Win32 sticker right-click context menu missing** — `WM_RBUTTONUP` on the message surface should hit-test via `sticker_hit_at` and pop a `TrackPopupMenu` calling `save_sticker_to_user_pack`.
 - **`save_sticker_to_user_pack` posts empty `info`** — right-click handlers pass `"{}"` for `info_json`; fix: thread `info_json` through `MessageListView::StickerHit`.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
+- **URL preview + hyperlink rendering on Win32 / macOS** — `get_url_preview` FFI and `MessageListView` preview card are wired on Qt6 + GTK4 only; Win32 and macOS shells need `on_url_preview_ready_` and `on_link_clicked` wiring.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
 
 ### Decisions still open
