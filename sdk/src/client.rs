@@ -1367,14 +1367,18 @@ impl ClientFfi {
     // Messaging
     // -----------------------------------------------------------------------
 
-    pub fn send_message(&mut self, room_id: &str, body: &str) -> OpResult {
+    pub fn send_message(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
-        let content = RoomMessageEventContent::text_plain(body);
+        let content = if formatted_body.is_empty() {
+            RoomMessageEventContent::text_plain(body)
+        } else {
+            RoomMessageEventContent::text_html(body, formatted_body)
+        };
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
@@ -1403,7 +1407,7 @@ impl ClientFfi {
     /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
     /// renders its own quote block).
     #[cfg(not(test))]
-    pub fn send_reply(&mut self, room_id: &str, event_id: &str, body: &str) -> OpResult {
+    pub fn send_reply(&mut self, room_id: &str, event_id: &str, body: &str, formatted_body: &str) -> OpResult {
         use matrix_sdk::ruma::events::room::message::Relation;
         use matrix_sdk::ruma::events::relation::{InReplyTo, Reply};
 
@@ -1417,7 +1421,11 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
-        let mut content = RoomMessageEventContent::text_plain(body);
+        let mut content = if formatted_body.is_empty() {
+            RoomMessageEventContent::text_plain(body)
+        } else {
+            RoomMessageEventContent::text_html(body, formatted_body)
+        };
         content.relates_to = Some(Relation::Reply(
             Reply::new(InReplyTo::new(event_id)),
         ));
@@ -1428,7 +1436,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_reply(&mut self, _room_id: &str, _event_id: &str, _body: &str) -> OpResult {
+    pub fn send_reply(&mut self, _room_id: &str, _event_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -1778,7 +1786,7 @@ impl ClientFfi {
     /// can be edited; the SDK returns an error for non-own or non-text
     /// events. Does not require `subscribe_room`.
     #[cfg(not(test))]
-    pub fn send_edit(&mut self, room_id: &str, event_id: &str, new_body: &str) -> OpResult {
+    pub fn send_edit(&mut self, room_id: &str, event_id: &str, new_body: &str, formatted_body: &str) -> OpResult {
         use matrix_sdk::room::edit::EditedContent;
 
         let Some(client) = self.client.clone() else { return err("not logged in") };
@@ -1791,7 +1799,11 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
-        let new_content = RoomMessageEventContent::text_plain(new_body);
+        let new_content = if formatted_body.is_empty() {
+            RoomMessageEventContent::text_plain(new_body)
+        } else {
+            RoomMessageEventContent::text_html(new_body, formatted_body)
+        };
         match self.rt.block_on(async move {
             let edit_event = room
                 .make_edit_event(&event_id, EditedContent::RoomMessage(new_content.into()))
@@ -1805,7 +1817,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn send_edit(&mut self, _room_id: &str, _event_id: &str, _new_body: &str) -> OpResult {
+    pub fn send_edit(&mut self, _room_id: &str, _event_id: &str, _new_body: &str, _formatted_body: &str) -> OpResult {
         err("not logged in")
     }
 
@@ -4064,7 +4076,7 @@ mod tests {
     #[test]
     fn send_message_fails_when_not_logged_in() {
         let mut c = ClientFfi::new();
-        let r = c.send_message("!room:example.com", "hello");
+        let r = c.send_message("!room:example.com", "hello", "");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
     }
@@ -4292,28 +4304,28 @@ mod tests {
     #[test]
     fn send_reply_not_logged_in() {
         let mut c = ClientFfi::new();
-        let r = c.send_reply("!room:example.com", "$event:example.com", "reply body");
+        let r = c.send_reply("!room:example.com", "$event:example.com", "reply body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_reply_invalid_room_id() {
         let mut c = ClientFfi::new();
-        let r = c.send_reply("not-a-room-id", "$event:example.com", "reply body");
+        let r = c.send_reply("not-a-room-id", "$event:example.com", "reply body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_edit_not_logged_in() {
         let mut c = ClientFfi::new();
-        let r = c.send_edit("!room:example.com", "$event:example.com", "new body");
+        let r = c.send_edit("!room:example.com", "$event:example.com", "new body", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_edit_invalid_room_id() {
         let mut c = ClientFfi::new();
-        let r = c.send_edit("not-a-room-id", "$event:example.com", "new body");
+        let r = c.send_edit("not-a-room-id", "$event:example.com", "new body", "");
         assert!(!r.ok);
     }
 

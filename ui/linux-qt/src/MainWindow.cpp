@@ -5,6 +5,7 @@
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
+#include "views/markdown.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -675,7 +676,8 @@ MainWindow::MainWindow(QWidget* parent)
         if (current_room_id_.empty()) return;
         std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
         if (trimmed.empty()) return;
-        auto res = client_->send_message(current_room_id_, trimmed);
+        auto md = tesseract::views::markdown_to_html(trimmed);
+        auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
         if (res) {
             if (composeTextArea_) composeTextArea_->set_text("");
             if (composeShared_)   composeShared_->set_current_text({});
@@ -757,7 +759,8 @@ MainWindow::MainWindow(QWidget* parent)
     composeShared_->on_send_reply = [this](const std::string& reply_event_id,
                                             const std::string& body) {
         if (body.empty() || current_room_id_.empty()) return;
-        auto res = client_->send_reply(current_room_id_, reply_event_id, body);
+        auto md = tesseract::views::markdown_to_html(body);
+        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
@@ -863,7 +866,8 @@ MainWindow::MainWindow(QWidget* parent)
     composeShared_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
         if (new_body.empty() || current_room_id_.empty()) return;
-        auto res = client_->send_edit(current_room_id_, event_id, new_body);
+        auto md = tesseract::views::markdown_to_html(new_body);
+        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);

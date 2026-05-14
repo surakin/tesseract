@@ -448,7 +448,7 @@ pub mod ffi {
 
         // ----- Messaging -----
 
-        fn send_message(self: &mut ClientFfi, room_id: &str, body: &str) -> OpResult;
+        fn send_message(self: &mut ClientFfi, room_id: &str, body: &str, formatted_body: &str) -> OpResult;
 
         /// Send a typing notice to `room_id`. Fire-and-forget — errors are
         /// silently swallowed. Does not require `subscribe_room`.
@@ -459,9 +459,10 @@ pub mod ffi {
         /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
         /// renders its own quote block for the reply indicator).
         fn send_reply(self: &mut ClientFfi,
-                      room_id:  &str,
-                      event_id: &str,
-                      body:     &str) -> OpResult;
+                      room_id:        &str,
+                      event_id:       &str,
+                      body:           &str,
+                      formatted_body: &str) -> OpResult;
 
         /// Trigger an async fetch of the details of the event referenced by
         /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
@@ -515,9 +516,10 @@ pub mod ffi {
         /// works on own `m.text` events; returns `ok=false` for non-own or
         /// non-text events.
         fn send_edit(self: &mut ClientFfi,
-                     room_id:   &str,
-                     event_id:  &str,
-                     new_body:  &str) -> OpResult;
+                     room_id:        &str,
+                     event_id:       &str,
+                     new_body:       &str,
+                     formatted_body: &str) -> OpResult;
 
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful

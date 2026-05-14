@@ -3,6 +3,7 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
+#include "views/markdown.h"
 
 #include <cairo.h>
 #include <thread>
@@ -772,7 +773,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         if (l == std::string::npos) return;
         std::string trimmed = body.substr(l, r - l + 1);
         if (trimmed.empty()) return;
-        auto res = client_->send_message(current_room_id_, trimmed);
+        auto md = tesseract::views::markdown_to_html(trimmed);
+        auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             compose_shared_->set_current_text({});
@@ -834,7 +836,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
                                              const std::string& body) {
         if (body.empty() || current_room_id_.empty()) return;
-        auto res = client_->send_reply(current_room_id_, reply_event_id, body);
+        auto md = tesseract::views::markdown_to_html(body);
+        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});
@@ -884,7 +887,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     compose_shared_->on_send_edit = [this](const std::string& event_id,
                                             const std::string& new_body) {
         if (new_body.empty() || current_room_id_.empty()) return;
-        auto res = client_->send_edit(current_room_id_, event_id, new_body);
+        auto md = tesseract::views::markdown_to_html(new_body);
+        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
         if (res) {
             if (compose_text_area_) compose_text_area_->set_text("");
             if (compose_shared_)    compose_shared_->set_current_text({});

@@ -132,7 +132,8 @@ public:
     // Messaging
     // ------------------------------------------------------------------
 
-    Result send_message(const std::string& room_id, const std::string& body);
+    Result send_message(const std::string& room_id, const std::string& body,
+                        const std::string& formatted_body = "");
 
     /// Send a typing notice to `room_id`. Fire-and-forget — returns immediately;
     /// errors are silently swallowed. Pass `typing=true` when the compose field
@@ -215,7 +216,8 @@ public:
     /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
     Result send_reply(const std::string& room_id,
                       const std::string& event_id,
-                      const std::string& body);
+                      const std::string& body,
+                      const std::string& formatted_body = "");
 
     /// Request async resolution of the replied-to event whose ID is
     /// `event_id` in `room_id`. Requires `subscribe_room`. Returns
@@ -229,7 +231,8 @@ public:
     /// Only works on own `m.text` events. Does not require `subscribe_room`.
     Result send_edit(const std::string& room_id,
                      const std::string& event_id,
-                     const std::string& new_body);
+                     const std::string& new_body,
+                     const std::string& formatted_body = "");
 
     // ------------------------------------------------------------------
     // Application prefs ("im.gnomos.tesseract" global account-data)

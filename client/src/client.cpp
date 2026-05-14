@@ -153,8 +153,9 @@ void Client::stop_background_backfill() {
     impl_->ffi->stop_background_backfill();
 }
 
-Result Client::send_message(const std::string& room_id, const std::string& body) {
-    return from_ffi(impl_->ffi->send_message(room_id, body));
+Result Client::send_message(const std::string& room_id, const std::string& body,
+                             const std::string& formatted_body) {
+    return from_ffi(impl_->ffi->send_message(room_id, body, formatted_body));
 }
 
 void Client::send_typing_notice(const std::string& room_id, bool typing) {
@@ -212,8 +213,9 @@ Result Client::redact_event(const std::string& room_id,
 
 Result Client::send_reply(const std::string& room_id,
                           const std::string& event_id,
-                          const std::string& body) {
-    return from_ffi(impl_->ffi->send_reply(room_id, event_id, body));
+                          const std::string& body,
+                          const std::string& formatted_body) {
+    return from_ffi(impl_->ffi->send_reply(room_id, event_id, body, formatted_body));
 }
 
 Result Client::fetch_reply_details(const std::string& room_id,
@@ -223,8 +225,9 @@ Result Client::fetch_reply_details(const std::string& room_id,
 
 Result Client::send_edit(const std::string& room_id,
                          const std::string& event_id,
-                         const std::string& new_body) {
-    return from_ffi(impl_->ffi->send_edit(room_id, event_id, new_body));
+                         const std::string& new_body,
+                         const std::string& formatted_body) {
+    return from_ffi(impl_->ffi->send_edit(room_id, event_id, new_body, formatted_body));
 }
 
 std::string Client::load_prefs_json() {

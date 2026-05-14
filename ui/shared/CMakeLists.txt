@@ -38,6 +38,8 @@ set(_tk_sources
     views/MessageListView.cpp
     views/html_spans.h
     views/html_spans.cpp
+    views/markdown.h
+    views/markdown.cpp
     views/EmojiPicker.h
     views/EmojiPicker.cpp
     views/StickerPicker.h
