@@ -103,7 +103,54 @@ protected:
     void handle_notification_ui_(std::string user_id, std::string room_id,
         std::string room_name, std::string sender, std::string body,
         bool is_mention, std::vector<uint8_t> avatar_bytes) override;
-    // on_room_list_state_ui_: macOS has no status bar — leave as default no-op
+    void on_room_list_state_ui_() override;
+
+    // Expose ShellBase protected members so MainWindowController ObjC++ code
+    // can reach them through _shell (composition, not inheritance).
+public:
+    using ShellBase::client_;
+    using ShellBase::event_handler_;
+    using ShellBase::current_room_id_;
+    using ShellBase::space_stack_;
+    using ShellBase::tk_avatars_;
+    using ShellBase::tk_images_;
+    using ShellBase::anim_cache_;
+    using ShellBase::voice_prefetched_;
+    using ShellBase::video_thumb_in_flight_;
+    using ShellBase::reply_details_requested_;
+    using ShellBase::media_fetches_in_flight_;
+    using ShellBase::sticker_fetches_in_flight_;
+    using ShellBase::recovery_banner_dismissed_;
+    using ShellBase::pagination_;
+    using ShellBase::last_room_list_state_;
+    using ShellBase::last_backup_state_;
+    using ShellBase::last_imported_keys_;
+    using ShellBase::sync_progress_shown_;
+    using ShellBase::shutting_down_;
+    using ShellBase::pending_restore_room_;
+    using ShellBase::accounts_;
+    using ShellBase::active_account_index_;
+    using ShellBase::per_account_rooms_;
+    using ShellBase::pending_login_client_;
+    using ShellBase::pending_login_temp_dir_;
+    using ShellBase::pending_login_is_add_account_;
+    using ShellBase::add_account_return_idx_;
+    using ShellBase::my_user_id_;
+    using ShellBase::my_display_name_;
+    using ShellBase::my_avatar_url_;
+    using ShellBase::rooms_;
+    using ShellBase::workers_mu_;
+    using ShellBase::workers_cv_;
+    using ShellBase::workers_in_flight_;
+    using ShellBase::run_async_;
+    using ShellBase::ensure_room_avatar_;
+    using ShellBase::ensure_user_avatar_;
+    using ShellBase::ensure_media_image_;
+    using ShellBase::ensure_reply_details_;
+    using ShellBase::ensure_row_media_;
+    using ShellBase::push_rooms_;
+    using ShellBase::push_paginate_result_;
+    using ShellBase::push_room_list_state_;
 
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
@@ -176,6 +223,11 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                     userId:(std::string)userId
                  isMention:(BOOL)isMention;
 - (void)_navigateToRoom:(std::string)roomId;
+- (void)_refreshRoomList;
+- (void)_setRoomHeader:(const tesseract::RoomInfo&)info;
+- (void)_relayoutRoomSurface;
+- (void)_relayoutMsgSurface;
+- (void)_onRoomListStateChanged;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
@@ -213,7 +265,8 @@ void MacShell::on_rooms_updated_() {
                 break;
             }
         }
-    } else if (!pending_restore_room_.empty()) {
+    } else if (!pending_restore_room_.empty()
+               && last_room_list_state_ == tesseract::RoomListState::Running) {
         for (const auto& r : rooms_) {
             if (r.id == pending_restore_room_ && !r.is_space) {
                 std::string target = std::move(pending_restore_room_);
@@ -232,7 +285,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (!c) return;
     if (kind == MediaKind::MediaImage) {
         [c _decodeMediaBytes:bytes forKey:key];
-        if (c->_msgSurface) c->_msgSurface->relayout();
+        [c _relayoutMsgSurface];
         return;
     }
     if (bytes.empty() || tk_avatars_.count(key)) return;
@@ -248,10 +301,10 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (!img) return;
     tk_avatars_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
-    if (kind == MediaKind::RoomAvatar && c->_roomSurface)
-        c->_roomSurface->relayout();
-    else if (kind == MediaKind::UserAvatar && c->_msgSurface)
-        c->_msgSurface->relayout();
+    if (kind == MediaKind::RoomAvatar)
+        [c _relayoutRoomSurface];
+    else if (kind == MediaKind::UserAvatar)
+        [c _relayoutMsgSurface];
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,
@@ -289,7 +342,7 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             if (tk_images_.count(key)) return;
             tk_images_.emplace(key, std::move(*img_holder));
             MainWindowController* c2 = ctrl_;
-            if (c2 && c2->_msgSurface) c2->_msgSurface->relayout();
+            if (c2) [c2 _relayoutMsgSurface];
         });
     });
 }
@@ -368,6 +421,11 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     MainWindowController* c = ctrl_;
     if (c) [c handleNotification:room_id roomName:room_name sender:sender
                             body:body userId:user_id isMention:is_mention];
+}
+
+void MacShell::on_room_list_state_ui_() {
+    MainWindowController* c = ctrl_;
+    if (c) [c _onRoomListStateChanged];
 }
 
 } // namespace
@@ -1952,6 +2010,64 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         && _recoverySurface)
     {
         ((__bridge NSView*)_recoverySurface->view_handle()).hidden = YES;
+    }
+}
+
+- (void)_relayoutRoomSurface {
+    if (_roomSurface) _roomSurface->relayout();
+}
+
+- (void)_relayoutMsgSurface {
+    if (_msgSurface) _msgSurface->relayout();
+}
+
+- (void)_onRoomListStateChanged {
+    // Update window title with sync progress (no status bar on macOS).
+    // Priority: Init/SettingUp → "Syncing rooms…",
+    //           Recovering     → "Reconnecting…",
+    //           keys busy      → "Downloading encryption keys (N)…",
+    //           else           → clear progress suffix.
+    using RLS = tesseract::RoomListState;
+    using BS  = tesseract::BackupState;
+
+    const bool room_busy    = (_shell->last_room_list_state_ == RLS::Init
+                            || _shell->last_room_list_state_ == RLS::SettingUp);
+    const bool reconnecting = (_shell->last_room_list_state_ == RLS::Recovering);
+    const bool keys_busy    = (_shell->last_backup_state_ == BS::Downloading);
+
+    NSString* suffix = nil;
+    if (room_busy) {
+        suffix = @" — Syncing rooms…";
+    } else if (reconnecting) {
+        suffix = @" — Reconnecting…";
+    } else if (keys_busy) {
+        suffix = [NSString stringWithFormat:@" — Downloading encryption keys (%llu)…",
+                  (unsigned long long)_shell->last_imported_keys_];
+    }
+
+    if (suffix) {
+        _shell->sync_progress_shown_ = true;
+        self.window.title = [@"Tesseract" stringByAppendingString:suffix];
+    } else if (_shell->sync_progress_shown_) {
+        _shell->sync_progress_shown_ = false;
+        self.window.title = @"Tesseract";
+    }
+
+    // Once Running, attempt the deferred room restore (we waited for Running
+    // to avoid subscribing to a room during initial sync, which triggers the
+    // imbl promote_front data race in matrix-sdk-ui).
+    if (_shell->last_room_list_state_ == RLS::Running
+        && _shell->current_room_id_.empty()
+        && !_shell->pending_restore_room_.empty())
+    {
+        for (const auto& r : _shell->rooms_) {
+            if (r.id == _shell->pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(_shell->pending_restore_room_);
+                _shell->pending_restore_room_.clear();
+                [self onRoomSelected:target];
+                break;
+            }
+        }
     }
 }
 
