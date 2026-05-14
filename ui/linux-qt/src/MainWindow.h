@@ -201,6 +201,8 @@ private:
                                     const std::string& video_url) override;
     void on_url_preview_ready_(const std::string& url,
                                 const tesseract::Client::UrlPreview& preview) override;
+    void cache_rgba_image_(const std::string& key, int w, int h,
+                           std::vector<uint8_t> rgba) override;
 
     std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 

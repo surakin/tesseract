@@ -125,6 +125,13 @@ public:
     virtual std::unique_ptr<Image>
         decode_image(std::span<const std::uint8_t> bytes) = 0;
 
+    // Create an Image from a raw RGBA8888 pixel buffer (stride = w * 4).
+    // Returns nullptr on backends that don't implement this (default).
+    virtual std::unique_ptr<Image>
+        create_image_rgba(const std::uint8_t* /*pixels*/, int /*w*/, int /*h*/) {
+        return nullptr;
+    }
+
     virtual std::unique_ptr<TextLayout>
         build_text(std::string_view utf8, const TextStyle&) = 0;
 

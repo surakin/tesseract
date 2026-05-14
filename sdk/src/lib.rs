@@ -77,6 +77,7 @@ pub mod ffi {
         pub in_reply_to_body:        String,
         pub is_edited:               bool,
         pub formatted_body:          String,
+        pub blurhash:                String,
     }
 
     #[derive(Debug, PartialEq, Default)]

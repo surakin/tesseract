@@ -1653,6 +1653,15 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     }
 }
 
+void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
+                                    std::vector<uint8_t> rgba) {
+    if (tk_images_.count(key)) return;
+    QImage img(w, h, QImage::Format_RGBA8888);
+    std::memcpy(img.bits(), rgba.data(), rgba.size());
+    tk_images_.emplace(key, tk::qt6::make_image(std::move(img)));
+    if (msgSurface_) msgSurface_->update();
+}
+
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
     // Sort: regular rooms first, spaces at the bottom.
     std::vector<tesseract::RoomInfo> sorted;

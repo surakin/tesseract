@@ -137,6 +137,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         ev->width     = e.width;
         ev->height    = e.height;
         ev->filename  = std::string(e.image_filename);
+        ev->blurhash  = std::string(e.blurhash);
         return ev;
     }
 
@@ -146,6 +147,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         ev->image_url = std::string(e.source_json);
         ev->width     = e.width;
         ev->height    = e.height;
+        ev->blurhash  = std::string(e.blurhash);
         return ev;
     }
 
@@ -190,6 +192,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         ev->no_audio      = e.video_no_audio;
         ev->hide_controls = e.video_hide_controls;
         ev->gif           = e.video_gif;
+        ev->blurhash      = std::string(e.blurhash);
         return ev;
     }
 

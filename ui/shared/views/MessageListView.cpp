@@ -45,6 +45,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.media_w              = static_cast<int>(img.width);
             row.media_h              = static_cast<int>(img.height);
             row.has_filename_caption = !img.filename.empty();
+            row.blurhash             = img.blurhash;
             break;
         }
         case tesseract::EventType::Sticker: {
@@ -53,6 +54,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.media_url = s.image_url;
             row.media_w   = static_cast<int>(s.width);
             row.media_h   = static_cast<int>(s.height);
+            row.blurhash  = s.blurhash;
             break;
         }
         case tesseract::EventType::File: {
@@ -89,6 +91,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.video_no_audio       = vid.no_audio;
             row.video_hide_controls  = vid.hide_controls;
             row.video_gif            = vid.gif;
+            row.blurhash             = vid.blurhash;
             break;
         }
         case tesseract::EventType::Redacted:      row.kind = Kind::Redacted;      break;
@@ -1270,11 +1273,19 @@ private:
             ctx.canvas.draw_image(*img, dst);
             ctx.canvas.pop_clip();
         } else {
-            // Placeholder while bytes are still downloading.
-            ctx.canvas.fill_rounded_rect(dst, 8.0f,
-                                          ctx.theme.palette.chrome_bg);
-            ctx.canvas.stroke_rounded_rect(dst, 8.0f,
-                                            ctx.theme.palette.border, 1.0f);
+            const tk::Image* bh_img = nullptr;
+            if (!m.blurhash.empty() && owner_.image_provider_)
+                bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+            if (bh_img) {
+                ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
+                ctx.canvas.draw_image(*bh_img, dst);
+                ctx.canvas.pop_clip();
+            } else {
+                ctx.canvas.fill_rounded_rect(dst, 8.0f,
+                                              ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(dst, 8.0f,
+                                                ctx.theme.palette.border, 1.0f);
+            }
         }
     }
 
@@ -1522,8 +1533,17 @@ private:
             ctx.canvas.draw_image(*thumb, dst);
             ctx.canvas.pop_clip();
         } else {
-            ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
-            ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
+            const tk::Image* bh_img = nullptr;
+            if (!m.blurhash.empty() && owner_.image_provider_)
+                bh_img = owner_.image_provider_("blurhash::" + m.event_id);
+            if (bh_img) {
+                ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
+                ctx.canvas.draw_image(*bh_img, dst);
+                ctx.canvas.pop_clip();
+            } else {
+                ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
+            }
         }
 
         // Autoplay / GIF-mode clips play immediately — no play button needed.

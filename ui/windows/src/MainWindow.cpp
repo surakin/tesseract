@@ -2388,6 +2388,16 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
     video_thumb_in_flight_.insert(event_id);
 }
 
+void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
+                                    std::vector<uint8_t> rgba) {
+    if (tk_images_.count(key) || !msg_surface_) return;
+    auto img = msg_surface_->factory().create_image_rgba(rgba.data(), w, h);
+    if (!img) return;
+    tk_images_.emplace(key, std::move(img));
+    if (msg_surface_->hwnd())
+        InvalidateRect(msg_surface_->hwnd(), nullptr, FALSE);
+}
+
 // ---------------------------------------------------------------------------
 //  Event → MessageRowData + append into the shared MessageListView
 // ---------------------------------------------------------------------------

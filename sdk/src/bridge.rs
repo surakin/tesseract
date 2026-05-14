@@ -157,6 +157,10 @@ pub mod ffi {
         /// HTML body from `formatted_body` when `format == "org.matrix.custom.html"`.
         /// Empty string for all non-text message types and plain-text messages.
         formatted_body:          String,
+        /// BlurHash placeholder string for this media item (MSC2448).
+        /// Empty when absent. Decoded by the UI layer before the real
+        /// bytes arrive; the unstable field name is xyz.amorgan.blurhash.
+        blurhash:                String,
     }
 
     /// Outcome of an asynchronous SDK operation.

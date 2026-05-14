@@ -86,6 +86,8 @@ protected:
                                 std::vector<uint8_t> bytes) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
+    void cache_rgba_image_(const std::string& key, int w, int h,
+                           std::vector<uint8_t> rgba) override;
 
     void handle_timeline_reset_ui_(std::string room_id,
         std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
@@ -368,6 +370,23 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             if (c2) [c2 _relayoutMsgSurface];
         });
     });
+}
+
+void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
+                                  std::vector<uint8_t> rgba) {
+    if (tk_images_.count(key)) return;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(rgba.data(), w, h, 8, w * 4,
+                                              cs, kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(cs);
+    if (!ctx) return;
+    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    if (!img) return;
+    tk_images_.emplace(key, tk::cg::make_image(img));
+    CGImageRelease(img);
+    MainWindowController* c = ctrl_;
+    if (c) [c _relayoutMsgSurface];
 }
 
 void MacShell::handle_timeline_reset_ui_(

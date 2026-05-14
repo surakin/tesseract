@@ -76,6 +76,7 @@ struct ImageEvent : public Event {
     /// Non-empty only when the sender supplied an MSC2530 `filename` field.
     /// When set, `body` is a user caption and should be displayed below the image.
     std::string filename;
+    std::string blurhash;   // MSC2448: xyz.amorgan.blurhash; empty when absent
 
     ImageEvent() { type = EventType::Image; }
 };
@@ -84,6 +85,7 @@ struct StickerEvent : public Event {
     std::string image_url;   // mxc:// URI
     uint64_t    width  = 0;
     uint64_t    height = 0;
+    std::string blurhash;   // MSC2448: xyz.amorgan.blurhash; empty when absent
 
     StickerEvent() { type = EventType::Sticker; }
 };
@@ -131,6 +133,7 @@ struct VideoEvent : public Event {
     uint64_t    height      = 0;
     uint64_t    duration_ms = 0;
     std::string filename;        // MSC2530 caption filename; empty → no caption
+    std::string blurhash;        // MSC2448: xyz.amorgan.blurhash; empty when absent
 
     // fi.mau.* vendor hints — each false when absent in content.info.
     bool autoplay      = false;  // start playback immediately on load

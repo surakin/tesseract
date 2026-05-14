@@ -402,6 +402,8 @@ private:
                                 std::vector<uint8_t> bytes) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
+    void cache_rgba_image_(const std::string& key, int w, int h,
+                           std::vector<uint8_t> rgba) override;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;

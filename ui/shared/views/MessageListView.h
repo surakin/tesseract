@@ -97,6 +97,9 @@ struct MessageRowData {
     // First http(s) URL found in the message body. Non-empty only for
     // Kind::Text / Kind::Unhandled. Used to fetch and display a preview card.
     std::string first_url;
+
+    // MSC2448: xyz.amorgan.blurhash placeholder string; empty when absent.
+    std::string blurhash;
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view

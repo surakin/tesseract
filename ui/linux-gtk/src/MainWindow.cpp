@@ -2055,6 +2055,24 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (msg_surface_) msg_surface_->relayout();
 }
 
+void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
+                                    std::vector<uint8_t> rgba) {
+    if (tk_images_.count(key)) return;
+    GdkPixbuf* pb = gdk_pixbuf_new_from_data(
+        rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8, w, h,
+        w * 4, nullptr, nullptr);
+    if (!pb) return;
+    cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_t* cr = cairo_create(surf);
+    gdk_cairo_set_source_pixbuf(cr, pb, 0, 0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    g_object_unref(pb);
+    tk_images_.emplace(key, tk::cairo_pango::make_image(surf));
+    cairo_surface_destroy(surf);
+    if (msg_surface_) msg_surface_->queue_draw();
+}
+
 // ---------------------------------------------------------------------------
 
 void MainWindow::maybe_show_recovery_banner() {

@@ -30,6 +30,8 @@ set(_tk_sources
     tk/image_view.cpp
     tk/list_view.h
     tk/list_view.cpp
+    tk/blurhash.h
+    tk/blurhash.cpp
     views/LoginView.h
     views/LoginView.cpp
     views/RoomListView.h

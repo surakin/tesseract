@@ -589,6 +589,30 @@ public:
                                           static_cast<int>(h));
     }
 
+    std::unique_ptr<Image>
+    create_image_rgba(const std::uint8_t* pixels, int w, int h) override {
+        if (!pixels || w <= 0 || h <= 0) return nullptr;
+        // WIC expects BGRA premultiplied; convert RGBA→BGRA (alpha is 255 from blurhash).
+        const int n = w * h * 4;
+        std::vector<std::uint8_t> bgra(static_cast<size_t>(n));
+        for (int i = 0; i < w * h; ++i) {
+            bgra[static_cast<size_t>(i * 4 + 0)] = pixels[i * 4 + 2]; // B
+            bgra[static_cast<size_t>(i * 4 + 1)] = pixels[i * 4 + 1]; // G
+            bgra[static_cast<size_t>(i * 4 + 2)] = pixels[i * 4 + 0]; // R
+            bgra[static_cast<size_t>(i * 4 + 3)] = pixels[i * 4 + 3]; // A
+        }
+        ComPtr<IWICBitmap> bitmap;
+        if (FAILED(backend_.wic->CreateBitmapFromMemory(
+                static_cast<UINT>(w), static_cast<UINT>(h),
+                GUID_WICPixelFormat32bppPBGRA,
+                static_cast<UINT>(w * 4),
+                static_cast<UINT>(n),
+                bgra.data(),
+                bitmap.GetAddressOf())))
+            return nullptr;
+        return std::make_unique<D2DImage>(std::move(bitmap), w, h);
+    }
+
     std::unique_ptr<TextLayout>
     build_text(std::string_view utf8, const TextStyle& s) override {
         std::wstring wide = utf8_to_wide(utf8);

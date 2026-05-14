@@ -3263,6 +3263,7 @@ async fn timeline_item_to_ffi(
                 in_reply_to_body:        String::new(),
                 is_edited:               false,
                 formatted_body:          String::new(),
+                blurhash:                String::new(),
             });
         }
     };
@@ -3321,6 +3322,7 @@ async fn timeline_item_to_ffi(
             in_reply_to_body:        String::new(),
             is_edited:               false,
             formatted_body:          String::new(),
+            blurhash:                String::new(),
         });
     }
 
@@ -3390,6 +3392,7 @@ async fn timeline_item_to_ffi(
             in_reply_to_body:        String::new(),
             is_edited:               false,
             formatted_body:          String::new(),
+            blurhash:                c.info.blurhash.as_deref().unwrap_or("").to_owned(),
         });
     }
 
@@ -3551,6 +3554,16 @@ async fn timeline_item_to_ffi(
             _ => return None,
         };
 
+    let blurhash = match msg_content.msgtype() {
+        MessageType::Image(i) => i.info.as_ref()
+            .and_then(|info| info.blurhash.as_deref())
+            .unwrap_or("").to_owned(),
+        MessageType::Video(v) => v.info.as_ref()
+            .and_then(|info| info.blurhash.as_deref())
+            .unwrap_or("").to_owned(),
+        _ => String::new(),
+    };
+
     let (sender_name, sender_avatar_url) =
         if let TimelineDetails::Ready(p) = event_item.sender_profile() {
             (
@@ -3646,6 +3659,7 @@ async fn timeline_item_to_ffi(
         in_reply_to_body,
         is_edited: msg_content.is_edited(),
         formatted_body,
+        blurhash,
     })
 }
 

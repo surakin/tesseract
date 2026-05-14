@@ -1,4 +1,5 @@
 #include "app/ShellBase.h"
+#include "tk/blurhash.h"
 #include "views/html_spans.h"
 #include <tesseract/visual.h>
 #include <thread>
@@ -78,6 +79,22 @@ void ShellBase::ensure_url_preview_(const std::string& url) {
     });
 }
 
+void ShellBase::ensure_blurhash_image_(const std::string& event_id,
+                                        const std::string& hash,
+                                        int media_w, int media_h) {
+    const std::string key = "blurhash::" + event_id;
+    if (tk_images_.count(key) || !blurhash_attempted_.insert(key).second) return;
+    constexpr int kMaxDim = 32;
+    int kW = kMaxDim, kH = kMaxDim;
+    if (media_w > 0 && media_h > 0) {
+        if (media_w >= media_h) kH = std::max(1, kMaxDim * media_h / media_w);
+        else                    kW = std::max(1, kMaxDim * media_w / media_h);
+    }
+    std::vector<uint8_t> rgba;
+    if (!tk::decode_blurhash(hash, kW, kH, rgba)) return;
+    cache_rgba_image_(key, kW, kH, std::move(rgba));
+}
+
 void ShellBase::ensure_row_media_(const Event& ev) {
     ensure_user_avatar_(ev.sender_avatar_url);
     for (const auto& rr : ev.read_receipts)
@@ -115,6 +132,24 @@ void ShellBase::ensure_row_media_(const Event& ev) {
     for (const auto& r : ev.reactions)
         if (!r.source_json.empty())
             ensure_media_image_(r.source_json, 20, 20);
+
+    // MSC2448: decode and cache BlurHash placeholder for media types.
+    {
+        std::string bh;
+        int bw = 0, bh_dim = 0;
+        if (ev.type == EventType::Image) {
+            const auto& img = static_cast<const ImageEvent&>(ev);
+            bh = img.blurhash; bw = static_cast<int>(img.width); bh_dim = static_cast<int>(img.height);
+        } else if (ev.type == EventType::Sticker) {
+            const auto& s = static_cast<const StickerEvent&>(ev);
+            bh = s.blurhash; bw = static_cast<int>(s.width); bh_dim = static_cast<int>(s.height);
+        } else if (ev.type == EventType::Video) {
+            const auto& vid = static_cast<const VideoEvent&>(ev);
+            bh = vid.blurhash; bw = static_cast<int>(vid.width); bh_dim = static_cast<int>(vid.height);
+        }
+        if (!bh.empty())
+            ensure_blurhash_image_(ev.event_id, bh, bw, bh_dim);
+    }
 
     if (ev.type == EventType::Text || ev.type == EventType::Unhandled) {
         std::string url;

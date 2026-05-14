@@ -84,6 +84,9 @@ protected:
     std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
 
+    // ── BlurHash decode dedup ────────────────────────────────────────────────
+    std::unordered_set<std::string> blurhash_attempted_;
+
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState  last_room_list_state_ = RoomListState::Init;
     BackupState    last_backup_state_    = BackupState::Unknown;
@@ -146,6 +149,11 @@ protected:
     // request a repaint.
     virtual void on_url_preview_ready_(const std::string& /*url*/,
                                         const Client::UrlPreview& /*preview*/) {}
+
+    // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
+    // Default is a no-op; each platform shell overrides with native image creation.
+    virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/, int /*h*/,
+                                   std::vector<uint8_t> /*rgba*/) {}
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
@@ -221,6 +229,12 @@ protected:
     // Fetch OpenGraph preview metadata for `url` from the homeserver.
     // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.
     void ensure_url_preview_(const std::string& url);
+
+    // Decode the BlurHash for `event_id` and store the result via cache_rgba_image_.
+    // Idempotent — skips events already attempted or already cached.
+    void ensure_blurhash_image_(const std::string& event_id,
+                                const std::string& hash,
+                                int media_w, int media_h);
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
