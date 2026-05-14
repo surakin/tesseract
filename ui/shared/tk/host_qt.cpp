@@ -590,13 +590,22 @@ void Surface::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void Surface::wheelEvent(QWheelEvent* e) {
-    // Qt reports angleDelta in 1/8 degree units; positive y = scroll
-    // away from the user (content scrolls *up*). The toolkit convention
-    // is positive dy = scroll content *down*, so invert.
+    // Toolkit convention: positive dy = scroll content *down*.
+    // Qt's positive angleDelta.y = scroll *up*, so we invert.
     QPointF pos = e->position();
-    QPoint  ad  = e->angleDelta();
-    float   dx  =  static_cast<float>(ad.x()) / 8.0f;
-    float   dy  = -static_cast<float>(ad.y()) / 8.0f;
+    float dx, dy;
+    QPoint pd = e->pixelDelta();
+    if (!pd.isNull()) {
+        // Smooth-scroll device (trackpad): pixel delta is already in px.
+        dx =  static_cast<float>(pd.x());
+        dy = -static_cast<float>(pd.y());
+    } else {
+        // Physical mouse wheel: angleDelta in 1/8-degree units, 120 per notch.
+        // Scale 0.75 px/unit → 90 px per standard notch, matching Win32.
+        QPoint ad = e->angleDelta();
+        dx =  static_cast<float>(ad.x()) * 0.75f;
+        dy = -static_cast<float>(ad.y()) * 0.75f;
+    }
     host_->on_wheel({ static_cast<float>(pos.x()),
                        static_cast<float>(pos.y()) }, dx, dy);
     e->accept();
