@@ -822,32 +822,39 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
-    // Drain background workers BEFORE tearing the clients down.  Workers
-    // call `client_->paginate_back_with_status` which does a tokio block_on
-    // over a network round-trip; we must not destroy the Runtime while that
-    // is in flight (causes panic_in_cleanup through cxx's prevent_unwind).
+    // Drain ALL background workers before tearing the clients down.
     //
-    // stop_sync() is called BEFORE waitForDone so the Rust-side select! in
-    // paginate_back_with_status sees the cancellation signal and returns
-    // immediately, unblocking any worker threads blocked inside it.
-    // The ~ClientFfi destructor calls stop_sync() again as a no-op safety
-    // net; stop_sync() is idempotent (handler.take() returns None on the
-    // second call). Calling it here while the bridges are still alive also
-    // ensures the final session-refresh callback can reach the handler.
+    // Two independent worker systems must both be drained:
+    //
+    //  1. mediaPool_ (QThreadPool) — used by runOnPool_() for pagination.
+    //     Guarded by shuttingDown_; drained by mediaPool_.waitForDone(-1).
+    //
+    //  2. ShellBase detached std::threads — used by run_async_() for avatar /
+    //     media fetches (ensure_room_avatar_, ensure_user_avatar_,
+    //     ensure_media_image_).  Guarded by shutting_down_ (ShellBase);
+    //     tracked by workers_in_flight_ / workers_cv_.
+    //
+    // Both flags must be flipped first so no new work is enqueued after the
+    // clear/drain calls.  stop_sync() is called before the waits so the
+    // Rust-side cancellation channel fires and any worker blocked inside a
+    // tokio block_on() returns promptly instead of waiting on a network hop.
+    // ~ClientFfi calls stop_sync() a second time as a no-op safety net
+    // (handler.take() returns None on repeated calls).
     shuttingDown_.store(true, std::memory_order_release);
+    shutting_down_.store(true, std::memory_order_release);
     mediaPool_.clear();
     for (auto& a : accounts_) {
         if (a && a->client) a->client->stop_sync();
     }
     if (pending_login_client_) pending_login_client_->stop_sync();
-    // Wait indefinitely: shuttingDown_ is already true so no new work can be
-    // queued, and clear() above removed pending runnables.  Only in-flight
-    // workers remain; we must not destroy ClientFfi (via accounts_ RAII)
-    // while a worker holds Pin<&mut ClientFfi> — that data race causes a
-    // panic_in_cleanup abort through Rust's drop chain.  A bounded wait was
-    // the original intent but a timeout that fires early is strictly worse
-    // than waiting: workers call reqwest-backed futures that complete in
-    // <1 s on a healthy network and are bounded by reqwest's own timeout.
+    // Drain ShellBase detached threads (avatar / media fetches).
+    {
+        std::unique_lock<std::mutex> lk(workers_mu_);
+        workers_cv_.wait_for(lk, std::chrono::seconds(5),
+                              [this]{ return workers_in_flight_ == 0; });
+    }
+    // Drain Qt pool workers (pagination).  Unbounded: shutting_down_ is true
+    // so no new runnables can be queued, and clear() removed pending ones.
     mediaPool_.waitForDone(-1);
 
     client_        = nullptr;
