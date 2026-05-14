@@ -121,4 +121,52 @@ void EventHandlerBase::on_notification(
         });
 }
 
+void EventHandlerBase::on_verification_request(
+    const std::string& flow_id, const std::string& user_id,
+    const std::string& device_id, bool incoming)
+{
+    shell_->post_to_ui_(
+        [shell = shell_,
+         fid = flow_id, uid = user_id, did = device_id, inc = incoming]() mutable {
+            shell->handle_verification_request_ui_(
+                std::move(fid), std::move(uid), std::move(did), inc);
+        });
+}
+
+void EventHandlerBase::on_sas_ready(
+    const std::string& flow_id, std::vector<VerificationEmoji> emojis)
+{
+    struct Payload { std::string fid; std::vector<VerificationEmoji> em; };
+    auto p = std::make_shared<Payload>(Payload{flow_id, std::move(emojis)});
+    shell_->post_to_ui_(
+        [shell = shell_, p]() mutable {
+            shell->handle_sas_ready_ui_(std::move(p->fid), std::move(p->em));
+        });
+}
+
+void EventHandlerBase::on_verification_done(const std::string& flow_id)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, fid = flow_id]() mutable {
+            shell->handle_verification_done_ui_(std::move(fid));
+        });
+}
+
+void EventHandlerBase::on_verification_cancelled(
+    const std::string& flow_id, const std::string& reason)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, fid = flow_id, r = reason]() mutable {
+            shell->handle_verification_cancelled_ui_(std::move(fid), std::move(r));
+        });
+}
+
+void EventHandlerBase::on_verification_state_changed(bool is_verified)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, v = is_verified]() {
+            shell->handle_verification_state_ui_(v);
+        });
+}
+
 } // namespace tesseract

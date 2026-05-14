@@ -165,6 +165,16 @@ pub mod ffi {
         redirect_uri: String,
     }
 
+    /// One of the 7 emoji displayed during an SAS device-verification flow.
+    /// `symbol` is the Unicode emoji string (one or more codepoints);
+    /// `description` is the English label from the Matrix spec table (e.g. "Dog").
+    /// The UI renders both side-by-side for each of the 7 tiles so the user
+    /// can compare them with the other device's display.
+    struct VerificationEmoji {
+        symbol:      String,
+        description: String,
+    }
+
     /// Snapshot of the server-side key-backup state plus a running counter of
     /// imported room keys for this device. Carried by `on_backup_progress`
     /// callbacks and returned by `backup_state()`.
@@ -296,6 +306,44 @@ pub mod ffi {
                            body:         &str,
                            is_mention:   bool,
                            avatar_bytes: &[u8]);
+
+        /// Fired when an incoming SAS verification request arrives from another
+        /// device (`incoming = true`), or when an outgoing request we sent has
+        /// been accepted and is ready for key exchange (`incoming = false`).
+        /// `flow_id` is the opaque transaction ID that identifies this request
+        /// across all subsequent verification calls.
+        fn on_verification_request(self: &EventHandlerBridge,
+                                   flow_id:   &str,
+                                   user_id:   &str,
+                                   device_id: &str,
+                                   incoming:  bool);
+
+        /// Fired when the SAS short-auth-string key exchange completes and the
+        /// 7 emoji are ready to compare. The UI should transition to its
+        /// ShowEmojis state and render the tiles. `flow_id` matches the one
+        /// supplied by `on_verification_request`.
+        fn on_sas_ready(self: &EventHandlerBridge,
+                        flow_id: &str,
+                        emojis:  &Vec<VerificationEmoji>);
+
+        /// Fired after both sides called `confirm_sas` — the device is now
+        /// cross-signing verified. The UI should transition to Done state and
+        /// then dismiss the banner.
+        fn on_verification_done(self: &EventHandlerBridge, flow_id: &str);
+
+        /// Fired when a verification flow is cancelled for any reason
+        /// (mismatch, timeout, explicit cancel by either party). `reason` is a
+        /// human-readable description from the cancel code.
+        fn on_verification_cancelled(self: &EventHandlerBridge,
+                                     flow_id: &str,
+                                     reason:  &str);
+
+        /// Fired when the cross-signing verification state for the current
+        /// account changes. `verified` is `true` when the SDK considers the
+        /// current device's own identity fully verified (all cross-signing keys
+        /// are consistent and confirmed). Use this to show/hide the
+        /// "Verify this device" banner.
+        fn on_verification_state_changed(self: &EventHandlerBridge, verified: bool);
     }
 
     // -------------------------------------------------------------------------
@@ -617,6 +665,33 @@ pub mod ffi {
 
         /// Current snapshot of the backup state and import counters.
         fn backup_state(self: &ClientFfi) -> BackupProgress;
+
+        // ----- SAS device verification -----
+
+        /// Send an `m.key.verification.request` to-device event to every other
+        /// device of the current user. When one accepts, `on_verification_request`
+        /// fires with `incoming = false` and the UI should call `start_sas`.
+        fn request_self_verification(self: &mut ClientFfi) -> OpResult;
+
+        /// Accept an incoming verification request identified by `flow_id`.
+        /// Call after receiving `on_verification_request(incoming=true)`.
+        fn accept_verification(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+
+        /// Start the SAS key-exchange on a ready request. The SDK will fire
+        /// `on_sas_ready` with the 7 emoji once both sides have exchanged keys.
+        fn start_sas(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+
+        /// Confirm that the emoji shown on this device match the other device's
+        /// display. Fires `on_verification_done` when both sides confirm.
+        fn confirm_sas(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+
+        /// Cancel or decline a verification flow (e.g. emoji mismatch or user
+        /// dismissed). Fires `on_verification_cancelled` on both sides.
+        fn cancel_verification(self: &mut ClientFfi, flow_id: &str) -> OpResult;
+
+        /// Return the 7 SAS emoji for `flow_id` after `on_sas_ready` has fired.
+        /// Returns an empty Vec before the key exchange completes.
+        fn get_sas_emojis(self: &ClientFfi, flow_id: &str) -> Vec<VerificationEmoji>;
 
         // ----- Session teardown -----
 

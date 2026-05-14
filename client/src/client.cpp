@@ -337,4 +337,33 @@ BackupProgress Client::backup_state() const {
     return from_ffi(impl_->ffi->backup_state());
 }
 
+Result Client::request_self_verification() {
+    return from_ffi(impl_->ffi->request_self_verification());
+}
+
+Result Client::accept_verification(const std::string& flow_id) {
+    return from_ffi(impl_->ffi->accept_verification(flow_id));
+}
+
+Result Client::start_sas(const std::string& flow_id) {
+    return from_ffi(impl_->ffi->start_sas(flow_id));
+}
+
+Result Client::confirm_sas(const std::string& flow_id) {
+    return from_ffi(impl_->ffi->confirm_sas(flow_id));
+}
+
+Result Client::cancel_verification(const std::string& flow_id) {
+    return from_ffi(impl_->ffi->cancel_verification(flow_id));
+}
+
+std::vector<VerificationEmoji> Client::get_sas_emojis(const std::string& flow_id) const {
+    auto ffi_vec = impl_->ffi->get_sas_emojis(flow_id);
+    std::vector<VerificationEmoji> result;
+    result.reserve(ffi_vec.size());
+    for (const auto& e : ffi_vec)
+        result.push_back({std::string(e.symbol), std::string(e.description)});
+    return result;
+}
+
 } // namespace tesseract

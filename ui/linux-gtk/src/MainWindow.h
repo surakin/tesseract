@@ -23,6 +23,7 @@
 #include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
+#include "views/VerificationBanner.h"
 #include "views/RoomListView.h"
 #include "views/StickerPicker.h"
 #include "views/UserInfo.h"
@@ -73,6 +74,16 @@ private:
         std::string description, bool soft_logout) override;
     void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void handle_image_packs_updated_ui_() override;
+    void handle_verification_request_ui_(
+        std::string flow_id, std::string user_id,
+        std::string device_id, bool incoming) override;
+    void handle_sas_ready_ui_(
+        std::string flow_id,
+        std::vector<tesseract::VerificationEmoji> emojis) override;
+    void handle_verification_done_ui_(std::string flow_id) override;
+    void handle_verification_cancelled_ui_(
+        std::string flow_id, std::string reason) override;
+    void handle_verification_state_ui_(bool is_verified) override;
     void handle_account_prefs_updated_ui_(
         std::string user_id, std::string json) override;
     void handle_notification_ui_(
@@ -238,6 +249,9 @@ private:
 
     std::unique_ptr<tk::gtk4::Surface>      recovery_surface_;
     tesseract::views::RecoveryBanner*       recovery_shared_   = nullptr;
+
+    std::unique_ptr<tk::gtk4::Surface>      verif_surface_;
+    tesseract::views::VerificationBanner*   verif_shared_      = nullptr;
     std::unique_ptr<tk::NativeTextField>    recovery_key_field_;
 
     // Sidebar user identity strip.

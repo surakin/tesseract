@@ -94,6 +94,39 @@ public:
                                   const std::string&          /*body*/,
                                   bool                        /*is_mention*/,
                                   const std::vector<uint8_t>& /*avatar_bytes*/) {}
+
+    // ------------------------------------------------------------------
+    // Cross-signing / SAS device verification (Step: device verification)
+    // ------------------------------------------------------------------
+
+    /// A SAS verification flow became available. `incoming` is true when
+    /// another device initiated the request (show IncomingRequest state);
+    /// false when the local device sent it and the remote has accepted
+    /// (show Waiting state and call `start_sas`). Called on a background
+    /// thread — marshal to UI thread before touching widgets.
+    virtual void on_verification_request(const std::string& /*flow_id*/,
+                                          const std::string& /*user_id*/,
+                                          const std::string& /*device_id*/,
+                                          bool               /*incoming*/) {}
+
+    /// The 7 SAS emoji are ready for display. Called after both devices
+    /// have exchanged keys; the UI switches to ShowEmojis state.
+    virtual void on_sas_ready(const std::string&                    /*flow_id*/,
+                               std::vector<VerificationEmoji>        /*emojis*/) {}
+
+    /// The SAS flow completed successfully. The UI should show Done state
+    /// briefly then dismiss the banner.
+    virtual void on_verification_done(const std::string& /*flow_id*/) {}
+
+    /// The SAS flow was cancelled (mismatch, timeout, or remote decline).
+    /// `reason` is the human-readable cancel code from matrix-sdk.
+    virtual void on_verification_cancelled(const std::string& /*flow_id*/,
+                                            const std::string& /*reason*/) {}
+
+    /// The device's cross-signing verification state changed. `is_verified`
+    /// is true when the device is now fully cross-signed. Called once at
+    /// startup with the current state and again on every transition.
+    virtual void on_verification_state_changed(bool /*is_verified*/) {}
 };
 
 } // namespace tesseract

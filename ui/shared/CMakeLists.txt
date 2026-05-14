@@ -42,6 +42,8 @@ set(_tk_sources
     views/StickerPicker.cpp
     views/RecoveryBanner.h
     views/RecoveryBanner.cpp
+    views/VerificationBanner.h
+    views/VerificationBanner.cpp
     views/ComposeBar.h
     views/ComposeBar.cpp
     views/UserInfo.h

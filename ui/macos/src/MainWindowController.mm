@@ -22,6 +22,7 @@
 #include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/VerificationBanner.h"
 
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
@@ -98,6 +99,16 @@ protected:
         std::string description, bool soft_logout) override;
     void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void handle_image_packs_updated_ui_() override;
+    void handle_verification_request_ui_(
+        std::string flow_id, std::string user_id,
+        std::string device_id, bool incoming) override;
+    void handle_sas_ready_ui_(
+        std::string flow_id,
+        std::vector<tesseract::VerificationEmoji> emojis) override;
+    void handle_verification_done_ui_(std::string flow_id) override;
+    void handle_verification_cancelled_ui_(
+        std::string flow_id, std::string reason) override;
+    void handle_verification_state_ui_(bool is_verified) override;
     void handle_account_prefs_updated_ui_(std::string user_id,
         std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
@@ -151,6 +162,11 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_openAccountPicker;
 - (void)_onUserStripLeftClick:(NSGestureRecognizer*)gr;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
+- (void)handleVerificationState:(BOOL)isVerified;
+- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming;
+- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis;
+- (void)handleVerificationDone;
+- (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
 - (void)_onRecoveryVerify;
@@ -353,6 +369,40 @@ void MacShell::handle_image_packs_updated_ui_() {
     if (c) [c handleImagePacksUpdated];
 }
 
+void MacShell::handle_verification_state_ui_(bool is_verified) {
+    MainWindowController* c = ctrl_;
+    if (c) [c handleVerificationState:is_verified ? YES : NO];
+}
+
+void MacShell::handle_verification_request_ui_(
+    std::string flow_id, std::string /*user_id*/,
+    std::string /*device_id*/, bool incoming)
+{
+    active_verification_flow_id_ = std::move(flow_id);
+    MainWindowController* c = ctrl_;
+    if (c) [c handleVerificationRequest:active_verification_flow_id_
+                                incoming:incoming ? YES : NO];
+}
+
+void MacShell::handle_sas_ready_ui_(
+    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
+{
+    MainWindowController* c = ctrl_;
+    if (c) [c handleSasReady:std::move(emojis)];
+}
+
+void MacShell::handle_verification_done_ui_(std::string /*flow_id*/) {
+    MainWindowController* c = ctrl_;
+    if (c) [c handleVerificationDone];
+}
+
+void MacShell::handle_verification_cancelled_ui_(
+    std::string /*flow_id*/, std::string reason)
+{
+    MainWindowController* c = ctrl_;
+    if (c) [c handleVerificationCancelled:std::move(reason)];
+}
+
 void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
                                                   std::string json) {
     MainWindowController* c = ctrl_;
@@ -410,6 +460,11 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     std::unique_ptr<tk::macos::Surface>             _recoverySurface;
     tesseract::views::RecoveryBanner*               _recoveryShared;  // borrowed
     std::unique_ptr<tk::NativeTextField>            _recoveryKeyField;
+
+    // Verification banner — shared widget on a tk::macos::Surface.
+    std::unique_ptr<tk::macos::Surface>             _verifSurface;
+    tesseract::views::VerificationBanner*           _verifShared;  // borrowed
+    NSLayoutConstraint*                              _verifHeightCon;
 
     NSTimer*                                         _animTimer;
 
@@ -865,6 +920,63 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     recoveryView.translatesAutoresizingMaskIntoConstraints = NO;
     recoveryView.hidden = YES;
 
+    // Verification banner — shared widget on a tk::macos::Surface. Initially
+    // hidden; shown by handleVerificationState: when isVerified=NO.
+    _verifSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    {
+        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
+        _verifShared = banner.get();
+        __weak MainWindowController* weakSelf = self;
+        _verifShared->on_verify = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_shell->client_)
+                s->_shell->client_->request_self_verification();
+        };
+        _verifShared->on_accept = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_) return;
+            s->_shell->client_->accept_verification(s->_shell->active_verification_flow_id_);
+            s->_shell->client_->start_sas(s->_shell->active_verification_flow_id_);
+        };
+        _verifShared->on_match = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_) return;
+            s->_shell->client_->confirm_sas(s->_shell->active_verification_flow_id_);
+            if (s->_verifShared) s->_verifShared->set_state(
+                tesseract::views::VerificationBanner::State::Confirming);
+            if (s->_verifSurface) s->_verifSurface->relayout();
+        };
+        _verifShared->on_mismatch = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_shell->client_)
+                s->_shell->client_->cancel_verification(s->_shell->active_verification_flow_id_);
+        };
+        _verifShared->on_cancel = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_shell->client_)
+                s->_shell->client_->cancel_verification(s->_shell->active_verification_flow_id_);
+        };
+        _verifShared->on_dismiss = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_shell->verification_banner_dismissed_ = true;
+            NSView* v = (__bridge NSView*)s->_verifSurface->view_handle();
+            v.hidden = YES;
+            s->_verifHeightCon.constant = 0;
+        };
+        _verifShared->on_done = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            NSView* v = (__bridge NSView*)s->_verifSurface->view_handle();
+            v.hidden = YES;
+            s->_verifHeightCon.constant = 0;
+        };
+        _verifSurface->set_root(std::move(banner));
+    }
+    NSView* verifView = (__bridge NSView*)_verifSurface->view_handle();
+    verifView.translatesAutoresizingMaskIntoConstraints = NO;
+    verifView.hidden = YES;
+
     // Compose bar — shared widget on a tk::macos::Surface. The text input
     // is a NativeTextArea overlay on the bar's text_area_rect; emoji and
     // send buttons paint into the toolkit.
@@ -1010,7 +1122,7 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     NSView* composeView = (__bridge NSView*)_composeSurface->view_handle();
     composeView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _contentStack = [NSStackView stackViewWithViews:@[header, recoveryView,
+    _contentStack = [NSStackView stackViewWithViews:@[header, recoveryView, verifView,
                                                        msgSurfaceView, composeView]];
     _contentStack.orientation     = NSUserInterfaceLayoutOrientationVertical;
     _contentStack.alignment       = NSLayoutAttributeLeading;
@@ -1029,11 +1141,15 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
         [recoveryView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [recoveryView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [recoveryView.heightAnchor   constraintEqualToConstant:48],
+        [verifView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
+        [verifView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [msgSurfaceView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [msgSurfaceView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [composeView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [composeView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
     ]];
+    _verifHeightCon = [verifView.heightAnchor constraintEqualToConstant:0];
+    _verifHeightCon.active = YES;
     _composeHeightCon = [composeView.heightAnchor
         constraintEqualToConstant:tesseract::views::ComposeBar::kMinHeight];
     _composeHeightCon.active = YES;
@@ -1932,6 +2048,65 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _msgSurface->relayout();
     }
     for (auto* ev : snapshot) delete ev;
+}
+
+- (void)handleVerificationState:(BOOL)isVerified {
+    if (!_verifSurface) return;
+    NSView* v = (__bridge NSView*)_verifSurface->view_handle();
+    if (!isVerified && !_shell->verification_banner_dismissed_) {
+        if (v.hidden) {
+            if (_verifShared) _verifShared->set_state(
+                tesseract::views::VerificationBanner::State::Prompt);
+            v.hidden = NO;
+            _verifHeightCon.constant = 48;
+            _verifSurface->relayout();
+        }
+    } else if (!v.hidden) {
+        v.hidden = YES;
+        _verifHeightCon.constant = 0;
+    }
+}
+
+- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming {
+    if (!_verifShared) return;
+    if (incoming) {
+        _verifShared->set_state(
+            tesseract::views::VerificationBanner::State::IncomingRequest);
+    } else {
+        _verifShared->set_state(
+            tesseract::views::VerificationBanner::State::Waiting);
+        if (_shell->client_)
+            _shell->client_->start_sas(_shell->active_verification_flow_id_);
+    }
+    if (_verifSurface) _verifSurface->relayout();
+}
+
+- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis {
+    if (!_verifShared) return;
+    _verifShared->set_emojis(emojis);
+    _verifHeightCon.constant = 124;
+    if (_verifSurface) _verifSurface->relayout();
+}
+
+- (void)handleVerificationDone {
+    if (!_verifShared) return;
+    _verifShared->set_state(tesseract::views::VerificationBanner::State::Done);
+    if (_verifSurface) _verifSurface->relayout();
+    __weak MainWindowController* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        MainWindowController* s = weakSelf;
+        if (s && s->_verifShared && s->_verifShared->on_done)
+            s->_verifShared->on_done();
+    });
+}
+
+- (void)handleVerificationCancelled:(std::string)reason {
+    if (!_verifShared) return;
+    _verifShared->set_state(
+        tesseract::views::VerificationBanner::State::Cancelled);
+    _verifShared->set_cancel_reason(std::move(reason));
+    if (_verifSurface) _verifSurface->relayout();
 }
 
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress {

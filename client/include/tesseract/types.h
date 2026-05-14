@@ -175,6 +175,14 @@ struct BackupProgress {
     uint64_t    total_keys    = 0;
 };
 
+/// One emoji from the 7-emoji Short Authentication String (SAS) used for
+/// device cross-signing verification. Mirrors `VerificationEmoji` in the
+/// Rust FFI bridge.
+struct VerificationEmoji {
+    std::string symbol;       // UTF-8 emoji glyph, e.g. "🐶"
+    std::string description;  // English label, e.g. "Dog"
+};
+
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via
 /// `IEventHandler::on_room_list_state` so UIs can render a "Syncing
 /// rooms…" indicator while the joined-room set is still being hydrated.

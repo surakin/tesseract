@@ -114,4 +114,40 @@ void EventHandlerBridge::on_notification(
                                is_mention, av);
 }
 
+void EventHandlerBridge::on_verification_request(
+    rust::Str flow_id, rust::Str user_id, rust::Str device_id, bool incoming) const
+{
+    if (!handler_) return;
+    handler_->on_verification_request(
+        std::string(flow_id), std::string(user_id), std::string(device_id), incoming);
+}
+
+void EventHandlerBridge::on_sas_ready(
+    rust::Str flow_id, const rust::Vec<VerificationEmoji>& emojis) const
+{
+    if (!handler_) return;
+    std::vector<tesseract::VerificationEmoji> cpp_emojis;
+    cpp_emojis.reserve(emojis.size());
+    for (const auto& e : emojis)
+        cpp_emojis.push_back({std::string(e.symbol), std::string(e.description)});
+    handler_->on_sas_ready(std::string(flow_id), std::move(cpp_emojis));
+}
+
+void EventHandlerBridge::on_verification_done(rust::Str flow_id) const {
+    if (!handler_) return;
+    handler_->on_verification_done(std::string(flow_id));
+}
+
+void EventHandlerBridge::on_verification_cancelled(
+    rust::Str flow_id, rust::Str reason) const
+{
+    if (!handler_) return;
+    handler_->on_verification_cancelled(std::string(flow_id), std::string(reason));
+}
+
+void EventHandlerBridge::on_verification_state_changed(bool verified) const {
+    if (!handler_) return;
+    handler_->on_verification_state_changed(verified);
+}
+
 } // namespace tesseract_ffi

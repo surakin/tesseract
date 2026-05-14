@@ -157,6 +157,85 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::handle_verification_state_ui_(bool is_verified)
+{
+    if (!verif_surface_) return;
+    GtkWidget* w = verif_surface_->widget();
+    if (is_verified) {
+        gtk_widget_set_visible(w, FALSE);
+        return;
+    }
+    if (verification_banner_dismissed_) return;
+    if (!gtk_widget_get_visible(w)) {
+        active_verification_flow_id_.clear();
+        if (verif_shared_)
+            verif_shared_->set_state(
+                tesseract::views::VerificationBanner::State::Prompt);
+        gtk_widget_set_size_request(w, -1, 48);
+        gtk_widget_set_visible(w, TRUE);
+        verif_surface_->relayout();
+    }
+}
+
+void MainWindow::handle_verification_request_ui_(
+    std::string flow_id, std::string /*user_id*/,
+    std::string /*device_id*/, bool incoming)
+{
+    if (!verif_surface_ || !verif_shared_) return;
+    active_verification_flow_id_ = flow_id;
+    if (incoming) {
+        verif_shared_->set_state(
+            tesseract::views::VerificationBanner::State::IncomingRequest);
+    } else {
+        verif_shared_->set_state(
+            tesseract::views::VerificationBanner::State::Waiting);
+        if (client_) client_->start_sas(flow_id);
+    }
+    GtkWidget* w = verif_surface_->widget();
+    gtk_widget_set_size_request(w, -1, 48);
+    gtk_widget_set_visible(w, TRUE);
+    verif_surface_->relayout();
+}
+
+void MainWindow::handle_sas_ready_ui_(
+    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
+{
+    if (!verif_surface_ || !verif_shared_) return;
+    verif_shared_->set_emojis(emojis);
+    GtkWidget* w = verif_surface_->widget();
+    gtk_widget_set_size_request(w, -1, 124);
+    gtk_widget_set_visible(w, TRUE);
+    verif_surface_->relayout();
+}
+
+void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
+{
+    if (!verif_surface_ || !verif_shared_) return;
+    verif_shared_->set_state(tesseract::views::VerificationBanner::State::Done);
+    GtkWidget* w = verif_surface_->widget();
+    gtk_widget_set_size_request(w, -1, 48);
+    verif_surface_->relayout();
+    // Hide after 1.5 s.
+    g_timeout_add(1500, [](gpointer data) -> gboolean {
+        auto* self = static_cast<MainWindow*>(data);
+        if (self->verif_shared_ && self->verif_shared_->on_done)
+            self->verif_shared_->on_done();
+        return G_SOURCE_REMOVE;
+    }, this);
+}
+
+void MainWindow::handle_verification_cancelled_ui_(
+    std::string /*flow_id*/, std::string reason)
+{
+    if (!verif_surface_ || !verif_shared_) return;
+    verif_shared_->set_state(tesseract::views::VerificationBanner::State::Cancelled);
+    verif_shared_->set_cancel_reason(std::move(reason));
+    GtkWidget* w = verif_surface_->widget();
+    gtk_widget_set_size_request(w, -1, 48);
+    gtk_widget_set_visible(w, TRUE);
+    verif_surface_->relayout();
+}
+
 // ---------------------------------------------------------------------------
 // MainWindow
 // ---------------------------------------------------------------------------
@@ -322,6 +401,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             self->search_debounce_id_ = 0;
             if (self->room_list_view_)
                 self->room_list_view_->set_search_text(self->search_pending_text_);
+            self->refresh_room_list();
             return G_SOURCE_REMOVE;
         }, this);
     });
@@ -492,6 +572,55 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_size_request(recovery_widget, -1, 48);
     gtk_widget_set_visible(recovery_widget, FALSE);
     gtk_box_append(GTK_BOX(vbox), recovery_widget);
+
+    // Verification banner — inline strip shown when the device is unverified.
+    verif_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+    {
+        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
+        verif_shared_ = banner.get();
+        verif_shared_->on_verify = [this] {
+            if (client_) client_->request_self_verification();
+        };
+        verif_shared_->on_accept = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                client_->accept_verification(active_verification_flow_id_);
+                client_->start_sas(active_verification_flow_id_);
+            }
+        };
+        verif_shared_->on_match = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                if (verif_shared_)
+                    verif_shared_->set_state(
+                        tesseract::views::VerificationBanner::State::Confirming);
+                verif_surface_->relayout();
+                client_->confirm_sas(active_verification_flow_id_);
+            }
+        };
+        verif_shared_->on_mismatch = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_cancel = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_dismiss = [this] {
+            verification_banner_dismissed_ = true;
+            if (verif_surface_)
+                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
+        };
+        verif_shared_->on_done = [this] {
+            if (verif_surface_)
+                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
+        };
+        verif_surface_->set_root(std::move(banner));
+    }
+    {
+        GtkWidget* w = verif_surface_->widget();
+        gtk_widget_set_size_request(w, -1, 48);
+        gtk_widget_set_visible(w, FALSE);
+        gtk_box_append(GTK_BOX(vbox), w);
+    }
 
     // Shared-toolkit message list. Each row is paint-only (no per-row
     // GtkWidget); the Surface owns scrolling, hit-testing and virtual-
@@ -1618,6 +1747,11 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
 void MainWindow::refresh_room_list() {
     if (space_stack_.empty()) {
+        if (!search_pending_text_.empty()) {
+            show_rooms(rooms_);
+            gtk_widget_set_visible(room_nav_bar_, FALSE);
+            return;
+        }
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_) {
             if (!r.is_space) continue;

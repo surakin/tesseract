@@ -87,6 +87,10 @@ protected:
     // ── Recovery ──────────────────────────────────────────────────────────────
     bool recovery_banner_dismissed_ = false;
 
+    // ── Cross-signing / SAS device verification ───────────────────────────────
+    bool        verification_banner_dismissed_  = false;
+    std::string active_verification_flow_id_;   // "" = no flow in progress
+
     // ── Pagination ────────────────────────────────────────────────────────────
     struct PaginationState { bool in_flight = false; bool reached_start = false; };
     std::unordered_map<std::string, PaginationState> pagination_;
@@ -156,6 +160,17 @@ protected:
         std::vector<uint8_t> /*avatar_bytes*/) {}
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_() {}
+
+    // ── Verification banner hooks (default no-op) ──────────────────────────────
+    virtual void handle_verification_request_ui_(
+        std::string /*flow_id*/, std::string /*user_id*/,
+        std::string /*device_id*/, bool /*incoming*/) {}
+    virtual void handle_sas_ready_ui_(
+        std::string /*flow_id*/, std::vector<VerificationEmoji> /*emojis*/) {}
+    virtual void handle_verification_done_ui_(std::string /*flow_id*/) {}
+    virtual void handle_verification_cancelled_ui_(
+        std::string /*flow_id*/, std::string /*reason*/) {}
+    virtual void handle_verification_state_ui_(bool /*is_verified*/) {}
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 

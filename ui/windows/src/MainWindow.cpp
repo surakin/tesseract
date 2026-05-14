@@ -472,6 +472,76 @@ void MainWindow::handle_image_packs_updated_ui_()
     refresh_emoji_picker();
 }
 
+void MainWindow::handle_verification_state_ui_(bool is_verified)
+{
+    if (!verif_surface_ || !verif_surface_->hwnd()) return;
+    if (!is_verified && !verification_banner_dismissed_) {
+        if (!verif_banner_visible_) {
+            if (verif_shared_) verif_shared_->set_state(
+                tesseract::views::VerificationBanner::State::Prompt);
+            ShowWindow(verif_surface_->hwnd(), SW_SHOW);
+            verif_banner_visible_ = true;
+            on_size(0, 0);  // re-trigger layout
+        }
+    } else {
+        if (verif_banner_visible_) {
+            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            verif_banner_visible_ = false;
+            on_size(0, 0);
+        }
+    }
+}
+
+void MainWindow::handle_verification_request_ui_(
+    std::string flow_id, std::string /*user_id*/,
+    std::string /*device_id*/, bool incoming)
+{
+    active_verification_flow_id_ = std::move(flow_id);
+    if (!verif_shared_) return;
+    if (incoming) {
+        verif_shared_->set_state(
+            tesseract::views::VerificationBanner::State::IncomingRequest);
+    } else {
+        verif_shared_->set_state(
+            tesseract::views::VerificationBanner::State::Waiting);
+        if (client_) client_->start_sas(active_verification_flow_id_);
+    }
+    if (verif_surface_) verif_surface_->relayout();
+}
+
+void MainWindow::handle_sas_ready_ui_(
+    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
+{
+    if (!verif_shared_) return;
+    verif_shared_->set_emojis(emojis);
+    if (verif_surface_ && verif_surface_->hwnd()) {
+        SetWindowPos(verif_surface_->hwnd(), nullptr,
+                     0, 0, 0, 124,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        verif_surface_->relayout();
+        on_size(0, 0);
+    }
+}
+
+void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
+{
+    if (!verif_shared_) return;
+    verif_shared_->set_state(
+        tesseract::views::VerificationBanner::State::Done);
+    if (verif_surface_) verif_surface_->relayout();
+    if (hwnd_) SetTimer(hwnd_, kVerifDoneTimerId, 1500, nullptr);
+}
+
+void MainWindow::handle_verification_cancelled_ui_(
+    std::string /*flow_id*/, std::string reason)
+{
+    if (!verif_shared_) return;
+    verif_shared_->set_state(
+        tesseract::views::VerificationBanner::State::Cancelled);
+    verif_shared_->set_cancel_reason(std::move(reason));
+    if (verif_surface_) verif_surface_->relayout();
+}
+
 void MainWindow::handle_account_prefs_updated_ui_(
     std::string /*user_id*/, std::string json)
 {
@@ -789,6 +859,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             KillTimer(hwnd, kSearchDebounceTimer);
             if (self->room_list_view_)
                 self->room_list_view_->set_search_text(self->pending_search_text_);
+            self->refresh_room_list();
             return 0;
         }
         if (wParam == kAnimTimerId) { self->on_anim_tick(); return 0; }
@@ -799,6 +870,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                 self->client_->stop_background_backfill();
                 self->client_->start_background_backfill(ids);
             }
+            return 0;
+        }
+        if (wParam == kVerifDoneTimerId) {
+            KillTimer(hwnd, kVerifDoneTimerId);
+            if (self->verif_shared_ && self->verif_shared_->on_done)
+                self->verif_shared_->on_done();
             return 0;
         }
         if (wParam == kSyncStatusDebounceTimerId) {
@@ -1271,6 +1348,53 @@ void MainWindow::on_create(HWND hwnd) {
         ShowWindow(rb, SW_HIDE);
     }
 
+    // Verification banner — shared widget on a tk::win32::Surface. Initially
+    // hidden; shown by handle_verification_state_ui_ when is_verified=false.
+    verif_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    {
+        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
+        verif_shared_ = banner.get();
+        verif_shared_->on_verify = [this] {
+            if (client_) client_->request_self_verification();
+        };
+        verif_shared_->on_accept = [this] {
+            if (client_) {
+                client_->accept_verification(active_verification_flow_id_);
+                client_->start_sas(active_verification_flow_id_);
+            }
+        };
+        verif_shared_->on_match = [this] {
+            if (client_) client_->confirm_sas(active_verification_flow_id_);
+            if (verif_shared_) verif_shared_->set_state(
+                tesseract::views::VerificationBanner::State::Confirming);
+            if (verif_surface_) verif_surface_->relayout();
+        };
+        verif_shared_->on_mismatch = [this] {
+            if (client_) client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_cancel = [this] {
+            if (client_) client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_dismiss = [this] {
+            verification_banner_dismissed_ = true;
+            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            verif_banner_visible_ = false;
+            on_size(0, 0);
+        };
+        verif_shared_->on_done = [this] {
+            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            verif_banner_visible_ = false;
+            on_size(0, 0);
+        };
+        verif_surface_->set_root(std::move(banner));
+    }
+    if (HWND vb = verif_surface_->hwnd()) {
+        SetWindowPos(vb, nullptr, 240, kRoomHeaderH, 784, 48,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(vb, SW_HIDE);
+    }
+
     // Image/sticker lightbox overlay — WS_CHILD Surface that covers the
     // entire content area when open. Created hidden; shown/hidden by
     // on_image_clicked / ImageViewerOverlay::on_close.
@@ -1442,6 +1566,17 @@ void MainWindow::on_size(int w, int h) {
                       SWP_NOZORDER | SWP_NOACTIVATE);
         msg_area_y += BANNER_H;
         msg_area_h -= BANNER_H;
+    }
+    if (verif_banner_visible_ && verif_surface_ && verif_surface_->hwnd()) {
+        using VBState = tesseract::views::VerificationBanner::State;
+        int verif_h = (verif_shared_
+                       && verif_shared_->state() == VBState::ShowEmojis) ? 124 : 48;
+        SetWindowPos(verif_surface_->hwnd(), nullptr,
+                      CHAT_X, msg_area_y, w - CHAT_X, verif_h,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+        verif_surface_->relayout();
+        msg_area_y += verif_h;
+        msg_area_h -= verif_h;
     }
 
     // Sidebar fills the full content height (status bar excluded): the
@@ -1981,10 +2116,19 @@ void MainWindow::refresh_room_list() {
 
     std::vector<tesseract::RoomInfo> filtered;
     if (space_stack_.empty()) {
-        // Hide the space navigation bar and build the root list, excluding
-        // rooms that are children of any space (they appear only when drilled in).
         if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_HIDE);
         if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_HIDE);
+        if (!pending_search_text_.empty()) {
+            for (const auto& r : rooms_) ensure_room_avatar_(r);
+            room_list_view_->set_rooms(rooms_);
+            if (!current_room_id_.empty())
+                room_list_view_->set_selected_room(current_room_id_);
+            if (hwnd_) { RECT rc; GetClientRect(hwnd_, &rc); on_size(rc.right, rc.bottom); }
+            if (room_surface_) room_surface_->relayout();
+            return;
+        }
+        // Build the root list, excluding rooms that are children of any space
+        // (they appear only when drilled in).
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_)
             if (r.is_space)

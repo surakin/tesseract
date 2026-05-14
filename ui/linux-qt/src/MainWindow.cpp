@@ -187,6 +187,7 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(searchDebounce, &QTimer::timeout, [this] {
         if (roomListView_) roomListView_->set_search_text(roomSearchPendingText_);
+        refreshRoomList();
     });
     roomSurface_->set_on_layout([this] {
         if (!roomListView_ || !roomSearchField_) return;
@@ -332,6 +333,50 @@ MainWindow::MainWindow(QWidget* parent)
     connect(this, &MainWindow::recoverFinished,
             this, &MainWindow::onRecoverFinished, Qt::QueuedConnection);
     vLayout->addWidget(recoverySurface_);
+
+    // Verification banner — inline strip shown when the device is unverified.
+    verifSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
+    verifSurface_->setFixedHeight(48);
+    verifSurface_->setVisible(false);
+    {
+        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
+        verifShared_ = banner.get();
+        verifShared_->on_verify = [this] {
+            if (client_) client_->request_self_verification();
+        };
+        verifShared_->on_accept = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                client_->accept_verification(active_verification_flow_id_);
+                client_->start_sas(active_verification_flow_id_);
+            }
+        };
+        verifShared_->on_match = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                if (verifShared_)
+                    verifShared_->set_state(
+                        tesseract::views::VerificationBanner::State::Confirming);
+                verifSurface_->relayout();
+                client_->confirm_sas(active_verification_flow_id_);
+            }
+        };
+        verifShared_->on_mismatch = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verifShared_->on_cancel = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verifShared_->on_dismiss = [this] {
+            verification_banner_dismissed_ = true;
+            if (verifSurface_) verifSurface_->setVisible(false);
+        };
+        verifShared_->on_done = [this] {
+            if (verifSurface_) verifSurface_->setVisible(false);
+        };
+        verifSurface_->set_root(std::move(banner));
+    }
+    vLayout->addWidget(verifSurface_);
 
     // Shared-toolkit message list. Each row is paint-only — no per-row
     // QWidget — and the surface owns scrolling, hit-testing, and
@@ -1491,6 +1536,11 @@ void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
 void MainWindow::refreshRoomList() {
     if (space_stack_.empty()) {
+        if (!roomSearchPendingText_.empty()) {
+            showRooms(rooms_);
+            roomNavBar_->setVisible(false);
+            return;
+        }
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_) {
             if (!r.is_space) continue;
@@ -2143,6 +2193,76 @@ void MainWindow::doLogout() {
     // Legacy shim that the tray / external code may still call. Routes to
     // the active-account logout path.
     logoutActiveAccount();
+}
+
+// ── Cross-signing / SAS verification hooks ────────────────────────────────────
+
+void MainWindow::handle_verification_state_ui_(bool is_verified)
+{
+    if (!verifSurface_ || !verifShared_) return;
+    if (is_verified) {
+        verifSurface_->setVisible(false);
+        return;
+    }
+    if (verification_banner_dismissed_) return;
+    // Show Prompt state when unverified.
+    if (!verifSurface_->isVisible()) {
+        active_verification_flow_id_.clear();
+        verifShared_->set_state(tesseract::views::VerificationBanner::State::Prompt);
+        verifSurface_->setVisible(true);
+        verifSurface_->relayout();
+    }
+}
+
+void MainWindow::handle_verification_request_ui_(
+    std::string flow_id, std::string /*user_id*/,
+    std::string /*device_id*/, bool incoming)
+{
+    if (!verifSurface_ || !verifShared_) return;
+    active_verification_flow_id_ = flow_id;
+    if (incoming) {
+        verifShared_->set_state(tesseract::views::VerificationBanner::State::IncomingRequest);
+    } else {
+        // Our request was accepted — switch to Waiting, immediately start SAS.
+        verifShared_->set_state(tesseract::views::VerificationBanner::State::Waiting);
+        if (client_) client_->start_sas(flow_id);
+    }
+    verifSurface_->setVisible(true);
+    verifSurface_->relayout();
+}
+
+void MainWindow::handle_sas_ready_ui_(
+    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
+{
+    if (!verifSurface_ || !verifShared_) return;
+    verifShared_->set_emojis(emojis);
+    verifSurface_->setFixedHeight(124);
+    verifSurface_->setVisible(true);
+    verifSurface_->relayout();
+}
+
+void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
+{
+    if (!verifSurface_ || !verifShared_) return;
+    verifShared_->set_state(tesseract::views::VerificationBanner::State::Done);
+    verifSurface_->setFixedHeight(48);
+    verifSurface_->relayout();
+    // Hide after 1.5 s via on_done callback (already wired in constructor).
+    QTimer::singleShot(1500, this, [this] {
+        if (verifShared_)
+            verifShared_->on_done ? verifShared_->on_done() : void();
+    });
+}
+
+void MainWindow::handle_verification_cancelled_ui_(
+    std::string /*flow_id*/, std::string reason)
+{
+    if (!verifSurface_ || !verifShared_) return;
+    verifShared_->set_state(tesseract::views::VerificationBanner::State::Cancelled);
+    verifShared_->set_cancel_reason(std::move(reason));
+    verifSurface_->setFixedHeight(48);
+    verifSurface_->setVisible(true);
+    verifSurface_->relayout();
 }
 
 } // namespace qt6

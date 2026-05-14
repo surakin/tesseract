@@ -14,6 +14,7 @@ namespace tesseract_ffi {
     struct TimelineEvent;
     struct RoomInfo;
     struct BackupProgress;
+    struct VerificationEmoji;
 }
 
 namespace tesseract_ffi {
@@ -53,6 +54,14 @@ public:
     void on_notification(rust::Str room_id, rust::Str room_name,
                          rust::Str sender, rust::Str body, bool is_mention,
                          rust::Slice<const uint8_t> avatar_bytes) const;
+
+    void on_verification_request(rust::Str flow_id, rust::Str user_id,
+                                  rust::Str device_id, bool incoming) const;
+    void on_sas_ready(rust::Str flow_id,
+                      const rust::Vec<VerificationEmoji>& emojis) const;
+    void on_verification_done(rust::Str flow_id) const;
+    void on_verification_cancelled(rust::Str flow_id, rust::Str reason) const;
+    void on_verification_state_changed(bool verified) const;
 
 private:
     tesseract::IEventHandler* handler_; // non-owning

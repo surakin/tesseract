@@ -34,7 +34,7 @@ use matrix_sdk_ui::{
 #[cfg(not(test))]
 use futures_util::StreamExt;
 #[cfg(not(test))]
-use crate::ffi::{EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent};
+use crate::ffi::{EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent, VerificationEmoji};
 #[cfg(not(test))]
 use matrix_sdk::{Room, ruma::UserId};
 #[cfg(not(test))]
@@ -208,6 +208,17 @@ pub struct ClientFfi {
     /// `set_data_dir` before `oauth_begin` / `restore_session`. Defaults to
     /// `default_data_dir()` for legacy single-account callers.
     data_dir:   PathBuf,
+    /// Maps verification `flow_id` → `user_id` for in-flight verification
+    /// requests (both incoming and outgoing). Allows `accept_verification`,
+    /// `start_sas`, etc. to look up the right VerificationRequest via the
+    /// SDK's internal map using (user_id, flow_id).
+    #[cfg(not(test))]
+    verification_flow_users: Arc<Mutex<HashMap<String, String>>>,
+    /// Most-recently-computed SAS emoji per `flow_id`. Populated by the SAS
+    /// watcher task when `KeysExchanged` fires; read synchronously by
+    /// `get_sas_emojis()`.
+    #[cfg(not(test))]
+    sas_emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     rt:         Runtime,
@@ -268,6 +279,10 @@ impl ClientFfi {
             #[cfg(not(test))]
             image_packs: Arc::new(Mutex::new(Vec::new())),
             data_dir:   default_data_dir(),
+            #[cfg(not(test))]
+            verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
             rt:         Runtime::new().expect("tokio runtime"),
         }
     }
@@ -809,6 +824,105 @@ impl ClientFfi {
                     }
                 }
             });
+        }
+
+        // Verification state watcher.
+        //
+        // Subscribes to `client.encryption().verification_state()` so the UI
+        // is notified whenever the cross-signing verified status of the current
+        // account changes (Unknown → Unverified → Verified). Fires an initial
+        // snapshot on startup so the UI always has a starting value.
+        {
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let mut stop_rx  = stop_rx.clone();
+
+            self.rt.spawn(async move {
+                use matrix_sdk::encryption::VerificationState;
+                let mut state_rx = client_clone.encryption().verification_state();
+
+                // Initial snapshot.
+                {
+                    let s = matches!(state_rx.next_now(), VerificationState::Verified);
+                    if let Ok(guard) = h.lock() {
+                        guard.on_verification_state_changed(s);
+                    }
+                }
+
+                loop {
+                    tokio::select! {
+                        _ = stop_rx.changed() => {
+                            if *stop_rx.borrow() { break; }
+                        }
+                        Some(state) = state_rx.next() => {
+                            let verified = matches!(state, VerificationState::Verified);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_verification_state_changed(verified);
+                            }
+                        }
+                        else => break,
+                    }
+                }
+            });
+        }
+
+        // Incoming verification request handler.
+        //
+        // Registers a to-device event handler for `m.key.verification.request`
+        // so the UI is notified when another device initiates a SAS flow with
+        // this one. After the SDK processes the event internally, we retrieve
+        // the `VerificationRequest` object and store the flow_id → user_id
+        // mapping so subsequent API calls can do the lookup.
+        {
+            use matrix_sdk::ruma::events::{
+                key::verification::request::ToDeviceKeyVerificationRequestEventContent,
+                ToDeviceEvent,
+            };
+            let h          = Arc::clone(&handler);
+            let flow_users = Arc::clone(&self.verification_flow_users);
+            let emoji_cache = Arc::clone(&self.sas_emoji_cache);
+
+            client.add_event_handler(
+                move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
+                      client: Client| {
+                    let h           = Arc::clone(&h);
+                    let flow_users  = Arc::clone(&flow_users);
+                    let emoji_cache = Arc::clone(&emoji_cache);
+                    async move {
+                        let flow_id   = ev.content.transaction_id.to_string();
+                        let user_id   = ev.sender.as_str().to_owned();
+                        let device_id = ev.content.from_device.as_str().to_owned();
+
+                        // Brief yield so the OlmMachine processes the event
+                        // and adds the request to its internal map before we
+                        // try to retrieve it.
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+                        if let Some(req) = client
+                            .encryption()
+                            .get_verification_request(&ev.sender, &flow_id)
+                            .await
+                        {
+                            flow_users.lock().unwrap()
+                                .insert(flow_id.clone(), user_id.clone());
+                            if let Ok(guard) = h.lock() {
+                                guard.on_verification_request(
+                                    &flow_id, &user_id, &device_id, true);
+                            }
+                            // Spawn a watcher so we can surface request-level
+                            // transitions (Done / Cancelled) that occur before
+                            // start_sas is called.
+                            let h2           = Arc::clone(&h);
+                            let flow_users2  = Arc::clone(&flow_users);
+                            let emoji_cache2 = Arc::clone(&emoji_cache);
+                            let flow_id2     = flow_id.clone();
+                            tokio::spawn(watch_verification_request(
+                                req, flow_id2, h2, flow_users2, emoji_cache2,
+                            ));
+                        }
+                    }
+                },
+            );
         }
 
         // Start SyncService and monitor state.
@@ -2167,6 +2281,183 @@ impl ClientFfi {
     pub fn backup_state(&self) -> BackupProgress { backup_progress_default() }
 
     // -----------------------------------------------------------------------
+    // SAS device verification
+    // -----------------------------------------------------------------------
+
+    /// Initiate an `m.key.verification.request` to every other device of the
+    /// current user. `on_verification_request(incoming=false)` fires when one
+    /// device accepts; the UI should then call `start_sas(flow_id)`.
+    #[cfg(not(test))]
+    pub fn request_self_verification(&mut self) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(handler) = self.handler.clone() else { return err("not syncing") };
+        let flow_users   = Arc::clone(&self.verification_flow_users);
+        let emoji_cache  = Arc::clone(&self.sas_emoji_cache);
+
+        match self.rt.block_on(async move {
+            let enc    = client.encryption();
+            let device = enc.get_own_device().await?.ok_or_else(|| {
+                anyhow::anyhow!("own device not found")
+            })?;
+            let req = device.request_verification().await?;
+
+            let flow_id = req.flow_id().to_owned();
+            let user_id = req.own_user_id().as_str().to_owned();
+            flow_users.lock().unwrap().insert(flow_id.clone(), user_id);
+
+            tokio::spawn(watch_verification_request(
+                req, flow_id, handler, flow_users, emoji_cache,
+            ));
+            Ok::<(), anyhow::Error>(())
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn request_self_verification(&mut self) -> OpResult { err("not logged in") }
+
+    /// Accept an incoming verification request. Call after receiving
+    /// `on_verification_request(incoming=true)`, then call `start_sas`.
+    #[cfg(not(test))]
+    pub fn accept_verification(&mut self, flow_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+            Some(u) => u,
+            None    => return err("no pending verification request for this flow_id"),
+        };
+        let flow_id = flow_id.to_owned();
+        match self.rt.block_on(async move {
+            use matrix_sdk::ruma::UserId;
+            let uid = <&UserId>::try_from(user_id.as_str())?;
+            let req = client.encryption()
+                .get_verification_request(uid, &flow_id)
+                .await
+                .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
+            req.accept().await?;
+            Ok::<(), anyhow::Error>(())
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn accept_verification(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+
+    /// Start the SAS key exchange. `on_sas_ready` fires when the 7 emoji are
+    /// computed. Call after `accept_verification` (incoming) or after
+    /// `on_verification_request(incoming=false)` (outgoing).
+    #[cfg(not(test))]
+    pub fn start_sas(&mut self, flow_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+            Some(u) => u,
+            None    => return err("no pending verification request for this flow_id"),
+        };
+        let flow_id_str  = flow_id.to_owned();
+        let Some(handler) = self.handler.clone() else { return err("not syncing") };
+        let emoji_cache  = Arc::clone(&self.sas_emoji_cache);
+
+        match self.rt.block_on(async move {
+            use matrix_sdk::ruma::UserId;
+            let uid = <&UserId>::try_from(user_id.as_str())?;
+            let req = client.encryption()
+                .get_verification_request(uid, &flow_id_str)
+                .await
+                .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
+            let sas = req.start_sas().await?
+                .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?;
+            tokio::spawn(watch_sas(sas, flow_id_str, handler, emoji_cache));
+            Ok::<(), anyhow::Error>(())
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn start_sas(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+
+    /// Confirm that the SAS emoji match. Fires `on_verification_done` when
+    /// both sides confirm. Call from the "They Match" button handler.
+    #[cfg(not(test))]
+    pub fn confirm_sas(&mut self, flow_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+            Some(u) => u,
+            None    => return err("no active SAS for this flow_id"),
+        };
+        let flow_id = flow_id.to_owned();
+        match self.rt.block_on(async move {
+            use matrix_sdk::ruma::UserId;
+            use matrix_sdk::encryption::verification::Verification;
+            let uid  = <&UserId>::try_from(user_id.as_str())?;
+            let verif = client.encryption()
+                .get_verification(uid, &flow_id)
+                .await
+                .ok_or_else(|| anyhow::anyhow!("verification not found"))?;
+            if let Verification::SasV1(sas) = verif {
+                sas.confirm().await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn confirm_sas(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+
+    /// Cancel or decline a verification flow (mismatch or user dismiss).
+    #[cfg(not(test))]
+    pub fn cancel_verification(&mut self, flow_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+            Some(u) => u,
+            None    => return err("no active verification for this flow_id"),
+        };
+        let flow_id = flow_id.to_owned();
+        match self.rt.block_on(async move {
+            use matrix_sdk::ruma::UserId;
+            use matrix_sdk::encryption::verification::Verification;
+            let uid   = <&UserId>::try_from(user_id.as_str())?;
+            // Try the SAS object first; fall back to the request.
+            if let Some(Verification::SasV1(sas)) = client.encryption()
+                .get_verification(uid, &flow_id).await
+            {
+                sas.cancel().await?;
+            } else if let Some(req) = client.encryption()
+                .get_verification_request(uid, &flow_id).await
+            {
+                req.cancel().await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }) {
+            Ok(())  => ok(""),
+            Err(e)  => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn cancel_verification(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+
+    /// Return the 7 SAS emoji for `flow_id` after `on_sas_ready` has fired.
+    #[cfg(not(test))]
+    pub fn get_sas_emojis(&self, flow_id: &str) -> Vec<VerificationEmoji> {
+        self.sas_emoji_cache.lock().unwrap()
+            .get(flow_id)
+            .map(|pairs| pairs.iter().map(|(sym, desc)| VerificationEmoji {
+                symbol:      sym.clone(),
+                description: desc.clone(),
+            }).collect())
+            .unwrap_or_default()
+    }
+
+
+    // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
 
@@ -3208,6 +3499,129 @@ async fn handle_timeline_diff(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// SAS verification helpers
+// ---------------------------------------------------------------------------
+
+/// Watch a `VerificationRequest`'s state stream. Fires `on_verification_request`
+/// (incoming=false) when the request is accepted (Ready state), then spawns a
+/// SAS watcher when the flow transitions to `Transitioned { SasV1 }`.
+/// Also surfaces top-level Done / Cancelled transitions before SAS starts.
+#[cfg(not(test))]
+async fn watch_verification_request(
+    req:         matrix_sdk::encryption::verification::VerificationRequest,
+    flow_id:     String,
+    handler:     Arc<Mutex<SendHandler>>,
+    flow_users:  Arc<Mutex<HashMap<String, String>>>,
+    emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
+) {
+    use futures_util::StreamExt;
+    use matrix_sdk::encryption::verification::{VerificationRequestState, Verification};
+
+    let user_id    = req.other_user_id().as_str().to_owned();
+    let we_started = req.we_started();
+
+    let mut changes = req.changes();
+
+    while let Some(state) = changes.next().await {
+        match state {
+            VerificationRequestState::Ready { ref other_device_data, .. } => {
+                // The other side accepted our outgoing request. Signal the UI
+                // to transition from Waiting and call start_sas.
+                if we_started {
+                    let device_id = other_device_data.device_id().as_str().to_owned();
+                    if let Ok(guard) = handler.lock() {
+                        guard.on_verification_request(&flow_id, &user_id, &device_id, false);
+                    }
+                }
+            }
+            VerificationRequestState::Transitioned { verification } => {
+                if let Verification::SasV1(sas) = verification {
+                    let h2           = Arc::clone(&handler);
+                    let flow_id2     = flow_id.clone();
+                    let emoji_cache2 = Arc::clone(&emoji_cache);
+                    tokio::spawn(watch_sas(sas, flow_id2, h2, emoji_cache2));
+                }
+                break;
+            }
+            VerificationRequestState::Done => {
+                if let Ok(guard) = handler.lock() {
+                    guard.on_verification_done(&flow_id);
+                }
+                flow_users.lock().unwrap().remove(&flow_id);
+                break;
+            }
+            VerificationRequestState::Cancelled(info) => {
+                if let Ok(guard) = handler.lock() {
+                    guard.on_verification_cancelled(&flow_id, info.reason());
+                }
+                flow_users.lock().unwrap().remove(&flow_id);
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Watch a `SasVerification`'s state stream. Fires `on_sas_ready` when the
+/// 7 emoji are available, `on_verification_done` on success, and
+/// `on_verification_cancelled` on mismatch or cancel.
+#[cfg(not(test))]
+async fn watch_sas(
+    sas:         SasVerification,
+    flow_id:     String,
+    handler:     Arc<Mutex<SendHandler>>,
+    emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
+) {
+    use futures_util::StreamExt;
+    use matrix_sdk::encryption::verification::SasState;
+
+    let mut changes = sas.changes();
+
+    while let Some(state) = changes.next().await {
+        match state {
+            SasState::KeysExchanged { emojis, .. } => {
+                if let Some(emojis) = emojis {
+                    let pairs: Vec<(String, String)> = emojis.emojis.iter()
+                        .map(|e| (e.symbol.to_owned(), e.description.to_owned()))
+                        .collect();
+                    emoji_cache.lock().unwrap().insert(flow_id.clone(), pairs.clone());
+                    let ve: Vec<VerificationEmoji> = pairs.into_iter()
+                        .map(|(sym, desc)| VerificationEmoji {
+                            symbol:      sym,
+                            description: desc,
+                        })
+                        .collect();
+                    if let Ok(guard) = handler.lock() {
+                        guard.on_sas_ready(&flow_id, &ve);
+                    }
+                }
+            }
+            SasState::Done { .. } => {
+                if let Ok(guard) = handler.lock() {
+                    guard.on_verification_done(&flow_id);
+                }
+                emoji_cache.lock().unwrap().remove(&flow_id);
+                break;
+            }
+            SasState::Cancelled(info) => {
+                if let Ok(guard) = handler.lock() {
+                    guard.on_verification_cancelled(
+                        &flow_id,
+                        &format!("{}", info.reason()),
+                    );
+                }
+                emoji_cache.lock().unwrap().remove(&flow_id);
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(not(test))]
+use matrix_sdk::encryption::verification::SasVerification;
 
 // ---------------------------------------------------------------------------
 

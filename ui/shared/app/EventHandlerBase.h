@@ -44,6 +44,16 @@ public:
                          const std::string& sender, const std::string& body,
                          bool is_mention,
                          const std::vector<uint8_t>& avatar_bytes) override;
+    void on_verification_request(const std::string& flow_id,
+                                  const std::string& user_id,
+                                  const std::string& device_id,
+                                  bool incoming) override;
+    void on_sas_ready(const std::string& flow_id,
+                      std::vector<VerificationEmoji> emojis) override;
+    void on_verification_done(const std::string& flow_id) override;
+    void on_verification_cancelled(const std::string& flow_id,
+                                    const std::string& reason) override;
+    void on_verification_state_changed(bool is_verified) override;
 
 protected:
     ShellBase*  shell_;
