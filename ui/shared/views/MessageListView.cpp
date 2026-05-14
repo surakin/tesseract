@@ -12,6 +12,79 @@
 
 namespace tesseract::views {
 
+MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_user_id) {
+    using Kind = MessageRowData::Kind;
+    MessageRowData row;
+    row.event_id          = ev.event_id;
+    row.sender            = ev.sender;
+    row.sender_name       = ev.sender_name;
+    row.sender_avatar_url = ev.sender_avatar_url;
+    row.body              = ev.body;
+    row.timestamp_ms      = ev.timestamp;
+    row.is_own            = !my_user_id.empty() && ev.sender == my_user_id;
+    row.reactions         = ev.reactions;
+    row.read_receipts     = ev.read_receipts;
+
+    row.in_reply_to_id          = ev.in_reply_to_id;
+    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
+    row.in_reply_to_body        = ev.in_reply_to_body;
+    row.is_edited               = ev.is_edited;
+
+    switch (ev.type) {
+        case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
+        case tesseract::EventType::Image: {
+            row.kind = Kind::Image;
+            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
+            row.media_url            = img.image_url;
+            row.media_w              = static_cast<int>(img.width);
+            row.media_h              = static_cast<int>(img.height);
+            row.has_filename_caption = !img.filename.empty();
+            break;
+        }
+        case tesseract::EventType::Sticker: {
+            row.kind = Kind::Sticker;
+            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
+            row.media_url = s.image_url;
+            row.media_w   = static_cast<int>(s.width);
+            row.media_h   = static_cast<int>(s.height);
+            break;
+        }
+        case tesseract::EventType::File: {
+            row.kind = Kind::File;
+            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
+            row.file_name = f.file_name;
+            row.file_size = f.file_size;
+            row.media_url = f.file_url;
+            break;
+        }
+        case tesseract::EventType::Voice: {
+            row.kind = Kind::Voice;
+            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
+            row.audio_source = v.audio_source;
+            row.audio_mime   = v.mime_type;
+            row.duration_ms  = v.duration_ms;
+            row.waveform     = v.waveform;
+            break;
+        }
+        case tesseract::EventType::Video: {
+            row.kind = Kind::Video;
+            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
+            row.media_url            = vid.video_url;
+            row.video_thumb_url      = vid.thumbnail_url.empty()
+                                       ? ("thumb::" + ev.event_id)
+                                       : vid.thumbnail_url;
+            row.media_w              = static_cast<int>(vid.width);
+            row.media_h              = static_cast<int>(vid.height);
+            row.duration_ms          = vid.duration_ms;
+            row.has_filename_caption = !vid.filename.empty();
+            break;
+        }
+        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
+        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
+    }
+    return row;
+}
+
 namespace {
 
 constexpr float kPadX        = tesseract::visual::kSpaceMD;          // 12

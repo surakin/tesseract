@@ -17,6 +17,9 @@
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
+#include "app/ShellBase.h"
+#include "app/EventHandlerBase.h"
+#include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_win32.h"
@@ -67,6 +70,7 @@ constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
 constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE  = WM_APP + 21;
+constexpr UINT WM_TESSERACT_POST_TO_UI       = WM_APP + 22;
 
 namespace win32 {
 
@@ -75,50 +79,12 @@ class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
 
 class LoginView;
 
-/// Win32 event handler: marshals Rust callbacks onto the UI thread via PostMessage.
-class EventHandler final : public tesseract::IEventHandler {
-public:
-    explicit EventHandler(HWND hwnd) : hwnd_(hwnd) {}
-
-    void set_user_id(std::string uid) { user_id_ = std::move(uid); }
-    const std::string& user_id() const { return user_id_; }
-
-    void on_timeline_reset(const std::string& room_id,
-                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
-    void on_message_inserted(const std::string& room_id,
-                              std::size_t index,
-                              std::unique_ptr<tesseract::Event> event) override;
-    void on_message_updated(const std::string& room_id,
-                             std::size_t index,
-                             std::unique_ptr<tesseract::Event> event) override;
-    void on_message_removed(const std::string& room_id,
-                             std::size_t index) override;
-    void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
-    void on_sync_error(const std::string& context,
-                       const std::string& description,
-                       bool soft_logout) override;
-    void on_session_saved(const std::string& session_json) override;
-    void on_backup_progress(const tesseract::BackupProgress& progress) override;
-    void on_room_list_state(tesseract::RoomListState state) override;
-    void on_image_packs_updated() override;
-    void on_account_prefs_updated(const std::string& json) override;
-    void on_notification(const std::string& room_id, const std::string& room_name,
-                         const std::string& sender,  const std::string& body,
-                         bool is_mention,
-                         const std::vector<uint8_t>& avatar_bytes) override;
-
-    HWND        hwnd_;
-    std::string user_id_;
-};
-
 // ---------------------------------------------------------------------------
 
-class MainWindow {
+class MainWindow : public tesseract::ShellBase {
     // Owner-drawn sidebar widgets need access to MainWindow state for paint.
     friend LRESULT CALLBACK room_header_wnd_proc(HWND, UINT, WPARAM, LPARAM);
     friend LRESULT CALLBACK user_strip_wnd_proc (HWND, UINT, WPARAM, LPARAM);
-    // EventHandler posts payloads typed as MainWindow's private structs.
-    friend class EventHandler;
 
 public:
     static bool register_class(HINSTANCE hInst);
@@ -128,14 +94,36 @@ public:
 
     bool create(int nCmdShow);
 
-    // Names the worker-thread media fetch's target cache / surface; the
-    // matching payload (MediaBytesPayload) is in the .cpp's anonymous
-    // namespace and needs to spell this type publicly.
-    enum class MediaKind : std::uint8_t {
-        RoomAvatar,  // tk_avatars_[mxc],  invalidate room_surface_
-        UserAvatar,  // tk_avatars_[mxc],  invalidate msg_surface_
-        MediaImage,  // tk_images_/tk_anim_images_[url], invalidate msg_surface_
-    };
+    // MediaKind is inherited from tesseract::ShellBase.
+    // RoomAvatar → tk_avatars_, invalidate room_surface_
+    // UserAvatar → tk_avatars_, invalidate msg_surface_
+    // MediaImage → anim_cache_/tk_images_[url], invalidate msg_surface_
+
+    // ── EventHandlerBase UI-thread hook overrides (Win32) ─────────────────────
+    void handle_timeline_reset_ui_(
+        std::string room_id,
+        std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void handle_message_inserted_ui_(
+        std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_updated_ui_(
+        std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_removed_ui_(
+        std::string room_id, std::size_t index) override;
+    void handle_sync_error_ui_(
+        std::string context, std::string user_id,
+        std::string description, bool soft_logout) override;
+    void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
+    void handle_image_packs_updated_ui_() override;
+    void handle_account_prefs_updated_ui_(
+        std::string user_id, std::string json) override;
+    void handle_notification_ui_(
+        std::string user_id, std::string room_id,
+        std::string room_name, std::string sender,
+        std::string body, bool is_mention,
+        std::vector<uint8_t> avatar_bytes) override;
+    void on_room_list_state_ui_() override;
 
 private:
     void on_create(HWND hwnd);
@@ -185,13 +173,8 @@ private:
     /// Kick off back-pagination on a worker thread.
     void request_more_history(const std::string& room_id);
 
-    // Convert a polymorphic SDK Event into MessageRowData for the shared
-    // MessageListView; pre-fetch any referenced media into tk_images_.
-    tesseract::views::MessageRowData to_row_data(const tesseract::Event& ev);
-    void ensure_room_avatar(const tesseract::RoomInfo& r);
-    void ensure_user_avatar_tk(const std::string& mxc);
-    void ensure_media_image(const std::string& url, int max_w, int max_h);
-    void ensure_reply_details(const std::string& event_id);
+    // ensure_room_avatar_, ensure_user_avatar_, ensure_media_image_,
+    // and ensure_reply_details_ are inherited from tesseract::ShellBase.
 
     void on_reconnect(const std::string& user_id);
     void on_space_back();
@@ -205,12 +188,10 @@ private:
     void on_login_cancelled();
     void rebuild_account_picker();
     void open_account_picker();
-    // Sync-progress status cache.
-    tesseract::RoomListState last_room_list_state_ = tesseract::RoomListState::Init;
-    tesseract::BackupState   last_backup_state_    = tesseract::BackupState::Unknown;
-    std::uint64_t            last_imported_keys_   = 0;
+    // last_room_list_state_, last_backup_state_, last_imported_keys_,
+    // sync_progress_shown_, and recovery_banner_dismissed_ are inherited
+    // from tesseract::ShellBase.
     UINT_PTR                 sync_status_debounce_timer_id_ = 0;
-    bool                     sync_progress_shown_  = false;
     static constexpr UINT_PTR kSyncStatusDebounceTimerId = 0xA1B2;
     void maybe_show_recovery_banner();
     void on_recovery_verify_clicked();
@@ -326,26 +307,18 @@ private:
     tesseract::views::RecoveryBanner*         recovery_shared_   = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>     recovery_key_field_;
     bool      recovery_banner_visible_   = false;
-    bool      recovery_banner_dismissed_ = false;
+    // recovery_banner_dismissed_ is inherited from tesseract::ShellBase.
     bool      recovery_in_flight_        = false;
 
     HWND             hUserStrip_     = nullptr;
     HWND             hUserIdLabel_   = nullptr;  // Matrix ID second line
-    std::string      my_display_name_;
-    std::string      my_avatar_url_;
+    // my_display_name_, my_avatar_url_, my_user_id_ are inherited from ShellBase.
     Gdiplus::Bitmap* user_avatar_bmp_ = nullptr;  // owned; null = use initials
 
-    // Multi-account state. client_ and event_handler_ are non-owning
-    // aliases of accounts_[active_account_index_].
-    std::vector<std::unique_ptr<tesseract::AccountSession>> accounts_;
-    int                         active_account_index_ = -1;
-    tesseract::Client*          client_        = nullptr;  // non-owning alias
-    EventHandler*               event_handler_ = nullptr;  // non-owning alias
-    std::unordered_map<std::string, std::vector<tesseract::RoomInfo>> per_account_rooms_;
-    std::unique_ptr<tesseract::Client>   pending_login_client_;
-    std::filesystem::path                pending_login_temp_dir_;
-    bool                                 pending_login_is_add_account_ = false;
-    int                                  add_account_return_idx_       = -1;
+    // Multi-account state: accounts_, active_account_index_, client_,
+    // event_handler_, per_account_rooms_, pending_login_client_,
+    // pending_login_temp_dir_, pending_login_is_add_account_,
+    // add_account_return_idx_ are inherited from tesseract::ShellBase.
 
     // Account-picker popup (WS_POPUP HWND hosting AccountPicker surface).
     HWND                                         hAccountPicker_  = nullptr;
@@ -354,17 +327,11 @@ private:
 
     std::unique_ptr<Win32TrayIcon>   tray_;
     bool                              quitting_ = false;
-    std::vector<tesseract::RoomInfo> rooms_;
+    // rooms_, current_room_id_, pending_restore_room_, space_stack_
+    // are inherited from tesseract::ShellBase.
     tesseract::RoomInfo              current_room_info_;
-    std::string                      current_room_id_;
-    std::string                      pending_restore_room_;
-    std::string                      my_user_id_;
-    std::vector<std::string>         space_stack_;
 
-    // Per-room back-pagination state (mirrors Qt/GTK/macOS).
-    struct PaginationState { bool in_flight = false; bool reached_start = false; };
-    std::unordered_map<std::string, PaginationState> pagination_;
-    static constexpr std::uint16_t kPaginationBatch = 50;
+    // pagination_ and kPaginationBatch are inherited from tesseract::ShellBase.
 
     ULONG_PTR  gdiplus_token_ = 0;
     // GDI+ bitmap caches for the legacy native paint paths that the
@@ -375,31 +342,9 @@ private:
     std::unordered_map<std::string, Gdiplus::Bitmap*> avatar_cache_;
     std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
 
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
-
-    // Voice-message source tokens already prefetched (or in flight). The
-    // SDK media cache owns the bytes; this set just dedupes worker spawns.
-    std::unordered_set<std::string> voice_prefetched_;
-    std::unordered_set<std::string> video_thumb_in_flight_;
-
-    // Replied-to event IDs for which we have already called
-    // fetch_reply_details this subscription session. Cleared on room switch.
-    std::unordered_set<std::string> reply_details_requested_;
-
-    // Animated inline-media entries (GIF / APNG / animated WebP). Frames
-    // are eager-decoded by tk::d2d::decode_animation; `next_advance_ms`
-    // is a monotonic wall-clock deadline driven by a 60 Hz WM_TIMER on
-    // the main window. The image providers for the message list AND the
-    // sticker picker both consult this map before falling back to the
-    // single-frame `tk_images_` cache.
-    struct AnimatedImage {
-        std::vector<std::unique_ptr<tk::Image>> frames;
-        std::vector<int>                         delays_ms;
-        std::size_t                              current        = 0;
-        std::int64_t                             next_advance_ms = 0;
-    };
-    std::unordered_map<std::string, AnimatedImage> tk_anim_images_;
+    // tk_avatars_, tk_images_, anim_cache_, voice_prefetched_,
+    // video_thumb_in_flight_, reply_details_requested_, media_fetches_in_flight_,
+    // sticker_fetches_in_flight_ are inherited from tesseract::ShellBase.
 
     /// Promote `url`'s entry in `tk_images_` to an animated cache if the
     /// bytes turn out to be multi-frame; otherwise leave the static entry
@@ -419,17 +364,8 @@ private:
     /// (animated or static), caches, and invalidates the picker.
     void request_sticker_image(const std::string& cache_key);
 
-    /// Async media fetches for room avatars, user avatars, and inline
-    /// media. The synchronous Rust fetches do a `tokio::block_on` per
-    /// call; running them on the UI thread freezes the message pump on
-    /// large accounts (one cache miss per room on first sync). These
-    /// helpers move the fetch onto a worker thread; the decoded bytes
-    /// come back via WM_TESSERACT_MEDIA_BYTES and land in the matching
-    /// cache + trigger a repaint of the relevant surface.
-    void request_room_avatar(const std::string& room_id,
-                              const std::string& mxc);
-    void request_user_avatar(const std::string& mxc);
-    void request_media_image(const std::string& url);
+    // run_async_, shutting_down_, workers_mu_, workers_cv_, workers_in_flight_
+    // are inherited from tesseract::ShellBase.
 
     static constexpr UINT_PTR kAnimTimerId           = 0xA01u;
     static constexpr UINT_PTR kSearchDebounceTimer   = 3;
@@ -437,22 +373,15 @@ private:
     static constexpr UINT     kAnimTimerHz          = 16;     // ~60 fps
     bool anim_timer_running_ = false;
     std::string pending_search_text_;
-    std::unordered_set<std::string> sticker_fetches_in_flight_;
-    std::unordered_set<std::string> media_fetches_in_flight_;
 
-    /// Spawn `fn` on a detached worker thread.  No-ops when shutdown is
-    /// in progress, and the worker itself rechecks the flag before
-    /// calling `client_.fetch_*`.  Bumps `workers_in_flight_` so
-    /// `WM_DESTROY` can wait (bounded) for in-flight workers to drain
-    /// before `stop_sync()` runs.  Required: without this, a worker
-    /// mid-FFI racing against `~ClientFfi` is a data race on `&mut self`
-    /// in Rust that surfaces as `panic_in_cleanup` through cxx.
-    void run_async_(std::function<void()> fn);
-
-    std::atomic<bool>        shutting_down_{false};
-    std::mutex               workers_mu_;
-    std::condition_variable  workers_cv_;
-    int                      workers_in_flight_ = 0;
+    // ShellBase virtual hooks (Win32 implementations).
+    void post_to_ui_(std::function<void()> fn) override;
+    void on_rooms_updated_() override;
+    void on_media_bytes_ready_(const std::string& cache_key,
+                                MediaKind kind,
+                                std::vector<uint8_t> bytes) override;
+    void generate_video_thumbnail_(const std::string& event_id,
+                                    const std::string& video_url) override;
 
     static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
     static constexpr int            IDC_SIDE_SEPARATOR   = 112;

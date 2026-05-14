@@ -68,35 +68,8 @@ static GdkTexture* make_scaled_texture(const std::vector<uint8_t>& data,
 }
 
 // ---------------------------------------------------------------------------
-// g_idle_add helpers
+// g_idle_add helpers (for async workers that are NOT part of EventHandlerBase)
 // ---------------------------------------------------------------------------
-
-struct IdleRooms {
-    MainWindow*                  window;
-    std::string                  user_id;
-    std::vector<tesseract::RoomInfo> rooms;
-};
-
-struct IdleError {
-    MainWindow* window;
-    std::string user_id;
-    std::string context;
-    std::string description;
-    bool soft_logout;
-};
-
-struct IdleTimelineReset {
-    MainWindow* window;
-    std::string room_id;
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot;
-};
-
-struct IdleMessageOp {
-    MainWindow*                       window;
-    std::string                       room_id;
-    std::size_t                       index;
-    std::unique_ptr<tesseract::Event> ev;   // null for remove
-};
 
 struct IdlePaginateResult {
     MainWindow* window;
@@ -111,233 +84,77 @@ struct IdleSubscribeResult {
 };
 
 // ---------------------------------------------------------------------------
-// EventHandler
+// EventHandlerBase UI-thread hook implementations (GTK4)
 // ---------------------------------------------------------------------------
 
-static MainWindow* cpp_window_for(GtkWindow* w) {
-    return reinterpret_cast<MainWindow*>(
-        g_object_get_data(G_OBJECT(w), "cpp_window"));
-}
-
-void EventHandler::on_timeline_reset(
-    const std::string& room_id,
+void MainWindow::handle_timeline_reset_ui_(
+    std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    auto* p = new IdleTimelineReset{
-        cpp_window_for(window_),
-        room_id,
-        std::move(snapshot),
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleTimelineReset*>(data);
-        d->window->push_timeline_reset(std::move(d->room_id),
-                                         std::move(d->snapshot));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_timeline_reset(std::move(room_id), std::move(snapshot));
 }
 
-void EventHandler::on_message_inserted(
-    const std::string& room_id,
-    std::size_t index,
+void MainWindow::handle_message_inserted_ui_(
+    std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    auto* p = new IdleMessageOp{
-        cpp_window_for(window_), room_id, index, std::move(ev),
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleMessageOp*>(data);
-        d->window->push_message_inserted(std::move(d->room_id),
-                                           d->index, std::move(d->ev));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_message_inserted(std::move(room_id), index, std::move(ev));
 }
 
-void EventHandler::on_message_updated(
-    const std::string& room_id,
-    std::size_t index,
+void MainWindow::handle_message_updated_ui_(
+    std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    auto* p = new IdleMessageOp{
-        cpp_window_for(window_), room_id, index, std::move(ev),
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleMessageOp*>(data);
-        d->window->push_message_updated(std::move(d->room_id),
-                                          d->index, std::move(d->ev));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_message_updated(std::move(room_id), index, std::move(ev));
 }
 
-void EventHandler::on_message_removed(
-    const std::string& room_id,
-    std::size_t index)
+void MainWindow::handle_message_removed_ui_(
+    std::string room_id, std::size_t index)
 {
-    auto* p = new IdleMessageOp{
-        cpp_window_for(window_), room_id, index, nullptr,
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleMessageOp*>(data);
-        d->window->push_message_removed(std::move(d->room_id), d->index);
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_message_removed(std::move(room_id), index);
 }
 
-void EventHandler::on_rooms_updated(
-    const std::vector<tesseract::RoomInfo>& rooms)
+void MainWindow::handle_sync_error_ui_(
+    std::string context, std::string user_id,
+    std::string description, bool soft_logout)
 {
-    auto* p = new IdleRooms{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        user_id_,
-        rooms
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleRooms*>(data);
-        d->window->push_rooms(std::move(d->user_id), std::move(d->rooms));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    if (context == "sync_reconnect")
+        handle_reconnect(user_id);
+    else if (context == "sync_auth_error")
+        handle_auth_error(soft_logout);
+    else
+        push_error(std::move(description));
 }
 
-void EventHandler::on_sync_error(
-    const std::string& context,
-    const std::string& description,
-    bool soft_logout)
+void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 {
-    auto* p = new IdleError{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        user_id_,
-        context,
-        description,
-        soft_logout
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleError*>(data);
-        if (d->context == "sync_reconnect")
-            d->window->handle_reconnect(d->user_id);
-        else if (d->context == "sync_auth_error")
-            d->window->handle_auth_error(d->soft_logout);
-        else
-            d->window->push_error(std::move(d->description));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_backup_progress(std::move(progress));
 }
 
-void EventHandler::on_session_saved(const std::string& session_json) {
-    if (!user_id_.empty())
-        tesseract::SessionStore::save_account(user_id_, session_json);
-}
-
-namespace {
-struct IdleBackupProgress {
-    MainWindow*               window;
-    tesseract::BackupProgress progress;
-};
-} // namespace
-
-void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress) {
-    auto* p = new IdleBackupProgress{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        progress
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleBackupProgress*>(data);
-        d->window->push_backup_progress(d->progress);
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
-}
-
-namespace {
-struct IdleRoomListState {
-    MainWindow*              window;
-    tesseract::RoomListState state;
-};
-} // namespace
-
-void EventHandler::on_room_list_state(tesseract::RoomListState state) {
-    auto* p = new IdleRoomListState{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        state
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleRoomListState*>(data);
-        d->window->push_room_list_state(d->state);
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
-}
-
-void EventHandler::on_image_packs_updated() {
-    // Marshal onto the GTK main loop; the picker reads the cache via
-    // Client APIs that aren't safe to call from a worker thread alongside
-    // a GTK widget repaint.
-    auto* w = reinterpret_cast<MainWindow*>(
-        g_object_get_data(G_OBJECT(window_), "cpp_window"));
-    g_idle_add([](gpointer data) -> gboolean {
-        static_cast<MainWindow*>(data)->push_image_packs_updated();
-        return G_SOURCE_REMOVE;
-    }, w);
-}
-
-namespace {
-struct IdleAccountPrefs {
-    MainWindow* window;
-    std::string json;
-};
-} // namespace (anonymous, extends the one above)
-
-void EventHandler::on_account_prefs_updated(const std::string& json) {
-    auto* p = new IdleAccountPrefs{
-        reinterpret_cast<MainWindow*>(
-            g_object_get_data(G_OBJECT(window_), "cpp_window")),
-        json
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleAccountPrefs*>(data);
-        d->window->push_account_prefs_updated(d->json);
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
-}
-
-namespace {
-struct IdleNotif {
-    MainWindow*          window;
-    std::string          user_id;
-    std::string          room_id, room_name, sender, body;
-    bool                 is_mention;
-    std::vector<uint8_t> avatar_bytes;
-};
-} // namespace
-
-void EventHandler::on_notification(
-    const std::string& room_id, const std::string& room_name,
-    const std::string& sender,  const std::string& body, bool is_mention,
-    const std::vector<uint8_t>& avatar_bytes)
+void MainWindow::handle_image_packs_updated_ui_()
 {
-    auto* p = new IdleNotif{
-        cpp_window_for(window_),
-        user_id_,
-        room_id, room_name, sender, body, is_mention,
-        avatar_bytes
-    };
-    g_idle_add([](gpointer data) -> gboolean {
-        auto* d = static_cast<IdleNotif*>(data);
-        d->window->push_notification(d->user_id, d->room_id, d->room_name,
-                                      d->sender, d->body, d->is_mention,
-                                      std::move(d->avatar_bytes));
-        delete d;
-        return G_SOURCE_REMOVE;
-    }, p);
+    push_image_packs_updated();
+}
+
+void MainWindow::handle_account_prefs_updated_ui_(
+    std::string /*user_id*/, std::string json)
+{
+    push_account_prefs_updated(json);
+}
+
+void MainWindow::handle_notification_ui_(
+    std::string user_id, std::string room_id,
+    std::string room_name, std::string sender,
+    std::string body, bool is_mention,
+    std::vector<uint8_t> avatar_bytes)
+{
+    push_notification(user_id, room_id, room_name, sender, body, is_mention,
+                      std::move(avatar_bytes));
+}
+
+void MainWindow::on_room_list_state_ui_()
+{
+    refresh_sync_status();
 }
 
 // ---------------------------------------------------------------------------
@@ -690,12 +507,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         });
     message_list_view_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
-            // Animated entries first — `on_tk_anim_tick_` keeps
-            // `current` valid; static cache is the second hop.
-            auto ait = tk_anim_images_.find(mxc);
-            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
-                return ait->second.frames[ait->second.current].get();
-            }
+            // Animated entries first; static cache is the second hop.
+            if (const auto* f = anim_cache_.current_frame(mxc)) return f;
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
@@ -957,9 +770,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         img_viewer_ = img_viewer_owner.get();
         img_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
-                auto ait = tk_anim_images_.find(url);
-                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                    return ait->second.frames[ait->second.current].get();
+                if (const auto* f = anim_cache_.current_frame(url)) return f;
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
@@ -1121,24 +932,6 @@ MainWindow::~MainWindow() {
     pending_login_client_.reset();
 }
 
-void MainWindow::run_async_(std::function<void()> fn) {
-    if (shutting_down_.load(std::memory_order_acquire)) return;
-    {
-        std::lock_guard<std::mutex> lk(workers_mu_);
-        ++workers_in_flight_;
-    }
-    std::thread([this, fn = std::move(fn)]() mutable {
-        // Recheck after the thread starts — flag may have flipped
-        // while we were waiting to be scheduled.  Without this the
-        // worker would still cross the FFI on a dying ClientFfi.
-        if (!shutting_down_.load(std::memory_order_acquire)) {
-            fn();
-        }
-        std::lock_guard<std::mutex> lk(workers_mu_);
-        if (--workers_in_flight_ == 0) workers_cv_.notify_all();
-    }).detach();
-}
-
 // ---------------------------------------------------------------------------
 
 void MainWindow::do_login() {
@@ -1168,7 +961,7 @@ void MainWindow::do_login() {
                 tesseract::Prefs::parse(
                     sess->client->load_prefs_json()).last_room;
 
-            auto bridge = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+            auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
             bridge->set_user_id(sess->user_id);
             sess->client->start_sync(bridge.get());
             sess->bridge       = std::move(bridge);
@@ -1257,7 +1050,7 @@ void MainWindow::on_login_succeeded() {
     sess->last_room    =
         tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
 
-    auto bridge = std::make_unique<EventHandler>(GTK_WINDOW(window_));
+    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(sess->user_id);
     sess->client->start_sync(bridge.get());
     sess->bridge       = std::move(bridge);
@@ -1351,11 +1144,9 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 }
 
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
-    auto it = pagination_.find(room_id);
-    if (it == pagination_.end()) return;
-    it->second.in_flight     = false;
-    it->second.reached_start = reached_start;
-    if (room_id == current_room_id_ && message_list_view_)
+    bool is_current = (room_id == current_room_id_);
+    push_paginate_result_(std::move(room_id), reached_start);
+    if (is_current && message_list_view_)
         message_list_view_->reset_near_top_latch();
 }
 
@@ -1403,9 +1194,9 @@ void MainWindow::push_message_inserted(
     if (!ev) return;
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
-    ensure_row_media(*ev);
-    ensure_reply_details(ev->in_reply_to_id);
-    message_list_view_->insert_message(index, to_row_data(*ev));
+    ensure_row_media_(*ev);
+    ensure_reply_details_(ev->in_reply_to_id);
+    message_list_view_->insert_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
     msg_surface_->relayout();
 }
 
@@ -1417,9 +1208,9 @@ void MainWindow::push_message_updated(
     if (!ev) return;
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
-    ensure_row_media(*ev);
-    ensure_reply_details(ev->in_reply_to_id);
-    message_list_view_->update_message(index, to_row_data(*ev));
+    ensure_row_media_(*ev);
+    ensure_reply_details_(ev->in_reply_to_id);
+    message_list_view_->update_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
     msg_surface_->relayout();
 }
 
@@ -1431,9 +1222,10 @@ void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
 
 void MainWindow::push_rooms(std::string user_id,
                             std::vector<tesseract::RoomInfo> rooms) {
-    per_account_rooms_[user_id] = rooms;
-    if (user_id != my_user_id_) return;  // background account
-    rooms_ = std::move(rooms);
+    push_rooms_(std::move(user_id), std::move(rooms));
+}
+
+void MainWindow::on_rooms_updated_() {
     refresh_room_list();
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_)
@@ -1515,9 +1307,9 @@ void MainWindow::push_timeline_reset(
     rows.reserve(snapshot.size());
     for (auto& ev : snapshot) {
         if (!ev) continue;
-        ensure_row_media(*ev);
-        ensure_reply_details(ev->in_reply_to_id);
-        rows.push_back(to_row_data(*ev));
+        ensure_row_media_(*ev);
+        ensure_reply_details_(ev->in_reply_to_id);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     message_list_view_->set_messages(std::move(rows));
     msg_surface_->relayout();
@@ -1721,36 +1513,9 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
 } // namespace
 
-// These three helpers used to call the synchronous Rust FFI on the UI
-// thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
-// `tokio::block_on` inside; on first sync of an account with many rooms
-// `show_rooms` froze the GTK main loop for minutes (one network
-// round-trip per room avatar, serialised on the UI thread). Decode +
-// cache now happens after a worker thread lands the bytes back via
-// `g_idle_add`; the call sites return immediately and the views paint
-// initials placeholders until the bytes arrive.
-void MainWindow::ensure_room_avatar(const tesseract::RoomInfo& r) {
-    request_room_avatar_async(r.id, r.avatar_url);
-}
-
-void MainWindow::ensure_user_avatar(const std::string& mxc) {
-    request_user_avatar_async(mxc);
-}
-
-void MainWindow::ensure_media_image(const std::string& url,
-                                      int /*max_w*/, int /*max_h*/) {
-    request_media_image_async(url);
-}
-
-void MainWindow::ensure_reply_details(const std::string& event_id) {
-    if (event_id.empty() || current_room_id_.empty()) return;
-    if (!reply_details_requested_.insert(event_id).second) return;
-    client_->fetch_reply_details(current_room_id_, event_id);
-}
-
 void MainWindow::start_anim_tick_if_needed_() {
     if (tk_anim_tick_id_ != 0) return;
-    if (tk_anim_images_.empty()) return;
+    if (anim_cache_.empty()) return;
     tk_anim_tick_id_ = g_timeout_add(16, on_tk_anim_tick_, this);
 }
 
@@ -1763,161 +1528,18 @@ void MainWindow::invalidate_anim_consumers_() {
 
 gboolean MainWindow::on_tk_anim_tick_(gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
-    if (self->tk_anim_images_.empty()) {
+    if (self->anim_cache_.empty()) {
         self->tk_anim_tick_id_ = 0;
         return G_SOURCE_REMOVE;
     }
     const std::int64_t now_ms = g_get_monotonic_time() / 1000;
-    bool any_changed = false;
-    for (auto& [_, entry] : self->tk_anim_images_) {
-        if (entry.frames.size() <= 1) continue;
-        std::size_t steps = 0;
-        while (now_ms >= entry.next_advance_ms
-                && steps < entry.frames.size())
-        {
-            entry.current =
-                (entry.current + 1) % entry.frames.size();
-            entry.next_advance_ms +=
-                entry.delays_ms[entry.current];
-            ++steps;
-        }
-        if (steps > 0) any_changed = true;
-    }
-    if (any_changed) self->invalidate_anim_consumers_();
+    if (self->anim_cache_.advance(now_ms))
+        self->invalidate_anim_consumers_();
     return G_SOURCE_CONTINUE;
 }
 
-void MainWindow::request_room_avatar_async(const std::string& room_id,
-                                              const std::string& mxc) {
-    if (room_id.empty() || mxc.empty() || tk_avatars_.count(mxc)) return;
-    if (!media_fetches_in_flight_.insert(mxc).second) return;
-
-    struct IdleData {
-        MainWindow*           self;
-        std::string           mxc;
-        std::vector<uint8_t>  bytes;
-    };
-
-    run_async_([this, room_id, mxc]() mutable {
-        auto bytes = client_->fetch_avatar_bytes(room_id);
-        auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
-        g_idle_add([](gpointer p) -> gboolean {
-            auto* d = static_cast<IdleData*>(p);
-            d->self->media_fetches_in_flight_.erase(d->mxc);
-            if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
-                if (cairo_surface_t* surface =
-                        decode_image_to_cairo_surface(d->bytes))
-                {
-                    auto img = tk::cairo_pango::make_image(surface);
-                    cairo_surface_destroy(surface);
-                    d->self->tk_avatars_.emplace(d->mxc, std::move(img));
-                    if (d->self->room_surface_)
-                        d->self->room_surface_->relayout();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        }, data);
-    });
-}
-
-void MainWindow::request_user_avatar_async(const std::string& mxc) {
-    if (mxc.empty() || tk_avatars_.count(mxc)) return;
-    if (!media_fetches_in_flight_.insert(mxc).second) return;
-
-    struct IdleData {
-        MainWindow*           self;
-        std::string           mxc;
-        std::vector<uint8_t>  bytes;
-    };
-
-    run_async_([this, mxc]() mutable {
-        auto bytes = client_->fetch_media_bytes(mxc);
-        auto* data = new IdleData{ this, std::move(mxc), std::move(bytes) };
-        g_idle_add([](gpointer p) -> gboolean {
-            auto* d = static_cast<IdleData*>(p);
-            d->self->media_fetches_in_flight_.erase(d->mxc);
-            if (!d->bytes.empty() && !d->self->tk_avatars_.count(d->mxc)) {
-                if (cairo_surface_t* surface =
-                        decode_image_to_cairo_surface(d->bytes))
-                {
-                    auto img = tk::cairo_pango::make_image(surface);
-                    cairo_surface_destroy(surface);
-                    d->self->tk_avatars_.emplace(d->mxc, std::move(img));
-                    if (d->self->msg_surface_)
-                        d->self->msg_surface_->relayout();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        }, data);
-    });
-}
-
-void MainWindow::request_media_image_async(const std::string& url) {
-    if (url.empty()) return;
-    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
-    if (!media_fetches_in_flight_.insert(url).second) return;
-
-    struct IdleData {
-        MainWindow*           self;
-        std::string           url;
-        std::vector<uint8_t>  bytes;
-    };
-
-    run_async_([this, url]() mutable {
-        // `url` may be plain mxc (plain images/stickers) or a JSON
-        // MediaSource (encrypted images/stickers + reaction sources).
-        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
-        // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_->fetch_source_bytes(url);
-        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
-        g_idle_add([](gpointer p) -> gboolean {
-            auto* d = static_cast<IdleData*>(p);
-            d->self->media_fetches_in_flight_.erase(d->url);
-            if (!d->bytes.empty()
-                && !d->self->tk_images_.count(d->url)
-                && !d->self->tk_anim_images_.count(d->url))
-            {
-                // Animated probe first; static fallback decodes via
-                // decode_image_to_cairo_surface.
-                if (auto anim = decode_animation(d->bytes)) {
-                    AnimatedImage entry;
-                    entry.frames.reserve(anim->frames.size());
-                    entry.delays_ms = std::move(anim->delays_ms);
-                    for (cairo_surface_t* s : anim->frames) {
-                        entry.frames.push_back(
-                            tk::cairo_pango::make_image(s));
-                        cairo_surface_destroy(s);
-                    }
-                    if (!entry.frames.empty()) {
-                        entry.current         = 0;
-                        const gint64 now_ms   = g_get_monotonic_time() / 1000;
-                        entry.next_advance_ms = now_ms + entry.delays_ms[0];
-                        d->self->tk_anim_images_.emplace(
-                            d->url, std::move(entry));
-                        d->self->start_anim_tick_if_needed_();
-                        if (d->self->msg_surface_)
-                            d->self->msg_surface_->relayout();
-                    }
-                } else if (cairo_surface_t* surface =
-                              decode_image_to_cairo_surface(d->bytes))
-                {
-                    auto img = tk::cairo_pango::make_image(surface);
-                    cairo_surface_destroy(surface);
-                    d->self->tk_images_.emplace(d->url, std::move(img));
-                    if (d->self->msg_surface_)
-                        d->self->msg_surface_->relayout();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        }, data);
-    });
-}
-
 void MainWindow::ensure_sticker_image_async(std::string url) {
-    if (url.empty() || tk_images_.count(url) || tk_anim_images_.count(url))
+    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
         return;
     if (!sticker_fetches_in_flight_.insert(url).second) return;
 
@@ -1938,29 +1560,22 @@ void MainWindow::ensure_sticker_image_async(std::string url) {
             d->self->sticker_fetches_in_flight_.erase(d->url);
             if (!d->bytes.empty()
                 && !d->self->tk_images_.count(d->url)
-                && !d->self->tk_anim_images_.count(d->url))
+                && !d->self->anim_cache_.has(d->url))
             {
-                // Probe for animation first; animated stickers
-                // (GIF / animated WebP / APNG) land in tk_anim_images_
-                // and ride the frame-tick loop. Static formats fall
-                // through to the existing tk_images_ path.
+                // Probe for animation first; animated stickers ride the
+                // frame-tick loop. Static formats fall through to tk_images_.
                 if (auto anim = decode_animation(d->bytes)) {
-                    AnimatedImage entry;
-                    entry.frames.reserve(anim->frames.size());
-                    entry.delays_ms = std::move(anim->delays_ms);
+                    std::vector<std::unique_ptr<tk::Image>> frames;
+                    frames.reserve(anim->frames.size());
                     for (cairo_surface_t* s : anim->frames) {
-                        entry.frames.push_back(
-                            tk::cairo_pango::make_image(s));
+                        frames.push_back(tk::cairo_pango::make_image(s));
                         cairo_surface_destroy(s);
                     }
-                    if (!entry.frames.empty()) {
-                        entry.current         = 0;
-                        gint64 now_ms =
-                            g_get_monotonic_time() / 1000;
-                        entry.next_advance_ms =
-                            now_ms + entry.delays_ms[0];
-                        d->self->tk_anim_images_.emplace(
-                            d->url, std::move(entry));
+                    if (!frames.empty()) {
+                        const gint64 now_ms = g_get_monotonic_time() / 1000;
+                        d->self->anim_cache_.store(d->url, std::move(frames),
+                                                   std::move(anim->delays_ms),
+                                                   now_ms);
                         d->self->start_anim_tick_if_needed_();
                         d->self->invalidate_anim_consumers_();
                     }
@@ -1993,7 +1608,7 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
     // Eagerly fetch avatars for the new room set so the first paint has
     // them ready. Bytes-already-cached is a no-op via tk_avatars_.count.
-    for (const auto& r : sorted) ensure_room_avatar(r);
+    for (const auto& r : sorted) ensure_room_avatar_(r);
 
     room_list_view_->set_rooms(std::move(sorted));
     if (!current_room_id_.empty())
@@ -2040,230 +1655,165 @@ void MainWindow::on_back_clicked_(GtkButton*, gpointer user_data) {
 }
 
 // ---------------------------------------------------------------------------
-//  Event → MessageRowData + append into the shared MessageListView
+//  GTK4-specific ShellBase virtual hook implementations
 // ---------------------------------------------------------------------------
 
-tesseract::views::MessageRowData MainWindow::to_row_data(
-    const tesseract::Event& ev)
-{
-    using Kind = tesseract::views::MessageRowData::Kind;
-    tesseract::views::MessageRowData row;
-    row.event_id          = ev.event_id;
-    row.sender            = ev.sender;
-    row.sender_name       = ev.sender_name;
-    row.sender_avatar_url = ev.sender_avatar_url;
-    row.body              = ev.body;
-    row.timestamp_ms      = ev.timestamp;
-    row.is_own            = (ev.sender == my_user_id_);
-    row.reactions         = ev.reactions;
-    row.read_receipts     = ev.read_receipts;
-
-    row.in_reply_to_id          = ev.in_reply_to_id;
-    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
-    row.in_reply_to_body        = ev.in_reply_to_body;
-    row.is_edited               = ev.is_edited;
-
-    switch (ev.type) {
-        case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
-        case tesseract::EventType::Image: {
-            row.kind = Kind::Image;
-            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-            row.media_url            = img.image_url;
-            row.media_w              = static_cast<int>(img.width);
-            row.media_h              = static_cast<int>(img.height);
-            row.has_filename_caption = !img.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Sticker: {
-            row.kind = Kind::Sticker;
-            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-            row.media_url = s.image_url;
-            row.media_w   = static_cast<int>(s.width);
-            row.media_h   = static_cast<int>(s.height);
-            break;
-        }
-        case tesseract::EventType::File: {
-            row.kind = Kind::File;
-            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
-            row.file_name = f.file_name;
-            row.file_size = f.file_size;
-            row.media_url = f.file_url;
-            break;
-        }
-        case tesseract::EventType::Voice: {
-            row.kind = Kind::Voice;
-            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-            row.audio_source = v.audio_source;
-            row.audio_mime   = v.mime_type;
-            row.duration_ms  = v.duration_ms;
-            row.waveform     = v.waveform;
-            break;
-        }
-        case tesseract::EventType::Video: {
-            row.kind = Kind::Video;
-            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-            row.media_url         = vid.video_url;
-            row.video_thumb_url   = vid.thumbnail_url.empty()
-                                    ? ("thumb::" + ev.event_id)
-                                    : vid.thumbnail_url;
-            row.media_w           = static_cast<int>(vid.width);
-            row.media_h           = static_cast<int>(vid.height);
-            row.duration_ms       = vid.duration_ms;
-            row.has_filename_caption = !vid.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
-        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
-    }
-    return row;
+void MainWindow::post_to_ui_(std::function<void()> fn) {
+    struct Data { std::function<void()> fn; };
+    auto* d = new Data{ std::move(fn) };
+    g_idle_add([](gpointer p) -> gboolean {
+        auto* data = static_cast<Data*>(p);
+        data->fn();
+        delete data;
+        return G_SOURCE_REMOVE;
+    }, d);
 }
 
-void MainWindow::ensure_row_media(const tesseract::Event& ev) {
-    // Pre-fetch any media this row will reference. The shared view's
-    // provider lambdas look up tk_avatars_ / tk_images_ on each paint.
-    ensure_user_avatar(ev.sender_avatar_url);
-    for (const auto& rr : ev.read_receipts) {
-        ensure_user_avatar(rr.avatar_url);
-    }
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensure_media_image(img.image_url,
-                            tesseract::visual::kMaxInlineImageWidth,
-                            tesseract::visual::kMaxInlineImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensure_media_image(s.image_url,
-                            tesseract::visual::kStickerSize,
-                            tesseract::visual::kStickerSize);
-    } else if (ev.type == tesseract::EventType::Voice) {
-        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-        if (!v.audio_source.empty() &&
-            voice_prefetched_.insert(v.audio_source).second) {
-            // Background-prime the SDK media cache so the first play tap
-            // is instant. We discard the bytes — the view's synchronous
-            // fetch on click reads them straight out of the cache.
-            run_async_([this, src = v.audio_source]() mutable {
-                (void)client_->fetch_source_bytes(src);
-            });
+void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
+                                       MediaKind kind,
+                                       std::vector<uint8_t> bytes) {
+    if (bytes.empty()) return;
+    if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar) {
+        if (tk_avatars_.count(cache_key)) return;
+        if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
+            auto img = tk::cairo_pango::make_image(surface);
+            cairo_surface_destroy(surface);
+            tk_avatars_.emplace(cache_key, std::move(img));
+            if (kind == MediaKind::RoomAvatar && room_surface_)
+                room_surface_->relayout();
+            else if (msg_surface_)
+                msg_surface_->relayout();
         }
-    } else if (ev.type == tesseract::EventType::Video) {
-        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (!vid.thumbnail_url.empty())
-            ensure_media_image(vid.thumbnail_url,
-                                tesseract::visual::kMaxInlineImageWidth,
-                                tesseract::visual::kMaxInlineImageHeight);
-        // Client-side first-frame generation when no server thumbnail.
-        if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
-            video_thumb_in_flight_.insert(ev.event_id).second) {
-            const std::string eid = ev.event_id;
-            run_async_([this, eid, src = vid.video_url]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                if (bytes.empty()) return;
-                // Extract first frame via GStreamer appsink.
-                GstElement* pipe  = gst_pipeline_new(nullptr);
-                GstElement* gsrc  = gst_element_factory_make("giostreamsrc",  nullptr);
-                GstElement* dec   = gst_element_factory_make("decodebin",     nullptr);
-                GstElement* vconv = gst_element_factory_make("videoconvert",  nullptr);
-                GstElement* vsink = gst_element_factory_make("appsink",       nullptr);
-                if (!pipe || !gsrc || !dec || !vconv || !vsink) {
-                    if (pipe)  gst_object_unref(pipe);
-                    if (gsrc)  gst_object_unref(gsrc);
-                    if (dec)   gst_object_unref(dec);
-                    if (vconv) gst_object_unref(vconv);
-                    if (vsink) gst_object_unref(vsink);
-                    return;
-                }
-                GstCaps* caps = gst_caps_from_string("video/x-raw,format=BGRA");
-                gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
-                gst_caps_unref(caps);
-                gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
-                gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
-                GInputStream* mem_stream = g_memory_input_stream_new_from_data(
-                    bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
-                g_object_set(gsrc, "stream", mem_stream, nullptr);
-                g_object_unref(mem_stream);
-                gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink, nullptr);
-                gst_element_link(gsrc, dec);
-                gst_element_link(vconv, vsink);
-                struct PadCtx { GstElement* vconv; };
-                auto* pad_ctx = new PadCtx{ vconv };
-                g_signal_connect(dec, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud){
-                    auto* pc = static_cast<PadCtx*>(ud);
-                    GstCaps* c2 = gst_pad_get_current_caps(pad);
-                    if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
-                    GstStructure* st = gst_caps_get_structure(c2, 0);
-                    if (g_str_has_prefix(gst_structure_get_name(st), "video")) {
-                        GstPad* sp = gst_element_get_static_pad(pc->vconv, "sink");
-                        if (sp && !gst_pad_is_linked(sp)) gst_pad_link(pad, sp);
-                        if (sp) gst_object_unref(sp);
-                    }
-                    gst_caps_unref(c2);
-                }), pad_ctx);
-                gst_element_set_state(pipe, GST_STATE_PLAYING);
-                // Pull exactly one preroll frame.
-                GstSample* sample = gst_app_sink_pull_preroll(GST_APP_SINK(vsink));
-                gst_element_set_state(pipe, GST_STATE_NULL);
-                delete pad_ctx;
-                gst_object_unref(pipe);
-                if (!sample) return;
-                GstBuffer* buf  = gst_sample_get_buffer(sample);
-                GstCaps*   scaps = gst_sample_get_caps(sample);
-                int w = 0, h = 0;
-                if (scaps) {
-                    GstStructure* st = gst_caps_get_structure(scaps, 0);
-                    gst_structure_get_int(st, "width",  &w);
-                    gst_structure_get_int(st, "height", &h);
-                }
-                if (!buf || w <= 0 || h <= 0) { gst_sample_unref(sample); return; }
-                GstMapInfo map;
-                if (!gst_buffer_map(buf, &map, GST_MAP_READ)) {
-                    gst_sample_unref(sample); return;
-                }
-                std::vector<uint8_t> frame_bytes(map.data, map.data + map.size);
-                gst_buffer_unmap(buf, &map);
-                gst_sample_unref(sample);
-                // BGRA → cairo surface on the main thread.
-                struct Ctx {
-                    MainWindow*          self;
-                    std::string          key;
-                    std::vector<uint8_t> pixels;
-                    int w, h;
-                };
-                auto* ctx = new Ctx{ this, "thumb::" + eid, std::move(frame_bytes), w, h };
-                g_idle_add([](gpointer p) -> gboolean {
-                    auto* c = static_cast<Ctx*>(p);
-                    if (!c->self->tk_images_.count(c->key)) {
-                        // Create an owned cairo surface and blit the BGRA pixels in.
-                        cairo_surface_t* surf =
-                            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, c->w, c->h);
-                        if (surf && cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS) {
-                            int dst_stride = cairo_image_surface_get_stride(surf);
-                            unsigned char* dst = cairo_image_surface_get_data(surf);
-                            int src_stride = c->w * 4;
-                            for (int row = 0; row < c->h; ++row) {
-                                std::memcpy(dst + row * dst_stride,
-                                             c->pixels.data() + row * src_stride,
-                                             static_cast<std::size_t>(src_stride));
-                            }
-                            cairo_surface_mark_dirty(surf);
-                            c->self->tk_images_.emplace(
-                                c->key, tk::cairo_pango::make_image(surf));
-                            cairo_surface_destroy(surf);
-                            if (c->self->msg_surface_) c->self->msg_surface_->relayout();
-                        } else if (surf) {
-                            cairo_surface_destroy(surf);
-                        }
-                    }
-                    delete c;
-                    return G_SOURCE_REMOVE;
-                }, ctx);
-            });
+    } else { // MediaImage
+        if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
+        if (auto anim = decode_animation(bytes)) {
+            std::vector<std::unique_ptr<tk::Image>> frames;
+            frames.reserve(anim->frames.size());
+            for (cairo_surface_t* s : anim->frames) {
+                frames.push_back(tk::cairo_pango::make_image(s));
+                cairo_surface_destroy(s);
+            }
+            if (!frames.empty()) {
+                const gint64 now_ms = g_get_monotonic_time() / 1000;
+                anim_cache_.store(cache_key, std::move(frames),
+                                  std::move(anim->delays_ms), now_ms);
+                start_anim_tick_if_needed_();
+                if (msg_surface_) msg_surface_->relayout();
+            }
+        } else if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
+            auto img = tk::cairo_pango::make_image(surface);
+            cairo_surface_destroy(surface);
+            tk_images_.emplace(cache_key, std::move(img));
+            if (msg_surface_) msg_surface_->relayout();
         }
     }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            ensure_media_image(r.source_json, 20, 20);
-    }
+}
+
+void MainWindow::generate_video_thumbnail_(const std::string& event_id,
+                                           const std::string& video_url) {
+    const std::string eid = event_id;
+    run_async_([this, eid, src = video_url]() mutable {
+        auto bytes = client_->fetch_source_bytes(src);
+        if (bytes.empty()) return;
+        // Extract first frame via GStreamer appsink.
+        GstElement* pipe  = gst_pipeline_new(nullptr);
+        GstElement* gsrc  = gst_element_factory_make("giostreamsrc",  nullptr);
+        GstElement* dec   = gst_element_factory_make("decodebin",     nullptr);
+        GstElement* vconv = gst_element_factory_make("videoconvert",  nullptr);
+        GstElement* vsink = gst_element_factory_make("appsink",       nullptr);
+        if (!pipe || !gsrc || !dec || !vconv || !vsink) {
+            if (pipe)  gst_object_unref(pipe);
+            if (gsrc)  gst_object_unref(gsrc);
+            if (dec)   gst_object_unref(dec);
+            if (vconv) gst_object_unref(vconv);
+            if (vsink) gst_object_unref(vsink);
+            return;
+        }
+        GstCaps* caps = gst_caps_from_string("video/x-raw,format=BGRA");
+        gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
+        gst_caps_unref(caps);
+        gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
+        gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
+        GInputStream* mem_stream = g_memory_input_stream_new_from_data(
+            bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+        g_object_set(gsrc, "stream", mem_stream, nullptr);
+        g_object_unref(mem_stream);
+        gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink, nullptr);
+        gst_element_link(gsrc, dec);
+        gst_element_link(vconv, vsink);
+        struct PadCtx { GstElement* vconv; };
+        auto* pad_ctx = new PadCtx{ vconv };
+        g_signal_connect(dec, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud){
+            auto* pc = static_cast<PadCtx*>(ud);
+            GstCaps* c2 = gst_pad_get_current_caps(pad);
+            if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
+            GstStructure* st = gst_caps_get_structure(c2, 0);
+            if (g_str_has_prefix(gst_structure_get_name(st), "video")) {
+                GstPad* sp = gst_element_get_static_pad(pc->vconv, "sink");
+                if (sp && !gst_pad_is_linked(sp)) gst_pad_link(pad, sp);
+                if (sp) gst_object_unref(sp);
+            }
+            gst_caps_unref(c2);
+        }), pad_ctx);
+        gst_element_set_state(pipe, GST_STATE_PLAYING);
+        // Pull exactly one preroll frame.
+        GstSample* sample = gst_app_sink_pull_preroll(GST_APP_SINK(vsink));
+        gst_element_set_state(pipe, GST_STATE_NULL);
+        delete pad_ctx;
+        gst_object_unref(pipe);
+        if (!sample) return;
+        GstBuffer* buf   = gst_sample_get_buffer(sample);
+        GstCaps*   scaps = gst_sample_get_caps(sample);
+        int w = 0, h = 0;
+        if (scaps) {
+            GstStructure* st = gst_caps_get_structure(scaps, 0);
+            gst_structure_get_int(st, "width",  &w);
+            gst_structure_get_int(st, "height", &h);
+        }
+        if (!buf || w <= 0 || h <= 0) { gst_sample_unref(sample); return; }
+        GstMapInfo map;
+        if (!gst_buffer_map(buf, &map, GST_MAP_READ)) {
+            gst_sample_unref(sample); return;
+        }
+        std::vector<uint8_t> frame_bytes(map.data, map.data + map.size);
+        gst_buffer_unmap(buf, &map);
+        gst_sample_unref(sample);
+        // BGRA → cairo surface on the main thread.
+        struct Ctx {
+            MainWindow*          self;
+            std::string          key;
+            std::vector<uint8_t> pixels;
+            int w, h;
+        };
+        auto* ctx = new Ctx{ this, "thumb::" + eid, std::move(frame_bytes), w, h };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* c = static_cast<Ctx*>(p);
+            if (!c->self->tk_images_.count(c->key)) {
+                // Create an owned cairo surface and blit the BGRA pixels in.
+                cairo_surface_t* surf =
+                    cairo_image_surface_create(CAIRO_FORMAT_ARGB32, c->w, c->h);
+                if (surf && cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS) {
+                    int dst_stride = cairo_image_surface_get_stride(surf);
+                    unsigned char* dst = cairo_image_surface_get_data(surf);
+                    int src_stride = c->w * 4;
+                    for (int row = 0; row < c->h; ++row) {
+                        std::memcpy(dst + row * dst_stride,
+                                     c->pixels.data() + row * src_stride,
+                                     static_cast<std::size_t>(src_stride));
+                    }
+                    cairo_surface_mark_dirty(surf);
+                    c->self->tk_images_.emplace(
+                        c->key, tk::cairo_pango::make_image(surf));
+                    cairo_surface_destroy(surf);
+                    if (c->self->msg_surface_) c->self->msg_surface_->relayout();
+                } else if (surf) {
+                    cairo_surface_destroy(surf);
+                }
+            }
+            delete c;
+            return G_SOURCE_REMOVE;
+        }, ctx);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2441,7 +1991,7 @@ void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
 }
 
 void MainWindow::push_room_list_state(tesseract::RoomListState state) {
-    last_room_list_state_ = state;
+    push_room_list_state_(state);
     refresh_sync_status();
 }
 
@@ -2644,10 +2194,7 @@ void MainWindow::build_sticker_popover() {
     sticker_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
                 const std::string& /*source_token*/) -> const tk::Image* {
-            auto ait = tk_anim_images_.find(cache_key);
-            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
-                return ait->second.frames[ait->second.current].get();
-            }
+            if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto it = tk_images_.find(cache_key);
             if (it != tk_images_.end()) return it->second.get();
             ensure_sticker_image_async(cache_key);
@@ -2868,7 +2415,7 @@ void MainWindow::switch_active_account(int new_idx) {
     auto& sess = *accounts_[new_idx];
 
     client_        = sess.client.get();
-    event_handler_ = static_cast<EventHandler*>(sess.bridge.get());
+    event_handler_ = sess.bridge.get();
 
     my_user_id_      = sess.user_id;
     my_display_name_ = sess.display_name;

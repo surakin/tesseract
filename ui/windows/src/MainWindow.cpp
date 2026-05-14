@@ -84,18 +84,18 @@ struct StickerBytesPayload {
     std::string                 cache_key;
     std::vector<std::uint8_t>   bytes;
 };
+// MediaBytesPayload is no longer posted by this shell — media fetches now flow
+// through ShellBase::ensure_*_() → post_to_ui_ → on_media_bytes_ready_().
+// The struct is kept as a forward stub so any stale queued messages can be
+// safely drained in the WM_TESSERACT_MEDIA_BYTES handler.
 struct MediaBytesPayload {
-    win32::MainWindow::MediaKind kind;
-    std::string                  cache_key;   // mxc (room/user avatar) or url
-    std::vector<std::uint8_t>    bytes;
+    int          kind;       // unused in drain handler
+    std::string  cache_key;
+    std::vector<std::uint8_t> bytes;
 };
 struct VideoBytesPayload {
     std::string                 source_json;  // original request key
     std::vector<std::uint8_t>   bytes;
-};
-struct AuthErrorPayload {
-    std::string user_id;
-    bool        soft_logout;
 };
 } // namespace
 
@@ -411,112 +411,94 @@ void MainWindow::paint_main_background(HDC hdc, const RECT& rc) {
 }
 
 // ---------------------------------------------------------------------------
-// EventHandler
+// EventHandlerBase UI-thread hook overrides (Win32)
 // ---------------------------------------------------------------------------
+// All marshalling is now handled by EventHandlerBase::post_to_ui_ which posts
+// WM_TESSERACT_POST_TO_UI with a heap-allocated std::function<void()>. These
+// methods run directly on the UI thread.
 
-void EventHandler::on_timeline_reset(
-    const std::string& room_id,
+void MainWindow::handle_timeline_reset_ui_(
+    std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    auto* p = new MainWindow::PostedTimelineReset{ room_id, std::move(snapshot) };
-    PostMessage(hwnd_, WM_TESSERACT_TIMELINE_RESET, 0,
-                reinterpret_cast<LPARAM>(p));
+    PostedTimelineReset payload{ std::move(room_id), std::move(snapshot) };
+    on_tesseract_timeline_reset(&payload);
 }
 
-void EventHandler::on_message_inserted(
-    const std::string& room_id,
-    std::size_t index,
+void MainWindow::handle_message_inserted_ui_(
+    std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    auto* p = new MainWindow::PostedMessageEvent{
-        room_id, index, std::move(ev),
-    };
-    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_INSERTED, 0,
-                reinterpret_cast<LPARAM>(p));
+    PostedMessageEvent payload{ std::move(room_id), index, std::move(ev) };
+    on_tesseract_message_inserted(&payload);
 }
 
-void EventHandler::on_message_updated(
-    const std::string& room_id,
-    std::size_t index,
+void MainWindow::handle_message_updated_ui_(
+    std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    auto* p = new MainWindow::PostedMessageEvent{
-        room_id, index, std::move(ev),
-    };
-    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_UPDATED, 0,
-                reinterpret_cast<LPARAM>(p));
+    PostedMessageEvent payload{ std::move(room_id), index, std::move(ev) };
+    on_tesseract_message_updated(&payload);
 }
 
-void EventHandler::on_message_removed(
-    const std::string& room_id,
-    std::size_t index)
+void MainWindow::handle_message_removed_ui_(
+    std::string room_id, std::size_t index)
 {
-    auto* p = new MainWindow::PostedMessageEvent{
-        room_id, index, nullptr,
-    };
-    PostMessage(hwnd_, WM_TESSERACT_MESSAGE_REMOVED, 0,
-                reinterpret_cast<LPARAM>(p));
+    PostedMessageEvent payload{ std::move(room_id), index, nullptr };
+    on_tesseract_message_removed(&payload);
 }
 
-void EventHandler::on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) {
-    auto* p = new MainWindow::RoomsPayload{ user_id_, std::vector<tesseract::RoomInfo>(rooms) };
-    PostMessage(hwnd_, WM_TESSERACT_ROOMS, 0, reinterpret_cast<LPARAM>(p));
-}
-
-void EventHandler::on_sync_error(const std::string& context,
-                                   const std::string& description,
-                                   bool soft_logout)
+void MainWindow::handle_sync_error_ui_(
+    std::string context, std::string user_id,
+    std::string description, bool soft_logout)
 {
     if (context == "sync_reconnect") {
-        auto* s = new std::string(user_id_);
-        PostMessage(hwnd_, WM_TESSERACT_RECONNECT, 0, reinterpret_cast<LPARAM>(s));
+        on_reconnect(user_id);
     } else if (context == "sync_auth_error") {
-        auto* p = new AuthErrorPayload{ user_id_, soft_logout };
-        PostMessage(hwnd_, WM_TESSERACT_AUTH_ERROR, 0, reinterpret_cast<LPARAM>(p));
+        on_auth_error(user_id, soft_logout);
     } else {
-        auto* p = new std::string(description);
-        PostMessage(hwnd_, WM_TESSERACT_SYNC_ERROR, 0, reinterpret_cast<LPARAM>(p));
+        MessageBoxA(hwnd_, description.c_str(), "Sync error", MB_ICONWARNING);
     }
 }
 
-void EventHandler::on_session_saved(const std::string& session_json) {
-    tesseract::SessionStore::save_account(user_id_, session_json);
-}
-
-void EventHandler::on_backup_progress(const tesseract::BackupProgress& progress) {
-    auto* p = new tesseract::BackupProgress(progress);
-    PostMessage(hwnd_, WM_TESSERACT_BACKUP_PROGRESS, 0,
-                reinterpret_cast<LPARAM>(p));
-}
-
-void EventHandler::on_room_list_state(tesseract::RoomListState state) {
-    PostMessage(hwnd_, WM_TESSERACT_ROOM_LIST_STATE,
-                static_cast<WPARAM>(state), 0);
-}
-
-void EventHandler::on_image_packs_updated() {
-    PostMessage(hwnd_, WM_TESSERACT_IMAGE_PACKS, 0, 0);
-}
-
-void EventHandler::on_account_prefs_updated(const std::string& json) {
-    auto* s = new std::string(json);
-    PostMessage(hwnd_, WM_TESSERACT_ACCOUNT_PREFS, 0,
-                reinterpret_cast<LPARAM>(s));
-}
-
-void EventHandler::on_notification(const std::string& room_id,
-                                    const std::string& room_name,
-                                    const std::string& sender,
-                                    const std::string& body,
-                                    bool is_mention,
-                                    const std::vector<uint8_t>& /*avatar_bytes*/)
+void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 {
-    auto* p = new MainWindow::NotificationPayload{
-        room_id, room_name, sender, body, user_id_, is_mention
-    };
-    PostMessage(hwnd_, WM_TESSERACT_NOTIFY,
-                static_cast<WPARAM>(is_mention ? 1 : 0),
-                reinterpret_cast<LPARAM>(p));
+    on_backup_progress(&progress);
+}
+
+void MainWindow::handle_image_packs_updated_ui_()
+{
+    refresh_sticker_picker();
+    refresh_emoji_picker();
+}
+
+void MainWindow::handle_account_prefs_updated_ui_(
+    std::string /*user_id*/, std::string json)
+{
+    auto prefs = tesseract::Prefs::parse(json);
+    if (!prefs.last_room.empty() &&
+        pending_restore_room_.empty() &&
+        current_room_id_.empty())
+    {
+        pending_restore_room_ = prefs.last_room;
+    }
+}
+
+void MainWindow::handle_notification_ui_(
+    std::string user_id, std::string room_id,
+    std::string room_name, std::string sender,
+    std::string body, bool is_mention,
+    std::vector<uint8_t> /*avatar_bytes*/)
+{
+    NotificationPayload p{ std::move(room_id), std::move(room_name),
+                           std::move(sender), std::move(body),
+                           std::move(user_id), is_mention };
+    on_tesseract_notify(&p);
+}
+
+void MainWindow::on_room_list_state_ui_()
+{
+    refresh_sync_status();
 }
 
 // ---------------------------------------------------------------------------
@@ -705,24 +687,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         win32::text::on_dpi_changed(LOWORD(wParam));
         return 0;
 
-    case WM_TESSERACT_MESSAGE_INSERTED: {
-        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
-        self->on_tesseract_message_inserted(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_MESSAGE_UPDATED: {
-        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
-        self->on_tesseract_message_updated(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_MESSAGE_REMOVED: {
-        auto* p = reinterpret_cast<MainWindow::PostedMessageEvent*>(lParam);
-        self->on_tesseract_message_removed(p);
-        delete p;
-        return 0;
-    }
     case WM_TESSERACT_PAGINATE_DONE: {
         auto* p = reinterpret_cast<std::string*>(lParam);
         self->on_tesseract_paginate_done(p, wParam != 0);
@@ -735,73 +699,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
-    case WM_TESSERACT_ROOMS: {
-        auto* p = reinterpret_cast<MainWindow::RoomsPayload*>(lParam);
-        self->on_tesseract_rooms(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_SYNC_ERROR: {
-        auto* p = reinterpret_cast<std::string*>(lParam);
-        MessageBoxA(hwnd, p->c_str(), "Sync error", MB_ICONWARNING);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_TIMELINE_RESET: {
-        auto* p = reinterpret_cast<MainWindow::PostedTimelineReset*>(lParam);
-        self->on_tesseract_timeline_reset(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_RECONNECT: {
-        auto* uid = reinterpret_cast<std::string*>(lParam);
-        std::string u = uid ? std::move(*uid) : std::string{};
-        delete uid;
-        self->on_reconnect(u);
-        return 0;
-    }
-    case WM_TESSERACT_AUTH_ERROR: {
-        auto* p = reinterpret_cast<AuthErrorPayload*>(lParam);
-        self->on_auth_error(p->user_id, p->soft_logout);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_BACKUP_PROGRESS: {
-        auto* p = reinterpret_cast<tesseract::BackupProgress*>(lParam);
-        self->on_backup_progress(p);
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_ROOM_LIST_STATE: {
-        self->on_room_list_state(
-            static_cast<tesseract::RoomListState>(wParam));
-        return 0;
-    }
     case WM_TESSERACT_RECOVER_DONE: {
         auto* p = reinterpret_cast<std::wstring*>(lParam);
         self->on_recover_done(wParam != 0, std::move(*p));
-        delete p;
-        return 0;
-    }
-    case WM_TESSERACT_IMAGE_PACKS:
-        self->refresh_sticker_picker();
-        self->refresh_emoji_picker();
-        return 0;
-    case WM_TESSERACT_ACCOUNT_PREFS: {
-        auto* s = reinterpret_cast<std::string*>(lParam);
-        auto prefs = tesseract::Prefs::parse(*s);
-        delete s;
-        if (!prefs.last_room.empty() &&
-            self->pending_restore_room_.empty() &&
-            self->current_room_id_.empty())
-        {
-            self->pending_restore_room_ = prefs.last_room;
-        }
-        return 0;
-    }
-    case WM_TESSERACT_NOTIFY: {
-        auto* p = reinterpret_cast<MainWindow::NotificationPayload*>(lParam);
-        self->on_tesseract_notify(p);
         delete p;
         return 0;
     }
@@ -828,7 +728,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             // a no-op when the buffer is single-frame; in that case fall
             // through to the static-decode path.
             self->try_load_animation(p->cache_key, p->bytes);
-            if (!self->tk_anim_images_.count(p->cache_key) &&
+            if (!self->anim_cache_.has(p->cache_key) &&
                 self->msg_surface_)
             {
                 if (auto img = self->msg_surface_->factory().decode_image(p->bytes))
@@ -848,47 +748,19 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_POST_TO_UI: {
+        // ShellBase::post_to_ui_ posts a heap-allocated std::function here.
+        // Execute it on the UI thread and free it.
+        auto* fn = reinterpret_cast<std::function<void()>*>(lParam);
+        (*fn)();
+        delete fn;
+        return 0;
+    }
     case WM_TESSERACT_MEDIA_BYTES: {
+        // No longer posted by this shell — media now flows through
+        // ShellBase::ensure_*_() → post_to_ui_ → on_media_bytes_ready_().
+        // Keep the case to safely drain any stale messages during shutdown.
         auto* p = reinterpret_cast<MediaBytesPayload*>(lParam);
-        self->media_fetches_in_flight_.erase(p->cache_key);
-        if (!p->bytes.empty()) {
-            using Kind = MainWindow::MediaKind;
-            HWND invalidate_hwnd = nullptr;
-            switch (p->kind) {
-            case Kind::RoomAvatar:
-                if (self->room_surface_) {
-                    if (auto img = self->room_surface_->factory()
-                                       .decode_image(p->bytes))
-                        self->tk_avatars_.emplace(p->cache_key,
-                                                    std::move(img));
-                    invalidate_hwnd = self->room_surface_->hwnd();
-                }
-                break;
-            case Kind::UserAvatar:
-                if (self->msg_surface_) {
-                    if (auto img = self->msg_surface_->factory()
-                                       .decode_image(p->bytes))
-                        self->tk_avatars_.emplace(p->cache_key,
-                                                    std::move(img));
-                    invalidate_hwnd = self->msg_surface_->hwnd();
-                }
-                break;
-            case Kind::MediaImage:
-                if (self->msg_surface_) {
-                    self->try_load_animation(p->cache_key, p->bytes);
-                    if (!self->tk_anim_images_.count(p->cache_key)) {
-                        if (auto img = self->msg_surface_->factory()
-                                           .decode_image(p->bytes))
-                            self->tk_images_.emplace(p->cache_key,
-                                                       std::move(img));
-                    }
-                    invalidate_hwnd = self->msg_surface_->hwnd();
-                }
-                break;
-            }
-            if (invalidate_hwnd)
-                InvalidateRect(invalidate_hwnd, nullptr, FALSE);
-        }
         delete p;
         return 0;
     }
@@ -1143,11 +1015,7 @@ void MainWindow::on_create(HWND hwnd) {
             });
         message_list_view_->set_image_provider(
             [this](const std::string& mxc) -> const tk::Image* {
-                // Animated entries take priority — `on_anim_tick` keeps
-                // `current` valid; static cache is the second hop.
-                auto ait = tk_anim_images_.find(mxc);
-                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                    return ait->second.frames[ait->second.current].get();
+                if (auto* f = anim_cache_.current_frame(mxc)) return f;
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
@@ -1413,9 +1281,7 @@ void MainWindow::on_create(HWND hwnd) {
         img_viewer_ = viewer.get();
         img_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
-                auto ait = tk_anim_images_.find(url);
-                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                    return ait->second.frames[ait->second.current].get();
+                if (auto* f = anim_cache_.current_frame(url)) return f;
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
@@ -1523,22 +1389,7 @@ void MainWindow::on_destroy() {
     if (pending_login_client_) pending_login_client_->stop_sync();
 }
 
-void MainWindow::run_async_(std::function<void()> fn) {
-    if (shutting_down_.load(std::memory_order_acquire)) return;
-    {
-        std::lock_guard<std::mutex> lk(workers_mu_);
-        ++workers_in_flight_;
-    }
-    std::thread([this, fn = std::move(fn)]() mutable {
-        // Recheck after the thread starts — flag may have flipped
-        // while we were waiting to be scheduled.
-        if (!shutting_down_.load(std::memory_order_acquire)) {
-            fn();
-        }
-        std::lock_guard<std::mutex> lk(workers_mu_);
-        if (--workers_in_flight_ == 0) workers_cv_.notify_all();
-    }).detach();
-}
+// run_async_ is implemented in tesseract::ShellBase.
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -1680,7 +1531,7 @@ void MainWindow::start_login() {
         sess->last_room    =
             tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
 
-        auto bridge = std::make_unique<EventHandler>(hwnd_);
+        auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
         bridge->set_user_id(sess->user_id);
         sess->bridge = std::move(bridge);
         sess->client->start_sync(sess->bridge.get());
@@ -1761,7 +1612,7 @@ void MainWindow::on_login_succeeded() {
     sess->last_room    =
         tesseract::Prefs::parse(sess->client->load_prefs_json()).last_room;
 
-    auto bridge = std::make_unique<EventHandler>(hwnd_);
+    auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(sess->user_id);
     sess->bridge = std::move(bridge);
     sess->client->start_sync(sess->bridge.get());
@@ -1840,11 +1691,11 @@ void MainWindow::on_reconnect(const std::string& user_id) {
 
     auto json = tesseract::SessionStore::load_account(user_id);
     if (json && sess->client->restore_session(*json)) {
-        auto bridge = std::make_unique<EventHandler>(hwnd_);
+        auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
         bridge->set_user_id(user_id);
         sess->bridge = std::move(bridge);
         if (idx == active_account_index_)
-            event_handler_ = static_cast<EventHandler*>(sess->bridge.get());
+            event_handler_ = sess->bridge.get();
         sess->client->start_sync(sess->bridge.get());
         if (idx == active_account_index_)
             SendMessageW(hStatus_, SB_SETTEXTW, 0,
@@ -1865,11 +1716,11 @@ void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout) {
     if (soft_logout) {
         auto json = tesseract::SessionStore::load_account(user_id);
         if (json && accounts_[idx]->client->restore_session(*json)) {
-            auto bridge = std::make_unique<EventHandler>(hwnd_);
+            auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
             bridge->set_user_id(user_id);
             accounts_[idx]->bridge = std::move(bridge);
             if (idx == active_account_index_) {
-                event_handler_ = static_cast<EventHandler*>(accounts_[idx]->bridge.get());
+                event_handler_ = accounts_[idx]->bridge.get();
                 my_user_id_       = accounts_[idx]->client->get_user_id();
                 my_display_name_  = accounts_[idx]->client->get_display_name();
                 my_avatar_url_    = accounts_[idx]->client->get_avatar_url();
@@ -2018,10 +1869,7 @@ void MainWindow::request_more_history(const std::string& room_id) {
 void MainWindow::on_tesseract_paginate_done(std::string* room_id,
                                               bool reached_start) {
     if (!room_id) return;
-    auto it = pagination_.find(*room_id);
-    if (it == pagination_.end()) return;
-    it->second.in_flight     = false;
-    it->second.reached_start = reached_start;
+    push_paginate_result_(*room_id, reached_start);
     if (*room_id == current_room_id_ && message_list_view_)
         message_list_view_->reset_near_top_latch();
 }
@@ -2058,8 +1906,8 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
     for (auto& ev : payload->snapshot) {
         if (!ev) continue;
         ensure_row_media(*ev);
-        ensure_reply_details(ev->in_reply_to_id);
-        rows.push_back(to_row_data(*ev));
+        ensure_reply_details_(ev->in_reply_to_id);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     message_list_view_->set_messages(std::move(rows));
     if (msg_surface_) msg_surface_->relayout();
@@ -2072,9 +1920,9 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
     if (!message_list_view_) return;
 
     ensure_row_media(*payload->event);
-    ensure_reply_details(payload->event->in_reply_to_id);
+    ensure_reply_details_(payload->event->in_reply_to_id);
     message_list_view_->insert_message(payload->index,
-                                         to_row_data(*payload->event));
+                                         tesseract::views::make_row_data(*payload->event, my_user_id_));
     if (msg_surface_) msg_surface_->relayout();
 }
 
@@ -2085,9 +1933,9 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
     if (!message_list_view_) return;
 
     ensure_row_media(*payload->event);
-    ensure_reply_details(payload->event->in_reply_to_id);
+    ensure_reply_details_(payload->event->in_reply_to_id);
     message_list_view_->update_message(payload->index,
-                                         to_row_data(*payload->event));
+                                         tesseract::views::make_row_data(*payload->event, my_user_id_));
     if (msg_surface_) msg_surface_->relayout();
 }
 
@@ -2100,12 +1948,11 @@ void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
 }
 
 void MainWindow::on_tesseract_rooms(RoomsPayload* payload) {
-    per_account_rooms_[payload->user_id] = std::move(payload->rooms);
-    if (active_account_index_ < 0 ||
-        active_account_index_ >= static_cast<int>(accounts_.size()) ||
-        accounts_[active_account_index_]->user_id != payload->user_id)
-        return;
-    rooms_ = per_account_rooms_[payload->user_id];
+    // push_rooms_ updates per_account_rooms_, rooms_, and calls on_rooms_updated_().
+    push_rooms_(std::move(payload->user_id), std::move(payload->rooms));
+}
+
+void MainWindow::on_rooms_updated_() {
     refresh_room_list();
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_) {
@@ -2126,9 +1973,7 @@ void MainWindow::on_tesseract_rooms(RoomsPayload* payload) {
 void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
                                                bool reached_start) {
     if (!room_id || *room_id != current_room_id_) return;
-    auto& state = pagination_[*room_id];
-    state.in_flight     = false;
-    state.reached_start = reached_start;
+    push_paginate_result_(*room_id, reached_start);
 }
 
 void MainWindow::refresh_room_list() {
@@ -2166,7 +2011,7 @@ void MainWindow::refresh_room_list() {
             }
         }
     }
-    for (const auto& r : filtered) ensure_room_avatar(r);
+    for (const auto& r : filtered) ensure_room_avatar_(r);
 
     room_list_view_->set_rooms(filtered);
     if (!current_room_id_.empty())
@@ -2199,27 +2044,8 @@ void MainWindow::on_space_back() {
 // Decode + cache + repaint now happens via WM_TESSERACT_MEDIA_BYTES;
 // the call sites return immediately and the next paint shows an
 // initials placeholder until the bytes land.
-void MainWindow::ensure_room_avatar(const tesseract::RoomInfo& r) {
-    if (!room_surface_) return;
-    request_room_avatar(r.id, r.avatar_url);
-}
-
-void MainWindow::ensure_user_avatar_tk(const std::string& mxc) {
-    if (!msg_surface_) return;
-    request_user_avatar(mxc);
-}
-
-void MainWindow::ensure_media_image(const std::string& url,
-                                      int /*max_w*/, int /*max_h*/) {
-    if (!msg_surface_) return;
-    request_media_image(url);
-}
-
-void MainWindow::ensure_reply_details(const std::string& event_id) {
-    if (event_id.empty() || current_room_id_.empty()) return;
-    if (!reply_details_requested_.insert(event_id).second) return;
-    client_->fetch_reply_details(current_room_id_, event_id);
-}
+// ensure_room_avatar_, ensure_user_avatar_, ensure_media_image_, and
+// ensure_reply_details_ are implemented in tesseract::ShellBase.
 
 // ---------------------------------------------------------------------------
 // Animated media — multi-frame WIC decode + 60 Hz WM_TIMER tick
@@ -2229,24 +2055,21 @@ void MainWindow::try_load_animation(const std::string& url,
                                       std::span<const std::uint8_t> bytes)
 {
     if (url.empty() || bytes.empty()) return;
-    if (tk_anim_images_.count(url))   return;
+    if (anim_cache_.has(url)) return;
     auto frames = tk::win32::decode_animation(bytes);
     if (frames.size() < 2) return;
 
-    AnimatedImage entry;
-    entry.frames.reserve(frames.size());
-    entry.delays_ms.reserve(frames.size());
+    std::vector<std::unique_ptr<tk::Image>> imgs;
+    std::vector<int> delays;
+    imgs.reserve(frames.size());
+    delays.reserve(frames.size());
     for (auto& af : frames) {
-        entry.frames.push_back(std::move(af.image));
-        entry.delays_ms.push_back(af.delay_ms);
+        imgs.push_back(std::move(af.image));
+        delays.push_back(af.delay_ms);
     }
-    entry.current = 0;
-    entry.next_advance_ms =
-        static_cast<std::int64_t>(GetTickCount64()) + entry.delays_ms[0];
-
-    tk_anim_images_.emplace(url, std::move(entry));
-    // Drop any static-cache leftover from a prior probe to keep providers
-    // from racing with two caches for the same URL.
+    anim_cache_.store(url, std::move(imgs), std::move(delays),
+                      static_cast<std::int64_t>(GetTickCount64()));
+    // Drop any static-cache leftover from a prior probe.
     tk_images_.erase(url);
 
     if (!anim_timer_running_ && hwnd_) {
@@ -2256,7 +2079,7 @@ void MainWindow::try_load_animation(const std::string& url,
 }
 
 void MainWindow::on_anim_tick() {
-    if (tk_anim_images_.empty()) {
+    if (anim_cache_.empty()) {
         if (anim_timer_running_ && hwnd_) {
             KillTimer(hwnd_, kAnimTimerId);
             anim_timer_running_ = false;
@@ -2264,23 +2087,7 @@ void MainWindow::on_anim_tick() {
         return;
     }
     const std::int64_t now = static_cast<std::int64_t>(GetTickCount64());
-    bool any_changed = false;
-    for (auto& [_, entry] : tk_anim_images_) {
-        if (entry.frames.size() <= 1) continue;
-        // Walk forward through every elapsed delay so we don't drift on
-        // slow ticks (e.g. dragging the window). Cap at one full loop so
-        // long pauses don't spin in catch-up.
-        std::size_t steps = 0;
-        while (now >= entry.next_advance_ms &&
-                steps < entry.frames.size())
-        {
-            entry.current = (entry.current + 1) % entry.frames.size();
-            entry.next_advance_ms += entry.delays_ms[entry.current];
-            ++steps;
-        }
-        if (steps > 0) any_changed = true;
-    }
-    if (!any_changed) return;
+    if (!anim_cache_.advance(now)) return;
     if (msg_surface_ && msg_surface_->hwnd())
         InvalidateRect(msg_surface_->hwnd(), nullptr, FALSE);
     if (sticker_picker_surface_ && sticker_picker_surface_->hwnd() &&
@@ -2299,7 +2106,7 @@ void MainWindow::on_anim_tick() {
 
 void MainWindow::request_sticker_image(const std::string& cache_key) {
     if (cache_key.empty()) return;
-    if (tk_images_.count(cache_key) || tk_anim_images_.count(cache_key)) return;
+    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
     if (!sticker_fetches_in_flight_.insert(cache_key).second) return;
 
     HWND target = hwnd_;
@@ -2314,183 +2121,77 @@ void MainWindow::request_sticker_image(const std::string& cache_key) {
     });
 }
 
-void MainWindow::request_room_avatar(const std::string& room_id,
-                                       const std::string& mxc) {
-    if (room_id.empty() || mxc.empty()) return;
-    if (tk_avatars_.count(mxc)) return;
-    if (!media_fetches_in_flight_.insert(mxc).second) return;
+// ---------------------------------------------------------------------------
+// ShellBase virtual hook implementations
+// ---------------------------------------------------------------------------
 
-    HWND target = hwnd_;
-    run_async_([this, target, room_id, mxc]() {
-        auto bytes = client_->fetch_avatar_bytes(room_id);
-        auto* p    = new MediaBytesPayload{
-            MainWindow::MediaKind::RoomAvatar, mxc, std::move(bytes) };
-        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
-                          reinterpret_cast<LPARAM>(p)))
-        {
-            delete p;
-        }
-    });
+void MainWindow::post_to_ui_(std::function<void()> fn) {
+    auto* p = new std::function<void()>(std::move(fn));
+    if (!PostMessageW(hwnd_, WM_TESSERACT_POST_TO_UI, 0,
+                      reinterpret_cast<LPARAM>(p))) {
+        delete p;  // window already gone; drop the closure
+    }
 }
 
-void MainWindow::request_user_avatar(const std::string& mxc) {
-    if (mxc.empty()) return;
-    if (tk_avatars_.count(mxc)) return;
-    if (!media_fetches_in_flight_.insert(mxc).second) return;
+void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
+                                        MediaKind kind,
+                                        std::vector<uint8_t> bytes) {
+    // Called on the UI thread (via post_to_ui_ → WM_TESSERACT_POST_TO_UI).
+    // Decode the bytes, store in the appropriate tk::Image cache, and repaint
+    // the relevant surface.
+    if (bytes.empty()) return;
 
-    HWND target = hwnd_;
-    run_async_([this, target, mxc]() {
-        auto bytes = client_->fetch_media_bytes(mxc);
-        auto* p    = new MediaBytesPayload{
-            MainWindow::MediaKind::UserAvatar, mxc, std::move(bytes) };
-        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
-                          reinterpret_cast<LPARAM>(p)))
-        {
-            delete p;
+    HWND invalidate_hwnd = nullptr;
+    switch (kind) {
+    case MediaKind::RoomAvatar:
+        if (room_surface_) {
+            if (auto img = room_surface_->factory().decode_image(bytes))
+                tk_avatars_.emplace(cache_key, std::move(img));
+            invalidate_hwnd = room_surface_->hwnd();
         }
-    });
+        // Also invalidate the room header — it uses the GDI+ avatar_cache_
+        // which is a separate code-path, but a relayout of room_surface
+        // covers the tk-based room list redraw that callers expect.
+        if (hRoomHeader_) InvalidateRect(hRoomHeader_, nullptr, FALSE);
+        break;
+    case MediaKind::UserAvatar:
+        if (msg_surface_) {
+            if (auto img = msg_surface_->factory().decode_image(bytes))
+                tk_avatars_.emplace(cache_key, std::move(img));
+            invalidate_hwnd = msg_surface_->hwnd();
+        }
+        break;
+    case MediaKind::MediaImage:
+        if (msg_surface_) {
+            try_load_animation(cache_key, bytes);
+            if (!anim_cache_.has(cache_key)) {
+                if (auto img = msg_surface_->factory().decode_image(bytes))
+                    tk_images_.emplace(cache_key, std::move(img));
+            }
+            invalidate_hwnd = msg_surface_->hwnd();
+        }
+        break;
+    }
+    if (invalidate_hwnd)
+        InvalidateRect(invalidate_hwnd, nullptr, FALSE);
 }
 
-void MainWindow::request_media_image(const std::string& url) {
-    if (url.empty()) return;
-    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
-    if (!media_fetches_in_flight_.insert(url).second) return;
-
-    HWND target = hwnd_;
-    run_async_([this, target, url]() {
-        // `url` may be a plain `mxc://` (plain images/stickers) or a JSON
-        // MediaSource (encrypted images, stickers, reaction sources).
-        // `fetch_source_bytes` accepts both shapes; `fetch_media_bytes`
-        // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_->fetch_source_bytes(url);
-        auto* p    = new MediaBytesPayload{
-            MainWindow::MediaKind::MediaImage, url, std::move(bytes) };
-        if (!PostMessageW(target, WM_TESSERACT_MEDIA_BYTES, 0,
-                          reinterpret_cast<LPARAM>(p)))
-        {
-            delete p;
-        }
-    });
+void MainWindow::generate_video_thumbnail_(const std::string& event_id,
+                                            const std::string& /*video_url*/) {
+    // Win32 has no GStreamer/AVFoundation pipeline for first-frame extraction.
+    // Record the event so the dedup set doesn't retry on every redraw; the
+    // MessageListView will show its play-button placeholder over a grey card.
+    video_thumb_in_flight_.insert(event_id);
 }
 
 // ---------------------------------------------------------------------------
 //  Event → MessageRowData + append into the shared MessageListView
 // ---------------------------------------------------------------------------
 
-tesseract::views::MessageRowData MainWindow::to_row_data(
-    const tesseract::Event& ev)
-{
-    using Kind = tesseract::views::MessageRowData::Kind;
-    tesseract::views::MessageRowData row;
-    row.event_id          = ev.event_id;
-    row.sender            = ev.sender;
-    row.sender_name       = ev.sender_name;
-    row.sender_avatar_url = ev.sender_avatar_url;
-    row.body              = ev.body;
-    row.timestamp_ms      = ev.timestamp;
-    row.is_own            = !my_user_id_.empty() && ev.sender == my_user_id_;
-    row.reactions         = ev.reactions;
-    row.read_receipts     = ev.read_receipts;
-
-    row.in_reply_to_id          = ev.in_reply_to_id;
-    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
-    row.in_reply_to_body        = ev.in_reply_to_body;
-    row.is_edited               = ev.is_edited;
-
-    switch (ev.type) {
-        case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
-        case tesseract::EventType::Image: {
-            row.kind = Kind::Image;
-            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-            row.media_url            = img.image_url;
-            row.media_w              = static_cast<int>(img.width);
-            row.media_h              = static_cast<int>(img.height);
-            row.has_filename_caption = !img.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Sticker: {
-            row.kind = Kind::Sticker;
-            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-            row.media_url = s.image_url;
-            row.media_w   = static_cast<int>(s.width);
-            row.media_h   = static_cast<int>(s.height);
-            break;
-        }
-        case tesseract::EventType::File: {
-            row.kind = Kind::File;
-            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
-            row.file_name = f.file_name;
-            row.file_size = f.file_size;
-            row.media_url = f.file_url;
-            break;
-        }
-        case tesseract::EventType::Voice: {
-            row.kind = Kind::Voice;
-            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-            row.audio_source = v.audio_source;
-            row.audio_mime   = v.mime_type;
-            row.duration_ms  = v.duration_ms;
-            row.waveform     = v.waveform;
-            break;
-        }
-        case tesseract::EventType::Video: {
-            row.kind = Kind::Video;
-            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-            row.media_url         = vid.video_url;
-            row.video_thumb_url   = vid.thumbnail_url.empty()
-                                    ? ("thumb::" + ev.event_id)
-                                    : vid.thumbnail_url;
-            row.media_w           = static_cast<int>(vid.width);
-            row.media_h           = static_cast<int>(vid.height);
-            row.duration_ms       = vid.duration_ms;
-            row.has_filename_caption = !vid.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
-        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
-    }
-    return row;
-}
-
 void MainWindow::ensure_row_media(const tesseract::Event& ev) {
-    ensure_user_avatar_tk(ev.sender_avatar_url);
-    for (const auto& rr : ev.read_receipts) {
-        ensure_user_avatar_tk(rr.avatar_url);
-    }
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensure_media_image(img.image_url,
-                            tesseract::visual::kMaxInlineImageWidth,
-                            tesseract::visual::kMaxInlineImageHeight);
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensure_media_image(s.image_url,
-                            tesseract::visual::kStickerSize,
-                            tesseract::visual::kStickerSize);
-    } else if (ev.type == tesseract::EventType::Voice) {
-        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-        if (!v.audio_source.empty() &&
-            voice_prefetched_.insert(v.audio_source).second) {
-            run_async_([this, src = v.audio_source]() mutable {
-                (void)client_->fetch_source_bytes(src);
-            });
-        }
-    } else if (ev.type == tesseract::EventType::Video) {
-        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (!vid.thumbnail_url.empty())
-            ensure_media_image(vid.thumbnail_url,
-                                tesseract::visual::kMaxInlineImageWidth,
-                                tesseract::visual::kMaxInlineImageHeight);
-        // No server thumbnail: record the event as seen so we don't retry.
-        // Win32 has no GStreamer/AVFoundation for first-frame extraction;
-        // the view shows a play-button placeholder over a grey card.
-        if (vid.thumbnail_url.empty() && !vid.video_url.empty())
-            video_thumb_in_flight_.insert(ev.event_id);
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty())
-            ensure_media_image(r.source_json, 20, 20);
-    }
+    // Delegate to the ShellBase implementation which calls ensure_user_avatar_,
+    // ensure_media_image_, generate_video_thumbnail_, etc.
+    ensure_row_media_(ev);
 }
 
 void MainWindow::clear_messages() {
@@ -2654,7 +2355,7 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
 }
 
 void MainWindow::on_room_list_state(tesseract::RoomListState state) {
-    last_room_list_state_ = state;
+    push_room_list_state_(state);
     refresh_sync_status();
 }
 
@@ -2733,7 +2434,7 @@ void MainWindow::switch_active_account(int new_idx) {
     auto& sess = accounts_[new_idx];
 
     client_        = sess->client.get();
-    event_handler_ = static_cast<EventHandler*>(sess->bridge.get());
+    event_handler_ = sess->bridge.get();
 
     my_user_id_       = sess->user_id;
     my_display_name_  = sess->display_name;
@@ -3029,9 +2730,7 @@ void MainWindow::ensure_emoji_picker_created() {
     emoji_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
                 const std::string& /*source_token*/) -> const tk::Image* {
-            auto ait = tk_anim_images_.find(cache_key);
-            if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                return ait->second.frames[ait->second.current].get();
+            if (auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto sit = tk_images_.find(cache_key);
             if (sit != tk_images_.end()) return sit->second.get();
             const_cast<MainWindow*>(this)->request_sticker_image(cache_key);
@@ -3224,9 +2923,7 @@ void MainWindow::ensure_sticker_picker_created() {
     sticker_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
                 const std::string& /*source_token*/) -> const tk::Image* {
-            auto ait = tk_anim_images_.find(cache_key);
-            if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                return ait->second.frames[ait->second.current].get();
+            if (auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto sit = tk_images_.find(cache_key);
             if (sit != tk_images_.end()) return sit->second.get();
             const_cast<MainWindow*>(this)->request_sticker_image(cache_key);

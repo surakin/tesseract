@@ -83,6 +83,11 @@ struct MessageRowData {
     bool is_edited = false;
 };
 
+// Convert a raw SDK Event into the flat MessageRowData the shared view
+// consumes. `my_user_id` is used to set `is_own` on the returned row.
+MessageRowData make_row_data(const tesseract::Event& ev,
+                             const std::string&      my_user_id);
+
 class MessageListView : public tk::ListView {
 public:
     using ImageProvider =

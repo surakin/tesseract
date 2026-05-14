@@ -8,12 +8,18 @@ cmake_minimum_required(VERSION 3.25)
 # compiled conditionally based on TESSERACT_UI.
 
 set(_tk_sources
+    app/ShellBase.h
+    app/ShellBase.cpp
+    app/EventHandlerBase.h
+    app/EventHandlerBase.cpp
     tk/audio.h
     tk/video.h
     tk/canvas.h
     tk/host.h
     tk/theme.h
     tk/theme.cpp
+    tk/anim_image_cache.h
+    tk/anim_image_cache.cpp
     tk/widget.h
     tk/widget.cpp
     tk/layout.h

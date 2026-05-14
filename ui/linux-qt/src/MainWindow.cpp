@@ -46,93 +46,14 @@
 #include <thread>
 #include <unordered_set>
 
-Q_DECLARE_METATYPE(tesseract::Event*)
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
 Q_DECLARE_METATYPE(tesseract::BackupProgress)
 
 namespace qt6 {
 
-// ---------------------------------------------------------------------------
-// EventBridge
-// ---------------------------------------------------------------------------
-
-void EventBridge::on_timeline_reset(
-    const std::string& room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
-{
-    // Release ownership of each Event into a raw-pointer vector so it
-    // can ride a Qt queued connection (`unique_ptr` is not Q_DECLARE_METATYPE-
-    // friendly). The slot is responsible for `delete`-ing every entry.
-    std::vector<tesseract::Event*> raw;
-    raw.reserve(snapshot.size());
-    for (auto& p : snapshot) raw.push_back(p.release());
-    emit timelineReset(QString::fromStdString(room_id), std::move(raw));
-}
-
-void EventBridge::on_message_inserted(
-    const std::string& room_id,
-    std::size_t index,
-    std::unique_ptr<tesseract::Event> event)
-{
-    emit messageInserted(QString::fromStdString(room_id), index, event.release());
-}
-
-void EventBridge::on_message_updated(
-    const std::string& room_id,
-    std::size_t index,
-    std::unique_ptr<tesseract::Event> event)
-{
-    emit messageUpdated(QString::fromStdString(room_id), index, event.release());
-}
-
-void EventBridge::on_message_removed(
-    const std::string& room_id,
-    std::size_t index)
-{
-    emit messageRemoved(QString::fromStdString(room_id), index);
-}
-
-void EventBridge::on_rooms_updated(
-    const std::vector<tesseract::RoomInfo>& rooms)
-{
-    emit roomsUpdated(rooms);
-}
-
-void EventBridge::on_sync_error(
-    const std::string& context,
-    const std::string& description,
-    bool soft_logout)
-{
-    emit syncError(QString::fromStdString(context),
-                   QString::fromStdString(description),
-                   soft_logout);
-}
-
-void EventBridge::on_session_saved(const std::string& session_json) {
-    // Per-account save: this bridge belongs to exactly one account; the
-    // user_id was set at attach time. Empty user_id means the bridge
-    // hasn't been adopted into `accounts_` yet (the OAuth round-trip is
-    // still in flight) — in that case the post-login attach path saves
-    // the session itself.
-    if (user_id_.empty()) return;
-    tesseract::SessionStore::save_account(user_id_, session_json);
-}
-
-void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
-    emit backupProgress(progress);
-}
-
-// on_room_list_state is inlined in MainWindow.h — it emits a queued
-// `roomListStateChanged` signal carrying the u8 code (Qt's meta-object
-// system handles std::uint8_t natively across queued connections).
-
-void EventBridge::on_image_packs_updated() {
-    emit imagePacksUpdated();
-}
-
-void EventBridge::on_account_prefs_updated(const std::string& json) {
-    emit accountPrefsUpdated(QString::fromStdString(json));
-}
+// EventBridge is now a thin QObject wrapper around EventHandlerBase.
+// All IEventHandler method bodies live in EventHandlerBase (shared/app/).
+// No EventBridge:: method definitions needed here.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,9 +96,6 @@ QPixmap MainWindow::makeInitialsPixmap(const QString& name, int size) {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    qRegisterMetaType<tesseract::Event*>();
-    qRegisterMetaType<std::vector<tesseract::Event*>>();
-    qRegisterMetaType<std::size_t>("std::size_t");
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
 
@@ -428,12 +346,8 @@ MainWindow::MainWindow(QWidget* parent)
         });
     messageListView_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
-            // Animated entries take priority — onMessageAnimTick_
-            // keeps `current` valid; static cache is the second hop.
-            auto ait = tk_anim_images_.find(mxc);
-            if (ait != tk_anim_images_.end() && !ait->second.frames.empty()) {
-                return ait->second.frames[ait->second.current].get();
-            }
+            // Animated entries take priority; static cache is the second hop.
+            if (const auto* f = anim_cache_.current_frame(mxc)) return f;
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
@@ -509,9 +423,7 @@ MainWindow::MainWindow(QWidget* parent)
         ovLayout->addWidget(imgViewerSurface_);
         imgViewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
-                auto ait = tk_anim_images_.find(url);
-                if (ait != tk_anim_images_.end() && !ait->second.frames.empty())
-                    return ait->second.frames[ait->second.current].get();
+                if (const auto* f = anim_cache_.current_frame(url)) return f;
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
@@ -639,10 +551,10 @@ MainWindow::MainWindow(QWidget* parent)
     });
 
     composeShared_->on_send  = [this](const std::string& body) {
-        if (currentRoomId_.empty()) return;
+        if (current_room_id_.empty()) return;
         std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
         if (trimmed.empty()) return;
-        auto res = client_->send_message(currentRoomId_, trimmed);
+        auto res = client_->send_message(current_room_id_, trimmed);
         if (res) {
             if (composeTextArea_) composeTextArea_->set_text("");
             if (composeShared_)   composeShared_->set_current_text({});
@@ -657,7 +569,7 @@ MainWindow::MainWindow(QWidget* parent)
                                              std::uint32_t /*src_w*/,
                                              std::uint32_t /*src_h*/,
                                              std::string reply_event_id) {
-        if (currentRoomId_.empty()) return;
+        if (current_room_id_.empty()) return;
         const bool compress =
             tesseract::Settings::instance().image_quality
             == tesseract::Settings::ImageQuality::Compressed;
@@ -674,7 +586,7 @@ MainWindow::MainWindow(QWidget* parent)
             if (dot != std::string::npos) out_name = out_name.substr(0, dot);
             out_name += ".jpg";
         }
-        auto res = client_->send_image(currentRoomId_, enc.bytes, enc.mime,
+        auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
                                         out_name, caption,
                                         enc.width, enc.height,
                                         reply_event_id);
@@ -693,8 +605,8 @@ MainWindow::MainWindow(QWidget* parent)
                                             std::string filename,
                                             std::string caption,
                                             std::string reply_event_id) {
-        if (currentRoomId_.empty()) return;
-        auto res = client_->send_file(currentRoomId_, bytes, mime,
+        if (current_room_id_.empty()) return;
+        auto res = client_->send_file(current_room_id_, bytes, mime,
                                       filename, caption, reply_event_id);
         if (!res) {
             statusBar()->showMessage(
@@ -723,8 +635,8 @@ MainWindow::MainWindow(QWidget* parent)
     };
     composeShared_->on_send_reply = [this](const std::string& reply_event_id,
                                             const std::string& body) {
-        if (body.empty() || currentRoomId_.empty()) return;
-        auto res = client_->send_reply(currentRoomId_, reply_event_id, body);
+        if (body.empty() || current_room_id_.empty()) return;
+        auto res = client_->send_reply(current_room_id_, reply_event_id, body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
@@ -749,8 +661,8 @@ MainWindow::MainWindow(QWidget* parent)
         if (!pendingReactionEventId_.empty()) {
             std::string ev = std::move(pendingReactionEventId_);
             pendingReactionEventId_.clear();
-            if (!currentRoomId_.empty()) {
-                client_->send_reaction(currentRoomId_, ev, glyph.toStdString());
+            if (!current_room_id_.empty()) {
+                client_->send_reaction(current_room_id_, ev, glyph.toStdString());
             }
             client_->recent_emoji_bump(glyph.toStdString());
             emojiPicker_->hide();
@@ -772,23 +684,23 @@ MainWindow::MainWindow(QWidget* parent)
     stickerPicker_->setClient(client_);
     stickerPicker_->onSelected =
         [this](const tesseract::ImagePackImage& img) {
-            if (currentRoomId_.empty()) return;
+            if (current_room_id_.empty()) return;
             std::string body = img.body.empty() ? img.shortcode : img.body;
-            client_->send_sticker(currentRoomId_, body, img.url, img.info_json);
+            client_->send_sticker(current_room_id_, body, img.url, img.info_json);
             stickerPicker_->hide();
         };
 
     // Reaction-chip click: toggle (Rust handles add/remove).
     messageListView_->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key) {
-            if (currentRoomId_.empty()) return;
-            client_->send_reaction(currentRoomId_, event_id, key);
+            if (current_room_id_.empty()) return;
+            client_->send_reaction(current_room_id_, event_id, key);
         };
 
     // "+" pseudo-chip click: open the emoji picker in reaction mode.
     messageListView_->on_add_reaction_requested =
         [this](const std::string& event_id, tk::Rect anchor) {
-            if (!emojiPicker_ || currentRoomId_.empty()) return;
+            if (!emojiPicker_ || current_room_id_.empty()) return;
             pendingReactionEventId_ = event_id;
             // anchor is in MessageListView-local coords; the view is the
             // root of msgSurface_, so the rect maps directly to surface
@@ -820,8 +732,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     composeShared_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
-        if (new_body.empty() || currentRoomId_.empty()) return;
-        auto res = client_->send_edit(currentRoomId_, event_id, new_body);
+        if (new_body.empty() || current_room_id_.empty()) return;
+        auto res = client_->send_edit(current_room_id_, event_id, new_body);
         if (!res) {
             statusBar()->showMessage(
                 tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);
@@ -840,33 +752,25 @@ MainWindow::MainWindow(QWidget* parent)
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
 
-    // Bridges live in `accounts_[].bridge` and are wired through
-    // `wireBridge` when an account is attached. Slots filter on `sender()`
-    // so callbacks from inactive accounts don't reach the UI surfaces.
+    // Bridges live in `accounts_[].bridge`; EventHandlerBase routes all
+    // callbacks through post_to_ui_ → handle_*_ui_() on MainWindow.
 
     // Notifiers are created per-account in doLogin / onLoginSucceeded.
 
     // Animation frame-tick for inline media in the timeline (GIF /
     // animated WebP / APNG). 60 Hz; the timer self-stops in
-    // `onMessageAnimTick_` when `tk_anim_images_` empties.
+    // `onMessageAnimTick_` when `anim_cache_` empties.
     tk_anim_timer_ = new QTimer(this);
     tk_anim_timer_->setInterval(16);
     connect(tk_anim_timer_, &QTimer::timeout,
             this, &MainWindow::onMessageAnimTick_);
 
-    // Worker-thread media fetches bounce back through this queued
-    // connection — see `requestRoomAvatar_` / `requestUserAvatar_` /
-    // `requestMediaImage_`.
-    connect(this, &MainWindow::mediaBytesLoaded_,
-            this, &MainWindow::onMediaBytesLoaded_,
-            Qt::QueuedConnection);
-
     // Back-pagination on scroll-to-top. The shared MessageListView fires
     // this once per crossing of the near-top threshold; the latch is
     // re-armed automatically after prepended rows are spliced in.
     messageListView_->on_near_top = [this]{
-        if (currentRoomId_.empty()) return;
-        requestMoreHistory(currentRoomId_);
+        if (current_room_id_.empty()) return;
+        requestMoreHistory(current_room_id_);
     };
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
@@ -901,8 +805,8 @@ MainWindow::~MainWindow() {
     // <1 s on a healthy network and are bounded by reqwest's own timeout.
     mediaPool_.waitForDone(-1);
 
-    client_ = nullptr;
-    bridge_ = nullptr;
+    client_        = nullptr;
+    event_handler_ = nullptr;
 
     // LoginView is a child widget, normally destroyed during ~QMainWindow
     // — but that runs *after* the AccountSessions (and thus their
@@ -1004,9 +908,8 @@ void MainWindow::doLogin() {
         session->last_room    = tesseract::Prefs::parse(
             session->client->load_prefs_json()).last_room;
 
-        auto bridge = std::make_unique<EventBridge>(this);
+        auto bridge = std::make_unique<EventBridge>(this, this);
         bridge->set_user_id(uid);
-        wireBridge(bridge.get());
         session->client->start_sync(bridge.get());
         session->sync_started = true;
         session->bridge = std::move(bridge);
@@ -1165,9 +1068,8 @@ void MainWindow::onLoginSucceeded() {
     session->last_room    = tesseract::Prefs::parse(
         session->client->load_prefs_json()).last_room;
 
-    auto bridge = std::make_unique<EventBridge>(this);
+    auto bridge = std::make_unique<EventBridge>(this, this);
     bridge->set_user_id(user_id);
-    wireBridge(bridge.get());
     session->client->start_sync(bridge.get());
     session->sync_started = true;
     session->bridge = std::move(bridge);
@@ -1243,37 +1145,6 @@ void MainWindow::navigate_to_room(const std::string& room_id) {
     activateWindow();
 }
 
-void MainWindow::onNotificationTriggered(
-        QString roomId, QString roomName, QString sender,
-        QString body, bool is_mention, QByteArray avatarBytes)
-{
-    const std::string rid = roomId.toStdString();
-    // Find the account that owns this notification via the emitting bridge.
-    auto* b = qobject_cast<EventBridge*>(QObject::sender());
-    const std::string uid = b ? b->user_id() : std::string{};
-    for (auto& sess : accounts_) {
-        if (sess->user_id != uid) continue;
-        // Suppress only when this account is active and its room is open.
-        if (isActiveWindow()
-                && active_account_index_ >= 0
-                && accounts_[active_account_index_]->user_id == uid
-                && currentRoomId_ == rid)
-            return;
-        if (sess->notifier) {
-            tesseract::Notification n;
-            n.room_id      = rid;
-            n.room_name    = roomName.toStdString();
-            n.sender       = sender.toStdString();
-            n.body         = body.toStdString();
-            n.is_mention   = is_mention;
-            n.avatar_bytes = std::vector<uint8_t>(
-                reinterpret_cast<const uint8_t*>(avatarBytes.constData()),
-                reinterpret_cast<const uint8_t*>(avatarBytes.constData()) + avatarBytes.size());
-            sess->notifier->notify(n);
-        }
-        return;
-    }
-}
 
 void MainWindow::onSendClicked() {
     if (composeShared_) composeShared_->trigger_send();
@@ -1285,16 +1156,16 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     // Drill into a space if the clicked row is one.
     for (const auto& r : rooms_) {
         if (r.id == room_id && r.is_space) {
-            spaceStack_.push_back(room_id);
+            space_stack_.push_back(room_id);
             refreshRoomList();
             return;
         }
     }
 
-    if (!currentRoomId_.empty() && currentRoomId_ != room_id)
-        client_->unsubscribe_room(currentRoomId_);
+    if (!current_room_id_.empty() && current_room_id_ != room_id)
+        client_->unsubscribe_room(current_room_id_);
 
-    currentRoomId_ = room_id;
+    current_room_id_ = room_id;
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());
@@ -1307,14 +1178,14 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     }
 
     for (const auto& r : rooms_)
-        if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
+        if (r.id == current_room_id_) { updateRoomHeader(r); break; }
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the UI stays responsive during the
     // first-load network round-trip.
     auto visible_ids = roomListView_ ? roomListView_->visible_room_ids()
                                      : std::vector<std::string>{};
-    std::string sub_room = currentRoomId_;
+    std::string sub_room = current_room_id_;
     runOnPool_([this, sub_room, visible_ids = std::move(visible_ids)]{
         auto res = client_->subscribe_room(sub_room);
         bool ok  = res.ok;
@@ -1334,7 +1205,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
                             QString::fromStdString(msg)), 4000);
                     return;
                 }
-                if (currentRoomId_ == sub_room) {
+                if (current_room_id_ == sub_room) {
                     auto& state = pagination_[sub_room];
                     state.in_flight     = false;
                     state.reached_start = reached;
@@ -1344,65 +1215,6 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     });
 }
 
-void MainWindow::onTimelineReset(
-    QString roomId, std::vector<tesseract::Event*> snapshot)
-{
-    // Filter: only the active account drives the message list. Background
-    // accounts deliver their timeline events too (they're all syncing), but
-    // the message list always shows the foreground room.
-    const bool from_active = (sender() == bridge_);
-    const bool current = from_active && roomId.toStdString() == currentRoomId_;
-    if (current) {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto* ev : snapshot) {
-            if (!ev) continue;
-            ensureRowMedia(*ev);
-            ensureReplyDetails(ev->in_reply_to_id);
-            rows.push_back(toRowData(*ev));
-        }
-        messageListView_->set_messages(std::move(rows));
-        msgSurface_->relayout();
-    }
-    for (auto* ev : snapshot) delete ev;
-}
-
-void MainWindow::onMessageInserted(
-    QString roomId, std::size_t index, tesseract::Event* ev)
-{
-    const bool from_active = (sender() == bridge_);
-    if (ev && from_active && roomId.toStdString() == currentRoomId_
-        && ev->type != tesseract::EventType::Unhandled)
-    {
-        ensureRowMedia(*ev);
-        ensureReplyDetails(ev->in_reply_to_id);
-        messageListView_->insert_message(index, toRowData(*ev));
-        msgSurface_->relayout();
-    }
-    delete ev;
-}
-
-void MainWindow::onMessageUpdated(
-    QString roomId, std::size_t index, tesseract::Event* ev)
-{
-    const bool from_active = (sender() == bridge_);
-    if (ev && from_active && roomId.toStdString() == currentRoomId_
-        && ev->type != tesseract::EventType::Unhandled)
-    {
-        ensureRowMedia(*ev);
-        ensureReplyDetails(ev->in_reply_to_id);
-        messageListView_->update_message(index, toRowData(*ev));
-        msgSurface_->relayout();
-    }
-    delete ev;
-}
-
-void MainWindow::onMessageRemoved(QString roomId, std::size_t index) {
-    if (sender() != bridge_) return;
-    if (roomId.toStdString() != currentRoomId_) return;
-    messageListView_->remove_message(index);
-    msgSurface_->relayout();
-}
 
 void MainWindow::requestMoreHistory(const std::string& room_id) {
     if (room_id.empty()) return;
@@ -1426,109 +1238,13 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
 }
 
 void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
-    auto it = pagination_.find(roomId.toStdString());
-    if (it == pagination_.end()) return;
-    it->second.in_flight     = false;
-    it->second.reached_start = reached_start;
-    // Re-arm the near-top latch so the user's next scroll-up can trigger
-    // another page. If the prepended rows already triggered a relayout,
-    // `arrange()` will have reset the latch too — calling here is cheap
-    // and idempotent.
-    if (roomId.toStdString() == currentRoomId_ && messageListView_)
+    const std::string rid = roomId.toStdString();
+    bool is_current = (rid == current_room_id_);
+    push_paginate_result_(rid, reached_start);
+    if (is_current && messageListView_)
         messageListView_->reset_near_top_latch();
 }
 
-void MainWindow::onRoomsUpdated(std::vector<tesseract::RoomInfo> rooms) {
-    // Identify the source account from the sender bridge so we can cache
-    // the snapshot under the right user_id even when the callback comes
-    // from a background account. Looking up by pointer keeps this O(N)
-    // worst case in account count, which is tiny.
-    auto* sender_bridge = qobject_cast<EventBridge*>(sender());
-    std::string source_uid;
-    if (sender_bridge) source_uid = sender_bridge->user_id();
-
-    if (!source_uid.empty())
-        per_account_rooms_[source_uid] = rooms;
-
-    if (sender_bridge != bridge_) return;   // background account → cache only
-
-    rooms_ = std::move(rooms);
-    refreshRoomList();
-    if (!currentRoomId_.empty()) {
-        for (const auto& r : rooms_)
-            if (r.id == currentRoomId_) { updateRoomHeader(r); break; }
-    } else if (!pendingRestoreRoom_.empty()) {
-        for (const auto& r : rooms_) {
-            if (r.id == pendingRestoreRoom_ && !r.is_space) {
-                std::string target = std::move(pendingRestoreRoom_);
-                pendingRestoreRoom_.clear();
-                onRoomSelected(target);
-                break;
-            }
-        }
-    }
-}
-
-void MainWindow::onSyncError(
-    QString context, QString description, bool soft_logout)
-{
-    // Identify which account fired the error. With multi-account we have
-    // N concurrent syncs; a soft-logout on one shouldn't yank a different
-    // account's session.
-    auto* sender_bridge = qobject_cast<EventBridge*>(sender());
-    tesseract::AccountSession* affected = nullptr;
-    if (sender_bridge) {
-        for (auto& a : accounts_) {
-            if (static_cast<EventBridge*>(a->bridge.get()) == sender_bridge) {
-                affected = a.get(); break;
-            }
-        }
-    }
-
-    if (context == "sync_reconnect") {
-        statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
-        if (affected && affected->client) {
-            affected->client->stop_sync();
-            affected->sync_started = false;
-            // Restart only the affected account's sync — do not tear down and
-            // rebuild all sessions via doLogin(), which causes a tight loop when
-            // the server rejects one-time key uploads on every new session.
-            QTimer::singleShot(5000, this, [this, uid = affected->user_id]() {
-                for (auto& a : accounts_) {
-                    if (a->user_id == uid && !a->sync_started && a->client) {
-                        a->sync_started = true;
-                        a->client->start_sync(
-                            static_cast<EventBridge*>(a->bridge.get()));
-                    }
-                }
-            });
-        }
-    } else if (context == "sync_auth_error") {
-        if (soft_logout && affected) {
-            if (auto saved = tesseract::SessionStore::load_account(affected->user_id)) {
-                statusBar()->showMessage(tr("Reconnecting session\xe2\x80\xa6"));
-                if (affected->client->restore_session(*saved)) {
-                    affected->display_name = affected->client->get_display_name();
-                    affected->avatar_url   = affected->client->get_avatar_url();
-                    if (affected == accounts_[std::max(0, active_account_index_)].get())
-                        switchActiveAccount(active_account_index_);
-                    affected->client->start_sync(static_cast<EventBridge*>(affected->bridge.get()));
-                    statusBar()->showMessage(tr("Reconnected"));
-                    maybeShowRecoveryBanner();
-                    return;
-                }
-            }
-        }
-        if (affected) {
-            tesseract::SessionStore::clear_account(affected->user_id);
-            affected->client->stop_sync();
-        }
-        statusBar()->showMessage(tr("Session expired; please log in again."));
-        doLogin();
-    } else {
-        statusBar()->showMessage(tr("Sync error: %1").arg(description), 8000);
-    }
-}
 
 // ---------------------------------------------------------------------------
 
@@ -1589,110 +1305,53 @@ void MainWindow::clearMessages() {
     msgSurface_->relayout();
 }
 
-// These three helpers used to call the synchronous Rust FFI on the UI
-// thread. `fetch_avatar_bytes` / `fetch_media_bytes` do a
-// `tokio::block_on` inside; on first sync of an account with many rooms
-// `showRooms` froze the event loop for minutes (one network round-trip
-// per room avatar, serialised on the UI thread). Decode + cache now
-// happens via `mediaBytesLoaded_` after a `QThreadPool` worker landed
-// the bytes; the call sites return immediately and the views paint
-// initials placeholders until the bytes land.
-void MainWindow::ensureRoomAvatar(const tesseract::RoomInfo& r) {
-    requestRoomAvatar_(r.id, r.avatar_url);
+// ---------------------------------------------------------------------------
+// ShellBase virtual hook implementations
+// ---------------------------------------------------------------------------
+
+void MainWindow::post_to_ui_(std::function<void()> fn) {
+    QMetaObject::invokeMethod(this, std::move(fn), Qt::QueuedConnection);
 }
 
-void MainWindow::ensureUserAvatar(const std::string& mxc) {
-    requestUserAvatar_(mxc);
+void MainWindow::on_rooms_updated_() {
+    refreshRoomList();
+    if (!current_room_id_.empty()) {
+        for (const auto& r : rooms_)
+            if (r.id == current_room_id_) { updateRoomHeader(r); break; }
+    } else if (!pending_restore_room_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(pending_restore_room_);
+                pending_restore_room_.clear();
+                onRoomSelected(target);
+                break;
+            }
+        }
+    }
 }
 
-void MainWindow::ensureMediaImage(const std::string& url, int max_w, int max_h) {
-    requestMediaImage_(url, max_w, max_h);
-}
-
-void MainWindow::ensureReplyDetails(const std::string& event_id) {
-    if (event_id.empty() || currentRoomId_.empty()) return;
-    if (!reply_details_requested_.insert(event_id).second) return;
-    client_->fetch_reply_details(currentRoomId_, event_id);
-}
-
-void MainWindow::requestRoomAvatar_(const std::string& room_id,
-                                      const std::string& mxc) {
-    if (room_id.empty() || mxc.empty()) return;
-    if (tk_avatars_.count(mxc)) return;
-    if (!mediaFetchesInFlight_.insert(mxc).second) return;
-
-    QString qkey = QString::fromStdString(mxc);
-    runOnPool_([this, room_id, qkey]() {
-        auto bytes = client_->fetch_avatar_bytes(room_id);
-        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-        emit mediaBytesLoaded_(qkey,
-                                static_cast<int>(MediaKind::RoomAvatar),
-                                qb);
-    });
-}
-
-void MainWindow::requestUserAvatar_(const std::string& mxc) {
-    if (mxc.empty()) return;
-    if (tk_avatars_.count(mxc)) return;
-    if (!mediaFetchesInFlight_.insert(mxc).second) return;
-
-    QString qkey = QString::fromStdString(mxc);
-    runOnPool_([this, key = mxc, qkey]() {
-        auto bytes = client_->fetch_media_bytes(key);
-        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-        emit mediaBytesLoaded_(qkey,
-                                static_cast<int>(MediaKind::UserAvatar),
-                                qb);
-    });
-}
-
-void MainWindow::requestMediaImage_(const std::string& url,
-                                      int max_w, int max_h) {
-    if (url.empty()) return;
-    if (tk_images_.count(url) || tk_anim_images_.count(url)) return;
-    if (!mediaFetchesInFlight_.insert(url).second) return;
-    mediaImageSizes_[url] = { max_w, max_h };
-
-    QString qkey = QString::fromStdString(url);
-    runOnPool_([this, key = url, qkey]() {
-        // `key` may be plain mxc (plain images/stickers) or a JSON
-        // MediaSource (encrypted images/stickers + reaction sources).
-        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
-        // only handles plain mxc and would return empty for encrypted.
-        auto bytes = client_->fetch_source_bytes(key);
-        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-        emit mediaBytesLoaded_(qkey,
-                                static_cast<int>(MediaKind::MediaImage),
-                                qb);
-    });
-}
-
-void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
-                                       QByteArray bytes) {
-    std::string key = cache_key.toStdString();
-    mediaFetchesInFlight_.erase(key);
-    if (bytes.isEmpty()) {
-        mediaImageSizes_.erase(key);
+void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
+                                        MediaKind kind,
+                                        std::vector<uint8_t> bytes) {
+    // Called on the UI thread (already posted via post_to_ui_ in ShellBase).
+    if (bytes.empty()) {
+        mediaImageSizes_.erase(cache_key);
         return;
     }
 
-    const MediaKind k = static_cast<MediaKind>(kind);
-    if (k == MediaKind::RoomAvatar || k == MediaKind::UserAvatar) {
-        if (tk_avatars_.count(key)) return;
+    if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar) {
+        if (tk_avatars_.count(cache_key)) return;
         QImage img;
-        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
-                              bytes.size()))
+        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                              static_cast<int>(bytes.size())))
             return;
-        const int size = (k == MediaKind::RoomAvatar)
+        const int size = (kind == MediaKind::RoomAvatar)
                           ? kRoomAvatarSize : kMsgAvatarSize;
         QImage scaled = img.scaled(size, size,
                                     Qt::KeepAspectRatio,
                                     Qt::SmoothTransformation);
-        tk_avatars_.emplace(key, tk::qt6::make_image(std::move(scaled)));
-        if (k == MediaKind::RoomAvatar) {
+        tk_avatars_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
+        if (kind == MediaKind::RoomAvatar) {
             if (roomSurface_) roomSurface_->update();
         } else {
             if (msgSurface_) msgSurface_->update();
@@ -1701,42 +1360,43 @@ void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
     }
 
     // MediaImage — animated probe first, then static fallback.
-    if (tk_images_.count(key) || tk_anim_images_.count(key)) {
-        mediaImageSizes_.erase(key);
+    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) {
+        mediaImageSizes_.erase(cache_key);
         return;
     }
     int max_w = kMaxImageWidth, max_h = kMaxImageHeight;
-    if (auto sit = mediaImageSizes_.find(key); sit != mediaImageSizes_.end()) {
+    if (auto sit = mediaImageSizes_.find(cache_key); sit != mediaImageSizes_.end()) {
         max_w = sit->second.first;
         max_h = sit->second.second;
         mediaImageSizes_.erase(sit);
     }
 
-    QBuffer buf(&bytes);
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<int>(bytes.size()));
+    QBuffer buf(&qb);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
 
     if (reader.supportsAnimation() && reader.imageCount() > 1) {
-        AnimatedImage entry;
-        entry.frames.reserve(reader.imageCount());
-        entry.delays_ms.reserve(reader.imageCount());
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int>                        delays;
+        frames.reserve(reader.imageCount());
+        delays.reserve(reader.imageCount());
         QImage frame;
         while (reader.read(&frame)) {
             int delay = reader.nextImageDelay();
-            if (delay <= 0)   delay = 100;
-            if (delay < 20)   delay = 20;
+            if (delay <= 0) delay = 100;
+            if (delay < 20) delay = 20;
             QImage scaled = frame.scaled(max_w, max_h,
                                           Qt::KeepAspectRatio,
                                           Qt::SmoothTransformation);
-            entry.frames.push_back(tk::qt6::make_image(std::move(scaled)));
-            entry.delays_ms.push_back(delay);
+            frames.push_back(tk::qt6::make_image(std::move(scaled)));
+            delays.push_back(delay);
         }
-        if (!entry.frames.empty()) {
-            entry.current         = 0;
-            entry.next_advance_ms = QDateTime::currentMSecsSinceEpoch()
-                                  + entry.delays_ms[0];
-            tk_anim_images_.emplace(key, std::move(entry));
+        if (!frames.empty()) {
+            anim_cache_.store(cache_key, std::move(frames), std::move(delays),
+                              QDateTime::currentMSecsSinceEpoch());
             if (tk_anim_timer_ && !tk_anim_timer_->isActive())
                 tk_anim_timer_->start();
             if (msgSurface_) msgSurface_->update();
@@ -1746,36 +1406,70 @@ void MainWindow::onMediaBytesLoaded_(QString cache_key, int kind,
     }
 
     QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
-                          bytes.size()))
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(qb.constData()),
+                          qb.size()))
         return;
     QImage scaled = img.scaled(max_w, max_h,
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
-    tk_images_.emplace(key, tk::qt6::make_image(std::move(scaled)));
+    tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
     if (msgSurface_) msgSurface_->update();
 }
 
+void MainWindow::generate_video_thumbnail_(const std::string& event_id,
+                                            const std::string& video_url) {
+    const std::string src = video_url;
+    runOnPool_([this, eid = event_id, src]() {
+        auto bytes = client_->fetch_source_bytes(src);
+        if (bytes.empty()) return;
+        // Decode the first frame on the UI thread — Qt multimedia
+        // objects (QMediaPlayer, QVideoSink) must live there.
+        QMetaObject::invokeMethod(this,
+            [this, eid, bytes = std::move(bytes)]() mutable {
+                const std::string key = "thumb::" + eid;
+                if (tk_images_.count(key)) return;
+                auto* player = new QMediaPlayer(this);
+                auto* sink   = new QVideoSink(player);
+                player->setVideoSink(sink);
+                auto* buf = new QBuffer(player);
+                QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                              static_cast<qsizetype>(bytes.size()));
+                buf->setData(ba);
+                buf->open(QIODevice::ReadOnly);
+                player->setSourceDevice(buf);
+                QObject::connect(
+                    sink, &QVideoSink::videoFrameChanged,
+                    sink, [this, key, player](const QVideoFrame& frame) {
+                        if (!frame.isValid()) return;
+                        player->stop();
+                        player->deleteLater();
+                        if (tk_images_.count(key)) return;
+                        QImage img = frame.toImage();
+                        if (img.isNull()) return;
+                        QByteArray enc;
+                        QBuffer encbuf(&enc);
+                        encbuf.open(QIODevice::WriteOnly);
+                        img.save(&encbuf, "JPEG", 85);
+                        if (!enc.isEmpty()) {
+                            std::vector<uint8_t> v(
+                                reinterpret_cast<const uint8_t*>(enc.constData()),
+                                reinterpret_cast<const uint8_t*>(enc.constData()) + enc.size());
+                            on_media_bytes_ready_(key, MediaKind::MediaImage,
+                                                  std::move(v));
+                        }
+                    });
+                player->play();
+            }, Qt::QueuedConnection);
+    });
+}
+
 void MainWindow::onMessageAnimTick_() {
-    if (tk_anim_images_.empty()) {
+    if (anim_cache_.empty()) {
         if (tk_anim_timer_) tk_anim_timer_->stop();
         return;
     }
-    const std::int64_t now = QDateTime::currentMSecsSinceEpoch();
-    bool any_changed = false;
-    for (auto& [_, entry] : tk_anim_images_) {
-        if (entry.frames.size() <= 1) continue;
-        std::size_t steps = 0;
-        while (now >= entry.next_advance_ms
-                && steps < entry.frames.size())
-        {
-            entry.current = (entry.current + 1) % entry.frames.size();
-            entry.next_advance_ms += entry.delays_ms[entry.current];
-            ++steps;
-        }
-        if (steps > 0) any_changed = true;
-    }
-    if (any_changed && msgSurface_) msgSurface_->update();
+    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()) && msgSurface_)
+        msgSurface_->update();
 }
 
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
@@ -1787,16 +1481,16 @@ void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
 
     // Eagerly fetch avatars for the new room set so the first paint has
     // them ready. Bytes-already-cached is a no-op via tk_avatars_.count.
-    for (const auto& r : sorted) ensureRoomAvatar(r);
+    for (const auto& r : sorted) ensure_room_avatar_(r);
 
     roomListView_->set_rooms(std::move(sorted));
-    if (!currentRoomId_.empty())
-        roomListView_->set_selected_room(currentRoomId_);
+    if (!current_room_id_.empty())
+        roomListView_->set_selected_room(current_room_id_);
     roomSurface_->relayout();
 }
 
 void MainWindow::refreshRoomList() {
-    if (spaceStack_.empty()) {
+    if (space_stack_.empty()) {
         std::unordered_set<std::string> in_space;
         for (const auto& r : rooms_) {
             if (!r.is_space) continue;
@@ -1811,7 +1505,7 @@ void MainWindow::refreshRoomList() {
         showRooms(filtered);
         roomNavBar_->setVisible(false);
     } else {
-        const std::string& space_id = spaceStack_.back();
+        const std::string& space_id = space_stack_.back();
         auto child_ids = client_->space_children(space_id);
         std::vector<tesseract::RoomInfo> filtered;
         for (const auto& r : rooms_)
@@ -1828,178 +1522,31 @@ void MainWindow::refreshRoomList() {
 }
 
 void MainWindow::onSpaceBack() {
-    if (!spaceStack_.empty()) spaceStack_.pop_back();
+    if (!space_stack_.empty()) space_stack_.pop_back();
     refreshRoomList();
 }
 
 // ---------------------------------------------------------------------------
 
-tesseract::views::MessageRowData MainWindow::toRowData(const tesseract::Event& ev) {
-    using Kind = tesseract::views::MessageRowData::Kind;
-    tesseract::views::MessageRowData row;
-    row.event_id          = ev.event_id;
-    row.sender            = ev.sender;
-    row.sender_name       = ev.sender_name;
-    row.sender_avatar_url = ev.sender_avatar_url;
-    row.body              = ev.body;
-    row.timestamp_ms      = ev.timestamp;
-    row.is_own            = (ev.sender == myUserId_);
-    row.reactions         = ev.reactions;
-    row.read_receipts     = ev.read_receipts;
-
-    row.in_reply_to_id          = ev.in_reply_to_id;
-    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
-    row.in_reply_to_body        = ev.in_reply_to_body;
-    row.is_edited               = ev.is_edited;
-
-    switch (ev.type) {
-        case tesseract::EventType::Text:
-            row.kind = Kind::Text;
-            break;
-        case tesseract::EventType::Image: {
-            row.kind = Kind::Image;
-            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-            row.media_url            = img.image_url;
-            row.media_w              = static_cast<int>(img.width);
-            row.media_h              = static_cast<int>(img.height);
-            row.has_filename_caption = !img.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Sticker: {
-            row.kind = Kind::Sticker;
-            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-            row.media_url = s.image_url;
-            row.media_w   = static_cast<int>(s.width);
-            row.media_h   = static_cast<int>(s.height);
-            break;
-        }
-        case tesseract::EventType::File: {
-            row.kind = Kind::File;
-            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
-            row.file_name = f.file_name;
-            row.file_size = f.file_size;
-            row.media_url = f.file_url;
-            break;
-        }
-        case tesseract::EventType::Voice: {
-            row.kind = Kind::Voice;
-            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-            row.audio_source = v.audio_source;
-            row.audio_mime   = v.mime_type;
-            row.duration_ms  = v.duration_ms;
-            row.waveform     = v.waveform;
-            break;
-        }
-        case tesseract::EventType::Video: {
-            row.kind = Kind::Video;
-            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-            row.media_url         = vid.video_url;
-            // Use server thumbnail when available; otherwise fall back to the
-            // client-generated key so the image provider will find the frame
-            // once ensureRowMedia() finishes generating it.
-            row.video_thumb_url   = vid.thumbnail_url.empty()
-                                    ? ("thumb::" + ev.event_id)
-                                    : vid.thumbnail_url;
-            row.media_w           = static_cast<int>(vid.width);
-            row.media_h           = static_cast<int>(vid.height);
-            row.duration_ms       = vid.duration_ms;
-            row.has_filename_caption = !vid.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Redacted:
-            row.kind = Kind::Redacted;
-            break;
-        case tesseract::EventType::Unhandled:
-            row.kind = Kind::Unhandled;
-            break;
-    }
-    return row;
-}
-
 void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
-    // Fetch + decode any media the row references. The shared
-    // MessageListView reads from tk_avatars_ / tk_images_ via provider
-    // lambdas wired in the constructor.
-    ensureUserAvatar(ev.sender_avatar_url);
-    for (const auto& rr : ev.read_receipts) {
-        ensureUserAvatar(rr.avatar_url);
-    }
+    // Store decode size hints before delegating to the ShellBase helper.
     if (ev.type == tesseract::EventType::Image) {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        ensureMediaImage(img.image_url, kMaxImageWidth, kMaxImageHeight);
+        if (!img.image_url.empty())
+            mediaImageSizes_[img.image_url] = { kMaxImageWidth, kMaxImageHeight };
     } else if (ev.type == tesseract::EventType::Sticker) {
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        ensureMediaImage(s.image_url, kMaxStickerSize, kMaxStickerSize);
-    } else if (ev.type == tesseract::EventType::Voice) {
-        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-        if (!v.audio_source.empty() &&
-            voice_prefetched_.insert(v.audio_source).second) {
-            // Pull the clip into the SDK media cache on a worker so the
-            // first play-button tap is instant. We discard the bytes —
-            // the next synchronous `fetch_source_bytes` (driven by the
-            // view) reads them straight back out of the cache.
-            std::string src = v.audio_source;
-            runOnPool_([this, src = std::move(src)]() {
-                (void)client_->fetch_source_bytes(src);
-            });
-        }
+        if (!s.image_url.empty())
+            mediaImageSizes_[s.image_url] = { kMaxStickerSize, kMaxStickerSize };
     } else if (ev.type == tesseract::EventType::Video) {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        // Fetch server thumbnail when available.
         if (!vid.thumbnail_url.empty())
-            ensureMediaImage(vid.thumbnail_url, kMaxImageWidth, kMaxImageHeight);
-        // Client-side first-frame generation when no server thumbnail.
-        if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
-            video_thumb_in_flight_.insert(ev.event_id).second) {
-            const std::string eid = ev.event_id;
-            std::string src = vid.video_url;
-            runOnPool_(
-                [this, eid, src = std::move(src)]() {
-                    auto bytes = client_->fetch_source_bytes(src);
-                    if (bytes.empty()) return;
-                    // Decode the first frame on the UI thread — Qt multimedia
-                    // objects (QMediaPlayer, QVideoSink) must live there.
-                    QMetaObject::invokeMethod(this,
-                        [this, eid, bytes = std::move(bytes)]() mutable {
-                            const std::string key = "thumb::" + eid;
-                            if (tk_images_.count(key)) return;
-                            auto* player = new QMediaPlayer(this);
-                            auto* sink   = new QVideoSink(player);
-                            player->setVideoSink(sink);
-                            auto* buf = new QBuffer(player);
-                            QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
-                                          static_cast<qsizetype>(bytes.size()));
-                            buf->setData(ba);
-                            buf->open(QIODevice::ReadOnly);
-                            player->setSourceDevice(buf);
-                            QObject::connect(
-                                sink, &QVideoSink::videoFrameChanged,
-                                sink, [this, key, player](const QVideoFrame& frame) {
-                                    if (!frame.isValid()) return;
-                                    player->stop();
-                                    player->deleteLater();
-                                    if (tk_images_.count(key)) return;
-                                    QImage img = frame.toImage();
-                                    if (img.isNull()) return;
-                                    QByteArray enc;
-                                    QBuffer encbuf(&enc);
-                                    encbuf.open(QIODevice::WriteOnly);
-                                    img.save(&encbuf, "JPEG", 85);
-                                    if (!enc.isEmpty())
-                                        emit mediaBytesLoaded_(
-                                            QString::fromStdString(key),
-                                            static_cast<int>(MediaKind::MediaImage),
-                                            enc);
-                                });
-                            player->play();
-                        }, Qt::QueuedConnection);
-                });
-        }
+            mediaImageSizes_[vid.thumbnail_url] = { kMaxImageWidth, kMaxImageHeight };
     }
-    for (const auto& r : ev.reactions) {
+    for (const auto& r : ev.reactions)
         if (!r.source_json.empty())
-            ensureMediaImage(r.source_json, 20, 20);
-    }
+            mediaImageSizes_[r.source_json] = { 20, 20 };
+    ensure_row_media_(ev);
 }
 
 
@@ -2008,7 +1555,7 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::maybeShowRecoveryBanner() {
-    if (recoveryBannerDismissed_) return;
+    if (recovery_banner_dismissed_) return;
     if (!client_->needs_recovery()) return;
     if (!recoverySurface_->isVisible()) {
         if (recoveryShared_) {
@@ -2077,40 +1624,10 @@ void MainWindow::onRecoverFinished(bool ok, QString error) {
 }
 
 void MainWindow::onDismissRecoveryBanner() {
-    recoveryBannerDismissed_ = true;
+    recovery_banner_dismissed_ = true;
     if (recoverySurface_) recoverySurface_->setVisible(false);
 }
 
-void MainWindow::onBackupProgress(tesseract::BackupProgress progress) {
-    if (sender() != bridge_) return;   // background-account backup state stays out of the active UI
-    maybeShowRecoveryBanner();
-
-    if (recoverySurface_ && recoverySurface_->isVisible()
-        && recoveryShared_
-        && recoveryShared_->state() ==
-            tesseract::views::RecoveryBanner::State::Importing
-        && progress.state == tesseract::BackupState::Downloading
-        && progress.imported_keys > 0)
-    {
-        recoveryShared_->set_import_progress(progress.imported_keys);
-        recoverySurface_->relayout();
-    }
-    if (progress.state == tesseract::BackupState::Enabled
-        && !client_->needs_recovery())
-    {
-        if (recoverySurface_) recoverySurface_->setVisible(false);
-    }
-
-    lastBackupState_  = progress.state;
-    lastImportedKeys_ = progress.imported_keys;
-    refreshSyncStatus();
-}
-
-void MainWindow::onRoomListStateChanged(std::uint8_t state) {
-    if (sender() != bridge_) return;   // background-account sync state stays out of the status bar
-    lastRoomListState_ = static_cast<tesseract::RoomListState>(state);
-    refreshSyncStatus();
-}
 
 void MainWindow::refreshSyncStatus() {
     // Compose progress text for the status bar. Priority order:
@@ -2123,10 +1640,10 @@ void MainWindow::refreshSyncStatus() {
     using RLS = tesseract::RoomListState;
     using BS  = tesseract::BackupState;
 
-    const bool room_busy = (lastRoomListState_ == RLS::Init
-                         || lastRoomListState_ == RLS::SettingUp);
-    const bool reconnecting = (lastRoomListState_ == RLS::Recovering);
-    const bool keys_busy = (lastBackupState_ == BS::Downloading);
+    const bool room_busy = (last_room_list_state_ == RLS::Init
+                         || last_room_list_state_ == RLS::SettingUp);
+    const bool reconnecting = (last_room_list_state_ == RLS::Recovering);
+    const bool keys_busy = (last_backup_state_ == BS::Downloading);
 
     if (room_busy) {
         // Debounce: only show "Syncing rooms…" after 300 ms of being
@@ -2137,16 +1654,16 @@ void MainWindow::refreshSyncStatus() {
             syncStatusDebounce_->setSingleShot(true);
             connect(syncStatusDebounce_, &QTimer::timeout, this, [this] {
                 using RLS2 = tesseract::RoomListState;
-                if (lastRoomListState_ == RLS2::Init
-                 || lastRoomListState_ == RLS2::SettingUp) {
-                    syncProgressShown_ = true;
+                if (last_room_list_state_ == RLS2::Init
+                 || last_room_list_state_ == RLS2::SettingUp) {
+                    sync_progress_shown_ = true;
                     statusBar()->showMessage(tr("Syncing rooms…"));
                 }
             });
         }
-        if (!syncStatusDebounce_->isActive() && !syncProgressShown_)
+        if (!syncStatusDebounce_->isActive() && !sync_progress_shown_)
             syncStatusDebounce_->start(300);
-        else if (syncProgressShown_)
+        else if (sync_progress_shown_)
             statusBar()->showMessage(tr("Syncing rooms…"));
         return;
     }
@@ -2154,20 +1671,20 @@ void MainWindow::refreshSyncStatus() {
     if (syncStatusDebounce_) syncStatusDebounce_->stop();
 
     if (reconnecting) {
-        syncProgressShown_ = true;
+        sync_progress_shown_ = true;
         statusBar()->showMessage(tr("Reconnecting…"));
         return;
     }
     if (keys_busy) {
-        syncProgressShown_ = true;
+        sync_progress_shown_ = true;
         statusBar()->showMessage(
             tr("Downloading encryption keys (%1)…")
-                .arg(static_cast<qulonglong>(lastImportedKeys_)));
+                .arg(static_cast<qulonglong>(last_imported_keys_)));
         return;
     }
-    if (syncProgressShown_) {
+    if (sync_progress_shown_) {
         // We covered up a prior login message; settle to the steady-state copy.
-        syncProgressShown_ = false;
+        sync_progress_shown_ = false;
         statusBar()->showMessage(tr("Connected"));
     }
 }
@@ -2177,15 +1694,15 @@ void MainWindow::refreshSyncStatus() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populateUserStrip() {
-    QString shown = myDisplayName_.empty()
-        ? QString::fromStdString(myUserId_)
-        : QString::fromStdString(myDisplayName_);
+    QString shown = my_display_name_.empty()
+        ? QString::fromStdString(my_user_id_)
+        : QString::fromStdString(my_display_name_);
     userNameLabel_->setText(shown);
-    if (userIdLabel_) userIdLabel_->setText(QString::fromStdString(myUserId_));
+    if (userIdLabel_) userIdLabel_->setText(QString::fromStdString(my_user_id_));
 
     QPixmap avatar;
-    if (!myAvatarUrl_.empty() && client_) {
-        auto bytes = client_->fetch_media_bytes(myAvatarUrl_);
+    if (!my_avatar_url_.empty() && client_) {
+        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
         if (!bytes.empty()) {
             QPixmap raw;
             if (raw.loadFromData(bytes.data(), static_cast<int>(bytes.size()))) {
@@ -2207,9 +1724,9 @@ void MainWindow::onUserStripContextMenu(const QPoint& pos) {
     QMenu menu(this);
     QAction* addAct = menu.addAction(tr("Add Account…"));
     QString logout_label = tr("Log Out %1").arg(
-        myDisplayName_.empty()
-            ? QString::fromStdString(myUserId_)
-            : QString::fromStdString(myDisplayName_));
+        my_display_name_.empty()
+            ? QString::fromStdString(my_user_id_)
+            : QString::fromStdString(my_display_name_));
     QAction* logoutAct = menu.addAction(logout_label);
     QAction* picked = menu.exec(userStrip_->mapToGlobal(pos));
     if      (picked == addAct)    beginAddAccount();
@@ -2238,49 +1755,197 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-account orchestration
+// EventHandlerBase UI-thread hook implementations (Qt6)
 // ---------------------------------------------------------------------------
 
-void MainWindow::wireBridge(EventBridge* b) {
-    // Each AccountSession's bridge is connected to the same MainWindow
-    // slots. Slots check `sender()` against `bridge_` (the active bridge)
-    // to filter out callbacks coming from inactive accounts — except
-    // `onRoomsUpdated`, which caches every account's snapshot in
-    // `per_account_rooms_` so a fast switch is immediate, and
-    // `onNotificationTriggered`, which fires regardless of foreground.
-    connect(b, &EventBridge::timelineReset,
-            this, &MainWindow::onTimelineReset);
-    connect(b, &EventBridge::messageInserted,
-            this, &MainWindow::onMessageInserted);
-    connect(b, &EventBridge::messageUpdated,
-            this, &MainWindow::onMessageUpdated);
-    connect(b, &EventBridge::messageRemoved,
-            this, &MainWindow::onMessageRemoved);
-    connect(b, &EventBridge::roomsUpdated,
-            this, &MainWindow::onRoomsUpdated);
-    connect(b, &EventBridge::syncError,
-            this, &MainWindow::onSyncError);
-    connect(b, &EventBridge::backupProgress,
-            this, &MainWindow::onBackupProgress);
-    connect(b, &EventBridge::roomListStateChanged,
-            this, &MainWindow::onRoomListStateChanged);
-    connect(b, &EventBridge::imagePacksUpdated,
-            this, [this, b]{
-                if (b == bridge_ && stickerPicker_) stickerPicker_->refreshPacks();
-            },
-            Qt::QueuedConnection);
-    connect(b, &EventBridge::accountPrefsUpdated,
-            this, [this, b](const QString& json) {
-                if (b != bridge_) return;   // ignore inactive accounts
-                auto prefs = tesseract::Prefs::parse(json.toStdString());
-                if (!prefs.last_room.empty() && pendingRestoreRoom_.empty() && currentRoomId_.empty())
-                    pendingRestoreRoom_ = prefs.last_room;
-            },
-            Qt::QueuedConnection);
-    connect(b, &EventBridge::notificationTriggered,
-            this, &MainWindow::onNotificationTriggered,
-            Qt::QueuedConnection);
+void MainWindow::handle_timeline_reset_ui_(
+    std::string room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
+    if (room_id != current_room_id_) return;
+    std::vector<tesseract::views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (auto& ev : snapshot) {
+        if (!ev) continue;
+        ensureRowMedia(*ev);
+        ensure_reply_details_(ev->in_reply_to_id);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+    }
+    messageListView_->set_messages(std::move(rows));
+    msgSurface_->relayout();
 }
+
+void MainWindow::handle_message_inserted_ui_(
+    std::string room_id, std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    if (!ev || room_id != current_room_id_
+            || ev->type == tesseract::EventType::Unhandled)
+        return;
+    ensureRowMedia(*ev);
+    ensure_reply_details_(ev->in_reply_to_id);
+    messageListView_->insert_message(index,
+        tesseract::views::make_row_data(*ev, my_user_id_));
+    msgSurface_->relayout();
+}
+
+void MainWindow::handle_message_updated_ui_(
+    std::string room_id, std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    if (!ev || room_id != current_room_id_
+            || ev->type == tesseract::EventType::Unhandled)
+        return;
+    ensureRowMedia(*ev);
+    ensure_reply_details_(ev->in_reply_to_id);
+    messageListView_->update_message(index,
+        tesseract::views::make_row_data(*ev, my_user_id_));
+    msgSurface_->relayout();
+}
+
+void MainWindow::handle_message_removed_ui_(
+    std::string room_id, std::size_t index)
+{
+    if (room_id != current_room_id_) return;
+    messageListView_->remove_message(index);
+    msgSurface_->relayout();
+}
+
+void MainWindow::handle_sync_error_ui_(
+    std::string context, std::string user_id,
+    std::string description, bool soft_logout)
+{
+    tesseract::AccountSession* affected = nullptr;
+    for (auto& a : accounts_)
+        if (a->user_id == user_id) { affected = a.get(); break; }
+
+    if (context == "sync_reconnect") {
+        statusBar()->showMessage(tr("Sync error: reconnecting\xe2\x80\xa6"));
+        if (affected && affected->client) {
+            affected->client->stop_sync();
+            affected->sync_started = false;
+            QTimer::singleShot(5000, this, [this, uid = affected->user_id]() {
+                for (auto& a : accounts_) {
+                    if (a->user_id == uid && !a->sync_started && a->client) {
+                        a->sync_started = true;
+                        a->client->start_sync(a->bridge.get());
+                    }
+                }
+            });
+        }
+    } else if (context == "sync_auth_error") {
+        if (soft_logout && affected) {
+            if (auto saved = tesseract::SessionStore::load_account(affected->user_id)) {
+                statusBar()->showMessage(tr("Reconnecting session\xe2\x80\xa6"));
+                if (affected->client->restore_session(*saved)) {
+                    affected->display_name = affected->client->get_display_name();
+                    affected->avatar_url   = affected->client->get_avatar_url();
+                    if (affected == accounts_[std::max(0, active_account_index_)].get())
+                        switchActiveAccount(active_account_index_);
+                    affected->client->start_sync(affected->bridge.get());
+                    statusBar()->showMessage(tr("Reconnected"));
+                    maybeShowRecoveryBanner();
+                    return;
+                }
+            }
+        }
+        if (affected) {
+            tesseract::SessionStore::clear_account(affected->user_id);
+            affected->client->stop_sync();
+        }
+        statusBar()->showMessage(tr("Session expired; please log in again."));
+        doLogin();
+    } else {
+        statusBar()->showMessage(
+            tr("Sync error: %1").arg(QString::fromStdString(description)), 8000);
+    }
+}
+
+void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
+{
+    // Only the active account's backup state drives the recovery banner and
+    // status bar — but we can't filter by user_id here since BackupProgress
+    // doesn't carry one. We rely on EventHandlerBase's post_to_ui_ being
+    // per-instance: the active client_ pointer check gates the banner update.
+    if (!client_) return;
+
+    maybeShowRecoveryBanner();
+
+    if (recoverySurface_ && recoverySurface_->isVisible()
+        && recoveryShared_
+        && recoveryShared_->state() ==
+            tesseract::views::RecoveryBanner::State::Importing
+        && progress.state == tesseract::BackupState::Downloading
+        && progress.imported_keys > 0)
+    {
+        recoveryShared_->set_import_progress(progress.imported_keys);
+        recoverySurface_->relayout();
+    }
+    if (progress.state == tesseract::BackupState::Enabled
+        && !client_->needs_recovery())
+    {
+        if (recoverySurface_) recoverySurface_->setVisible(false);
+    }
+
+    last_backup_state_  = progress.state;
+    last_imported_keys_ = progress.imported_keys;
+    refreshSyncStatus();
+}
+
+void MainWindow::handle_image_packs_updated_ui_()
+{
+    if (stickerPicker_) stickerPicker_->refreshPacks();
+}
+
+void MainWindow::handle_account_prefs_updated_ui_(
+    std::string user_id, std::string json)
+{
+    // Only the active account's prefs set the pending restore room.
+    if (active_account_index_ < 0
+            || accounts_[active_account_index_]->user_id != user_id)
+        return;
+    auto prefs = tesseract::Prefs::parse(json);
+    if (!prefs.last_room.empty()
+            && pending_restore_room_.empty()
+            && current_room_id_.empty())
+        pending_restore_room_ = prefs.last_room;
+}
+
+void MainWindow::handle_notification_ui_(
+    std::string user_id, std::string room_id,
+    std::string room_name, std::string sender,
+    std::string body, bool is_mention,
+    std::vector<uint8_t> avatar_bytes)
+{
+    for (auto& sess : accounts_) {
+        if (sess->user_id != user_id) continue;
+        if (isActiveWindow()
+                && active_account_index_ >= 0
+                && accounts_[active_account_index_]->user_id == user_id
+                && current_room_id_ == room_id)
+            return;
+        if (sess->notifier) {
+            tesseract::Notification n;
+            n.room_id      = room_id;
+            n.room_name    = room_name;
+            n.sender       = sender;
+            n.body         = body;
+            n.is_mention   = is_mention;
+            n.avatar_bytes = std::move(avatar_bytes);
+            sess->notifier->notify(n);
+        }
+        return;
+    }
+}
+
+void MainWindow::on_room_list_state_ui_()
+{
+    refreshSyncStatus();
+}
+
+// ---------------------------------------------------------------------------
+// Multi-account orchestration
+// ---------------------------------------------------------------------------
 
 void MainWindow::switchActiveAccount(int new_idx) {
     if (new_idx < 0 || new_idx >= static_cast<int>(accounts_.size())) return;
@@ -2288,21 +1953,21 @@ void MainWindow::switchActiveAccount(int new_idx) {
 
     // Unsubscribe the previous account's open room so its timeline stops
     // streaming updates to the message list when we swap surfaces.
-    if (client_ && !currentRoomId_.empty()) {
-        client_->unsubscribe_room(currentRoomId_);
+    if (client_ && !current_room_id_.empty()) {
+        client_->unsubscribe_room(current_room_id_);
     }
-    currentRoomId_.clear();
+    current_room_id_.clear();
     clearMessages();
 
     active_account_index_ = new_idx;
     auto& s = *accounts_[new_idx];
-    client_ = s.client.get();
-    bridge_ = static_cast<EventBridge*>(s.bridge.get());
+    client_        = s.client.get();
+    event_handler_ = s.bridge.get();   // keep ShellBase's non-owning alias in sync
 
-    myUserId_      = s.user_id;
-    myDisplayName_ = s.display_name;
-    myAvatarUrl_   = s.avatar_url;
-    pendingRestoreRoom_ = s.last_room;
+    my_user_id_      = s.user_id;
+    my_display_name_ = s.display_name;
+    my_avatar_url_   = s.avatar_url;
+    pending_restore_room_ = s.last_room;
 
     populateUserStrip();
     if (emojiPicker_)   emojiPicker_->setClient(client_);
@@ -2366,19 +2031,19 @@ void MainWindow::logoutActiveAccount() {
     // Remove this account from the live vector.
     accounts_.erase(accounts_.begin() + active_account_index_);
     active_account_index_ = -1;
-    client_ = nullptr;
-    bridge_ = nullptr;
+    client_        = nullptr;
+    event_handler_ = nullptr;
 
     // Reset visible state regardless of where we go next.
-    currentRoomId_.clear();
-    myUserId_.clear();
-    myDisplayName_.clear();
-    myAvatarUrl_.clear();
+    current_room_id_.clear();
+    my_user_id_.clear();
+    my_display_name_.clear();
+    my_avatar_url_.clear();
     rooms_.clear();
     refreshRoomList();
     clearMessages();
     if (recoverySurface_) recoverySurface_->setVisible(false);
-    recoveryBannerDismissed_ = false;
+    recovery_banner_dismissed_ = false;
     roomHeader_->setVisible(false);
 
     if (accounts_.empty()) {

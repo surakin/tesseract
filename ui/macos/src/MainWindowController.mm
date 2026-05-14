@@ -11,6 +11,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
+#include "tk/anim_image_cache.h"
 #include "tk/canvas_cg.h"
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -38,6 +39,9 @@
 
 #include <tesseract/account_session.h>
 
+#include "app/ShellBase.h"
+#include "app/EventHandlerBase.h"
+
 #include "views/AccountPicker.h"
 #include "views/UserInfo.h"
 
@@ -60,56 +64,49 @@
 @class MainWindowController;
 
 // ─────────────────────────────────────────────────────────────────────────
-//  EventBridge — IEventHandler that forwards to the controller on the
-//  main thread. The SDK calls every method from worker threads; we route
-//  through dispatch_async to land mutations on the AppKit run loop.
+//  MacShell — ShellBase subclass for the macOS AppKit shell.
+//  ObjC++ @interface cannot inherit C++ classes, so we use composition:
+//  MainWindowController holds a std::unique_ptr<MacShell>.
 // ─────────────────────────────────────────────────────────────────────────
 
 namespace {
 
-struct AnimEntry {
-    std::vector<std::unique_ptr<tk::Image>> frames;
-    std::vector<int>                         delays_ms;
-    std::size_t                              current         = 0;
-    std::int64_t                             next_advance_ms = 0;
-};
-
-class EventBridge final : public tesseract::IEventHandler {
+class MacShell final : public tesseract::ShellBase {
 public:
-    explicit EventBridge(MainWindowController* controller)
-        : controller_(controller) {}
+    // ctrl_ is non-owning: MacShell is owned by MainWindowController itself
+    // (via _shell), so ctrl_ is always valid for MacShell's lifetime.
+    explicit MacShell(MainWindowController* ctrl) : ctrl_(ctrl) {}
 
-    void on_timeline_reset(const std::string& room_id,
-                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
-    void on_message_inserted(const std::string& room_id,
-                              std::size_t index,
-                              std::unique_ptr<tesseract::Event> event) override;
-    void on_message_updated(const std::string& room_id,
-                             std::size_t index,
-                             std::unique_ptr<tesseract::Event> event) override;
-    void on_message_removed(const std::string& room_id,
-                             std::size_t index) override;
-    void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
-    void on_sync_error(const std::string& context,
-                       const std::string& description,
-                       bool soft_logout) override;
-    void on_session_saved(const std::string& session_json) override;
-    void on_backup_progress(const tesseract::BackupProgress& progress) override;
-    void on_image_packs_updated() override;
-    void on_account_prefs_updated(const std::string& json) override;
-    void on_notification(const std::string& room_id,
-                         const std::string& room_name,
-                         const std::string& sender,
-                         const std::string& body,
-                         bool is_mention,
-                         const std::vector<uint8_t>& avatar_bytes) override;
+protected:
+    void post_to_ui_(std::function<void()> fn) override;
+    void on_rooms_updated_() override;
+    void on_media_bytes_ready_(const std::string& key,
+                                ShellBase::MediaKind kind,
+                                std::vector<uint8_t> bytes) override;
+    void generate_video_thumbnail_(const std::string& event_id,
+                                    const std::string& video_url) override;
 
-public:
-    std::string user_id_;
-    void set_user_id(const std::string& uid) { user_id_ = uid; }
+    void handle_timeline_reset_ui_(std::string room_id,
+        std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void handle_message_inserted_ui_(std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_updated_ui_(std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_removed_ui_(std::string room_id,
+        std::size_t index) override;
+    void handle_sync_error_ui_(std::string context, std::string user_id,
+        std::string description, bool soft_logout) override;
+    void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
+    void handle_image_packs_updated_ui_() override;
+    void handle_account_prefs_updated_ui_(std::string user_id,
+        std::string json) override;
+    void handle_notification_ui_(std::string user_id, std::string room_id,
+        std::string room_name, std::string sender, std::string body,
+        bool is_mention, std::vector<uint8_t> avatar_bytes) override;
+    // on_room_list_state_ui_: macOS has no status bar — leave as default no-op
 
 private:
-    MainWindowController* __weak controller_;
+    MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
 };
 
 std::string trim(std::string s) {
@@ -144,7 +141,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       reached_start:(BOOL)reached;
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
-- (void)updateRoomsForUserId:(std::string)userId rooms:(std::vector<tesseract::RoomInfo>)rooms;
 - (void)handleSyncErrorContext:(NSString*)ctx
                     description:(NSString*)desc
                     softLogout:(BOOL)soft;
@@ -192,150 +188,186 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
-/// Spawn `fn` on a detached worker thread.  No-ops when shutdown is in
-/// progress, and the worker itself rechecks the flag before calling
-/// `_client.fetch_*`.  Bumps `_workersInFlight` so `stopSync` can wait
-/// (bounded) for in-flight workers to drain before the FFI runtime is
-/// torn down.  Required: without this, a worker mid-FFI racing against
-/// `~ClientFfi` is a data race on `&mut self` in Rust that surfaces as
-/// `panic_in_cleanup` through cxx.
-- (void)runAsync:(std::function<void()>)fn;
 @end
 
 namespace {
 
-void EventBridge::on_timeline_reset(
-    const std::string& room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
-{
-    MainWindowController* c = controller_;
+// ── MacShell method implementations ──────────────────────────────────────
+
+void MacShell::post_to_ui_(std::function<void()> fn) {
+    auto* heap = new std::function<void()>(std::move(fn));
+    dispatch_async(dispatch_get_main_queue(), ^{
+        (*heap)();
+        delete heap;
+    });
+}
+
+void MacShell::on_rooms_updated_() {
+    MainWindowController* c = ctrl_;
     if (!c) return;
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    // Release ownership of every Event into the block. The main-thread
-    // method takes ownership of the raw pointers.
-    std::vector<tesseract::Event*> raw;
-    raw.reserve(snapshot.size());
-    for (auto& p : snapshot) raw.push_back(p.release());
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleTimelineReset:rid snapshot:raw];
-    });
-}
-
-void EventBridge::on_message_inserted(
-    const std::string& room_id,
-    std::size_t index,
-    std::unique_ptr<tesseract::Event> event)
-{
-    MainWindowController* c = controller_;
-    if (!c || !event) return;
-    NSString*         rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    tesseract::Event* raw = event.release();
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleMessageInserted:rid index:index event:raw];
-    });
-}
-
-void EventBridge::on_message_updated(
-    const std::string& room_id,
-    std::size_t index,
-    std::unique_ptr<tesseract::Event> event)
-{
-    MainWindowController* c = controller_;
-    if (!c || !event) return;
-    NSString*         rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    tesseract::Event* raw = event.release();
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleMessageUpdated:rid index:index event:raw];
-    });
-}
-
-void EventBridge::on_message_removed(
-    const std::string& room_id,
-    std::size_t index)
-{
-    MainWindowController* c = controller_;
-    if (!c) return;
-    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleMessageRemoved:rid index:index];
-    });
-}
-
-void EventBridge::on_rooms_updated(
-    const std::vector<tesseract::RoomInfo>& rooms)
-{
-    MainWindowController* c = controller_;
-    if (!c) return;
-    auto copy = rooms;
-    std::string uid = user_id_;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c updateRoomsForUserId:uid rooms:copy];
-    });
-}
-
-void EventBridge::on_sync_error(const std::string& context,
-                                  const std::string& description,
-                                  bool soft_logout) {
-    MainWindowController* c = controller_;
-    if (!c) return;
-    NSString* ctx  = [NSString stringWithUTF8String:context.c_str()]      ?: @"";
-    NSString* desc = [NSString stringWithUTF8String:description.c_str()]  ?: @"";
-    BOOL      soft = soft_logout;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleSyncErrorContext:ctx description:desc softLogout:soft];
-    });
-}
-
-void EventBridge::on_session_saved(const std::string& session_json) {
-    if (!user_id_.empty()) {
-        tesseract::SessionStore::save_account(user_id_, session_json);
+    [c _refreshRoomList];
+    if (!current_room_id_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == current_room_id_) {
+                [c _setRoomHeader:r];
+                break;
+            }
+        }
+    } else if (!pending_restore_room_.empty()) {
+        for (const auto& r : rooms_) {
+            if (r.id == pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(pending_restore_room_);
+                pending_restore_room_.clear();
+                [c onRoomSelected:target];
+                break;
+            }
+        }
     }
 }
 
-void EventBridge::on_backup_progress(const tesseract::BackupProgress& progress) {
-    MainWindowController* c = controller_;
+void MacShell::on_media_bytes_ready_(const std::string& key,
+                                      ShellBase::MediaKind kind,
+                                      std::vector<uint8_t> bytes) {
+    MainWindowController* c = ctrl_;
     if (!c) return;
-    tesseract::BackupProgress copy = progress;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleBackupProgress:copy];
+    if (kind == MediaKind::MediaImage) {
+        [c _decodeMediaBytes:bytes forKey:key];
+        if (c->_msgSurface) c->_msgSurface->relayout();
+        return;
+    }
+    if (bytes.empty() || tk_avatars_.count(key)) return;
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
+                                   bytes.data(),
+                                   static_cast<CFIndex>(bytes.size()));
+    if (!data) return;
+    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
+    CFRelease(data);
+    if (!src) return;
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return;
+    tk_avatars_.emplace(key, tk::cg::make_image(img));
+    CGImageRelease(img);
+    if (kind == MediaKind::RoomAvatar && c->_roomSurface)
+        c->_roomSurface->relayout();
+    else if (kind == MediaKind::UserAvatar && c->_msgSurface)
+        c->_msgSurface->relayout();
+}
+
+void MacShell::generate_video_thumbnail_(const std::string& event_id,
+                                          const std::string& video_url) {
+    MainWindowController* c = ctrl_;
+    if (!c) return;
+    std::string src = video_url;
+    std::string eid = event_id;
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+    run_async_([this, src, eid, bytes_holder]() mutable {
+        *bytes_holder = client_->fetch_source_bytes(src);
+        if (bytes_holder->empty()) return;
+        NSString* tmpDir  = NSTemporaryDirectory();
+        NSString* eidNS   = [NSString stringWithUTF8String:eid.c_str()];
+        NSString* tmpPath = [tmpDir stringByAppendingPathComponent:
+                              [NSString stringWithFormat:@"vtmp_%@.mp4", eidNS]];
+        NSData* data = [NSData dataWithBytes:bytes_holder->data()
+                                      length:bytes_holder->size()];
+        [data writeToFile:tmpPath atomically:YES];
+        NSURL* url   = [NSURL fileURLWithPath:tmpPath];
+        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+        AVAssetImageGenerator* gen =
+            [[AVAssetImageGenerator alloc] initWithAsset:asset];
+        gen.appliesPreferredTrackTransform = YES;
+        CMTime t = CMTimeMake(0, 1);
+        NSError* err = nil;
+        CGImageRef frame = [gen copyCGImageAtTime:t actualTime:nil error:&err];
+        [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+        if (!frame) return;
+        auto img_holder = std::make_shared<std::unique_ptr<tk::Image>>(
+            tk::cg::make_image(frame));
+        CGImageRelease(frame);
+        std::string key = "thumb::" + eid;
+        post_to_ui_([this, key, img_holder]() mutable {
+            if (tk_images_.count(key)) return;
+            tk_images_.emplace(key, std::move(*img_holder));
+            MainWindowController* c2 = ctrl_;
+            if (c2 && c2->_msgSurface) c2->_msgSurface->relayout();
+        });
     });
 }
 
-void EventBridge::on_image_packs_updated() {
-    MainWindowController* c = controller_;
+void MacShell::handle_timeline_reset_ui_(
+    std::string room_id,
+    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+{
+    MainWindowController* c = ctrl_;
     if (!c) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleImagePacksUpdated];
-    });
+    std::vector<tesseract::Event*> raw;
+    raw.reserve(snapshot.size());
+    for (auto& p : snapshot) raw.push_back(p.release());
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    [c handleTimelineReset:rid snapshot:raw];
 }
 
-void EventBridge::on_account_prefs_updated(const std::string& json) {
-    MainWindowController* c = controller_;
+void MacShell::handle_message_inserted_ui_(
+    std::string room_id, std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    MainWindowController* c = ctrl_;
+    if (!c || !ev) return;
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    [c handleMessageInserted:rid index:index event:ev.release()];
+}
+
+void MacShell::handle_message_updated_ui_(
+    std::string room_id, std::size_t index,
+    std::unique_ptr<tesseract::Event> ev)
+{
+    MainWindowController* c = ctrl_;
+    if (!c || !ev) return;
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    [c handleMessageUpdated:rid index:index event:ev.release()];
+}
+
+void MacShell::handle_message_removed_ui_(std::string room_id, std::size_t index) {
+    MainWindowController* c = ctrl_;
+    if (!c) return;
+    NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
+    [c handleMessageRemoved:rid index:index];
+}
+
+void MacShell::handle_sync_error_ui_(std::string context, std::string /*user_id*/,
+                                      std::string description, bool soft_logout) {
+    MainWindowController* c = ctrl_;
+    if (!c) return;
+    NSString* ctx  = [NSString stringWithUTF8String:context.c_str()]     ?: @"";
+    NSString* desc = [NSString stringWithUTF8String:description.c_str()] ?: @"";
+    [c handleSyncErrorContext:ctx description:desc softLogout:soft_logout];
+}
+
+void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress) {
+    MainWindowController* c = ctrl_;
+    if (c) [c handleBackupProgress:progress];
+}
+
+void MacShell::handle_image_packs_updated_ui_() {
+    MainWindowController* c = ctrl_;
+    if (c) [c handleImagePacksUpdated];
+}
+
+void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
+                                                  std::string json) {
+    MainWindowController* c = ctrl_;
     if (!c) return;
     NSString* ns = [NSString stringWithUTF8String:json.c_str()];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleAccountPrefsUpdated:ns];
-    });
+    [c handleAccountPrefsUpdated:ns];
 }
 
-void EventBridge::on_notification(const std::string& room_id,
-                                   const std::string& room_name,
-                                   const std::string& sender,
-                                   const std::string& body,
-                                   bool is_mention,
-                                   const std::vector<uint8_t>& /*avatar_bytes*/) {
-    MainWindowController* c = controller_;
-    if (!c) return;
-    std::string rid  = room_id;
-    std::string rnam = room_name;
-    std::string sndr = sender;
-    std::string bd   = body;
-    std::string uid  = user_id_;
-    BOOL mention     = is_mention;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [c handleNotification:rid roomName:rnam sender:sndr body:bd
-                     userId:uid isMention:mention];
-    });
+void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
+                                        std::string room_name, std::string sender,
+                                        std::string body, bool is_mention,
+                                        std::vector<uint8_t> /*avatar_bytes*/) {
+    MainWindowController* c = ctrl_;
+    if (c) [c handleNotification:room_id roomName:room_name sender:sender
+                            body:body userId:user_id isMention:is_mention];
 }
 
 } // namespace
@@ -343,30 +375,13 @@ void EventBridge::on_notification(const std::string& room_id,
 // ─────────────────────────────────────────────────────────────────────────
 
 @implementation MainWindowController {
-    std::vector<std::unique_ptr<tesseract::AccountSession>>     _accounts;
-    int                                                          _activeAccountIndex;
-    tesseract::Client*                                           _client;   // non-owning alias
-    EventBridge*                                                 _bridge;   // non-owning alias
-    std::unordered_map<std::string, std::vector<tesseract::RoomInfo>> _perAccountRooms;
-    std::unique_ptr<tesseract::Client>                           _pendingLoginClient;
-    std::filesystem::path                                        _pendingLoginTempDir;
-    BOOL                                                         _pendingLoginIsAddAccount;
-    int                                                          _addAccountReturnIdx;
+    // MacShell owns all multi-account state, image caches, worker threads,
+    // and the EventHandlerBase bridges. It is created before _buildChrome.
+    std::unique_ptr<MacShell>                        _shell;
 
-    std::vector<tesseract::RoomInfo> _rooms;
-    std::string                      _currentRoomId;
-    std::string                      _pendingRestoreRoom;
-    std::string                      _myUserId;
-
-    // Per-room back-pagination state (mirrors Qt/GTK). `in_flight` gates
-    // concurrent paginate_back calls; `reached_start` latches the trigger
-    // off when the timeline reports no more history.
-    struct PaginationState { bool in_flight = false; bool reached_start = false; };
-    std::unordered_map<std::string, PaginationState> _pagination;
     // When non-empty, the next emoji selection routes through
     // send_reaction for this event id (set by the "+" reaction chip).
     std::string                      _pendingReactionEventId;
-    std::vector<std::string>         _spaceStack;
 
     // Shared widget tree.
     std::unique_ptr<tk::macos::Surface>             _roomSurface;
@@ -375,11 +390,6 @@ void EventBridge::on_notification(const std::string& room_id,
     std::unique_ptr<tk::NativeTextField>            _roomSearchField;
     std::string                                     _pendingSearchText;
     tesseract::views::MessageListView*              _messageListView;  // borrowed
-    std::unordered_map<std::string, TkImagePtr>     _tkAvatars;
-    std::unordered_map<std::string, TkImagePtr>     _tkImages;
-    // Voice-message source tokens already prefetched (or in flight). The
-    // SDK media cache owns the bytes; this set just dedupes worker spawns.
-    std::unordered_set<std::string>                 _voicePrefetched;
 
     // AppKit chrome.
     NSSplitView*   _splitView;
@@ -400,29 +410,13 @@ void EventBridge::on_notification(const std::string& room_id,
     std::unique_ptr<tk::macos::Surface>             _recoverySurface;
     tesseract::views::RecoveryBanner*               _recoveryShared;  // borrowed
     std::unique_ptr<tk::NativeTextField>            _recoveryKeyField;
-    BOOL                                             _recoveryDismissed;
 
-    // Animated sticker cache (GIF / APNG / animated WebP).
-    std::unordered_map<std::string, AnimEntry>       _tkAnimImages;
     NSTimer*                                         _animTimer;
 
     // System-tray icon (menu-bar status item). Created after login; nil
     // until then. When non-nil and `is_available()`, closing the window
     // hides it instead of terminating the app.
     std::unique_ptr<MacOSTrayIcon>                    _tray;
-
-    // Sticker picker async-fetch guard.
-    std::set<std::string>                            _stickerFetchesInFlight;
-
-    // Room/user-avatar + inline-media async-fetch guard. The synchronous
-    // Rust FFI does a `tokio::block_on` per call; running it on the main
-    // queue would freeze the AppKit run loop on accounts with many rooms
-    // (one round-trip per avatar). The worker spawns are deduped here.
-    std::set<std::string>                            _mediaFetchesInFlight;
-
-    // Replied-to event IDs for which we have already called
-    // fetch_reply_details this subscription session. Cleared on room switch.
-    std::set<std::string>                            _replyDetailsRequested;
 
     // Image/sticker lightbox overlay.
     std::unique_ptr<tk::macos::Surface>              _imgViewerSurface;
@@ -434,7 +428,9 @@ void EventBridge::on_notification(const std::string& room_id,
     std::unique_ptr<tk::macos::Surface>              _vidViewerSurface;
     tesseract::views::VideoViewerOverlay*            _vidViewer;  // borrowed
     NSView*                                          _vidViewerView;
-    NSMutableSet*                                    _videoThumbInFlight;
+    // macOS-specific: NSMutableSet used by _videoThumbInFlight check.
+    // ShellBase owns video_thumb_in_flight_ (C++ unordered_set); this ObjC
+    // set is no longer used — the C++ set in ShellBase deduplicates.
 
     // Right-click context menu sticker state.
     std::string                                      _ctxStickerEventId;
@@ -453,19 +449,11 @@ void EventBridge::on_notification(const std::string& room_id,
     NSTextField*         _userNameLabel;
     NSTextField*         _userIdLabel;
     NSLayoutConstraint*  _userStripHeightCon;
-    std::string          _myDisplayName;
-    std::string          _myAvatarUrl;
 
     // Account picker popover (left-click on user strip).
     NSPopover*                                        _accountPickerPopover;
     std::unique_ptr<tk::macos::Surface>               _accountPickerSurface;
     tesseract::views::AccountPicker*                  _accountPickerShared;  // borrowed
-
-    // Background-worker coordination — see `runAsync:` for context.
-    std::atomic<bool>           _shuttingDown;
-    std::mutex                  _workersMu;
-    std::condition_variable     _workersCv;
-    int                         _workersInFlight;
 }
 
 - (instancetype)init {
@@ -487,12 +475,7 @@ void EventBridge::on_notification(const std::string& room_id,
     self = [super initWithWindow:window];
     if (!self) return nil;
 
-    _videoThumbInFlight = [NSMutableSet set];
-    _activeAccountIndex = -1;
-    _client = nullptr;
-    _bridge = nullptr;
-    _addAccountReturnIdx = -1;
-    _pendingLoginIsAddAccount = NO;
+    _shell = std::make_unique<MacShell>(self);
     _accountPickerShared = nullptr;
     window.delegate = self;
     [self _buildChrome];
@@ -561,8 +544,8 @@ void EventBridge::on_notification(const std::string& room_id,
     _roomListView  = room_view.get();
     _roomListView->set_avatar_provider(
         [self](const std::string& mxc) -> const tk::Image* {
-            auto it = _tkAvatars.find(mxc);
-            return it == _tkAvatars.end() ? nullptr : it->second.get();
+            auto it = _shell->tk_avatars_.find(mxc);
+            return it == _shell->tk_avatars_.end() ? nullptr : it->second.get();
         });
     _roomListView->on_room_selected =
         [self](const std::string& room_id) { [self onRoomSelected:room_id]; };
@@ -713,16 +696,14 @@ void EventBridge::on_notification(const std::string& room_id,
     _messageListView = msg_view.get();
     _messageListView->set_avatar_provider(
         [self](const std::string& mxc) -> const tk::Image* {
-            auto it = _tkAvatars.find(mxc);
-            return it == _tkAvatars.end() ? nullptr : it->second.get();
+            auto it = _shell->tk_avatars_.find(mxc);
+            return it == _shell->tk_avatars_.end() ? nullptr : it->second.get();
         });
     _messageListView->set_image_provider(
         [self](const std::string& mxc) -> const tk::Image* {
-            auto ait = _tkAnimImages.find(mxc);
-            if (ait != _tkAnimImages.end() && !ait->second.frames.empty())
-                return ait->second.frames[ait->second.current].get();
-            auto it = _tkImages.find(mxc);
-            return it == _tkImages.end() ? nullptr : it->second.get();
+            if (auto* f = _shell->anim_cache_.current_frame(mxc)) return f;
+            auto it = _shell->tk_images_.find(mxc);
+            return it == _shell->tk_images_.end() ? nullptr : it->second.get();
         });
     {
         __weak MainWindowController* weakSelf = self;
@@ -730,14 +711,14 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& event_id, const std::string& key) {
                 MainWindowController* s = weakSelf;
                 if (!s) return;
-                if (s->_currentRoomId.empty()) return;
-                s->_client->send_reaction(s->_currentRoomId, event_id, key);
+                if (s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->send_reaction(s->_shell->current_room_id_, event_id, key);
             };
         _messageListView->on_add_reaction_requested =
             [weakSelf](const std::string& event_id, tk::Rect anchor) {
                 MainWindowController* s = weakSelf;
                 if (!s) return;
-                if (s->_currentRoomId.empty()) return;
+                if (s->_shell->current_room_id_.empty()) return;
                 s->_pendingReactionEventId = event_id;
                 // anchor is in MessageListView-local coords; the view is
                 // the root of _msgSurface, whose backing NSView is
@@ -769,8 +750,8 @@ void EventBridge::on_notification(const std::string& room_id,
         _messageListView->on_near_top = [weakSelf]{
             MainWindowController* s = weakSelf;
             if (!s) return;
-            if (s->_currentRoomId.empty()) return;
-            [s requestMoreHistoryForRoom:s->_currentRoomId];
+            if (s->_shell->current_room_id_.empty()) return;
+            [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
         };
         _messageListView->on_image_clicked =
             [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {
@@ -791,10 +772,10 @@ void EventBridge::on_notification(const std::string& room_id,
                 [s->_vidViewerView setHidden:NO];
                 [s->_vidViewerView.window makeFirstResponder:s->_vidViewerView];
                 // Async byte fetch.
-                tesseract::Client* clientPtr = s->_client;
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
                 std::string src = hit.source_json;
-                [s runAsync:[clientPtr, weakSelf, src, bytes_holder]() {
+                s->_shell->run_async_([weakSelf, src, bytes_holder,
+                                       clientPtr = s->_shell->client_]() {
                     *bytes_holder = clientPtr->fetch_source_bytes(src);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         MainWindowController* s2 = weakSelf;
@@ -802,7 +783,7 @@ void EventBridge::on_notification(const std::string& room_id,
                         s2->_vidViewer->load_bytes(bytes_holder->data(),
                                                     bytes_holder->size());
                     });
-                }];
+                });
             };
     }
     // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
@@ -811,7 +792,7 @@ void EventBridge::on_notification(const std::string& room_id,
     }
     _messageListView->set_voice_bytes_provider(
         [self](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return _client->fetch_source_bytes(source_json);
+            return _shell->client_->fetch_source_bytes(source_json);
         });
     {
         __weak MainWindowController* weakSelf = self;
@@ -830,7 +811,7 @@ void EventBridge::on_notification(const std::string& room_id,
             if (!s || !s->_messageListView) return;
             auto hit = s->_messageListView->sticker_hit_at(p);
             if (!hit) return;
-            if (s->_client->user_pack_has_sticker(hit->mxc_url)) return;
+            if (s->_shell->client_->user_pack_has_sticker(hit->mxc_url)) return;
             s->_ctxStickerEventId = hit->event_id;
             s->_ctxStickerMxcUrl  = hit->mxc_url;
             s->_ctxStickerBody    = hit->body;
@@ -894,10 +875,10 @@ void EventBridge::on_notification(const std::string& room_id,
         __weak MainWindowController* weakSelf = self;
         _composeShared->on_send = [weakSelf](const std::string& body) {
             MainWindowController* s = weakSelf;
-            if (!s || s->_currentRoomId.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty()) return;
             std::string trimmed = trim(body);
             if (trimmed.empty()) return;
-            auto res = s->_client->send_message(s->_currentRoomId, trimmed);
+            auto res = s->_shell->client_->send_message(s->_shell->current_room_id_, trimmed);
             if (res) {
                 if (s->_composeTextArea) s->_composeTextArea->set_text("");
                 if (s->_composeShared)   s->_composeShared->set_current_text({});
@@ -966,7 +947,7 @@ void EventBridge::on_notification(const std::string& room_id,
                                         std::string filename) {
             MainWindowController* c = weakSelf;
             if (!c || !c->_composeShared) return;
-            const auto limit = c->_client->media_upload_limit();
+            const auto limit = c->_shell->client_->media_upload_limit();
             if (limit > 0 && bytes.size() > limit) return;
             if (mime.rfind("image/", 0) == 0) {
                 c->_composeShared->set_pending_image(std::move(bytes),
@@ -999,8 +980,8 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& reply_event_id,
                        const std::string& body) {
                 MainWindowController* s = weakSelf;
-                if (!s || body.empty() || s->_currentRoomId.empty()) return;
-                s->_client->send_reply(s->_currentRoomId, reply_event_id, body);
+                if (!s || body.empty() || s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->send_reply(s->_shell->current_room_id_, reply_event_id, body);
                 if (s->_composeTextArea) s->_composeTextArea->set_text("");
                 if (s->_composeShared)   s->_composeShared->set_current_text({});
             };
@@ -1008,8 +989,8 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& event_id,
                        const std::string& new_body) {
                 MainWindowController* s = weakSelf;
-                if (!s || new_body.empty() || s->_currentRoomId.empty()) return;
-                s->_client->send_edit(s->_currentRoomId, event_id, new_body);
+                if (!s || new_body.empty() || s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id, new_body);
                 if (s->_composeTextArea) s->_composeTextArea->set_text("");
                 if (s->_composeShared)   s->_composeShared->set_current_text({});
             };
@@ -1101,11 +1082,9 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& url) -> const tk::Image* {
                 MainWindowController* s = weakSelf;
                 if (!s) return nullptr;
-                auto ait = s->_tkAnimImages.find(url);
-                if (ait != s->_tkAnimImages.end() && !ait->second.frames.empty())
-                    return ait->second.frames[ait->second.current].get();
-                auto it = s->_tkImages.find(url);
-                return it == s->_tkImages.end() ? nullptr : it->second.get();
+                if (auto* f = s->_shell->anim_cache_.current_frame(url)) return f;
+                auto it = s->_shell->tk_images_.find(url);
+                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
             });
         _imgViewer->on_close = [weakSelf] {
             MainWindowController* s = weakSelf;
@@ -1152,8 +1131,8 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& url) -> const tk::Image* {
                 MainWindowController* s = weakSelf;
                 if (!s) return nullptr;
-                auto it = s->_tkImages.find(url);
-                return it == s->_tkImages.end() ? nullptr : it->second.get();
+                auto it = s->_shell->tk_images_.find(url);
+                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
             });
         _vidViewer->set_video_player(_msgSurface->host().make_video_player());
         _vidViewer->set_repaint_requester([weakSelf] {
@@ -1189,43 +1168,24 @@ void EventBridge::on_notification(const std::string& room_id,
 
 - (void)stopSync {
     // Drain background workers BEFORE tearing the client down.  Each
-    // worker calls `_client.fetch_*` (which takes `&mut self` on the
+    // worker calls `client_.fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
     // surfaces as `panic_in_cleanup` through cxx's `prevent_unwind`.
-    _shuttingDown.store(true, std::memory_order_release);
+    _shell->shutting_down_.store(true, std::memory_order_release);
     {
-        std::unique_lock<std::mutex> lk(_workersMu);
-        _workersCv.wait_for(lk, std::chrono::seconds(5),
-                             [self]{ return self->_workersInFlight == 0; });
+        std::unique_lock<std::mutex> lk(_shell->workers_mu_);
+        _shell->workers_cv_.wait_for(lk, std::chrono::seconds(5),
+            [self]{ return self->_shell->workers_in_flight_ == 0; });
     }
-    for (auto& acc : _accounts) {
+    for (auto& acc : _shell->accounts_) {
         if (acc->sync_started) acc->client->stop_sync();
     }
-}
-
-- (void)runAsync:(std::function<void()>)fn {
-    if (_shuttingDown.load(std::memory_order_acquire)) return;
-    {
-        std::lock_guard<std::mutex> lk(_workersMu);
-        ++_workersInFlight;
-    }
-    __weak MainWindowController* weakSelf = self;
-    std::thread([weakSelf, fn = std::move(fn)]() mutable {
-        MainWindowController* strong = weakSelf;
-        if (strong && !strong->_shuttingDown.load(std::memory_order_acquire)) {
-            fn();
-        }
-        if (strong) {
-            std::lock_guard<std::mutex> lk(strong->_workersMu);
-            if (--strong->_workersInFlight == 0) strong->_workersCv.notify_all();
-        }
-    }).detach();
 }
 
 - (void)showEmojiPicker:(id)sender {
     if (!_composeSurface) return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-    panel.client = _client;
+    panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
@@ -1234,8 +1194,8 @@ void EventBridge::on_notification(const std::string& room_id,
         if (!s->_pendingReactionEventId.empty()) {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_currentRoomId.empty()) {
-                s->_client->send_reaction(s->_currentRoomId, ev,
+            if (!s->_shell->current_room_id_.empty()) {
+                s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
                                           std::string(glyph.UTF8String ?: ""));
             }
             [panel close];
@@ -1255,7 +1215,7 @@ void EventBridge::on_notification(const std::string& room_id,
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor {
     if (!_msgSurface) return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-    panel.client = _client;
+    panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
@@ -1263,8 +1223,8 @@ void EventBridge::on_notification(const std::string& room_id,
         if (!s->_pendingReactionEventId.empty()) {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_currentRoomId.empty()) {
-                s->_client->send_reaction(s->_currentRoomId, ev,
+            if (!s->_shell->current_room_id_.empty()) {
+                s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
                                           std::string(glyph.UTF8String ?: ""));
             }
             [panel close];
@@ -1290,7 +1250,7 @@ void EventBridge::on_notification(const std::string& room_id,
                    filename:(std::string)filename
                     caption:(std::string)caption
                replyEventId:(std::string)reply_event_id {
-    if (_currentRoomId.empty() || !_composeSurface) return;
+    if (_shell->current_room_id_.empty() || !_composeSurface) return;
     const bool compress =
         tesseract::Settings::instance().image_quality
         == tesseract::Settings::ImageQuality::Compressed;
@@ -1303,7 +1263,7 @@ void EventBridge::on_notification(const std::string& room_id,
         if (dot != std::string::npos) out_name = out_name.substr(0, dot);
         out_name += ".jpg";
     }
-    auto res = _client->send_image(_currentRoomId, enc.bytes, enc.mime,
+    auto res = _shell->client_->send_image(_shell->current_room_id_, enc.bytes, enc.mime,
                                     out_name, caption,
                                     enc.width, enc.height,
                                     reply_event_id);
@@ -1318,8 +1278,8 @@ void EventBridge::on_notification(const std::string& room_id,
                   filename:(std::string)filename
                    caption:(std::string)caption
              replyEventId:(std::string)reply_event_id {
-    if (_currentRoomId.empty()) return;
-    auto res = _client->send_file(_currentRoomId, bytes, mime,
+    if (_shell->current_room_id_.empty()) return;
+    auto res = _shell->client_->send_file(_shell->current_room_id_, bytes, mime,
                                   filename, caption, reply_event_id);
     if (res) {
         if (_composeTextArea) _composeTextArea->set_text("");
@@ -1345,7 +1305,7 @@ void EventBridge::on_notification(const std::string& room_id,
             tesseract::SessionStore::sdk_store_dir(uid).string());
         if (!session->client->restore_session(*session_json)) continue;
 
-        auto* bridge_ptr = new EventBridge(self);
+        auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
         bridge_ptr->set_user_id(uid);
         session->bridge.reset(bridge_ptr);
 
@@ -1357,17 +1317,17 @@ void EventBridge::on_notification(const std::string& room_id,
         session->sync_started = true;
         session->client->start_sync(session->bridge.get());
 
-        _accounts.push_back(std::move(session));
+        _shell->accounts_.push_back(std::move(session));
     }
 
-    if (_accounts.empty()) {
-        _pendingLoginClient = std::make_unique<tesseract::Client>();
+    if (_shell->accounts_.empty()) {
+        _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-        _pendingLoginTempDir = tesseract::SessionStore::account_dir("pending-" + ms);
-        _pendingLoginClient->set_data_dir(
-            (_pendingLoginTempDir / "matrix-store").string());
-        [_loginView setClient:_pendingLoginClient.get()];
+        _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
+        _shell->pending_login_client_->set_data_dir(
+            (_shell->pending_login_temp_dir_ / "matrix-store").string());
+        [_loginView setClient:_shell->pending_login_client_.get()];
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];
         _splitView.hidden = YES;
@@ -1376,8 +1336,8 @@ void EventBridge::on_notification(const std::string& room_id,
     }
 
     int firstActive = 0;
-    for (int i = 0; i < (int)_accounts.size(); ++i) {
-        if (_accounts[i]->user_id == index.active_user_id) {
+    for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
+        if (_shell->accounts_[i]->user_id == index.active_user_id) {
             firstActive = i;
             break;
         }
@@ -1386,18 +1346,18 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)loginViewDidSucceed:(LoginView*)view {
-    if (!_pendingLoginClient) return;
+    if (!_shell->pending_login_client_) return;
 
-    std::string sessionJson = _pendingLoginClient->export_session();
-    std::string newUserId   = _pendingLoginClient->get_user_id();
+    std::string sessionJson = _shell->pending_login_client_->export_session();
+    std::string newUserId   = _shell->pending_login_client_->get_user_id();
 
     auto finalDir = tesseract::SessionStore::account_dir(newUserId);
     std::error_code ec;
     std::filesystem::create_directories(finalDir.parent_path(), ec);
-    std::filesystem::rename(_pendingLoginTempDir, finalDir, ec);
-    if (ec) finalDir = _pendingLoginTempDir;  // EXDEV fallback: keep as-is
-    _pendingLoginClient.reset();  // close SQLite handles before reopen
-    _pendingLoginTempDir = {};
+    std::filesystem::rename(_shell->pending_login_temp_dir_, finalDir, ec);
+    if (ec) finalDir = _shell->pending_login_temp_dir_;  // EXDEV fallback: keep as-is
+    _shell->pending_login_client_.reset();  // close SQLite handles before reopen
+    _shell->pending_login_temp_dir_ = {};
 
     auto session = std::make_unique<tesseract::AccountSession>();
     session->client = std::make_unique<tesseract::Client>();
@@ -1405,7 +1365,7 @@ void EventBridge::on_notification(const std::string& room_id,
         tesseract::SessionStore::sdk_store_dir(newUserId).string());
     if (!session->client->restore_session(sessionJson)) return;
 
-    auto* bridge_ptr = new EventBridge(self);
+    auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
     bridge_ptr->set_user_id(newUserId);
     session->bridge.reset(bridge_ptr);
 
@@ -1425,48 +1385,48 @@ void EventBridge::on_notification(const std::string& room_id,
     idxData.active_user_id = newUserId;
     tesseract::SessionStore::save_index(idxData);
 
-    int newIdx = (int)_accounts.size();
-    _accounts.push_back(std::move(session));
-    _pendingLoginIsAddAccount = NO;
-    _addAccountReturnIdx = -1;
+    int newIdx = (int)_shell->accounts_.size();
+    _shell->accounts_.push_back(std::move(session));
+    _shell->pending_login_is_add_account_ = false;
+    _shell->add_account_return_idx_ = -1;
 
     [self _switchActiveAccount:newIdx];
 }
 
 - (void)loginViewDidCancel:(LoginView*)view {
-    _pendingLoginClient.reset();
-    if (_pendingLoginTempDir != std::filesystem::path()) {
+    _shell->pending_login_client_.reset();
+    if (_shell->pending_login_temp_dir_ != std::filesystem::path()) {
         std::error_code ec;
-        std::filesystem::remove_all(_pendingLoginTempDir, ec);
-        _pendingLoginTempDir = {};
+        std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
+        _shell->pending_login_temp_dir_ = {};
     }
-    _pendingLoginIsAddAccount = NO;
-    int returnIdx = _addAccountReturnIdx;
-    _addAccountReturnIdx = -1;
-    if (returnIdx >= 0 && returnIdx < (int)_accounts.size())
+    _shell->pending_login_is_add_account_ = false;
+    int returnIdx = _shell->add_account_return_idx_;
+    _shell->add_account_return_idx_ = -1;
+    if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
         [self _switchActiveAccount:returnIdx];
 }
 
 - (void)_switchActiveAccount:(int)idx {
-    _activeAccountIndex = idx;
-    auto* session = _accounts[idx].get();
-    _client = session->client.get();
-    _bridge = static_cast<EventBridge*>(session->bridge.get());
+    _shell->active_account_index_ = idx;
+    auto* session = _shell->accounts_[idx].get();
+    _shell->client_ = session->client.get();
+    _shell->event_handler_ = session->bridge.get();
 
-    _myUserId      = session->user_id;
-    _myDisplayName = session->display_name;
-    _myAvatarUrl   = session->avatar_url;
-    _pendingRestoreRoom = session->last_room;
+    _shell->my_user_id_      = session->user_id;
+    _shell->my_display_name_ = session->display_name;
+    _shell->my_avatar_url_   = session->avatar_url;
+    _shell->pending_restore_room_ = session->last_room;
 
     auto idxData = tesseract::SessionStore::load_index();
-    idxData.active_user_id = _myUserId;
+    idxData.active_user_id = _shell->my_user_id_;
     tesseract::SessionStore::save_index(idxData);
 
-    _currentRoomId.clear();
-    _spaceStack.clear();
+    _shell->current_room_id_.clear();
+    _shell->space_stack_.clear();
 
-    auto it = _perAccountRooms.find(_myUserId);
-    _rooms = (it != _perAccountRooms.end())
+    auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
+    _shell->rooms_ = (it != _shell->per_account_rooms_.end())
         ? it->second : std::vector<tesseract::RoomInfo>{};
     [self _refreshRoomList];
     _messageListView->set_messages({});
@@ -1478,11 +1438,11 @@ void EventBridge::on_notification(const std::string& room_id,
     [self _populateUserStrip];
     [self _maybeShowRecoveryBanner];
 
-    if (!_pendingRestoreRoom.empty()) {
-        for (const auto& r : _rooms) {
-            if (r.id == _pendingRestoreRoom && !r.is_space) {
-                std::string target = std::move(_pendingRestoreRoom);
-                _pendingRestoreRoom.clear();
+    if (!_shell->pending_restore_room_.empty()) {
+        for (const auto& r : _shell->rooms_) {
+            if (r.id == _shell->pending_restore_room_ && !r.is_space) {
+                std::string target = std::move(_shell->pending_restore_room_);
+                _shell->pending_restore_room_.clear();
                 [self onRoomSelected:target];
                 break;
             }
@@ -1519,15 +1479,15 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)_beginAddAccount {
-    _pendingLoginIsAddAccount = YES;
-    _addAccountReturnIdx = _activeAccountIndex;
-    _pendingLoginClient = std::make_unique<tesseract::Client>();
+    _shell->pending_login_is_add_account_ = true;
+    _shell->add_account_return_idx_ = _shell->active_account_index_;
+    _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
     auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
-    _pendingLoginTempDir = tesseract::SessionStore::account_dir("pending-" + ms);
-    _pendingLoginClient->set_data_dir(
-        (_pendingLoginTempDir / "matrix-store").string());
-    [_loginView setClient:_pendingLoginClient.get()];
+    _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
+    _shell->pending_login_client_->set_data_dir(
+        (_shell->pending_login_temp_dir_ / "matrix-store").string());
+    [_loginView setClient:_shell->pending_login_client_.get()];
     [_loginView setMode:tesseract::views::LoginView::Mode::AddAccount];
     [_loginView reset];
     _splitView.hidden = YES;
@@ -1535,21 +1495,21 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)_populateUserStrip {
-    NSString* shown = _myDisplayName.empty()
-        ? [NSString stringWithUTF8String:_myUserId.c_str()]
-        : [NSString stringWithUTF8String:_myDisplayName.c_str()];
+    NSString* shown = _shell->my_display_name_.empty()
+        ? [NSString stringWithUTF8String:_shell->my_user_id_.c_str()]
+        : [NSString stringWithUTF8String:_shell->my_display_name_.c_str()];
     _userNameLabel.stringValue = shown ?: @"";
-    _userIdLabel.stringValue = [NSString stringWithUTF8String:_myUserId.c_str()] ?: @"";
+    _userIdLabel.stringValue = [NSString stringWithUTF8String:_shell->my_user_id_.c_str()] ?: @"";
     _userStrip.hidden = NO;
     _userStripHeightCon.constant = 48;
 
-    if (!_myAvatarUrl.empty()) {
-        std::string url = _myAvatarUrl;
+    if (!_shell->my_avatar_url_.empty()) {
+        std::string url = _shell->my_avatar_url_;
         __weak MainWindowController* weakSelf = self;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             MainWindowController* s = weakSelf;
             if (!s) return;
-            auto bytes = s->_client->fetch_media_bytes(url);
+            auto bytes = s->_shell->client_->fetch_media_bytes(url);
             dispatch_async(dispatch_get_main_queue(), ^{
                 MainWindowController* s2 = weakSelf;
                 if (!s2 || bytes.empty()) return;
@@ -1604,23 +1564,23 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)_onRoomScrollDebounce {
-    if (!_roomListView || !_client) return;
+    if (!_roomListView || !_shell->client_) return;
     auto ids = _roomListView->visible_room_ids();
-    _client->stop_background_backfill();
-    _client->start_background_backfill(ids);
+    _shell->client_->stop_background_backfill();
+    _shell->client_->start_background_backfill(ids);
 }
 
 - (void)_onSpaceBack {
-    if (!_spaceStack.empty()) _spaceStack.pop_back();
+    if (!_shell->space_stack_.empty()) _shell->space_stack_.pop_back();
     [self _refreshRoomList];
 }
 
 - (void)_onUserStripRightClick:(NSGestureRecognizer*)gr {
     if (gr.state != NSGestureRecognizerStateEnded) return;
     NSString* logoutTitle = [NSString stringWithFormat:@"Log Out %@",
-        _myDisplayName.empty()
-            ? [NSString stringWithUTF8String:_myUserId.c_str()]
-            : [NSString stringWithUTF8String:_myDisplayName.c_str()]];
+        _shell->my_display_name_.empty()
+            ? [NSString stringWithUTF8String:_shell->my_user_id_.c_str()]
+            : [NSString stringWithUTF8String:_shell->my_display_name_.c_str()]];
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
     [menu addItemWithTitle:@"Add Account…"
                    action:@selector(_beginAddAccount)
@@ -1633,7 +1593,7 @@ void EventBridge::on_notification(const std::string& room_id,
 
 - (void)_onUserStripLeftClick:(NSGestureRecognizer*)gr {
     if (gr.state != NSGestureRecognizerStateEnded) return;
-    if (_accounts.size() < 2) return;
+    if (_shell->accounts_.size() < 2) return;
     [self _openAccountPicker];
 }
 
@@ -1653,8 +1613,8 @@ void EventBridge::on_notification(const std::string& room_id,
         _accountPickerShared->on_select = [weakSelf](const std::string& uid) {
             MainWindowController* s = weakSelf;
             if (!s) return;
-            for (int i = 0; i < (int)s->_accounts.size(); ++i) {
-                if (s->_accounts[i]->user_id == uid) {
+            for (int i = 0; i < (int)s->_shell->accounts_.size(); ++i) {
+                if (s->_shell->accounts_[i]->user_id == uid) {
                     [s->_accountPickerPopover close];
                     [s _switchActiveAccount:i];
                     break;
@@ -1665,8 +1625,8 @@ void EventBridge::on_notification(const std::string& room_id,
             [weakSelf](const std::string& mxc) -> const tk::Image* {
                 MainWindowController* s = weakSelf;
                 if (!s) return nullptr;
-                auto it = s->_tkAvatars.find(mxc);
-                return it == s->_tkAvatars.end() ? nullptr : it->second.get();
+                auto it = s->_shell->tk_avatars_.find(mxc);
+                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
             });
         _accountPickerSurface->set_root(std::move(picker));
 
@@ -1682,20 +1642,20 @@ void EventBridge::on_notification(const std::string& room_id,
     }
 
     std::vector<tesseract::views::AccountEntry> entries;
-    for (int i = 0; i < (int)_accounts.size(); ++i) {
-        auto& acc = *_accounts[i];
+    for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
+        auto& acc = *_shell->accounts_[i];
         tesseract::views::AccountEntry e;
         e.user_id      = acc.user_id;
         e.display_name = acc.display_name;
         e.avatar_url   = acc.avatar_url;
-        e.active       = (i == _activeAccountIndex);
+        e.active       = (i == _shell->active_account_index_);
         entries.push_back(std::move(e));
-        if (!acc.avatar_url.empty()) [self _ensureUserAvatar:acc.avatar_url];
+        if (!acc.avatar_url.empty()) _shell->ensure_user_avatar_(acc.avatar_url);
     }
     _accountPickerShared->set_entries(std::move(entries));
 
     CGFloat rowH = 48.0f;
-    NSSize sz = NSMakeSize(220, rowH * (CGFloat)_accounts.size());
+    NSSize sz = NSMakeSize(220, rowH * (CGFloat)_shell->accounts_.size());
     _accountPickerPopover.contentSize = sz;
     _accountPickerSurface->relayout();
 
@@ -1705,55 +1665,56 @@ void EventBridge::on_notification(const std::string& room_id,
 }
 
 - (void)_logoutActiveAccount {
-    if (_activeAccountIndex < 0 || _activeAccountIndex >= (int)_accounts.size()) return;
-    auto* session = _accounts[_activeAccountIndex].get();
+    if (_shell->active_account_index_ < 0 ||
+        _shell->active_account_index_ >= (int)_shell->accounts_.size()) return;
+    auto* session = _shell->accounts_[_shell->active_account_index_].get();
     std::string uid = session->user_id;
 
-    if (!_currentRoomId.empty()) {
-        _client->unsubscribe_room(_currentRoomId);
-        _currentRoomId.clear();
+    if (!_shell->current_room_id_.empty()) {
+        _shell->client_->unsubscribe_room(_shell->current_room_id_);
+        _shell->current_room_id_.clear();
     }
     session->client->logout();
     session->client->stop_sync();
     session->sync_started = false;
 
     tesseract::SessionStore::clear_account(uid);
-    _perAccountRooms.erase(uid);
-    _accounts.erase(_accounts.begin() + _activeAccountIndex);
+    _shell->per_account_rooms_.erase(uid);
+    _shell->accounts_.erase(_shell->accounts_.begin() + _shell->active_account_index_);
 
     auto idxData = tesseract::SessionStore::load_index();
     auto& ids = idxData.user_ids;
     ids.erase(std::remove(ids.begin(), ids.end(), uid), ids.end());
 
-    if (_accounts.empty()) {
-        _activeAccountIndex = -1;
-        _client = nullptr;
-        _bridge = nullptr;
+    if (_shell->accounts_.empty()) {
+        _shell->active_account_index_ = -1;
+        _shell->client_ = nullptr;
+        _shell->event_handler_ = nullptr;
         idxData.active_user_id.clear();
         tesseract::SessionStore::save_index(idxData);
 
-        _rooms.clear();
-        _spaceStack.clear();
+        _shell->rooms_.clear();
+        _shell->space_stack_.clear();
         [self _refreshRoomList];
         _messageListView->set_messages({});
         _msgSurface->relayout();
         _userStrip.hidden = YES;
         _userStripHeightCon.constant = 0;
 
-        _pendingLoginClient = std::make_unique<tesseract::Client>();
+        _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-        _pendingLoginTempDir = tesseract::SessionStore::account_dir("pending-" + ms);
-        _pendingLoginClient->set_data_dir(
-            (_pendingLoginTempDir / "matrix-store").string());
-        [_loginView setClient:_pendingLoginClient.get()];
+        _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
+        _shell->pending_login_client_->set_data_dir(
+            (_shell->pending_login_temp_dir_ / "matrix-store").string());
+        [_loginView setClient:_shell->pending_login_client_.get()];
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];
         _splitView.hidden = YES;
         _loginView.hidden = NO;
     } else {
-        int newIdx = std::min(_activeAccountIndex, (int)_accounts.size() - 1);
-        idxData.active_user_id = _accounts[newIdx]->user_id;
+        int newIdx = std::min(_shell->active_account_index_, (int)_shell->accounts_.size() - 1);
+        idxData.active_user_id = _shell->accounts_[newIdx]->user_id;
         tesseract::SessionStore::save_index(idxData);
         [self _switchActiveAccount:newIdx];
     }
@@ -1772,10 +1733,10 @@ void EventBridge::on_notification(const std::string& room_id,
     (void)isMention;
     // Suppress if the window is focused, this account is active, and room is open.
     if (self.window.isKeyWindow
-            && _activeAccountIndex >= 0
-            && (int)_accounts.size() > _activeAccountIndex
-            && _accounts[_activeAccountIndex]->user_id == userId
-            && _currentRoomId == roomId) return;
+            && _shell->active_account_index_ >= 0
+            && (int)_shell->accounts_.size() > _shell->active_account_index_
+            && _shell->accounts_[_shell->active_account_index_]->user_id == userId
+            && _shell->current_room_id_ == roomId) return;
 
     UNMutableNotificationContent* content =
         [[UNMutableNotificationContent alloc] init];
@@ -1811,11 +1772,11 @@ void EventBridge::on_notification(const std::string& room_id,
     NSDictionary* info = notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
-    BOOL activeAccount = uid && _activeAccountIndex >= 0
-        && (int)_accounts.size() > _activeAccountIndex
-        && _accounts[_activeAccountIndex]->user_id == std::string(uid.UTF8String ?: "");
+    BOOL activeAccount = uid && _shell->active_account_index_ >= 0
+        && (int)_shell->accounts_.size() > _shell->active_account_index_
+        && _shell->accounts_[_shell->active_account_index_]->user_id == std::string(uid.UTF8String ?: "");
     if (self.window.isKeyWindow && activeAccount
-            && rid && _currentRoomId == std::string(rid.UTF8String ?: "")) {
+            && rid && _shell->current_room_id_ == std::string(rid.UTF8String ?: "")) {
         completionHandler(UNNotificationPresentationOptionNone);
     } else {
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
@@ -1839,8 +1800,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     // Switch to the account that owns this notification before navigating.
     if (uid) {
         std::string target_uid(uid.UTF8String ?: "");
-        for (int i = 0; i < (int)_accounts.size(); ++i) {
-            if (_accounts[i]->user_id == target_uid) {
+        for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
+            if (_shell->accounts_[i]->user_id == target_uid) {
                 [self _switchActiveAccount:i];
                 break;
             }
@@ -1888,99 +1849,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     dest.emplace(key, std::move(wrapper));
 }
 
-// These three helpers used to call the synchronous Rust FFI on the
-// main queue. `fetch_avatar_bytes` / `fetch_media_bytes` do a
-// `tokio::block_on` inside; on first sync of an account with many rooms
-// the room-list paint froze the AppKit run loop for minutes (one
-// network round-trip per room avatar, serialised on the main queue).
-// Decode + cache now happens after a worker thread lands the bytes
-// back via `dispatch_async(main_queue)`; the call sites return
-// immediately and the views paint initials placeholders until the
-// bytes arrive.
-- (void)_ensureRoomAvatar:(const tesseract::RoomInfo&)r {
-    if (r.avatar_url.empty() || _tkAvatars.count(r.avatar_url)) return;
-    if (!_mediaFetchesInFlight.insert(r.avatar_url).second) return;
-
-    tesseract::Client* clientPtr = _client;
-    __weak MainWindowController* weakSelf = self;
-    std::string roomId = r.id;
-    std::string mxc    = r.avatar_url;
-    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-
-    [self runAsync:[clientPtr, weakSelf, roomId, mxc, bytes_holder]() {
-        *bytes_holder = clientPtr->fetch_avatar_bytes(roomId);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_mediaFetchesInFlight.erase(mxc);
-            if (bytes_holder->empty() || s->_tkAvatars.count(mxc)) return;
-            [s _decodeAndCache:*bytes_holder
-                          forKey:mxc
-                        destMap:s->_tkAvatars
-                             cap:tesseract::visual::kRoomAvatarSize];
-            if (s->_roomSurface) s->_roomSurface->relayout();
-        });
-    }];
-}
-
-- (void)_ensureUserAvatar:(const std::string&)mxc {
-    if (mxc.empty() || _tkAvatars.count(mxc)) return;
-    if (!_mediaFetchesInFlight.insert(mxc).second) return;
-
-    tesseract::Client* clientPtr = _client;
-    __weak MainWindowController* weakSelf = self;
-    std::string key = mxc;
-    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-
-    [self runAsync:[clientPtr, weakSelf, key, bytes_holder]() {
-        *bytes_holder = clientPtr->fetch_media_bytes(key);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_mediaFetchesInFlight.erase(key);
-            if (bytes_holder->empty() || s->_tkAvatars.count(key)) return;
-            [s _decodeAndCache:*bytes_holder
-                          forKey:key
-                        destMap:s->_tkAvatars
-                             cap:tesseract::visual::kMsgAvatarSize];
-            if (s->_msgSurface) s->_msgSurface->relayout();
-        });
-    }];
-}
-
-- (void)_ensureMediaImage:(const std::string&)url cap:(int)cap {
-    if (url.empty() || _tkImages.count(url) || _tkAnimImages.count(url)) return;
-    if (!_mediaFetchesInFlight.insert(url).second) return;
-
-    tesseract::Client* clientPtr = _client;
-    __weak MainWindowController* weakSelf = self;
-    std::string key = url;
-    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-
-    [self runAsync:[clientPtr, weakSelf, key, bytes_holder]() {
-        // `key` may be plain mxc (plain images/stickers) or a JSON
-        // MediaSource (encrypted images/stickers + reaction sources).
-        // `fetch_source_bytes` handles both shapes; `fetch_media_bytes`
-        // only handles plain mxc and would return empty for encrypted.
-        *bytes_holder = clientPtr->fetch_source_bytes(key);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_mediaFetchesInFlight.erase(key);
-            if (bytes_holder->empty()
-                || s->_tkImages.count(key)
-                || s->_tkAnimImages.count(key)) return;
-            [s _decodeMediaBytes:*bytes_holder forKey:key];
-            if (s->_msgSurface) s->_msgSurface->relayout();
-        });
-    }];
-}
-
-- (void)_ensureReplyDetails:(const std::string&)eventId {
-    if (eventId.empty() || _currentRoomId.empty()) return;
-    if (!_replyDetailsRequested.insert(eventId).second) return;
-    _client->fetch_reply_details(_currentRoomId, eventId);
-}
+// Note: _ensureRoomAvatar, _ensureUserAvatar, _ensureMediaImage, and
+// _ensureReplyDetails are now handled by ShellBase via MacShell.
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Event-bridge callbacks (main thread)
@@ -1992,11 +1862,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 {
     std::unique_ptr<tesseract::Event> guard(event);
     if (!event) return;
-    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
     if (event->type == tesseract::EventType::Unhandled) return;
-    [self _ensureRowMedia:*event];
-    [self _ensureReplyDetails:event->in_reply_to_id];
-    _messageListView->insert_message(index, [self _toRowData:*event]);
+    _shell->ensure_row_media_(*event);
+    _shell->ensure_reply_details_(event->in_reply_to_id);
+    _messageListView->insert_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
     _msgSurface->relayout();
 }
 
@@ -2006,56 +1876,35 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 {
     std::unique_ptr<tesseract::Event> guard(event);
     if (!event) return;
-    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
     if (event->type == tesseract::EventType::Unhandled) return;
-    [self _ensureRowMedia:*event];
-    [self _ensureReplyDetails:event->in_reply_to_id];
-    _messageListView->update_message(index, [self _toRowData:*event]);
+    _shell->ensure_row_media_(*event);
+    _shell->ensure_reply_details_(event->in_reply_to_id);
+    _messageListView->update_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
     _msgSurface->relayout();
 }
 
 - (void)handleMessageRemoved:(NSString*)roomId
                         index:(std::size_t)index
 {
-    if (std::string(roomId.UTF8String ?: "") != _currentRoomId) return;
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
     _messageListView->remove_message(index);
     _msgSurface->relayout();
 }
 
-- (void)updateRoomsForUserId:(std::string)userId rooms:(std::vector<tesseract::RoomInfo>)rooms {
-    _perAccountRooms[userId] = rooms;
-    if (_activeAccountIndex < 0 || _activeAccountIndex >= (int)_accounts.size()) return;
-    if (_accounts[_activeAccountIndex]->user_id != userId) return;
-    _rooms = std::move(rooms);
-    [self _refreshRoomList];
-    if (!_currentRoomId.empty()) {
-        for (const auto& r : _rooms) {
-            if (r.id == _currentRoomId) {
-                [self _setRoomHeader:r];
-                break;
-            }
-        }
-    } else if (!_pendingRestoreRoom.empty()) {
-        for (const auto& r : _rooms) {
-            if (r.id == _pendingRestoreRoom && !r.is_space) {
-                std::string target = std::move(_pendingRestoreRoom);
-                _pendingRestoreRoom.clear();
-                [self onRoomSelected:target];
-                break;
-            }
-        }
-    }
-}
+// updateRoomsForUserId: was the old ObjC EventBridge hook. EventHandlerBase now
+// calls ShellBase::push_rooms_() directly, which invokes on_rooms_updated_()
+// → _refreshRoomList + restore-room logic. No ObjC forwarding needed.
 
 - (void)handleSyncErrorContext:(NSString*)ctx
                     description:(NSString*)desc
                     softLogout:(BOOL)soft {
     if ([ctx isEqualToString:@"sync_auth_error"]) {
-        if (soft && _client && _activeAccountIndex >= 0) {
-            std::string uid = _accounts[_activeAccountIndex]->user_id;
+        if (soft && _shell->client_ && _shell->active_account_index_ >= 0) {
+            std::string uid = _shell->accounts_[_shell->active_account_index_]->user_id;
             if (auto saved = tesseract::SessionStore::load_account(uid)) {
-                if (_client->restore_session(*saved)) {
-                    _client->start_sync(_bridge);
+                if (_shell->client_->restore_session(*saved)) {
+                    _shell->client_->start_sync(_shell->event_handler_);
                     return;
                 }
             }
@@ -2069,15 +1918,15 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                     snapshot:(std::vector<tesseract::Event*>)snapshot
 {
     const bool current =
-        roomId.UTF8String && std::string(roomId.UTF8String) == _currentRoomId;
+        roomId.UTF8String && std::string(roomId.UTF8String) == _shell->current_room_id_;
     if (current) {
         std::vector<tesseract::views::MessageRowData> rows;
         rows.reserve(snapshot.size());
         for (auto* ev : snapshot) {
             if (!ev) continue;
-            [self _ensureRowMedia:*ev];
-            [self _ensureReplyDetails:ev->in_reply_to_id];
-            rows.push_back([self _toRowData:*ev]);
+            _shell->ensure_row_media_(*ev);
+            _shell->ensure_reply_details_(ev->in_reply_to_id);
+            rows.push_back(tesseract::views::make_row_data(*ev, _shell->my_user_id_));
         }
         _messageListView->set_messages(std::move(rows));
         _msgSurface->relayout();
@@ -2099,7 +1948,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _recoverySurface->relayout();
     }
     if (progress.state == tesseract::BackupState::Enabled
-        && !_client->needs_recovery()
+        && _shell->client_ && !_shell->client_->needs_recovery()
         && _recoverySurface)
     {
         ((__bridge NSView*)_recoverySurface->view_handle()).hidden = YES;
@@ -2107,9 +1956,9 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)_maybeShowRecoveryBanner {
-    if (_recoveryDismissed)         return;
-    if (!_client->needs_recovery())  return;
-    if (!_recoverySurface)          return;
+    if (_shell->recovery_banner_dismissed_)           return;
+    if (!_shell->client_ || !_shell->client_->needs_recovery()) return;
+    if (!_recoverySurface)                            return;
     NSView* view = (__bridge NSView*)_recoverySurface->view_handle();
     if (view.hidden) {
         if (_recoveryShared) {
@@ -2150,10 +1999,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (_recoverySurface)  _recoverySurface->relayout();
 
     __weak MainWindowController* weakSelf = self;
-    [self runAsync:[weakSelf, key]() {
-        MainWindowController* strongSelf = weakSelf;
-        if (!strongSelf) return;
-        auto res = strongSelf->_client->recover(key);
+    _shell->run_async_([weakSelf, key, clientPtr = _shell->client_]() {
+        auto res = clientPtr->recover(key);
         bool        ok  = res.ok;
         std::string msg = res.message;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -2176,11 +2023,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             }
             if (s->_recoverySurface) s->_recoverySurface->relayout();
         });
-    }];
+    });
 }
 
 - (void)_onRecoveryDismiss {
-    _recoveryDismissed = YES;
+    _shell->recovery_banner_dismissed_ = true;
     if (_recoverySurface) {
         ((__bridge NSView*)_recoverySurface->view_handle()).hidden = YES;
     }
@@ -2188,30 +2035,34 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_refreshRoomList {
     std::vector<tesseract::RoomInfo> filtered;
-    if (_spaceStack.empty()) {
+    if (_shell->space_stack_.empty()) {
         std::unordered_set<std::string> in_space;
-        for (const auto& r : _rooms) {
-            if (!r.is_space) continue;
-            for (const auto& id : _client->space_children(r.id))
-                in_space.insert(id);
+        if (_shell->client_) {
+            for (const auto& r : _shell->rooms_) {
+                if (!r.is_space) continue;
+                for (const auto& id : _shell->client_->space_children(r.id))
+                    in_space.insert(id);
+            }
         }
-        filtered.reserve(_rooms.size());
-        for (const auto& r : _rooms)
+        filtered.reserve(_shell->rooms_.size());
+        for (const auto& r : _shell->rooms_)
             if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
-        for (const auto& r : _rooms)
+        for (const auto& r : _shell->rooms_)
             if ( r.is_space) filtered.push_back(r);
         _spaceNavBar.hidden = YES;
         _spaceNavHeightCon.constant = 0;
     } else {
-        auto child_ids = _client->space_children(_spaceStack.back());
-        for (const auto& r : _rooms) {
+        auto child_ids = _shell->client_
+            ? _shell->client_->space_children(_shell->space_stack_.back())
+            : std::vector<std::string>{};
+        for (const auto& r : _shell->rooms_) {
             if (std::find(child_ids.begin(), child_ids.end(), r.id)
                 != child_ids.end()) {
                 filtered.push_back(r);
             }
         }
-        for (const auto& r : _rooms) {
-            if (r.id == _spaceStack.back()) {
+        for (const auto& r : _shell->rooms_) {
+            if (r.id == _shell->space_stack_.back()) {
                 _spaceNameLabel.stringValue =
                     [NSString stringWithUTF8String:r.name.c_str()] ?: @"";
                 break;
@@ -2220,11 +2071,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _spaceNavBar.hidden = NO;
         _spaceNavHeightCon.constant = 36;
     }
-    for (const auto& r : filtered) [self _ensureRoomAvatar:r];
+    for (const auto& r : filtered) _shell->ensure_room_avatar_(r);
 
     _roomListView->set_rooms(filtered);
-    if (!_currentRoomId.empty()) {
-        _roomListView->set_selected_room(_currentRoomId);
+    if (!_shell->current_room_id_.empty()) {
+        _roomListView->set_selected_room(_shell->current_room_id_);
     }
     _roomSurface->relayout();
 }
@@ -2240,29 +2091,29 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)onRoomSelected:(std::string)roomId {
     if (roomId.empty()) return;
-    for (const auto& r : _rooms) {
+    for (const auto& r : _shell->rooms_) {
         if (r.id == roomId && r.is_space) {
-            _spaceStack.push_back(roomId);
+            _shell->space_stack_.push_back(roomId);
             [self _refreshRoomList];
             return;
         }
     }
-    if (!_currentRoomId.empty() && _currentRoomId != roomId) {
-        _client->unsubscribe_room(_currentRoomId);
+    if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId) {
+        _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
-    _currentRoomId = roomId;
-    _replyDetailsRequested.clear();
+    _shell->current_room_id_ = roomId;
+    _shell->reply_details_requested_.clear();
     {
-        auto prefs = tesseract::Prefs::parse(_client->load_prefs_json());
+        auto prefs = tesseract::Prefs::parse(_shell->client_->load_prefs_json());
         prefs.last_room = roomId;
-        _client->save_prefs_json(tesseract::Prefs::serialize(prefs));
+        _shell->client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
     if (_composeShared) {
         _composeShared->clear_reply();
         _composeShared->clear_editing();
     }
-    for (const auto& r : _rooms) {
-        if (r.id == _currentRoomId) { [self _setRoomHeader:r]; break; }
+    for (const auto& r : _shell->rooms_) {
+        if (r.id == _shell->current_room_id_) { [self _setRoomHeader:r]; break; }
     }
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
@@ -2270,14 +2121,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     std::vector<std::string> visibleIds =
         _roomListView ? _roomListView->visible_room_ids()
                       : std::vector<std::string>{};
-    std::string subRoom = _currentRoomId;
+    std::string subRoom = _shell->current_room_id_;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        auto res = self->_client->subscribe_room(subRoom);
+        auto res = self->_shell->client_->subscribe_room(subRoom);
         BOOL reached = NO;
         if (res) {
-            auto pr = self->_client->paginate_back_with_status(subRoom, 50);
+            auto pr = self->_shell->client_->paginate_back_with_status(subRoom, 50);
             reached = pr.ok && pr.reached_start;
-            self->_client->start_background_backfill(visibleIds);
+            self->_shell->client_->start_background_backfill(visibleIds);
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             [self handleSubscribeResultForRoom:subRoom reached:reached];
@@ -2287,14 +2138,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)requestMoreHistoryForRoom:(std::string)roomId {
     if (roomId.empty()) return;
-    auto& state = _pagination[roomId];
+    auto& state = _shell->pagination_[roomId];
     if (state.in_flight || state.reached_start) return;
     state.in_flight = true;
 
     // Run the blocking paginate call on a background queue; marshal the
     // result back to the main thread.
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        auto pr = self->_client->paginate_back_with_status(roomId, 50);
+        auto pr = self->_shell->client_->paginate_back_with_status(roomId, 50);
         BOOL reached = pr.ok && pr.reached_start;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self handlePaginateResultForRoom:roomId reached_start:reached];
@@ -2304,180 +2155,24 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached {
-    auto it = _pagination.find(roomId);
-    if (it == _pagination.end()) return;
+    auto it = _shell->pagination_.find(roomId);
+    if (it == _shell->pagination_.end()) return;
     it->second.in_flight     = false;
     it->second.reached_start = reached;
-    if (roomId == _currentRoomId && _messageListView)
+    if (roomId == _shell->current_room_id_ && _messageListView)
         _messageListView->reset_near_top_latch();
 }
 
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached {
-    if (roomId != _currentRoomId) return;
-    auto& state = _pagination[roomId];
+    if (roomId != _shell->current_room_id_) return;
+    auto& state = _shell->pagination_[roomId];
     state.in_flight     = false;
     state.reached_start = reached;
 }
 
-- (tesseract::views::MessageRowData)_toRowData:(const tesseract::Event&)ev {
-    using Kind = tesseract::views::MessageRowData::Kind;
-    tesseract::views::MessageRowData row;
-    row.event_id          = ev.event_id;
-    row.sender            = ev.sender;
-    row.sender_name       = ev.sender_name;
-    row.sender_avatar_url = ev.sender_avatar_url;
-    row.body              = ev.body;
-    row.timestamp_ms      = ev.timestamp;
-    row.is_own            = (ev.sender == _myUserId);
-    row.reactions         = ev.reactions;
-    row.read_receipts     = ev.read_receipts;
-
-    row.in_reply_to_id          = ev.in_reply_to_id;
-    row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
-    row.in_reply_to_body        = ev.in_reply_to_body;
-    row.is_edited               = ev.is_edited;
-
-    switch (ev.type) {
-        case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
-        case tesseract::EventType::Image: {
-            row.kind = Kind::Image;
-            const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-            row.media_url            = img.image_url;
-            row.media_w              = static_cast<int>(img.width);
-            row.media_h              = static_cast<int>(img.height);
-            row.has_filename_caption = !img.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Sticker: {
-            row.kind = Kind::Sticker;
-            const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-            row.media_url = s.image_url;
-            row.media_w   = static_cast<int>(s.width);
-            row.media_h   = static_cast<int>(s.height);
-            break;
-        }
-        case tesseract::EventType::File: {
-            row.kind = Kind::File;
-            const auto& f = static_cast<const tesseract::FileEvent&>(ev);
-            row.file_name = f.file_name;
-            row.file_size = f.file_size;
-            row.media_url = f.file_url;
-            break;
-        }
-        case tesseract::EventType::Voice: {
-            row.kind = Kind::Voice;
-            const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-            row.audio_source = v.audio_source;
-            row.audio_mime   = v.mime_type;
-            row.duration_ms  = v.duration_ms;
-            row.waveform     = v.waveform;
-            break;
-        }
-        case tesseract::EventType::Video: {
-            row.kind = Kind::Video;
-            const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-            row.media_url         = vid.video_url;
-            row.video_thumb_url   = vid.thumbnail_url.empty()
-                                    ? ("thumb::" + ev.event_id)
-                                    : vid.thumbnail_url;
-            row.media_w           = static_cast<int>(vid.width);
-            row.media_h           = static_cast<int>(vid.height);
-            row.duration_ms       = vid.duration_ms;
-            row.has_filename_caption = !vid.filename.empty();
-            break;
-        }
-        case tesseract::EventType::Redacted:  row.kind = Kind::Redacted;  break;
-        case tesseract::EventType::Unhandled: row.kind = Kind::Unhandled; break;
-    }
-    return row;
-}
-
-- (void)_ensureRowMedia:(const tesseract::Event&)ev {
-    [self _ensureUserAvatar:ev.sender_avatar_url];
-    for (const auto& rr : ev.read_receipts) {
-        [self _ensureUserAvatar:rr.avatar_url];
-    }
-
-    if (ev.type == tesseract::EventType::Image) {
-        const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        [self _ensureMediaImage:img.image_url
-                            cap:tesseract::visual::kMaxInlineImageWidth];
-    } else if (ev.type == tesseract::EventType::Sticker) {
-        const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        [self _ensureMediaImage:s.image_url
-                            cap:tesseract::visual::kStickerSize];
-    } else if (ev.type == tesseract::EventType::Voice) {
-        const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-        if (!v.audio_source.empty() &&
-            _voicePrefetched.insert(v.audio_source).second) {
-            // Pull the clip into the SDK media cache on a background
-            // queue so the first play tap is instant. Bytes are discarded;
-            // the next synchronous fetch reads them out of cache.
-            std::string src = v.audio_source;
-            tesseract::Client* clientPtr = _client;
-            [self runAsync:[clientPtr, src]() {
-                (void)clientPtr->fetch_source_bytes(src);
-            }];
-        }
-    } else if (ev.type == tesseract::EventType::Video) {
-        const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (!vid.thumbnail_url.empty())
-            [self _ensureMediaImage:vid.thumbnail_url
-                                cap:tesseract::visual::kMaxInlineImageWidth];
-        // Client-side first-frame via AVAssetImageGenerator when no server thumbnail.
-        if (vid.thumbnail_url.empty() && !vid.video_url.empty()) {
-            NSString* eidStr = [NSString stringWithUTF8String:ev.event_id.c_str()];
-            if (![_videoThumbInFlight containsObject:eidStr]) {
-                [_videoThumbInFlight addObject:eidStr];
-                tesseract::Client* clientPtr = _client;
-                __weak MainWindowController* weakSelf = self;
-                std::string src = vid.video_url;
-                std::string eid = ev.event_id;
-                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-                [self runAsync:[clientPtr, weakSelf, src, eid, bytes_holder]() {
-                    *bytes_holder = clientPtr->fetch_source_bytes(src);
-                    if (bytes_holder->empty()) return;
-                    // Write bytes to a temp file for AVURLAsset.
-                    NSString* tmpDir = NSTemporaryDirectory();
-                    NSString* eidNS = [NSString stringWithUTF8String:eid.c_str()];
-                    NSString* tmpPath = [tmpDir stringByAppendingPathComponent:
-                                         [NSString stringWithFormat:@"vtmp_%@.mp4", eidNS]];
-                    NSData* data = [NSData dataWithBytes:bytes_holder->data()
-                                                  length:bytes_holder->size()];
-                    [data writeToFile:tmpPath atomically:YES];
-                    NSURL* url = [NSURL fileURLWithPath:tmpPath];
-                    AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-                    AVAssetImageGenerator* gen =
-                        [[AVAssetImageGenerator alloc] initWithAsset:asset];
-                    gen.appliesPreferredTrackTransform = YES;
-                    CMTime t = CMTimeMake(0, 1);
-                    NSError* err = nil;
-                    CGImageRef frame = [gen copyCGImageAtTime:t
-                                                  actualTime:nil
-                                                       error:&err];
-                    [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
-                    if (!frame) return;
-                    auto img_holder =
-                        std::make_shared<std::unique_ptr<tk::Image>>(
-                            tk::cg::make_image(frame));
-                    CGImageRelease(frame);
-                    std::string key = "thumb::" + eid;
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        MainWindowController* s = weakSelf;
-                        if (!s || s->_tkImages.count(key)) return;
-                        s->_tkImages.emplace(key, std::move(*img_holder));
-                        if (s->_msgSurface) s->_msgSurface->relayout();
-                    });
-                }];
-            }
-        }
-    }
-    for (const auto& r : ev.reactions) {
-        if (!r.source_json.empty()) {
-            [self _ensureMediaImage:r.source_json cap:20];
-        }
-    }
-}
+// Note: _ensureRowMedia is now handled by ShellBase::ensure_row_media_() via
+// MacShell. MacShell::generate_video_thumbnail_ handles client-side first-frame
+// generation for m.video when the server provides no thumbnail.
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Animated sticker support
@@ -2485,7 +2180,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key {
-    if (bytes.empty() || _tkImages.count(key) || _tkAnimImages.count(key)) return;
+    if (bytes.empty() || _shell->tk_images_.count(key) || _shell->anim_cache_.has(key)) return;
     CFDataRef data = CFDataCreate(kCFAllocatorDefault,
                                    bytes.data(),
                                    static_cast<CFIndex>(bytes.size()));
@@ -2496,13 +2191,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
     std::size_t count = CGImageSourceGetCount(src);
     if (count > 1) {
-        AnimEntry entry;
-        entry.frames.reserve(count);
-        entry.delays_ms.reserve(count);
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int> delays;
+        frames.reserve(count);
+        delays.reserve(count);
         for (std::size_t i = 0; i < count; ++i) {
             CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
             if (!frame) continue;
-            entry.frames.push_back(tk::cg::make_image(frame));
+            frames.push_back(tk::cg::make_image(frame));
             CGImageRelease(frame);
             int delay_ms = 100;
             CFDictionaryRef props =
@@ -2533,16 +2229,13 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                 }
                 CFRelease(props);
             }
-            entry.delays_ms.push_back(std::max(delay_ms, 20));
+            delays.push_back(std::max(delay_ms, 20));
         }
-        if (!entry.frames.empty()) {
+        if (!frames.empty()) {
             CFRelease(src);
-            entry.current = 0;
-            entry.next_advance_ms =
-                static_cast<std::int64_t>(
-                    [[NSDate date] timeIntervalSince1970] * 1000.0)
-                + entry.delays_ms[0];
-            _tkAnimImages.emplace(key, std::move(entry));
+            const std::int64_t now_ms = static_cast<std::int64_t>(
+                [[NSDate date] timeIntervalSince1970] * 1000.0);
+            _shell->anim_cache_.store(key, std::move(frames), std::move(delays), now_ms);
             [self _startAnimTickIfNeeded];
             return;
         }
@@ -2560,12 +2253,12 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
     CFRelease(src);
     if (!img) return;
-    _tkImages.emplace(key, tk::cg::make_image(img));
+    _shell->tk_images_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
 }
 
 - (void)_startAnimTickIfNeeded {
-    if (_animTimer || _tkAnimImages.empty()) return;
+    if (_animTimer || _shell->anim_cache_.empty()) return;
     __weak MainWindowController* weakSelf = self;
     _animTimer = [NSTimer scheduledTimerWithTimeInterval:0.016
                                                  repeats:YES
@@ -2577,25 +2270,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)_animTick:(NSTimer*)timer {
-    if (_tkAnimImages.empty()) {
+    if (_shell->anim_cache_.empty()) {
         [_animTimer invalidate];
         _animTimer = nil;
         return;
     }
     const std::int64_t now =
         static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] * 1000.0);
-    bool any_changed = false;
-    for (auto& [_, entry] : _tkAnimImages) {
-        if (entry.frames.size() <= 1) continue;
-        std::size_t steps = 0;
-        while (now >= entry.next_advance_ms && steps < entry.frames.size()) {
-            entry.current = (entry.current + 1) % entry.frames.size();
-            entry.next_advance_ms += entry.delays_ms[entry.current];
-            ++steps;
-        }
-        if (steps > 0) any_changed = true;
-    }
-    if (any_changed) {
+    if (_shell->anim_cache_.advance(now)) {
         if (_msgSurface) _msgSurface->relayout();
         StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
         if (panel.isVisible) [panel invalidateImageCache];
@@ -2603,28 +2285,27 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)_ensureStickerImageAsync:(std::string)url {
-    if (url.empty() || _tkImages.count(url) || _tkAnimImages.count(url)) return;
-    if (!_stickerFetchesInFlight.insert(url).second) return;
+    if (url.empty() || _shell->tk_images_.count(url) || _shell->anim_cache_.has(url)) return;
+    if (!_shell->sticker_fetches_in_flight_.insert(url).second) return;
 
-    tesseract::Client* clientPtr = _client;
     __weak MainWindowController* weakSelf = self;
-    auto bytes_holder =
-        std::make_shared<std::vector<uint8_t>>();
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
 
-    [self runAsync:[clientPtr, weakSelf, url, bytes_holder]() {
+    _shell->run_async_([weakSelf, url, bytes_holder,
+                         clientPtr = _shell->client_]() {
         *bytes_holder = clientPtr->fetch_source_bytes(url);
         dispatch_async(dispatch_get_main_queue(), ^{
             MainWindowController* s = weakSelf;
             if (!s) return;
-            s->_stickerFetchesInFlight.erase(url);
+            s->_shell->sticker_fetches_in_flight_.erase(url);
             if (bytes_holder->empty()
-                || s->_tkImages.count(url)
-                || s->_tkAnimImages.count(url)) return;
+                || s->_shell->tk_images_.count(url)
+                || s->_shell->anim_cache_.has(url)) return;
             [s _decodeMediaBytes:*bytes_holder forKey:url];
             StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
             if (panel.isVisible) [panel invalidateImageCache];
         });
-    }];
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2633,20 +2314,22 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)handleImagePacksUpdated {
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    panel.client = _client;
+    panel.client = _shell->client_;
     [panel refreshPacks];
 }
 
 - (void)handleAccountPrefsUpdated:(NSString*)json {
     auto prefs = tesseract::Prefs::parse(json.UTF8String);
-    if (!prefs.last_room.empty() && _pendingRestoreRoom.empty() && _currentRoomId.empty())
-        _pendingRestoreRoom = prefs.last_room;
+    if (!prefs.last_room.empty()
+        && _shell->pending_restore_room_.empty()
+        && _shell->current_room_id_.empty())
+        _shell->pending_restore_room_ = prefs.last_room;
 }
 
 - (void)_showStickerPicker {
-    if (!_composeSurface || _currentRoomId.empty()) return;
+    if (!_composeSurface || _shell->current_room_id_.empty()) return;
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-    panel.client = _client;
+    panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;
 
@@ -2655,22 +2338,20 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                    const std::string& /*source_token*/) -> const tk::Image* {
             MainWindowController* s = weakSelf;
             if (!s) return nullptr;
-            auto ait = s->_tkAnimImages.find(cache_key);
-            if (ait != s->_tkAnimImages.end() && !ait->second.frames.empty())
-                return ait->second.frames[ait->second.current].get();
-            auto it = s->_tkImages.find(cache_key);
-            if (it != s->_tkImages.end()) return it->second.get();
+            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
+            auto it = s->_shell->tk_images_.find(cache_key);
+            if (it != s->_shell->tk_images_.end()) return it->second.get();
             [s _ensureStickerImageAsync:cache_key];
             return nullptr;
         }];
 
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
-        if (!s || s->_currentRoomId.empty()) return;
+        if (!s || s->_shell->current_room_id_.empty()) return;
         std::string u = url.UTF8String      ?: "";
         std::string b = body.UTF8String     ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        s->_client->send_sticker(s->_currentRoomId, b, u, j);
+        s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
         [panel orderOut:nil];
     };
 
@@ -2692,7 +2373,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_onStickerSave:(id)sender {
     if (_ctxStickerMxcUrl.empty()) return;
-    _client->save_sticker_to_user_pack(
+    _shell->client_->save_sticker_to_user_pack(
         _ctxStickerBody,
         _ctxStickerBody,
         _ctxStickerMxcUrl,

@@ -9,6 +9,9 @@
 #include "LinuxNotifier.h"
 #include "LinuxGtkTrayIcon.h"
 
+#include "app/ShellBase.h"
+#include "app/EventHandlerBase.h"
+#include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_gtk.h"
@@ -39,51 +42,47 @@ namespace gtk4 {
 
 class LoginView;
 
-/// Marshals SDK callbacks onto the GTK main loop via g_idle_add.
-class EventHandler final : public tesseract::IEventHandler {
-public:
-    explicit EventHandler(GtkWindow* window) : window_(window) {}
-
-    void set_user_id(std::string uid) { user_id_ = std::move(uid); }
-    const std::string& user_id() const { return user_id_; }
-
-    void on_timeline_reset(const std::string& room_id,
-                            std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
-    void on_message_inserted(const std::string& room_id,
-                              std::size_t index,
-                              std::unique_ptr<tesseract::Event> event) override;
-    void on_message_updated(const std::string& room_id,
-                             std::size_t index,
-                             std::unique_ptr<tesseract::Event> event) override;
-    void on_message_removed(const std::string& room_id,
-                             std::size_t index) override;
-    void on_rooms_updated(const std::vector<tesseract::RoomInfo>& rooms) override;
-    void on_sync_error(const std::string& context,
-                       const std::string& description,
-                       bool soft_logout) override;
-    void on_session_saved(const std::string& session_json) override;
-    void on_backup_progress(const tesseract::BackupProgress& progress) override;
-    void on_room_list_state(tesseract::RoomListState state) override;
-    void on_image_packs_updated() override;
-    void on_account_prefs_updated(const std::string& json) override;
-    void on_notification(const std::string& room_id, const std::string& room_name,
-                         const std::string& sender,  const std::string& body,
-                         bool is_mention,
-                         const std::vector<uint8_t>& avatar_bytes) override;
-
-    GtkWindow*  window_;
-    std::string user_id_;
-};
-
 // ---------------------------------------------------------------------------
 
-class MainWindow {
+class MainWindow : public tesseract::ShellBase {
 public:
     explicit MainWindow(GtkApplication* app);
     ~MainWindow();
 
     GtkWidget* widget() const { return window_; }
 
+    // These are called from internal async callbacks (paginate/subscribe workers).
+    void push_paginate_result(std::string room_id, bool reached_start);
+    void push_subscribe_result(std::string room_id, bool reached_start);
+
+private:
+    // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
+    void handle_timeline_reset_ui_(
+        std::string room_id,
+        std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+    void handle_message_inserted_ui_(
+        std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_updated_ui_(
+        std::string room_id, std::size_t index,
+        std::unique_ptr<tesseract::Event> ev) override;
+    void handle_message_removed_ui_(
+        std::string room_id, std::size_t index) override;
+    void handle_sync_error_ui_(
+        std::string context, std::string user_id,
+        std::string description, bool soft_logout) override;
+    void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
+    void handle_image_packs_updated_ui_() override;
+    void handle_account_prefs_updated_ui_(
+        std::string user_id, std::string json) override;
+    void handle_notification_ui_(
+        std::string user_id, std::string room_id,
+        std::string room_name, std::string sender,
+        std::string body, bool is_mention,
+        std::vector<uint8_t> avatar_bytes) override;
+    void on_room_list_state_ui_() override;
+
+    // ── Internal push helpers (called from handle_*_ui_ and async workers) ────
     void push_timeline_reset(std::string room_id,
                               std::vector<std::unique_ptr<tesseract::Event>> snapshot);
     void push_message_inserted(std::string room_id,
@@ -93,8 +92,6 @@ public:
                                std::size_t index,
                                std::unique_ptr<tesseract::Event> ev);
     void push_message_removed(std::string room_id, std::size_t index);
-    void push_paginate_result(std::string room_id, bool reached_start);
-    void push_subscribe_result(std::string room_id, bool reached_start);
     // user_id identifies which account's snapshot this is (for caching).
     void push_rooms(std::string user_id, std::vector<tesseract::RoomInfo> rooms);
     void push_error(std::string description);
@@ -108,8 +105,6 @@ public:
                            const std::string& room_id, const std::string& room_name,
                            const std::string& sender, const std::string& body,
                            bool is_mention, std::vector<uint8_t> avatar_bytes);
-
-private:
     static void    on_login_clicked(GtkButton*, gpointer user_data);
     static void    on_back_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
@@ -175,30 +170,16 @@ private:
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
-    tesseract::views::MessageRowData to_row_data(const tesseract::Event& ev);
-    void ensure_room_avatar(const tesseract::RoomInfo& r);
-    void ensure_user_avatar(const std::string& mxc);
-    void ensure_media_image(const std::string& url, int max_w, int max_h);
-    void ensure_reply_details(const std::string& event_id);
     void ensure_sticker_image_async(std::string url);
 
-    enum class MediaKind : std::uint8_t {
-        RoomAvatar,
-        UserAvatar,
-        MediaImage,
-    };
-    void request_room_avatar_async(const std::string& room_id,
-                                     const std::string& mxc);
-    void request_user_avatar_async(const std::string& mxc);
-    void request_media_image_async(const std::string& url);
-    std::unordered_set<std::string> media_fetches_in_flight_;
-
-    void run_async_(std::function<void()> fn);
-
-    std::atomic<bool>           shutting_down_{false};
-    std::mutex                  workers_mu_;
-    std::condition_variable     workers_cv_;
-    int                         workers_in_flight_ = 0;
+    // ShellBase virtual hooks (GTK4 implementations).
+    void post_to_ui_(std::function<void()> fn) override;
+    void on_rooms_updated_() override;
+    void on_media_bytes_ready_(const std::string& cache_key,
+                                MediaKind kind,
+                                std::vector<uint8_t> bytes) override;
+    void generate_video_thumbnail_(const std::string& event_id,
+                                    const std::string& video_url) override;
 
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();
@@ -251,18 +232,13 @@ private:
     std::string     ctx_sticker_body_;
     GtkWidget*      status_bar_         = nullptr;
 
-    tesseract::RoomListState last_room_list_state_ = tesseract::RoomListState::Init;
-    tesseract::BackupState   last_backup_state_    = tesseract::BackupState::Unknown;
-    std::uint64_t            last_imported_keys_   = 0;
     guint                    sync_status_debounce_id_ = 0;
-    bool                     sync_progress_shown_     = false;
     void                     refresh_sync_status();
     static gboolean          on_sync_status_debounce_(gpointer user_data);
 
     std::unique_ptr<tk::gtk4::Surface>      recovery_surface_;
     tesseract::views::RecoveryBanner*       recovery_shared_   = nullptr;
     std::unique_ptr<tk::NativeTextField>    recovery_key_field_;
-    bool                                    recovery_banner_dismissed_ = false;
 
     // Sidebar user identity strip.
     GtkWidget*      user_strip_       = nullptr;
@@ -276,62 +252,14 @@ private:
     std::unique_ptr<tk::gtk4::Surface>            account_picker_surface_;
     tesseract::views::AccountPicker*              account_picker_         = nullptr;
 
-    // Multi-account state. client_ and event_handler_ are non-owning
-    // aliases of accounts_[active_account_index_]->client / ->bridge,
-    // repointed by switch_active_account().
-    std::vector<std::unique_ptr<tesseract::AccountSession>> accounts_;
-    int              active_account_index_ = -1;
-    tesseract::Client*  client_        = nullptr;   // non-owning alias
-    EventHandler*       event_handler_ = nullptr;   // non-owning alias
-
-    // Per-account room snapshot cache, keyed by user_id.
-    std::unordered_map<std::string, std::vector<tesseract::RoomInfo>> per_account_rooms_;
-
-    // In-flight login (OAuth into a temp dir; rename on success).
-    std::unique_ptr<tesseract::Client> pending_login_client_;
-    std::filesystem::path              pending_login_temp_dir_;
-    bool                               pending_login_is_add_account_ = false;
-    int                                add_account_return_idx_       = -1;
-
-    // Cached identity for the active account (repopulated by switch_active_account).
-    std::string     my_user_id_;
-    std::string     my_display_name_;
-    std::string     my_avatar_url_;
-
     std::unique_ptr<LinuxGtkTrayIcon>     tray_;
-    std::vector<tesseract::RoomInfo>  rooms_;
-    std::string                    current_room_id_;
-    std::string                    pending_restore_room_;
     std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
 
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
-
-    std::unordered_set<std::string>                              voice_prefetched_;
-    std::unordered_set<std::string> video_thumb_in_flight_;
-
-    struct AnimatedImage {
-        std::vector<std::unique_ptr<tk::Image>> frames;
-        std::vector<int>                         delays_ms;
-        std::size_t                              current        = 0;
-        std::int64_t                             next_advance_ms = 0;
-    };
-    std::unordered_map<std::string, AnimatedImage>               tk_anim_images_;
-    guint                                                         tk_anim_tick_id_ = 0;
-
-    std::unordered_set<std::string>                              sticker_fetches_in_flight_;
+    guint              tk_anim_tick_id_ = 0;
 
     guint        search_debounce_id_  = 0;
     guint        scroll_debounce_id_  = 0;
     std::string  search_pending_text_;
-
-    std::unordered_set<std::string>                              reply_details_requested_;
-
-    std::vector<std::string>                               space_stack_;
-
-    struct PaginationState { bool in_flight = false; bool reached_start = false; };
-    std::unordered_map<std::string, PaginationState> pagination_;
-    static constexpr std::uint16_t kPaginationBatch = 50;
 };
 
 } // namespace gtk4
