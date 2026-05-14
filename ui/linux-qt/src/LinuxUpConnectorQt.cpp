@@ -6,6 +6,7 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QStringList>
+#include <QUrl>
 #include <cctype>
 #include <unordered_map>
 
@@ -219,12 +220,18 @@ void LinuxUpConnectorQt::stop() {
 
 void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint) {
     if (!client_) return;
+    // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
+    // By UP convention the push provider exposes a Matrix gateway at that path.
+    QUrl url(QString::fromStdString(endpoint));
+    url.setPath(QStringLiteral("/_matrix/push/v1/notify"));
+    url.setQuery(QString{});
+    url.setFragment(QString{});
     client_->register_pusher(
         token_,
         "im.gnomos.tesseract",
         "Tesseract",
         "Linux Desktop",
-        endpoint,
+        url.toString().toStdString(),
         "en");
 }
 

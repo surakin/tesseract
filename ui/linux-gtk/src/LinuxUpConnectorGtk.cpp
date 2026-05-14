@@ -282,12 +282,23 @@ void LinuxUpConnectorGtk::stop() {
 
 void LinuxUpConnectorGtk::on_new_endpoint(const std::string& endpoint) {
     if (!client_) return;
+    // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
+    // By UP convention the push provider exposes a Matrix gateway at that path.
+    std::string gateway = endpoint;
+    const std::string prefix = "://";
+    auto host_start = gateway.find(prefix);
+    if (host_start != std::string::npos) {
+        auto path_start = gateway.find('/', host_start + prefix.size());
+        if (path_start != std::string::npos)
+            gateway.erase(path_start);
+    }
+    gateway += "/_matrix/push/v1/notify";
     client_->register_pusher(
         token_,
         "im.gnomos.tesseract",
         "Tesseract",
         "Linux Desktop",
-        endpoint,
+        gateway,
         "en");
 }
 
