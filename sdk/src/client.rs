@@ -2074,6 +2074,7 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     #[cfg(not(test))]
+    #[allow(deprecated)]
     pub fn get_url_preview(&mut self, url: &str) -> String {
         use ruma::api::client::media::get_media_preview::v3::Request;
 
@@ -2083,7 +2084,6 @@ impl ClientFfi {
         let url_str = url.to_owned();
         let stop_rx = self.stop_rx.clone();
         self.rt.block_on(async move {
-            #[allow(deprecated)]
             let req = Request::new(url_str);
             tokio::select! {
                 result = async { client.send(req).await } => {
