@@ -2141,6 +2141,18 @@ void MainWindow::switchActiveAccount(int new_idx) {
     if (it != per_account_rooms_.end()) {
         rooms_ = it->second;
         refreshRoomList();
+        // Rooms are already in cache — try to restore the last open room
+        // immediately. on_rooms_updated_ handles the async case (no cache).
+        if (!pending_restore_room_.empty()) {
+            for (const auto& r : rooms_) {
+                if (r.id == pending_restore_room_ && !r.is_space) {
+                    std::string target = std::move(pending_restore_room_);
+                    pending_restore_room_.clear();
+                    onRoomSelected(target);
+                    break;
+                }
+            }
+        }
     } else {
         rooms_.clear();
         refreshRoomList();
