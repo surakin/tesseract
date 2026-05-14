@@ -1687,7 +1687,7 @@ void MainWindow::refreshRoomList() {
         for (const auto& r : rooms_)
             if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         for (const auto& r : rooms_)
-            if ( r.is_space) filtered.push_back(r);
+            if ( r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         showRooms(filtered);
         roomNavBar_->setVisible(false);
     } else {
