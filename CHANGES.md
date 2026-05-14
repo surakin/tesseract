@@ -13,6 +13,8 @@
 - **Account-data prefs (`im.gnomos.tesseract`) — all four platforms**: `last_room` and future prefs stored as Matrix account-data instead of a local file; `load_prefs` / `save_prefs` / `on_account_prefs_updated` FFI; 6 C++ tests + 2 Rust tests.
 - **Recent emoji (MSC4356)**: `m.recent_emoji` account-data with stable → unstable → legacy read precedence; `sdk/src/recent_emoji.rs` with move-to-front, 100-entry cap; 16 Rust unit tests.
 - **Initial-sync + key-backfill progress in status bar — Qt6 / GTK4 / Win32**: `room_list_state_code()` FFI; `on_room_list_state` callback; "Syncing rooms…" / "Downloading encryption keys (N)…" status text with 300 ms debounce.
+- **Initial-sync progress in window title — macOS**: `on_room_list_state_ui_()` override in `MacShell` appends "— Syncing rooms…" / "— Reconnecting…" / "— Downloading encryption keys (N)…" to the window title; clears to "Tesseract" on Running. `pending_restore_room_` navigation gated on `RoomListState::Running` to avoid a data race in matrix-sdk-ui during initial timeline subscription.
+- **`ShellBase` / `EventHandlerBase` refactor**: Extracted all platform-agnostic shell state and event-marshaling logic into `ui/shared/app/ShellBase.h` / `ShellBase.cpp` and `EventHandlerBase.h` / `EventHandlerBase.cpp`. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; macOS uses composition (`MacShell : public ShellBase` held as `std::unique_ptr<MacShell>` in `MainWindowController`) with C++ `using` declarations in a `public:` section of `MacShell` to expose protected members to ObjC++ code.
 - **i18n — Qt6 + GTK4**: Qt6 uses `QObject::tr()` + `QTranslator`; GTK4 uses GNU gettext; all user-visible shell strings wrapped; CMake extract targets.
 
 ## UI Toolkit (`tesseract_tk`)

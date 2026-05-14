@@ -78,6 +78,8 @@ ui/
 
 **`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views (LoginView, RoomListView, MessageListView, EmojiPicker, RecoveryBanner, ComposeBar) live under `views/`. Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
 
+**`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`.
+
 **`ui/*/` (C++)** — Each platform target is a thin native shell that owns the window/menu/AX surface and mounts one or more `tk::*::Surface`s hosting shared views. Each shell implements `IEventHandler`. Because Rust callbacks arrive on worker threads, the shells route through `tk::Host::post_to_ui`, which is backed by `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), and `dispatch_async(dispatch_get_main_queue())` (macOS).
 
 ### Key API surface (`client/include/tesseract/`)
@@ -126,8 +128,10 @@ Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ct
 | `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` overlays |
 | `ui/shared/tk/widget.h` | Widget tree base: measure → arrange → paint + pointer dispatch |
 | `ui/shared/views/*.h` | Cross-platform views mounted by every native shell |
+| `ui/shared/app/ShellBase.h` | Platform-agnostic shell state + pure-virtual hooks shared by all four shells |
+| `ui/shared/app/EventHandlerBase.h` | `IEventHandler` adapter: marshals SDK callbacks → UI thread → `handle_*_ui_()` virtuals |
 | `ui/linux-qt/src/MainWindow.h` | Qt6 shell with `EventBridge` for thread marshaling |
-| `ui/macos/src/MainWindowController.mm` | AppKit shell (`NSWindowController` + `NSSplitView`) |
+| `ui/macos/src/MainWindowController.mm` | AppKit shell (`NSWindowController` + `NSSplitView`); uses `MacShell : ShellBase` composition |
 
 ## Roadmap
 
@@ -182,7 +186,6 @@ Done: inline images, stickers, reply-to, message editing, voice messages, Compos
 - **Sticker picker placeholders on GTK4** — GTK4 still needs the worker-fetch hookup for `StickerPicker` / `EmojiPicker` custom-pack tabs; `tk::AsyncImageCache` consolidation also pending.
 - **Win32 sticker right-click context menu missing** — `WM_RBUTTONUP` on the message surface should hit-test via `sticker_hit_at` and pop a `TrackPopupMenu` calling `save_sticker_to_user_pack`.
 - **`save_sticker_to_user_pack` posts empty `info`** — right-click handlers pass `"{}"` for `info_json`; fix: thread `info_json` through `MessageListView::StickerHit`.
-- **Initial-sync progress not shown on macOS** — `on_room_list_state` is wired but `MainWindowController.mm` doesn't override it (no status bar). Fix: thin status label below the sidebar user strip, or append to window title.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
 - **Qt6 sidebar user strip not yet using shared `UserInfo` widget** — still QLabel-based; cosmetic refactor pending.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
