@@ -47,6 +47,14 @@ const HTML_FAILURE: &str = "<!doctype html><html><head><meta charset='utf-8'>\
 text-align:center;padding:4em'><h1>Sign-in failed.</h1>\
 <p>Return to Tesseract for details.</p></body></html>";
 
+fn build_device_display_name() -> Option<String> {
+    const PLATFORM: &str = env!("TESSERACT_UI_PLATFORM");
+    hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .map(|host| format!("Tesseract on {host} ({PLATFORM})"))
+}
+
 /// State carried between `begin` and `await_callback`.
 pub struct PendingFlow {
     /// The half-built client; `finish_login` populates it with tokens.
@@ -123,12 +131,16 @@ pub async fn begin(
     // 5. Ask the SDK for the authorisation URL. PKCE verifier, state, and
     //    nonce are generated inside `OAuth::login()`; they're held in the
     //    `Client` until `finish_login` is called on the same instance.
-    let auth_data = client
+    let mut auth_data = client
         .oauth()
         .login(redirect_url, None /* device_id */, Some(registration_data), None /* additional_scopes */)
         .build()
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;
+
+    if let Some(name) = build_device_display_name() {
+        auth_data.url.query_pairs_mut().append_pair("device_display_name", &name);
+    }
 
     Ok(BeginResult {
         auth_url:     auth_data.url.to_string(),
@@ -207,13 +219,13 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
     // Best-effort: set the device display name so the user can tell sessions
     // apart. ClientMetadata.client_name only feeds the OAuth consent page;
     // the device display name comes from PUT /devices.
-    if let (Some(device_id), Some(host)) = (
+    if let (Some(device_id), Some(_host)) = (
         flow.client.device_id(),
         hostname::get().ok().and_then(|h| h.into_string().ok()),
     ) {
         use ruma::api::client::device::update_device::v3;
-        const PLATFORM: &str = env!("TESSERACT_UI_PLATFORM");
-        let display_name = format!("Tesseract on {host} ({PLATFORM})");
+        let display_name = build_device_display_name()
+            .unwrap_or_else(|| "Tesseract".to_owned());
         let mut req = v3::Request::new(device_id.to_owned());
         req.display_name = Some(display_name.clone());
         if let Err(e) = flow.client.send(req).await {

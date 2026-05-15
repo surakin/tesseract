@@ -2577,11 +2577,17 @@ impl ClientFfi {
         let emoji_cache  = Arc::clone(&self.sas_emoji_cache);
 
         match self.rt.block_on(async move {
-            let enc    = client.encryption();
-            let device = enc.get_own_device().await?.ok_or_else(|| {
-                anyhow::anyhow!("own device not found")
-            })?;
-            let req = device.request_verification().await?;
+            let user_id = client.user_id()
+                .ok_or_else(|| anyhow::anyhow!("not logged in"))?
+                .to_owned();
+            // Use the user identity (not the own device) so the request is
+            // broadcast to all other E2EE sessions — not looped back to this
+            // device, which would show an unwanted incoming-request banner.
+            let identity = client.encryption()
+                .get_user_identity(&user_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("own identity not found"))?;
+            let req = identity.request_verification().await?;
 
             let flow_id = req.flow_id().to_owned();
             let user_id = req.own_user_id().as_str().to_owned();

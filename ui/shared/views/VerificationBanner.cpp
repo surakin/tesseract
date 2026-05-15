@@ -71,6 +71,15 @@ VerificationBanner::VerificationBanner() {
     dismiss->set_min_size({ kDismissSide, kDismissSide });
     dismiss_ = add_child(std::move(dismiss));
 
+    // "Use recovery key" link — visible in Prompt state only
+    auto link = std::make_unique<tk::Button>(
+        "Use recovery key", std::function<void()>{}, tk::Button::Variant::Subtle);
+    link->set_on_click([this] {
+        if (on_use_recovery_key) on_use_recovery_key();
+    });
+    link->set_min_size({ 0.0f, kBtnH });
+    link_ = add_child(std::move(link));
+
     apply_state();
 }
 
@@ -151,6 +160,7 @@ void VerificationBanner::apply_state() {
     if (primary_)   { primary_->set_label(primary_text);     primary_->set_visible(show_primary); }
     if (secondary_) { secondary_->set_label(secondary_text); secondary_->set_visible(show_secondary); }
     if (dismiss_)   { dismiss_->set_visible(show_dismiss); }
+    if (link_)      { link_->set_visible(state_ == State::Prompt); }
 }
 
 tk::Size VerificationBanner::measure(tk::LayoutCtx&, tk::Size constraints) {
@@ -240,6 +250,15 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         right = primary_rect_.x - kGap;
     }
 
+    link_rect_ = {};
+    if (link_ && link_->visible()) {
+        auto sz = link_->measure(ctx, { 200.0f, kBtnH });
+        link_rect_ = { right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f,
+                       sz.w, kBtnH };
+        link_->arrange(ctx, link_rect_);
+        right = link_rect_.x - kGap;
+    }
+
     label_rect_ = {
         bounds.x + kPadX,
         bounds.y + (bounds.h - 20.0f) * 0.5f,
@@ -308,9 +327,10 @@ void VerificationBanner::paint(tk::PaintCtx& ctx) {
     }
 
     // Normal state buttons
-    if (primary_ && primary_->visible())   primary_->paint(ctx);
+    if (primary_ && primary_->visible())     primary_->paint(ctx);
     if (secondary_ && secondary_->visible()) secondary_->paint(ctx);
-    if (dismiss_ && dismiss_->visible())   dismiss_->paint(ctx);
+    if (dismiss_ && dismiss_->visible())     dismiss_->paint(ctx);
+    if (link_ && link_->visible())           link_->paint(ctx);
 }
 
 } // namespace tesseract::views

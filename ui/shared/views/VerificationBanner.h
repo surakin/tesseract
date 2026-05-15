@@ -58,8 +58,9 @@ public:
     std::function<void()> on_match;       // ShowEmojis: emojis match
     std::function<void()> on_mismatch;    // ShowEmojis: emojis don't match
     std::function<void()> on_cancel;      // Waiting: cancel flow
-    std::function<void()> on_dismiss;     // Prompt / Cancelled: hide banner
-    std::function<void()> on_done;        // Done: fired after brief pause
+    std::function<void()> on_dismiss;          // Prompt / Cancelled: hide banner
+    std::function<void()> on_done;             // Done: fired after brief pause
+    std::function<void()> on_use_recovery_key; // Prompt: switch to recovery key flow
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
@@ -78,15 +79,17 @@ private:
     std::vector<VerificationEmoji> emojis_;  // up to 7 entries in ShowEmojis
 
     tk::Label*  label_   = nullptr;   // borrowed
-    tk::Button* primary_ = nullptr;   // borrowed — context-dependent action
-    tk::Button* secondary_ = nullptr; // borrowed — context-dependent dismiss/decline
-    tk::Button* dismiss_ = nullptr;   // borrowed — always visible in Prompt/Cancelled
+    tk::Button* primary_   = nullptr;  // borrowed — context-dependent action
+    tk::Button* secondary_ = nullptr;  // borrowed — context-dependent dismiss/decline
+    tk::Button* dismiss_   = nullptr;  // borrowed — always visible in Prompt/Cancelled
+    tk::Button* link_      = nullptr;  // borrowed — "Use recovery key" in Prompt state
 
     // Cached layout rects (computed in arrange)
     tk::Rect label_rect_     {};
     tk::Rect primary_rect_   {};
     tk::Rect secondary_rect_ {};
     tk::Rect dismiss_rect_   {};
+    tk::Rect link_rect_      {};
     // One rect per emoji tile in ShowEmojis state
     std::array<tk::Rect, kEmojiCount> emoji_rects_ {};
     std::array<tk::Rect, kEmojiCount> emoji_label_rects_ {};

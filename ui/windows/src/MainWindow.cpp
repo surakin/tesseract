@@ -481,6 +481,12 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 tesseract::views::VerificationBanner::State::Prompt);
             ShowWindow(verif_surface_->hwnd(), SW_SHOW);
             verif_banner_visible_ = true;
+            // Verification takes priority — hide the recovery banner if it
+            // appeared before the verification state callback arrived.
+            if (recovery_banner_visible_ && recovery_surface_ && recovery_surface_->hwnd()) {
+                ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+                recovery_banner_visible_ = false;
+            }
             on_size(0, 0);  // re-trigger layout
         }
     } else {
@@ -1488,6 +1494,13 @@ void MainWindow::on_create(HWND hwnd) {
             verif_banner_visible_ = false;
             on_size(0, 0);
         };
+        verif_shared_->on_use_recovery_key = [this] {
+            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            verif_banner_visible_ = false;
+            maybe_show_recovery_banner();
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
+        };
         verif_surface_->set_root(std::move(banner));
     }
     if (HWND vb = verif_surface_->hwnd()) {
@@ -1835,6 +1848,8 @@ void MainWindow::on_login_succeeded() {
     std::string user_id   = pending_login_client_->get_user_id();
     std::string json      = pending_login_client_->export_session();
     pending_login_client_.reset();   // closes SQLite in the temp dir
+    // Null out the dangling pointer before any reset() calls below.
+    if (login_view_) login_view_->set_client(nullptr);
 
     namespace fs = std::filesystem;
     fs::path final_dir = tesseract::SessionStore::account_dir(user_id);
@@ -1846,6 +1861,8 @@ void MainWindow::on_login_succeeded() {
             // Rename failed (e.g. cross-device); leave temp dir and bail.
             pending_login_temp_dir_.clear();
             if (login_view_) {
+                pending_login_client_ = std::make_unique<tesseract::Client>();
+                login_view_->set_client(pending_login_client_.get());
                 login_view_->set_status_message(L"Failed to save session.");
                 login_view_->reset();
             }
@@ -1860,7 +1877,11 @@ void MainWindow::on_login_succeeded() {
         tesseract::SessionStore::sdk_store_dir(user_id).string());
     if (!sess->client->restore_session(json)) {
         tesseract::SessionStore::clear_account(user_id);
-        if (login_view_) login_view_->reset();
+        if (login_view_) {
+            pending_login_client_ = std::make_unique<tesseract::Client>();
+            login_view_->set_client(pending_login_client_.get());
+            login_view_->reset();
+        }
         return;
     }
     sess->user_id      = sess->client->get_user_id();
@@ -2516,6 +2537,7 @@ void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_->needs_recovery())  return;
     if (recovery_banner_visible_) return;
+    if (verif_banner_visible_) return;
     if (!recovery_surface_ || !recovery_surface_->hwnd()) return;
 
     if (recovery_shared_) {
