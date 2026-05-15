@@ -179,6 +179,32 @@ struct RoomInfo {
     std::string topic_html;
 };
 
+/// MSC3266 room summary — metadata about a room fetched without joining.
+/// `room_id` is empty when the lookup failed (check before using).
+struct RoomSummary {
+    std::string room_id;
+    std::string canonical_alias;  ///< `#alias:server` or empty
+    std::string name;
+    std::string topic;
+    std::string avatar_url;       ///< mxc:// URI or empty
+    uint32_t    num_joined_members = 0;
+    /// "public", "invite", "knock", "knock_restricted",
+    /// "restricted", "private", or "unknown"
+    std::string join_rule;
+    bool        world_readable  = false;
+    bool        guest_can_join  = false;
+    std::string encryption;       ///< encryption algorithm or empty when not encrypted
+    bool        is_space         = false;
+    /// Current user's membership in this room: "join", "invite",
+    /// "leave", "ban", "knock", or empty when unknown / unauthenticated.
+    std::string membership;
+
+    bool ok()     const { return !room_id.empty(); }
+    bool is_join_open() const { return join_rule == "public" || join_rule == "knock"
+                                    || join_rule == "restricted"
+                                    || join_rule == "knock_restricted"; }
+};
+
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed
 /// `state` field carried over the FFI in `BackupProgress` (see
 /// `sdk/src/bridge.rs`).

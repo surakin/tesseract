@@ -2,6 +2,7 @@
 #include "LoginView.h"
 #include "EmojiPicker.h"
 #include "StickerPicker.h"
+#include "JoinRoomDialog.h"
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -171,6 +172,9 @@ MainWindow::MainWindow(QWidget* parent)
         roomSearchPendingText_.clear();
         if (roomListView_) roomListView_->set_search_text("");
         refreshRoomList();
+    };
+    roomListView_->on_join_room_requested = [this] {
+        if (joinRoomDialog_) joinRoomDialog_->openDialog();
     };
 
     // ---- User identity strip (footer) ----
@@ -678,6 +682,17 @@ MainWindow::MainWindow(QWidget* parent)
             client_->send_sticker(current_room_id_, body, img.url, img.info_json);
             stickerPicker_->hide();
         };
+
+    joinRoomDialog_ = new JoinRoomDialog(this);
+    joinRoomDialog_->setClient(client_);
+    joinRoomDialog_->setAvatarProvider(
+        [this](const std::string& mxc_url) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc_url);
+            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
+        });
+    joinRoomDialog_->onJoined = [this](const std::string& room_id) {
+        navigate_to_room(room_id);
+    };
 
     statusBar()->showMessage(tr("Not logged in"));
     // Room selection is delivered through RoomListView's on_room_selected

@@ -752,6 +752,19 @@ pub mod ffi {
         /// Blocks the calling thread — call only from a worker thread.
         fn get_url_preview(self: &mut ClientFfi, url: &str) -> String;
 
+        // ----- MSC3266 room summary / join -----
+
+        /// Fetch a room summary (name, topic, avatar, member count, join rule,
+        /// encryption state) for any room the homeserver can see, whether or
+        /// not the client is a member. Accepts a room ID (`!id:server`) or
+        /// alias (`#alias:server`). Returns a JSON object on success or an
+        /// empty string on error. Blocks the calling thread.
+        fn get_room_summary(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
+
+        /// Join a room by its ID or alias. Returns true on success.
+        /// Blocks the calling thread — call only from a worker thread.
+        fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> bool;
+
         // ----- Spaces -----
 
         /// Returns the room IDs of all direct children declared by a space

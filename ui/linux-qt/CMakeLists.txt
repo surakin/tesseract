@@ -13,6 +13,8 @@ qt_add_executable(tesseract_qt
     src/EmojiPicker.h         # MOC input
     src/StickerPicker.cpp
     src/StickerPicker.h       # MOC input
+    src/JoinRoomDialog.cpp
+    src/JoinRoomDialog.h      # MOC input
     src/LinuxNotifier.cpp
     src/LinuxNotifier.h       # MOC input
     src/LinuxUpConnectorQt.cpp

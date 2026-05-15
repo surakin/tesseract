@@ -2414,6 +2414,100 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // MSC3266 room summary / join
+    // -----------------------------------------------------------------------
+
+    #[cfg(not(test))]
+    pub fn get_room_summary(&mut self, room_id_or_alias: &str) -> String {
+        use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+        use matrix_sdk::ruma::room::{JoinRuleSummary, RoomType};
+
+        let Some(client) = self.client.clone() else { return String::new() };
+        if room_id_or_alias.is_empty() { return String::new(); }
+
+        let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
+            Ok(id) => id,
+            Err(_) => return String::new(),
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let req = Request::new(id, vec![]);
+            tokio::select! {
+                result = client.send(req) => {
+                    match result {
+                        Ok(resp) => {
+                            let s = &resp.summary;
+                            let join_rule = match &s.join_rule {
+                                JoinRuleSummary::Public        => "public",
+                                JoinRuleSummary::Invite        => "invite",
+                                JoinRuleSummary::Knock         => "knock",
+                                JoinRuleSummary::KnockRestricted(_) => "knock_restricted",
+                                JoinRuleSummary::Restricted(_) => "restricted",
+                                JoinRuleSummary::Private       => "private",
+                                _                              => "unknown",
+                            };
+                            let encryption = s.encryption.as_ref()
+                                .map(|e| e.as_str())
+                                .unwrap_or("");
+                            let is_space = matches!(s.room_type, Some(RoomType::Space));
+                            let membership = resp.membership.as_ref()
+                                .map(|m| m.as_str())
+                                .unwrap_or("");
+                            serde_json::json!({
+                                "room_id":            s.room_id.as_str(),
+                                "canonical_alias":    s.canonical_alias.as_ref().map(|a| a.as_str()).unwrap_or(""),
+                                "name":               s.name.as_deref().unwrap_or(""),
+                                "topic":              s.topic.as_deref().unwrap_or(""),
+                                "avatar_url":         s.avatar_url.as_ref().map(|u| u.as_str()).unwrap_or(""),
+                                "num_joined_members": u64::from(s.num_joined_members),
+                                "join_rule":          join_rule,
+                                "world_readable":     s.world_readable,
+                                "guest_can_join":     s.guest_can_join,
+                                "encryption":         encryption,
+                                "is_space":           is_space,
+                                "membership":         membership,
+                            }).to_string()
+                        }
+                        Err(_) => String::new(),
+                    }
+                }
+                _ = stop_fut(stop_rx) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn get_room_summary(&mut self, _room_id_or_alias: &str) -> String {
+        String::new()
+    }
+
+    #[cfg(not(test))]
+    pub fn join_room(&mut self, room_id_or_alias: &str) -> bool {
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+
+        let Some(client) = self.client.clone() else { return false };
+        if room_id_or_alias.is_empty() { return false; }
+
+        let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
+            Ok(id) => id,
+            Err(_) => return false,
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            tokio::select! {
+                result = client.join_room_by_id_or_alias(&id, &[]) => result.is_ok(),
+                _ = stop_fut(stop_rx) => false,
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn join_room(&mut self, _room_id_or_alias: &str) -> bool {
+        false
+    }
+
+    // -----------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // -----------------------------------------------------------------------
 

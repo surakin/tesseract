@@ -82,6 +82,10 @@ public:
     // The host should clear the NativeTextField text and reset the search.
     std::function<void()> on_search_clear;
 
+    // Fires when the user clicks the + button in the search header.
+    // The host should open the JoinRoomView dialog.
+    std::function<void()> on_join_room_requested;
+
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
@@ -133,8 +137,10 @@ private:
     tk::ListView*                            list_                  = nullptr;
     tk::Rect                                 search_field_rect_     {};
     tk::Rect                                 search_clear_rect_     {};
+    tk::Rect                                 join_room_rect_        {};
     bool                                     search_field_visible_  = false;
     bool                                     press_search_clear_    = false;
+    bool                                     press_join_room_       = false;
 
     // Last-known selected room ID, preserved across filter/collapse changes
     // when the selection is temporarily hidden.

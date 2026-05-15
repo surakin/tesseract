@@ -447,6 +447,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_list_view_->set_search_text("");
         refresh_room_list();
     };
+    room_list_view_->on_join_room_requested = [this] { open_join_room_dialog(); };
 
     GtkWidget* room_surface_widget = room_surface_->widget();
     gtk_widget_set_vexpand(room_surface_widget, TRUE);
@@ -869,6 +870,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     build_emoji_popover();
     build_sticker_popover();
     build_sticker_context_menu();
+    build_join_room_dialog();
 
     // Right-click on the chat surface: hit-test sticker rects and
     // pop the context menu. Gesture is added after chat_surface_ +
@@ -2907,6 +2909,115 @@ void MainWindow::on_user_strip_left_click_(GtkGestureClick* gesture,
     auto* self = static_cast<MainWindow*>(user_data);
     gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
     self->open_account_picker(x, y);
+}
+
+// ---------------------------------------------------------------------------
+// Join room dialog — transient GtkWindow hosting JoinRoomView.
+// ---------------------------------------------------------------------------
+
+void MainWindow::build_join_room_dialog() {
+    join_room_dialog_window_ = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(join_room_dialog_window_), _("Join a Room"));
+    gtk_window_set_modal(GTK_WINDOW(join_room_dialog_window_), TRUE);
+    gtk_window_set_transient_for(GTK_WINDOW(join_room_dialog_window_),
+                                  GTK_WINDOW(window_));
+    gtk_window_set_resizable(GTK_WINDOW(join_room_dialog_window_), FALSE);
+    gtk_window_set_default_size(
+        GTK_WINDOW(join_room_dialog_window_),
+        static_cast<int>(tesseract::views::JoinRoomView::kPreferredW),
+        static_cast<int>(tesseract::views::JoinRoomView::kPreferredH));
+
+    join_room_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+
+    auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
+    join_room_shared_ = jrv.get();
+
+    join_room_shared_->set_avatar_provider(
+        [this](const std::string& mxc_url) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc_url);
+            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
+        });
+
+    join_room_shared_->on_lookup_requested =
+        [this](const std::string& alias) {
+            if (!client_ || alias.empty()) return;
+            join_room_shared_->set_state(
+                tesseract::views::JoinRoomView::State::Loading);
+            if (join_room_surface_) join_room_surface_->relayout();
+            run_async_([this, alias] {
+                tesseract::RoomSummary s = client_->get_room_summary(alias);
+                post_to_ui_([this, s = std::move(s)] {
+                    if (!join_room_shared_) return;
+                    if (s.ok())
+                        join_room_shared_->set_preview(s);
+                    else
+                        join_room_shared_->set_error(_("Room not found."));
+                    if (join_room_surface_) join_room_surface_->relayout();
+                });
+            });
+        };
+
+    join_room_shared_->on_join_requested =
+        [this](const std::string& room_id_or_alias) {
+            if (!client_ || room_id_or_alias.empty()) return;
+            join_room_shared_->set_state(
+                tesseract::views::JoinRoomView::State::Joining);
+            if (join_room_surface_) join_room_surface_->relayout();
+            run_async_([this, room_id_or_alias] {
+                bool ok = client_->join_room(room_id_or_alias);
+                std::string rid = ok ? room_id_or_alias : "";
+                post_to_ui_([this, ok, rid] {
+                    if (!join_room_shared_) return;
+                    if (ok) {
+                        if (join_room_dialog_window_)
+                            gtk_widget_set_visible(join_room_dialog_window_, FALSE);
+                        navigate_to_room(rid);
+                    } else {
+                        join_room_shared_->set_error(_("Join failed."));
+                        if (join_room_surface_) join_room_surface_->relayout();
+                    }
+                });
+            });
+        };
+
+    join_room_shared_->on_cancel = [this] {
+        if (join_room_dialog_window_)
+            gtk_widget_set_visible(join_room_dialog_window_, FALSE);
+    };
+
+    join_room_surface_->set_root(std::move(jrv));
+
+    join_room_alias_field_ = join_room_surface_->host().make_text_field();
+    join_room_alias_field_->set_placeholder(_("#room:server.org"));
+    join_room_alias_field_->set_on_changed(
+        [this](const std::string& text) {
+            if (join_room_shared_) join_room_shared_->set_alias_text(text);
+        });
+    join_room_surface_->set_on_layout([this] {
+        if (join_room_alias_field_ && join_room_shared_) {
+            join_room_alias_field_->set_rect(
+                join_room_shared_->alias_field_rect());
+            join_room_alias_field_->set_visible(
+                join_room_shared_->alias_field_visible());
+        }
+    });
+
+    GtkWidget* surface_widget = join_room_surface_->widget();
+    gtk_window_set_child(GTK_WINDOW(join_room_dialog_window_), surface_widget);
+}
+
+void MainWindow::open_join_room_dialog() {
+    if (!join_room_dialog_window_) return;
+
+    if (join_room_shared_) {
+        join_room_shared_->set_state(tesseract::views::JoinRoomView::State::Idle);
+        join_room_shared_->set_alias_text("");
+    }
+    if (join_room_alias_field_) join_room_alias_field_->set_text("");
+    if (join_room_surface_)     join_room_surface_->relayout();
+
+    gtk_window_present(GTK_WINDOW(join_room_dialog_window_));
+    if (join_room_alias_field_) join_room_alias_field_->set_focused(true);
 }
 
 } // namespace gtk4

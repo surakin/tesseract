@@ -26,6 +26,7 @@
 #include "views/RoomListView.h"
 #include "views/RoomView.h"
 #include "views/StickerPicker.h"
+#include "views/JoinRoomView.h"
 #include "views/UserInfo.h"
 
 #include <atomic>
@@ -127,6 +128,8 @@ private:
     void           build_emoji_popover();
     void           build_sticker_popover();
     void           toggle_sticker_picker();
+    void           build_join_room_dialog();
+    void           open_join_room_dialog();
     void           build_sticker_context_menu();
 public:
     void emoji_selected(const std::string& glyph);
@@ -240,6 +243,11 @@ private:
 
     std::unique_ptr<tk::gtk4::Surface>       vid_viewer_surface_;
     tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;
+
+    GtkWidget*      join_room_dialog_window_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>      join_room_surface_;
+    tesseract::views::JoinRoomView*         join_room_shared_ = nullptr;
+    std::unique_ptr<tk::NativeTextField>    join_room_alias_field_;
 
     GtkWidget*      sticker_ctx_menu_     = nullptr;
     GSimpleActionGroup* sticker_ctx_actions_ = nullptr;

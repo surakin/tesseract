@@ -772,6 +772,33 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE: {
+        // lParam owns a heap-allocated RoomSummary (or empty room_id = error).
+        auto* s = reinterpret_cast<tesseract::RoomSummary*>(lParam);
+        if (self->join_room_shared_) {
+            if (s->ok())
+                self->join_room_shared_->set_preview(*s);
+            else
+                self->join_room_shared_->set_error("Room not found.");
+        }
+        if (self->join_room_surface_) self->join_room_surface_->relayout();
+        delete s;
+        return 0;
+    }
+    case WM_TESSERACT_JOIN_ROOM_DONE: {
+        // wParam = 1 on success. lParam owns a heap-allocated room_id string.
+        auto* room_id = reinterpret_cast<std::string*>(lParam);
+        bool ok = (wParam == 1);
+        if (ok && self->join_room_shared_) {
+            if (self->hJoinRoom_) ShowWindow(self->hJoinRoom_, SW_HIDE);
+            if (!room_id->empty()) self->navigate_to_room(*room_id);
+        } else if (!ok && self->join_room_shared_) {
+            self->join_room_shared_->set_error("Join failed.");
+            if (self->join_room_surface_) self->join_room_surface_->relayout();
+        }
+        delete room_id;
+        return 0;
+    }
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
             if (self->vid_viewer_ && self->vid_viewer_->is_open()) {
@@ -956,6 +983,7 @@ void MainWindow::on_create(HWND hwnd) {
             room_list_view_->set_search_text("");
             refresh_room_list();
         };
+        room_list_view_->on_join_room_requested = [this] { open_join_room_dialog(); };
     }
     if (HWND rs = room_surface_->hwnd()) {
         SetWindowPos(rs, nullptr, 0, 0, 240, 600,
@@ -3246,6 +3274,138 @@ void MainWindow::refresh_sticker_picker() {
         sticker_picker_shared_->invalidate_image_cache();
     }
     if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+}
+
+// ---------------------------------------------------------------------------
+// Join room dialog — centred WS_POPUP hosting JoinRoomView.
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr const wchar_t* kJoinRoomClass = L"TesseractJoinRoom";
+} // namespace
+
+void MainWindow::ensure_join_room_created() {
+    if (hJoinRoom_) return;
+
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = DefWindowProcW;
+        wc.hInstance     = hInst_;
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        wc.lpszClassName = kJoinRoomClass;
+        RegisterClassExW(&wc);
+        registered = true;
+    }
+
+    hJoinRoom_ = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        kJoinRoomClass, L"Join a Room",
+        WS_POPUP | WS_BORDER,
+        0, 0, kJoinRoomPickW, kJoinRoomPickH,
+        hwnd_, nullptr, hInst_, nullptr);
+    if (!hJoinRoom_) return;
+
+    join_room_surface_ =
+        std::make_unique<tk::win32::Surface>(hInst_, hJoinRoom_, tk::Theme::light());
+
+    auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
+    join_room_shared_ = jrv.get();
+
+    join_room_shared_->set_avatar_provider(
+        [this](const std::string& mxc_url) -> const tk::Image* {
+            auto it = tk_avatars_.find(mxc_url);
+            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
+        });
+
+    join_room_shared_->on_lookup_requested =
+        [this](const std::string& alias) {
+            if (!client_ || alias.empty()) return;
+            if (join_room_shared_)
+                join_room_shared_->set_state(
+                    tesseract::views::JoinRoomView::State::Loading);
+            if (join_room_surface_) join_room_surface_->relayout();
+            HWND target = hwnd_;
+            run_async_([this, alias, target] {
+                auto* s = new tesseract::RoomSummary(
+                    client_->get_room_summary(alias));
+                PostMessageW(target, WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE,
+                             0, reinterpret_cast<LPARAM>(s));
+            });
+        };
+
+    join_room_shared_->on_join_requested =
+        [this](const std::string& room_id_or_alias) {
+            if (!client_ || room_id_or_alias.empty()) return;
+            if (join_room_shared_)
+                join_room_shared_->set_state(
+                    tesseract::views::JoinRoomView::State::Joining);
+            if (join_room_surface_) join_room_surface_->relayout();
+            HWND target = hwnd_;
+            run_async_([this, room_id_or_alias, target] {
+                bool ok = client_->join_room(room_id_or_alias);
+                auto* rid = new std::string(ok ? room_id_or_alias : "");
+                PostMessageW(target, WM_TESSERACT_JOIN_ROOM_DONE,
+                             ok ? 1 : 0, reinterpret_cast<LPARAM>(rid));
+            });
+        };
+
+    join_room_shared_->on_cancel = [this] {
+        if (hJoinRoom_) ShowWindow(hJoinRoom_, SW_HIDE);
+    };
+
+    join_room_surface_->set_root(std::move(jrv));
+
+    if (HWND s = join_room_surface_->hwnd())
+        SetWindowPos(s, nullptr, 0, 0, kJoinRoomPickW, kJoinRoomPickH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+
+    join_room_alias_field_ = join_room_surface_->host().make_text_field();
+    join_room_alias_field_->set_placeholder("#room:server.org");
+    join_room_alias_field_->set_on_changed(
+        [this](const std::string& text) {
+            if (join_room_shared_) join_room_shared_->set_alias_text(text);
+        });
+
+    join_room_surface_->set_on_layout([this] {
+        if (join_room_alias_field_ && join_room_shared_) {
+            join_room_alias_field_->set_rect(
+                join_room_shared_->alias_field_rect());
+            join_room_alias_field_->set_visible(
+                join_room_shared_->alias_field_visible());
+        }
+    });
+}
+
+void MainWindow::open_join_room_dialog() {
+    ensure_join_room_created();
+    if (!hJoinRoom_) return;
+
+    if (IsWindowVisible(hJoinRoom_)) {
+        ShowWindow(hJoinRoom_, SW_HIDE);
+        return;
+    }
+
+    // Reset to Idle state.
+    if (join_room_shared_)
+        join_room_shared_->set_state(tesseract::views::JoinRoomView::State::Idle);
+    if (join_room_alias_field_) join_room_alias_field_->set_text("");
+    if (join_room_shared_)      join_room_shared_->set_alias_text("");
+
+    // Centre over the main window.
+    RECT rc{};
+    GetWindowRect(hwnd_, &rc);
+    int cx = (rc.left + rc.right)  / 2 - kJoinRoomPickW / 2;
+    int cy = (rc.top  + rc.bottom) / 2 - kJoinRoomPickH / 2;
+    SetWindowPos(hJoinRoom_, HWND_TOPMOST,
+                 cx, cy, kJoinRoomPickW, kJoinRoomPickH,
+                 SWP_NOACTIVATE);
+
+    ShowWindow(hJoinRoom_, SW_SHOWNOACTIVATE);
+    if (join_room_surface_) join_room_surface_->relayout();
+    if (join_room_alias_field_) join_room_alias_field_->set_focused(true);
 }
 
 void MainWindow::refresh_emoji_picker() {

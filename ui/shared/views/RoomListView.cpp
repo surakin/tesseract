@@ -439,23 +439,32 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     search_field_visible_ = wants_search;
 
     if (wants_search) {
+        const float btn_side = kSearchBarH - 2.0f * kSearchBarInsetY;
+
+        // "+" join-room button always anchored to the far right.
+        join_room_rect_ = {
+            bounds.x + bounds.w - kSearchBarInsetX - btn_side,
+            bounds.y + kSearchBarInsetY,
+            btn_side,
+            btn_side,
+        };
+
         search_field_rect_ = {
             bounds.x + kSearchBarInsetX,
             bounds.y + kSearchBarInsetY,
-            std::max(0.0f, bounds.w - 2 * kSearchBarInsetX),
+            std::max(0.0f, join_room_rect_.x - kSearchBarInsetX - (bounds.x + kSearchBarInsetX)),
             std::max(0.0f, kSearchBarH - 2 * kSearchBarInsetY),
         };
 
-        // Clear (×) button: shown on the right when the search query is
-        // non-empty.  Shrink the text field rect to leave room for it.
+        // Clear (×) button: shown to the left of "+" when the search query is
+        // non-empty.  Shrink the text field rect further to leave room for it.
         if (!search_text_.empty()) {
-            const float btn_side = kSearchBarH - 2.0f * kSearchBarInsetY;
-            const float btn_x    = bounds.x + bounds.w - kSearchBarInsetX - btn_side;
+            const float btn_x = join_room_rect_.x - kSearchBarInsetX - btn_side;
             search_clear_rect_ = {
                 btn_x,
                 bounds.y + kSearchBarInsetY,
                 btn_side,
-                btn_side
+                btn_side,
             };
             search_field_rect_.w = std::max(0.0f,
                 btn_x - kSearchBarInsetX - search_field_rect_.x);
@@ -473,6 +482,7 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     } else {
         search_field_rect_ = {};
         search_clear_rect_ = {};
+        join_room_rect_    = {};
     }
 }
 
@@ -502,6 +512,23 @@ void RoomListView::paint(tk::PaintCtx& ctx) {
                     col);
             }
         }
+
+        // Join room "+" button — always in the far right of the header.
+        if (!join_room_rect_.empty()) {
+            tk::TextStyle xs{};
+            xs.role = tk::FontRole::UiSemibold;
+            auto plus_lo = ctx.factory.build_text(std::string("+"), xs);
+            if (plus_lo) {
+                tk::Size sz = plus_lo->measure();
+                tk::Color col = press_join_room_
+                    ? ctx.theme.palette.text_primary
+                    : ctx.theme.palette.accent;
+                ctx.canvas.draw_text(*plus_lo,
+                    { join_room_rect_.x + (join_room_rect_.w - sz.w) * 0.5f,
+                      join_room_rect_.y + (join_room_rect_.h - sz.h) * 0.5f },
+                    col);
+            }
+        }
     }
     if (list_ && list_->visible()) list_->paint(ctx);
 }
@@ -509,8 +536,19 @@ void RoomListView::paint(tk::PaintCtx& ctx) {
 bool RoomListView::on_pointer_down(tk::Point local) {
     if (!list_) return false;
     press_search_clear_ = false;
+    press_join_room_    = false;
 
-    // Give the clear button priority over the header early-return.
+    // Join room "+" button — highest priority, always in header.
+    if (!join_room_rect_.empty()
+        && local.x >= join_room_rect_.x
+        && local.x <  join_room_rect_.x + join_room_rect_.w
+        && local.y >= join_room_rect_.y
+        && local.y <  join_room_rect_.y + join_room_rect_.h) {
+        press_join_room_ = true;
+        return true;
+    }
+
+    // Clear (×) button.
     if (!search_clear_rect_.empty()
         && local.x >= search_clear_rect_.x
         && local.x <  search_clear_rect_.x + search_clear_rect_.w
@@ -526,6 +564,18 @@ bool RoomListView::on_pointer_down(tk::Point local) {
 }
 
 void RoomListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_join_room_) {
+        press_join_room_ = false;
+        if (inside_self
+            && !join_room_rect_.empty()
+            && local.x >= join_room_rect_.x
+            && local.x <  join_room_rect_.x + join_room_rect_.w
+            && local.y >= join_room_rect_.y
+            && local.y <  join_room_rect_.y + join_room_rect_.h) {
+            if (on_join_room_requested) on_join_room_requested();
+        }
+        return;
+    }
     if (press_search_clear_) {
         press_search_clear_ = false;
         if (inside_self

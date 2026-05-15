@@ -32,6 +32,7 @@
 #include "views/RoomView.h"
 #include "views/VerificationBanner.h"
 #include "views/StickerPicker.h"
+#include "views/JoinRoomView.h"
 
 #include "views/AccountPicker.h"
 
@@ -70,8 +71,10 @@ constexpr UINT WM_TESSERACT_NOTIFY           = WM_APP + 17;
 constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE  = WM_APP + 21;
-constexpr UINT WM_TESSERACT_POST_TO_UI       = WM_APP + 22;
-constexpr UINT WM_TESSERACT_JUMP_DONE        = WM_APP + 23;
+constexpr UINT WM_TESSERACT_POST_TO_UI            = WM_APP + 22;
+constexpr UINT WM_TESSERACT_JUMP_DONE             = WM_APP + 23;
+constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
+constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE        = WM_APP + 26;
 
 namespace win32 {
 
@@ -249,6 +252,13 @@ private:
     void   toggle_sticker_picker();
     void   refresh_sticker_picker();
 
+    // ── Join room dialog ─────────────────────────────────────────────────
+    // A centred WS_POPUP HWND hosts JoinRoomView. Lookup and join run on
+    // worker threads and post WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE /
+    // WM_TESSERACT_JOIN_ROOM_DONE back to the UI thread.
+    void   ensure_join_room_created();
+    void   open_join_room_dialog();
+
     // When non-empty, the next emoji selection routes through
     // `Client::send_reaction` for this event_id rather than into compose.
     std::string                      pending_reaction_event_id_;
@@ -262,8 +272,10 @@ private:
     static constexpr int kEmojiPickW = kEmojiCellW * kEmojiCols + 16;  // ~304
     static constexpr int kEmojiPickH = 320;
 
-    static constexpr int kStickerPickW = 360;
-    static constexpr int kStickerPickH = 420;
+    static constexpr int kStickerPickW  = 360;
+    static constexpr int kStickerPickH  = 420;
+    static constexpr int kJoinRoomPickW = static_cast<int>(tesseract::views::JoinRoomView::kPreferredW);
+    static constexpr int kJoinRoomPickH = static_cast<int>(tesseract::views::JoinRoomView::kPreferredH);
 
     Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
     void draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
@@ -303,6 +315,11 @@ private:
     std::unique_ptr<tk::win32::Surface>     sticker_picker_surface_;
     tesseract::views::StickerPicker*         sticker_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+
+    HWND      hJoinRoom_ = nullptr;          // centred WS_POPUP host
+    std::unique_ptr<tk::win32::Surface>     join_room_surface_;
+    tesseract::views::JoinRoomView*          join_room_shared_ = nullptr;       // borrowed
+    std::unique_ptr<tk::NativeTextField>    join_room_alias_field_;
 
     // Full-window image/sticker lightbox overlay (WS_CHILD of hwnd_).
     std::unique_ptr<tk::win32::Surface>      img_viewer_surface_;

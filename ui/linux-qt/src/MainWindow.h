@@ -50,6 +50,7 @@
 
 class EmojiPicker;
 class StickerPicker;
+class JoinRoomDialog;
 class QTimer;
 
 namespace qt6 {
@@ -271,6 +272,7 @@ private:
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     EmojiPicker*                            emojiPicker_     = nullptr;
     ::StickerPicker*                        stickerPicker_   = nullptr;
+    JoinRoomDialog*                         joinRoomDialog_  = nullptr;
 
     // Full-window image/sticker lightbox overlay.
     QWidget*                                imgViewerHost_    = nullptr;

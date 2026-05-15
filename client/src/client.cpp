@@ -355,7 +355,45 @@ int json_int_field(std::string_view json, std::string_view key) {
     return v;
 }
 
+bool json_bool_field(std::string_view json, std::string_view key) {
+    std::string needle = "\"";
+    needle += key;
+    needle += "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string_view::npos) return false;
+    pos += needle.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    return json.substr(pos, 4) == "true";
+}
+
 } // namespace
+
+// ---------------------------------------------------------------------------
+// MSC3266 room summary / join
+// ---------------------------------------------------------------------------
+
+RoomSummary Client::get_room_summary(const std::string& room_id_or_alias) {
+    std::string json = std::string(impl_->ffi->get_room_summary(room_id_or_alias));
+    if (json.empty()) return {};
+    RoomSummary s;
+    s.room_id            = json_string_field(json, "room_id");
+    s.canonical_alias    = json_string_field(json, "canonical_alias");
+    s.name               = json_string_field(json, "name");
+    s.topic              = json_string_field(json, "topic");
+    s.avatar_url         = json_string_field(json, "avatar_url");
+    s.num_joined_members = static_cast<uint32_t>(json_int_field(json, "num_joined_members"));
+    s.join_rule          = json_string_field(json, "join_rule");
+    s.world_readable     = json_bool_field(json, "world_readable");
+    s.guest_can_join     = json_bool_field(json, "guest_can_join");
+    s.encryption         = json_string_field(json, "encryption");
+    s.is_space           = json_bool_field(json, "is_space");
+    s.membership         = json_string_field(json, "membership");
+    return s;
+}
+
+bool Client::join_room(const std::string& room_id_or_alias) {
+    return impl_->ffi->join_room(room_id_or_alias);
+}
 
 Client::UrlPreview Client::get_url_preview(const std::string& url) {
     std::string json = std::string(impl_->ffi->get_url_preview(url));

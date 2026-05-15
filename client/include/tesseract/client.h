@@ -361,6 +361,21 @@ public:
     UrlPreview get_url_preview(const std::string& url);
 
     // ------------------------------------------------------------------
+    // MSC3266 room summary / join
+    // ------------------------------------------------------------------
+
+    /// Fetch a room summary (name, topic, avatar, member count, join rule,
+    /// encryption state) for any room the homeserver can see, whether or
+    /// not the client is a member. Accepts a room ID (`!id:server`) or
+    /// alias (`#alias:server`). Returns RoomSummary with ok()==false on error.
+    /// Blocks the calling thread — invoke only from a worker thread.
+    RoomSummary get_room_summary(const std::string& room_id_or_alias);
+
+    /// Join a room by its ID or alias.
+    /// Returns true on success; blocks the calling thread.
+    bool join_room(const std::string& room_id_or_alias);
+
+    // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // ------------------------------------------------------------------
 
