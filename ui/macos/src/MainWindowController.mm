@@ -177,6 +177,11 @@ public:
         update_typing_bar_(text, visible);
     }
 
+    // Borrowed pointer set by ObjC side after building the chat surface.
+    // Exposed here so MacShell C++ methods can call it without crossing the
+    // ObjC ivar boundary (which is private to @implementation).
+    tesseract::views::RoomView* room_view_ = nullptr;
+
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
 };
@@ -290,7 +295,7 @@ void MacShell::on_rooms_updated_() {
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_) {
             if (r.id == current_room_id_) {
-                if (c->_roomView) { c->_roomView->set_room(r); [c _relayoutChatSurface]; }
+                if (room_view_) { room_view_->set_room(r); [c _relayoutChatSurface]; }
                 break;
             }
         }
@@ -511,7 +516,7 @@ void MacShell::on_room_list_state_ui_() {
 void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     MainWindowController* c = ctrl_;
     if (!c) return;
-    if (c->_roomView) c->_roomView->set_typing_text(text);
+    if (room_view_) room_view_->set_typing_text(text);
 }
 
 } // namespace
@@ -825,6 +830,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     {
         auto rv = std::make_unique<tesseract::views::RoomView>();
         _roomView = rv.get();
+        _shell->room_view_ = _roomView;
         __weak MainWindowController* weakSelf = self;
         _roomView->set_avatar_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image* {
