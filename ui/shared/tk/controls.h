@@ -18,12 +18,13 @@ public:
                     FontRole role = FontRole::Body)
         : text_(std::move(text)), role_(role) {}
 
-    Label& set_text   (std::string t)             { text_   = std::move(t); invalidate_cache(); return *this; }
-    Label& set_role   (FontRole r)                { role_   = r;            invalidate_cache(); return *this; }
-    Label& set_colour (std::optional<Color> c)    { colour_ = c;            return *this; }
-    Label& set_halign (TextHAlign a)              { halign_ = a;            invalidate_cache(); return *this; }
-    Label& set_wrap   (bool w)                    { wrap_   = w;            invalidate_cache(); return *this; }
-    Label& set_trim   (TextTrim t)                { trim_   = t;            invalidate_cache(); return *this; }
+    Label& set_text     (std::string t)             { text_   = std::move(t); invalidate_cache(); return *this; }
+    Label& set_role     (FontRole r)                { role_   = r;            invalidate_cache(); return *this; }
+    Label& set_colour   (std::optional<Color> c)    { colour_ = c;            return *this; }
+    Label& set_halign   (TextHAlign a)              { halign_ = a;            invalidate_cache(); return *this; }
+    Label& set_wrap     (bool w)                    { wrap_   = w;            invalidate_cache(); return *this; }
+    Label& set_trim     (TextTrim t)                { trim_   = t;            invalidate_cache(); return *this; }
+    Label& set_min_size (Size s)                    { min_size_ = s;          return *this; }
 
     Size measure(LayoutCtx&, Size constraints) override;
     void paint  (PaintCtx&)                    override;
@@ -39,6 +40,7 @@ private:
     TextHAlign                   halign_   = TextHAlign::Leading;
     bool                         wrap_     = false;
     TextTrim                     trim_     = TextTrim::None;
+    Size                         min_size_ = {};
 
     // Layout cache. cached_max_w_ tracks the max-width measure() last
     // built for so subsequent paint reuses the layout when constraints

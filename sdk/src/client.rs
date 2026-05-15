@@ -251,29 +251,25 @@ impl Drop for ClientFfi {
     }
 }
 
-/// Send both public (`m.read`) and private (`m.read.private`) receipts for
-/// `event_id`. The private receipt advances the user's own read position
-/// across devices without broadcasting it to other room members (MSC2285).
+/// Send public (`m.read`), private (`m.read.private`), and fully-read
+/// (`m.fully_read`) markers for `event_id` in a single request.
+///
+/// `m.read.private` advances the user's own read position across devices
+/// without broadcasting it to other room members (MSC2285). `m.fully_read`
+/// sets the account-data marker that matrix-sdk-ui uses to position the
+/// `VirtualTimelineItem::ReadMarker` ("New messages" divider) in the timeline.
 #[cfg(not(test))]
 async fn send_both_receipts(
     room: &matrix_sdk::Room,
     event_id: matrix_sdk::ruma::OwnedEventId,
 ) -> matrix_sdk::Result<()> {
-    use matrix_sdk::ruma::{
-        api::client::receipt::create_receipt,
-        events::receipt::ReceiptThread,
-    };
-    room.send_single_receipt(
-        create_receipt::v3::ReceiptType::Read,
-        ReceiptThread::Unthreaded,
-        event_id.clone(),
-    ).await?;
-    room.send_single_receipt(
-        create_receipt::v3::ReceiptType::ReadPrivate,
-        ReceiptThread::Unthreaded,
-        event_id,
-    ).await?;
-    Ok(())
+    use matrix_sdk::room::Receipts;
+    room.send_multiple_receipts(
+        Receipts::new()
+            .fully_read_marker(event_id.clone())
+            .public_read_receipt(event_id.clone())
+            .private_read_receipt(event_id),
+    ).await
 }
 
 impl ClientFfi {
@@ -2370,6 +2366,7 @@ impl ClientFfi {
             .unwrap_or_default();
 
         if crate::image_packs::pack_contains_url(&current_content, image_url) {
+            self.update_user_pack_in_cache(&current_content);
             return ok("");
         }
 

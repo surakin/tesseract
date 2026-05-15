@@ -70,29 +70,34 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
 
 void Win32Notifier::notify(const tesseract::Notification& n)
 {
-    WDX::XmlDocument doc;
-    doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body));
+    try {
+        WDX::XmlDocument doc;
+        doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body));
 
-    auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
-        L"io.gnomos.Tesseract");
-    auto toast = WUN::ToastNotification(doc);
+        auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
+            L"io.gnomos.Tesseract");
+        auto toast = WUN::ToastNotification(doc);
 
-    // Capture room_id + user_id for the click handler (runs on a WinRT thread-pool thread).
-    HWND        hwnd    = hwnd_;
-    std::string room_id = n.room_id;
-    std::string user_id = user_id_;
-    toast.Activated(
-        winrt::Windows::Foundation::TypedEventHandler<
-            WUN::ToastNotification,
-            winrt::Windows::Foundation::IInspectable>{
-            [hwnd, room_id, user_id](const WUN::ToastNotification&,
-                                      const winrt::Windows::Foundation::IInspectable&) {
-                PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                            reinterpret_cast<LPARAM>(
-                                new NotifyClickPayload{room_id, user_id}));
-            }});
+        // Capture room_id + user_id for the click handler (runs on a WinRT thread-pool thread).
+        HWND        hwnd    = hwnd_;
+        std::string room_id = n.room_id;
+        std::string user_id = user_id_;
+        toast.Activated(
+            winrt::Windows::Foundation::TypedEventHandler<
+                WUN::ToastNotification,
+                winrt::Windows::Foundation::IInspectable>{
+                [hwnd, room_id, user_id](const WUN::ToastNotification&,
+                                          const winrt::Windows::Foundation::IInspectable&) {
+                    PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
+                                reinterpret_cast<LPARAM>(
+                                    new NotifyClickPayload{room_id, user_id}));
+                }});
 
-    notifier.Show(toast);
+        notifier.Show(toast);
+    } catch (const winrt::hresult_error&) {
+        // Toast infrastructure unavailable or AUMID not yet visible to the
+        // notification system; silently swallow so the caller stays stable.
+    }
 }
 
 } // namespace win32

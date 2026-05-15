@@ -91,11 +91,17 @@ public:
     bool on_wheel       (Point local, float dx, float dy) override;
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
+    void on_pointer_drag(Point local)                      override;
 
 private:
     int  cols(float available_w) const;
     int  rows(int n_cells, int cols_) const;
     void clamp_scroll();
+    float content_height() const;
+
+    struct ThumbGeom { float track_top, track_h, thumb_h, thumb_top; };
+    ThumbGeom thumb_geom()     const;
+    bool      thumb_hit(Point) const;
 
     GridAdapter* adapter_ = nullptr;
 
@@ -108,6 +114,9 @@ private:
     int    selected_index_ = -1;
     int    hovered_index_  = -1;
     int    pressed_index_  = -1;
+
+    bool   scrollbar_drag_ = false;
+    float  drag_anchor_y_  = 0;
 
     float  scroll_y_       = 0;
 };

@@ -123,8 +123,9 @@ private:
         auto clayout = ctx.factory.build_text(chevron, cs);
         float chevron_x = bounds.x + bounds.w - kHeaderPadX;
         if (clayout) {
-            float cw = clayout->measure().w;
-            float cy = bounds.y + (bounds.h - clayout->measure().h) * 0.5f;
+            tk::Size csz = clayout->measure();
+            float cw = csz.w;
+            float cy = bounds.y + (bounds.h - csz.h) * 0.5f;
             chevron_x -= cw;
             ctx.canvas.draw_text(*clayout,
                                   { chevron_x, cy },
@@ -242,10 +243,9 @@ private:
             badge_style.role   = tk::FontRole::UnreadBadge;
             badge_style.halign = tk::TextHAlign::Center;
             auto badge_layout = ctx.factory.build_text(badge_text, badge_style);
-            float text_w_measured = badge_layout
-                ? badge_layout->measure().w : 0.0f;
+            tk::Size badge_sz = badge_layout ? badge_layout->measure() : tk::Size{};
             float pill_w = std::max(kBadgeMinW,
-                                     text_w_measured + kBadgePadX * 2);
+                                     badge_sz.w + kBadgePadX * 2);
             tk::Rect pill{
                 bounds.x + bounds.w - kPadX - pill_w,
                 bounds.y + (bounds.h - kBadgeH) * 0.5f,
@@ -255,11 +255,10 @@ private:
             ctx.canvas.fill_rounded_rect(pill, kBadgeRadius,
                                            ctx.theme.palette.unread_bg);
             if (badge_layout) {
-                tk::Size ts = badge_layout->measure();
                 ctx.canvas.draw_text(
                     *badge_layout,
-                    { pill.x + (pill.w - ts.w) * 0.5f,
-                      pill.y + (pill.h - ts.h) * 0.5f },
+                    { pill.x + (pill.w - badge_sz.w) * 0.5f,
+                      pill.y + (pill.h - badge_sz.h) * 0.5f },
                     ctx.theme.palette.unread_text);
             }
         }

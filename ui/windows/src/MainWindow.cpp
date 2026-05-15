@@ -1239,13 +1239,16 @@ void MainWindow::on_create(HWND hwnd) {
             if (!message_list_view_ || !client_) return;
             auto hit = message_list_view_->sticker_hit_at(p);
             if (!hit) return;
-            if (client_->user_pack_has_sticker(hit->mxc_url)) return;
+            const bool already_saved = client_->user_pack_has_sticker(hit->mxc_url);
             // Capture before TrackPopupMenu — sticker_geom_ is rebuilt each paint.
             const std::string mxc  = hit->mxc_url;
             const std::string body = hit->body;
             const std::string info = hit->info_json;
             HMENU menu = CreatePopupMenu();
-            AppendMenuW(menu, MF_STRING, 1, L"Add to Saved Stickers");
+            AppendMenuW(menu,
+                MF_STRING | (already_saved ? MF_GRAYED : 0),
+                1,
+                already_saved ? L"Already in Saved Stickers" : L"Add to Saved Stickers");
             POINT sp{ static_cast<LONG>(p.x), static_cast<LONG>(p.y) };
             ClientToScreen(msg_surface_->hwnd(), &sp);
             int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,

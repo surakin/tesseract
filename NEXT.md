@@ -15,9 +15,10 @@ In the emoji picker, the emojis are not properly centered on their cells.
 
 Design the ability of opening a room in a separate separate room-only window (with its own message list and composer bar) Add a context menu to the room list with this single option for now.
 
-https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/4230-animated-image-flag.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/2010-spoilers.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/3030-jump-to-date.md
+
+https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/4230-animated-image-flag.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/3381-polls.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/3266-room-summary.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/3765-rich-room-topics.md

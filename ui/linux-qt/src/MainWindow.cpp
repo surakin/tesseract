@@ -453,21 +453,22 @@ MainWindow::MainWindow(QWidget* parent)
             tk::Point{ static_cast<float>(pos.x()),
                        static_cast<float>(pos.y()) });
         if (!hit) return;
-        if (client_->user_pack_has_sticker(hit->mxc_url)) return;
 
-        // Capture relevant fields up front; the hit_at result is
-        // recomputed each paint so we don't hold a reference past
-        // the menu lifetime.
-        const auto event_id  = hit->event_id;
+        const bool already_saved = client_->user_pack_has_sticker(hit->mxc_url);
         const auto mxc_url   = hit->mxc_url;
         const auto body      = hit->body;
         const auto info_json = hit->info_json;
 
         QMenu menu(this);
-        QAction* add = menu.addAction(tr("Add to Saved Stickers"));
-        connect(add, &QAction::triggered, this, [this, mxc_url, body, info_json]{
-            client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
-        });
+        QAction* add = menu.addAction(already_saved
+            ? tr("Already in Saved Stickers")
+            : tr("Add to Saved Stickers"));
+        add->setEnabled(!already_saved);
+        if (!already_saved) {
+            connect(add, &QAction::triggered, this, [this, mxc_url, body, info_json]{
+                client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
+            });
+        }
         menu.exec(msgSurface_->mapToGlobal(pos));
     });
 

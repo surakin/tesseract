@@ -420,15 +420,44 @@ void GridView::arrange(LayoutCtx&, Rect bounds) {
     clamp_scroll();
 }
 
-void GridView::clamp_scroll() {
-    if (!adapter_) { scroll_y_ = 0; return; }
+float GridView::content_height() const {
+    if (!adapter_) return 0;
     int c = cols(bounds_.w);
     int r = rows(static_cast<int>(adapter_->count()), c);
-    float content_h = padding_.vertical()
+    return padding_.vertical()
         + (r > 0 ? r * cell_h_ + (r - 1) * v_spacing_ : 0);
-    float max_scroll = std::max(0.0f, content_h - bounds_.h);
+}
+
+void GridView::clamp_scroll() {
+    if (!adapter_) { scroll_y_ = 0; return; }
+    float max_scroll = std::max(0.0f, content_height() - bounds_.h);
     if (scroll_y_ < 0)          scroll_y_ = 0;
     if (scroll_y_ > max_scroll) scroll_y_ = max_scroll;
+}
+
+GridView::ThumbGeom GridView::thumb_geom() const {
+    ThumbGeom g{ 0, 0, 0, 0 };
+    float total = content_height();
+    if (total <= bounds_.h || bounds_.h <= 0) return g;
+    g.track_top = bounds_.y + kScrollbarInset;
+    g.track_h   = bounds_.h - kScrollbarInset * 2;
+    g.thumb_h   = std::max(kScrollbarMinLen,
+                            g.track_h * (bounds_.h / total));
+    g.thumb_top = g.track_top
+                + (g.track_h - g.thumb_h)
+                    * (scroll_y_ / std::max(1.0f, total - bounds_.h));
+    return g;
+}
+
+bool GridView::thumb_hit(Point local) const {
+    float world_x = local.x + bounds_.x;
+    float world_y = local.y + bounds_.y;
+    if (content_height() <= bounds_.h) return false;
+    float right = bounds_.x + bounds_.w - kScrollbarInset;
+    float left  = right - kScrollbarWidth;
+    if (world_x < left || world_x > right) return false;
+    ThumbGeom g = thumb_geom();
+    return world_y >= g.thumb_top && world_y < g.thumb_top + g.thumb_h;
 }
 
 void GridView::paint(PaintCtx& ctx) {
@@ -471,6 +500,25 @@ void GridView::paint(PaintCtx& ctx) {
     }
 
     ctx.canvas.pop_clip();
+
+    // Scrollbar overlay — only when content overflows the viewport.
+    float content_h = content_height();
+    if (content_h > bounds_.h && bounds_.h > 0) {
+        float track_h = bounds_.h - kScrollbarInset * 2;
+        float thumb_h = std::max(kScrollbarMinLen,
+                                  track_h * (bounds_.h / content_h));
+        float thumb_y = bounds_.y + kScrollbarInset
+                        + (track_h - thumb_h)
+                            * (scroll_y_ / std::max(1.0f, content_h - bounds_.h));
+        Rect thumb{
+            bounds_.x + bounds_.w - kScrollbarWidth - kScrollbarInset,
+            thumb_y,
+            kScrollbarWidth,
+            thumb_h
+        };
+        ctx.canvas.fill_rounded_rect(thumb, kScrollbarRadius,
+                                      ctx.theme.palette.text_muted.with_alpha(128));
+    }
 }
 
 bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
@@ -482,6 +530,13 @@ bool GridView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
 }
 
 bool GridView::on_pointer_down(Point local) {
+    if (thumb_hit(local)) {
+        scrollbar_drag_ = true;
+        ThumbGeom g    = thumb_geom();
+        drag_anchor_y_ = (local.y + bounds_.y) - g.thumb_top;
+        return true;
+    }
+    if (!adapter_) return false;
     int idx = index_at(local);
     if (idx == kInvalidIndex) return false;
     if (!adapter_->is_selectable(idx)) return false;
@@ -489,7 +544,25 @@ bool GridView::on_pointer_down(Point local) {
     return true;
 }
 
+void GridView::on_pointer_drag(Point local) {
+    if (!scrollbar_drag_) return;
+    ThumbGeom g  = thumb_geom();
+    float ch     = content_height();
+    float travel = g.track_h - g.thumb_h;
+    if (travel <= 0 || ch <= bounds_.h) return;
+    float wanted = (local.y + bounds_.y) - drag_anchor_y_;
+    float t = (wanted - g.track_top) / travel;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    scroll_y_ = t * (ch - bounds_.h);
+    clamp_scroll();
+}
+
 void GridView::on_pointer_up(Point local, bool inside_self) {
+    if (scrollbar_drag_) {
+        scrollbar_drag_ = false;
+        return;
+    }
     int idx = inside_self ? index_at(local) : kInvalidIndex;
     if (pressed_index_ != kInvalidIndex && pressed_index_ == idx) {
         selected_index_ = idx;
