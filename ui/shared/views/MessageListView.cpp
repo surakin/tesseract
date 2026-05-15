@@ -1419,7 +1419,10 @@ private:
                 if (layout) {
                     ctx.canvas.draw_text(*layout, { x, y },
                                           ctx.theme.palette.text_primary);
-                    return layout->measure().h;
+                    float h = layout->measure().h;
+                    owner_.link_layout_cache_[m.event_id] =
+                        { std::move(layout), { x, y } };
+                    return h;
                 }
             }
         }
@@ -1876,6 +1879,7 @@ MessageListView::video_hit_at(tk::Point world) const {
 void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     inline_players_.clear();
     revealed_spoilers_.clear();
+    link_layout_cache_.clear();
     adapter_->clear_layout_cache();
     messages_ = std::move(msgs);
     invalidate_data();
@@ -2351,6 +2355,25 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         }
     }
 
+    // Inline hyperlink hit-test — capture press if pointer lands on a link
+    // glyph in a rich-text body (avoids swallowing the event for non-links).
+    {
+        press_link_url_.clear();
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        std::size_t row = hovered_row_geom_.row_index;
+        if (row < messages_.size()) {
+            const auto& m = messages_[row];
+            auto it = link_layout_cache_.find(m.event_id);
+            if (it != link_layout_cache_.end() && it->second.layout) {
+                tk::Point ll{ world.x - it->second.origin.x,
+                              world.y - it->second.origin.y };
+                press_link_url_ = it->second.layout->link_at(ll);
+                if (!press_link_url_.empty())
+                    return true;
+            }
+        }
+    }
+
     // Video thumbnail click-to-view hit-test (before image so it wins when
     // video_geom_ and image_geom_ happen to overlap for the same event_id).
     {
@@ -2532,6 +2555,13 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
                 }
             }
         }
+        return;
+    }
+
+    if (!press_link_url_.empty()) {
+        std::string url = std::move(press_link_url_);
+        press_link_url_.clear();
+        if (inside_self && on_link_clicked) on_link_clicked(url);
         return;
     }
 

@@ -988,6 +988,9 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
                     });
                 });
             };
+        _roomView->on_link_clicked = [](const std::string& url) {
+            tesseract::Client::open_in_browser(url);
+        };
         _roomView->on_near_top = [weakSelf] {
             MainWindowController* s = weakSelf;
             if (!s || s->_shell->current_room_id_.empty()) return;

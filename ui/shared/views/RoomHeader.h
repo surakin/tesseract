@@ -16,6 +16,7 @@
 #include <tesseract/types.h>
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -36,7 +37,11 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
 
+    std::function<void(const std::string& url)> on_link_clicked;
+
 private:
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+
     tk::Label* name_label_  = nullptr;
     tk::Label* topic_label_ = nullptr;
 
@@ -46,6 +51,8 @@ private:
     std::vector<tk::TextSpan> topic_spans_;
     tk::Rect    topic_rect_{};
     std::string avatar_url_;
+
+    std::unique_ptr<tk::TextLayout>         topic_layout_;
 
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
 };

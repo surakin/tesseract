@@ -419,8 +419,12 @@ private:
 
 class DWriteLayout : public TextLayout {
 public:
-    DWriteLayout(ComPtr<IDWriteTextLayout> layout)
-        : layout_(std::move(layout)) {
+    struct UrlRange { UINT32 start, end; std::string url; };
+
+    DWriteLayout(ComPtr<IDWriteTextLayout> layout,
+                 std::vector<UrlRange> url_ranges = {})
+        : layout_(std::move(layout))
+        , url_ranges_(std::move(url_ranges)) {
         DWRITE_TEXT_METRICS m{};
         layout_->GetMetrics(&m);
         size_       = Size{ m.widthIncludingTrailingWhitespace, m.height };
@@ -436,10 +440,23 @@ public:
     int   line_count() const override { return line_count_; }
     float ascent()     const override { return ascent_; }
 
+    std::string link_at(Point local) const override {
+        if (url_ranges_.empty()) return {};
+        BOOL trailing = FALSE, inside = FALSE;
+        DWRITE_HIT_TEST_METRICS m{};
+        layout_->HitTestPoint(local.x, local.y, &trailing, &inside, &m);
+        if (!inside) return {};
+        for (const auto& r : url_ranges_)
+            if (m.textPosition >= r.start && m.textPosition < r.end)
+                return r.url;
+        return {};
+    }
+
     IDWriteTextLayout* raw() const { return layout_.Get(); }
 
 private:
     ComPtr<IDWriteTextLayout> layout_;
+    std::vector<UrlRange>     url_ranges_;
     Size                      size_{};
     int                       line_count_ = 0;
     float                     ascent_     = 0;
@@ -903,9 +920,67 @@ public:
 
     std::unique_ptr<TextLayout>
     build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
-        std::string plain;
-        for (const auto& sp : spans) plain += sp.text;
-        return build_text(plain, s);
+        // Concatenate all span text to UTF-16, tracking per-span character ranges.
+        std::wstring wide;
+        struct WideRange { UINT32 start, end; const TextSpan* sp; };
+        std::vector<WideRange> ranges;
+        ranges.reserve(spans.size());
+        for (const auto& sp : spans) {
+            UINT32 start = static_cast<UINT32>(wide.size());
+            wide += utf8_to_wide(sp.text);
+            ranges.push_back({ start, static_cast<UINT32>(wide.size()), &sp });
+        }
+
+        IDWriteTextFormat* tf = backend_.text_format_for(s.role);
+        if (!tf) return nullptr;
+
+        float max_w = s.max_width  >= 0 ? s.max_width  : 8192.0f;
+        float max_h = s.max_height >= 0 ? s.max_height : 8192.0f;
+
+        ComPtr<IDWriteTextLayout> layout;
+        HRESULT hr = backend_.dwrite->CreateTextLayout(
+            wide.c_str(), static_cast<UINT32>(wide.size()),
+            tf, max_w, max_h, layout.GetAddressOf());
+        if (FAILED(hr) || !layout) return nullptr;
+
+        if (backend_.font_fallback) {
+            ComPtr<IDWriteTextLayout2> layout2;
+            if (SUCCEEDED(layout.As(&layout2)))
+                layout2->SetFontFallback(backend_.font_fallback.Get());
+        }
+
+        // Apply per-span formatting.
+        std::vector<DWriteLayout::UrlRange> url_ranges;
+        for (const auto& wr : ranges) {
+            const TextSpan& sp = *wr.sp;
+            DWRITE_TEXT_RANGE tr{ wr.start, wr.end - wr.start };
+            if (sp.bold)
+                layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, tr);
+            if (sp.italic)
+                layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, tr);
+            if (sp.code)
+                layout->SetFontFamilyName(L"Cascadia Code", tr);
+            if (sp.strikethrough)
+                layout->SetStrikethrough(TRUE, tr);
+            if (!sp.url.empty()) {
+                layout->SetUnderline(TRUE, tr);
+                url_ranges.push_back({ wr.start, wr.end, sp.url });
+            }
+        }
+
+        layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP
+                                       : DWRITE_WORD_WRAPPING_NO_WRAP);
+
+        if (s.trim == TextTrim::Ellipsis) {
+            DWRITE_TRIMMING tr{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+            ComPtr<IDWriteInlineObject> sign;
+            backend_.dwrite->CreateEllipsisTrimmingSign(tf, sign.GetAddressOf());
+            layout->SetTrimming(&tr, sign.Get());
+        }
+
+        return std::make_unique<DWriteLayout>(std::move(layout),
+                                              std::move(url_ranges));
     }
 
 private:

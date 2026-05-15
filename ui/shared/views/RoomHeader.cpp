@@ -126,15 +126,22 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
         ts.role      = tk::FontRole::SidebarPreview;
         ts.trim      = tk::TextTrim::Ellipsis;
         ts.max_width = topic_rect_.w;
-        auto lo = ctx.factory.build_rich_text(topic_spans_, ts);
-        if (lo) {
-            ctx.canvas.draw_text(*lo,
+        topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+        if (topic_layout_) {
+            ctx.canvas.draw_text(*topic_layout_,
                 { topic_rect_.x, topic_rect_.y },
                 ctx.theme.palette.text_primary);
         }
     } else if (topic_label_ && topic_label_->visible()) {
         topic_label_->paint(ctx);
     }
+}
+
+void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
+    if (!inside_self || !topic_layout_) return;
+    tk::Point ll{ local.x - topic_rect_.x, local.y - topic_rect_.y };
+    std::string url = topic_layout_->link_at(ll);
+    if (!url.empty() && on_link_clicked) on_link_clicked(url);
 }
 
 } // namespace tesseract::views

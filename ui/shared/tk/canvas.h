@@ -105,6 +105,11 @@ public:
     // ascent). Use this instead of measure().h for vertically centering
     // single-line glyphs that leave an empty descender below the baseline.
     virtual float ascent()     const = 0;
+    // Returns the URL of the hyperlink whose glyph bounds contain `local`
+    // (layout-local coordinates: origin = the Point passed to draw_text).
+    // Returns "" when not over a hyperlink. Backends override when
+    // build_rich_text is fully implemented; plain-text layouts always return "".
+    virtual std::string link_at(Point /*local*/) const { return {}; }
 };
 
 // One formatting run for rich text. Bold, italic, code, and strikethrough

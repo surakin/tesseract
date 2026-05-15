@@ -138,6 +138,28 @@ private:
     float        ascent_     = 0;
 };
 
+// Extends PangoTextLayout with hyperlink hit-testing for rich-text layouts.
+class PangoRichTextLayout : public PangoTextLayout {
+    struct UrlRange { int start_byte, end_byte; std::string url; };
+    std::vector<UrlRange> url_ranges_;
+public:
+    PangoRichTextLayout(PangoLayout* layout, std::vector<UrlRange> urls)
+        : PangoTextLayout(layout), url_ranges_(std::move(urls)) {}
+
+    std::string link_at(tk::Point local) const override {
+        int byte_idx = 0, trailing = 0;
+        if (!pango_layout_xy_to_index(raw(),
+                static_cast<int>(local.x * PANGO_SCALE),
+                static_cast<int>(local.y * PANGO_SCALE),
+                &byte_idx, &trailing))
+            return {};
+        for (const auto& r : url_ranges_)
+            if (byte_idx >= r.start_byte && byte_idx < r.end_byte)
+                return r.url;
+        return {};
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────
 //  CairoCanvas — tk::Canvas
 // ─────────────────────────────────────────────────────────────────────────
@@ -416,16 +438,22 @@ public:
     build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
         std::string markup;
         markup.reserve(256);
+        std::vector<PangoRichTextLayout::UrlRange> url_ranges;
+        int byte_offset = 0;
         for (const auto& sp : spans) {
             std::string t = pango_escape(sp.text);
             if (sp.code)          t = "<tt>" + t + "</tt>";
             if (sp.strikethrough) t = "<s>"  + t + "</s>";
             if (sp.italic)        t = "<i>"  + t + "</i>";
             if (sp.bold)          t = "<b>"  + t + "</b>";
-            if (!sp.url.empty())
+            if (!sp.url.empty()) {
                 t = "<span underline=\"single\" foreground=\"#2563EB\">"
                     + t + "</span>";
+                url_ranges.push_back({ byte_offset,
+                    byte_offset + static_cast<int>(sp.text.size()), sp.url });
+            }
             markup += t;
+            byte_offset += static_cast<int>(sp.text.size());
         }
         PangoLayout* lay = pango_layout_new(ctx_);
         PangoFontDescription* d = desc_for(s.role);
@@ -443,6 +471,8 @@ public:
             pango_layout_set_width(lay, -1);
         pango_layout_set_single_paragraph_mode(
             lay, !s.wrap || s.trim == TextTrim::Ellipsis);
+        if (!url_ranges.empty())
+            return std::make_unique<PangoRichTextLayout>(lay, std::move(url_ranges));
         return std::make_unique<PangoTextLayout>(lay);
     }
 

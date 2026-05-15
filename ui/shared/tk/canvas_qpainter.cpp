@@ -333,6 +333,16 @@ public:
         p.restore();
     }
 
+    std::string link_at(tk::Point local) const override {
+        int pos = doc_->documentLayout()->hitTest(
+            QPointF(static_cast<qreal>(local.x),
+                    static_cast<qreal>(local.y)),
+            Qt::ExactHit);
+        if (pos < 0) return {};
+        QTextCharFormat fmt = doc_->characterAt(pos).charFormat();
+        return fmt.isAnchor() ? fmt.anchorHref().toStdString() : "";
+    }
+
 private:
     std::unique_ptr<QTextDocument> doc_;
     QSizeF sz_;

@@ -240,12 +240,15 @@ private:
 
 class CTLayout : public TextLayout {
 public:
+    struct UrlRange { CFIndex start, end; std::string url; };
+
     CTLayout(CFAttributedStringRef attr, CGFloat max_width, CGFloat max_height,
-             bool elide_single_line)
+             bool elide_single_line, std::vector<UrlRange> url_ranges = {})
         : attr_(attr),
           max_width_(max_width),
           max_height_(max_height),
-          elide_single_line_(elide_single_line)
+          elide_single_line_(elide_single_line),
+          url_ranges_(std::move(url_ranges))
     {
         framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
         if (framesetter_) {
@@ -289,6 +292,42 @@ public:
     Size  measure()    const override { return measured_; }
     int   line_count() const override { return line_count_; }
     float ascent()     const override { return static_cast<float>(font_ascent()); }
+
+    std::string link_at(tk::Point local) const override {
+        if (url_ranges_.empty()) return {};
+        CFIndex str_idx = kCFNotFound;
+        if (frame_) {
+            CFArrayRef lines = CTFrameGetLines(frame_);
+            CFIndex n = CFArrayGetCount(lines);
+            if (n == 0) return {};
+            std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+            CTFrameGetLineOrigins(frame_, CFRangeMake(0, n), origins.data());
+            // Convert layout-local Y-down to CTFrame Y-up.
+            CGFloat ctframe_y = static_cast<CGFloat>(measured_.h - local.y);
+            CFIndex best_line = 0;
+            CGFloat best_dist = std::abs(origins[0].y - ctframe_y);
+            for (CFIndex i = 1; i < n; ++i) {
+                CGFloat d = std::abs(origins[i].y - ctframe_y);
+                if (d < best_dist) { best_dist = d; best_line = i; }
+            }
+            CTLineRef line = static_cast<CTLineRef>(
+                CFArrayGetValueAtIndex(lines, best_line));
+            CGPoint pt = CGPointMake(
+                static_cast<CGFloat>(local.x) - origins[best_line].x, 0);
+            str_idx = CTLineGetStringIndexForPosition(line, pt);
+        } else if (attr_) {
+            // Elided single-line path — no pre-built frame.
+            CFRetained<CTLineRef> line{ CTLineCreateWithAttributedString(attr_) };
+            if (!line.get()) return {};
+            CGPoint pt = CGPointMake(static_cast<CGFloat>(local.x), 0);
+            str_idx = CTLineGetStringIndexForPosition(line.get(), pt);
+        }
+        if (str_idx == kCFNotFound) return {};
+        for (const auto& r : url_ranges_)
+            if (str_idx >= r.start && str_idx < r.end)
+                return r.url;
+        return {};
+    }
 
     void draw(CGContextRef ctx, Point origin, Color c) const {
         if (!framesetter_) return;
@@ -420,6 +459,7 @@ private:
     CGFloat               max_width_   = -1;
     CGFloat               max_height_  = -1;
     bool                  elide_single_line_ = false;
+    std::vector<UrlRange> url_ranges_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -660,11 +700,14 @@ public:
         if (!mattr.get()) return nullptr;
 
         FontDesc base_desc = desc_for(s.role);
+        std::vector<CTLayout::UrlRange> url_ranges;
+        CFIndex char_offset = 0;
 
         for (const auto& span : spans) {
             if (span.text.empty()) continue;
             CFRetained<CFStringRef> text{ cfstr_from_utf8(span.text) };
             if (!text.get() || CFStringGetLength(text.get()) == 0) continue;
+            CFIndex span_len = CFStringGetLength(text.get());
 
             CFRetained<CTFontRef> span_font;
             if (span.code) {
@@ -713,6 +756,10 @@ public:
                 mattr.get(),
                 CFRangeMake(CFAttributedStringGetLength(mattr.get()), 0),
                 aspan.get());
+
+            if (!span.url.empty())
+                url_ranges.push_back({ char_offset, char_offset + span_len, span.url });
+            char_offset += span_len;
         }
 
         if (CFAttributedStringGetLength(mattr.get()) == 0) return nullptr;
@@ -725,7 +772,8 @@ public:
         bool   elide = (s.trim == TextTrim::Ellipsis);
         CGFloat max_w = s.max_width  > 0 ? s.max_width  : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
-        return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide);
+        return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide,
+                                          std::move(url_ranges));
     }
 };
 

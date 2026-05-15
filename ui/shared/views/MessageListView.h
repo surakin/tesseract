@@ -409,6 +409,16 @@ private:
     bool                           press_preview_        = false;
     std::string                    press_preview_url_;
 
+    // Inline hyperlink hit-testing. Layouts built during paint_body_text
+    // are moved here so link_at() can be called on pointer events without
+    // a repaint. Cleared whenever messages_ is replaced.
+    struct LinkLayout {
+        std::unique_ptr<tk::TextLayout> layout;
+        tk::Point                       origin{};  // world-space draw origin
+    };
+    mutable std::unordered_map<std::string, LinkLayout> link_layout_cache_;
+    std::string                    press_link_url_;
+
     // MSC2010 spoiler reveal state.
     std::unordered_set<std::string> revealed_spoilers_;
     bool                            press_spoiler_     = false;
