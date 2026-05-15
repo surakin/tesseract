@@ -171,7 +171,10 @@ public:
     using ShellBase::push_room_list_state_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::mark_room_read_;
-    
+    using ShellBase::begin_focused_subscription_;
+    using ShellBase::request_forward_history_;
+    using ShellBase::return_to_live_;
+
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible) {
         update_typing_bar_(text, visible);
@@ -213,6 +216,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       reached_start:(BOOL)reached;
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
+- (void)openJumpToDateDialog;
 - (void)handleSyncErrorContext:(NSString*)ctx
                     description:(NSString*)desc
                     softLogout:(BOOL)soft;
@@ -986,6 +990,20 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
             MainWindowController* s = weakSelf;
             if (!s || s->_shell->current_room_id_.empty()) return;
             [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
+        };
+        _roomView->on_near_bottom = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            s->_shell->request_forward_history_(s->_shell->current_room_id_);
+        };
+        _roomView->on_return_to_live = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            s->_shell->return_to_live_(s->_shell->current_room_id_);
+        };
+        _roomView->on_jump_to_date_requested = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s openJumpToDateDialog];
         };
         _roomView->on_emoji = [weakSelf] {
             MainWindowController* s = weakSelf;
@@ -2098,6 +2116,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         }
         if (_roomView) _roomView->set_messages(std::move(rows));
         [self _relayoutChatSurface];
+        if (_roomView && _roomView->message_list()) {
+            const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
+            _roomView->message_list()->set_historical_mode(
+                _shell->pagination_[rid].is_focused);
+            if (_shell->pagination_[rid].is_focused)
+                _roomView->message_list()->scroll_to_event_id(
+                    _shell->pagination_[rid].focus_event_id);
+        }
     }
     for (auto* ev : snapshot) delete ev;
 }
@@ -2438,6 +2464,71 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             [self handlePaginateResultForRoom:roomId reached_start:reached];
         });
     });
+}
+
+- (void)openJumpToDateDialog {
+    if (_shell->current_room_id_.empty()) return;
+
+    // Build an NSDatePicker in graphical calendar mode.
+    NSDatePicker* picker = [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 148)];
+    picker.datePickerStyle    = NSDatePickerStyleClockAndCalendar;
+    picker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
+    picker.timeZone           = [NSTimeZone timeZoneWithName:@"UTC"];
+
+    // Clamp selection to [1970-01-01, today].
+    NSCalendar* utcCal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    utcCal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+    NSDateComponents* epochComps = [[NSDateComponents alloc] init];
+    epochComps.year = 1970; epochComps.month = 1; epochComps.day = 1;
+    picker.minDate = [utcCal dateFromComponents:epochComps];
+    picker.maxDate = [NSDate date];
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText     = @"Jump to Date";
+    alert.informativeText = @"Navigate to messages from the selected day.";
+    [alert addButtonWithTitle:@"Jump"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.accessoryView = picker;
+
+    [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
+        if (r != NSAlertFirstButtonReturn) return;
+
+        // Extract midnight UTC from the selected date.
+        NSDate* selected = picker.dateValue;
+        NSDateComponents* comps = [utcCal components:(NSCalendarUnitYear |
+                                                       NSCalendarUnitMonth |
+                                                       NSCalendarUnitDay)
+                                           fromDate:selected];
+        comps.hour = 0; comps.minute = 0; comps.second = 0;
+        NSDate* midnight = [utcCal dateFromComponents:comps];
+        const uint64_t ts_ms =
+            static_cast<uint64_t>([midnight timeIntervalSince1970] * 1000.0);
+
+        const std::string room_id = self->_shell->current_room_id_;
+        if (room_id.empty()) return;
+
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            auto res = self->_shell->client_->timestamp_to_event(room_id, ts_ms, "f");
+            if (!res.ok) {
+                NSString* msg = [NSString stringWithUTF8String:res.message.c_str()] ?: @"Unknown error";
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSAlert* err = [[NSAlert alloc] init];
+                    err.alertStyle      = NSAlertStyleWarning;
+                    err.messageText     = @"Jump to Date Failed";
+                    err.informativeText = msg;
+                    [err beginSheetModalForWindow:self.window completionHandler:nil];
+                });
+                return;
+            }
+            const std::string event_id = res.message;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self->_shell->begin_focused_subscription_(room_id, event_id);
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                    self->_shell->client_->subscribe_room_at(room_id, event_id);
+                });
+            });
+        });
+    }];
 }
 
 - (void)handlePaginateResultForRoom:(std::string)roomId
