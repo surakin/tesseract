@@ -84,6 +84,23 @@ struct IdleSubscribeResult {
     bool        reached_start;
 };
 
+struct IdleJumpResult {
+    MainWindow* window;
+    std::string room_id;
+    std::string event_id;
+};
+
+struct IdleJumpError {
+    MainWindow* window;
+    std::string message;
+};
+
+struct JumpDlgCtx {
+    MainWindow* self;
+    GtkWidget*  calendar;
+    GtkWidget*  dialog;
+};
+
 // ---------------------------------------------------------------------------
 // EventHandlerBase UI-thread hook implementations (GTK4)
 // ---------------------------------------------------------------------------
@@ -828,6 +845,15 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         if (current_room_id_.empty()) return;
         request_more_history(current_room_id_);
     };
+    room_view_->on_near_bottom = [this] {
+        if (!current_room_id_.empty()) request_forward_history_(current_room_id_);
+    };
+    room_view_->on_return_to_live = [this] {
+        if (!current_room_id_.empty()) return_to_live_(current_room_id_);
+    };
+    room_view_->on_jump_to_date_requested = [this] {
+        open_jump_to_date_dialog();
+    };
 
     room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
     room_view_->on_sticker = [this] { toggle_sticker_picker(); };
@@ -1316,6 +1342,117 @@ void MainWindow::request_more_history(const std::string& room_id) {
             return G_SOURCE_REMOVE;
         }, p);
     });
+}
+
+void MainWindow::open_jump_to_date_dialog() {
+    if (current_room_id_.empty()) return;
+
+    auto* dlg = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(dlg), _("Jump to Date"));
+    gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
+    gtk_window_set_transient_for(GTK_WINDOW(dlg), GTK_WINDOW(window_));
+    gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
+    gtk_window_set_default_size(GTK_WINDOW(dlg), 300, -1);
+
+    auto* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_start(vbox, 12);
+    gtk_widget_set_margin_end(vbox, 12);
+    gtk_widget_set_margin_top(vbox, 12);
+    gtk_widget_set_margin_bottom(vbox, 12);
+
+    auto* calendar = gtk_calendar_new();
+    gtk_box_append(GTK_BOX(vbox), calendar);
+
+    auto* btn_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_halign(btn_row, GTK_ALIGN_END);
+    auto* cancel_btn = gtk_button_new_with_label(_("Cancel"));
+    auto* ok_btn     = gtk_button_new_with_label(_("Jump"));
+    gtk_box_append(GTK_BOX(btn_row), cancel_btn);
+    gtk_box_append(GTK_BOX(btn_row), ok_btn);
+    gtk_box_append(GTK_BOX(vbox), btn_row);
+
+    gtk_window_set_child(GTK_WINDOW(dlg), vbox);
+
+    auto* ctx = new JumpDlgCtx{ this, calendar, dlg };
+    g_signal_connect(ok_btn,     "clicked", G_CALLBACK(on_jump_dialog_ok_),      ctx);
+    g_signal_connect(cancel_btn, "clicked", G_CALLBACK(on_jump_dialog_cancel_),  ctx);
+    // "destroy" fires when the window is torn down (by button OR window-manager X).
+    // It is the single place we free ctx; button callbacks must not free it themselves.
+    g_signal_connect(dlg, "destroy", G_CALLBACK(on_jump_dialog_destroy_), ctx);
+
+    gtk_window_present(GTK_WINDOW(dlg));
+}
+
+void MainWindow::on_jump_dialog_cancel_(GtkButton*, gpointer user_data) {
+    auto* ctx = static_cast<JumpDlgCtx*>(user_data);
+    gtk_window_destroy(GTK_WINDOW(ctx->dialog));
+    // ctx freed by on_jump_dialog_destroy_
+}
+
+void MainWindow::on_jump_dialog_ok_(GtkButton*, gpointer user_data) {
+    auto* ctx = static_cast<JumpDlgCtx*>(user_data);
+    MainWindow* self = ctx->self;
+
+    // Extract date BEFORE destroying the dialog (which unrefs all children).
+    GDateTime* gdt = gtk_calendar_get_date(GTK_CALENDAR(ctx->calendar));
+    int year, month, day;
+    g_date_time_get_ymd(gdt, &year, &month, &day);
+    g_date_time_unref(gdt);
+
+    const std::string room_id = self->current_room_id_;
+    gtk_window_destroy(GTK_WINDOW(ctx->dialog));
+    // ctx freed by on_jump_dialog_destroy_; do NOT access ctx after this point.
+
+    if (room_id.empty()) return;
+
+    // Reject pre-epoch dates to avoid uint64_t wrap-around.
+    if (year < 1970) {
+        if (self->status_bar_)
+            gtk_label_set_text(GTK_LABEL(self->status_bar_),
+                               _("Jump to date: please select a date from 1970 onwards"));
+        return;
+    }
+
+    GTimeZone* utc_tz   = g_time_zone_new_utc();
+    GDateTime* midnight = g_date_time_new(utc_tz, year, month, day, 0, 0, 0.0);
+    g_time_zone_unref(utc_tz);
+    const gint64 unix_s = g_date_time_to_unix(midnight);
+    g_date_time_unref(midnight);
+
+    const uint64_t ts_ms = static_cast<uint64_t>(unix_s) * 1000ULL;
+
+    self->run_async_([self, room_id, ts_ms] {
+        auto res = self->client_->timestamp_to_event(room_id, ts_ms, "f");
+        if (!res.ok) {
+            auto* e = new IdleJumpError{ self, res.message };
+            g_idle_add([](gpointer p) -> gboolean {
+                auto* d = static_cast<IdleJumpError*>(p);
+                if (d->window->status_bar_)
+                    gtk_label_set_text(GTK_LABEL(d->window->status_bar_),
+                                       d->message.c_str());
+                delete d;
+                return G_SOURCE_REMOVE;
+            }, e);
+            return;
+        }
+        auto* d = new IdleJumpResult{ self, room_id, res.message };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* data = static_cast<IdleJumpResult*>(p);
+            MainWindow* w   = data->window;
+            std::string rid = std::move(data->room_id);
+            std::string eid = std::move(data->event_id);
+            delete data;
+            w->begin_focused_subscription_(rid, eid);
+            w->run_async_([w, rid, eid] {
+                w->client_->subscribe_room_at(rid, eid);
+            });
+            return G_SOURCE_REMOVE;
+        }, d);
+    });
+}
+
+void MainWindow::on_jump_dialog_destroy_(GtkWidget*, gpointer user_data) {
+    delete static_cast<JumpDlgCtx*>(user_data);
 }
 
 void MainWindow::on_login_clicked(GtkButton*, gpointer user_data) {
