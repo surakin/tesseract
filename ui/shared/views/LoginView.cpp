@@ -40,12 +40,13 @@ void LoginView::rebuild_tree() {
     caption->set_halign(tk::TextHAlign::Center);
     caption->set_wrap(true);
 
-    // Homeserver field placeholder — drawn as a labelled box. The host
-    // overlays a native edit control on top of homeserver_field_rect()
-    // until tk::TextField + IME passthrough lands.
-    auto hs_field = std::make_unique<tk::Label>(homeserver_label_,
-                                                  tk::FontRole::Body);
+    // Homeserver field — layout spacer only. The host overlays a native
+    // edit control on top of homeserver_field_rect(); this widget holds
+    // the space and drives the rect calculation but must not draw text
+    // (the native control is the sole visible display of the value).
+    auto hs_field = std::make_unique<tk::Label>("", tk::FontRole::Body);
     hs_field->set_halign(tk::TextHAlign::Leading);
+    hs_field->set_min_size({ 0.0f, kHSFieldHeight });
 
     auto sign_in = std::make_unique<tk::Button>("Sign in",
                                                    std::function<void()>{},
@@ -109,7 +110,6 @@ void LoginView::set_status(std::string message,
 
 void LoginView::set_homeserver_label(std::string url) {
     homeserver_label_ = std::move(url);
-    if (hs_field_lbl_) hs_field_lbl_->set_text(homeserver_label_);
 }
 
 tk::Size LoginView::measure(tk::LayoutCtx&, tk::Size constraints) {

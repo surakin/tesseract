@@ -21,7 +21,8 @@ Size Label::measure(LayoutCtx& ctx, Size constraints) {
     st.max_height = constraints.h > 0 ? constraints.h : -1.0f;
     cached_       = ctx.factory.build_text(text_, st);
     cached_max_w_ = max_w;
-    cached_size_  = cached_ ? cached_->measure() : Size{};
+    Size s        = cached_ ? cached_->measure() : Size{};
+    cached_size_  = { std::max(s.w, min_size_.w), std::max(s.h, min_size_.h) };
     return cached_size_;
 }
 
