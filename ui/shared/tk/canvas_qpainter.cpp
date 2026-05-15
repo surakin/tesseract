@@ -339,7 +339,9 @@ public:
                     static_cast<qreal>(local.y)),
             Qt::ExactHit);
         if (pos < 0) return {};
-        QTextCharFormat fmt = doc_->characterAt(pos).charFormat();
+        QTextCursor cur(doc_.get());
+        cur.setPosition(pos);
+        QTextCharFormat fmt = cur.charFormat();
         return fmt.isAnchor() ? fmt.anchorHref().toStdString() : "";
     }
 
