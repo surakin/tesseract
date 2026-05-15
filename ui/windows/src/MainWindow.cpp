@@ -1859,6 +1859,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    clear_focused_state_(room_id);
     mark_room_read_(current_room_id_);
     reply_details_requested_.clear();
     {

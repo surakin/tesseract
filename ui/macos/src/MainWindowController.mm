@@ -172,6 +172,7 @@ public:
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::mark_room_read_;
     using ShellBase::begin_focused_subscription_;
+    using ShellBase::clear_focused_state_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
 
@@ -2410,6 +2411,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
     _shell->current_room_id_ = roomId;
+    _shell->clear_focused_state_(roomId);
     _shell->mark_room_read_(roomId);
     _shell->reply_details_requested_.clear();
     {

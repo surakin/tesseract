@@ -256,6 +256,11 @@ protected:
     void begin_focused_subscription_(const std::string& room_id,
                                       const std::string& event_id);
 
+    // MSC3030: clear stale focused-timeline state when (re-)entering a room via
+    // the live room-selection path.  Must be called before subscribe_room() so
+    // that the subsequent handle_timeline_reset_ui_() sees is_focused == false.
+    void clear_focused_state_(const std::string& room_id);
+
     // MSC3030: paginate forward in a focused timeline; switches to live when done.
     void request_forward_history_(const std::string& room_id);
 

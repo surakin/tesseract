@@ -184,6 +184,14 @@ void ShellBase::begin_focused_subscription_(const std::string& room_id,
     state.reached_end     = false;
 }
 
+void ShellBase::clear_focused_state_(const std::string& room_id) {
+    auto& state           = pagination_[room_id];
+    state.is_focused      = false;
+    state.focus_event_id.clear();
+    state.reached_end     = false;
+    state.fwd_in_flight   = false;
+}
+
 void ShellBase::request_forward_history_(const std::string& room_id) {
     auto& state = pagination_[room_id];
     if (state.fwd_in_flight || state.reached_end) return;
