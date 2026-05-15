@@ -708,10 +708,9 @@ TEST_CASE("MessageListView read receipts paint inside existing row bounds",
     st.run(view, { 0, 0, 320, 400 });
     float with_h = view.content_height();
 
-    // In the compact-row design, a plain row has no chip strip. Adding
-    // read receipts introduces one, so the receipts row is taller.
+    // Receipts overlay within existing row bounds — they never add height.
     CHECK(plain_h > 0.0f);
-    CHECK(with_h > plain_h);
+    CHECK(with_h == plain_h);
 }
 
 TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-right",
@@ -736,8 +735,11 @@ TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-righ
     // Layout: right_edge = bounds.x + bounds.w - kPadX = 320 - 12 = 308.
     // Rightmost disc centre is (308 - kReceiptSize/2, disc_cy) = (300, ~).
     // The disc fills its area with a coloured initials background.
+    // sample_y is content_height - 14 to hit the disc vertical centre
+    // (disc_cy = cursor - kReceiptSize/2; sampling near the top edge hits
+    // the stadium corner rounding and misses the fill).
     int sample_x = 300;
-    int sample_y = static_cast<int>(view.content_height()) - 21;
+    int sample_y = static_cast<int>(view.content_height()) - 14;
     auto disc_px = st.surface->read_pixel(sample_x, sample_y);
     auto bg_px   = st.surface->read_pixel(300, 0);
     CHECK(pixel_differs(disc_px, bg_px));
