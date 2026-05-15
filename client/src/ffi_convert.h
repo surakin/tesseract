@@ -13,7 +13,7 @@ inline Result from_ffi(const tesseract_ffi::OpResult& r) {
 }
 
 inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r) {
-    return { r.ok, std::string(r.message), r.reached_start };
+    return { r.ok, std::string(r.message), r.reached_start, r.reached_end };
 }
 
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p) {

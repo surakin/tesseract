@@ -1103,6 +1103,78 @@ impl ClientFfi {
     // Timeline subscription (Step 2)
     // -----------------------------------------------------------------------
 
+    /// Spawn the two tasks that are common to both `subscribe_room` and
+    /// `subscribe_room_at`: the streaming task that pumps timeline diffs to
+    /// the UI, and the `fetch_members` backfill task. Returns their
+    /// `AbortHandle`s so the caller can store them in `TimelineHandle`.
+    ///
+    /// `timeline` and `room` must already be fully constructed; `room_id_str`
+    /// is the string form of the room ID used by handler callbacks.
+    #[cfg(not(test))]
+    fn spawn_timeline_tasks(
+        timeline:    &Arc<matrix_sdk_ui::Timeline>,
+        room:        &matrix_sdk::Room,
+        room_id_str: String,
+        handler:     &Arc<Mutex<SendHandler>>,
+        client:      &Client,
+        rt:          &tokio::runtime::Runtime,
+    ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
+        let tl         = Arc::clone(timeline);
+        let h          = Arc::clone(handler);
+        let rid        = room_id_str;
+        let room_clone = room.clone();
+        let me         = client.user_id().map(|u| u.to_owned());
+        let client_ref = client.clone();
+
+        let abort = rt.spawn(async move {
+            let (initial_items, mut stream) = tl.subscribe().await;
+
+            // Build the visibility mirror + initial snapshot in one pass.
+            // The mirror is `true` for every matrix-sdk-ui timeline slot
+            // whose `timeline_item_to_ffi` yields Some — this covers both
+            // real message events and virtual items (day-dividers,
+            // read-markers, timeline-start). State events and membership
+            // changes remain `false` so they are silently filtered.
+            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
+            let mut snapshot: Vec<TimelineEvent> = Vec::new();
+            for item in initial_items.iter() {
+                let ev = timeline_item_to_ffi(
+                    item, &rid, &room_clone, me.as_deref()).await;
+                visible.push(ev.is_some());
+                if let Some(ev) = ev { snapshot.push(ev); }
+            }
+            if let Ok(guard) = h.lock() {
+                guard.on_timeline_reset(&rid, &snapshot);
+            }
+            drop(snapshot);
+
+            while let Some(diffs) = stream.next().await {
+                for diff in diffs {
+                    handle_timeline_diff(
+                        diff, &mut visible, &h, &rid, &room_clone, me.as_deref(),
+                        &client_ref).await;
+                }
+            }
+        }).abort_handle();
+
+        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
+        // sync member info on its own — `EventTimelineItem::sender_profile()`
+        // stays at `TimelineDetails::Pending` for any user whose
+        // membership state wasn't included in the initial sync's room
+        // delta, so their messages render with an empty name + avatar.
+        // `fetch_members()` runs `sync_members()` then patches every
+        // affected timeline item in place, which the streaming task
+        // above picks up as `VectorDiff::Set` and re-emits to C++. We
+        // spawn it separately so the initial items aren't blocked
+        // behind a multi-second member sync on big rooms.
+        let tl_for_members = Arc::clone(timeline);
+        let fetch_abort = rt.spawn(async move {
+            tl_for_members.fetch_members().await;
+        }).abort_handle();
+
+        (abort, fetch_abort)
+    }
+
     #[cfg(not(test))]
     pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
@@ -1137,59 +1209,9 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
-        // Spawn a task that streams timeline items to the UI.
-        let tl    = Arc::clone(&timeline);
-        let h     = Arc::clone(&handler);
-        let rid   = room_id_str.clone();
-        let room  = room.clone();
-        let me    = client.user_id().map(|u| u.to_owned());
-        let client_ref = client.clone();
-
-        let abort = self.rt.spawn(async move {
-            let (initial_items, mut stream) = tl.subscribe().await;
-
-            // Build the visibility mirror + initial snapshot in one pass.
-            // The mirror is `true` for every matrix-sdk-ui timeline slot
-            // whose `timeline_item_to_ffi` yields Some — this covers both
-            // real message events and virtual items (day-dividers,
-            // read-markers, timeline-start). State events and membership
-            // changes remain `false` so they are silently filtered.
-            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
-            let mut snapshot: Vec<TimelineEvent> = Vec::new();
-            for item in initial_items.iter() {
-                let ev = timeline_item_to_ffi(
-                    item, &rid, &room, me.as_deref()).await;
-                visible.push(ev.is_some());
-                if let Some(ev) = ev { snapshot.push(ev); }
-            }
-            if let Ok(guard) = h.lock() {
-                guard.on_timeline_reset(&rid, &snapshot);
-            }
-            drop(snapshot);
-
-            while let Some(diffs) = stream.next().await {
-                for diff in diffs {
-                    handle_timeline_diff(
-                        diff, &mut visible, &h, &rid, &room, me.as_deref(),
-                        &client_ref).await;
-                }
-            }
-        }).abort_handle();
-
-        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
-        // sync member info on its own — `EventTimelineItem::sender_profile()`
-        // stays at `TimelineDetails::Pending` for any user whose
-        // membership state wasn't included in the initial sync's room
-        // delta, so their messages render with an empty name + avatar.
-        // `fetch_members()` runs `sync_members()` then patches every
-        // affected timeline item in place, which the streaming task
-        // above picks up as `VectorDiff::Set` and re-emits to C++. We
-        // spawn it separately so the initial items aren't blocked
-        // behind a multi-second member sync on big rooms.
-        let tl_for_members = Arc::clone(&timeline);
-        let fetch_abort = self.rt.spawn(async move {
-            tl_for_members.fetch_members().await;
-        }).abort_handle();
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline, &room, room_id_str, &handler, &client, &self.rt,
+        );
 
         self.timelines.insert(room_id, TimelineHandle {
             timeline,
@@ -1323,6 +1345,8 @@ impl ClientFfi {
 
         let req = Request::new(room_id, ts, direction);
 
+        // No shutdown-race here: timestamp lookups are typically fast (single HTTP
+        // round-trip) and not in a loop, so blocking the thread is acceptable.
         match self.rt.block_on(async move { client.send(req).await }) {
             Ok(resp) => ok(resp.event_id.to_string()),
             Err(e)   => err(e.to_string()),
@@ -1388,43 +1412,9 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
-        // Spawn a task that streams timeline items to the UI.
-        let tl         = Arc::clone(&timeline);
-        let h          = Arc::clone(&handler);
-        let rid        = room_id_str.clone();
-        let room_clone = room.clone();
-        let me         = client.user_id().map(|u| u.to_owned());
-        let client_ref = client.clone();
-
-        let abort = self.rt.spawn(async move {
-            let (initial_items, mut stream) = tl.subscribe().await;
-
-            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
-            let mut snapshot: Vec<TimelineEvent> = Vec::new();
-            for item in initial_items.iter() {
-                let ev = timeline_item_to_ffi(
-                    item, &rid, &room_clone, me.as_deref()).await;
-                visible.push(ev.is_some());
-                if let Some(ev) = ev { snapshot.push(ev); }
-            }
-            if let Ok(guard) = h.lock() {
-                guard.on_timeline_reset(&rid, &snapshot);
-            }
-            drop(snapshot);
-
-            while let Some(diffs) = stream.next().await {
-                for diff in diffs {
-                    handle_timeline_diff(
-                        diff, &mut visible, &h, &rid, &room_clone, me.as_deref(),
-                        &client_ref).await;
-                }
-            }
-        }).abort_handle();
-
-        let tl_for_members = Arc::clone(&timeline);
-        let fetch_abort = self.rt.spawn(async move {
-            tl_for_members.fetch_members().await;
-        }).abort_handle();
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline, &room, room_id_str, &handler, &client, &self.rt,
+        );
 
         self.timelines.insert(room_id, TimelineHandle {
             timeline,

@@ -22,13 +22,15 @@ struct Result {
     explicit operator bool() const noexcept { return ok; }
 };
 
-/// Result of `Client::paginate_back_with_status`. `reached_start` is true
-/// when matrix-sdk-ui reports the timeline has no further history to load.
-/// UIs latch their scroll-up trigger off this signal.
+/// Result of `Client::paginate_back_with_status` and `paginate_forward`.
+/// `reached_start` is true when matrix-sdk-ui reports the timeline has no
+/// further history to load. `reached_end` is true when a focused timeline
+/// has caught up to the live end. UIs latch their scroll triggers off these.
 struct PaginateResult {
     bool        ok            = false;
     std::string message;
     bool        reached_start = false;
+    bool        reached_end   = false;
 
     explicit operator bool() const noexcept { return ok; }
 };
