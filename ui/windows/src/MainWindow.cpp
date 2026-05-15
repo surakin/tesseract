@@ -1256,7 +1256,7 @@ void MainWindow::on_create(HWND hwnd) {
         });
     }
     if (HWND rb = recovery_surface_->hwnd()) {
-        SetWindowPos(rb, nullptr, 240, kRoomHeaderH, 784, 48,
+        SetWindowPos(rb, nullptr, 240, static_cast<int>(tesseract::views::RoomHeader::kHeight), 784, 48,
                       SWP_NOZORDER | SWP_NOACTIVATE);
         ShowWindow(rb, SW_HIDE);
     }
@@ -1310,7 +1310,7 @@ void MainWindow::on_create(HWND hwnd) {
         verif_surface_->set_root(std::move(banner));
     }
     if (HWND vb = verif_surface_->hwnd()) {
-        SetWindowPos(vb, nullptr, 240, kRoomHeaderH, 784, 48,
+        SetWindowPos(vb, nullptr, 240, static_cast<int>(tesseract::views::RoomHeader::kHeight), 784, 48,
                       SWP_NOZORDER | SWP_NOACTIVATE);
         ShowWindow(vb, SW_HIDE);
     }
