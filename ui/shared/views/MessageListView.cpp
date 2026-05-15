@@ -46,6 +46,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.media_h              = static_cast<int>(img.height);
             row.has_filename_caption = !img.filename.empty();
             row.blurhash             = img.blurhash;
+            row.image_animated       = img.animated;
             break;
         }
         case tesseract::EventType::Sticker: {
@@ -56,6 +57,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.media_h            = static_cast<int>(s.height);
             row.blurhash           = s.blurhash;
             row.sticker_info_json  = s.info_json;
+            row.image_animated     = s.animated;
             break;
         }
         case tesseract::EventType::File: {
@@ -1028,6 +1030,24 @@ private:
                         : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
                 tk::Rect r{ x, y, sz.w, sz.h };
                 paint_inline_media(m, ctx, r);
+                // GIF badge for animated images (MSC4230).
+                if (m.image_animated) {
+                    tk::TextStyle ts{}; ts.role = tk::FontRole::Timestamp;
+                    auto lo = ctx.factory.build_text("GIF", ts);
+                    if (lo) {
+                        tk::Size lsz = lo->measure();
+                        constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
+                        float bx = r.x + r.w - lsz.w - kBadgePadX * 2 - 4.0f;
+                        float by = r.y + r.h - lsz.h - kBadgePadY * 2 - 4.0f;
+                        tk::Rect badge{ bx, by,
+                                        lsz.w + kBadgePadX * 2,
+                                        lsz.h + kBadgePadY * 2 };
+                        ctx.canvas.fill_rounded_rect(badge, 4.0f,
+                                                     tk::Color{ 0, 0, 0, 140 });
+                        ctx.canvas.draw_text(*lo, { bx + kBadgePadX, by + kBadgePadY },
+                                             tk::Color{ 255, 255, 255, 230 });
+                    }
+                }
                 if (!m.event_id.empty()) {
                     int iw = (img && img->width()  > 0) ? img->width()  : m.media_w;
                     int ih = (img && img->height() > 0) ? img->height() : m.media_h;

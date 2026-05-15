@@ -64,8 +64,10 @@ pub mod ffi {
     /// For `m.image`   → source_json, width, height are populated.
     ///                   image_filename is non-empty only when the sender supplied
     ///                   an explicit MSC2530 filename; in that case `body` is a caption.
+    ///                   image_animated is true when MSC4230 is_animated flag is set.
     /// For `m.file`    → file_json, file_name, file_size are populated.
     /// For `m.sticker` → source_json, width, height are populated (same as m.image).
+    ///                   image_animated is true when MSC4230 is_animated flag is set.
     /// For `m.voice`   → audio_source_json, audio_duration_ms, audio_waveform,
     ///                   audio_mime are populated (MSC3245 voice messages).
     ///                   Non-voice `m.audio` events are converted to "m.file"
@@ -166,6 +168,10 @@ pub mod ffi {
         /// other message types. Lets right-click handlers pass real metadata
         /// to `save_sticker_to_user_pack` instead of `"{}"`.
         sticker_info_json:       String,
+        /// True when the sender set MSC4230 `org.matrix.msc4230.is_animated` to true
+        /// in the event `info` block. Valid for `m.image` and `m.sticker`; always
+        /// false for all other message types.
+        image_animated:          bool,
     }
 
     /// Outcome of an asynchronous SDK operation.

@@ -77,6 +77,7 @@ struct ImageEvent : public Event {
     /// When set, `body` is a user caption and should be displayed below the image.
     std::string filename;
     std::string blurhash;   // MSC2448: xyz.amorgan.blurhash; empty when absent
+    bool        animated = false; // MSC4230: is_animated hint from sender
 
     ImageEvent() { type = EventType::Image; }
 };
@@ -87,6 +88,7 @@ struct StickerEvent : public Event {
     uint64_t    height = 0;
     std::string blurhash;   // MSC2448: xyz.amorgan.blurhash; empty when absent
     std::string info_json;  // JSON-serialised ImageInfo from sender
+    bool        animated = false; // MSC4230: is_animated hint from sender
 
     StickerEvent() { type = EventType::Sticker; }
 };
