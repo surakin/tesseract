@@ -564,11 +564,16 @@ bool drop_is_acceptable(const QMimeData* md) {
 
 } // namespace
 
-void Surface::paintEvent(QPaintEvent*) {
+void Surface::paintEvent(QPaintEvent* ev) {
     QPainter painter(this);
+    const QRect dirty = ev->rect();
+    if (!dirty.isEmpty())
+        painter.setClipRect(dirty, Qt::IntersectClip);
     host_->paint(painter);
 
     if (drag_active_) {
+        painter.save();
+        painter.setClipping(false);
         // Translucent accent fill + dashed border + centred "Drop to
         // attach" label. Painted last so it sits above the widget tree.
         const QPalette& pal = palette();
@@ -578,7 +583,6 @@ void Surface::paintEvent(QPaintEvent*) {
         const qreal inset = 8.0;
         const QRectF area = rect().adjusted(inset, inset, -inset, -inset);
         if (area.width() > 0 && area.height() > 0) {
-            painter.save();
             painter.setRenderHint(QPainter::Antialiasing, true);
             painter.fillRect(area, fill);
             QPen pen(stroke, 2.0, Qt::DashLine);
@@ -593,8 +597,8 @@ void Surface::paintEvent(QPaintEvent*) {
                 ? pal.color(QPalette::HighlightedText) : accent);
             painter.drawText(area, Qt::AlignCenter,
                              QStringLiteral("Drop to attach"));
-            painter.restore();
         }
+        painter.restore();
     }
 }
 

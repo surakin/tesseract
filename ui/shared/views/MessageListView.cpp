@@ -1570,8 +1570,9 @@ private:
         }
         tk::TextStyle ds{}; ds.role = tk::FontRole::Timestamp;
         auto dur_lo = ctx.factory.build_text(format_mmss(label_ms), ds);
-        float dur_w = dur_lo ? dur_lo->measure().w : 0.0f;
-        float dur_h = dur_lo ? dur_lo->measure().h : 0.0f;
+        tk::Size dur_sz = dur_lo ? dur_lo->measure() : tk::Size{};
+        float dur_w = dur_sz.w;
+        float dur_h = dur_sz.h;
         if (dur_lo) {
             ctx.canvas.draw_text(*dur_lo,
                 { dst.x + dst.w - kVoiceCardPadX - dur_w,
