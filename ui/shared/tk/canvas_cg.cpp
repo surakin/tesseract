@@ -370,6 +370,7 @@ public:
 
 private:
     void draw_elided_line(CGContextRef ctx, Point origin, Color c) const {
+        if (!attr_ || CFAttributedStringGetLength(attr_) == 0) return;
         CFRetained<CTLineRef> raw{ CTLineCreateWithAttributedString(attr_) };
         if (!raw.get()) return;
 
