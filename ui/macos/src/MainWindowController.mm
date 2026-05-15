@@ -16,12 +16,11 @@
 #include "tk/host.h"
 #include "tk/host_macos.h"
 #include "tk/theme.h"
-#include "views/ComposeBar.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/RoomView.h"
 #include "views/VerificationBanner.h"
 
 #include <ImageIO/ImageIO.h>
@@ -255,9 +254,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                  isMention:(BOOL)isMention;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
-- (void)_setRoomHeader:(const tesseract::RoomInfo&)info;
 - (void)_relayoutRoomSurface;
-- (void)_relayoutMsgSurface;
+- (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
 
 // Sticker picker + animated stickers.
@@ -271,7 +269,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
-- (void)_updateTypingBar:(NSString*)text;
 @end
 
 namespace {
@@ -293,7 +290,7 @@ void MacShell::on_rooms_updated_() {
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_) {
             if (r.id == current_room_id_) {
-                [c _setRoomHeader:r];
+                if (c->_roomView) { c->_roomView->set_room(r); [c _relayoutChatSurface]; }
                 break;
             }
         }
@@ -317,7 +314,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (!c) return;
     if (kind == MediaKind::MediaImage) {
         [c _decodeMediaBytes:bytes forKey:key];
-        [c _relayoutMsgSurface];
+        [c _relayoutChatSurface];
         return;
     }
     if (bytes.empty() || tk_avatars_.count(key)) return;
@@ -336,7 +333,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (kind == MediaKind::RoomAvatar)
         [c _relayoutRoomSurface];
     else if (kind == MediaKind::UserAvatar)
-        [c _relayoutMsgSurface];
+        [c _relayoutChatSurface];
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,
@@ -374,7 +371,7 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             if (tk_images_.count(key)) return;
             tk_images_.emplace(key, std::move(*img_holder));
             MainWindowController* c2 = ctrl_;
-            if (c2) [c2 _relayoutMsgSurface];
+            if (c2) [c2 _relayoutChatSurface];
         });
     });
 }
@@ -393,7 +390,7 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     tk_images_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
-    if (c) [c _relayoutMsgSurface];
+    if (c) [c _relayoutChatSurface];
 }
 
 void MacShell::handle_timeline_reset_ui_(
@@ -511,11 +508,10 @@ void MacShell::on_room_list_state_ui_() {
     if (c) [c _onRoomListStateChanged];
 }
 
-void MacShell::update_typing_bar_(const std::string& text, bool visible) {
+void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     MainWindowController* c = ctrl_;
     if (!c) return;
-    NSString* ns = [NSString stringWithUTF8String:text.c_str()] ?: @"";
-    [c _updateTypingBar:ns];
+    if (c->_roomView) c->_roomView->set_typing_text(text);
 }
 
 } // namespace
@@ -533,28 +529,21 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
 
     // Shared widget tree.
     std::unique_ptr<tk::macos::Surface>             _roomSurface;
-    std::unique_ptr<tk::macos::Surface>             _msgSurface;
     tesseract::views::RoomListView*                 _roomListView;     // borrowed
     std::unique_ptr<tk::NativeTextField>            _roomSearchField;
     std::string                                     _pendingSearchText;
-    tesseract::views::MessageListView*              _messageListView;  // borrowed
+
+    // Combined chat area: RoomHeader + MessageListView + typing + ComposeBar.
+    std::unique_ptr<tk::macos::Surface>             _chatSurface;
+    tesseract::views::RoomView*                     _roomView;         // borrowed
+    std::unique_ptr<tk::NativeTextArea>             _roomTextArea;
 
     // AppKit chrome.
     NSSplitView*   _splitView;
     NSView*        _sidebar;
     NSView*        _content;
-    NSTextField*   _roomTitleLabel;
     LoginView*     _loginView;
     NSStackView*   _contentStack;
-
-    NSTextField*   _typingBar;
-
-    // Compose bar — tk::macos::Surface hosting the shared ComposeBar
-    // with a NativeTextArea overlay (NSTextView under the hood).
-    std::unique_ptr<tk::macos::Surface>             _composeSurface;
-    tesseract::views::ComposeBar*                    _composeShared;     // borrowed
-    std::unique_ptr<tk::NativeTextArea>              _composeTextArea;
-    NSLayoutConstraint*                               _composeHeightCon;
 
     // Recovery banner — shared widget on a tk::macos::Surface.
     std::unique_ptr<tk::macos::Surface>             _recoverySurface;
@@ -831,96 +820,136 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     _content.wantsLayer = YES;
     _content.layer.backgroundColor = [NSColor whiteColor].CGColor;
 
-    // Room header — a simple bordered strip with the room name.
-    _roomTitleLabel = [NSTextField labelWithString:@""];
-    _roomTitleLabel.font = [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold];
-    _roomTitleLabel.textColor = [NSColor labelColor];
-    _roomTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    NSView* header = [[NSView alloc] init];
-    header.wantsLayer = YES;
-    header.layer.backgroundColor = [NSColor windowBackgroundColor].CGColor;
-    [header addSubview:_roomTitleLabel];
-    [NSLayoutConstraint activateConstraints:@[
-        [_roomTitleLabel.leadingAnchor  constraintEqualToAnchor:header.leadingAnchor constant:16],
-        [_roomTitleLabel.centerYAnchor  constraintEqualToAnchor:header.centerYAnchor],
-    ]];
-    [header.heightAnchor constraintEqualToConstant:48].active = YES;
-
-    // Message list surface.
-    _msgSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    auto msg_view = std::make_unique<tesseract::views::MessageListView>();
-    _messageListView = msg_view.get();
-    _messageListView->set_avatar_provider(
-        [self](const std::string& mxc) -> const tk::Image* {
-            auto it = _shell->tk_avatars_.find(mxc);
-            return it == _shell->tk_avatars_.end() ? nullptr : it->second.get();
-        });
-    _messageListView->set_image_provider(
-        [self](const std::string& mxc) -> const tk::Image* {
-            if (auto* f = _shell->anim_cache_.current_frame(mxc)) return f;
-            auto it = _shell->tk_images_.find(mxc);
-            return it == _shell->tk_images_.end() ? nullptr : it->second.get();
-        });
+    // Combined chat area: RoomHeader + MessageListView + typing + ComposeBar.
+    _chatSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     {
+        auto rv = std::make_unique<tesseract::views::RoomView>();
+        _roomView = rv.get();
         __weak MainWindowController* weakSelf = self;
-        _messageListView->on_reaction_toggled =
+        _roomView->set_avatar_provider(
+            [weakSelf](const std::string& mxc) -> const tk::Image* {
+                MainWindowController* s = weakSelf;
+                if (!s) return nullptr;
+                auto it = s->_shell->tk_avatars_.find(mxc);
+                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        _roomView->set_image_provider(
+            [weakSelf](const std::string& mxc) -> const tk::Image* {
+                MainWindowController* s = weakSelf;
+                if (!s) return nullptr;
+                if (auto* f = s->_shell->anim_cache_.current_frame(mxc)) return f;
+                auto it = s->_shell->tk_images_.find(mxc);
+                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
+            });
+        _roomView->set_voice_bytes_provider(
+            [weakSelf](const std::string& source_json) -> std::vector<std::uint8_t> {
+                MainWindowController* s = weakSelf;
+                if (!s) return {};
+                return s->_shell->client_->fetch_source_bytes(source_json);
+            });
+        _roomView->set_video_player_factory(
+            [weakSelf]() -> std::unique_ptr<tk::VideoPlayer> {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_chatSurface) return nullptr;
+                return s->_chatSurface->host().make_video_player();
+            });
+        _roomView->set_video_fetch_provider(
+            [weakSelf](const std::string& src,
+                       std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+                s->_shell->run_async_([weakSelf, src, bytes_holder,
+                                       on_ready = std::move(on_ready),
+                                       clientPtr = s->_shell->client_]() mutable {
+                    *bytes_holder = clientPtr->fetch_source_bytes(src);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        on_ready(std::move(*bytes_holder));
+                    });
+                });
+            });
+        if (auto player = _chatSurface->host().make_audio_player())
+            _roomView->set_audio_player(std::move(player));
+
+        _roomView->on_send = [weakSelf](const std::string& body) {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            std::string trimmed = trim(body);
+            if (trimmed.empty()) return;
+            if (s->_shell->client_->send_message(s->_shell->current_room_id_, trimmed)) {
+                if (s->_roomTextArea) s->_roomTextArea->set_text("");
+                if (s->_roomView)     s->_roomView->set_current_text({});
+            }
+        };
+        _roomView->on_send_reply =
+            [weakSelf](const std::string& reply_event_id, const std::string& body) {
+                MainWindowController* s = weakSelf;
+                if (!s || body.empty() || s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->send_reply(s->_shell->current_room_id_, reply_event_id, body);
+                if (s->_roomTextArea) s->_roomTextArea->set_text("");
+                if (s->_roomView)     s->_roomView->set_current_text({});
+            };
+        _roomView->on_send_edit =
+            [weakSelf](const std::string& event_id, const std::string& new_body) {
+                MainWindowController* s = weakSelf;
+                if (!s || new_body.empty() || s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id, new_body);
+                if (s->_roomTextArea) s->_roomTextArea->set_text("");
+                if (s->_roomView)     s->_roomView->set_current_text({});
+            };
+        _roomView->on_send_image =
+            [weakSelf](std::vector<std::uint8_t> bytes,
+                       std::string mime,
+                       std::string filename,
+                       std::string caption,
+                       std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
+                       std::string reply_event_id) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                [s _sendComposedImage:std::move(bytes)
+                                  mime:std::move(mime)
+                              filename:std::move(filename)
+                               caption:std::move(caption)
+                          replyEventId:std::move(reply_event_id)];
+            };
+        _roomView->on_send_file =
+            [weakSelf](std::vector<std::uint8_t> bytes,
+                       std::string mime,
+                       std::string filename,
+                       std::string caption,
+                       std::string reply_event_id) {
+                MainWindowController* s = weakSelf;
+                if (!s) return;
+                [s _sendComposedFile:std::move(bytes)
+                                  mime:std::move(mime)
+                              filename:std::move(filename)
+                               caption:std::move(caption)
+                          replyEventId:std::move(reply_event_id)];
+            };
+        _roomView->on_delete_requested = [weakSelf](const std::string& event_id) {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            s->_shell->client_->redact_event(s->_shell->current_room_id_, event_id);
+        };
+        _roomView->on_reaction_toggled =
             [weakSelf](const std::string& event_id, const std::string& key) {
                 MainWindowController* s = weakSelf;
-                if (!s) return;
-                if (s->_shell->current_room_id_.empty()) return;
+                if (!s || s->_shell->current_room_id_.empty()) return;
                 s->_shell->client_->send_reaction(s->_shell->current_room_id_, event_id, key);
             };
-        _messageListView->on_add_reaction_requested =
+        _roomView->on_add_reaction_requested =
             [weakSelf](const std::string& event_id, tk::Rect anchor) {
                 MainWindowController* s = weakSelf;
-                if (!s) return;
-                if (s->_shell->current_room_id_.empty()) return;
+                if (!s || s->_shell->current_room_id_.empty()) return;
                 s->_pendingReactionEventId = event_id;
-                // anchor is in MessageListView-local coords; the view is
-                // the root of _msgSurface, whose backing NSView is
-                // flipped so the rect maps directly to view-local.
                 [s showEmojiPickerAtRect:anchor];
             };
-        _messageListView->on_reply_requested =
-            [weakSelf](const std::string& event_id,
-                       const std::string& sender_name,
-                       const std::string& body_preview) {
-                MainWindowController* s = weakSelf;
-                if (!s || !s->_composeShared) return;
-                s->_composeShared->set_reply_to(event_id, sender_name,
-                                                body_preview);
-                if (s->_composeTextArea) s->_composeTextArea->set_focused(true);
-            };
-        _messageListView->on_edit_requested =
-            [weakSelf](const std::string& event_id,
-                       const std::string& current_body) {
-                MainWindowController* s = weakSelf;
-                if (!s || !s->_composeShared) return;
-                s->_composeShared->set_editing(event_id);
-                if (s->_composeTextArea) {
-                    s->_composeTextArea->set_text(current_body);
-                    s->_composeShared->set_current_text(current_body);
-                    s->_composeTextArea->set_focused(true);
-                }
-            };
-        _messageListView->on_delete_requested =
-            [weakSelf](const std::string& event_id) {
-                MainWindowController* s = weakSelf;
-                if (!s || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->redact_event(s->_shell->current_room_id_, event_id);
-            };
-        _messageListView->on_near_top = [weakSelf]{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            if (s->_shell->current_room_id_.empty()) return;
-            [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
-        };
-        _messageListView->on_receipt_needed = [weakSelf](const std::string& eid) {
+        _roomView->on_receipt_needed = [weakSelf](const std::string& eid) {
             MainWindowController* s = weakSelf;
             if (!s) return;
             s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_, eid);
         };
-        _messageListView->on_image_clicked =
+        _roomView->on_image_clicked =
             [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {
                 MainWindowController* s = weakSelf;
                 if (!s || !s->_imgViewer || !s->_imgViewerView) return;
@@ -929,7 +958,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                 [s->_imgViewerView setHidden:NO];
                 [s->_imgViewerView.window makeFirstResponder:s->_imgViewerView];
             };
-        _messageListView->on_video_clicked =
+        _roomView->on_video_clicked =
             [weakSelf](const tesseract::views::MessageListView::VideoHit& hit) {
                 MainWindowController* s = weakSelf;
                 if (!s || !s->_vidViewer || !s->_vidViewerView) return;
@@ -940,7 +969,6 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                                     hit.no_audio, hit.hide_controls);
                 [s->_vidViewerView setHidden:NO];
                 [s->_vidViewerView.window makeFirstResponder:s->_vidViewerView];
-                // Async byte fetch.
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
                 std::string src = hit.source_json;
                 s->_shell->run_async_([weakSelf, src, bytes_holder,
@@ -954,67 +982,111 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                     });
                 });
             };
-        __weak MainWindowController* wkSelf = self;
-        _messageListView->set_video_player_factory(
-            [wkSelf]() -> std::unique_ptr<tk::VideoPlayer> {
-                MainWindowController* s = wkSelf;
-                if (!s || !s->_msgSurface) return nullptr;
-                return s->_msgSurface->host().make_video_player();
-            });
-        _messageListView->set_video_fetch_provider(
-            [wkSelf](const std::string& src,
-                     std::function<void(std::vector<std::uint8_t>)> on_ready) {
-                MainWindowController* s = wkSelf;
-                if (!s) return;
-                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-                s->_shell->run_async_([wkSelf, src, bytes_holder,
-                                       on_ready = std::move(on_ready),
-                                       clientPtr = s->_shell->client_]() mutable {
-                    *bytes_holder = clientPtr->fetch_source_bytes(src);
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        on_ready(std::move(*bytes_holder));
-                    });
-                });
-            });
-    }
-    // Voice (MSC3245) playback — AVAudioPlayer-backed tk::AudioPlayer.
-    if (auto player = _msgSurface->host().make_audio_player()) {
-        _messageListView->set_audio_player(std::move(player));
-    }
-    _messageListView->set_voice_bytes_provider(
-        [self](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return _shell->client_->fetch_source_bytes(source_json);
-        });
-    {
-        __weak MainWindowController* weakSelf = self;
-        _messageListView->set_repaint_requester([weakSelf]() {
+        _roomView->on_near_top = [weakSelf] {
             MainWindowController* s = weakSelf;
-            if (!s || !s->_msgSurface) return;
-            NSView* v = (__bridge NSView*)s->_msgSurface->view_handle();
-            [v setNeedsDisplay:YES];
-        });
-    }
-    _msgSurface->set_root(std::move(msg_view));
-    {
-        __weak MainWindowController* ws = self;
-        _msgSurface->set_on_right_click([ws](tk::Point p) {
-            MainWindowController* s = ws;
-            if (!s || !s->_messageListView) return;
-            auto hit = s->_messageListView->sticker_hit_at(p);
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
+        };
+        _roomView->on_emoji = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s showEmojiPicker:nil];
+        };
+        _roomView->on_sticker = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s _showStickerPicker];
+        };
+        _roomView->on_edit_cancelled = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            if (s->_roomTextArea) s->_roomTextArea->set_text("");
+            if (s->_roomView)     s->_roomView->set_current_text({});
+        };
+        _roomView->on_edit_prefill = [weakSelf](const std::string& body) {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            if (s->_roomTextArea) s->_roomTextArea->set_text(body);
+            if (s->_roomView)     s->_roomView->set_current_text(body);
+            if (s->_roomTextArea) s->_roomTextArea->set_focused(true);
+        };
+        _roomView->on_reply_focus = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_roomTextArea) s->_roomTextArea->set_focused(true);
+        };
+        _roomView->on_layout_changed = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s) [s _relayoutChatSurface];
+        };
+
+        _chatSurface->set_on_right_click([weakSelf](tk::Point p) {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_roomView) return;
+            auto hit = s->_roomView->message_list()->sticker_hit_at(p);
             if (!hit) return;
             s->_ctxStickerEventId  = hit->event_id;
             s->_ctxStickerMxcUrl   = hit->mxc_url;
             s->_ctxStickerBody     = hit->body;
             s->_ctxStickerInfoJson = hit->info_json;
-            NSView* view = (__bridge NSView*)s->_msgSurface->view_handle();
+            NSView* view = (__bridge NSView*)s->_chatSurface->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
             NSPoint screen = [view.window convertPointToScreen:
                                [view convertPoint:local toView:nil]];
             [s _showStickerContextMenuAt:screen];
         });
+
+        _chatSurface->set_root(std::move(rv));
+
+        _roomTextArea = _chatSurface->host().make_text_area();
+        _roomTextArea->set_placeholder("Message…");
+        _roomTextArea->set_on_changed([weakSelf](const std::string& s) {
+            MainWindowController* c = weakSelf;
+            if (c) c->_shell->handle_compose_text_changed_(s);
+            if (c && c->_roomView) c->_roomView->set_current_text(s);
+        });
+        _roomTextArea->set_on_submit([weakSelf] {
+            MainWindowController* c = weakSelf;
+            if (c) [c _onComposeSend];
+        });
+        _roomTextArea->set_on_height_changed([weakSelf](float h) {
+            MainWindowController* c = weakSelf;
+            if (!c || !c->_roomView) return;
+            c->_roomView->set_text_area_natural_height(h);
+            [c _relayoutChatSurface];
+        });
+        _roomTextArea->set_on_image_paste(
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime) {
+                MainWindowController* c = weakSelf;
+                if (c && c->_roomView)
+                    c->_roomView->compose_bar()->set_pending_image(std::move(bytes),
+                                                                    std::move(mime));
+            });
+
+        auto on_file_drop = [weakSelf](std::vector<std::uint8_t> bytes,
+                                        std::string mime,
+                                        std::string filename) {
+            MainWindowController* c = weakSelf;
+            if (!c || !c->_roomView) return;
+            const auto limit = c->_shell->client_->media_upload_limit();
+            if (limit > 0 && bytes.size() > limit) return;
+            if (mime.rfind("image/", 0) == 0) {
+                c->_roomView->compose_bar()->set_pending_image(std::move(bytes),
+                                                               std::move(mime),
+                                                               std::move(filename));
+            } else {
+                c->_roomView->compose_bar()->set_pending_file(std::move(bytes),
+                                                              std::move(mime),
+                                                              std::move(filename));
+            }
+        };
+        _chatSurface->set_on_file_drop(on_file_drop);
+
+        _chatSurface->set_on_layout([weakSelf] {
+            MainWindowController* c = weakSelf;
+            if (!c || !c->_roomView || !c->_roomTextArea) return;
+            c->_roomTextArea->set_rect(c->_roomView->compose_text_area_rect());
+        });
     }
-    NSView* msgSurfaceView = (__bridge NSView*)_msgSurface->view_handle();
-    msgSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
+    NSView* chatSurfaceView = (__bridge NSView*)_chatSurface->view_handle();
+    chatSurfaceView.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Recovery banner — shared widget hosted in a tk::macos::Surface.
     _recoverySurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
@@ -1113,165 +1185,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     verifView.translatesAutoresizingMaskIntoConstraints = NO;
     verifView.hidden = YES;
 
-    // Compose bar — shared widget on a tk::macos::Surface. The text input
-    // is a NativeTextArea overlay on the bar's text_area_rect; emoji and
-    // send buttons paint into the toolkit.
-    _composeSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
-    {
-        auto bar = std::make_unique<tesseract::views::ComposeBar>();
-        _composeShared = bar.get();
-        __weak MainWindowController* weakSelf = self;
-        _composeShared->on_send = [weakSelf](const std::string& body) {
-            MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
-            std::string trimmed = trim(body);
-            if (trimmed.empty()) return;
-            auto res = s->_shell->client_->send_message(s->_shell->current_room_id_, trimmed);
-            if (res) {
-                if (s->_composeTextArea) s->_composeTextArea->set_text("");
-                if (s->_composeShared)   s->_composeShared->set_current_text({});
-            }
-        };
-        _composeShared->on_send_image =
-            [weakSelf](std::vector<std::uint8_t> bytes,
-                        std::string mime,
-                        std::string filename,
-                        std::string caption,
-                        std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
-                        std::string reply_event_id) {
-                MainWindowController* s = weakSelf;
-                if (!s) return;
-                [s _sendComposedImage:std::move(bytes)
-                                   mime:std::move(mime)
-                                filename:std::move(filename)
-                                  caption:std::move(caption)
-                           replyEventId:std::move(reply_event_id)];
-            };
-        _composeShared->on_size_changed = [weakSelf] {
-            MainWindowController* c = weakSelf;
-            if (!c || !c->_composeShared || !c->_composeHeightCon) return;
-            c->_composeHeightCon.constant = c->_composeShared->natural_height();
-        };
-        _composeShared->on_emoji = [weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (s) [s showEmojiPicker:nil];
-        };
-        _composeShared->on_sticker = [weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (s) [s _showStickerPicker];
-        };
-        _composeSurface->set_root(std::move(bar));
-
-        _composeTextArea = _composeSurface->host().make_text_area();
-        _composeTextArea->set_placeholder("Message…");
-        _composeTextArea->set_on_changed([weakSelf](const std::string& s) {
-            MainWindowController* c = weakSelf;
-            if (c) c->_shell->handle_compose_text_changed_(s);
-            if (c && c->_composeShared) c->_composeShared->set_current_text(s);
-        });
-        _composeTextArea->set_on_submit([weakSelf] {
-            MainWindowController* c = weakSelf;
-            if (c) [c _onComposeSend];
-        });
-        _composeTextArea->set_on_height_changed([weakSelf](float h) {
-            MainWindowController* c = weakSelf;
-            if (!c || !c->_composeShared) return;
-            c->_composeShared->set_text_area_natural_height(h);
-            if (c->_composeHeightCon)
-                c->_composeHeightCon.constant = c->_composeShared->natural_height();
-        });
-        _composeTextArea->set_on_image_paste(
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime) {
-                MainWindowController* c = weakSelf;
-                if (c && c->_composeShared)
-                    c->_composeShared->set_pending_image(std::move(bytes),
-                                                          std::move(mime));
-            });
-
-        // Drag-and-drop: any file dropped on the message list or
-        // composer parks in the compose bar — images use the preview
-        // band, everything else uses the file chip.
-        auto on_file_drop = [weakSelf](std::vector<std::uint8_t> bytes,
-                                        std::string mime,
-                                        std::string filename) {
-            MainWindowController* c = weakSelf;
-            if (!c || !c->_composeShared) return;
-            const auto limit = c->_shell->client_->media_upload_limit();
-            if (limit > 0 && bytes.size() > limit) return;
-            if (mime.rfind("image/", 0) == 0) {
-                c->_composeShared->set_pending_image(std::move(bytes),
-                                                     std::move(mime),
-                                                     std::move(filename));
-            } else {
-                c->_composeShared->set_pending_file(std::move(bytes),
-                                                    std::move(mime),
-                                                    std::move(filename));
-            }
-        };
-        _composeSurface->set_on_file_drop(on_file_drop);
-        if (_msgSurface) _msgSurface->set_on_file_drop(on_file_drop);
-
-        _composeShared->on_send_file =
-            [weakSelf](std::vector<std::uint8_t> bytes,
-                        std::string mime,
-                        std::string filename,
-                        std::string caption,
-                        std::string reply_event_id) {
-                MainWindowController* s = weakSelf;
-                if (!s) return;
-                [s _sendComposedFile:std::move(bytes)
-                                  mime:std::move(mime)
-                              filename:std::move(filename)
-                                caption:std::move(caption)
-                          replyEventId:std::move(reply_event_id)];
-            };
-        _composeShared->on_send_reply =
-            [weakSelf](const std::string& reply_event_id,
-                       const std::string& body) {
-                MainWindowController* s = weakSelf;
-                if (!s || body.empty() || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->send_reply(s->_shell->current_room_id_, reply_event_id, body);
-                if (s->_composeTextArea) s->_composeTextArea->set_text("");
-                if (s->_composeShared)   s->_composeShared->set_current_text({});
-            };
-        _composeShared->on_send_edit =
-            [weakSelf](const std::string& event_id,
-                       const std::string& new_body) {
-                MainWindowController* s = weakSelf;
-                if (!s || new_body.empty() || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id, new_body);
-                if (s->_composeTextArea) s->_composeTextArea->set_text("");
-                if (s->_composeShared)   s->_composeShared->set_current_text({});
-            };
-        _composeShared->on_edit_cancelled = [weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            if (s->_composeTextArea) s->_composeTextArea->set_text("");
-            if (s->_composeShared)   s->_composeShared->set_current_text({});
-        };
-
-        _composeSurface->set_on_layout([weakSelf] {
-            MainWindowController* c = weakSelf;
-            if (!c || !c->_composeShared || !c->_composeTextArea) return;
-            c->_composeTextArea->set_rect(c->_composeShared->text_area_rect());
-        });
-    }
-    NSView* composeView = (__bridge NSView*)_composeSurface->view_handle();
-    composeView.translatesAutoresizingMaskIntoConstraints = NO;
-
-    _typingBar = [NSTextField labelWithString:@""];
-    _typingBar.textColor = NSColor.secondaryLabelColor;
-    _typingBar.font = [NSFont systemFontOfSize:11];
-    _typingBar.editable = NO;
-    _typingBar.bordered = NO;
-    _typingBar.drawsBackground = NO;
-    _typingBar.translatesAutoresizingMaskIntoConstraints = NO;
-    [_typingBar addConstraint:
-        [_typingBar.heightAnchor constraintEqualToConstant:20]];
-
-    _contentStack = [NSStackView stackViewWithViews:@[header, recoveryView, verifView,
-                                                       msgSurfaceView, _typingBar,
-                                                       composeView]];
+    _contentStack = [NSStackView stackViewWithViews:@[recoveryView, verifView,
+                                                       chatSurfaceView]];
     _contentStack.orientation     = NSUserInterfaceLayoutOrientationVertical;
     _contentStack.alignment       = NSLayoutAttributeLeading;
     _contentStack.distribution    = NSStackViewDistributionFill;
@@ -1284,26 +1199,16 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
         [_contentStack.trailingAnchor constraintEqualToAnchor:_content.trailingAnchor],
         [_contentStack.bottomAnchor   constraintEqualToAnchor:_content.bottomAnchor],
 
-        [header.leadingAnchor   constraintEqualToAnchor:_contentStack.leadingAnchor],
-        [header.trailingAnchor  constraintEqualToAnchor:_contentStack.trailingAnchor],
         [recoveryView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [recoveryView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
         [recoveryView.heightAnchor   constraintEqualToConstant:48],
         [verifView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
         [verifView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
-        [msgSurfaceView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
-        [msgSurfaceView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
-        [_typingBar.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor
-                                                 constant:8],
-        [_typingBar.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
-        [composeView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
-        [composeView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
+        [chatSurfaceView.leadingAnchor  constraintEqualToAnchor:_contentStack.leadingAnchor],
+        [chatSurfaceView.trailingAnchor constraintEqualToAnchor:_contentStack.trailingAnchor],
     ]];
     _verifHeightCon = [verifView.heightAnchor constraintEqualToConstant:0];
     _verifHeightCon.active = YES;
-    _composeHeightCon = [composeView.heightAnchor
-        constraintEqualToConstant:tesseract::views::ComposeBar::kMinHeight];
-    _composeHeightCon.active = YES;
 
     // ── Split view (sidebar | content) ────────────────────────────────
     _splitView = [[NSSplitView alloc] initWithFrame:NSZeroRect];
@@ -1401,7 +1306,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                 auto it = s->_shell->tk_images_.find(url);
                 return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
             });
-        _vidViewer->set_video_player(_msgSurface->host().make_video_player());
+        _vidViewer->set_video_player(_chatSurface->host().make_video_player());
         _vidViewer->set_repaint_requester([weakSelf] {
             MainWindowController* s = weakSelf;
             if (s && s->_vidViewerSurface) s->_vidViewerSurface->relayout();
@@ -1450,7 +1355,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
 }
 
 - (void)showEmojiPicker:(id)sender {
-    if (!_composeSurface) return;
+    if (!_chatSurface) return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
@@ -1469,17 +1374,17 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             [weakPanel close];
             return;
         }
-        if (!s->_composeTextArea) return;
-        s->_composeTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_composeShared) s->_composeShared->set_current_text(s->_composeTextArea->text());
-        s->_composeTextArea->set_focused(true);
+        if (!s->_roomTextArea) return;
+        s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
+        if (s->_roomView) s->_roomView->set_current_text(s->_roomTextArea->text());
+        s->_roomTextArea->set_focused(true);
     };
-    NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();
+    NSView* anchor = (__bridge NSView*)_chatSurface->view_handle();
     [panel popupAboveView:anchor];
 }
 
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor {
-    if (!_msgSurface) return;
+    if (!_chatSurface) return;
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
@@ -1497,17 +1402,17 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             [weakPanel close];
             return;
         }
-        if (!s->_composeTextArea) return;
-        s->_composeTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_composeShared) s->_composeShared->set_current_text(s->_composeTextArea->text());
-        s->_composeTextArea->set_focused(true);
+        if (!s->_roomTextArea) return;
+        s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
+        if (s->_roomView) s->_roomView->set_current_text(s->_roomTextArea->text());
+        s->_roomTextArea->set_focused(true);
     };
-    NSView* anchorView = (__bridge NSView*)_msgSurface->view_handle();
+    NSView* anchorView = (__bridge NSView*)_chatSurface->view_handle();
     [panel popupAtRect:anchor inView:anchorView];
 }
 
 - (void)_onComposeSend {
-    if (_composeShared) _composeShared->trigger_send();
+    if (_roomView) _roomView->compose_bar()->trigger_send();
 }
 
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
@@ -1515,11 +1420,11 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                    filename:(std::string)filename
                     caption:(std::string)caption
                replyEventId:(std::string)reply_event_id {
-    if (_shell->current_room_id_.empty() || !_composeSurface) return;
+    if (_shell->current_room_id_.empty() || !_chatSurface) return;
     const bool compress =
         tesseract::Settings::instance().image_quality
         == tesseract::Settings::ImageQuality::Compressed;
-    auto enc = _composeSurface->host().encode_for_send(
+    auto enc = _chatSurface->host().encode_for_send(
         bytes.data(), bytes.size(), compress);
     if (enc.bytes.empty()) return;
     std::string out_name = filename;
@@ -1533,8 +1438,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                                     enc.width, enc.height,
                                     reply_event_id);
     if (res) {
-        if (_composeTextArea) _composeTextArea->set_text("");
-        if (_composeShared)   _composeShared->set_current_text({});
+        if (_roomTextArea) _roomTextArea->set_text("");
+        if (_roomView)     _roomView->set_current_text({});
     }
 }
 
@@ -1547,8 +1452,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     auto res = _shell->client_->send_file(_shell->current_room_id_, bytes, mime,
                                   filename, caption, reply_event_id);
     if (res) {
-        if (_composeTextArea) _composeTextArea->set_text("");
-        if (_composeShared)   _composeShared->set_current_text({});
+        if (_roomTextArea) _roomTextArea->set_text("");
+        if (_roomView)     _roomView->set_current_text({});
     }
 }
 
@@ -1694,8 +1599,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     _shell->rooms_ = (it != _shell->per_account_rooms_.end())
         ? it->second : std::vector<tesseract::RoomInfo>{};
     [self _refreshRoomList];
-    _messageListView->set_messages({});
-    _msgSurface->relayout();
+    if (_roomView) _roomView->set_messages({});
+    [self _relayoutChatSurface];
 
     _splitView.hidden = NO;
     _loginView.hidden = YES;
@@ -1961,8 +1866,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
         _shell->rooms_.clear();
         _shell->space_stack_.clear();
         [self _refreshRoomList];
-        _messageListView->set_messages({});
-        _msgSurface->relayout();
+        if (_roomView) _roomView->set_messages({});
+        [self _relayoutChatSurface];
         _userStrip.hidden = YES;
         _userStripHeightCon.constant = 0;
 
@@ -2131,8 +2036,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (event->type == tesseract::EventType::Unhandled) return;
     _shell->ensure_row_media_(*event);
     _shell->ensure_reply_details_(event->in_reply_to_id);
-    _messageListView->insert_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
-    _msgSurface->relayout();
+    if (_roomView) _roomView->insert_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
+    [self _relayoutChatSurface];
 }
 
 - (void)handleMessageUpdated:(NSString*)roomId
@@ -2145,16 +2050,16 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (event->type == tesseract::EventType::Unhandled) return;
     _shell->ensure_row_media_(*event);
     _shell->ensure_reply_details_(event->in_reply_to_id);
-    _messageListView->update_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
-    _msgSurface->relayout();
+    if (_roomView) _roomView->update_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
+    [self _relayoutChatSurface];
 }
 
 - (void)handleMessageRemoved:(NSString*)roomId
                         index:(std::size_t)index
 {
     if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
-    _messageListView->remove_message(index);
-    _msgSurface->relayout();
+    if (_roomView) _roomView->remove_message(index);
+    [self _relayoutChatSurface];
 }
 
 // updateRoomsForUserId: was the old ObjC EventBridge hook. EventHandlerBase now
@@ -2193,8 +2098,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             _shell->ensure_reply_details_(ev->in_reply_to_id);
             rows.push_back(tesseract::views::make_row_data(*ev, _shell->my_user_id_));
         }
-        _messageListView->set_messages(std::move(rows));
-        _msgSurface->relayout();
+        if (_roomView) _roomView->set_messages(std::move(rows));
+        [self _relayoutChatSurface];
     }
     for (auto* ev : snapshot) delete ev;
 }
@@ -2283,12 +2188,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (_roomSurface) _roomSurface->relayout();
 }
 
-- (void)_relayoutMsgSurface {
-    if (_msgSurface) _msgSurface->relayout();
-}
-
-- (void)_updateTypingBar:(NSString*)text {
-    _typingBar.stringValue = text ?: @"";
+- (void)_relayoutChatSurface {
+    if (_chatSurface) _chatSurface->relayout();
 }
 
 - (void)_onRoomListStateChanged {
@@ -2466,10 +2367,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     _roomSurface->relayout();
 }
 
-- (void)_setRoomHeader:(const tesseract::RoomInfo&)info {
-    _roomTitleLabel.stringValue =
-        [NSString stringWithUTF8String:info.name.c_str()] ?: @"";
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Room + message handling
@@ -2496,13 +2393,16 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         prefs.last_room = roomId;
         _shell->client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
-    if (_composeShared) {
-        _composeShared->clear_reply();
-        _composeShared->clear_editing();
+    if (_roomView) {
+        _roomView->compose_bar()->clear_reply();
+        _roomView->compose_bar()->clear_editing();
     }
-    _shell->update_typing_bar({}, false);
+    if (_roomView) _roomView->set_typing_text({});
     for (const auto& r : _shell->rooms_) {
-        if (r.id == _shell->current_room_id_) { [self _setRoomHeader:r]; break; }
+        if (r.id == _shell->current_room_id_) {
+            if (_roomView) { _roomView->set_room(r); [self _relayoutChatSurface]; }
+            break;
+        }
     }
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
@@ -2548,8 +2448,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (it == _shell->pagination_.end()) return;
     it->second.in_flight     = false;
     it->second.reached_start = reached;
-    if (roomId == _shell->current_room_id_ && _messageListView)
-        _messageListView->reset_near_top_latch();
+    if (roomId == _shell->current_room_id_ && _roomView)
+        _roomView->message_list()->reset_near_top_latch();
 }
 
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached {
@@ -2667,7 +2567,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     const std::int64_t now =
         static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] * 1000.0);
     if (_shell->anim_cache_.advance(now)) {
-        if (_msgSurface) _msgSurface->relayout();
+        [self _relayoutChatSurface];
         StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
         if (panel.isVisible) [panel invalidateImageCache];
     }
@@ -2716,7 +2616,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)_showStickerPicker {
-    if (!_composeSurface || _shell->current_room_id_.empty()) return;
+    if (!_chatSurface || _shell->current_room_id_.empty()) return;
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
 
@@ -2745,7 +2645,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         [weakPanel orderOut:nil];
     };
 
-    NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();
+    NSView* anchor = (__bridge NSView*)_chatSurface->view_handle();
     [panel popupAboveView:anchor];
 }
 

@@ -23,14 +23,13 @@
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_win32.h"
-#include "views/ComposeBar.h"
 #include "views/EmojiPicker.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/RoomListView.h"
+#include "views/RoomView.h"
 #include "views/VerificationBanner.h"
 #include "views/StickerPicker.h"
 
@@ -84,7 +83,6 @@ class LoginView;
 
 class MainWindow : public tesseract::ShellBase {
     // Owner-drawn sidebar widgets need access to MainWindow state for paint.
-    friend LRESULT CALLBACK room_header_wnd_proc(HWND, UINT, WPARAM, LPARAM);
     friend LRESULT CALLBACK user_strip_wnd_proc (HWND, UINT, WPARAM, LPARAM);
 
 public:
@@ -96,9 +94,9 @@ public:
     bool create(int nCmdShow);
 
     // MediaKind is inherited from tesseract::ShellBase.
-    // RoomAvatar → tk_avatars_, invalidate room_surface_
-    // UserAvatar → tk_avatars_, invalidate msg_surface_
-    // MediaImage → anim_cache_/tk_images_[url], invalidate msg_surface_
+    // RoomAvatar → tk_avatars_, relayout room_surface_ + chat_surface_
+    // UserAvatar → tk_avatars_, invalidate chat_surface_
+    // MediaImage → anim_cache_/tk_images_[url], invalidate chat_surface_
 
     // ── EventHandlerBase UI-thread hook overrides (Win32) ─────────────────────
     void handle_timeline_reset_ui_(
@@ -217,8 +215,6 @@ private:
     // positional-callback path (insert / update / reset).
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
-    void update_room_header(const tesseract::RoomInfo& info);
-
     // Room and message rendering are owned by the shared widget tree —
     // see RoomListView / MessageListView. The legacy DRAWITEM hooks
     // are gone.
@@ -260,7 +256,6 @@ private:
     static constexpr int kStickerPickW = 360;
     static constexpr int kStickerPickH = 420;
 
-    Gdiplus::Bitmap* get_room_avatar(const std::string& room_id);
     Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
     void draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
                              int x, int y, int size);
@@ -271,7 +266,6 @@ private:
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
-    static constexpr int kRoomHeaderH    = 60;
     static constexpr int kSpaceNavBarH   = 36;
     static constexpr int kRoomRowH       = tesseract::visual::kRoomRowHeight;
     static constexpr int kMsgRowPad      = tesseract::visual::kMsgRowVerticalPad;
@@ -288,14 +282,10 @@ private:
     HWND      hSideSep_      = nullptr;   // 1px vertical separator at x=ROOM_W
     HWND      hSpaceNavBack_ = nullptr;   // ← button shown when inside a space
     HWND      hSpaceNavLabel_= nullptr;   // space name label next to back button
-    HWND      hRoomHeader_   = nullptr;
-    std::unique_ptr<tk::win32::Surface>            msg_surface_;
-    tesseract::views::MessageListView*             message_list_view_ = nullptr; // borrowed
-    // Compose bar — tk::win32::Surface hosting the shared ComposeBar
-    // with a NativeTextArea overlay (multi-line EDIT under the hood).
-    std::unique_ptr<tk::win32::Surface>            compose_surface_;
-    tesseract::views::ComposeBar*                   compose_shared_   = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextArea>             compose_text_area_;
+    // Combined chat area: RoomHeader + MessageListView + typing + ComposeBar.
+    std::unique_ptr<tk::win32::Surface>            chat_surface_;
+    tesseract::views::RoomView*                    room_view_         = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextArea>            room_text_area_;
     HWND      hEmojiPicker_ = nullptr;       // floating WS_POPUP host
     std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
@@ -313,8 +303,6 @@ private:
     std::unique_ptr<tk::win32::Surface>      vid_viewer_surface_;
     tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
 
-    HWND      hTypingBar_         = nullptr;
-    bool      typing_bar_visible_ = false;
     HWND      hStatus_            = nullptr;
 
     // Recovery banner — shared widget on a tk::win32::Surface. Key
@@ -351,17 +339,13 @@ private:
     bool                              quitting_ = false;
     // rooms_, current_room_id_, pending_restore_room_, space_stack_
     // are inherited from tesseract::ShellBase.
-    tesseract::RoomInfo              current_room_info_;
 
     // pagination_ and kPaginationBatch are inherited from tesseract::ShellBase.
 
     ULONG_PTR  gdiplus_token_ = 0;
-    // GDI+ bitmap caches for the legacy native paint paths that the
-    // migration still relies on: the room-header avatar (drawn in
-    // room_header_wnd_proc) and the user-strip avatar (drawn in
-    // user_strip_wnd_proc). Room-list + message-list avatars and
-    // inline media flow through the tk::Image caches below.
-    std::unordered_map<std::string, Gdiplus::Bitmap*> avatar_cache_;
+    // GDI+ bitmap cache for the user-strip avatar (drawn in user_strip_wnd_proc).
+    // Room-list + message-list avatars and inline media now flow through the
+    // tk::Image caches below.
     std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
 
     // URL preview cache: keyed by URL, populated by on_url_preview_ready_.

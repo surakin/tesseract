@@ -17,15 +17,14 @@
 #include "tk/host.h"
 #include "tk/host_gtk.h"
 #include "views/AccountPicker.h"
-#include "views/ComposeBar.h"
 #include "views/EmojiPicker.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/MessageListView.h"
 #include "views/RecoveryBanner.h"
 #include "views/VerificationBanner.h"
 #include "views/RoomListView.h"
+#include "views/RoomView.h"
 #include "views/StickerPicker.h"
 #include "views/UserInfo.h"
 
@@ -218,16 +217,9 @@ private:
     std::unique_ptr<tk::gtk4::Surface>            room_surface_;
     tesseract::views::RoomListView*               room_list_view_   = nullptr;
     std::unique_ptr<tk::NativeTextField>          room_search_field_;
-    GtkWidget*      room_header_        = nullptr;
-    GtkWidget*      room_header_avatar_ = nullptr;
-    GtkWidget*      room_header_name_   = nullptr;
-    GtkWidget*      room_header_topic_  = nullptr;
-    std::unique_ptr<tk::gtk4::Surface>            msg_surface_;
-    tesseract::views::MessageListView*            message_list_view_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface>            compose_surface_;
-    tesseract::views::ComposeBar*                  compose_shared_   = nullptr;
-    std::unique_ptr<tk::NativeTextArea>            compose_text_area_;
-    GtkWidget*      typing_bar_         = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>            chat_surface_;
+    tesseract::views::RoomView*                   room_view_         = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextArea>           room_text_area_;
     GtkWidget*      emoji_popover_      = nullptr;
     std::unique_ptr<tk::gtk4::Surface>      emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr;
@@ -277,7 +269,6 @@ private:
     tesseract::views::AccountPicker*              account_picker_         = nullptr;
 
     std::unique_ptr<LinuxGtkTrayIcon>     tray_;
-    std::unordered_map<std::string, std::vector<uint8_t>> avatar_cache_;
 
     guint              tk_anim_tick_id_ = 0;
 

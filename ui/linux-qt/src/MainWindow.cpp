@@ -57,40 +57,6 @@ namespace qt6 {
 // No EventBridge:: method definitions needed here.
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-QPixmap MainWindow::makeCirclePixmap(const QPixmap& src, int size) {
-    QPixmap result(size, size);
-    result.fill(Qt::transparent);
-    QPainter p(&result);
-    p.setRenderHint(QPainter::Antialiasing);
-    QPainterPath path;
-    path.addEllipse(0, 0, size, size);
-    p.setClipPath(path);
-    p.drawPixmap(0, 0, size, size, src);
-    return result;
-}
-
-QPixmap MainWindow::makeInitialsPixmap(const QString& name, int size) {
-    QPixmap result(size, size);
-    result.fill(Qt::transparent);
-    QPainter p(&result);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor(0x8E, 0x8E, 0x93));
-    p.setPen(Qt::NoPen);
-    p.drawEllipse(0, 0, size, size);
-    p.setPen(Qt::white);
-    QFont f;
-    f.setPixelSize(size / 2);
-    f.setBold(true);
-    p.setFont(f);
-    p.drawText(QRect(0, 0, size, size), Qt::AlignCenter,
-               name.isEmpty() ? "?" : QString(name[0].toUpper()));
-    return result;
-}
-
-// ---------------------------------------------------------------------------
 // MainWindow constructor
 // ---------------------------------------------------------------------------
 
@@ -268,41 +234,6 @@ MainWindow::MainWindow(QWidget* parent)
     vLayout->setSpacing(0);
     hLayout->addWidget(chatPanel, 1);
 
-    // Room header bar
-    roomHeader_ = new QWidget(chatPanel);
-    roomHeader_->setObjectName("roomHeader");
-    roomHeader_->setStyleSheet(
-        "#roomHeader { background-color:#FFFFFF; border-bottom:1px solid #D0D3D8; }");
-    roomHeader_->setFixedHeight(60);
-    roomHeader_->setVisible(false);
-
-    auto* headerLayout = new QHBoxLayout(roomHeader_);
-    headerLayout->setContentsMargins(16, 0, 16, 0);
-    headerLayout->setSpacing(12);
-
-    roomHeaderAvatar_ = new QLabel(roomHeader_);
-    roomHeaderAvatar_->setFixedSize(40, 40);
-    headerLayout->addWidget(roomHeaderAvatar_);
-
-    auto* nameBlock = new QWidget(roomHeader_);
-    auto* nameVBox  = new QVBoxLayout(nameBlock);
-    nameVBox->setContentsMargins(0, 0, 0, 0);
-    nameVBox->setSpacing(2);
-
-    roomHeaderName_ = new QLabel(nameBlock);
-    roomHeaderName_->setStyleSheet("font-size:14px; font-weight:bold; color:#111111;");
-    nameVBox->addWidget(roomHeaderName_);
-
-    roomHeaderTopic_ = new QLabel(nameBlock);
-    roomHeaderTopic_->setStyleSheet("font-size:11px; color:#65676B;");
-    roomHeaderTopic_->setVisible(false);
-    roomHeaderTopic_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    roomHeaderTopic_->installEventFilter(this);
-    nameVBox->addWidget(roomHeaderTopic_);
-
-    headerLayout->addWidget(nameBlock, 1);
-    vLayout->addWidget(roomHeader_);
-
     // Recovery banner — shared widget hosted in a tk::qt6::Surface.
     recoverySurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
     recoverySurface_->setFixedHeight(48);
@@ -380,85 +311,246 @@ MainWindow::MainWindow(QWidget* parent)
     }
     vLayout->addWidget(verifSurface_);
 
-    // Shared-toolkit message list. Each row is paint-only — no per-row
-    // QWidget — and the surface owns scrolling, hit-testing, and
-    // viewport virtualisation.
-    msgSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
-    auto msg_view_owner = std::make_unique<tesseract::views::MessageListView>();
-    messageListView_ = msg_view_owner.get();
-    messageListView_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        });
-    messageListView_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
-            // Animated entries take priority; static cache is the second hop.
-            if (const auto* f = anim_cache_.current_frame(mxc)) return f;
-            auto it = tk_images_.find(mxc);
-            return it == tk_images_.end() ? nullptr : it->second.get();
-        });
-    messageListView_->set_preview_provider(
-        [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
-            auto it = url_preview_data_.find(url);
-            if (it == url_preview_data_.end()) return nullptr;
-            if (!it->second.image_mxc.empty()
-                && !tk_images_.count(it->second.image_mxc)
-                && !anim_cache_.has(it->second.image_mxc))
-                ensure_media_image_(it->second.image_mxc, 64, 64);
-            return &it->second;
-        });
-    messageListView_->on_link_clicked = [](const std::string& url) {
-        tesseract::Client::open_in_browser(url);
-    };
-    // Voice (MSC3245) playback wiring. The Qt backend builds a QMediaPlayer
-    // when `make_audio_player()` is called; the bytes provider piggybacks
-    // on the SDK media cache via fetch_source_bytes (synchronous; empty on
-    // cache miss, in which case the view stays in its idle state).
-    if (auto player = msgSurface_->host().make_audio_player()) {
-        messageListView_->set_audio_player(std::move(player));
-    }
-    messageListView_->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return client_->fetch_source_bytes(source_json);
-        });
+    // RoomView — single shared surface hosting RoomHeader + MessageListView +
+    // ComposeBar. Replaces the three separate surfaces that were here before.
+    chatSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
     {
-        QPointer<tk::qt6::Surface> sfp = msgSurface_;
-        messageListView_->set_repaint_requester([sfp]() {
-            if (sfp) sfp->update();
-        });
+        auto room_view_owner = std::make_unique<tesseract::views::RoomView>();
+        roomView_ = room_view_owner.get();
+
+        roomView_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        roomView_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                if (const auto* f = anim_cache_.current_frame(mxc)) return f;
+                auto it = tk_images_.find(mxc);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        roomView_->set_preview_provider(
+            [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+                auto it = url_preview_data_.find(url);
+                if (it == url_preview_data_.end()) return nullptr;
+                if (!it->second.image_mxc.empty()
+                    && !tk_images_.count(it->second.image_mxc)
+                    && !anim_cache_.has(it->second.image_mxc))
+                    ensure_media_image_(it->second.image_mxc, 64, 64);
+                return &it->second;
+            });
+        if (auto player = chatSurface_->host().make_audio_player())
+            roomView_->set_audio_player(std::move(player));
+        roomView_->set_voice_bytes_provider(
+            [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+                return client_->fetch_source_bytes(source_json);
+            });
+        {
+            QPointer<tk::qt6::Surface> sfp = chatSurface_;
+            roomView_->set_repaint_requester([sfp]() {
+                if (sfp) sfp->update();
+            });
+        }
+        roomView_->set_video_player_factory(
+            [this]() { return chatSurface_->host().make_video_player(); });
+        roomView_->set_video_fetch_provider(
+            [this](const std::string& src,
+                   std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                runOnPool_([this, src, on_ready = std::move(on_ready)]() mutable {
+                    auto bytes = client_->fetch_source_bytes(src);
+                    QMetaObject::invokeMethod(this,
+                        [on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
+                            on_ready(std::move(bytes));
+                        }, Qt::QueuedConnection);
+                });
+            });
+
+        roomView_->on_layout_changed = [this] {
+            if (chatSurface_) chatSurface_->relayout();
+        };
+        roomView_->on_link_clicked = [](const std::string& url) {
+            tesseract::Client::open_in_browser(url);
+        };
+        roomView_->on_receipt_needed = [this](const std::string& eid) {
+            maybe_send_read_receipt_(current_room_id_, eid);
+        };
+        roomView_->on_near_top = [this] {
+            if (current_room_id_.empty()) return;
+            requestMoreHistory(current_room_id_);
+        };
+        roomView_->on_delete_requested = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            client_->redact_event(current_room_id_, event_id);
+        };
+        roomView_->on_reaction_toggled =
+            [this](const std::string& event_id, const std::string& key) {
+                if (current_room_id_.empty()) return;
+                client_->send_reaction(current_room_id_, event_id, key);
+            };
+        roomView_->on_add_reaction_requested =
+            [this](const std::string& event_id, tk::Rect anchor) {
+                if (!emojiPicker_ || current_room_id_.empty()) return;
+                pendingReactionEventId_ = event_id;
+                emojiPicker_->popupAtRect(chatSurface_, anchor);
+            };
+        roomView_->on_send = [this](const std::string& body) {
+            if (current_room_id_.empty()) return;
+            std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
+            if (trimmed.empty()) return;
+            auto md = tesseract::views::markdown_to_html(trimmed);
+            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            if (res) {
+                if (roomTextArea_) roomTextArea_->set_text("");
+                roomView_->clear_compose_text();
+            } else {
+                statusBar()->showMessage(QString::fromStdString(res.message), 4000);
+            }
+        };
+        roomView_->on_send_reply =
+            [this](const std::string& reply_event_id, const std::string& body) {
+                if (body.empty() || current_room_id_.empty()) return;
+                auto md = tesseract::views::markdown_to_html(body);
+                auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+                if (!res)
+                    statusBar()->showMessage(
+                        tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
+                if (roomTextArea_) roomTextArea_->set_text("");
+                roomView_->clear_compose_text();
+            };
+        roomView_->on_send_edit =
+            [this](const std::string& event_id, const std::string& new_body) {
+                if (new_body.empty() || current_room_id_.empty()) return;
+                auto md = tesseract::views::markdown_to_html(new_body);
+                auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+                if (!res)
+                    statusBar()->showMessage(
+                        tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);
+                if (roomTextArea_) roomTextArea_->set_text("");
+                roomView_->clear_compose_text();
+            };
+        roomView_->on_send_image =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption,
+                   int /*src_w*/, int /*src_h*/, std::string reply_id) {
+                if (current_room_id_.empty()) return;
+                const bool compress =
+                    tesseract::Settings::instance().image_quality
+                    == tesseract::Settings::ImageQuality::Compressed;
+                auto enc = chatSurface_->host().encode_for_send(
+                    bytes.data(), bytes.size(), compress);
+                if (enc.bytes.empty()) {
+                    statusBar()->showMessage(tr("Image decode failed"), 4000);
+                    return;
+                }
+                std::string out_name = filename;
+                if (enc.mime == "image/jpeg") {
+                    auto dot = out_name.find_last_of('.');
+                    if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+                    out_name += ".jpg";
+                }
+                auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                                out_name, caption,
+                                                enc.width, enc.height, reply_id);
+                if (!res) {
+                    statusBar()->showMessage(
+                        tr("Send image failed: %1").arg(
+                            QString::fromStdString(res.message)), 4000);
+                    return;
+                }
+                if (roomTextArea_) roomTextArea_->set_text("");
+                roomView_->clear_compose_text();
+            };
+        roomView_->on_send_file =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption,
+                   std::string reply_id) {
+                if (current_room_id_.empty()) return;
+                auto res = client_->send_file(current_room_id_, bytes, mime,
+                                              filename, caption, reply_id);
+                if (!res) {
+                    statusBar()->showMessage(
+                        tr("Send file failed: %1").arg(
+                            QString::fromStdString(res.message)), 4000);
+                    return;
+                }
+                if (roomTextArea_) roomTextArea_->set_text("");
+                roomView_->clear_compose_text();
+            };
+        roomView_->on_edit_prefill = [this](const std::string& body) {
+            if (roomTextArea_) {
+                roomTextArea_->set_text(body);
+                roomTextArea_->set_focused(true);
+            }
+        };
+        roomView_->on_edit_cancelled = [this] {
+            if (roomTextArea_) roomTextArea_->set_text("");
+            roomView_->clear_compose_text();
+        };
+        roomView_->on_reply_focus = [this] {
+            if (roomTextArea_) roomTextArea_->set_focused(true);
+        };
+        roomView_->on_emoji = [this] {
+            if (!emojiPicker_) return;
+            if (emojiPicker_->isVisible()) emojiPicker_->hide();
+            else                            emojiPicker_->popupAt(chatSurface_);
+        };
+        roomView_->on_sticker = [this] {
+            if (!stickerPicker_) return;
+            if (stickerPicker_->isVisible()) stickerPicker_->hide();
+            else                              stickerPicker_->popupAt(chatSurface_);
+        };
+
+        chatSurface_->set_root(std::move(room_view_owner));
     }
-    msgSurface_->set_root(std::move(msg_view_owner));
-    vLayout->addWidget(msgSurface_, 1);
 
-    typingBar_ = new QLabel(chatPanel);
-    typingBar_->setFixedHeight(20);
-    typingBar_->setContentsMargins(8, 0, 8, 0);
-    typingBar_->setStyleSheet(QStringLiteral("QLabel{color:palette(mid);font-size:11px;}"));
-    vLayout->addWidget(typingBar_);
+    roomTextArea_ = chatSurface_->host().make_text_area();
+    roomTextArea_->set_font_role(tk::FontRole::Body);
+    roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
+    roomTextArea_->set_on_changed([this](const std::string& s) {
+        if (roomView_) roomView_->set_current_text(s);
+    });
+    roomTextArea_->set_on_submit([this] { onSendClicked(); });
+    roomTextArea_->set_on_height_changed([this](float h) {
+        if (!roomView_ || !chatSurface_) return;
+        roomView_->set_text_area_natural_height(h);
+        chatSurface_->relayout();
+    });
+    roomTextArea_->set_on_image_paste(
+        [this](std::vector<std::uint8_t> bytes, std::string mime) {
+            if (roomView_)
+                roomView_->compose_bar()->set_pending_image(
+                    std::move(bytes), std::move(mime));
+        });
+    chatSurface_->set_on_layout([this] {
+        if (roomView_ && roomTextArea_)
+            roomTextArea_->set_rect(roomView_->compose_text_area_rect());
+    });
 
+    auto onFileDrop = [this](std::vector<std::uint8_t> bytes, std::string mime,
+                              std::string filename) {
+        if (!roomView_) return;
+        if (mime.starts_with("image/"))
+            roomView_->compose_bar()->set_pending_image(
+                std::move(bytes), std::move(mime), std::move(filename));
+        else
+            roomView_->compose_bar()->set_pending_file(
+                std::move(bytes), std::move(mime), std::move(filename));
+    };
+    chatSurface_->set_on_file_drop(onFileDrop);
 
-    // Right-click context menu on sticker rows. The shared
-    // MessageListView records sticker rects per-paint (world coords);
-    // we feed the QContextMenuEvent's local-widget position to
-    // `sticker_hit_at` and, on a hit, offer "Add to Saved Stickers".
-    // Suppress the menu when the sticker is already in the user pack.
-    msgSurface_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(msgSurface_, &QWidget::customContextMenuRequested,
+    // Right-click context menu on sticker rows.
+    chatSurface_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(chatSurface_, &QWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
-        if (!messageListView_) return;
-        // Surface coordinates equal MessageListView-local coordinates
-        // since the view is the surface's root widget.
-        auto hit = messageListView_->sticker_hit_at(
+        if (!roomView_) return;
+        auto hit = roomView_->message_list()->sticker_hit_at(
             tk::Point{ static_cast<float>(pos.x()),
                        static_cast<float>(pos.y()) });
         if (!hit) return;
-
         const bool already_saved = client_->user_pack_has_sticker(hit->mxc_url);
         const auto mxc_url   = hit->mxc_url;
         const auto body      = hit->body;
         const auto info_json = hit->info_json;
-
         QMenu menu(this);
         QAction* add = menu.addAction(already_saved
             ? tr("Already in Saved Stickers")
@@ -469,8 +561,9 @@ MainWindow::MainWindow(QWidget* parent)
                 client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
             });
         }
-        menu.exec(msgSurface_->mapToGlobal(pos));
+        menu.exec(chatSurface_->mapToGlobal(pos));
     });
+    vLayout->addWidget(chatSurface_, 1);
 
     // Image / sticker lightbox overlay — full-window surface that paints a
     // dark backdrop + the selected image. Shown on `on_image_clicked`,
@@ -500,46 +593,6 @@ MainWindow::MainWindow(QWidget* parent)
         imgViewerSurface_->set_root(std::move(viewer_owner));
     }
 
-    messageListView_->on_image_clicked =
-        [this](const tesseract::views::MessageListView::ImageHit& hit) {
-            if (!imgViewer_ || !imgViewerHost_) return;
-            imgViewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
-            imgViewerHost_->setGeometry(mainContent_->rect());
-            imgViewerHost_->raise();
-            imgViewerHost_->show();
-            imgViewerHost_->setFocus();
-
-            // Fetch and decode at native resolution. The inline path stores a
-            // 320×200-capped copy in tk_images_; the viewer needs the original.
-            // Skip animated images — they're already playing from anim_cache_.
-            const std::string& url = hit.media_url;
-            if (!url.empty()
-                && !viewerFullresCache_.count(url)
-                && !anim_cache_.has(url)
-                && viewerFullresInFlight_.insert(url).second)
-            {
-                runOnPool_([this, url]() {
-                    auto bytes = client_->fetch_source_bytes(url);
-                    QMetaObject::invokeMethod(this,
-                        [this, url, bytes = std::move(bytes)]() mutable {
-                            viewerFullresInFlight_.erase(url);
-                            if (bytes.empty() || viewerFullresCache_.count(url)) return;
-                            QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                                          static_cast<int>(bytes.size()));
-                            QBuffer buf(&qb);
-                            buf.open(QIODevice::ReadOnly);
-                            QImageReader reader(&buf);
-                            reader.setAutoTransform(true);
-                            QImage img;
-                            if (!reader.read(&img)) return;
-                            viewerFullresCache_.emplace(url,
-                                tk::qt6::make_image(std::move(img)));
-                            if (imgViewerSurface_) imgViewerSurface_->update();
-                        });
-                });
-            }
-        };
-
     // Video lightbox overlay — full-window surface for m.video playback.
     {
         auto viewer_owner = std::make_unique<tesseract::views::VideoViewerOverlay>();
@@ -556,215 +609,13 @@ MainWindow::MainWindow(QWidget* parent)
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        vidViewer_->set_video_player(msgSurface_->host().make_video_player());
+        vidViewer_->set_video_player(chatSurface_->host().make_video_player());
         vidViewer_->set_repaint_requester([this] {
             if (vidViewerSurface_) vidViewerSurface_->relayout();
         });
         vidViewer_->on_close = [this] { vidViewerHost_->hide(); };
         vidViewerSurface_->set_root(std::move(viewer_owner));
     }
-
-    messageListView_->on_video_clicked =
-        [this](const tesseract::views::MessageListView::VideoHit& hit) {
-            if (!vidViewer_ || !vidViewerHost_) return;
-            vidViewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                             hit.duration_ms, hit.natural_w, hit.natural_h,
-                             hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
-            vidViewerHost_->setGeometry(mainContent_->rect());
-            vidViewerHost_->raise();
-            vidViewerHost_->show();
-            vidViewerHost_->setFocus();
-            // Async byte fetch on a worker thread.
-            std::string src = hit.source_json;
-            runOnPool_([this, src = std::move(src)]() {
-                auto bytes = client_->fetch_source_bytes(src);
-                QMetaObject::invokeMethod(this, [this, bytes = std::move(bytes)]() mutable {
-                    if (vidViewer_)
-                        vidViewer_->load_bytes(bytes.data(), bytes.size());
-                }, Qt::QueuedConnection);
-            });
-        };
-
-    messageListView_->set_video_player_factory(
-        [this]() { return msgSurface_->host().make_video_player(); });
-    messageListView_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready) {
-            runOnPool_([this, src, on_ready = std::move(on_ready)]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                QMetaObject::invokeMethod(this,
-                    [on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
-                        on_ready(std::move(bytes));
-                    }, Qt::QueuedConnection);
-            });
-        });
-
-    // Compose bar — shared widget on a tk::qt6::Surface. The text input
-    // is a NativeTextArea overlaid on the shared ComposeBar's
-    // text_area_rect; the emoji + send buttons paint into the toolkit.
-    composeSurface_ = new tk::qt6::Surface(tk::Theme::light(), chatPanel);
-    composeSurface_->setFixedHeight(
-        static_cast<int>(tesseract::views::ComposeBar::kMinHeight));
-    auto compose_owner = std::make_unique<tesseract::views::ComposeBar>();
-    composeShared_ = compose_owner.get();
-    composeSurface_->set_root(std::move(compose_owner));
-
-    composeTextArea_ = composeSurface_->host().make_text_area();
-    composeTextArea_->set_font_role(tk::FontRole::Body);
-    composeTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
-    composeTextArea_->set_on_changed([this](const std::string& s) {
-        handle_compose_text_changed_(s);
-        if (composeShared_) composeShared_->set_current_text(s);
-    });
-    composeTextArea_->set_on_submit([this] { onSendClicked(); });
-    composeTextArea_->set_on_height_changed([this](float h) {
-        if (!composeShared_ || !composeSurface_) return;
-        composeShared_->set_text_area_natural_height(h);
-        composeSurface_->setFixedHeight(
-            static_cast<int>(composeShared_->natural_height()));
-        composeSurface_->relayout();
-    });
-    composeTextArea_->set_on_image_paste(
-        [this](std::vector<std::uint8_t> bytes, std::string mime) {
-            if (composeShared_)
-                composeShared_->set_pending_image(std::move(bytes),
-                                                    std::move(mime));
-        });
-
-    // Drag-and-drop: dropping any file on either the message list or
-    // the composer parks it in the compose bar (image → preview band,
-    // anything else → file chip). Same handler wired to both surfaces;
-    // the sidebar gets none (drops there show "no drop" by virtue of
-    // accepting nothing).
-    auto onFileDrop = [this](std::vector<std::uint8_t> bytes,
-                             std::string mime,
-                             std::string filename) {
-        if (!composeShared_) return;
-        const auto limit = client_->media_upload_limit();
-        if (limit > 0 && bytes.size() > limit) {
-            statusBar()->showMessage(
-                tr("File exceeds server limit (%1)")
-                    .arg(QString::fromStdString(
-                        tesseract::views::format_size(limit))),
-                4000);
-            return;
-        }
-        if (mime.rfind("image/", 0) == 0) {
-            composeShared_->set_pending_image(std::move(bytes),
-                                              std::move(mime),
-                                              std::move(filename));
-        } else {
-            composeShared_->set_pending_file(std::move(bytes),
-                                             std::move(mime),
-                                             std::move(filename));
-        }
-    };
-    composeSurface_->set_on_file_drop(onFileDrop);
-    if (msgSurface_) msgSurface_->set_on_file_drop(onFileDrop);
-    composeSurface_->set_on_layout([this] {
-        if (composeShared_ && composeTextArea_)
-            composeTextArea_->set_rect(composeShared_->text_area_rect());
-    });
-
-    composeShared_->on_send  = [this](const std::string& body) {
-        if (current_room_id_.empty()) return;
-        std::string trimmed = QString::fromStdString(body).trimmed().toStdString();
-        if (trimmed.empty()) return;
-        auto md = tesseract::views::markdown_to_html(trimmed);
-        auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
-        if (res) {
-            if (composeTextArea_) composeTextArea_->set_text("");
-            if (composeShared_)   composeShared_->set_current_text({});
-        } else {
-            statusBar()->showMessage(QString::fromStdString(res.message), 4000);
-        }
-    };
-    composeShared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
-                                             std::string mime,
-                                             std::string filename,
-                                             std::string caption,
-                                             std::uint32_t /*src_w*/,
-                                             std::uint32_t /*src_h*/,
-                                             std::string reply_event_id) {
-        if (current_room_id_.empty()) return;
-        const bool compress =
-            tesseract::Settings::instance().image_quality
-            == tesseract::Settings::ImageQuality::Compressed;
-        auto enc = composeSurface_->host().encode_for_send(
-            bytes.data(), bytes.size(), compress);
-        if (enc.bytes.empty()) {
-            statusBar()->showMessage(tr("Image decode failed"), 4000);
-            return;
-        }
-        // After compression mime/extension may have changed to JPEG.
-        std::string out_name = filename;
-        if (enc.mime == "image/jpeg") {
-            auto dot = out_name.find_last_of('.');
-            if (dot != std::string::npos) out_name = out_name.substr(0, dot);
-            out_name += ".jpg";
-        }
-        auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
-                                        out_name, caption,
-                                        enc.width, enc.height,
-                                        reply_event_id);
-        if (!res) {
-            statusBar()->showMessage(
-                tr("Send image failed: %1").arg(QString::fromStdString(res.message)),
-                4000);
-            return;
-        }
-        // Clear the caption now that the image went out.
-        if (composeTextArea_) composeTextArea_->set_text("");
-        if (composeShared_)   composeShared_->set_current_text({});
-    };
-    composeShared_->on_send_file = [this](std::vector<std::uint8_t> bytes,
-                                            std::string mime,
-                                            std::string filename,
-                                            std::string caption,
-                                            std::string reply_event_id) {
-        if (current_room_id_.empty()) return;
-        auto res = client_->send_file(current_room_id_, bytes, mime,
-                                      filename, caption, reply_event_id);
-        if (!res) {
-            statusBar()->showMessage(
-                tr("Send file failed: %1").arg(QString::fromStdString(res.message)),
-                4000);
-            return;
-        }
-        if (composeTextArea_) composeTextArea_->set_text("");
-        if (composeShared_)   composeShared_->set_current_text({});
-    };
-    composeShared_->on_size_changed = [this] {
-        if (!composeShared_ || !composeSurface_) return;
-        composeSurface_->setFixedHeight(
-            static_cast<int>(composeShared_->natural_height()));
-        composeSurface_->relayout();
-    };
-    composeShared_->on_emoji = [this] {
-        if (!emojiPicker_) return;
-        if (emojiPicker_->isVisible()) emojiPicker_->hide();
-        else                            emojiPicker_->popupAt(composeSurface_);
-    };
-    composeShared_->on_sticker = [this] {
-        if (!stickerPicker_) return;
-        if (stickerPicker_->isVisible()) stickerPicker_->hide();
-        else                              stickerPicker_->popupAt(composeSurface_);
-    };
-    composeShared_->on_send_reply = [this](const std::string& reply_event_id,
-                                            const std::string& body) {
-        if (body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(body);
-        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
-        if (!res) {
-            statusBar()->showMessage(
-                tr("Send reply failed: %1").arg(QString::fromStdString(res.message)), 4000);
-            return;
-        }
-        if (composeTextArea_) composeTextArea_->set_text("");
-        if (composeShared_)   composeShared_->set_current_text({});
-    };
-
-    vLayout->addWidget(composeSurface_);
 
     // Emoji picker: build the floating panel, wire selection → cursor
     // insert + account-data bump. Recents live in the SDK now (synced via
@@ -786,18 +637,18 @@ MainWindow::MainWindow(QWidget* parent)
             emojiPicker_->hide();
             return;
         }
-        if (!composeTextArea_) return;
-        composeTextArea_->insert_at_cursor(glyph.toStdString());
-        if (composeShared_) composeShared_->set_current_text(composeTextArea_->text());
-        composeTextArea_->set_focused(true);
+        if (!roomTextArea_) return;
+        roomTextArea_->insert_at_cursor(glyph.toStdString());
+        if (roomView_) roomView_->set_current_text(roomTextArea_->text());
+        roomTextArea_->set_focused(true);
         client_->recent_emoji_bump(glyph.toStdString());
     };
 
     emojiPicker_->onEmoticonSelected = [this](const tesseract::ImagePackImage& img) {
-        if (!composeTextArea_) return;
-        composeTextArea_->insert_at_cursor(":" + img.shortcode + ":");
-        if (composeShared_) composeShared_->set_current_text(composeTextArea_->text());
-        composeTextArea_->set_focused(true);
+        if (!roomTextArea_) return;
+        roomTextArea_->insert_at_cursor(":" + img.shortcode + ":");
+        if (roomView_) roomView_->set_current_text(roomTextArea_->text());
+        roomTextArea_->set_focused(true);
     };
 
     // Sticker picker: floating panel anchored at the compose-bar sticker
@@ -812,71 +663,6 @@ MainWindow::MainWindow(QWidget* parent)
             client_->send_sticker(current_room_id_, body, img.url, img.info_json);
             stickerPicker_->hide();
         };
-
-    // Reaction-chip click: toggle (Rust handles add/remove).
-    messageListView_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key) {
-            if (current_room_id_.empty()) return;
-            client_->send_reaction(current_room_id_, event_id, key);
-        };
-
-    // "+" pseudo-chip click: open the emoji picker in reaction mode.
-    messageListView_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor) {
-            if (!emojiPicker_ || current_room_id_.empty()) return;
-            pendingReactionEventId_ = event_id;
-            // anchor is in MessageListView-local coords; the view is the
-            // root of msgSurface_, so the rect maps directly to surface
-            // widget coords.
-            emojiPicker_->popupAtRect(msgSurface_, anchor);
-        };
-
-    // "↩" hover button → enter reply mode in the compose bar.
-    messageListView_->on_reply_requested =
-        [this](const std::string& event_id,
-               const std::string& sender_name,
-               const std::string& body_preview) {
-            if (!composeShared_) return;
-            composeShared_->set_reply_to(event_id, sender_name, body_preview);
-            if (composeTextArea_) composeTextArea_->set_focused(true);
-        };
-
-    // "✏" hover button → enter edit mode in the compose bar.
-    messageListView_->on_edit_requested =
-        [this](const std::string& event_id, const std::string& current_body) {
-            if (!composeShared_) return;
-            composeShared_->set_editing(event_id);
-            if (composeTextArea_) {
-                composeTextArea_->set_text(current_body);
-                composeShared_->set_current_text(current_body);
-                composeTextArea_->set_focused(true);
-            }
-        };
-
-    messageListView_->on_delete_requested =
-        [this](const std::string& event_id) {
-            if (current_room_id_.empty()) return;
-            client_->redact_event(current_room_id_, event_id);
-        };
-
-    composeShared_->on_send_edit = [this](const std::string& event_id,
-                                           const std::string& new_body) {
-        if (new_body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(new_body);
-        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
-        if (!res) {
-            statusBar()->showMessage(
-                tr("Edit failed: %1").arg(QString::fromStdString(res.message)), 4000);
-            return;
-        }
-        if (composeTextArea_) composeTextArea_->set_text("");
-        if (composeShared_)   composeShared_->set_current_text({});
-    };
-
-    composeShared_->on_edit_cancelled = [this] {
-        if (composeTextArea_) composeTextArea_->set_text("");
-        if (composeShared_)   composeShared_->set_current_text({});
-    };
 
     statusBar()->showMessage(tr("Not logged in"));
     // Room selection is delivered through RoomListView's on_room_selected
@@ -894,18 +680,6 @@ MainWindow::MainWindow(QWidget* parent)
     tk_anim_timer_->setInterval(16);
     connect(tk_anim_timer_, &QTimer::timeout,
             this, &MainWindow::onMessageAnimTick_);
-
-    // Back-pagination on scroll-to-top. The shared MessageListView fires
-    // this once per crossing of the near-top threshold; the latch is
-    // re-armed automatically after prepended rows are spliced in.
-    messageListView_->on_near_top = [this]{
-        if (current_room_id_.empty()) return;
-        requestMoreHistory(current_room_id_);
-    };
-
-    messageListView_->on_receipt_needed = [this](const std::string& eid) {
-        maybe_send_read_receipt_(current_room_id_, eid);
-    };
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
 }
@@ -1300,7 +1074,7 @@ void MainWindow::navigate_to_room(const std::string& room_id) {
 
 
 void MainWindow::onSendClicked() {
-    if (composeShared_) composeShared_->trigger_send();
+    if (roomView_) roomView_->compose_bar()->trigger_send();
 }
 
 void MainWindow::onRoomSelected(const std::string& room_id) {
@@ -1328,15 +1102,15 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         prefs.last_room = current_room_id_;
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
-    if (composeShared_) {
-        composeShared_->clear_reply();
-        composeShared_->clear_editing();
+    if (roomView_) {
+        roomView_->compose_bar()->clear_reply();
+        roomView_->compose_bar()->clear_editing();
+        roomView_->clear_compose_text();
     }
-    if (composeTextArea_) composeTextArea_->set_text("");
-    if (composeShared_)   composeShared_->set_current_text({});
+    if (roomTextArea_) roomTextArea_->set_text("");
 
     for (const auto& r : rooms_)
-        if (r.id == current_room_id_) { updateRoomHeader(r); break; }
+        if (r.id == current_room_id_) { if (roomView_) roomView_->set_room(r); break; }
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the UI stays responsive during the
@@ -1399,68 +1173,13 @@ void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
     const std::string rid = roomId.toStdString();
     bool is_current = (rid == current_room_id_);
     push_paginate_result_(rid, reached_start);
-    if (is_current && messageListView_)
-        messageListView_->reset_near_top_latch();
+    if (is_current && roomView_)
+        roomView_->message_list()->reset_near_top_latch();
 }
 
-
-// ---------------------------------------------------------------------------
-
-void MainWindow::updateRoomHeader(const tesseract::RoomInfo& info) {
-    roomHeaderName_->setText(QString::fromStdString(info.name));
-
-    if (!info.topic.empty()) {
-        currentTopicText_ = QString::fromStdString(info.topic);
-        roomHeaderTopic_->setToolTip(currentTopicText_);
-        updateTopicElision();
-        roomHeaderTopic_->setVisible(true);
-        roomHeader_->setFixedHeight(68);
-    } else {
-        currentTopicText_.clear();
-        roomHeaderTopic_->setToolTip({});
-        roomHeaderTopic_->setVisible(false);
-        roomHeader_->setFixedHeight(60);
-    }
-
-    QPixmap pm;
-    if (!info.avatar_url.empty()) {
-        QString qurl = QString::fromStdString(info.avatar_url);
-        if (!avatarCache_.contains(qurl)) {
-            auto bytes = client_->fetch_avatar_bytes(info.id);
-            if (!bytes.empty()) {
-                QPixmap raw;
-                raw.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
-                                 static_cast<uint>(bytes.size()));
-                if (!raw.isNull())
-                    avatarCache_[qurl] = raw.scaled(
-                        kRoomAvatarSize, kRoomAvatarSize,
-                        Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            }
-        }
-        if (avatarCache_.contains(qurl))
-            pm = avatarCache_[qurl];
-    }
-    if (pm.isNull())
-        pm = makeInitialsPixmap(QString::fromStdString(info.name), 40);
-    else
-        pm = makeCirclePixmap(pm, 40);
-
-    roomHeaderAvatar_->setPixmap(pm);
-    roomHeader_->setVisible(true);
-}
-
-void MainWindow::updateTopicElision() {
-    if (currentTopicText_.isEmpty()) return;
-    int w = roomHeaderTopic_->width();
-    if (w <= 0) return;
-    roomHeaderTopic_->setText(
-        QFontMetrics(roomHeaderTopic_->font())
-            .elidedText(currentTopicText_, Qt::ElideRight, w));
-}
 
 void MainWindow::clearMessages() {
-    messageListView_->set_messages({});
-    msgSurface_->relayout();
+    if (roomView_) roomView_->set_messages({});
 }
 
 // ---------------------------------------------------------------------------
@@ -1475,7 +1194,7 @@ void MainWindow::on_rooms_updated_() {
     refreshRoomList();
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_)
-            if (r.id == current_room_id_) { updateRoomHeader(r); break; }
+            if (r.id == current_room_id_) { if (roomView_) roomView_->set_room(r); break; }
     } else if (!pending_restore_room_.empty()) {
         for (const auto& r : rooms_) {
             if (r.id == pending_restore_room_ && !r.is_space) {
@@ -1512,7 +1231,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (kind == MediaKind::RoomAvatar) {
             if (roomSurface_) roomSurface_->update();
         } else {
-            if (msgSurface_)       msgSurface_->update();
+            if (chatSurface_)      chatSurface_->update();
             if (userStripSurface_) userStripSurface_->update();
         }
         return;
@@ -1558,8 +1277,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                               QDateTime::currentMSecsSinceEpoch());
             if (tk_anim_timer_ && !tk_anim_timer_->isActive())
                 tk_anim_timer_->start();
-            if (messageListView_) messageListView_->notify_image_ready(cache_key);
-            if (msgSurface_) { msgSurface_->relayout(); msgSurface_->update(); }
+            if (roomView_) roomView_->notify_image_ready(cache_key);
+            if (chatSurface_) { chatSurface_->relayout(); chatSurface_->update(); }
             return;
         }
         buf.seek(0);
@@ -1573,8 +1292,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
     tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
-    if (messageListView_) messageListView_->notify_image_ready(cache_key);
-    if (msgSurface_) { msgSurface_->relayout(); msgSurface_->update(); }
+    if (roomView_) roomView_->notify_image_ready(cache_key);
+    if (chatSurface_) { chatSurface_->relayout(); chatSurface_->update(); }
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
@@ -1629,8 +1348,8 @@ void MainWindow::onMessageAnimTick_() {
         if (tk_anim_timer_) tk_anim_timer_->stop();
         return;
     }
-    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()) && msgSurface_)
-        msgSurface_->update();
+    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()) && chatSurface_)
+        chatSurface_->update();
 }
 
 void MainWindow::on_url_preview_ready_(const std::string& url,
@@ -1648,10 +1367,10 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
 
     // Invalidate cached row heights so the preview card is included in the
     // next measure pass, then relayout to apply the new heights.
-    if (messageListView_) messageListView_->notify_url_preview_ready(url);
-    if (msgSurface_) {
-        msgSurface_->relayout();
-        msgSurface_->update();
+    if (roomView_) roomView_->notify_url_preview_ready(url);
+    if (chatSurface_) {
+        chatSurface_->relayout();
+        chatSurface_->update();
     }
 }
 
@@ -1661,7 +1380,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     QImage img(w, h, QImage::Format_RGBA8888);
     std::memcpy(img.bits(), rgba.data(), rgba.size());
     tk_images_.emplace(key, tk::qt6::make_image(std::move(img)));
-    if (msgSurface_) msgSurface_->update();
+    if (chatSurface_) chatSurface_->update();
 }
 
 void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
@@ -1913,9 +1632,6 @@ void MainWindow::onUserStripContextMenu(const QPoint& pos) {
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == roomHeaderTopic_ && event->type() == QEvent::Resize) {
-        updateTopicElision();
-    }
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -1936,8 +1652,8 @@ void MainWindow::handle_timeline_reset_ui_(
         ensure_reply_details_(ev->in_reply_to_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
-    messageListView_->set_messages(std::move(rows));
-    msgSurface_->relayout();
+    if (roomView_) roomView_->set_messages(std::move(rows));
+    if (chatSurface_) chatSurface_->relayout();
 }
 
 void MainWindow::handle_message_inserted_ui_(
@@ -1949,9 +1665,9 @@ void MainWindow::handle_message_inserted_ui_(
         return;
     ensureRowMedia(*ev);
     ensure_reply_details_(ev->in_reply_to_id);
-    messageListView_->insert_message(index,
+    if (roomView_) roomView_->insert_message(index,
         tesseract::views::make_row_data(*ev, my_user_id_));
-    msgSurface_->relayout();
+    if (chatSurface_) chatSurface_->relayout();
 }
 
 void MainWindow::handle_message_updated_ui_(
@@ -1963,17 +1679,17 @@ void MainWindow::handle_message_updated_ui_(
         return;
     ensureRowMedia(*ev);
     ensure_reply_details_(ev->in_reply_to_id);
-    messageListView_->update_message(index,
+    if (roomView_) roomView_->update_message(index,
         tesseract::views::make_row_data(*ev, my_user_id_));
-    msgSurface_->relayout();
+    if (chatSurface_) chatSurface_->relayout();
 }
 
 void MainWindow::handle_message_removed_ui_(
     std::string room_id, std::size_t index)
 {
     if (room_id != current_room_id_) return;
-    messageListView_->remove_message(index);
-    msgSurface_->relayout();
+    if (roomView_) roomView_->remove_message(index);
+    if (chatSurface_) chatSurface_->relayout();
 }
 
 void MainWindow::handle_sync_error_ui_(
@@ -2109,12 +1825,9 @@ void MainWindow::on_room_list_state_ui_()
     refreshSyncStatus();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text, bool visible)
+void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
-    if (typingBar_) {
-        typingBar_->setText(QString::fromStdString(text));
-        typingBar_->setVisible(visible);
-    }
+    if (roomView_) roomView_->set_typing_text(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -2231,7 +1944,6 @@ void MainWindow::logoutActiveAccount() {
     clearMessages();
     if (recoverySurface_) recoverySurface_->setVisible(false);
     recovery_banner_dismissed_ = false;
-    roomHeader_->setVisible(false);
 
     if (accounts_.empty()) {
         // No accounts left → back to initial login.

@@ -28,11 +28,10 @@
 #include "LinuxUpConnectorQt.h"
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
-#include "views/ComposeBar.h"
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/MessageListView.h"
+#include "views/RoomView.h"
 #include "views/RecoveryBanner.h"
 #include "views/VerificationBanner.h"
 #include "views/RoomListView.h"
@@ -184,12 +183,8 @@ private:
     void     clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history
-    /// has been fully fetched. Hooked to `MessageListView::on_near_top`.
+    /// has been fully fetched. Hooked to `RoomView::on_near_top`.
     void     requestMoreHistory(const std::string& room_id);
-    void     updateRoomHeader(const tesseract::RoomInfo& info);
-    void     updateTopicElision();
-    QPixmap  makeCirclePixmap(const QPixmap& src, int size);
-    QPixmap  makeInitialsPixmap(const QString& name, int size);
 
     // ShellBase virtual hooks (Qt6 implementations).
     void post_to_ui_(std::function<void()> fn) override;
@@ -267,19 +262,10 @@ private:
     QWidget*             roomNavBar_      = nullptr;
     QPushButton*         backButton_      = nullptr;
     QLabel*              spaceNameLabel_  = nullptr;
-    QWidget*             roomHeader_      = nullptr;
-    QLabel*              roomHeaderAvatar_= nullptr;
-    QLabel*              roomHeaderName_  = nullptr;
-    QLabel*              roomHeaderTopic_ = nullptr;
-    tk::qt6::Surface*                  msgSurface_      = nullptr;
-    tesseract::views::MessageListView* messageListView_ = nullptr;  // borrowed
-    // Typing bar — fixed-height label between the message list and compose bar.
-    QLabel*                                 typingBar_       = nullptr;
-    // Compose bar — tk::qt6::Surface hosting the shared ComposeBar widget
-    // with a NativeTextArea overlaid on its text_area_rect.
-    tk::qt6::Surface*                       composeSurface_  = nullptr;
-    tesseract::views::ComposeBar*           composeShared_   = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextArea>     composeTextArea_;
+    // Combined room-chat surface: RoomHeader + MessageListView + ComposeBar.
+    tk::qt6::Surface*                  chatSurface_     = nullptr;
+    tesseract::views::RoomView*        roomView_        = nullptr;  // borrowed
+    std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     EmojiPicker*                            emojiPicker_     = nullptr;
     ::StickerPicker*                        stickerPicker_   = nullptr;
 
@@ -337,15 +323,9 @@ private:
     // anim_cache_, space_stack_, pagination_, kPaginationBatch are all
     // inherited from ShellBase.
 
-    // Room-header avatar (the 40 px disc shown above the message list)
-    // still uses QPixmap because the header itself remains a QLabel-
-    // based widget for now.
-    QHash<QString, QPixmap>       avatarCache_;
-
     // Animated inline-media (GIF / WebP / APNG). `tk_anim_timer_` fires at
     // ~60 Hz and calls anim_cache_.advance(); a true return triggers repaint.
     QTimer*            tk_anim_timer_ = nullptr;
-    QString                       currentTopicText_;
 };
 
 } // namespace qt6

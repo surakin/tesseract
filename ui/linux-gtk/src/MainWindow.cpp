@@ -158,12 +158,9 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text, bool visible)
+void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
-    if (typing_bar_) {
-        gtk_label_set_text(GTK_LABEL(typing_bar_), text.c_str());
-        gtk_widget_set_visible(typing_bar_, visible);
-    }
+    if (room_view_) room_view_->set_typing_text(text);
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
@@ -524,37 +521,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_hexpand(vbox, TRUE);
     gtk_box_append(GTK_BOX(hbox), vbox);
 
-    // Room header bar
-    room_header_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_add_css_class(room_header_, "room-header");
-    gtk_widget_set_margin_start(room_header_, 16);
-    gtk_widget_set_margin_end(room_header_, 16);
-    gtk_widget_set_margin_top(room_header_, 10);
-    gtk_widget_set_margin_bottom(room_header_, 10);
-    gtk_widget_set_visible(room_header_, FALSE);
-
-    room_header_avatar_ = gtk_image_new();
-    gtk_image_set_pixel_size(GTK_IMAGE(room_header_avatar_), 40);
-    gtk_widget_set_valign(room_header_avatar_, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(room_header_), room_header_avatar_);
-
-    GtkWidget* name_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_set_hexpand(name_box, TRUE);
-
-    room_header_name_ = gtk_label_new("");
-    gtk_widget_add_css_class(room_header_name_, "room-header-name");
-    gtk_label_set_xalign(GTK_LABEL(room_header_name_), 0.0f);
-    gtk_box_append(GTK_BOX(name_box), room_header_name_);
-
-    room_header_topic_ = gtk_label_new("");
-    gtk_widget_add_css_class(room_header_topic_, "room-header-topic");
-    gtk_label_set_xalign(GTK_LABEL(room_header_topic_), 0.0f);
-    gtk_label_set_ellipsize(GTK_LABEL(room_header_topic_), PANGO_ELLIPSIZE_END);
-    gtk_widget_set_visible(room_header_topic_, FALSE);
-    gtk_box_append(GTK_BOX(name_box), room_header_topic_);
-
-    gtk_box_append(GTK_BOX(room_header_), name_box);
-    gtk_box_append(GTK_BOX(vbox), room_header_);
 
     // Recovery banner — shared widget on a tk::gtk4::Surface. Hidden
     // until needs_recovery() is true; surfaced via maybe_show_recovery_banner.
@@ -641,26 +607,23 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         gtk_box_append(GTK_BOX(vbox), w);
     }
 
-    // Shared-toolkit message list. Each row is paint-only (no per-row
-    // GtkWidget); the Surface owns scrolling, hit-testing and virtual-
-    // isation, and the sticky-bottom auto-scroll behaviour is built
-    // into MessageListView::append_message.
-    msg_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    auto msg_view_owner = std::make_unique<tesseract::views::MessageListView>();
-    message_list_view_ = msg_view_owner.get();
-    message_list_view_->set_avatar_provider(
+    // Combined room-chat surface: RoomHeader + MessageListView + typing strip +
+    // ComposeBar. RoomView owns all three sub-widgets on a single Surface.
+    chat_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+    auto chat_view_owner = std::make_unique<tesseract::views::RoomView>();
+    room_view_ = chat_view_owner.get();
+    room_view_->set_avatar_provider(
         [this](const std::string& mxc) -> const tk::Image* {
             auto it = tk_avatars_.find(mxc);
             return it == tk_avatars_.end() ? nullptr : it->second.get();
         });
-    message_list_view_->set_image_provider(
+    room_view_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
-            // Animated entries first; static cache is the second hop.
             if (const auto* f = anim_cache_.current_frame(mxc)) return f;
             auto it = tk_images_.find(mxc);
             return it == tk_images_.end() ? nullptr : it->second.get();
         });
-    message_list_view_->set_preview_provider(
+    room_view_->set_preview_provider(
         [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
             auto it = url_preview_data_.find(url);
             if (it == url_preview_data_.end()) return nullptr;
@@ -670,78 +633,42 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                 ensure_media_image_(it->second.image_mxc, 64, 64);
             return &it->second;
         });
-    message_list_view_->on_link_clicked = [](const std::string& url) {
-        tesseract::Client::open_in_browser(url);
-    };
-    // Voice (MSC3245) playback — GStreamer playbin via tk::gtk4::Host.
-    if (auto player = msg_surface_->host().make_audio_player()) {
-        message_list_view_->set_audio_player(std::move(player));
-    }
-    message_list_view_->set_voice_bytes_provider(
+    if (auto player = chat_surface_->host().make_audio_player())
+        room_view_->set_audio_player(std::move(player));
+    room_view_->set_voice_bytes_provider(
         [this](const std::string& source_json) -> std::vector<std::uint8_t> {
             return client_->fetch_source_bytes(source_json);
         });
     {
-        tk::gtk4::Surface* sfp = msg_surface_.get();
-        message_list_view_->set_repaint_requester([sfp]() {
+        tk::gtk4::Surface* sfp = chat_surface_.get();
+        room_view_->set_repaint_requester([sfp]() {
             if (sfp) gtk_widget_queue_draw(sfp->widget());
         });
     }
-    msg_surface_->set_root(std::move(msg_view_owner));
+    chat_surface_->set_root(std::move(chat_view_owner));
 
-    GtkWidget* msg_surface_widget = msg_surface_->widget();
-    gtk_widget_set_vexpand(msg_surface_widget, TRUE);
-    gtk_widget_set_hexpand(msg_surface_widget, TRUE);
-    gtk_box_append(GTK_BOX(vbox), msg_surface_widget);
-
-    typing_bar_ = gtk_label_new("");
-    gtk_label_set_xalign(GTK_LABEL(typing_bar_), 0.0f);
-    gtk_widget_set_margin_start(typing_bar_, 8);
-    gtk_widget_set_size_request(typing_bar_, -1, 20);
-    gtk_box_append(GTK_BOX(vbox), typing_bar_);
-
-    // Compose bar — shared widget on a tk::gtk4::Surface. Text input is
-    // a NativeTextArea overlay on the bar's text_area_rect; emoji + send
-    // buttons paint into the toolkit.
-    compose_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    auto compose_owner = std::make_unique<tesseract::views::ComposeBar>();
-    compose_shared_ = compose_owner.get();
-    compose_surface_->set_root(std::move(compose_owner));
-
-    GtkWidget* compose_surface_widget = compose_surface_->widget();
-    gtk_widget_set_size_request(compose_surface_widget, -1,
-        static_cast<int>(tesseract::views::ComposeBar::kMinHeight));
-    gtk_widget_set_hexpand(compose_surface_widget, TRUE);
-    gtk_box_append(GTK_BOX(vbox), compose_surface_widget);
-
-    compose_text_area_ = compose_surface_->host().make_text_area();
-    compose_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
-    compose_text_area_->set_on_changed([this](const std::string& s) {
+    room_text_area_ = chat_surface_->host().make_text_area();
+    room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
+    room_text_area_->set_on_changed([this](const std::string& s) {
         handle_compose_text_changed_(s);
-        if (compose_shared_) compose_shared_->set_current_text(s);
+        room_view_->set_current_text(s);
     });
-    compose_text_area_->set_on_submit([this] { on_send_clicked(); });
-    compose_text_area_->set_on_height_changed([this](float h) {
-        if (!compose_shared_ || !compose_surface_) return;
-        compose_shared_->set_text_area_natural_height(h);
-        gtk_widget_set_size_request(compose_surface_->widget(), -1,
-            static_cast<int>(compose_shared_->natural_height()));
-        compose_surface_->relayout();
+    room_text_area_->set_on_submit([this] { on_send_clicked(); });
+    room_text_area_->set_on_height_changed([this](float h) {
+        room_view_->set_text_area_natural_height(h);
+        chat_surface_->relayout();
     });
-    compose_text_area_->set_on_image_paste(
+    room_text_area_->set_on_image_paste(
         [this](std::vector<std::uint8_t> bytes, std::string mime) {
-            if (compose_shared_)
-                compose_shared_->set_pending_image(std::move(bytes),
-                                                    std::move(mime));
+            if (room_view_)
+                room_view_->compose_bar()->set_pending_image(
+                    std::move(bytes), std::move(mime));
         });
 
-    // Drag-and-drop: dropping any file on either the message list or the
-    // composer parks it in the compose bar — images go to the preview
-    // band, everything else to the file chip.
     auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
                                std::string mime,
                                std::string filename) {
-        if (!compose_shared_) return;
+        if (!room_view_) return;
         const auto limit = client_->media_upload_limit();
         if (limit > 0 && bytes.size() > limit) {
             if (status_bar_) {
@@ -751,24 +678,22 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             }
             return;
         }
-        if (mime.rfind("image/", 0) == 0) {
-            compose_shared_->set_pending_image(std::move(bytes),
-                                               std::move(mime),
-                                               std::move(filename));
-        } else {
-            compose_shared_->set_pending_file(std::move(bytes),
-                                              std::move(mime),
-                                              std::move(filename));
-        }
+        if (mime.rfind("image/", 0) == 0)
+            room_view_->compose_bar()->set_pending_image(
+                std::move(bytes), std::move(mime), std::move(filename));
+        else
+            room_view_->compose_bar()->set_pending_file(
+                std::move(bytes), std::move(mime), std::move(filename));
     };
-    compose_surface_->set_on_file_drop(on_file_drop);
-    if (msg_surface_) msg_surface_->set_on_file_drop(on_file_drop);
-    compose_surface_->set_on_layout([this] {
-        if (compose_shared_ && compose_text_area_)
-            compose_text_area_->set_rect(compose_shared_->text_area_rect());
+    chat_surface_->set_on_file_drop(on_file_drop);
+    chat_surface_->set_on_layout([this] {
+        if (room_view_ && room_text_area_)
+            room_text_area_->set_rect(room_view_->compose_text_area_rect());
     });
 
-    compose_shared_->on_send  = [this](const std::string& body) {
+    room_view_->on_layout_changed = [this] { chat_surface_->relayout(); };
+
+    room_view_->on_send = [this](const std::string& body) {
         if (current_room_id_.empty()) return;
         auto l = body.find_first_not_of(" \t\n\r");
         auto r = body.find_last_not_of(" \t\n\r");
@@ -778,22 +703,50 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         auto md = tesseract::views::markdown_to_html(trimmed);
         auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
         if (res) {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            compose_shared_->set_current_text({});
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
         }
     };
-    compose_shared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
-                                              std::string mime,
-                                              std::string filename,
-                                              std::string caption,
-                                              std::uint32_t /*src_w*/,
-                                              std::uint32_t /*src_h*/,
-                                              std::string reply_event_id) {
+
+    room_view_->on_send_reply = [this](const std::string& reply_event_id,
+                                        const std::string& body) {
+        if (body.empty() || current_room_id_.empty()) return;
+        auto md = tesseract::views::markdown_to_html(body);
+        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+        if (res) {
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
+        } else if (status_bar_) {
+            std::string msg = std::string(_("Send reply failed: ")) + res.message;
+            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+        }
+    };
+
+    room_view_->on_send_edit = [this](const std::string& event_id,
+                                       const std::string& new_body) {
+        if (new_body.empty() || current_room_id_.empty()) return;
+        auto md = tesseract::views::markdown_to_html(new_body);
+        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+        if (res) {
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
+        } else if (status_bar_) {
+            std::string msg = std::string(_("Edit failed: ")) + res.message;
+            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+        }
+    };
+
+    room_view_->on_send_image = [this](std::vector<std::uint8_t> bytes,
+                                        std::string mime,
+                                        std::string filename,
+                                        std::string caption,
+                                        int /*src_w*/, int /*src_h*/,
+                                        std::string reply_event_id) {
         if (current_room_id_.empty()) return;
         const bool compress =
             tesseract::Settings::instance().image_quality
             == tesseract::Settings::ImageQuality::Compressed;
-        auto enc = compose_surface_->host().encode_for_send(
+        auto enc = chat_surface_->host().encode_for_send(
             bytes.data(), bytes.size(), compress);
         if (enc.bytes.empty()) return;
         std::string out_name = filename;
@@ -804,123 +757,85 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         }
         auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
                                         out_name, caption,
-                                        enc.width, enc.height,
-                                        reply_event_id);
+                                        enc.width, enc.height, reply_event_id);
         if (res) {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
         }
     };
-    compose_shared_->on_send_file = [this](std::vector<std::uint8_t> bytes,
-                                             std::string mime,
-                                             std::string filename,
-                                             std::string caption,
-                                             std::string reply_event_id) {
+
+    room_view_->on_send_file = [this](std::vector<std::uint8_t> bytes,
+                                       std::string mime,
+                                       std::string filename,
+                                       std::string caption,
+                                       std::string reply_event_id) {
         if (current_room_id_.empty()) return;
         auto res = client_->send_file(current_room_id_, bytes, mime,
                                       filename, caption, reply_event_id);
         if (res) {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
         } else if (status_bar_) {
             std::string msg = std::string(_("Send file failed: ")) + res.message;
             gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
         }
     };
-    compose_shared_->on_size_changed = [this] {
-        if (!compose_shared_ || !compose_surface_) return;
-        gtk_widget_set_size_request(compose_surface_->widget(), -1,
-            static_cast<int>(compose_shared_->natural_height()));
-        compose_surface_->relayout();
+
+    room_view_->on_edit_cancelled = [this] {
+        if (room_text_area_) room_text_area_->set_text("");
+        room_view_->clear_compose_text();
     };
-    compose_shared_->on_emoji   = [this] { toggle_emoji_picker(); };
-    compose_shared_->on_sticker = [this] { toggle_sticker_picker(); };
-    compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
-                                             const std::string& body) {
-        if (body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(body);
-        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
-        if (res) {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
-        } else if (status_bar_) {
-            std::string msg = std::string(_("Send reply failed: ")) + res.message;
-            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+
+    room_view_->on_reply_focus = [this] {
+        if (room_text_area_) room_text_area_->set_focused(true);
+    };
+
+    room_view_->on_edit_prefill = [this](const std::string& body) {
+        if (room_text_area_) {
+            room_text_area_->set_text(body);
+            room_view_->set_current_text(body);
+            room_text_area_->set_focused(true);
         }
     };
 
-    message_list_view_->on_reaction_toggled =
+    room_view_->on_delete_requested = [this](const std::string& event_id) {
+        if (current_room_id_.empty()) return;
+        client_->redact_event(current_room_id_, event_id);
+    };
+
+    room_view_->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key) {
             if (current_room_id_.empty()) return;
             client_->send_reaction(current_room_id_, event_id, key);
         };
-    message_list_view_->on_add_reaction_requested =
+
+    room_view_->on_add_reaction_requested =
         [this](const std::string& event_id, tk::Rect anchor) {
             if (!emoji_popover_ || current_room_id_.empty()) return;
             pending_reaction_event_id_ = event_id;
-            // anchor is in MessageListView-local coords; the view is the
-            // root of msg_surface_, so the rect maps directly to its
-            // widget coords.
-            popup_emoji_at_rect(msg_surface_->widget(), anchor);
+            popup_emoji_at_rect(chat_surface_->widget(), anchor);
         };
 
-    // "↩" hover button → enter reply mode in the compose bar.
-    message_list_view_->on_reply_requested =
-        [this](const std::string& event_id,
-               const std::string& sender_name,
-               const std::string& body_preview) {
-            if (!compose_shared_) return;
-            compose_shared_->set_reply_to(event_id, sender_name, body_preview);
-            if (compose_text_area_) compose_text_area_->set_focused(true);
-        };
-
-    // "✏" hover button → enter edit mode in the compose bar.
-    message_list_view_->on_edit_requested =
-        [this](const std::string& event_id, const std::string& current_body) {
-            if (!compose_shared_) return;
-            compose_shared_->set_editing(event_id);
-            if (compose_text_area_) {
-                compose_text_area_->set_text(current_body);
-                compose_shared_->set_current_text(current_body);
-                compose_text_area_->set_focused(true);
-            }
-        };
-
-    message_list_view_->on_delete_requested =
-        [this](const std::string& event_id) {
-            if (current_room_id_.empty()) return;
-            client_->redact_event(current_room_id_, event_id);
-        };
-
-    compose_shared_->on_send_edit = [this](const std::string& event_id,
-                                            const std::string& new_body) {
-        if (new_body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(new_body);
-        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
-        if (res) {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
-        } else if (status_bar_) {
-            std::string msg = std::string(_("Edit failed: ")) + res.message;
-            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-        }
+    room_view_->on_link_clicked = [](const std::string& url) {
+        tesseract::Client::open_in_browser(url);
     };
 
-    compose_shared_->on_edit_cancelled = [this] {
-        if (compose_text_area_) compose_text_area_->set_text("");
-        if (compose_shared_)    compose_shared_->set_current_text({});
+    room_view_->on_receipt_needed = [this](const std::string& eid) {
+        maybe_send_read_receipt_(current_room_id_, eid);
     };
 
-    // Back-pagination on scroll-to-top. The shared MessageListView fires
-    // this once per crossing of the near-top threshold.
-    message_list_view_->on_near_top = [this]{
+    room_view_->on_near_top = [this] {
         if (current_room_id_.empty()) return;
         request_more_history(current_room_id_);
     };
 
-    message_list_view_->on_receipt_needed = [this](const std::string& eid) {
-        maybe_send_read_receipt_(current_room_id_, eid);
-    };
+    room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
+    room_view_->on_sticker = [this] { toggle_sticker_picker(); };
+
+    GtkWidget* chat_widget = chat_surface_->widget();
+    gtk_widget_set_vexpand(chat_widget, TRUE);
+    gtk_widget_set_hexpand(chat_widget, TRUE);
+    gtk_box_append(GTK_BOX(vbox), chat_widget);
 
     // Lazily build the picker — the popover is parented to the compose
     // surface widget. Recents live in account-data now
@@ -929,8 +844,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     build_sticker_popover();
     build_sticker_context_menu();
 
-    // Right-click on the message surface: hit-test sticker rects and
-    // pop the context menu. Gesture is added after msg_surface_ +
+    // Right-click on the chat surface: hit-test sticker rects and
+    // pop the context menu. Gesture is added after chat_surface_ +
     // sticker_ctx_menu_ both exist.
     {
         GtkGesture* gesture = gtk_gesture_click_new();
@@ -938,7 +853,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                        GDK_BUTTON_SECONDARY);
         g_signal_connect(gesture, "pressed",
                          G_CALLBACK(on_msg_right_click_), this);
-        gtk_widget_add_controller(msg_surface_->widget(),
+        gtk_widget_add_controller(chat_surface_->widget(),
                                    GTK_EVENT_CONTROLLER(gesture));
     }
 
@@ -968,7 +883,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         gtk_widget_set_visible(overlay_widget, FALSE);
     }
 
-    message_list_view_->on_image_clicked =
+    room_view_->on_image_clicked =
         [this](const tesseract::views::MessageListView::ImageHit& hit) {
             if (!img_viewer_ || !img_viewer_surface_) return;
             img_viewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
@@ -986,7 +901,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        vid_viewer_->set_video_player(msg_surface_->host().make_video_player());
+        vid_viewer_->set_video_player(chat_surface_->host().make_video_player());
         vid_viewer_->set_repaint_requester([this] {
             if (vid_viewer_surface_) vid_viewer_surface_->relayout();
         });
@@ -1003,7 +918,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         gtk_widget_set_visible(vid_overlay_widget, FALSE);
     }
 
-    message_list_view_->on_video_clicked =
+    room_view_->on_video_clicked =
         [this](const tesseract::views::MessageListView::VideoHit& hit) {
             if (!vid_viewer_ || !vid_viewer_surface_) return;
             vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
@@ -1027,9 +942,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             });
         };
 
-    message_list_view_->set_video_player_factory(
-        [this]() { return msg_surface_->host().make_video_player(); });
-    message_list_view_->set_video_fetch_provider(
+    room_view_->set_video_player_factory(
+        [this]() { return chat_surface_->host().make_video_player(); });
+    room_view_->set_video_fetch_provider(
         [this](const std::string& src,
                std::function<void(std::vector<std::uint8_t>)> on_ready) {
             run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
@@ -1304,7 +1219,7 @@ void MainWindow::on_login_succeeded() {
 }
 
 void MainWindow::on_send_clicked() {
-    if (compose_shared_) compose_shared_->trigger_send();
+    if (room_view_) room_view_->compose_bar()->trigger_send();
 }
 
 void MainWindow::on_room_selected(const std::string& room_id) {
@@ -1332,15 +1247,15 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         prefs.last_room = current_room_id_;
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
-    if (compose_shared_) {
-        compose_shared_->clear_reply();
-        compose_shared_->clear_editing();
+    if (room_view_) {
+        room_view_->compose_bar()->clear_reply();
+        room_view_->compose_bar()->clear_editing();
     }
-    if (compose_text_area_) compose_text_area_->set_text("");
-    if (compose_shared_)    compose_shared_->set_current_text({});
+    if (room_text_area_) room_text_area_->set_text("");
+    if (room_view_) room_view_->clear_compose_text();
 
     for (const auto& r : rooms_)
-        if (r.id == current_room_id_) { update_room_header(r); break; }
+        if (r.id == current_room_id_) { room_view_->set_room(r); break; }
 
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the GTK main loop stays responsive.
@@ -1369,8 +1284,8 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 void MainWindow::push_paginate_result(std::string room_id, bool reached_start) {
     bool is_current = (room_id == current_room_id_);
     push_paginate_result_(std::move(room_id), reached_start);
-    if (is_current && message_list_view_)
-        message_list_view_->reset_near_top_latch();
+    if (is_current && room_view_)
+        room_view_->message_list()->reset_near_top_latch();
 }
 
 void MainWindow::push_subscribe_result(std::string room_id, bool reached_start) {
@@ -1419,8 +1334,8 @@ void MainWindow::push_message_inserted(
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media_(*ev);
     ensure_reply_details_(ev->in_reply_to_id);
-    message_list_view_->insert_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
-    msg_surface_->relayout();
+    room_view_->insert_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
+    chat_surface_->relayout();
 }
 
 void MainWindow::push_message_updated(
@@ -1433,14 +1348,14 @@ void MainWindow::push_message_updated(
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media_(*ev);
     ensure_reply_details_(ev->in_reply_to_id);
-    message_list_view_->update_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
-    msg_surface_->relayout();
+    room_view_->update_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
+    chat_surface_->relayout();
 }
 
 void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
     if (room_id != current_room_id_) return;
-    message_list_view_->remove_message(index);
-    msg_surface_->relayout();
+    room_view_->remove_message(index);
+    chat_surface_->relayout();
 }
 
 void MainWindow::push_rooms(std::string user_id,
@@ -1450,9 +1365,9 @@ void MainWindow::push_rooms(std::string user_id,
 
 void MainWindow::on_rooms_updated_() {
     refresh_room_list();
-    if (!current_room_id_.empty()) {
+    if (!current_room_id_.empty() && room_view_) {
         for (const auto& r : rooms_)
-            if (r.id == current_room_id_) { update_room_header(r); break; }
+            if (r.id == current_room_id_) { room_view_->set_room(r); break; }
     } else if (!pending_restore_room_.empty()) {
         for (const auto& r : rooms_) {
             if (r.id == pending_restore_room_ && !r.is_space) {
@@ -1534,48 +1449,13 @@ void MainWindow::push_timeline_reset(
         ensure_reply_details_(ev->in_reply_to_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
-    message_list_view_->set_messages(std::move(rows));
-    msg_surface_->relayout();
-}
-
-void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
-    gtk_label_set_text(GTK_LABEL(room_header_name_), info.name.c_str());
-
-    if (!info.topic.empty()) {
-        gtk_label_set_text(GTK_LABEL(room_header_topic_), info.topic.c_str());
-        gtk_widget_set_tooltip_text(room_header_topic_, info.topic.c_str());
-        gtk_widget_set_visible(room_header_topic_, TRUE);
-    } else {
-        gtk_widget_set_visible(room_header_topic_, FALSE);
-    }
-
-    if (!info.avatar_url.empty()) {
-        if (avatar_cache_.find(info.avatar_url) == avatar_cache_.end())
-            avatar_cache_[info.avatar_url] = client_->fetch_avatar_bytes(info.id);
-        auto it = avatar_cache_.find(info.avatar_url);
-        if (it != avatar_cache_.end() && !it->second.empty()) {
-            GBytes*     gb  = g_bytes_new(it->second.data(), it->second.size());
-            GError*     err = nullptr;
-            GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
-            g_bytes_unref(gb);
-            if (tex) {
-                gtk_image_set_from_paintable(GTK_IMAGE(room_header_avatar_),
-                                             GDK_PAINTABLE(tex));
-                g_object_unref(tex);
-            } else if (err) {
-                g_error_free(err);
-            }
-        }
-    } else {
-        gtk_image_clear(GTK_IMAGE(room_header_avatar_));
-    }
-
-    gtk_widget_set_visible(room_header_, TRUE);
+    if (room_view_) room_view_->set_messages(std::move(rows));
+    chat_surface_->relayout();
 }
 
 void MainWindow::clear_messages() {
-    message_list_view_->set_messages({});
-    msg_surface_->relayout();
+    if (room_view_) room_view_->set_messages({});
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1743,7 +1623,7 @@ void MainWindow::start_anim_tick_if_needed_() {
 }
 
 void MainWindow::invalidate_anim_consumers_() {
-    if (msg_surface_) msg_surface_->relayout();
+    if (chat_surface_) chat_surface_->relayout();
     if (sticker_picker_shared_)
         sticker_picker_shared_->invalidate_image_cache();
     if (sticker_picker_surface_) sticker_picker_surface_->relayout();
@@ -1909,8 +1789,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             tk_avatars_.emplace(cache_key, std::move(img));
             if (kind == MediaKind::RoomAvatar && room_surface_)
                 room_surface_->relayout();
-            else if (msg_surface_)
-                msg_surface_->relayout();
+            else if (chat_surface_)
+                chat_surface_->relayout();
         }
     } else { // MediaImage
         if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
@@ -1926,15 +1806,15 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 anim_cache_.store(cache_key, std::move(frames),
                                   std::move(anim->delays_ms), now_ms);
                 start_anim_tick_if_needed_();
-                if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
-                if (msg_surface_) msg_surface_->relayout();
+                if (room_view_) room_view_->notify_image_ready(cache_key);
+                if (chat_surface_) chat_surface_->relayout();
             }
         } else if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
             auto img = tk::cairo_pango::make_image(surface);
             cairo_surface_destroy(surface);
             tk_images_.emplace(cache_key, std::move(img));
-            if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
-            if (msg_surface_) msg_surface_->relayout();
+            if (room_view_) room_view_->notify_image_ready(cache_key);
+            if (chat_surface_) chat_surface_->relayout();
         }
     }
 }
@@ -2035,7 +1915,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                     c->self->tk_images_.emplace(
                         c->key, tk::cairo_pango::make_image(surf));
                     cairo_surface_destroy(surf);
-                    if (c->self->msg_surface_) c->self->msg_surface_->relayout();
+                    if (c->self->chat_surface_) c->self->chat_surface_->relayout();
                 } else if (surf) {
                     cairo_surface_destroy(surf);
                 }
@@ -2059,8 +1939,8 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
-    if (message_list_view_) message_list_view_->notify_url_preview_ready(url);
-    if (msg_surface_) msg_surface_->relayout();
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
@@ -2078,7 +1958,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     g_object_unref(pb);
     tk_images_.emplace(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
-    if (msg_surface_) msg_surface_->queue_draw();
+    if (chat_surface_) gtk_widget_queue_draw(chat_surface_->widget());
 }
 
 // ---------------------------------------------------------------------------
@@ -2388,7 +2268,7 @@ void MainWindow::do_logout() {
 
 void MainWindow::build_emoji_popover() {
     emoji_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(emoji_popover_, compose_surface_->widget());
+    gtk_widget_set_parent(emoji_popover_, chat_surface_->widget());
     gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
     gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
     gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
@@ -2433,7 +2313,7 @@ void MainWindow::build_emoji_popover() {
 
 void MainWindow::build_sticker_popover() {
     sticker_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(sticker_popover_, compose_surface_->widget());
+    gtk_widget_set_parent(sticker_popover_, chat_surface_->widget());
     gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
     gtk_popover_set_has_arrow(GTK_POPOVER(sticker_popover_), TRUE);
     gtk_popover_set_autohide(GTK_POPOVER(sticker_popover_), TRUE);
@@ -2494,7 +2374,7 @@ void MainWindow::toggle_sticker_picker() {
         return;
     }
     GtkWidget* desired_parent =
-        compose_surface_ ? compose_surface_->widget() : nullptr;
+        chat_surface_ ? chat_surface_->widget() : nullptr;
     if (desired_parent &&
         gtk_widget_get_parent(sticker_popover_) != desired_parent) {
         gtk_widget_unparent(sticker_popover_);
@@ -2519,7 +2399,7 @@ void MainWindow::build_sticker_context_menu() {
 
     sticker_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
     gtk_popover_set_has_arrow(GTK_POPOVER(sticker_ctx_menu_), FALSE);
-    gtk_widget_set_parent(sticker_ctx_menu_, msg_surface_->widget());
+    gtk_widget_set_parent(sticker_ctx_menu_, chat_surface_->widget());
     g_object_unref(menu);
 
     sticker_ctx_actions_ = g_simple_action_group_new();
@@ -2529,7 +2409,7 @@ void MainWindow::build_sticker_context_menu() {
     g_action_map_add_action(G_ACTION_MAP(sticker_ctx_actions_),
                             G_ACTION(save));
     g_object_unref(save);
-    gtk_widget_insert_action_group(msg_surface_->widget(), "sticker",
+    gtk_widget_insert_action_group(chat_surface_->widget(), "sticker",
                                     G_ACTION_GROUP(sticker_ctx_actions_));
 }
 
@@ -2538,11 +2418,9 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
                                       double x, double y,
                                       gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
-    if (!self->message_list_view_ || !self->sticker_ctx_menu_) return;
+    if (!self->room_view_ || !self->sticker_ctx_menu_) return;
 
-    // Surface coordinates equal MessageListView-local coordinates because
-    // the view is the surface's root widget.
-    auto hit = self->message_list_view_->sticker_hit_at(
+    auto hit = self->room_view_->message_list()->sticker_hit_at(
         tk::Point{ static_cast<float>(x), static_cast<float>(y) });
     if (!hit) return;
 
@@ -2619,10 +2497,10 @@ void MainWindow::toggle_emoji_picker() {
         gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
         return;
     }
-    // Compose-bar path: ensure the popover is parented to the compose
+    // Compose-bar path: ensure the popover is parented to the chat
     // surface and clear any prior `pointing_to` from a reaction popup.
     GtkWidget* desired_parent =
-        compose_surface_ ? compose_surface_->widget() : nullptr;
+        chat_surface_ ? chat_surface_->widget() : nullptr;
     if (desired_parent && gtk_widget_get_parent(emoji_popover_) != desired_parent) {
         gtk_widget_unparent(emoji_popover_);
         gtk_widget_set_parent(emoji_popover_, desired_parent);
@@ -2671,10 +2549,10 @@ void MainWindow::emoji_selected(const std::string& glyph) {
         if (emoji_popover_) gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
         return;
     }
-    if (!compose_text_area_) return;
-    compose_text_area_->insert_at_cursor(glyph);
-    if (compose_shared_) compose_shared_->set_current_text(compose_text_area_->text());
-    compose_text_area_->set_focused(true);
+    if (!room_text_area_) return;
+    room_text_area_->insert_at_cursor(glyph);
+    if (room_view_) room_view_->set_current_text(room_text_area_->text());
+    room_text_area_->set_focused(true);
     // The shared picker already calls recent_emoji_bump before invoking
     // this callback. Keep the popover open so users can pick several.
 }
@@ -2759,7 +2637,6 @@ void MainWindow::logout_active_account() {
     clear_messages();
     rooms_.clear();
     refresh_room_list();
-    gtk_widget_set_visible(room_header_, FALSE);
     if (recovery_surface_)
         gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
     recovery_banner_dismissed_ = false;

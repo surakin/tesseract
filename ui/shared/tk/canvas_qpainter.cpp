@@ -233,7 +233,7 @@ public:
         const int key = static_cast<int>(std::round(static_cast<qreal>(diameter) * 2.0));
         auto& path = s_paths[key];
         if (path.isEmpty()) {
-            const qreal r = key * 0.5;
+            const qreal r = key * 0.25;
             path.addEllipse(QPointF(0.0, 0.0), r, r);
         }
         p_.save();
