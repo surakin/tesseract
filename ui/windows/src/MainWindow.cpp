@@ -602,7 +602,7 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
-    if (message_list_view_) message_list_view_->invalidate_data();
+    if (message_list_view_) message_list_view_->notify_url_preview_ready(url);
     if (msg_surface_) {
         msg_surface_->relayout();
         if (HWND ms = msg_surface_->hwnd())
@@ -1207,6 +1207,25 @@ void MainWindow::on_create(HWND hwnd) {
             tesseract::Client::open_in_browser(url);
         };
         msg_surface_->set_root(std::move(view));
+        msg_surface_->set_on_right_click([this](tk::Point p) {
+            if (!message_list_view_ || !client_) return;
+            auto hit = message_list_view_->sticker_hit_at(p);
+            if (!hit) return;
+            if (client_->user_pack_has_sticker(hit->mxc_url)) return;
+            // Capture before TrackPopupMenu — sticker_geom_ is rebuilt each paint.
+            const std::string mxc  = hit->mxc_url;
+            const std::string body = hit->body;
+            const std::string info = hit->info_json;
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, L"Add to Saved Stickers");
+            POINT sp{ static_cast<LONG>(p.x), static_cast<LONG>(p.y) };
+            ClientToScreen(msg_surface_->hwnd(), &sp);
+            int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                      sp.x, sp.y, 0, hwnd_, nullptr);
+            DestroyMenu(menu);
+            if (cmd == 1)
+                client_->save_sticker_to_user_pack(body, body, mxc, info);
+        });
     }
     if (HWND ms = msg_surface_->hwnd()) {
         SetWindowPos(ms, nullptr, 240, kRoomHeaderH, 784, 700 - kRoomHeaderH,

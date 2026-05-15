@@ -50,6 +50,8 @@ struct MessageRowData {
     // supplied a distinct `filename`, in which case `body` is a user
     // caption to render beneath the image.
     bool        has_filename_caption = false;
+    // JSON-serialised ImageInfo from the sticker event (empty for Kind::Image).
+    std::string sticker_info_json;
 
     // File card
     std::string file_name;
@@ -163,6 +165,12 @@ public:
     // to trigger a fetch as a side-effect).
     void set_preview_provider(PreviewProvider p);
 
+    // Called by the shell after storing new preview data in the provider cache.
+    // Invalidates row heights and, if the affected row is entirely above the
+    // current viewport, arms the scroll anchor so the user's visual position
+    // is preserved (preview card grows upward, not into the visible region).
+    void notify_url_preview_ready(const std::string& url);
+
     // Voice-message playback (MSC3245). Shells wire all three after
     // construction; the view stays inert (clicks become no-ops) when any
     // of them is missing — Win32 currently lacks an audio backend, so
@@ -230,6 +238,7 @@ public:
         std::string event_id;
         std::string mxc_url;
         std::string body;
+        std::string info_json;   // JSON-serialised ImageInfo from the sticker event
         tk::Rect    world_rect;
     };
     std::optional<StickerHit> sticker_hit_at(tk::Point world) const;

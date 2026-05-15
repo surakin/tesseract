@@ -250,6 +250,7 @@ private:
     std::string     ctx_sticker_event_id_;
     std::string     ctx_sticker_mxc_url_;
     std::string     ctx_sticker_body_;
+    std::string     ctx_sticker_info_json_;
     GtkWidget*      status_bar_         = nullptr;
 
     guint                    sync_status_debounce_id_ = 0;

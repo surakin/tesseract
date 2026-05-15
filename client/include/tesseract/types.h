@@ -86,6 +86,7 @@ struct StickerEvent : public Event {
     uint64_t    width  = 0;
     uint64_t    height = 0;
     std::string blurhash;   // MSC2448: xyz.amorgan.blurhash; empty when absent
+    std::string info_json;  // JSON-serialised ImageInfo from sender
 
     StickerEvent() { type = EventType::Sticker; }
 };

@@ -2051,7 +2051,7 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
-    if (message_list_view_) message_list_view_->invalidate_data();
+    if (message_list_view_) message_list_view_->notify_url_preview_ready(url);
     if (msg_surface_) msg_surface_->relayout();
 }
 
@@ -2546,9 +2546,10 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
     // Capture sticker fields for the action handler. The hit_at result
     // points into MessageListView's per-frame sticker_geom_ map and would
     // dangle by the time the action fires.
-    self->ctx_sticker_event_id_ = hit->event_id;
-    self->ctx_sticker_mxc_url_  = hit->mxc_url;
-    self->ctx_sticker_body_     = hit->body;
+    self->ctx_sticker_event_id_  = hit->event_id;
+    self->ctx_sticker_mxc_url_   = hit->mxc_url;
+    self->ctx_sticker_body_      = hit->body;
+    self->ctx_sticker_info_json_ = hit->info_json;
 
     GdkRectangle r{
         .x      = static_cast<int>(x),
@@ -2582,15 +2583,14 @@ void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
     auto* self = static_cast<MainWindow*>(user_data);
     if (self->ctx_sticker_mxc_url_.empty()) return;
     self->client_->save_sticker_to_user_pack(
-        self->ctx_sticker_body_,    // shortcode hint (slugified by SDK)
-        self->ctx_sticker_body_,    // body
+        self->ctx_sticker_body_,
+        self->ctx_sticker_body_,
         self->ctx_sticker_mxc_url_,
-        "{}");                      // info_json: SDK preserves the original
-                                    // event's info via the local pack cache
-                                    // when the round-trip completes.
+        self->ctx_sticker_info_json_);
     self->ctx_sticker_event_id_.clear();
     self->ctx_sticker_mxc_url_.clear();
     self->ctx_sticker_body_.clear();
+    self->ctx_sticker_info_json_.clear();
     if (self->sticker_ctx_menu_)
         gtk_popover_popdown(GTK_POPOVER(self->sticker_ctx_menu_));
 }

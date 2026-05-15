@@ -151,7 +151,7 @@ Done: inline images, stickers, reply-to, message editing, voice messages, Compos
 ### Step 8 — MSC2545 phase A: remaining items
 
 - **Inline emoticons in HTML message bodies** — render `<img data-mx-emoticon ...>` in `formatted_body` instead of alt text. Per-platform: Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, macOS `NSTextAttachment`, Win32 via RichEdit overlay (Step 8b).
-- **Win32 shell wiring** — `StickerPicker` child `WS_POPUP` surface, right-click menu (`TrackPopupMenu` on `WM_RBUTTONUP`), and the underlying RichEdit overlay (Step 8b).
+- **Win32 shell wiring** — `StickerPicker` child `WS_POPUP` surface and the underlying RichEdit overlay (Step 8b). Right-click "Add to Saved Stickers" is done (`tk::win32::Surface::set_on_right_click` + `WM_RBUTTONUP`).
 - **Async image cache for pickers** — promote `ensure_media_image` into a shared `tk::AsyncImageCache` (worker → decode → post-to-UI → cache + repaint) so `StickerPicker` / `EmojiPicker` custom tabs don't show grey placeholders for stickers not yet seen in a timeline. GTK4 worker-fetch hookup still pending; consolidation with Win32/Qt6 paths also pending.
 
 ### Step 8b — Win32 RichEdit inline media overlay
@@ -185,8 +185,6 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 - **Win32 `NativeTextArea::natural_height()` undercounts wrapped lines** — `EM_GETLINECOUNT × tmHeight` ignores soft-wrap; auto-grow lags by one keystroke when wrapping.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
 - **Sticker picker placeholders on GTK4** — GTK4 still needs the worker-fetch hookup for `StickerPicker` / `EmojiPicker` custom-pack tabs; `tk::AsyncImageCache` consolidation also pending.
-- **Win32 sticker right-click context menu missing** — `WM_RBUTTONUP` on the message surface should hit-test via `sticker_hit_at` and pop a `TrackPopupMenu` calling `save_sticker_to_user_pack`.
-- **`save_sticker_to_user_pack` posts empty `info`** — right-click handlers pass `"{}"` for `info_json`; fix: thread `info_json` through `MessageListView::StickerHit`.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
 - **URL preview + hyperlink rendering on macOS** — `get_url_preview` FFI and `MessageListView` preview card are wired on Qt6, GTK4, and Win32; macOS `MainWindowController` still needs `on_url_preview_ready_` and `on_link_clicked` wiring.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.

@@ -161,6 +161,11 @@ pub mod ffi {
         /// Empty when absent. Decoded by the UI layer before the real
         /// bytes arrive; the unstable field name is xyz.amorgan.blurhash.
         blurhash:                String,
+        /// JSON-serialised `ImageInfo` for `m.sticker` events (width, height,
+        /// mimetype, size, etc. as sent by the sender). Empty string for all
+        /// other message types. Lets right-click handlers pass real metadata
+        /// to `save_sticker_to_user_pack` instead of `"{}"`.
+        sticker_info_json:       String,
     }
 
     /// Outcome of an asynchronous SDK operation.

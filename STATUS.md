@@ -109,7 +109,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Emoji picker** — Unicode-category tabs + per-pack custom tabs; search; virtualised grid via `tk::GridView`.
 - **Sticker picker** — Favorites tab + per-pack tabs; search; virtualised grid. Floating panel on every platform (Qt6 `QFrame`, GTK4 `GtkPopover`, macOS `NSPanel`, Win32 `WS_POPUP` HWND).
 - **Recent emoji (MSC4356)** — `m.recent_emoji` + `io.github.johennes.msc4356.recent_emoji` account-data, dual-written on every bump; reads stable → unstable → legacy `io.element.recent_emoji` so existing Element users keep their picker rank. 100-entry cap, move-to-front-and-increment semantics, count-desc top-N for the Frequents tab.
-- **Add to Saved Stickers** — right-click on an inline sticker offers `save_sticker_to_user_pack` (Qt6 / GTK4 / macOS; Win32 pending).
+- **Add to Saved Stickers** — right-click on an inline sticker offers `save_sticker_to_user_pack` (all four platforms: Qt6 / GTK4 / macOS / Win32 via `WM_RBUTTONUP` + `TrackPopupMenu`). All platforms now pass the real `ImageInfo` JSON instead of `"{}"`, so width/height/mimetype/size are preserved in the saved pack entry.
 - **Toggle favourite** — `toggle_favorite_sticker` flips the `im.tesseract.favorite` flag on user-pack entries.
 - **Async sticker image fetch** — Win32 + Qt6 + macOS run a worker thread + decode + post-to-UI + cache + repaint per pending sticker; GTK4 still falls back to the host's `tk_images_` cache.
 

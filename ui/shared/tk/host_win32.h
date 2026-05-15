@@ -74,6 +74,11 @@ public:
     // Deprecated alias.
     void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
 
+    // Install a right-click handler. Receives surface-local coordinates in
+    // the same logical pixel space as pointer-down/up events. Fired on
+    // WM_RBUTTONUP. Pass {} to clear.
+    void set_on_right_click(std::function<void(tk::Point)> cb);
+
 private:
     std::unique_ptr<Host> host_;
 };

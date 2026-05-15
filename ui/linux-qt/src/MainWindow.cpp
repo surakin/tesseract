@@ -458,18 +458,15 @@ MainWindow::MainWindow(QWidget* parent)
         // Capture relevant fields up front; the hit_at result is
         // recomputed each paint so we don't hold a reference past
         // the menu lifetime.
-        const auto event_id = hit->event_id;
-        const auto mxc_url  = hit->mxc_url;
-        const auto body     = hit->body;
+        const auto event_id  = hit->event_id;
+        const auto mxc_url   = hit->mxc_url;
+        const auto body      = hit->body;
+        const auto info_json = hit->info_json;
 
         QMenu menu(this);
         QAction* add = menu.addAction(tr("Add to Saved Stickers"));
-        connect(add, &QAction::triggered, this, [this, mxc_url, body, event_id]{
-            // Width/height: best-effort from messageListView's row data.
-            // We don't track them here; the SDK preserves info_json
-            // round-trip via the original event when the picker later
-            // sends. For Add-to-pack, an empty info object is fine.
-            client_->save_sticker_to_user_pack(body, body, mxc_url, "{}");
+        connect(add, &QAction::triggered, this, [this, mxc_url, body, info_json]{
+            client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
         });
         menu.exec(msgSurface_->mapToGlobal(pos));
     });
@@ -1646,7 +1643,7 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
 
     // Invalidate cached row heights so the preview card is included in the
     // next measure pass, then relayout to apply the new heights.
-    if (messageListView_) messageListView_->invalidate_data();
+    if (messageListView_) messageListView_->notify_url_preview_ready(url);
     if (msgSurface_) {
         msgSurface_->relayout();
         msgSurface_->update();

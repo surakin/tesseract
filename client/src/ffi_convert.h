@@ -148,6 +148,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         ev->width     = e.width;
         ev->height    = e.height;
         ev->blurhash  = std::string(e.blurhash);
+        ev->info_json = std::string(e.sticker_info_json);
         return ev;
     }
 

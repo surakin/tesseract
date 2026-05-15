@@ -3264,6 +3264,7 @@ async fn timeline_item_to_ffi(
                 is_edited:               false,
                 formatted_body:          String::new(),
                 blurhash:                String::new(),
+                sticker_info_json:       String::new(),
             });
         }
     };
@@ -3323,6 +3324,7 @@ async fn timeline_item_to_ffi(
             is_edited:               false,
             formatted_body:          String::new(),
             blurhash:                String::new(),
+            sticker_info_json:       String::new(),
         });
     }
 
@@ -3393,6 +3395,8 @@ async fn timeline_item_to_ffi(
             is_edited:               false,
             formatted_body:          String::new(),
             blurhash:                c.info.blurhash.as_deref().unwrap_or("").to_owned(),
+            sticker_info_json:       serde_json::to_string(&c.info)
+                                         .unwrap_or_else(|_| "{}".to_owned()),
         });
     }
 
@@ -3660,6 +3664,7 @@ async fn timeline_item_to_ffi(
         is_edited: msg_content.is_edited(),
         formatted_body,
         blurhash,
+        sticker_info_json: String::new(),
     })
 }
 

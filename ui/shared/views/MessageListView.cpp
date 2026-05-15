@@ -51,10 +51,11 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
         case tesseract::EventType::Sticker: {
             row.kind = Kind::Sticker;
             const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-            row.media_url = s.image_url;
-            row.media_w   = static_cast<int>(s.width);
-            row.media_h   = static_cast<int>(s.height);
-            row.blurhash  = s.blurhash;
+            row.media_url          = s.image_url;
+            row.media_w            = static_cast<int>(s.width);
+            row.media_h            = static_cast<int>(s.height);
+            row.blurhash           = s.blurhash;
+            row.sticker_info_json  = s.info_json;
             break;
         }
         case tesseract::EventType::File: {
@@ -1018,7 +1019,7 @@ private:
                 paint_inline_media(m, ctx, r);
                 if (!m.event_id.empty()) {
                     owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
-                        m.event_id, m.media_url, m.body, r
+                        m.event_id, m.media_url, m.body, m.sticker_info_json, r
                     };
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
                         m.event_id, m.media_url, m.body,
@@ -1741,6 +1742,21 @@ void MessageListView::set_image_provider(ImageProvider p) {
 
 void MessageListView::set_preview_provider(PreviewProvider p) {
     preview_provider_ = std::move(p);
+}
+
+void MessageListView::notify_url_preview_ready(const std::string& url) {
+    auto [first, last] = visible_range();
+    for (std::size_t i = 0; i < messages_.size(); ++i) {
+        if (messages_[i].first_url == url) {
+            if (first > 0 && static_cast<int>(i) < first) {
+                preserve_top_through([&]{ invalidate_data(); });
+            } else {
+                invalidate_data();
+            }
+            return;
+        }
+    }
+    invalidate_data();
 }
 
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player) {

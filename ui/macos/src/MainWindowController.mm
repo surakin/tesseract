@@ -585,6 +585,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
     std::string                                      _ctxStickerBody;
+    std::string                                      _ctxStickerInfoJson;
 
     // Space navigation chrome (top of sidebar, shown when drilling into a space).
     NSView*              _spaceNavBar;
@@ -990,9 +991,10 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             auto hit = s->_messageListView->sticker_hit_at(p);
             if (!hit) return;
             if (s->_shell->client_->user_pack_has_sticker(hit->mxc_url)) return;
-            s->_ctxStickerEventId = hit->event_id;
-            s->_ctxStickerMxcUrl  = hit->mxc_url;
-            s->_ctxStickerBody    = hit->body;
+            s->_ctxStickerEventId  = hit->event_id;
+            s->_ctxStickerMxcUrl   = hit->mxc_url;
+            s->_ctxStickerBody     = hit->body;
+            s->_ctxStickerInfoJson = hit->info_json;
             NSView* view = (__bridge NSView*)s->_msgSurface->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
             NSPoint screen = [view.window convertPointToScreen:
@@ -2755,10 +2757,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _ctxStickerBody,
         _ctxStickerBody,
         _ctxStickerMxcUrl,
-        "{}");
+        _ctxStickerInfoJson);
     _ctxStickerEventId.clear();
     _ctxStickerMxcUrl.clear();
     _ctxStickerBody.clear();
+    _ctxStickerInfoJson.clear();
 }
 
 @end

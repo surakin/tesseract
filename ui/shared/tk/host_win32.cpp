@@ -868,6 +868,14 @@ public:
             on_file_drop_(std::move(bytes), std::move(mime),
                             std::move(filename));
     }
+    void set_on_right_click(std::function<void(tk::Point)> cb) {
+        on_right_click_ = std::move(cb);
+    }
+    void fire_right_click(int x, int y) {
+        if (on_right_click_)
+            on_right_click_(tk::Point{ static_cast<float>(x),
+                                       static_cast<float>(y) });
+    }
     void set_drag_active(bool active) {
         if (drag_active_ == active) return;
         drag_active_ = active;
@@ -877,6 +885,7 @@ public:
 
 private:
     FileDropHandler                      on_file_drop_;
+    std::function<void(tk::Point)>       on_right_click_;
     bool                                 drag_active_ = false;
 };
 
@@ -927,6 +936,10 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
             if (host) host->on_pointer_up(GET_X_LPARAM(lParam),
                                             GET_Y_LPARAM(lParam));
             return 0;
+        case WM_RBUTTONUP:
+            if (host) host->fire_right_click(GET_X_LPARAM(lParam),
+                                              GET_Y_LPARAM(lParam));
+            return 0;
         case WM_MOUSEMOVE: {
             if (host) host->on_pointer_move(GET_X_LPARAM(lParam),
                                               GET_Y_LPARAM(lParam));
@@ -951,6 +964,24 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
                                 delta);
             }
             return 0;
+        }
+        case WM_CTLCOLOREDIT: {
+            // Paint EDIT-control backgrounds with the theme's input-card colour
+            // instead of the system default white.
+            if (host) {
+                HDC dc = reinterpret_cast<HDC>(wParam);
+                const auto& pal = host->theme().palette;
+                COLORREF bg = RGB(pal.compose_card_bg.r,
+                                  pal.compose_card_bg.g,
+                                  pal.compose_card_bg.b);
+                SetBkColor(dc, bg);
+                SetTextColor(dc, RGB(pal.text_primary.r,
+                                     pal.text_primary.g,
+                                     pal.text_primary.b));
+                SetDCBrushColor(dc, bg);
+                return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
+            }
+            break;
         }
         case WM_COMMAND: {
             // EN_CHANGE from a child EDIT belonging to one of our
@@ -1242,6 +1273,10 @@ CanvasFactory& Surface::factory() { return host_->factory(); }
 
 void Surface::set_on_file_drop(FileDropHandler cb) {
     host_->set_on_file_drop(std::move(cb));
+}
+
+void Surface::set_on_right_click(std::function<void(tk::Point)> cb) {
+    host_->set_on_right_click(std::move(cb));
 }
 
 std::vector<tk::d2d::AnimatedFrame> decode_animation(

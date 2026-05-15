@@ -12,10 +12,11 @@
 
 ## Step 8 — MSC2545 stickers/emoticons, remaining
 - [ ] Inline emoticons in HTML bodies (`<img data-mx-emoticon>`) — Qt6, GTK4, macOS, Win32
-- [ ] Win32: StickerPicker `WS_POPUP` surface + right-click "Add to Saved Stickers" (`TrackPopupMenu` on `WM_RBUTTONUP`)
+- [ ] Inline emoticons in HTML bodies (`<img data-mx-emoticon>`) — Qt6, GTK4, macOS, Win32
+- [x] Win32: right-click "Add to Saved Stickers" (`TrackPopupMenu` on `WM_RBUTTONUP` via `tk::win32::Surface::set_on_right_click`)
+- [x] Fix `save_sticker_to_user_pack` posting empty `info` — `sticker_info_json` now threaded Rust→C++→`StickerHit`; all four callers updated
 - [ ] GTK4: sticker/emoji picker async worker fetch (stickers unseen in timeline show placeholder)
 - [ ] `tk::AsyncImageCache` consolidation (shared host-side cache for picker + message-list images)
-- [ ] Fix `save_sticker_to_user_pack` posting empty `info` (thread `info_json` through `StickerHit`)
 
 ## Step 8b — Win32 RichEdit inline media overlay
 - [ ] `tk::InlineMediaSurface` abstraction + Win32 RichEdit 4.1 (`MSFTEDIT.DLL`) implementation
