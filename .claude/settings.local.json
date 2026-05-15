@@ -72,7 +72,9 @@
       "Bash(rustup target *)",
       "Bash(dpkg -l \"*mingw*\" 2>/dev/null | grep ^ii | awk '{print $2}'; ls /usr/x86_64-w64-mingw32/include/ 2>/dev/null | head -20)",
       "Bash(cat > *)",
-      "Bash(tests\\\\tesseract_tests.exe \"[migration]\" --reporter compact)"
+      "Bash(tests\\\\tesseract_tests.exe \"[migration]\" --reporter compact)",
+      "Skill(superpowers:using-git-worktrees)",
+      "Skill(superpowers:using-git-worktrees:*)"
     ]
   }
 }

@@ -37,10 +37,21 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
 
+    bool on_pointer_down(tk::Point local)                   override;
+    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    void on_pointer_move(tk::Point local)                   override;
+    void on_pointer_leave()                                 override;
+
+    // Fired when a hyperlink in the room topic is clicked.
     std::function<void(const std::string& url)> on_link_clicked;
 
+    // Fired when the user clicks the calendar/jump-to-date button.
+    std::function<void()> on_jump_to_date_requested;
+
 private:
-    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool     hover_calendar_ = false;
+    bool     press_calendar_ = false;
+    tk::Rect calendar_btn_rect_{};  // updated each paint pass
 
     tk::Label* name_label_  = nullptr;
     tk::Label* topic_label_ = nullptr;

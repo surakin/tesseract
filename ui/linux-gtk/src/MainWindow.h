@@ -170,6 +170,10 @@ private:
     void ensure_row_media(const tesseract::Event& ev);
     void clear_messages();
     void request_more_history(const std::string& room_id);
+    void open_jump_to_date_dialog();
+    static void on_jump_dialog_ok_(GtkButton*, gpointer user_data);
+    static void on_jump_dialog_cancel_(GtkButton*, gpointer user_data);
+    static void on_jump_dialog_destroy_(GtkWidget*, gpointer user_data);
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
     void do_logout();

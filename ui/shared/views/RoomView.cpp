@@ -115,6 +115,15 @@ void RoomView::wire_internal_callbacks() {
     message_list_->on_near_top = [this] {
         if (on_near_top) on_near_top();
     };
+    message_list_->on_near_bottom = [this] {
+        if (on_near_bottom) on_near_bottom();
+    };
+    message_list_->on_return_to_live = [this] {
+        if (on_return_to_live) on_return_to_live();
+    };
+    header_->on_jump_to_date_requested = [this] {
+        if (on_jump_to_date_requested) on_jump_to_date_requested();
+    };
     message_list_->on_scroll_to_original =
         [this](const std::string& original_event_id) {
             if (on_scroll_to_original) on_scroll_to_original(original_event_id);
@@ -156,6 +165,16 @@ void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f) {
 
 void RoomView::set_video_fetch_provider(MessageListView::VideoFetchProvider f) {
     if (message_list_) message_list_->set_video_fetch_provider(std::move(f));
+}
+
+// ── Historical-mode helpers ────────────────────────────────────────────────
+
+void RoomView::set_historical_mode(bool historical) {
+    if (message_list_) message_list_->set_historical_mode(historical);
+}
+
+bool RoomView::scroll_to_event_id(const std::string& id) {
+    return message_list_ && message_list_->scroll_to_event_id(id);
 }
 
 // ── Room / message state ───────────────────────────────────────────────────

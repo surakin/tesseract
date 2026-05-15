@@ -86,6 +86,15 @@ public:
     // Valid after the first arrange() pass.
     tk::Rect compose_text_area_rect() const;
 
+    // ── Historical-mode helpers (forwarded to MessageListView) ──────────
+
+    // Toggle historical display mode (pill stays visible; clicking it
+    // fires on_return_to_live instead of scrolling to the bottom).
+    void set_historical_mode(bool historical);
+
+    // Scroll to the row matching event_id. Returns true when found.
+    bool scroll_to_event_id(const std::string& id);
+
     // ── Direct accessors for shell integration ───────────────────────────
 
     // Needed by the shell for: emoji/sticker picker anchor (popupAt),
@@ -130,6 +139,9 @@ public:
     std::function<void(MessageListView::ImageHit)>         on_image_clicked;
     std::function<void(MessageListView::VideoHit)>         on_video_clicked;
     std::function<void()>                                  on_near_top;
+    std::function<void()>                                  on_near_bottom;
+    std::function<void()>                                  on_return_to_live;
+    std::function<void()>                                  on_jump_to_date_requested;
     std::function<void(std::string original_event_id)>     on_scroll_to_original;
     std::function<void()>                                  on_emoji;
     std::function<void()>                                  on_sticker;

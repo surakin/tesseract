@@ -71,6 +71,7 @@ constexpr UINT WM_TESSERACT_VIDEO_BYTES      = WM_APP + 19;
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
 constexpr UINT WM_TESSERACT_ROOM_LIST_STATE  = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI       = WM_APP + 22;
+constexpr UINT WM_TESSERACT_JUMP_DONE        = WM_APP + 23;
 
 namespace win32 {
 
@@ -159,6 +160,12 @@ private:
         std::size_t                       index;
         std::unique_ptr<tesseract::Event> event;   // null for "removed"
     };
+    struct JumpDonePayload {
+        bool        ok;
+        std::string room_id;
+        std::string event_id;   // valid when ok == true
+        std::string error_msg;  // valid when ok == false
+    };
     struct NotificationPayload {
         std::string room_id;
         std::string room_name;
@@ -180,6 +187,8 @@ private:
     void on_tesseract_message_removed(PostedMessageEvent* payload);
     void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
     void on_tesseract_subscribe_done(std::string* room_id, bool reached_start);
+    void openJumpToDateDialog();
+    void on_tesseract_jump_done(JumpDonePayload* p);
     void on_tesseract_rooms(RoomsPayload* payload);
     void refresh_room_list();
     /// Kick off back-pagination on a worker thread.

@@ -694,6 +694,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         delete p;
         return 0;
     }
+    case WM_TESSERACT_JUMP_DONE: {
+        auto* p = reinterpret_cast<JumpDonePayload*>(lParam);
+        self->on_tesseract_jump_done(p);
+        delete p;
+        return 0;
+    }
     case WM_TESSERACT_RECOVER_DONE: {
         auto* p = reinterpret_cast<std::wstring*>(lParam);
         self->on_recover_done(wParam != 0, std::move(*p));
@@ -1142,6 +1148,17 @@ void MainWindow::on_create(HWND hwnd) {
         room_view_->on_near_top = [this] {
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);
+        };
+        room_view_->on_near_bottom = [this] {
+            if (!current_room_id_.empty())
+                request_forward_history_(current_room_id_);
+        };
+        room_view_->on_return_to_live = [this] {
+            if (!current_room_id_.empty())
+                return_to_live_(current_room_id_);
+        };
+        room_view_->on_jump_to_date_requested = [this] {
+            openJumpToDateDialog();
         };
         room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
         room_view_->on_sticker = [this] { toggle_sticker_picker(); };
@@ -1842,6 +1859,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
+    clear_focused_state_(room_id);
     mark_room_read_(current_room_id_);
     reply_details_requested_.clear();
     {
@@ -1929,6 +1947,10 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
     }
     room_view_->set_messages(std::move(rows));
     if (chat_surface_) chat_surface_->relayout();
+    const auto& pstate = pagination_[payload->room_id];
+    room_view_->set_historical_mode(pstate.is_focused);
+    if (pstate.is_focused)
+        room_view_->scroll_to_event_id(pstate.focus_event_id);
 }
 
 void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
@@ -1995,6 +2017,194 @@ void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
                                                bool reached_start) {
     if (!room_id || *room_id != current_room_id_) return;
     push_paginate_result_(*room_id, reached_start);
+}
+
+void MainWindow::on_tesseract_jump_done(JumpDonePayload* p) {
+    if (!p) return;
+    if (!p->ok) {
+        std::wstring msg = L"Jump to date failed: " + utf8_to_wstr(p->error_msg);
+        MessageBoxW(hwnd_, msg.c_str(), L"Jump to Date", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    begin_focused_subscription_(p->room_id, p->event_id);
+    const std::string room_id  = p->room_id;
+    const std::string event_id = p->event_id;
+    run_async_([this, room_id, event_id] {
+        client_->subscribe_room_at(room_id, event_id);
+    });
+}
+
+namespace {
+
+struct JumpPickerState {
+    HWND hCal;
+    bool done;
+    bool accepted;
+    SYSTEMTIME result;
+};
+
+LRESULT CALLBACK jump_to_date_proc(HWND hwnd, UINT msg,
+                                    WPARAM wParam, LPARAM lParam)
+{
+    auto* ctx = reinterpret_cast<JumpPickerState*>(
+        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    switch (msg) {
+    case WM_CREATE: {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return 0;
+    }
+    case WM_COMMAND:
+        if (!ctx) break;
+        if (LOWORD(wParam) == IDOK) {
+            MonthCal_GetCurSel(ctx->hCal, &ctx->result);
+            ctx->result.wHour = ctx->result.wMinute =
+                ctx->result.wSecond = ctx->result.wMilliseconds = 0;
+            ctx->accepted = true;
+            ctx->done     = true;
+            DestroyWindow(hwnd);
+        } else if (LOWORD(wParam) == IDCANCEL) {
+            ctx->done = true;
+            DestroyWindow(hwnd);
+        }
+        return 0;
+    case WM_DESTROY:
+        if (ctx) ctx->done = true;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+} // anonymous namespace
+
+void MainWindow::openJumpToDateDialog() {
+    if (current_room_id_.empty()) return;
+
+    // Register the picker window class once.
+    static bool s_registered = false;
+    if (!s_registered) {
+        INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_DATE_CLASSES };
+        InitCommonControlsEx(&icc);
+        WNDCLASSEXW wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = jump_to_date_proc;
+        wc.hInstance     = hInst_;
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1);
+        wc.lpszClassName = L"TesseractJumpToDate";
+        RegisterClassExW(&wc);
+        s_registered = true;
+    }
+
+    JumpPickerState ctx{ nullptr, false, false, {} };
+
+    // Compute popup position (centred on the main window).
+    const int kBtnH = 28, kBtnW = 90, kGap = 8;
+    RECT wr{};
+    GetWindowRect(hwnd_, &wr);
+
+    // Create the host popup (placeholder size; resized after MonthCal).
+    HWND hPicker = CreateWindowExW(
+        WS_EX_DLGMODALFRAME,
+        L"TesseractJumpToDate", L"Jump to Date",
+        WS_POPUP | WS_CAPTION | WS_SYSMENU,
+        0, 0, 200, 200,
+        hwnd_, nullptr, hInst_, &ctx);
+    if (!hPicker) return;
+
+    // Create MonthCal control to get its minimum size.
+    HWND hCal = CreateWindowExW(
+        0, MONTHCAL_CLASS, L"",
+        WS_CHILD | WS_VISIBLE | MCS_NOTODAY,
+        kGap, kGap, 180, 150,
+        hPicker, nullptr, hInst_, nullptr);
+    if (!hCal) { DestroyWindow(hPicker); return; }
+    ctx.hCal = hCal;
+
+    // Query minimum size and resize popup accordingly.
+    RECT calMin{};
+    MonthCal_GetMinReqRect(hCal, &calMin);
+    const int calW = calMin.right  - calMin.left;
+    const int calH = calMin.bottom - calMin.top;
+
+    RECT adjRect{ 0, 0, calW + kGap * 2, calH + kGap * 3 + kBtnH };
+    AdjustWindowRectEx(&adjRect, WS_POPUP | WS_CAPTION | WS_SYSMENU,
+                        FALSE, WS_EX_DLGMODALFRAME);
+    const int wndW = adjRect.right  - adjRect.left;
+    const int wndH = adjRect.bottom - adjRect.top;
+    const int cx   = (wr.left + wr.right  - wndW) / 2;
+    const int cy   = (wr.top  + wr.bottom - wndH) / 2;
+
+    SetWindowPos(hPicker, nullptr, cx, cy, wndW, wndH,
+                  SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(hCal, nullptr, kGap, kGap, calW, calH,
+                  SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // Set min/max date on the MonthCal: 1970-01-01 … today.
+    SYSTEMTIME range[2]{};
+    range[0].wYear = 1970; range[0].wMonth = 1; range[0].wDay = 1;
+    GetSystemTime(&range[1]);   // UTC today
+    range[1].wHour = 0; range[1].wMinute = 0;
+    range[1].wSecond = 0; range[1].wMilliseconds = 0;
+    MonthCal_SetRange(hCal, GDTR_MIN | GDTR_MAX, range);
+
+    // Buttons: OK and Cancel.
+    const int btnTop = kGap + calH + kGap;
+    const int totalBtns = kBtnW * 2 + kGap;
+    const int btnLeft = (calW + kGap * 2 - totalBtns) / 2;
+    CreateWindowW(L"BUTTON", L"OK",
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        btnLeft, btnTop, kBtnW, kBtnH,
+        hPicker, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)),
+        hInst_, nullptr);
+    CreateWindowW(L"BUTTON", L"Cancel",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        btnLeft + kBtnW + kGap, btnTop, kBtnW, kBtnH,
+        hPicker, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)),
+        hInst_, nullptr);
+
+    ShowWindow(hPicker, SW_SHOW);
+
+    // Run a nested modal message loop.
+    EnableWindow(hwnd_, FALSE);
+    MSG m{};
+    while (!ctx.done && GetMessageW(&m, nullptr, 0, 0) > 0) {
+        if (!IsDialogMessageW(hPicker, &m)) {
+            TranslateMessage(&m);
+            DispatchMessageW(&m);
+        }
+    }
+    EnableWindow(hwnd_, TRUE);
+    SetForegroundWindow(hwnd_);
+
+    if (!ctx.accepted) return;
+
+    // Convert selected UTC date to Unix ms via FILETIME.
+    FILETIME ft{};
+    SystemTimeToFileTime(&ctx.result, &ft);
+    ULARGE_INTEGER ui;
+    ui.LowPart  = ft.dwLowDateTime;
+    ui.HighPart = ft.dwHighDateTime;
+    // FILETIME epoch (1601-01-01) to Unix epoch (1970-01-01): 116444736000000000 * 100ns
+    constexpr ULONGLONG kEpochDiff = 116444736000000000ULL;
+    const uint64_t ts_ms = (ui.QuadPart - kEpochDiff) / 10000ULL;
+
+    const std::string room_id = current_room_id_;
+    HWND main_hwnd = hwnd_;
+    tesseract::Client* cl = client_;
+    run_async_([cl, room_id, ts_ms, main_hwnd] {
+        auto res = cl->timestamp_to_event(room_id, ts_ms, "f");
+        auto* p = new JumpDonePayload{
+            res.ok,
+            room_id,
+            res.ok  ? res.message : std::string{},
+            !res.ok ? res.message : std::string{}
+        };
+        PostMessageW(main_hwnd, WM_TESSERACT_JUMP_DONE, 0,
+                      reinterpret_cast<LPARAM>(p));
+    });
 }
 
 void MainWindow::refresh_room_list() {

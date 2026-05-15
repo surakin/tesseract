@@ -175,6 +175,60 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start) {
     state.reached_start = reached_start;
 }
 
+void ShellBase::begin_focused_subscription_(const std::string& room_id,
+                                             const std::string& event_id) {
+    auto& state           = pagination_[room_id];
+    state.is_focused      = true;
+    state.focus_event_id  = event_id;
+    state.fwd_in_flight   = false;
+    state.reached_end     = false;
+}
+
+void ShellBase::clear_focused_state_(const std::string& room_id) {
+    auto& state           = pagination_[room_id];
+    state.is_focused      = false;
+    state.focus_event_id.clear();
+    state.reached_end     = false;
+    state.fwd_in_flight   = false;
+}
+
+void ShellBase::request_forward_history_(const std::string& room_id) {
+    auto& state = pagination_[room_id];
+    if (state.fwd_in_flight || state.reached_end) return;
+    if (!state.is_focused) return;
+    state.fwd_in_flight = true;
+
+    run_async_([this, room_id]() {
+        auto res = client_->paginate_forward(room_id, kPaginationBatch);
+        post_to_ui_([this, room_id, res]() {
+            pagination_[room_id].fwd_in_flight = false;
+            if (res.ok) {
+                pagination_[room_id].reached_end = res.reached_end;
+                if (res.reached_end)
+                    return_to_live_(room_id);
+            }
+        });
+    });
+}
+
+void ShellBase::return_to_live_(const std::string& room_id) {
+    auto& state        = pagination_[room_id];
+    state.is_focused   = false;
+    state.focus_event_id.clear();
+    state.reached_end  = false;
+    state.fwd_in_flight = false;
+    state.in_flight    = true;
+
+    run_async_([this, room_id]() {
+        client_->subscribe_room(room_id);
+        auto pr = client_->paginate_back_with_status(room_id, kPaginationBatch);
+        post_to_ui_([this, room_id, pr]() {
+            pagination_[room_id].reached_start = pr.reached_start;
+            pagination_[room_id].in_flight     = false;
+        });
+    });
+}
+
 void ShellBase::push_room_list_state_(RoomListState state) {
     last_room_list_state_ = state;
 }

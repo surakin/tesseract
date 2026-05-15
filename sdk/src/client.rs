@@ -29,7 +29,7 @@ use matrix_sdk::SessionChange;
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
-    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
+    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
 };
 #[cfg(not(test))]
 use futures_util::StreamExt;
@@ -160,6 +160,10 @@ impl std::ops::Deref for SendHandler {
 struct TimelineHandle {
     timeline:    Arc<matrix_sdk_ui::Timeline>,
     abort_tasks: Vec<tokio::task::AbortHandle>,
+    /// `true` when this timeline was built via `subscribe_room_at` (focused on
+    /// a specific event); `false` for the live timeline built by
+    /// `subscribe_room`. `paginate_forward` requires `is_focused == true`.
+    is_focused:  bool,
 }
 
 /// Serialisable wrapper for a full OAuth session (client_id + user session).
@@ -1099,6 +1103,78 @@ impl ClientFfi {
     // Timeline subscription (Step 2)
     // -----------------------------------------------------------------------
 
+    /// Spawn the two tasks that are common to both `subscribe_room` and
+    /// `subscribe_room_at`: the streaming task that pumps timeline diffs to
+    /// the UI, and the `fetch_members` backfill task. Returns their
+    /// `AbortHandle`s so the caller can store them in `TimelineHandle`.
+    ///
+    /// `timeline` and `room` must already be fully constructed; `room_id_str`
+    /// is the string form of the room ID used by handler callbacks.
+    #[cfg(not(test))]
+    fn spawn_timeline_tasks(
+        timeline:    &Arc<matrix_sdk_ui::Timeline>,
+        room:        &matrix_sdk::Room,
+        room_id_str: String,
+        handler:     &Arc<Mutex<SendHandler>>,
+        client:      &Client,
+        rt:          &tokio::runtime::Runtime,
+    ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
+        let tl         = Arc::clone(timeline);
+        let h          = Arc::clone(handler);
+        let rid        = room_id_str;
+        let room_clone = room.clone();
+        let me         = client.user_id().map(|u| u.to_owned());
+        let client_ref = client.clone();
+
+        let abort = rt.spawn(async move {
+            let (initial_items, mut stream) = tl.subscribe().await;
+
+            // Build the visibility mirror + initial snapshot in one pass.
+            // The mirror is `true` for every matrix-sdk-ui timeline slot
+            // whose `timeline_item_to_ffi` yields Some — this covers both
+            // real message events and virtual items (day-dividers,
+            // read-markers, timeline-start). State events and membership
+            // changes remain `false` so they are silently filtered.
+            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
+            let mut snapshot: Vec<TimelineEvent> = Vec::new();
+            for item in initial_items.iter() {
+                let ev = timeline_item_to_ffi(
+                    item, &rid, &room_clone, me.as_deref()).await;
+                visible.push(ev.is_some());
+                if let Some(ev) = ev { snapshot.push(ev); }
+            }
+            if let Ok(guard) = h.lock() {
+                guard.on_timeline_reset(&rid, &snapshot);
+            }
+            drop(snapshot);
+
+            while let Some(diffs) = stream.next().await {
+                for diff in diffs {
+                    handle_timeline_diff(
+                        diff, &mut visible, &h, &rid, &room_clone, me.as_deref(),
+                        &client_ref).await;
+                }
+            }
+        }).abort_handle();
+
+        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
+        // sync member info on its own — `EventTimelineItem::sender_profile()`
+        // stays at `TimelineDetails::Pending` for any user whose
+        // membership state wasn't included in the initial sync's room
+        // delta, so their messages render with an empty name + avatar.
+        // `fetch_members()` runs `sync_members()` then patches every
+        // affected timeline item in place, which the streaming task
+        // above picks up as `VectorDiff::Set` and re-emits to C++. We
+        // spawn it separately so the initial items aren't blocked
+        // behind a multi-second member sync on big rooms.
+        let tl_for_members = Arc::clone(timeline);
+        let fetch_abort = rt.spawn(async move {
+            tl_for_members.fetch_members().await;
+        }).abort_handle();
+
+        (abort, fetch_abort)
+    }
+
     #[cfg(not(test))]
     pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
@@ -1143,63 +1219,14 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
-        // Spawn a task that streams timeline items to the UI.
-        let tl    = Arc::clone(&timeline);
-        let h     = Arc::clone(&handler);
-        let rid   = room_id_str.clone();
-        let room  = room.clone();
-        let me    = client.user_id().map(|u| u.to_owned());
-        let client_ref = client.clone();
-
-        let abort = self.rt.spawn(async move {
-            let (initial_items, mut stream) = tl.subscribe().await;
-
-            // Build the visibility mirror + initial snapshot in one pass.
-            // The mirror is `true` for every matrix-sdk-ui timeline slot
-            // whose `timeline_item_to_ffi` yields Some — this covers both
-            // real message events and virtual items (day-dividers,
-            // read-markers, timeline-start). State events and membership
-            // changes remain `false` so they are silently filtered.
-            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
-            let mut snapshot: Vec<TimelineEvent> = Vec::new();
-            for item in initial_items.iter() {
-                let ev = timeline_item_to_ffi(
-                    item, &rid, &room, me.as_deref()).await;
-                visible.push(ev.is_some());
-                if let Some(ev) = ev { snapshot.push(ev); }
-            }
-            if let Ok(guard) = h.lock() {
-                guard.on_timeline_reset(&rid, &snapshot);
-            }
-            drop(snapshot);
-
-            while let Some(diffs) = stream.next().await {
-                for diff in diffs {
-                    handle_timeline_diff(
-                        diff, &mut visible, &h, &rid, &room, me.as_deref(),
-                        &client_ref).await;
-                }
-            }
-        }).abort_handle();
-
-        // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
-        // sync member info on its own — `EventTimelineItem::sender_profile()`
-        // stays at `TimelineDetails::Pending` for any user whose
-        // membership state wasn't included in the initial sync's room
-        // delta, so their messages render with an empty name + avatar.
-        // `fetch_members()` runs `sync_members()` then patches every
-        // affected timeline item in place, which the streaming task
-        // above picks up as `VectorDiff::Set` and re-emits to C++. We
-        // spawn it separately so the initial items aren't blocked
-        // behind a multi-second member sync on big rooms.
-        let tl_for_members = Arc::clone(&timeline);
-        let fetch_abort = self.rt.spawn(async move {
-            tl_for_members.fetch_members().await;
-        }).abort_handle();
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline, &room, room_id_str, &handler, &client, &self.rt,
+        );
 
         self.timelines.insert(room_id, TimelineHandle {
             timeline,
             abort_tasks: vec![abort, fetch_abort],
+            is_focused:  false,
         });
 
         ok("")
@@ -1232,6 +1259,7 @@ impl ClientFfi {
                 ok: false,
                 message: format!("invalid room id: {e}"),
                 reached_start: false,
+                reached_end:   false,
             },
         };
 
@@ -1240,6 +1268,7 @@ impl ClientFfi {
                 ok: false,
                 message: "room not subscribed; call subscribe_room first".into(),
                 reached_start: false,
+                reached_end:   false,
             };
         };
 
@@ -1270,17 +1299,229 @@ impl ClientFfi {
                 ok: true,
                 message: String::new(),
                 reached_start,
+                reached_end: false,
             },
             Ok(None) => PaginateResult {
                 ok: false,
                 message: "shutdown in progress".into(),
                 reached_start: false,
+                reached_end:   false,
             },
             Err(e) => PaginateResult {
                 ok: false,
                 message: e.to_string(),
                 reached_start: false,
+                reached_end:   false,
             },
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // MSC3030 Jump to Date
+    // -----------------------------------------------------------------------
+
+    /// MSC3030: resolve a Unix millisecond timestamp to the nearest event ID
+    /// in `room_id`. `dir` is `"f"` (forward) or `"b"` (backward).
+    /// On success, `OpResult.message` holds the event ID string.
+    #[cfg(not(test))]
+    pub fn timestamp_to_event(
+        &mut self,
+        room_id: &str,
+        ts_ms:   u64,
+        dir:     &str,
+    ) -> OpResult {
+        use matrix_sdk::ruma::{
+            MilliSecondsSinceUnixEpoch,
+            api::{Direction, client::room::get_event_by_timestamp::v1::Request},
+        };
+
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+
+        let room_id: matrix_sdk::ruma::OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+
+        let direction = match dir {
+            "f" => Direction::Forward,
+            "b" => Direction::Backward,
+            _   => return err(format!("invalid dir {:?}: expected \"f\" or \"b\"", dir)),
+        };
+
+        let ts = match UInt::try_from(ts_ms) {
+            Ok(u)  => MilliSecondsSinceUnixEpoch(u),
+            Err(_) => return err(format!("timestamp {ts_ms} is out of range for MilliSecondsSinceUnixEpoch")),
+        };
+
+        let req = Request::new(room_id, ts, direction);
+
+        // No shutdown-race here: timestamp lookups are typically fast (single HTTP
+        // round-trip) and not in a loop, so blocking the thread is acceptable.
+        match self.rt.block_on(async move { client.send(req).await }) {
+            Ok(resp) => ok(resp.event_id.to_string()),
+            Err(e)   => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn timestamp_to_event(&mut self, _room_id: &str, _ts_ms: u64, _dir: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// MSC3030: subscribe to `room_id`'s timeline focused on `focus_event_id`.
+    /// Tears down any previous subscription for this room, then builds a
+    /// `TimelineFocus::Event` timeline. Fires `on_timeline_reset` + individual
+    /// event callbacks identically to `subscribe_room`. Sets `is_focused = true`
+    /// so that `paginate_forward` can gate itself.
+    #[cfg(not(test))]
+    pub fn subscribe_room_at(
+        &mut self,
+        room_id:        &str,
+        focus_event_id: &str,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(handler) = self.handler.clone() else { return err("sync not started") };
+
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+
+        let target: matrix_sdk::ruma::OwnedEventId = match focus_event_id.try_into() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+
+        // Drop any previous subscription for this room.
+        if let Some(prev) = self.timelines.remove(&room_id) {
+            for h in prev.abort_tasks { h.abort(); }
+        }
+
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+
+        let focus = TimelineFocus::Event {
+            target,
+            num_context_events: 50,
+            thread_mode: TimelineEventFocusThreadMode::Automatic {
+                hide_threaded_events: false,
+            },
+        };
+
+        let timeline = match self.rt.block_on(
+            room.timeline_builder().with_focus(focus).build()
+        ) {
+            Ok(t)  => Arc::new(t),
+            Err(e) => return err(format!("build focused timeline: {e}")),
+        };
+
+        let room_id_str = room_id.to_string();
+
+        // Synchronously clear the UI for this room (same as subscribe_room).
+        if let Ok(guard) = handler.lock() {
+            let empty: Vec<TimelineEvent> = Vec::new();
+            guard.on_timeline_reset(&room_id_str, &empty);
+        }
+
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline, &room, room_id_str, &handler, &client, &self.rt,
+        );
+
+        self.timelines.insert(room_id, TimelineHandle {
+            timeline,
+            abort_tasks: vec![abort, fetch_abort],
+            is_focused:  true,
+        });
+
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn subscribe_room_at(&mut self, _room_id: &str, _focus_event_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// MSC3030: paginate forward in a focused timeline. Only valid after
+    /// `subscribe_room_at`; returns an error for live timelines.
+    /// `reached_end = true` when the timeline has reached the live end.
+    #[cfg(not(test))]
+    pub fn paginate_forward(&mut self, room_id: &str, count: u16) -> PaginateResult {
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return PaginateResult {
+                ok: false,
+                message: format!("invalid room id: {e}"),
+                reached_start: false,
+                reached_end:   false,
+            },
+        };
+
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return PaginateResult {
+                ok: false,
+                message: "room not subscribed; call subscribe_room_at first".into(),
+                reached_start: false,
+                reached_end:   false,
+            };
+        };
+
+        if !handle.is_focused {
+            return PaginateResult {
+                ok: false,
+                message: "not in focused mode".into(),
+                reached_start: false,
+                reached_end:   false,
+            };
+        }
+
+        let tl      = Arc::clone(&handle.timeline);
+        let stop_rx = self.stop_rx.clone();
+
+        match self.rt.block_on(async move {
+            let paginate = tl.paginate_forwards(count);
+            if let Some(mut rx) = stop_rx {
+                tokio::select! {
+                    result = paginate => result.map(Some),
+                    _ = async {
+                        loop {
+                            match rx.changed().await {
+                                Ok(()) => { if *rx.borrow() { return; } }
+                                Err(_) => return,
+                            }
+                        }
+                    } => Ok(None),
+                }
+            } else {
+                paginate.await.map(Some)
+            }
+        }) {
+            Ok(Some(reached_end)) => PaginateResult {
+                ok: true,
+                message: String::new(),
+                reached_start: false,
+                reached_end,
+            },
+            Ok(None) => PaginateResult {
+                ok: false,
+                message: "shutdown in progress".into(),
+                reached_start: false,
+                reached_end:   false,
+            },
+            Err(e) => PaginateResult {
+                ok: false,
+                message: e.to_string(),
+                reached_start: false,
+                reached_end:   false,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn paginate_forward(&mut self, _room_id: &str, _count: u16) -> PaginateResult {
+        PaginateResult {
+            ok: false,
+            message: "not in focused mode".into(),
+            reached_start: false,
+            reached_end:   false,
         }
     }
 

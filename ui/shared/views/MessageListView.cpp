@@ -2243,8 +2243,25 @@ void MessageListView::on_pointer_leave() {
 }
 
 bool MessageListView::should_show_pill() const {
+    if (historical_mode_) return true;
     if (content_height() <= bounds().h) return false;
     return scroll_y() + bounds().h + 1.0f < content_height();
+}
+
+bool MessageListView::scroll_to_event_id(const std::string& event_id) {
+    if (event_id.empty()) return false;
+    for (std::size_t i = 0; i < messages_.size(); ++i) {
+        if (messages_[i].event_id == event_id) {
+            scroll_to_index(static_cast<int>(i), /*align_top=*/false);
+            return true;
+        }
+    }
+    return false;
+}
+
+void MessageListView::set_historical_mode(bool historical) {
+    historical_mode_ = historical;
+    invalidate_data();
 }
 
 bool MessageListView::on_pointer_down(tk::Point local) {
@@ -2443,7 +2460,12 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
         press_pill_ = false;
         if (fire) {
             tk::Point world{ local.x + bounds().x, local.y + bounds().y };
-            if (rect_contains(pill_rect_, world)) scroll_to_bottom();
+            if (rect_contains(pill_rect_, world)) {
+                if (historical_mode_ && on_return_to_live)
+                    on_return_to_live();
+                else
+                    scroll_to_bottom();
+            }
         }
         return;
     }

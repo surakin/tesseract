@@ -116,6 +116,10 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
         return;
     }
     if (heights_dirty_ || measured_width_ != bounds.w) {
+        // Snapshot the last-measured row count (from row_heights_, which
+        // rebuild_heights will overwrite) rather than querying the adapter,
+        // which may already reflect additions made before this arrange call.
+        std::size_t prev_count = row_heights_.size();
         rebuild_heights(ctx, bounds.w);
         if (anchor_pre_height_ >= 0.0f) {
             // Preserve the user's visual position: if rows were added
@@ -128,6 +132,14 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
             // Re-arm the near-top trigger: another page can be requested
             // the next time the user crosses the threshold.
             was_near_top_ = false;
+        } else {
+            // Re-arm the near-bottom trigger only when rows were actually
+            // appended. A pure resize (same row count, different width)
+            // must not spuriously re-fire on_near_bottom.
+            std::size_t new_count = adapter_ ? adapter_->count() : 0;
+            if (new_count > prev_count) {
+                was_near_bottom_ = false;
+            }
         }
     }
     if (stick_to_bottom_) {
@@ -176,6 +188,21 @@ void ListView::maybe_fire_near_top() {
         if (on_near_top) on_near_top();
     } else if (!now_near && was_near_top_) {
         was_near_top_ = false;
+    }
+}
+
+void ListView::maybe_fire_near_bottom() {
+    if (!adapter_ || adapter_->count() == 0) return;
+    if (stick_to_bottom_) return;
+    if (scrollbar_drag_) return;
+    float total = content_height();
+    if (total <= bounds_.h) return;  // content not taller than viewport
+    bool now_near = (total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_;
+    if (now_near && !was_near_bottom_) {
+        was_near_bottom_ = true;
+        if (on_near_bottom) on_near_bottom();
+    } else if (!now_near && was_near_bottom_) {
+        was_near_bottom_ = false;
     }
 }
 
@@ -295,6 +322,7 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
     stick_to_bottom_ = false;
     clamp_scroll();
     maybe_fire_near_top();
+    maybe_fire_near_bottom();
     bool changed = (scroll_y_ != prev);
     if (changed && on_scroll) on_scroll();
     return changed;
@@ -332,6 +360,7 @@ void ListView::on_pointer_drag(Point local) {
     scroll_y_ = t * (total - bounds_.h);
     clamp_scroll();
     maybe_fire_near_top();
+    maybe_fire_near_bottom();
     if (scroll_y_ != prev && on_scroll) on_scroll();
 }
 
@@ -339,6 +368,7 @@ void ListView::on_pointer_up(Point local, bool inside_self) {
     if (scrollbar_drag_) {
         scrollbar_drag_ = false;
         maybe_fire_near_top();  // check now that the drag guard is lifted
+        maybe_fire_near_bottom();  // check now that the drag guard is lifted
         return;     // drag releases never select a row
     }
     int idx = inside_self ? index_at(local) : kInvalidIndex;
