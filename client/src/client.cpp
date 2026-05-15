@@ -143,6 +143,25 @@ PaginateResult Client::paginate_back_with_status(const std::string& room_id,
     return from_ffi(impl_->ffi->paginate_back_with_status(room_id, count));
 }
 
+Result Client::timestamp_to_event(const std::string& room_id,
+                                   uint64_t ts_ms,
+                                   const std::string& dir) {
+    if (!impl_) return { false, "client not initialised" };
+    return from_ffi(impl_->ffi->timestamp_to_event(room_id, ts_ms, dir));
+}
+
+Result Client::subscribe_room_at(const std::string& room_id,
+                                  const std::string& focus_event_id) {
+    if (!impl_) return { false, "client not initialised" };
+    return from_ffi(impl_->ffi->subscribe_room_at(room_id, focus_event_id));
+}
+
+PaginateResult Client::paginate_forward(const std::string& room_id,
+                                         std::uint16_t count) {
+    if (!impl_) return {};
+    return from_ffi(impl_->ffi->paginate_forward(room_id, count));
+}
+
 Result Client::start_background_backfill(
     const std::vector<std::string>& room_ids)
 {

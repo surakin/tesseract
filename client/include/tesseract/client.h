@@ -119,6 +119,29 @@ public:
     PaginateResult paginate_back_with_status(const std::string& room_id,
                                              std::uint16_t count);
 
+    /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
+    /// nearest event ID in `room_id`. `dir` is `"f"` (forward — first event
+    /// ≥ ts) or `"b"` (backward — last event ≤ ts). On success
+    /// `Result::message` holds the resolved event ID; on failure it holds
+    /// the error description.
+    Result         timestamp_to_event(const std::string& room_id,
+                                       uint64_t ts_ms,
+                                       const std::string& dir);
+
+    /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
+    /// specific event. Behaves like `subscribe_room` but centers the
+    /// timeline on `focus_event_id`. Call `paginate_forward` (and
+    /// `paginate_back`) to load events in either direction from the focus.
+    Result         subscribe_room_at(const std::string& room_id,
+                                      const std::string& focus_event_id);
+
+    /// MSC3030 Jump to Date: paginate forward in a focused timeline.
+    /// Only valid after `subscribe_room_at`. `reached_end` is true when the
+    /// live end has been reached; the UI should then switch to a live
+    /// subscription via `subscribe_room`.
+    PaginateResult paginate_forward(const std::string& room_id,
+                                     std::uint16_t count);
+
     /// Kick off a background pass that paginates the given rooms (those
     /// currently visible in the room list), up to ~50 events each, with
     /// bounded concurrency. Idempotent — safe to call from every room-open
