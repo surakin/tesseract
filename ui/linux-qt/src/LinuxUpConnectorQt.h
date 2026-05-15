@@ -16,6 +16,7 @@ public:
     void logout() override;
 
     // Called by UpSharedBusQt when the distributor fires callbacks for our token.
+    void set_distributor(const std::string& service);
     void on_new_endpoint(const std::string& endpoint);
     void on_unregistered();
 

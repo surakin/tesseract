@@ -5,8 +5,10 @@
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusReply>
+#include <QFutureWatcher>
 #include <QStringList>
 #include <QUrl>
+#include <QtConcurrent/QtConcurrent>
 #include <cctype>
 #include <unordered_map>
 
@@ -78,6 +80,7 @@ public:
     void remove_route(const std::string& token) { routes_.erase(token); }
 
     // Scan the session bus for the first service exposing Distributor1.
+    // Safe to call from a worker thread — uses the thread's own D-Bus connection.
     QString find_distributor() {
         QDBusReply<QStringList> names =
             QDBusConnection::sessionBus().interface()->registeredServiceNames();
@@ -95,6 +98,26 @@ public:
                 return svc;
         }
         return {};
+    }
+
+    // Non-blocking: runs find_distributor() on a thread pool worker and delivers
+    // the result via QFutureWatcher::finished back on the main thread.
+    void find_distributor_async(const std::string& token) {
+        auto* watcher = new QFutureWatcher<QString>(this);
+        std::string tok = token;
+        QObject::connect(watcher, &QFutureWatcher<QString>::finished,
+                         this, [this, watcher, tok]() {
+            QString dist = watcher->result();
+            watcher->deleteLater();
+            if (dist.isEmpty()) return;
+            auto it = routes_.find(tok);
+            if (it == routes_.end()) return; // connector stopped before scan finished
+            it->second->set_distributor(dist.toStdString());
+            distributor_register(dist, tok);
+        });
+        watcher->setFuture(QtConcurrent::run([this]() {
+            return find_distributor();
+        }));
     }
 
     void distributor_register(const QString& svc, const std::string& token) {
@@ -182,6 +205,10 @@ static std::string sanitize_token(const std::string& user_id) {
 
 LinuxUpConnectorQt::LinuxUpConnectorQt() = default;
 
+void LinuxUpConnectorQt::set_distributor(const std::string& service) {
+    distributor_service_ = service;
+}
+
 LinuxUpConnectorQt::~LinuxUpConnectorQt() {
     stop();
 }
@@ -196,12 +223,7 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
     if (!bus.acquire()) return; // another process owns the bus name
 
     bus.add_route(token_, this);
-
-    QString dist = bus.find_distributor();
-    if (dist.isEmpty()) return; // no distributor present — silent no-op
-
-    distributor_service_ = dist.toStdString();
-    bus.distributor_register(dist, token_);
+    bus.find_distributor_async(token_); // non-blocking; callback sets distributor
 }
 
 void LinuxUpConnectorQt::stop() {

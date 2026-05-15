@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia DBus)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia DBus Concurrent)
 qt_standard_project_setup()
 
 qt_add_executable(tesseract_qt
@@ -34,6 +34,7 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Widgets
     Qt6::Multimedia
     Qt6::DBus
+    Qt6::Concurrent
 )
 
 set_target_properties(tesseract_qt PROPERTIES
