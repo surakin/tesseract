@@ -289,6 +289,16 @@ float body_text_max_width(float row_width) {
                      row_width - kPadX - kAvatarSize - kAvatarGap - kPadX);
 }
 
+// Width to reserve on the right of the body column for a read-receipt cluster.
+// Returns 0 when there are no receipts or when reactions are present (the
+// cluster then floats beside the chip strip, not overlapping body text).
+inline float receipt_reserve_width(const MessageRowData& m) {
+    if (m.read_receipts.empty() || !m.reactions.empty())
+        return 0.0f;
+    const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
+    return kReceiptSize + static_cast<float>(n - 1) * kReceiptStride + chip_gap();
+}
+
 std::string format_day_label(std::uint64_t timestamp_ms) {
     if (timestamp_ms == 0) return {};
     std::time_t now_t = std::time(nullptr);
@@ -375,7 +385,7 @@ public:
         if (m.kind == Kind::ReadMarker)    return kReadMarkerH;
         if (m.kind == Kind::TimelineStart) return kTimelineStartH;
         bool  cont    = is_cont(index);
-        float body_w  = body_text_max_width(width);
+        float body_w  = std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m));
         float body_h  = measure_body_block_height(m, ctx, body_w);
         float chips_h  = !m.reactions.empty() ? chip_h() : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
@@ -425,7 +435,8 @@ public:
         // Right-of-avatar column (same indent for cont + non-cont so
         // body text aligns with the row above in a continuation group).
         float col_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX);
+        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX
+                                      - receipt_reserve_width(m));
 
         if (!cont) {
             // Avatar disc / initials.
