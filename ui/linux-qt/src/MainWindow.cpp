@@ -1190,6 +1190,7 @@ void MainWindow::openJumpToDateDialog() {
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Jump to Date"));
     auto* cal = new QCalendarWidget(&dlg);
+    cal->setMinimumDate(QDate(1970, 1, 1));
     cal->setMaximumDate(QDate::currentDate());
     auto* bb = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
