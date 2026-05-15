@@ -50,6 +50,10 @@ set(_tk_sources
     views/RecoveryBanner.cpp
     views/VerificationBanner.h
     views/VerificationBanner.cpp
+    views/RoomHeader.h
+    views/RoomHeader.cpp
+    views/RoomView.h
+    views/RoomView.cpp
     views/ComposeBar.h
     views/ComposeBar.cpp
     views/UserInfo.h

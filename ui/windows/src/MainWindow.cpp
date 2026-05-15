@@ -100,102 +100,6 @@ struct VideoBytesPayload {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Room header WndProc
-// ---------------------------------------------------------------------------
-
-LRESULT CALLBACK room_header_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    switch (msg) {
-    case WM_ERASEBKGND:
-        return 1;  // Painted in WM_PAINT.
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        int w = rc.right - rc.left, h = rc.bottom - rc.top;
-
-        // Double-buffer through a memory DC. on_rooms_updated fires on every
-        // sync delta (one per incoming event across any room), so without
-        // a back-buffer the user sees the chrome_bg fill flash before the
-        // avatar/name/topic redraw — a strobe-like flicker that visually
-        // looks like the banner is overlapping the message list below.
-        HDC     mem_dc  = CreateCompatibleDC(hdc);
-        HBITMAP mem_bmp = CreateCompatibleBitmap(hdc, w, h);
-        HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
-
-        Gdiplus::Graphics g(mem_dc);
-        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
-
-        const auto& pal = theme::palette();
-
-        // Background
-        Gdiplus::SolidBrush bg(theme::gpc(pal.chrome_bg));
-        g.FillRectangle(&bg, 0, 0, w, h);
-
-        // Bottom border
-        Gdiplus::Pen border(theme::gpc(pal.separator), 1.0f);
-        g.DrawLine(&border, 0.0f, (float)(h - 1), (float)w, (float)(h - 1));
-
-        const auto& info = self->current_room_info_;
-        if (!info.id.empty()) {
-            // Avatar
-            Gdiplus::Bitmap* bmp = self->get_room_avatar(info.id);
-            int ax = 16;
-            int ay = (h - MainWindow::kRoomAvatarSize) / 2;
-            if (bmp)
-                self->draw_circle_bitmap(g, bmp, ax, ay, MainWindow::kRoomAvatarSize);
-            else
-                self->draw_initials_circle(g, info.name, ax, ay, MainWindow::kRoomAvatarSize);
-
-            // Name + topic — DirectWrite/D2D so emoji in room names/topics
-            // render in color via Segoe UI Emoji's COLR layers.
-            int tx     = ax + MainWindow::kRoomAvatarSize + 12;
-            int text_w = w - tx - 16;
-
-            auto wname = utf8_to_wstr(info.name);
-            RECT name_rc{ tx, 12, tx + text_w, 12 + 22 };
-            win32::text::draw(mem_dc, name_rc, wname.c_str(), -1,
-                win32::text::Style{
-                    .family = L"Segoe UI",
-                    .size   = 13.5f,
-                    .weight = win32::text::Weight::Bold,
-                    .color  = pal.text_primary,
-                    .trim   = win32::text::Trim::EllipsisChar,
-                });
-
-            if (!info.topic.empty()) {
-                auto wtopic = utf8_to_wstr(info.topic);
-                RECT topic_rc{ tx, 34, tx + text_w, 34 + 18 };
-                win32::text::draw(mem_dc, topic_rc, wtopic.c_str(), -1,
-                    win32::text::Style{
-                        .family = L"Segoe UI",
-                        .size   = 10.0f,
-                        .color  = pal.text_secondary,
-                        .trim   = win32::text::Trim::EllipsisChar,
-                    });
-            }
-        }
-
-        BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
-
-        SelectObject(mem_dc, old_bmp);
-        DeleteObject(mem_bmp);
-        DeleteDC(mem_dc);
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // User-strip WndProc (sidebar footer with avatar + display name + right-click)
 // ---------------------------------------------------------------------------
 
@@ -394,15 +298,11 @@ void MainWindow::apply_default_font(HWND h) {
 void MainWindow::on_system_theme_changed() {
     if (!theme::refresh_from_system()) return;
     theme::apply_window_attributes(hwnd_);
-    // The room / message / compose lists are tk Surfaces; they paint
-    // themselves on theme change via relayout.
     InvalidateRect(hwnd_, nullptr, TRUE);
-    if (room_surface_)    room_surface_->relayout();
-    if (msg_surface_)     msg_surface_->relayout();
-    if (compose_surface_) compose_surface_->relayout();
-    if (hRoomHeader_)  InvalidateRect(hRoomHeader_, nullptr, TRUE);
-    if (hUserStrip_)   InvalidateRect(hUserStrip_,  nullptr, TRUE);
-    if (hStatus_)     InvalidateRect(hStatus_,     nullptr, TRUE);
+    if (room_surface_) room_surface_->relayout();
+    if (chat_surface_) chat_surface_->relayout();
+    if (hUserStrip_)   InvalidateRect(hUserStrip_, nullptr, TRUE);
+    if (hStatus_)      InvalidateRect(hStatus_,    nullptr, TRUE);
 }
 
 void MainWindow::paint_main_background(HDC hdc, const RECT& rc) {
@@ -577,27 +477,9 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
-void MainWindow::update_typing_bar_(const std::string& text, bool visible)
+void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
-    if (!hTypingBar_) return;
-    const bool changed = (typing_bar_visible_ != visible);
-    typing_bar_visible_ = visible;
-    ShowWindow(hTypingBar_, visible ? SW_SHOW : SW_HIDE);
-    if (changed && hwnd_) {
-        RECT rc; GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
-    }
-    if (text.empty()) {
-        SetWindowTextW(hTypingBar_, L"");
-        return;
-    }
-    int len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
-                                   static_cast<int>(text.size()), nullptr, 0);
-    if (len <= 0) return;
-    std::wstring wide(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
-                         static_cast<int>(text.size()), wide.data(), len);
-    SetWindowTextW(hTypingBar_, wide.c_str());
+    if (room_view_) room_view_->set_typing_text(text);
 }
 
 void MainWindow::on_url_preview_ready_(const std::string& url,
@@ -614,11 +496,11 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (!preview.image_mxc.empty())
         ensure_media_image_(preview.image_mxc, 64, 64);
 
-    if (message_list_view_) message_list_view_->notify_url_preview_ready(url);
-    if (msg_surface_) {
-        msg_surface_->relayout();
-        if (HWND ms = msg_surface_->hwnd())
-            InvalidateRect(ms, nullptr, FALSE);
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    if (chat_surface_) {
+        chat_surface_->relayout();
+        if (HWND cs = chat_surface_->hwnd())
+            InvalidateRect(cs, nullptr, FALSE);
     }
 }
 
@@ -677,15 +559,6 @@ void MainWindow::draw_initials_circle(Gdiplus::Graphics& g, const std::string& n
             .valign = win32::text::VAlign::Center,
         });
     g.ReleaseHDC(hdc);
-}
-
-Gdiplus::Bitmap* MainWindow::get_room_avatar(const std::string& room_id) {
-    auto it = avatar_cache_.find(room_id);
-    if (it != avatar_cache_.end()) return it->second;
-    auto bytes = client_->fetch_avatar_bytes(room_id);
-    Gdiplus::Bitmap* bmp = bitmap_from_bytes(bytes);
-    avatar_cache_[room_id] = bmp;
-    return bmp;
 }
 
 Gdiplus::Bitmap* MainWindow::get_user_avatar(const std::string& mxc_url) {
@@ -780,17 +653,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         HDC dc = reinterpret_cast<HDC>(wParam);
         HWND ctl = reinterpret_cast<HWND>(lParam);
         SetBkMode(dc, TRANSPARENT);
-        // The recovery banner is now a tk::win32::Surface — it paints
-        // its own background; no WM_CTLCOLOR tinting needed.
-        // EDIT controls (compose) → compose-card bg.
+        // The recovery banner and compose bar are now tk::win32::Surfaces —
+        // they paint their own backgrounds; no WM_CTLCOLOR tinting needed.
+        // EDIT controls → compose-card bg.
         if (msg == WM_CTLCOLOREDIT) {
             SetTextColor(dc, pal.text_primary);
-            SetBkColor(dc, pal.compose_card_bg);
-            return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
-        }
-        // Typing bar: blend with the compose area below it.
-        if (ctl == self->hTypingBar_) {
-            SetTextColor(dc, pal.text_secondary);
             SetBkColor(dc, pal.compose_card_bg);
             return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
         }
@@ -857,9 +724,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             // through to the static-decode path.
             self->try_load_animation(p->cache_key, p->bytes);
             if (!self->anim_cache_.has(p->cache_key) &&
-                self->msg_surface_)
+                self->chat_surface_)
             {
-                if (auto img = self->msg_surface_->factory().decode_image(p->bytes))
+                if (auto img = self->chat_surface_->factory().decode_image(p->bytes))
                     self->tk_images_.emplace(p->cache_key, std::move(img));
             }
             if (self->sticker_picker_shared_)
@@ -999,7 +866,6 @@ MainWindow::~MainWindow() {
     // login_view_ calls cancel_oauth() + joins its worker on destruction.
     // Tear it down while the client pointers are still alive.
     login_view_.reset();
-    for (auto& [k, v] : avatar_cache_)      delete v;
     for (auto& [k, v] : user_avatar_cache_) delete v;
     theme::shutdown();
     win32::text::shutdown();
@@ -1098,22 +964,6 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SIDE_SEPARATOR)),
         hInst_, nullptr);
 
-    // Room header — above message area
-    WNDCLASSEXW rhwc{};
-    rhwc.cbSize = sizeof(rhwc);
-    rhwc.lpfnWndProc = room_header_wnd_proc;
-    rhwc.hInstance = hInst_;
-    rhwc.lpszClassName = L"TesseractRoomHeader";
-    RegisterClassExW(&rhwc);
-
-    hRoomHeader_ = CreateWindowExW(
-        0, L"TesseractRoomHeader", nullptr,
-        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-        240, 0, 784, kRoomHeaderH,
-        hwnd, nullptr, hInst_, nullptr);
-    SetWindowLongPtrW(hRoomHeader_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-    ShowWindow(hRoomHeader_, SW_HIDE);
-
     // User identity strip (sidebar footer)
     WNDCLASSEXW uswc{};
     uswc.cbSize = sizeof(uswc);
@@ -1148,80 +998,27 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, nullptr, hInst_, nullptr);
     if (hSpaceNavLabel_) apply_default_font(hSpaceNavLabel_);
 
-    // Message list — shared toolkit Surface hosting MessageListView.
-    msg_surface_ = std::make_unique<tk::win32::Surface>(
+    // Chat area — single tk::win32::Surface hosting RoomView (header +
+    // message list + typing strip + compose bar). A NativeTextArea overlay
+    // sits at the compose text rect; its position is updated by set_on_layout.
+    chat_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
     {
-        auto view = std::make_unique<tesseract::views::MessageListView>();
-        message_list_view_ = view.get();
-        message_list_view_->set_avatar_provider(
+        auto rv = std::make_unique<tesseract::views::RoomView>();
+        room_view_ = rv.get();
+
+        room_view_->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image* {
                 auto it = tk_avatars_.find(mxc);
                 return it == tk_avatars_.end() ? nullptr : it->second.get();
             });
-        message_list_view_->set_image_provider(
+        room_view_->set_image_provider(
             [this](const std::string& mxc) -> const tk::Image* {
                 if (auto* f = anim_cache_.current_frame(mxc)) return f;
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        message_list_view_->on_reaction_toggled =
-            [this](const std::string& event_id, const std::string& key) {
-                if (current_room_id_.empty()) return;
-                client_->send_reaction(current_room_id_, event_id, key);
-            };
-        message_list_view_->on_add_reaction_requested =
-            [this](const std::string& event_id, tk::Rect anchor) {
-                if (current_room_id_.empty()) return;
-                pending_reaction_event_id_ = event_id;
-                // anchor is in MessageListView-local coords; the view is
-                // the root of msg_surface_, so the rect maps directly to
-                // surface client coords.
-                if (msg_surface_ && msg_surface_->hwnd())
-                    popup_emoji_at_rect(msg_surface_->hwnd(), anchor);
-                else
-                    toggle_emoji_picker();
-            };
-        message_list_view_->on_reply_requested =
-            [this](const std::string& event_id,
-                   const std::string& sender_name,
-                   const std::string& body_preview) {
-                if (!compose_shared_) return;
-                compose_shared_->set_reply_to(event_id, sender_name,
-                                              body_preview);
-                if (compose_text_area_) compose_text_area_->set_focused(true);
-            };
-        message_list_view_->on_edit_requested =
-            [this](const std::string& event_id,
-                   const std::string& current_body) {
-                if (!compose_shared_) return;
-                compose_shared_->set_editing(event_id);
-                if (compose_text_area_) {
-                    compose_text_area_->set_text(current_body);
-                    compose_shared_->set_current_text(current_body);
-                    compose_text_area_->set_focused(true);
-                }
-            };
-        message_list_view_->on_delete_requested =
-            [this](const std::string& event_id) {
-                if (current_room_id_.empty()) return;
-                client_->redact_event(current_room_id_, event_id);
-            };
-        message_list_view_->on_near_top = [this]{
-            if (current_room_id_.empty()) return;
-            request_more_history(current_room_id_);
-        };
-        message_list_view_->on_receipt_needed = [this](const std::string& eid) {
-            maybe_send_read_receipt_(current_room_id_, eid);
-        };
-        if (auto player = msg_surface_->host().make_audio_player()) {
-            message_list_view_->set_audio_player(std::move(player));
-        }
-        message_list_view_->set_voice_bytes_provider(
-            [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-                return client_->fetch_source_bytes(source_json);
-            });
-        message_list_view_->set_preview_provider(
+        room_view_->set_preview_provider(
             [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
                 auto it = url_preview_data_.find(url);
                 if (it == url_preview_data_.end()) return nullptr;
@@ -1231,16 +1028,133 @@ void MainWindow::on_create(HWND hwnd) {
                     ensure_media_image_(it->second.image_mxc, 64, 64);
                 return &it->second;
             });
-        message_list_view_->on_link_clicked = [](const std::string& url) {
+        if (auto player = chat_surface_->host().make_audio_player())
+            room_view_->set_audio_player(std::move(player));
+        room_view_->set_voice_bytes_provider(
+            [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+                return client_->fetch_source_bytes(source_json);
+            });
+
+        room_view_->on_send = [this](const std::string& body) {
+            std::string trimmed = body;
+            auto l = trimmed.find_first_not_of(" \t\n\r");
+            auto r = trimmed.find_last_not_of(" \t\n\r");
+            if (l == std::string::npos) return;
+            trimmed = trimmed.substr(l, r - l + 1);
+            if (trimmed.empty() || current_room_id_.empty()) return;
+            auto res = client_->send_message(current_room_id_, trimmed);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->set_current_text({});
+            } else {
+                MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
+                             L"Send failed", MB_ICONWARNING);
+            }
+        };
+        room_view_->on_send_reply = [this](const std::string& reply_event_id,
+                                            const std::string& body) {
+            if (body.empty() || current_room_id_.empty()) return;
+            client_->send_reply(current_room_id_, reply_event_id, body);
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->set_current_text({});
+        };
+        room_view_->on_send_edit = [this](const std::string& event_id,
+                                           const std::string& new_body) {
+            if (new_body.empty() || current_room_id_.empty()) return;
+            client_->send_edit(current_room_id_, event_id, new_body);
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->set_current_text({});
+        };
+        room_view_->on_send_image = [this](std::vector<std::uint8_t> bytes,
+                                            std::string mime,
+                                            std::string filename,
+                                            std::string caption,
+                                            int /*src_w*/, int /*src_h*/,
+                                            std::string reply_event_id) {
+            if (current_room_id_.empty() || !chat_surface_) return;
+            const bool compress =
+                tesseract::Settings::instance().image_quality
+                == tesseract::Settings::ImageQuality::Compressed;
+            auto enc = chat_surface_->host().encode_for_send(
+                bytes.data(), bytes.size(), compress);
+            if (enc.bytes.empty()) return;
+            std::string out_name = filename;
+            if (enc.mime == "image/jpeg") {
+                auto dot = out_name.find_last_of('.');
+                if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+                out_name += ".jpg";
+            }
+            client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                 out_name, caption,
+                                 enc.width, enc.height, reply_event_id);
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->set_current_text({});
+        };
+        room_view_->on_send_file = [this](std::vector<std::uint8_t> bytes,
+                                           std::string mime,
+                                           std::string filename,
+                                           std::string caption,
+                                           std::string reply_event_id) {
+            if (current_room_id_.empty()) return;
+            auto res = client_->send_file(current_room_id_, bytes, mime,
+                                          filename, caption, reply_event_id);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->set_current_text({});
+            } else {
+                if (hStatus_) SetWindowTextW(hStatus_, L"Send file failed");
+            }
+        };
+        room_view_->on_edit_cancelled = [this] {
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->set_current_text({});
+        };
+        room_view_->on_edit_prefill = [this](const std::string& body) {
+            if (room_text_area_) room_text_area_->set_text(body);
+        };
+        room_view_->on_reply_focus = [this] {
+            if (room_text_area_) room_text_area_->set_focused(true);
+        };
+        room_view_->on_delete_requested = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            client_->redact_event(current_room_id_, event_id);
+        };
+        room_view_->on_reaction_toggled =
+            [this](const std::string& event_id, const std::string& key) {
+                if (current_room_id_.empty()) return;
+                client_->send_reaction(current_room_id_, event_id, key);
+            };
+        room_view_->on_add_reaction_requested =
+            [this](const std::string& event_id, tk::Rect anchor) {
+                if (current_room_id_.empty()) return;
+                pending_reaction_event_id_ = event_id;
+                if (chat_surface_ && chat_surface_->hwnd())
+                    popup_emoji_at_rect(chat_surface_->hwnd(), anchor);
+                else
+                    toggle_emoji_picker();
+            };
+        room_view_->on_receipt_needed = [this](const std::string& eid) {
+            maybe_send_read_receipt_(current_room_id_, eid);
+        };
+        room_view_->on_link_clicked = [](const std::string& url) {
             tesseract::Client::open_in_browser(url);
         };
-        msg_surface_->set_root(std::move(view));
-        msg_surface_->set_on_right_click([this](tk::Point p) {
-            if (!message_list_view_ || !client_) return;
-            auto hit = message_list_view_->sticker_hit_at(p);
+        room_view_->on_near_top = [this] {
+            if (current_room_id_.empty()) return;
+            request_more_history(current_room_id_);
+        };
+        room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
+        room_view_->on_sticker = [this] { toggle_sticker_picker(); };
+        room_view_->on_layout_changed = [this] {
+            if (chat_surface_) chat_surface_->relayout();
+        };
+
+        chat_surface_->set_root(std::move(rv));
+        chat_surface_->set_on_right_click([this](tk::Point p) {
+            if (!room_view_ || !client_) return;
+            auto hit = room_view_->message_list()->sticker_hit_at(p);
             if (!hit) return;
             const bool already_saved = client_->user_pack_has_sticker(hit->mxc_url);
-            // Capture before TrackPopupMenu — sticker_geom_ is rebuilt each paint.
             const std::string mxc  = hit->mxc_url;
             const std::string body = hit->body;
             const std::string info = hit->info_json;
@@ -1250,167 +1164,53 @@ void MainWindow::on_create(HWND hwnd) {
                 1,
                 already_saved ? L"Already in Saved Stickers" : L"Add to Saved Stickers");
             POINT sp{ static_cast<LONG>(p.x), static_cast<LONG>(p.y) };
-            ClientToScreen(msg_surface_->hwnd(), &sp);
+            ClientToScreen(chat_surface_->hwnd(), &sp);
             int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                       sp.x, sp.y, 0, hwnd_, nullptr);
             DestroyMenu(menu);
             if (cmd == 1)
                 client_->save_sticker_to_user_pack(body, body, mxc, info);
         });
-    }
-    if (HWND ms = msg_surface_->hwnd()) {
-        SetWindowPos(ms, nullptr, 240, kRoomHeaderH, 784, 700 - kRoomHeaderH,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-    }
 
-    // Compose bar — shared widget on a tk::win32::Surface. The text input
-    // is a NativeTextArea overlay on the bar's text_area_rect; emoji and
-    // send buttons paint into the toolkit.
-    compose_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
-    {
-        auto bar = std::make_unique<tesseract::views::ComposeBar>();
-        compose_shared_ = bar.get();
-        compose_shared_->on_send  = [this](const std::string& body) {
-            std::string trimmed = body;
-            auto l = trimmed.find_first_not_of(" \t\n\r");
-            auto r = trimmed.find_last_not_of(" \t\n\r");
-            if (l == std::string::npos) return;
-            trimmed = trimmed.substr(l, r - l + 1);
-            if (trimmed.empty() || current_room_id_.empty()) return;
-            auto res = client_->send_message(current_room_id_, trimmed);
-            if (res) {
-                if (compose_text_area_) compose_text_area_->set_text("");
-                compose_shared_->set_current_text({});
-            } else {
-                MessageBoxW(hwnd_, utf8_to_wstr(res.message).c_str(),
-                             L"Send failed", MB_ICONWARNING);
-            }
-        };
-        compose_shared_->on_send_image = [this](std::vector<std::uint8_t> bytes,
-                                                  std::string mime,
-                                                  std::string filename,
-                                                  std::string caption,
-                                                  std::uint32_t /*src_w*/,
-                                                  std::uint32_t /*src_h*/,
-                                                  std::string reply_event_id) {
-            if (current_room_id_.empty() || !compose_surface_) return;
-            const bool compress =
-                tesseract::Settings::instance().image_quality
-                == tesseract::Settings::ImageQuality::Compressed;
-            auto enc = compose_surface_->host().encode_for_send(
-                bytes.data(), bytes.size(), compress);
-            if (enc.bytes.empty()) return;
-            std::string out_name = filename;
-            if (enc.mime == "image/jpeg") {
-                auto dot = out_name.find_last_of('.');
-                if (dot != std::string::npos) out_name = out_name.substr(0, dot);
-                out_name += ".jpg";
-            }
-            auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
-                                            out_name, caption,
-                                            enc.width, enc.height,
-                                            reply_event_id);
-            if (res) {
-                if (compose_text_area_) compose_text_area_->set_text("");
-                if (compose_shared_)    compose_shared_->set_current_text({});
-            }
-        };
-        compose_shared_->on_size_changed = [this] {
-            if (!hwnd_) return;
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
-        };
-        compose_shared_->on_emoji   = [this] { toggle_emoji_picker(); };
-        compose_shared_->on_sticker = [this] { toggle_sticker_picker(); };
-        compose_shared_->on_send_reply = [this](const std::string& reply_event_id,
-                                                 const std::string& body) {
-            if (body.empty() || current_room_id_.empty()) return;
-            client_->send_reply(current_room_id_, reply_event_id, body);
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
-        };
-        compose_surface_->set_root(std::move(bar));
-
-        compose_text_area_ = compose_surface_->host().make_text_area();
-        compose_text_area_->set_placeholder("Message…");
-        compose_text_area_->set_on_changed([this](const std::string& s) {
-            handle_compose_text_changed_(s);
-            if (compose_shared_) compose_shared_->set_current_text(s);
-        });
-        compose_text_area_->set_on_submit([this] { on_send_clicked(); });
-        compose_text_area_->set_on_height_changed([this](float h) {
-            if (!compose_shared_) return;
-            compose_shared_->set_text_area_natural_height(h);
-            // Re-run the host layout to reposition the compose surface
-            // (its height tracks the shared widget's natural_height()).
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
-        });
-        compose_text_area_->set_on_image_paste(
-            [this](std::vector<std::uint8_t> bytes, std::string mime) {
-                if (compose_shared_)
-                    compose_shared_->set_pending_image(std::move(bytes),
-                                                        std::move(mime));
-            });
-
-        // Drag-and-drop: any file dropped on the message list or
-        // composer parks in the compose bar. Images use the preview
-        // band; everything else uses the file chip.
         auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
                                    std::string mime,
                                    std::string filename) {
-            if (!compose_shared_) return;
+            if (!room_view_) return;
             const auto limit = client_->media_upload_limit();
             if (limit > 0 && bytes.size() > limit) {
-                if (hStatus_) SetWindowTextW(hStatus_,
-                    L"File exceeds server limit");
+                if (hStatus_) SetWindowTextW(hStatus_, L"File exceeds server limit");
                 return;
             }
-            if (mime.rfind("image/", 0) == 0) {
-                compose_shared_->set_pending_image(std::move(bytes),
-                                                   std::move(mime),
-                                                   std::move(filename));
-            } else {
-                compose_shared_->set_pending_file(std::move(bytes),
-                                                  std::move(mime),
-                                                  std::move(filename));
-            }
+            if (mime.rfind("image/", 0) == 0)
+                room_view_->compose_bar()->set_pending_image(
+                    std::move(bytes), std::move(mime), std::move(filename));
+            else
+                room_view_->compose_bar()->set_pending_file(
+                    std::move(bytes), std::move(mime), std::move(filename));
         };
-        compose_surface_->set_on_file_drop(on_file_drop);
-        if (msg_surface_) msg_surface_->set_on_file_drop(on_file_drop);
+        chat_surface_->set_on_file_drop(on_file_drop);
 
-        compose_shared_->on_send_file =
-            [this](std::vector<std::uint8_t> bytes,
-                   std::string mime,
-                   std::string filename,
-                   std::string caption,
-                   std::string reply_event_id) {
-            if (current_room_id_.empty()) return;
-            auto res = client_->send_file(current_room_id_, bytes, mime,
-                                          filename, caption, reply_event_id);
-            if (res) {
-                if (compose_text_area_) compose_text_area_->set_text("");
-                if (compose_shared_)    compose_shared_->set_current_text({});
-            } else {
-                if (hStatus_) SetWindowTextW(hStatus_, L"Send file failed");
-            }
-        };
-        compose_shared_->on_send_edit = [this](const std::string& event_id,
-                                                const std::string& new_body) {
-            if (new_body.empty() || current_room_id_.empty()) return;
-            client_->send_edit(current_room_id_, event_id, new_body);
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
-        };
-        compose_shared_->on_edit_cancelled = [this] {
-            if (compose_text_area_) compose_text_area_->set_text("");
-            if (compose_shared_)    compose_shared_->set_current_text({});
-        };
+        room_text_area_ = chat_surface_->host().make_text_area();
+        room_text_area_->set_placeholder("Message…");
+        room_text_area_->set_on_changed([this](const std::string& s) {
+            handle_compose_text_changed_(s);
+            if (room_view_) room_view_->set_current_text(s);
+        });
+        room_text_area_->set_on_submit([this] { on_send_clicked(); });
+        room_text_area_->set_on_height_changed([this](float h) {
+            if (room_view_) room_view_->set_text_area_natural_height(h);
+            if (chat_surface_) chat_surface_->relayout();
+        });
+        room_text_area_->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime) {
+                if (room_view_)
+                    room_view_->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime));
+            });
 
-        compose_surface_->set_on_layout([this] {
-            if (compose_shared_ && compose_text_area_)
-                compose_text_area_->set_rect(compose_shared_->text_area_rect());
+        chat_surface_->set_on_layout([this] {
+            if (room_view_ && room_text_area_)
+                room_text_area_->set_rect(room_view_->compose_text_area_rect());
         });
     }
 
@@ -1426,12 +1226,6 @@ void MainWindow::on_create(HWND hwnd) {
         WS_CHILD | WS_VISIBLE,
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
-
-    hTypingBar_ = CreateWindowExW(0, L"STATIC", L"",
-        WS_CHILD | SS_LEFT,
-        0, 0, 0, 0,
-        hwnd, nullptr, hInst_, nullptr);
-    apply_default_font(hTypingBar_);
 
     // Recovery banner — shared widget on a tk::win32::Surface. Initially
     // hidden; toggled by maybe_show_recovery_banner() after start_sync.
@@ -1544,7 +1338,7 @@ void MainWindow::on_create(HWND hwnd) {
     if (HWND iv = img_viewer_surface_->hwnd())
         ShowWindow(iv, SW_HIDE);
 
-    message_list_view_->on_image_clicked =
+    room_view_->on_image_clicked =
         [this](const tesseract::views::MessageListView::ImageHit& hit) {
             if (!img_viewer_ || !img_viewer_surface_) return;
             img_viewer_->open(hit.media_url, hit.body,
@@ -1572,7 +1366,7 @@ void MainWindow::on_create(HWND hwnd) {
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        vid_viewer_->set_video_player(msg_surface_->host().make_video_player());
+        vid_viewer_->set_video_player(chat_surface_->host().make_video_player());
         vid_viewer_->set_repaint_requester([this] {
             if (vid_viewer_surface_) vid_viewer_surface_->relayout();
         });
@@ -1585,7 +1379,7 @@ void MainWindow::on_create(HWND hwnd) {
     if (HWND vv = vid_viewer_surface_->hwnd())
         ShowWindow(vv, SW_HIDE);
 
-    message_list_view_->on_video_clicked =
+    room_view_->on_video_clicked =
         [this](const tesseract::views::MessageListView::VideoHit& hit) {
             if (!vid_viewer_ || !vid_viewer_surface_) return;
             vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
@@ -1613,9 +1407,9 @@ void MainWindow::on_create(HWND hwnd) {
             });
         };
 
-    message_list_view_->set_video_player_factory(
-        [this]() { return msg_surface_->host().make_video_player(); });
-    message_list_view_->set_video_fetch_provider(
+    room_view_->set_video_player_factory(
+        [this]() { return chat_surface_->host().make_video_player(); });
+    room_view_->set_video_fetch_provider(
         [this](const std::string& src,
                std::function<void(std::vector<std::uint8_t>)> on_ready) {
             run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
@@ -1664,120 +1458,71 @@ void MainWindow::on_size(int w, int h) {
     constexpr int SEP_W    = 1;
     constexpr int CHAT_X   = ROOM_W + SEP_W;
     constexpr int STATUS_H  = 24;
-    constexpr int TYPING_H  = 20;
-    const int     typing_h  = typing_bar_visible_ ? TYPING_H : 0;
+    constexpr int BANNER_H  = 48;
 
-    // Custom status bar is anchored to the bottom. Position it explicitly.
-    if (hStatus_) {
-        SetWindowPos(hStatus_, nullptr,
-                     0, h - STATUS_H, w, STATUS_H, SWP_NOZORDER);
-    }
+    if (hStatus_) SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H, SWP_NOZORDER);
 
     if (login_visible_ && login_view_ && login_view_->hwnd()) {
-        SetWindowPos(login_view_->hwnd(), nullptr,
-                     0, 0, w, h - STATUS_H, SWP_NOZORDER);
+        SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, h - STATUS_H, SWP_NOZORDER);
         login_view_->layout(w, h - STATUS_H);
         return;
     }
 
     int content_h = h - STATUS_H;
-    // Drive layout from the compose bar's actual height so it never
-    // overflows below the window when a reply/edit banner or attachment
-    // is shown.
-    int compose_h = compose_shared_
-        ? static_cast<int>(compose_shared_->natural_height())
-        : static_cast<int>(tesseract::views::ComposeBar::kMinHeight);
-    compose_h = std::clamp(compose_h,
-                           static_cast<int>(tesseract::views::ComposeBar::kMinHeight),
-                           content_h / 2);
-    int msg_h = content_h - compose_h - typing_h;
 
-    constexpr int BANNER_H = 48;
-
-    int msg_area_y = 0;
-    int msg_area_h = msg_h;
-    if (hRoomHeader_ && IsWindowVisible(hRoomHeader_)) {
-        msg_area_y = kRoomHeaderH;
-        msg_area_h -= kRoomHeaderH;
-    }
-    if (recovery_banner_visible_ && recovery_surface_
-        && recovery_surface_->hwnd())
-    {
-        SetWindowPos(recovery_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_area_y, w - CHAT_X, BANNER_H,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        msg_area_y += BANNER_H;
-        msg_area_h -= BANNER_H;
-    }
-    if (verif_banner_visible_ && verif_surface_ && verif_surface_->hwnd()) {
-        using VBState = tesseract::views::VerificationBanner::State;
-        int verif_h = (verif_shared_
-                       && verif_shared_->state() == VBState::ShowEmojis) ? 124 : 48;
-        SetWindowPos(verif_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_area_y, w - CHAT_X, verif_h,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        verif_surface_->relayout();
-        msg_area_y += verif_h;
-        msg_area_h -= verif_h;
-    }
-
-    // Sidebar fills the full content height (status bar excluded): the
-    // user strip sits flush against the bottom, with the room list above.
-    // The compose bar lives at x=CHAT_X so the left sidebar continues
-    // all the way down to content_h to avoid an empty band beneath the
-    // user strip.
+    // Sidebar.
     bool nav_bar_visible = hSpaceNavBack_ && IsWindowVisible(hSpaceNavBack_);
     int  room_surface_y  = nav_bar_visible ? kSpaceNavBarH : 0;
     if (nav_bar_visible) {
-        SetWindowPos(hSpaceNavBack_,  nullptr, 4,  8,               28,               20,               SWP_NOZORDER);
+        SetWindowPos(hSpaceNavBack_,  nullptr, 4,  8,          28,          20,          SWP_NOZORDER);
         SetWindowPos(hSpaceNavLabel_, nullptr, 36, 0, ROOM_W - 40, kSpaceNavBarH, SWP_NOZORDER);
     }
-
     bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
     int sidebar_h   = content_h;
     int room_list_h = (user_strip_visible ? sidebar_h - kUserStripH : sidebar_h) - room_surface_y;
-
-    if (room_surface_ && room_surface_->hwnd()) {
+    if (room_surface_ && room_surface_->hwnd())
         SetWindowPos(room_surface_->hwnd(), nullptr,
                       0, room_surface_y, ROOM_W, room_list_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    if (hUserStrip_) {
+    if (hUserStrip_)
         SetWindowPos(hUserStrip_, nullptr,
                      0, room_surface_y + room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
-    }
-    if (hSideSep_) {
+    if (hSideSep_)
         SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, sidebar_h, SWP_NOZORDER);
-    }
-    SetWindowPos(hRoomHeader_, nullptr, CHAT_X, 0, w - CHAT_X, kRoomHeaderH, SWP_NOZORDER);
-    if (msg_surface_ && msg_surface_->hwnd()) {
-        SetWindowPos(msg_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_area_y, w - CHAT_X, msg_area_h,
+
+    // Chat area: banners stack at the top, chat_surface_ fills the rest.
+    int chat_y = 0;
+    int chat_h = content_h;
+    if (recovery_banner_visible_ && recovery_surface_ && recovery_surface_->hwnd()) {
+        SetWindowPos(recovery_surface_->hwnd(), nullptr,
+                      CHAT_X, chat_y, w - CHAT_X, BANNER_H,
                       SWP_NOZORDER | SWP_NOACTIVATE);
+        chat_y += BANNER_H;
+        chat_h -= BANNER_H;
     }
-    if (hTypingBar_) {
-        SetWindowPos(hTypingBar_, nullptr,
-                      CHAT_X, msg_h, w - CHAT_X, TYPING_H,
+    if (verif_banner_visible_ && verif_surface_ && verif_surface_->hwnd()) {
+        using VBState = tesseract::views::VerificationBanner::State;
+        int verif_h = (verif_shared_ && verif_shared_->state() == VBState::ShowEmojis) ? 124 : 48;
+        SetWindowPos(verif_surface_->hwnd(), nullptr,
+                      CHAT_X, chat_y, w - CHAT_X, verif_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
+        verif_surface_->relayout();
+        chat_y += verif_h;
+        chat_h -= verif_h;
     }
-    if (compose_surface_ && compose_surface_->hwnd()) {
-        SetWindowPos(compose_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_h + typing_h, w - CHAT_X, compose_h,
+    if (chat_surface_ && chat_surface_->hwnd()) {
+        SetWindowPos(chat_surface_->hwnd(), nullptr,
+                      CHAT_X, chat_y, w - CHAT_X, chat_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
+        chat_surface_->relayout();
     }
-    // Image viewer overlay — keep it sized to the full content area
-    // whenever it is visible so it tracks window resizes.
+
     if (img_viewer_surface_ && img_viewer_surface_->hwnd()
-        && IsWindowVisible(img_viewer_surface_->hwnd())) {
-        SetWindowPos(img_viewer_surface_->hwnd(), HWND_TOP,
-                      0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
-    }
-    // Video viewer overlay — same full-area tracking.
+        && IsWindowVisible(img_viewer_surface_->hwnd()))
+        SetWindowPos(img_viewer_surface_->hwnd(), HWND_TOP, 0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
     if (vid_viewer_surface_ && vid_viewer_surface_->hwnd()
-        && IsWindowVisible(vid_viewer_surface_->hwnd())) {
-        SetWindowPos(vid_viewer_surface_->hwnd(), HWND_TOP,
-                      0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
-    }
+        && IsWindowVisible(vid_viewer_surface_->hwnd()))
+        SetWindowPos(vid_viewer_surface_->hwnd(), HWND_TOP, 0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
 
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
@@ -1933,13 +1678,10 @@ void MainWindow::show_login_view() {
     // Hide all main-content widgets.
     if (room_surface_ && room_surface_->hwnd())
         ShowWindow(room_surface_->hwnd(), SW_HIDE);
-    ShowWindow(hSideSep_,         SW_HIDE);
-    ShowWindow(hRoomHeader_,      SW_HIDE);
-    ShowWindow(hUserStrip_,       SW_HIDE);
-    if (msg_surface_ && msg_surface_->hwnd())
-        ShowWindow(msg_surface_->hwnd(), SW_HIDE);
-    if (compose_surface_ && compose_surface_->hwnd())
-        ShowWindow(compose_surface_->hwnd(), SW_HIDE);
+    ShowWindow(hSideSep_,   SW_HIDE);
+    ShowWindow(hUserStrip_, SW_HIDE);
+    if (chat_surface_ && chat_surface_->hwnd())
+        ShowWindow(chat_surface_->hwnd(), SW_HIDE);
     if (recovery_surface_ && recovery_surface_->hwnd())
         ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
 
@@ -1954,15 +1696,13 @@ void MainWindow::show_main_content() {
         ShowWindow(login_view_->hwnd(), SW_HIDE);
     }
     // Unconditional main-content widgets. Conditional widgets
-    // (hRoomHeader_, hUserStrip_, recovery banner) are shown by their own
+    // (hUserStrip_, recovery/verif banners) are shown by their own
     // code paths once their state is set.
     if (room_surface_ && room_surface_->hwnd())
         ShowWindow(room_surface_->hwnd(), SW_SHOW);
-    ShowWindow(hSideSep_,  SW_SHOW);
-    if (msg_surface_ && msg_surface_->hwnd())
-        ShowWindow(msg_surface_->hwnd(), SW_SHOW);
-    if (compose_surface_ && compose_surface_->hwnd())
-        ShowWindow(compose_surface_->hwnd(), SW_SHOW);
+    ShowWindow(hSideSep_, SW_SHOW);
+    if (chat_surface_ && chat_surface_->hwnd())
+        ShowWindow(chat_surface_->hwnd(), SW_SHOW);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -2047,7 +1787,7 @@ void MainWindow::on_auth_error(const std::string& user_id, bool soft_logout) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::on_send_clicked() {
-    if (compose_shared_) compose_shared_->trigger_send();
+    if (room_view_) room_view_->compose_bar()->trigger_send();
 }
 
 // ---------------------------------------------------------------------------
@@ -2109,18 +1849,17 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         prefs.last_room = current_room_id_;
         client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
-    if (compose_shared_) {
-        compose_shared_->clear_reply();
-        compose_shared_->clear_editing();
+    if (room_view_) {
+        room_view_->compose_bar()->clear_reply();
+        room_view_->compose_bar()->clear_editing();
     }
-    if (compose_text_area_) compose_text_area_->set_text("");
-    if (compose_shared_)    compose_shared_->set_current_text({});
+    if (room_text_area_) room_text_area_->set_text("");
+    if (room_view_)      room_view_->set_current_text({});
     update_typing_bar_({}, false);
 
     for (const auto& r : rooms_) {
         if (r.id == current_room_id_) {
-            current_room_info_ = r;
-            update_room_header(r);
+            if (room_view_) room_view_->set_room(r);
             break;
         }
     }
@@ -2166,27 +1905,10 @@ void MainWindow::on_tesseract_paginate_done(std::string* room_id,
                                               bool reached_start) {
     if (!room_id) return;
     push_paginate_result_(*room_id, reached_start);
-    if (*room_id == current_room_id_ && message_list_view_)
-        message_list_view_->reset_near_top_latch();
+    if (*room_id == current_room_id_ && room_view_)
+        room_view_->message_list()->reset_near_top_latch();
 }
 
-void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
-    bool was_visible = hRoomHeader_ && IsWindowVisible(hRoomHeader_);
-    if (info.id.empty()) {
-        ShowWindow(hRoomHeader_, SW_HIDE);
-        if (was_visible && hwnd_) {
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
-        }
-        return;
-    }
-    ShowWindow(hRoomHeader_, SW_SHOW);
-    InvalidateRect(hRoomHeader_, nullptr, FALSE);
-    if (!was_visible && hwnd_) {
-        RECT rc; GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Event callbacks
@@ -2195,7 +1917,7 @@ void MainWindow::update_room_header(const tesseract::RoomInfo& info) {
 void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
     if (!payload) return;
     if (payload->room_id != current_room_id_) return;
-    if (!message_list_view_) return;
+    if (!room_view_) return;
 
     std::vector<tesseract::views::MessageRowData> rows;
     rows.reserve(payload->snapshot.size());
@@ -2205,42 +1927,42 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
         ensure_reply_details_(ev->in_reply_to_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
-    message_list_view_->set_messages(std::move(rows));
-    if (msg_surface_) msg_surface_->relayout();
+    room_view_->set_messages(std::move(rows));
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
     if (!payload || !payload->event) return;
     if (payload->room_id != current_room_id_) return;
     if (payload->event->type == tesseract::EventType::Unhandled) return;
-    if (!message_list_view_) return;
+    if (!room_view_) return;
 
     ensure_row_media(*payload->event);
     ensure_reply_details_(payload->event->in_reply_to_id);
-    message_list_view_->insert_message(payload->index,
-                                         tesseract::views::make_row_data(*payload->event, my_user_id_));
-    if (msg_surface_) msg_surface_->relayout();
+    room_view_->insert_message(payload->index,
+                               tesseract::views::make_row_data(*payload->event, my_user_id_));
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
     if (!payload || !payload->event) return;
     if (payload->room_id != current_room_id_) return;
     if (payload->event->type == tesseract::EventType::Unhandled) return;
-    if (!message_list_view_) return;
+    if (!room_view_) return;
 
     ensure_row_media(*payload->event);
     ensure_reply_details_(payload->event->in_reply_to_id);
-    message_list_view_->update_message(payload->index,
-                                         tesseract::views::make_row_data(*payload->event, my_user_id_));
-    if (msg_surface_) msg_surface_->relayout();
+    room_view_->update_message(payload->index,
+                               tesseract::views::make_row_data(*payload->event, my_user_id_));
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
     if (!payload) return;
     if (payload->room_id != current_room_id_) return;
-    if (!message_list_view_) return;
-    message_list_view_->remove_message(payload->index);
-    if (msg_surface_) msg_surface_->relayout();
+    if (!room_view_) return;
+    room_view_->remove_message(payload->index);
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_rooms(RoomsPayload* payload) {
@@ -2252,7 +1974,10 @@ void MainWindow::on_rooms_updated_() {
     refresh_room_list();
     if (!current_room_id_.empty()) {
         for (const auto& r : rooms_) {
-            if (r.id == current_room_id_) { update_room_header(r); break; }
+            if (r.id == current_room_id_) {
+                if (room_view_) room_view_->set_room(r);
+                break;
+            }
         }
     } else if (!pending_restore_room_.empty()) {
         for (const auto& r : rooms_) {
@@ -2393,8 +2118,8 @@ void MainWindow::on_anim_tick() {
     }
     const std::int64_t now = static_cast<std::int64_t>(GetTickCount64());
     if (!anim_cache_.advance(now)) return;
-    if (msg_surface_ && msg_surface_->hwnd())
-        InvalidateRect(msg_surface_->hwnd(), nullptr, FALSE);
+    if (chat_surface_ && chat_surface_->hwnd())
+        InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
     if (sticker_picker_surface_ && sticker_picker_surface_->hwnd() &&
         hStickerPicker_ && IsWindowVisible(hStickerPicker_))
     {
@@ -2454,28 +2179,26 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 tk_avatars_.emplace(cache_key, std::move(img));
             invalidate_hwnd = room_surface_->hwnd();
         }
-        // Also invalidate the room header — it uses the GDI+ avatar_cache_
-        // which is a separate code-path, but a relayout of room_surface
-        // covers the tk-based room list redraw that callers expect.
-        if (hRoomHeader_) InvalidateRect(hRoomHeader_, nullptr, FALSE);
+        // Also refresh the RoomHeader inside chat_surface_.
+        if (chat_surface_) chat_surface_->relayout();
         break;
     case MediaKind::UserAvatar:
-        if (msg_surface_) {
-            if (auto img = msg_surface_->factory().decode_image(bytes))
+        if (chat_surface_) {
+            if (auto img = chat_surface_->factory().decode_image(bytes))
                 tk_avatars_.emplace(cache_key, std::move(img));
-            invalidate_hwnd = msg_surface_->hwnd();
+            invalidate_hwnd = chat_surface_->hwnd();
         }
         break;
     case MediaKind::MediaImage:
-        if (msg_surface_) {
+        if (chat_surface_) {
             try_load_animation(cache_key, bytes);
             if (!anim_cache_.has(cache_key)) {
-                if (auto img = msg_surface_->factory().decode_image(bytes))
+                if (auto img = chat_surface_->factory().decode_image(bytes))
                     tk_images_.emplace(cache_key, std::move(img));
             }
-            if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
-            msg_surface_->relayout();
-            invalidate_hwnd = msg_surface_->hwnd();
+            if (room_view_) room_view_->notify_image_ready(cache_key);
+            chat_surface_->relayout();
+            invalidate_hwnd = chat_surface_->hwnd();
         }
         break;
     }
@@ -2493,12 +2216,12 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                     std::vector<uint8_t> rgba) {
-    if (tk_images_.count(key) || !msg_surface_) return;
-    auto img = msg_surface_->factory().create_image_rgba(rgba.data(), w, h);
+    if (tk_images_.count(key) || !chat_surface_) return;
+    auto img = chat_surface_->factory().create_image_rgba(rgba.data(), w, h);
     if (!img) return;
     tk_images_.emplace(key, std::move(img));
-    if (msg_surface_->hwnd())
-        InvalidateRect(msg_surface_->hwnd(), nullptr, FALSE);
+    if (chat_surface_->hwnd())
+        InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
 }
 
 // ---------------------------------------------------------------------------
@@ -2512,9 +2235,9 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
 }
 
 void MainWindow::clear_messages() {
-    if (!message_list_view_) return;
-    message_list_view_->set_messages({});
-    if (msg_surface_) msg_surface_->relayout();
+    if (!room_view_) return;
+    room_view_->set_messages({});
+    if (chat_surface_) chat_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -2760,7 +2483,6 @@ void MainWindow::switch_active_account(int new_idx) {
     pending_restore_room_ = sess->last_room;
 
     current_room_id_.clear();
-    current_room_info_ = tesseract::RoomInfo{};
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
@@ -2772,10 +2494,10 @@ void MainWindow::switch_active_account(int new_idx) {
     else
         rooms_.clear();
 
-    if (room_list_view_)    room_list_view_->set_rooms({});
-    if (message_list_view_) message_list_view_->set_messages({});
-    if (room_surface_)  room_surface_->relayout();
-    if (msg_surface_)   msg_surface_->relayout();
+    if (room_list_view_) room_list_view_->set_rooms({});
+    if (room_view_)      room_view_->set_messages({});
+    if (room_surface_)   room_surface_->relayout();
+    if (chat_surface_)   chat_surface_->relayout();
 
     recovery_banner_visible_   = false;
     recovery_banner_dismissed_ = false;
@@ -2867,18 +2589,16 @@ void MainWindow::logout_active_account() {
         index.user_ids.end());
 
     current_room_id_.clear();
-    current_room_info_ = tesseract::RoomInfo{};
     my_user_id_.clear();
     my_display_name_.clear();
     my_avatar_url_.clear();
     if (user_avatar_bmp_) { delete user_avatar_bmp_; user_avatar_bmp_ = nullptr; }
     rooms_.clear();
-    if (room_list_view_)    room_list_view_->set_rooms({});
-    if (message_list_view_) message_list_view_->set_messages({});
-    if (room_surface_) room_surface_->relayout();
-    if (msg_surface_)  msg_surface_->relayout();
-    ShowWindow(hRoomHeader_, SW_HIDE);
-    ShowWindow(hUserStrip_,  SW_HIDE);
+    if (room_list_view_) room_list_view_->set_rooms({});
+    if (room_view_)      room_view_->set_messages({});
+    if (room_surface_)   room_surface_->relayout();
+    if (chat_surface_)   chat_surface_->relayout();
+    ShowWindow(hUserStrip_, SW_HIDE);
     if (recovery_surface_ && recovery_surface_->hwnd())
         ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
     recovery_banner_visible_   = false;
@@ -3085,12 +2805,10 @@ void MainWindow::toggle_emoji_picker() {
         return;
     }
 
-    // Anchor the picker above the compose bar, clamped to the screen.
-    // (With the shared ComposeBar there's no standalone emoji-button HWND
-    // — the bar's surface is the closest available anchor.)
+    // Anchor the picker above the chat surface (which hosts the compose bar).
     RECT btn_rc{};
-    if (compose_surface_ && compose_surface_->hwnd())
-        GetWindowRect(compose_surface_->hwnd(), &btn_rc);
+    if (chat_surface_ && chat_surface_->hwnd())
+        GetWindowRect(chat_surface_->hwnd(), &btn_rc);
     else
         GetWindowRect(hwnd_, &btn_rc);
     int x = btn_rc.left + 8;
@@ -3170,10 +2888,10 @@ void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
         if (hEmojiPicker_) ShowWindow(hEmojiPicker_, SW_HIDE);
         return;
     }
-    if (!compose_text_area_) return;
-    compose_text_area_->insert_at_cursor(glyph);
-    if (compose_shared_) compose_shared_->set_current_text(compose_text_area_->text());
-    compose_text_area_->set_focused(true);
+    if (!room_text_area_) return;
+    room_text_area_->insert_at_cursor(glyph);
+    if (room_view_) room_view_->set_current_text(room_text_area_->text());
+    room_text_area_->set_focused(true);
     // The shared picker already called recent_emoji_bump before invoking
     // this callback — no need to re-bump here.
 }
@@ -3277,10 +2995,10 @@ void MainWindow::toggle_sticker_picker() {
         return;
     }
 
-    // Anchor above the compose bar, clamped to the work area.
+    // Anchor above the chat surface (which hosts the compose bar).
     RECT btn_rc{};
-    if (compose_surface_ && compose_surface_->hwnd())
-        GetWindowRect(compose_surface_->hwnd(), &btn_rc);
+    if (chat_surface_ && chat_surface_->hwnd())
+        GetWindowRect(chat_surface_->hwnd(), &btn_rc);
     else
         GetWindowRect(hwnd_, &btn_rc);
     int x = btn_rc.right - kStickerPickW - 8;
