@@ -138,6 +138,8 @@ public:
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::sticker_fetches_in_flight_;
     using ShellBase::recovery_banner_dismissed_;
+    using ShellBase::verification_banner_dismissed_;
+    using ShellBase::active_verification_flow_id_;
     using ShellBase::pagination_;
     using ShellBase::last_room_list_state_;
     using ShellBase::last_backup_state_;
@@ -170,6 +172,11 @@ public:
     using ShellBase::push_room_list_state_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::mark_room_read_;
+    
+    // Public method to call the protected update_typing_bar_ method
+    void update_typing_bar(const std::string& text, bool visible) {
+        update_typing_bar_(text, visible);
+    }
 
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
@@ -509,7 +516,6 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     if (!c) return;
     NSString* ns = [NSString stringWithUTF8String:text.c_str()] ?: @"";
     [c _updateTypingBar:ns];
-    _typingBar.hidden = !visible;
 }
 
 } // namespace
@@ -2491,7 +2497,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _composeShared->clear_reply();
         _composeShared->clear_editing();
     }
-    _shell->update_typing_bar_({}, false);
+    _shell->update_typing_bar({}, false);
     for (const auto& r : _shell->rooms_) {
         if (r.id == _shell->current_room_id_) { [self _setRoomHeader:r]; break; }
     }
