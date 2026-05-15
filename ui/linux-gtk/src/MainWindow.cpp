@@ -397,7 +397,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     // the hood) shown only when the list overflows the viewport; the
     // RoomListView itself decides visibility in its arrange() pass.
     room_search_field_ = room_surface_->host().make_text_field();
-    room_search_field_->set_placeholder("Search rooms");
+    room_search_field_->set_placeholder("Search");
     room_search_field_->set_visible(false);
     room_search_field_->set_on_changed([this](const std::string& q) {
         search_pending_text_ = q;

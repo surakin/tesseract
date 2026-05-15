@@ -27,6 +27,8 @@
 #include <span>
 #include <vector>
 
+struct IDWriteFontFallback;
+
 namespace tk::win32 {
 
 class Host;
@@ -89,5 +91,11 @@ private:
 // a backend reference into application code.
 std::vector<tk::d2d::AnimatedFrame> decode_animation(
     std::span<const std::uint8_t> bytes);
+
+// Returns the Twemoji-first IDWriteFontFallback built by the D2D backend.
+// May return nullptr before the first Surface is constructed (i.e. before
+// backend_singleton() is initialized). Call after at least one Surface
+// has been created to guarantee a non-null result.
+IDWriteFontFallback* dwrite_font_fallback();
 
 } // namespace tk::win32

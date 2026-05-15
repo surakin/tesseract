@@ -116,13 +116,17 @@ public:
         size_       = Size{ static_cast<float>(pw),
                             static_cast<float>(ph) };
         line_count_ = pango_layout_get_line_count(layout_);
+        // pango_layout_get_baseline returns Pango units (1/PANGO_SCALE pixels)
+        ascent_ = static_cast<float>(pango_layout_get_baseline(layout_))
+                  / static_cast<float>(PANGO_SCALE);
     }
     ~PangoTextLayout() override { g_object_unref(layout_); }
     PangoTextLayout(const PangoTextLayout&) = delete;
     PangoTextLayout& operator=(const PangoTextLayout&) = delete;
 
-    Size measure()    const override { return size_; }
-    int  line_count() const override { return line_count_; }
+    Size  measure()    const override { return size_; }
+    int   line_count() const override { return line_count_; }
+    float ascent()     const override { return ascent_; }
 
     PangoLayout* raw() const { return layout_; }
 
@@ -130,6 +134,7 @@ private:
     PangoLayout* layout_;
     Size         size_{};
     int          line_count_ = 0;
+    float        ascent_     = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

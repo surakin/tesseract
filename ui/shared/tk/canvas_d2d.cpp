@@ -3,11 +3,19 @@
 #include <tesseract/settings.h>
 
 #include <d2d1_1.h>
+#include <d2d1_1helper.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #include <dwrite_2.h>
+#include <dwrite_3.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
+// Matches IDR_TWEMOJI_FONT in ui/windows/src/resource.h
+static constexpr int kTwemojiFontResourceId = 201;
+
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -114,16 +122,39 @@ static FontDesc desc_for(FontRole r) {
 // ─────────────────────────────────────────────────────────────────────────
 
 struct Backend::Impl {
-    ComPtr<ID2D1Factory1>     d2d;
-    ComPtr<IDWriteFactory2>   dwrite;
-    ComPtr<IWICImagingFactory> wic;
-    // Cached system font fallback — applied to every IDWriteTextLayout so
-    // emoji sequences (especially flag RIS pairs) shape via Segoe UI Emoji.
-    ComPtr<IDWriteFontFallback> font_fallback;
-    bool                      com_initialised_here = false;
+    ComPtr<ID2D1Factory1>                 d2d;
+    ComPtr<IDWriteFactory2>               dwrite;
+    ComPtr<IWICImagingFactory>            wic;
+    ComPtr<IDWriteFontFallback>           font_fallback;
+    ComPtr<IDWriteFontFileLoader>         mem_font_loader; // keeps Twemoji alive
+    bool                                 com_initialised_here = false;
 
-    // IDWriteTextFormat is cheap to keep around; one per FontRole.
+    ComPtr<ID3D11Device>  d3d;
+    ComPtr<IDXGIDevice1>  dxgi_dev;
+    ComPtr<ID2D1Device>   d2d_dev;
+    bool                  device_lost_ = false;
+
     std::unordered_map<int, ComPtr<IDWriteTextFormat>> text_formats;
+
+    void create_d3d_device() {
+        d2d_dev.Reset();
+        dxgi_dev.Reset();
+        d3d.Reset();
+        HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE,
+            nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+            D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
+        if (FAILED(hr)) {
+            hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+                nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
+            check(hr, "D3D11CreateDevice");
+        }
+        check(d3d->QueryInterface(IID_PPV_ARGS(dxgi_dev.GetAddressOf())),
+              "QI IDXGIDevice1");
+        check(d2d->CreateDevice(dxgi_dev.Get(), d2d_dev.GetAddressOf()),
+              "ID2D1Factory1::CreateDevice");
+        device_lost_ = false;
+    }
 
     IDWriteTextFormat* text_format_for(FontRole role) {
         auto it = text_formats.find(static_cast<int>(role));
@@ -144,6 +175,144 @@ struct Backend::Impl {
         return tf.Get();
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Twemoji emoji-first font fallback
+// ─────────────────────────────────────────────────────────────────────────
+
+// Chains two IDWriteFontFallback objects: tries `emoji_` first (covers only
+// emoji Unicode ranges → Twemoji Mozilla), then delegates to `system_` for
+// everything not resolved by the emoji fallback.
+struct TwemojiFirstFallback : IDWriteFontFallback {
+    TwemojiFirstFallback(ComPtr<IDWriteFontFallback> emoji,
+                         ComPtr<IDWriteFontFallback> system)
+        : emoji_(std::move(emoji)), system_(std::move(system)) {}
+
+    IFACEMETHOD(MapCharacters)(
+        IDWriteTextAnalysisSource* src, UINT32 pos, UINT32 len,
+        IDWriteFontCollection* base_coll, const wchar_t* base_family,
+        DWRITE_FONT_WEIGHT bw, DWRITE_FONT_STYLE bs, DWRITE_FONT_STRETCH bst,
+        UINT32* mapped_len, IDWriteFont** mapped_font, FLOAT* scale) override
+    {
+        *mapped_font = nullptr;
+        emoji_->MapCharacters(src, pos, len, base_coll, base_family,
+                              bw, bs, bst, mapped_len, mapped_font, scale);
+        if (*mapped_font) return S_OK;
+        return system_->MapCharacters(src, pos, len, base_coll, base_family,
+                                      bw, bs, bst, mapped_len, mapped_font, scale);
+    }
+
+    IFACEMETHOD_(ULONG, AddRef)() override { return ++ref_; }
+    IFACEMETHOD_(ULONG, Release)() override {
+        ULONG r = --ref_; if (!r) delete this; return r;
+    }
+    IFACEMETHOD(QueryInterface)(REFIID riid, void** p) override {
+        if (riid == __uuidof(IDWriteFontFallback) || riid == __uuidof(IUnknown))
+            return *p = this, AddRef(), S_OK;
+        return *p = nullptr, E_NOINTERFACE;
+    }
+
+    ComPtr<IDWriteFontFallback> emoji_, system_;
+    std::atomic<ULONG>          ref_{ 1 };
+};
+
+// Loads the Twemoji Mozilla TTF from the embedded RCDATA resource and builds
+// an emoji-first IDWriteFontFallback that checks Twemoji for all emoji Unicode
+// ranges before falling through to the system fallback.
+// Returns nullptr (and leaves mem_loader_out untouched) on any failure — the
+// caller then keeps using the system-only fallback.
+static ComPtr<IDWriteFontFallback> build_twemoji_fallback(
+    ComPtr<IDWriteFactory2>&       dwrite,
+    ComPtr<IDWriteFontFallback>    system_fallback,
+    ComPtr<IDWriteFontFileLoader>& mem_loader_out)
+{
+    // 1. Read font bytes from the embedded RCDATA resource.
+    HMODULE hmod  = GetModuleHandleW(nullptr);
+    HRSRC   hrsrc = FindResourceW(hmod,
+        MAKEINTRESOURCEW(kTwemojiFontResourceId), RT_RCDATA);
+    if (!hrsrc) return nullptr;
+    HGLOBAL hglob = LoadResource(hmod, hrsrc);
+    if (!hglob) return nullptr;
+    const void* data = LockResource(hglob);
+    DWORD       size = SizeofResource(hmod, hrsrc);
+    if (!data || !size) return nullptr;
+
+    // 2. QI to IDWriteFactory5 (Win10 1709+) for CreateInMemoryFontFileLoader.
+    //    Falls back to system-only fallback on older builds.
+    ComPtr<IDWriteFactory5> dwrite5;
+    if (FAILED(dwrite.As(&dwrite5))) return nullptr;
+
+    // 3. Register an in-memory font file loader and create a file reference.
+    ComPtr<IDWriteInMemoryFontFileLoader> mem_loader;
+    if (FAILED(dwrite5->CreateInMemoryFontFileLoader(&mem_loader))) return nullptr;
+    if (FAILED(dwrite5->RegisterFontFileLoader(mem_loader.Get()))) return nullptr;
+
+    ComPtr<IDWriteFontFile> font_file;
+    if (FAILED(mem_loader->CreateInMemoryFontFileReference(
+            dwrite5.Get(), data, size, nullptr, &font_file))) return nullptr;
+
+    // 4. Build a font set containing just Twemoji, then a font collection.
+    //    IDWriteFactory5 inherits IDWriteFactory3, so we use it directly.
+    ComPtr<IDWriteFontFaceReference> face_ref;
+    if (FAILED(dwrite5->CreateFontFaceReference(
+            font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
+        return nullptr;
+
+    ComPtr<IDWriteFontSetBuilder> set_builder;
+    if (FAILED(dwrite5->CreateFontSetBuilder(&set_builder))) return nullptr;
+    if (FAILED(set_builder->AddFontFaceReference(face_ref.Get()))) return nullptr;
+
+    ComPtr<IDWriteFontSet> font_set;
+    if (FAILED(set_builder->CreateFontSet(&font_set))) return nullptr;
+
+    ComPtr<IDWriteFontCollection1> twemoji_coll;
+    if (FAILED(dwrite5->CreateFontCollectionFromFontSet(
+            font_set.Get(), &twemoji_coll))) return nullptr;
+
+    // 5. Build a fallback that maps emoji Unicode ranges → Twemoji Mozilla.
+    static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
+        { 0x00A9, 0x00A9 }, { 0x00AE, 0x00AE },   // © ®
+        { 0x203C, 0x203C }, { 0x2049, 0x2049 },   // ‼ ⁉
+        { 0x2122, 0x2122 }, { 0x2139, 0x2139 },   // ™ ℹ
+        { 0x2194, 0x2199 }, { 0x21A9, 0x21AA },   // arrows
+        { 0x231A, 0x231B }, { 0x2328, 0x2328 },   // watch, keyboard
+        { 0x23CF, 0x23CF }, { 0x23E9, 0x23FA },   // eject, media controls
+        { 0x24C2, 0x24C2 },                        // Ⓜ
+        { 0x25AA, 0x25FE },                        // geometric shapes
+        { 0x2600, 0x27BF },                        // misc symbols + dingbats
+        { 0x2934, 0x2935 }, { 0x2B05, 0x2B55 },   // arrows, squares, star
+        { 0x3030, 0x3030 }, { 0x303D, 0x303D },
+        { 0x3297, 0x3297 }, { 0x3299, 0x3299 },
+        { 0x1F004, 0x1F004 }, { 0x1F0CF, 0x1F0CF },
+        { 0x1F170, 0x1F171 }, { 0x1F17E, 0x1F17F },
+        { 0x1F18E, 0x1F18E }, { 0x1F191, 0x1F19A },
+        { 0x1F1E0, 0x1F1FF },  // Regional Indicator (country flags)
+        { 0x1F201, 0x1F251 },  // enclosed ideographic
+        { 0x1F300, 0x1F9FF },  // main emoji block
+        { 0x1FA00, 0x1FAFF },  // extended (chess, medical, misc)
+        { 0xFE00,  0xFE0F  },  // variation selectors
+    };
+    const wchar_t* family[] = { L"Twemoji Mozilla" };
+
+    ComPtr<IDWriteFontFallbackBuilder> fb_builder;
+    if (FAILED(dwrite->CreateFontFallbackBuilder(&fb_builder))) return nullptr;
+    if (FAILED(fb_builder->AddMapping(
+            kEmojiRanges, ARRAYSIZE(kEmojiRanges),
+            family, 1, twemoji_coll.Get(),
+            nullptr, nullptr, 1.0f))) return nullptr;
+
+    ComPtr<IDWriteFontFallback> emoji_fallback;
+    if (FAILED(fb_builder->CreateFontFallback(&emoji_fallback))) return nullptr;
+
+    // 6. Wrap emoji fallback + system fallback into a composite chain.
+    auto* raw = new TwemojiFirstFallback(std::move(emoji_fallback),
+                                         std::move(system_fallback));
+    ComPtr<IDWriteFontFallback> result;
+    result.Attach(static_cast<IDWriteFontFallback*>(raw));
+
+    mem_loader_out = std::move(mem_loader);
+    return result;
+}
 
 Backend::Backend() : impl_(std::make_unique<Impl>()) {
     HRESULT hr_co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -168,17 +337,29 @@ Backend::Backend() : impl_(std::make_unique<Impl>()) {
                               reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
     check(hr, "DWriteCreateFactory");
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
+    if (auto twemoji = build_twemoji_fallback(impl_->dwrite,
+                                              impl_->font_fallback,
+                                              impl_->mem_font_loader))
+        impl_->font_fallback = std::move(twemoji);
 
     hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                           CLSCTX_INPROC_SERVER,
                           IID_PPV_ARGS(impl_->wic.GetAddressOf()));
     check(hr, "WICImagingFactory");
+
+    impl_->create_d3d_device();
 }
 
 Backend::~Backend() {
     impl_->text_formats.clear();
     impl_->wic.Reset();
+    if (impl_->mem_font_loader)
+        impl_->dwrite->UnregisterFontFileLoader(impl_->mem_font_loader.Get());
+    impl_->mem_font_loader.Reset();
     impl_->dwrite.Reset();
+    impl_->d2d_dev.Reset();
+    impl_->dxgi_dev.Reset();
+    impl_->d3d.Reset();
     impl_->d2d.Reset();
     if (impl_->com_initialised_here) {
         CoUninitialize();
@@ -243,10 +424,16 @@ public:
         layout_->GetMetrics(&m);
         size_       = Size{ m.widthIncludingTrailingWhitespace, m.height };
         line_count_ = static_cast<int>(m.lineCount);
+
+        DWRITE_LINE_METRICS lm{};
+        UINT32 actual = 0;
+        layout_->GetLineMetrics(&lm, 1, &actual);
+        ascent_ = (actual > 0) ? lm.baseline : size_.h * 0.78f;
     }
 
-    Size measure()    const override { return size_; }
-    int  line_count() const override { return line_count_; }
+    Size  measure()    const override { return size_; }
+    int   line_count() const override { return line_count_; }
+    float ascent()     const override { return ascent_; }
 
     IDWriteTextLayout* raw() const { return layout_.Get(); }
 
@@ -254,6 +441,7 @@ private:
     ComPtr<IDWriteTextLayout> layout_;
     Size                      size_{};
     int                       line_count_ = 0;
+    float                     ascent_     = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -459,48 +647,88 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 
 struct Surface::Impl {
-    Backend::Impl&                  backend;
-    HWND                            hwnd;
-    ComPtr<ID2D1HwndRenderTarget>   rt;
-    std::unique_ptr<D2DCanvas>      canvas;
-    bool                            painting = false;
+    Backend::Impl&              backend;
+    HWND                        hwnd;
+    ComPtr<ID2D1DeviceContext>  dc;
+    ComPtr<IDXGISwapChain1>     swap_chain;
+    ComPtr<ID2D1Bitmap1>        target_bmp;
+    std::unique_ptr<D2DCanvas>  canvas;
+    bool                        painting = false;
 
     Impl(Backend::Impl& b, HWND h) : backend(b), hwnd(h) {}
 
+    void create_target_bitmap() {
+        ComPtr<IDXGISurface> surf;
+        check(swap_chain->GetBuffer(0, IID_PPV_ARGS(surf.GetAddressOf())),
+              "IDXGISwapChain1::GetBuffer");
+        float dpi = static_cast<float>(GetDpiForWindow(hwnd));
+        if (dpi == 0.0f) dpi = 96.0f;
+        D2D1_BITMAP_PROPERTIES1 bp = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_IGNORE),
+            dpi, dpi);
+        check(dc->CreateBitmapFromDxgiSurface(surf.Get(), &bp,
+                                               target_bmp.GetAddressOf()),
+              "CreateBitmapFromDxgiSurface");
+        dc->SetTarget(target_bmp.Get());
+        dc->SetDpi(dpi, dpi);
+    }
+
     void ensure_target() {
-        if (rt) return;
-        RECT rc;
+        if (dc) return;
+        if (backend.device_lost_) backend.create_d3d_device();
+
+        check(backend.d2d_dev->CreateDeviceContext(
+            D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf()),
+            "ID2D1Device::CreateDeviceContext");
+
+        ComPtr<IDXGIAdapter> adapter;
+        check(backend.dxgi_dev->GetAdapter(adapter.GetAddressOf()),
+              "IDXGIDevice1::GetAdapter");
+        ComPtr<IDXGIFactory2> factory2;
+        check(adapter->GetParent(IID_PPV_ARGS(factory2.GetAddressOf())),
+              "IDXGIAdapter::GetParent");
+
+        RECT rc{};
         GetClientRect(hwnd, &rc);
-        D2D1_SIZE_U size = D2D1::SizeU(
-            static_cast<UINT32>(std::max<LONG>(rc.right  - rc.left, 1)),
-            static_cast<UINT32>(std::max<LONG>(rc.bottom - rc.top,  1)));
-        D2D1_RENDER_TARGET_PROPERTIES rt_props =
-            D2D1::RenderTargetProperties();
-        D2D1_HWND_RENDER_TARGET_PROPERTIES hwnd_props =
-            D2D1::HwndRenderTargetProperties(hwnd, size,
-                                              D2D1_PRESENT_OPTIONS_NONE);
-        HRESULT hr = backend.d2d->CreateHwndRenderTarget(
-            rt_props, hwnd_props, rt.GetAddressOf());
-        check(hr, "CreateHwndRenderTarget");
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        desc.Width       = static_cast<UINT>(std::max<LONG>(rc.right,  1));
+        desc.Height      = static_cast<UINT>(std::max<LONG>(rc.bottom, 1));
+        desc.Format      = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc  = {1, 0};
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 2;
+        desc.SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.AlphaMode   = DXGI_ALPHA_MODE_IGNORE;
+        check(factory2->CreateSwapChainForHwnd(
+            backend.d3d.Get(), hwnd, &desc, nullptr, nullptr,
+            swap_chain.GetAddressOf()),
+            "IDXGIFactory2::CreateSwapChainForHwnd");
 
-        UINT dpi = GetDpiForWindow(hwnd);
-        if (dpi == 0) dpi = 96;
-        rt->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-
-        canvas = std::make_unique<D2DCanvas>(backend, rt.Get());
+        create_target_bitmap();
+        canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
     }
 
     void resize(int w, int h) {
-        if (!rt) return;
-        D2D1_SIZE_U size = D2D1::SizeU(
-            static_cast<UINT32>(std::max(w, 1)),
-            static_cast<UINT32>(std::max(h, 1)));
-        rt->Resize(size);
+        if (!dc || !swap_chain) return;
+        dc->SetTarget(nullptr);
+        target_bmp.Reset();
+        check(swap_chain->ResizeBuffers(0,
+            static_cast<UINT>(std::max(w, 1)),
+            static_cast<UINT>(std::max(h, 1)),
+            DXGI_FORMAT_UNKNOWN, 0),
+            "IDXGISwapChain1::ResizeBuffers");
+        create_target_bitmap();
     }
 
-    void drop_target() {
+    void drop_target(bool device_removed = false) {
         canvas.reset();
-        rt.Reset();
+        if (dc) dc->SetTarget(nullptr);
+        target_bmp.Reset();
+        swap_chain.Reset();
+        dc.Reset();
+        if (device_removed) backend.device_lost_ = true;
     }
 };
 
@@ -513,18 +741,25 @@ void Surface::resize(int w, int h) { impl_->resize(w, h); }
 
 Canvas& Surface::begin_paint() {
     impl_->ensure_target();
-    impl_->rt->BeginDraw();
+    impl_->dc->BeginDraw();
     impl_->painting = true;
-    impl_->canvas->rebind(impl_->rt.Get());
+    impl_->canvas->rebind(impl_->dc.Get());
     return *impl_->canvas;
 }
 
 bool Surface::end_paint() {
     if (!impl_->painting) return false;
     impl_->painting = false;
-    HRESULT hr = impl_->rt->EndDraw();
+    HRESULT hr = impl_->dc->EndDraw();
+    if (SUCCEEDED(hr)) {
+        hr = impl_->swap_chain->Present(1, 0);
+    }
     if (hr == D2DERR_RECREATE_TARGET) {
         impl_->drop_target();
+        return true;
+    }
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        impl_->drop_target(true);
         return true;
     }
     return false;
@@ -686,7 +921,8 @@ std::unique_ptr<Canvas> make_canvas(Backend& b, ID2D1RenderTarget* rt) {
 
 Factories factories(Backend& b) {
     Backend::Impl& impl = b.impl();
-    return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get() };
+    return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
+                      impl.font_fallback.Get() };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

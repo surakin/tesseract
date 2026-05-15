@@ -1,5 +1,22 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Download Twemoji Mozilla (COLR/CPAL v0 color emoji font) once at configure
+# time. Keeps the binary out of git while ensuring a reproducible build.
+set(_twemoji_ttf "${CMAKE_CURRENT_SOURCE_DIR}/fonts/twemoji-mozilla.ttf")
+if(NOT EXISTS "${_twemoji_ttf}")
+    message(STATUS "Downloading Twemoji Mozilla font (one-time)...")
+    file(DOWNLOAD
+        "https://github.com/mozilla/twemoji-colr/releases/download/v0.7.0/Twemoji.Mozilla.ttf"
+        "${_twemoji_ttf}"
+        EXPECTED_HASH SHA256=6d90152ee0d29e82fe2a87793af5aa4b7ad13e6538360889e141e81ed299ee8e
+        SHOW_PROGRESS
+        STATUS _twemoji_status)
+    list(GET _twemoji_status 0 _twemoji_err)
+    if(_twemoji_err)
+        message(FATAL_ERROR "Failed to download Twemoji Mozilla font: ${_twemoji_status}")
+    endif()
+endif()
+
 # Generate Tesseract.ico from the shared SVG at build time. Renderer is
 # resvg-py (pure Rust SVG -> PNG), then a small stdlib packer wraps the
 # frames in an ICO container. Install once per build environment with:
@@ -80,6 +97,8 @@ target_link_libraries(tesseract_win32 PRIVATE
     dwmapi
     uxtheme
     d2d1
+    d3d11
+    dxgi
     dwrite
     windowsapp
 )

@@ -247,6 +247,10 @@ void on_dpi_changed(UINT dpi) {
     if (g_rt) g_rt->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
 }
 
+void set_font_fallback(IDWriteFontFallback* fallback) {
+    g_font_fallback = fallback;
+}
+
 void draw(HDC hdc, const RECT& bounds,
           const wchar_t* text, int len,
           const Style& s)

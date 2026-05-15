@@ -97,8 +97,10 @@ private:
     //   N+1..end   → Custom MSC2545 emoticon packs (in custom_packs_ order)
     int      tab_at(tk::Point local) const;
     tk::Rect tab_strip_rect() const;
-    int      builtin_tab_count() const; // 1 + kCategories
-    int      total_tab_count()   const; // builtin + custom_packs_.size()
+    int      builtin_tab_count() const;   // 1 + kCategories (constant)
+    int      total_tab_count()   const;   // frequents (if any) + categories + custom packs
+    bool     has_frequents_tab() const { return !frequents_glyphs_.empty(); }
+    int      frequents_tab_offset() const { return has_frequents_tab() ? 1 : 0; }
 
     tesseract::Client*                   client_   = nullptr;
     ImageProvider                        provider_;

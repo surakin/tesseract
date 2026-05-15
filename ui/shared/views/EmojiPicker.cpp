@@ -166,7 +166,10 @@ void EmojiPicker::set_client(tesseract::Client* c) {
 void EmojiPicker::refresh_frequents() {
     frequents_glyphs_.clear();
     if (client_) frequents_glyphs_ = client_->recent_emoji_top(32);
-    if (page_ == Page::Frequents) rebuild_current_items();
+    if (page_ == Page::Frequents) {
+        if (frequents_glyphs_.empty()) switch_to_category(category_);
+        else                            rebuild_current_items();
+    }
 }
 
 void EmojiPicker::refresh_emoticon_packs() {
@@ -199,7 +202,9 @@ void EmojiPicker::invalidate_image_cache() {
 
 int EmojiPicker::builtin_tab_count() const { return kBuiltinTabCount; }
 int EmojiPicker::total_tab_count() const {
-    return kBuiltinTabCount + static_cast<int>(custom_packs_.size());
+    // kBuiltinTabCount includes 1 slot for Frequents; exclude it when empty.
+    return frequents_tab_offset() + (kBuiltinTabCount - 1)
+           + static_cast<int>(custom_packs_.size());
 }
 
 void EmojiPicker::set_search_query(std::string query) {
@@ -343,11 +348,12 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
     int total = total_tab_count();
     float tab_w = std::max(kTabSlotMin,
                             tab_rect_.w / static_cast<float>(total));
+    const int foff = frequents_tab_offset(); // 0 or 1
     int active;
     switch (page_) {
-        case Page::Frequents:  active = 0; break;
-        case Page::Category:   active = 1 + static_cast<int>(category_); break;
-        case Page::CustomPack: active = kBuiltinTabCount + custom_pack_idx_; break;
+        case Page::Frequents:  active = has_frequents_tab() ? 0 : -1; break;
+        case Page::Category:   active = foff + static_cast<int>(category_); break;
+        case Page::CustomPack: active = foff + (kBuiltinTabCount - 1) + custom_pack_idx_; break;
         default:               active = -1; break;
     }
     ctx.canvas.push_clip_rect(tab_rect_);
@@ -366,10 +372,26 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
             ctx.canvas.fill_rect(tab, ctx.theme.palette.subtle_hover);
         }
 
-        if (i < kBuiltinTabCount) {
+        // Tab content: frequents star (when visible), builtin category glyphs,
+        // then custom pack avatars/initials.
+        if (has_frequents_tab() && i == 0) {
+            // Frequents tab — reuse builtin_tab_glyph(0) which is the star.
             tk::TextStyle st{};
             st.role = tk::FontRole::Body;
-            auto layout = ctx.factory.build_text(builtin_tab_glyph(i), st);
+            auto layout = ctx.factory.build_text(builtin_tab_glyph(0), st);
+            if (!layout) continue;
+            tk::Size sz = layout->measure();
+            ctx.canvas.draw_text(*layout,
+                { tab.x + (tab.w - sz.w) * 0.5f,
+                  tab.y + (tab.h - sz.h) * 0.5f },
+                ctx.theme.palette.text_primary);
+        } else if (i < foff + (kBuiltinTabCount - 1)) {
+            // Builtin category tab (indices foff .. foff+kCategories-1).
+            // builtin_tab_glyph index: 0=frequents,1..8=categories.
+            // Our visual index i maps to glyph index (i - foff + 1).
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Body;
+            auto layout = ctx.factory.build_text(builtin_tab_glyph(i - foff + 1), st);
             if (!layout) continue;
             tk::Size sz = layout->measure();
             ctx.canvas.draw_text(*layout,
@@ -379,7 +401,7 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
         } else {
             // Custom pack tab: avatar bitmap (when cached) or a fallback
             // single-letter initial. Same treatment as StickerPicker.
-            int pack_idx = i - kBuiltinTabCount;
+            int pack_idx = i - foff - (kBuiltinTabCount - 1);
             const auto& pack = custom_packs_[pack_idx];
             const tk::Image* avatar = nullptr;
             if (provider_ && !pack.avatar_url.empty()) {
@@ -419,7 +441,6 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
 tk::Rect EmojiPicker::tab_strip_rect() const { return tab_rect_; }
 
 int EmojiPicker::tab_at(tk::Point local) const {
-    // Translate widget-local to tab_rect_-local.
     float lx = local.x - (tab_rect_.x - bounds_.x);
     float ly = local.y - (tab_rect_.y - bounds_.y);
     if (lx < 0 || ly < 0 || lx >= tab_rect_.w || ly >= tab_rect_.h) return -1;
@@ -427,7 +448,6 @@ int EmojiPicker::tab_at(tk::Point local) const {
     if (total == 0) return -1;
     float tab_w = std::max(kTabSlotMin,
                             tab_rect_.w / static_cast<float>(total));
-    // Account for scroll: shift x back by the current offset before dividing.
     int idx = static_cast<int>((lx + tab_scroll_offset_) / tab_w);
     if (idx < 0 || idx >= total) return -1;
     return idx;
@@ -448,13 +468,14 @@ void EmojiPicker::on_pointer_up(tk::Point local, bool inside_self) {
     int hit = pressed_tab_idx_;
     pressed_tab_idx_ = -1;
     if (t != hit) return;
-    if (hit == 0) {
+    const int foff = frequents_tab_offset();
+    if (has_frequents_tab() && hit == 0) {
         switch_to_frequents();
-    } else if (hit < kBuiltinTabCount) {
+    } else if (hit < foff + (kBuiltinTabCount - 1)) {
         switch_to_category(
-            tesseract::emoji::kCategories[hit - 1]);
+            tesseract::emoji::kCategories[hit - foff]);
     } else {
-        switch_to_custom_pack(hit - kBuiltinTabCount);
+        switch_to_custom_pack(hit - foff - (kBuiltinTabCount - 1));
     }
 }
 

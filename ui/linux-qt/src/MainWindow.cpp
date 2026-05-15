@@ -178,7 +178,7 @@ MainWindow::MainWindow(QWidget* parent)
     // the hood) shown only when the list overflows the viewport; the
     // RoomListView itself decides visibility in its arrange() pass.
     roomSearchField_ = roomSurface_->host().make_text_field();
-    roomSearchField_->set_placeholder("Search rooms");
+    roomSearchField_->set_placeholder("Search");
     roomSearchField_->set_visible(true);
     auto* searchDebounce = new QTimer(this);
     searchDebounce->setSingleShot(true);

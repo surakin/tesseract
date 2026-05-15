@@ -27,6 +27,7 @@
 struct ID2D1Factory1;
 struct ID2D1RenderTarget;
 struct IDWriteFactory2;
+struct IDWriteFontFallback;
 struct IWICImagingFactory;
 
 namespace tk::d2d {
@@ -47,10 +48,11 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// One per HWND. Owns the ID2D1HwndRenderTarget. Lost-device retry is
-// handled transparently: when EndDraw returns D2DERR_RECREATE_TARGET the
-// next begin_paint() drops and rebuilds the target. The window should
-// InvalidateRect() once after a recreate to repaint with the new target.
+// One per HWND. Owns a DXGI flip-model swap chain + ID2D1DeviceContext.
+// Presents via DWM's compositor for smooth, tear-free rendering. Lost-device
+// retry is handled transparently: when EndDraw or Present signals a lost
+// device the next begin_paint() drops and rebuilds the target. The window
+// should InvalidateRect() once after a recreate to repaint.
 class Surface {
 public:
     Surface(Backend&, HWND);
@@ -89,9 +91,10 @@ std::unique_ptr<Canvas> make_canvas(Backend&, ID2D1RenderTarget*);
 // the Backend. Intended for callers that need to construct their own
 // render target (e.g. tests using CreateWicBitmapRenderTarget).
 struct Factories {
-    ID2D1Factory1*      d2d;
-    IDWriteFactory2*    dwrite;
-    IWICImagingFactory* wic;
+    ID2D1Factory1*       d2d;
+    IDWriteFactory2*     dwrite;
+    IWICImagingFactory*  wic;
+    IDWriteFontFallback* font_fallback;
 };
 Factories factories(Backend&);
 

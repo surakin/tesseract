@@ -242,6 +242,9 @@ public:
 
     void set_rect(Rect r) override {
         if (!hwnd_) return;
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h) return;
+        last_rect_ = r;
         int x = static_cast<int>(std::floor(r.x));
         int w = static_cast<int>(std::round(r.w));
         // Single-line EDIT controls draw text top-aligned within their HWND.
@@ -332,6 +335,7 @@ private:
     int  id_         = 0;
     int  line_h_     = 0;
     bool suppress_changed_ = false;
+    Rect last_rect_  = {-1.f, -1.f, -1.f, -1.f};
     std::function<void(const std::string&)> on_changed_;
     std::function<void()>                   on_submit_;
 };
@@ -352,7 +356,7 @@ public:
         hwnd_ = CreateWindowExW(
             0,
             L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+            WS_CHILD | WS_VISIBLE |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
             0, 0, 200, 40,
             parent_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
@@ -378,6 +382,9 @@ public:
 
     void set_rect(Rect r) override {
         if (!hwnd_) return;
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h) return;
+        last_rect_ = r;
         SetWindowPos(hwnd_, nullptr,
                       static_cast<int>(std::floor(r.x)),
                       static_cast<int>(std::floor(r.y)),
@@ -503,6 +510,7 @@ private:
     int  id_         = 0;
     bool  suppress_changed_ = false;
     float last_height_      = 0.f;
+    Rect  last_rect_        = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
     std::function<void(const std::string&)>  on_changed_;
     std::function<void()>                    on_submit_;
@@ -919,6 +927,12 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
                                reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
             return TRUE;
         }
+        case WM_MOUSEACTIVATE:
+            // Prevent the Surface from stealing keyboard focus from native
+            // overlays (NativeTextArea, NativeTextField) when buttons are
+            // clicked. All input handling is mouse-driven; no WM_KEYDOWN
+            // handling lives in this proc.
+            return MA_NOACTIVATE;
         case WM_ERASEBKGND:
             return 1;   // we paint the full client area in WM_PAINT
         case WM_PAINT:
@@ -1283,6 +1297,10 @@ std::vector<tk::d2d::AnimatedFrame> decode_animation(
     std::span<const std::uint8_t> bytes)
 {
     return tk::d2d::decode_animation(backend_singleton(), bytes);
+}
+
+IDWriteFontFallback* dwrite_font_fallback() {
+    return tk::d2d::factories(backend_singleton()).font_fallback;
 }
 
 } // namespace tk::win32

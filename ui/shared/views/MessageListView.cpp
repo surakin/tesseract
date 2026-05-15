@@ -289,6 +289,16 @@ float body_text_max_width(float row_width) {
                      row_width - kPadX - kAvatarSize - kAvatarGap - kPadX);
 }
 
+// Width to reserve on the right of the body column for a read-receipt cluster.
+// Returns 0 when there are no receipts or when reactions are present (the
+// cluster then floats beside the chip strip, not overlapping body text).
+inline float receipt_reserve_width(const MessageRowData& m) {
+    if (m.read_receipts.empty() || !m.reactions.empty())
+        return 0.0f;
+    const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
+    return kReceiptSize + static_cast<float>(n - 1) * kReceiptStride + chip_gap();
+}
+
 std::string format_day_label(std::uint64_t timestamp_ms) {
     if (timestamp_ms == 0) return {};
     std::time_t now_t = std::time(nullptr);
@@ -375,14 +385,12 @@ public:
         if (m.kind == Kind::ReadMarker)    return kReadMarkerH;
         if (m.kind == Kind::TimelineStart) return kTimelineStartH;
         bool  cont    = is_cont(index);
-        float body_w  = body_text_max_width(width);
+        float body_w  = std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m));
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h   = !m.reactions.empty() ? chip_h() : 0.0f;
-        float receipt_h = !m.read_receipts.empty() && m.reactions.empty()
-                              ? kReceiptSize + kPadY : 0.0f;
+        float chips_h  = !m.reactions.empty() ? chip_h() : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
-        return top_pad + header_h + body_h + chips_h + receipt_h + kPadY;
+        return top_pad + header_h + body_h + chips_h + kPadY;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -427,7 +435,8 @@ public:
         // Right-of-avatar column (same indent for cont + non-cont so
         // body text aligns with the row above in a continuation group).
         float col_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX);
+        float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kPadX
+                                      - receipt_reserve_width(m));
 
         if (!cont) {
             // Avatar disc / initials.
@@ -537,12 +546,11 @@ public:
             }
         }
 
-        // Disc centre Y for receipts. When reactions are present the disc shares
-        // their chip strip (overridden inside that block). When only receipts are
-        // present they get their own strip immediately below the body block.
-        float receipt_disc_cy = (!m.read_receipts.empty() && m.reactions.empty())
-            ? cursor + kReceiptSize * 0.5f
-            : cursor - kReceiptSize * 0.5f;
+        // Disc centre Y for receipts. Receipts always overlay the row — they
+        // never expand it. Default: centre in the bottom kPadY strip (cursor
+        // is its top edge). When reactions are present the block below
+        // overrides this to align with the chip strip centre.
+        float receipt_disc_cy = cursor - kReceiptSize * 0.5f;
 
         // ── Bottom chip strip (reactions) ────────────────────────────────────
         // Only created when there are persistent reaction chips to show.
@@ -619,13 +627,12 @@ public:
                         { left_x + img_side + kChipInnerGap, count_y },
                         text);
                 } else {
-                    // Centre the emoji by its *ascent* (top of layout box to
-                    // baseline), not its full line-height: colour-emoji glyphs
-                    // fill the ascent region and leave the descender empty, so
-                    // box-centring leaves them visually high in the chip.
-                    constexpr float kAscentRatio = 0.78f;
+                    // Centre the emoji by its ascent (top of layout box to
+                    // baseline): colour-emoji glyphs fill the ascent region
+                    // and leave the descender empty, so centering by the
+                    // full line-height leaves them visually high in the chip.
                     float emoji_y = pill.y
-                                  + (pill.h - esz.h * kAscentRatio) * 0.5f;
+                                  + (pill.h - emoji_layout->ascent()) * 0.5f;
                     ctx.canvas.draw_text(*emoji_layout, { left_x, emoji_y }, text);
                     ctx.canvas.draw_text(
                         *count_layout,
@@ -922,8 +929,18 @@ private:
                 return quote_h + h;
             }
             case MessageRowData::Kind::Sticker: {
-                float side = std::min(col_w, kStickerSize);
-                return quote_h + side;
+                float max_side = std::min(col_w, kStickerSize);
+                const tk::Image* sticker_img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz;
+                if (sticker_img && sticker_img->width() > 0 && sticker_img->height() > 0)
+                    sz = fit_media(sticker_img->width(), sticker_img->height(), max_side, max_side);
+                else if (m.media_w > 0 && m.media_h > 0)
+                    sz = fit_media(m.media_w, m.media_h, max_side, max_side);
+                else
+                    sz = { max_side, max_side };
+                return quote_h + sz.h;
             }
             case MessageRowData::Kind::File:
                 return quote_h + kFileCardH;
@@ -1014,8 +1031,18 @@ private:
                 return cursor;
             }
             case MessageRowData::Kind::Sticker: {
-                float side = std::min(col_w, kStickerSize);
-                tk::Rect r{ x, y, side, side };
+                float max_side = std::min(col_w, kStickerSize);
+                const tk::Image* sticker_img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz;
+                if (sticker_img && sticker_img->width() > 0 && sticker_img->height() > 0)
+                    sz = fit_media(sticker_img->width(), sticker_img->height(), max_side, max_side);
+                else if (m.media_w > 0 && m.media_h > 0)
+                    sz = fit_media(m.media_w, m.media_h, max_side, max_side);
+                else
+                    sz = { max_side, max_side };
+                tk::Rect r{ x, y, sz.w, sz.h };
                 paint_inline_media(m, ctx, r);
                 if (!m.event_id.empty()) {
                     owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
@@ -1023,10 +1050,10 @@ private:
                     };
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
                         m.event_id, m.media_url, m.body,
-                        static_cast<int>(side), static_cast<int>(side), r
+                        m.media_w, m.media_h, r
                     };
                 }
-                return y + side;
+                return y + sz.h;
             }
             case MessageRowData::Kind::File: {
                 float card_w = std::min(kFileCardW, col_w);
