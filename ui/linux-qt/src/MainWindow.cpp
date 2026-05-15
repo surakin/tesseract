@@ -40,7 +40,13 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPainterPath>
+#include <QCalendarWidget>
+#include <QDate>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTime>
+#include <QTimeZone>
 #include <QTimer>
 #include <QStandardItem>
 #include <algorithm>
@@ -377,6 +383,15 @@ MainWindow::MainWindow(QWidget* parent)
         roomView_->on_near_top = [this] {
             if (current_room_id_.empty()) return;
             requestMoreHistory(current_room_id_);
+        };
+        roomView_->on_near_bottom = [this] {
+            if (!current_room_id_.empty()) request_forward_history_(current_room_id_);
+        };
+        roomView_->on_return_to_live = [this] {
+            if (!current_room_id_.empty()) return_to_live_(current_room_id_);
+        };
+        roomView_->on_jump_to_date_requested = [this] {
+            openJumpToDateDialog();
         };
         roomView_->on_delete_requested = [this](const std::string& event_id) {
             if (current_room_id_.empty()) return;
@@ -1166,6 +1181,48 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
             Qt::QueuedConnection,
             Q_ARG(QString, QString::fromStdString(room_id)),
             Q_ARG(bool, reached));
+    });
+}
+
+void MainWindow::openJumpToDateDialog() {
+    if (current_room_id_.empty()) return;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Jump to Date"));
+    auto* cal = new QCalendarWidget(&dlg);
+    cal->setMaximumDate(QDate::currentDate());
+    auto* bb = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    auto* lo = new QVBoxLayout(&dlg);
+    lo->addWidget(cal);
+    lo->addWidget(bb);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const QDate date = cal->selectedDate();
+    const uint64_t ts_ms = static_cast<uint64_t>(
+        QDateTime(date, QTime(0, 0, 0), QTimeZone::utc()).toMSecsSinceEpoch());
+
+    const std::string room_id = current_room_id_;
+    runOnPool_([this, room_id, ts_ms] {
+        auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
+        if (!res.ok) {
+            QMetaObject::invokeMethod(this, [this, msg = res.message] {
+                statusBar()->showMessage(
+                    tr("Jump to date failed: %1")
+                        .arg(QString::fromStdString(msg)), 4000);
+            }, Qt::QueuedConnection);
+            return;
+        }
+        const std::string event_id = res.message;
+        QMetaObject::invokeMethod(this, [this, room_id, event_id] {
+            begin_focused_subscription_(room_id, event_id);
+            runOnPool_([this, room_id, event_id] {
+                client_->subscribe_room_at(room_id, event_id);
+            });
+        }, Qt::QueuedConnection);
     });
 }
 

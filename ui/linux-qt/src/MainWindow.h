@@ -185,6 +185,9 @@ private:
     /// if a pagination is already in flight for this room or its history
     /// has been fully fetched. Hooked to `RoomView::on_near_top`.
     void     requestMoreHistory(const std::string& room_id);
+    /// Show a QCalendarWidget dialog; on acceptance resolves the chosen date
+    /// to an event via MSC3030 and switches the timeline to focused mode.
+    void     openJumpToDateDialog();
 
     // ShellBase virtual hooks (Qt6 implementations).
     void post_to_ui_(std::function<void()> fn) override;
