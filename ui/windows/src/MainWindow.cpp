@@ -2119,6 +2119,7 @@ void MainWindow::openJumpToDateDialog() {
         WS_CHILD | WS_VISIBLE | MCS_NOTODAY,
         kGap, kGap, 180, 150,
         hPicker, nullptr, hInst_, nullptr);
+    if (!hCal) { DestroyWindow(hPicker); return; }
     ctx.hCal = hCal;
 
     // Query minimum size and resize popup accordingly.
@@ -2191,8 +2192,9 @@ void MainWindow::openJumpToDateDialog() {
 
     const std::string room_id = current_room_id_;
     HWND main_hwnd = hwnd_;
-    run_async_([this, room_id, ts_ms, main_hwnd] {
-        auto res = client_->timestamp_to_event(room_id, ts_ms, "f");
+    tesseract::Client* cl = client_;
+    run_async_([cl, room_id, ts_ms, main_hwnd] {
+        auto res = cl->timestamp_to_event(room_id, ts_ms, "f");
         auto* p = new JumpDonePayload{
             res.ok,
             room_id,
