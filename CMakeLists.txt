@@ -78,7 +78,9 @@ corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 # the symbol undefined at link time. Force the full CMake-based aws-lc build,
 # which compiles every asm source aws-lc lists. Requires go, perl, and cmake
 # (already in the prereqs).
-corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_CMAKE_BUILDER=1)
+corrosion_set_env_vars(tesseract_sdk_ffi
+    AWS_LC_SYS_CMAKE_BUILDER=1
+    TESSERACT_UI=${TESSERACT_UI})
 
 # Apple system frameworks required by Rust crates' platform integrations
 # (DNS resolver, proxy lookup, keychain). Attached to the Rust archive's

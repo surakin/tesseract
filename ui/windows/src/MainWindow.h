@@ -313,8 +313,9 @@ private:
     std::unique_ptr<tk::win32::Surface>      vid_viewer_surface_;
     tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
 
-    HWND      hTypingBar_  = nullptr;
-    HWND      hStatus_     = nullptr;
+    HWND      hTypingBar_         = nullptr;
+    bool      typing_bar_visible_ = false;
+    HWND      hStatus_            = nullptr;
 
     // Recovery banner — shared widget on a tk::win32::Surface. Key
     // input is a NativeTextField overlay (Win32 EDIT under the hood).

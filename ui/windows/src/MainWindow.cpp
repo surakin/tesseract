@@ -574,7 +574,13 @@ void MainWindow::on_room_list_state_ui_()
 void MainWindow::update_typing_bar_(const std::string& text, bool visible)
 {
     if (!hTypingBar_) return;
+    const bool changed = (typing_bar_visible_ != visible);
+    typing_bar_visible_ = visible;
     ShowWindow(hTypingBar_, visible ? SW_SHOW : SW_HIDE);
+    if (changed && hwnd_) {
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
+    }
     if (text.empty()) {
         SetWindowTextW(hTypingBar_, L"");
         return;
@@ -768,14 +774,21 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         HDC dc = reinterpret_cast<HDC>(wParam);
         HWND ctl = reinterpret_cast<HWND>(lParam);
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, pal.text_primary);
         // The recovery banner is now a tk::win32::Surface — it paints
         // its own background; no WM_CTLCOLOR tinting needed.
         // EDIT controls (compose) → compose-card bg.
         if (msg == WM_CTLCOLOREDIT) {
+            SetTextColor(dc, pal.text_primary);
             SetBkColor(dc, pal.compose_card_bg);
             return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
         }
+        // Typing bar: blend with the compose area below it.
+        if (ctl == self->hTypingBar_) {
+            SetTextColor(dc, pal.text_secondary);
+            SetBkColor(dc, pal.compose_card_bg);
+            return reinterpret_cast<LRESULT>(theme::brush(pal.compose_card_bg));
+        }
+        SetTextColor(dc, pal.text_primary);
         SetBkColor(dc, pal.window_bg);
         return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
     }
@@ -1397,7 +1410,7 @@ void MainWindow::on_create(HWND hwnd) {
         hwnd, nullptr, hInst_, nullptr);
 
     hTypingBar_ = CreateWindowExW(0, L"STATIC", L"",
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        WS_CHILD | SS_LEFT,
         0, 0, 0, 0,
         hwnd, nullptr, hInst_, nullptr);
     apply_default_font(hTypingBar_);
@@ -1627,6 +1640,7 @@ void MainWindow::on_size(int w, int h) {
     constexpr int CHAT_X   = ROOM_W + SEP_W;
     constexpr int STATUS_H  = 24;
     constexpr int TYPING_H  = 20;
+    const int     typing_h  = typing_bar_visible_ ? TYPING_H : 0;
 
     // Custom status bar is anchored to the bottom. Position it explicitly.
     if (hStatus_) {
@@ -1651,7 +1665,7 @@ void MainWindow::on_size(int w, int h) {
     compose_h = std::clamp(compose_h,
                            static_cast<int>(tesseract::views::ComposeBar::kMinHeight),
                            content_h / 2);
-    int msg_h = content_h - compose_h - TYPING_H;
+    int msg_h = content_h - compose_h - typing_h;
 
     constexpr int BANNER_H = 48;
 
@@ -1723,7 +1737,7 @@ void MainWindow::on_size(int w, int h) {
     }
     if (compose_surface_ && compose_surface_->hwnd()) {
         SetWindowPos(compose_surface_->hwnd(), nullptr,
-                      CHAT_X, msg_h + TYPING_H, w - CHAT_X, compose_h,
+                      CHAT_X, msg_h + typing_h, w - CHAT_X, compose_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
     // Image viewer overlay — keep it sized to the full content area

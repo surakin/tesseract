@@ -204,15 +204,20 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         .await
         .context("oauth finish_login")?;
 
-    // Best-effort: rename the freshly minted device to "<hostname>" so the
-    // user can tell sessions apart. ClientMetadata.client_name only feeds the
-    // OAuth consent page; the device display name comes from PUT /devices.
+    // Best-effort: set the device display name so the user can tell sessions
+    // apart. ClientMetadata.client_name only feeds the OAuth consent page;
+    // the device display name comes from PUT /devices.
     if let (Some(device_id), Some(host)) = (
         flow.client.device_id(),
         hostname::get().ok().and_then(|h| h.into_string().ok()),
     ) {
-        if let Err(e) = flow.client.rename_device(device_id, &host).await {
-            tracing::warn!("rename_device({host:?}) failed: {e}");
+        use ruma::api::client::device::update_device::v3;
+        const PLATFORM: &str = env!("TESSERACT_UI_PLATFORM");
+        let display_name = format!("Tesseract on {host} ({PLATFORM})");
+        let mut req = v3::Request::new(device_id.to_owned());
+        req.display_name = Some(display_name.clone());
+        if let Err(e) = flow.client.send(req).await {
+            tracing::warn!("rename_device({display_name:?}) failed: {e}");
         }
     }
 
