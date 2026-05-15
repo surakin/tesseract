@@ -54,7 +54,7 @@
     }
 }
 
-- (void)dealloc { [self stopObserving]; }
+- (void)dealloc { [self stopObserving]; [super dealloc]; }
 @end
 
 namespace tk::macos {

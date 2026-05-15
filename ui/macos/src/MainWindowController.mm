@@ -1455,6 +1455,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
+    __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
         if (!s || glyph.length == 0) return;
@@ -1466,7 +1467,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                 s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
                                           std::string(glyph.UTF8String ?: ""));
             }
-            [panel close];
+            [weakPanel close];
             return;
         }
         if (!s->_composeTextArea) return;
@@ -1483,6 +1484,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
+    __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
         if (!s || glyph.length == 0) return;
@@ -1493,7 +1495,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                 s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
                                           std::string(glyph.UTF8String ?: ""));
             }
-            [panel close];
+            [weakPanel close];
             return;
         }
         if (!s->_composeTextArea) return;
@@ -2733,6 +2735,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             return nullptr;
         }];
 
+    __weak StickerPickerPanel* weakPanel = panel;
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
         if (!s || s->_shell->current_room_id_.empty()) return;
@@ -2740,7 +2743,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         std::string b = body.UTF8String     ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
         s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
-        [panel orderOut:nil];
+        [weakPanel orderOut:nil];
     };
 
     NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();

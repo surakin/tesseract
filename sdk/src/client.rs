@@ -1120,6 +1120,16 @@ impl ClientFfi {
 
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
 
+        // imbl-6.1.0 has a use-after-free (EXC_BAD_ACCESS) in Vector::push_back
+        // triggered by collect() inside replace_with_remote_events during
+        // init_focus. Clear the room event cache first so init_focus sees zero
+        // events and skips the collect() call entirely.
+        let _ = self.rt.block_on(async {
+            if let Ok((cache, _)) = room.event_cache().await {
+                let _ = cache.clear().await;
+            }
+        });
+
         let timeline = match self.rt.block_on(room.timeline()) {
             Ok(t)  => Arc::new(t),
             Err(e) => return err(format!("build timeline: {e}")),
