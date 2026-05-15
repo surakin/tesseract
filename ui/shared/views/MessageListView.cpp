@@ -2194,6 +2194,7 @@ bool MessageListView::should_show_pill() const {
 }
 
 bool MessageListView::scroll_to_event_id(const std::string& event_id) {
+    if (event_id.empty()) return false;
     for (std::size_t i = 0; i < messages_.size(); ++i) {
         if (messages_[i].event_id == event_id) {
             scroll_to_index(static_cast<int>(i), /*align_top=*/false);
