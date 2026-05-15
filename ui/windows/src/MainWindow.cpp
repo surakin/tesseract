@@ -1057,7 +1057,7 @@ void MainWindow::on_create(HWND hwnd) {
         // Search field — host-overlaid NativeTextField shown when the
         // list overflows the viewport (decided inside RoomListView).
         room_search_field_ = room_surface_->host().make_text_field();
-        room_search_field_->set_placeholder("Search rooms");
+        room_search_field_->set_placeholder("Search");
         room_search_field_->set_visible(false);
         room_search_field_->set_on_changed([this](const std::string& q) {
             pending_search_text_ = q;

@@ -616,13 +616,12 @@ public:
                         { left_x + img_side + kChipInnerGap, count_y },
                         text);
                 } else {
-                    // Centre the emoji by its *ascent* (top of layout box to
-                    // baseline), not its full line-height: colour-emoji glyphs
-                    // fill the ascent region and leave the descender empty, so
-                    // box-centring leaves them visually high in the chip.
-                    constexpr float kAscentRatio = 0.78f;
+                    // Centre the emoji by its ascent (top of layout box to
+                    // baseline): colour-emoji glyphs fill the ascent region
+                    // and leave the descender empty, so centering by the
+                    // full line-height leaves them visually high in the chip.
                     float emoji_y = pill.y
-                                  + (pill.h - esz.h * kAscentRatio) * 0.5f;
+                                  + (pill.h - emoji_layout->ascent()) * 0.5f;
                     ctx.canvas.draw_text(*emoji_layout, { left_x, emoji_y }, text);
                     ctx.canvas.draw_text(
                         *count_layout,
@@ -919,8 +918,18 @@ private:
                 return quote_h + h;
             }
             case MessageRowData::Kind::Sticker: {
-                float side = std::min(col_w, kStickerSize);
-                return quote_h + side;
+                float max_side = std::min(col_w, kStickerSize);
+                const tk::Image* sticker_img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz;
+                if (sticker_img && sticker_img->width() > 0 && sticker_img->height() > 0)
+                    sz = fit_media(sticker_img->width(), sticker_img->height(), max_side, max_side);
+                else if (m.media_w > 0 && m.media_h > 0)
+                    sz = fit_media(m.media_w, m.media_h, max_side, max_side);
+                else
+                    sz = { max_side, max_side };
+                return quote_h + sz.h;
             }
             case MessageRowData::Kind::File:
                 return quote_h + kFileCardH;
@@ -1011,8 +1020,18 @@ private:
                 return cursor;
             }
             case MessageRowData::Kind::Sticker: {
-                float side = std::min(col_w, kStickerSize);
-                tk::Rect r{ x, y, side, side };
+                float max_side = std::min(col_w, kStickerSize);
+                const tk::Image* sticker_img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz;
+                if (sticker_img && sticker_img->width() > 0 && sticker_img->height() > 0)
+                    sz = fit_media(sticker_img->width(), sticker_img->height(), max_side, max_side);
+                else if (m.media_w > 0 && m.media_h > 0)
+                    sz = fit_media(m.media_w, m.media_h, max_side, max_side);
+                else
+                    sz = { max_side, max_side };
+                tk::Rect r{ x, y, sz.w, sz.h };
                 paint_inline_media(m, ctx, r);
                 if (!m.event_id.empty()) {
                     owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
@@ -1020,10 +1039,10 @@ private:
                     };
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
                         m.event_id, m.media_url, m.body,
-                        static_cast<int>(side), static_cast<int>(side), r
+                        m.media_w, m.media_h, r
                     };
                 }
-                return y + side;
+                return y + sz.h;
             }
             case MessageRowData::Kind::File: {
                 float card_w = std::min(kFileCardW, col_w);

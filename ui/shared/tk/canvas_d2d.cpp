@@ -273,10 +273,16 @@ public:
         layout_->GetMetrics(&m);
         size_       = Size{ m.widthIncludingTrailingWhitespace, m.height };
         line_count_ = static_cast<int>(m.lineCount);
+
+        DWRITE_LINE_METRICS lm{};
+        UINT32 actual = 0;
+        layout_->GetLineMetrics(&lm, 1, &actual);
+        ascent_ = (actual > 0) ? lm.baseline : size_.h * 0.78f;
     }
 
-    Size measure()    const override { return size_; }
-    int  line_count() const override { return line_count_; }
+    Size  measure()    const override { return size_; }
+    int   line_count() const override { return line_count_; }
+    float ascent()     const override { return ascent_; }
 
     IDWriteTextLayout* raw() const { return layout_.Get(); }
 
@@ -284,6 +290,7 @@ private:
     ComPtr<IDWriteTextLayout> layout_;
     Size                      size_{};
     int                       line_count_ = 0;
+    float                     ascent_     = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

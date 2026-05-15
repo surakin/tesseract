@@ -713,7 +713,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
     // the hood) shown only when the list overflows the viewport; the
     // RoomListView itself decides visibility in its arrange() pass.
     _roomSearchField = _roomSurface->host().make_text_field();
-    _roomSearchField->set_placeholder("Search rooms");
+    _roomSearchField->set_placeholder("Search");
     _roomSearchField->set_visible(false);
     _roomSearchField->set_on_changed([self](const std::string& q) {
         self->_pendingSearchText = q;

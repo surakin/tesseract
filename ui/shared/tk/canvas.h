@@ -98,8 +98,12 @@ public:
 class TextLayout {
 public:
     virtual ~TextLayout() = default;
-    virtual Size measure()    const = 0;
-    virtual int  line_count() const = 0;
+    virtual Size  measure()    const = 0;
+    virtual int   line_count() const = 0;
+    // Distance from the top of the layout box to the baseline (typographic
+    // ascent). Use this instead of measure().h for vertically centering
+    // single-line glyphs that leave an empty descender below the baseline.
+    virtual float ascent()     const = 0;
 };
 
 // One formatting run for rich text. Bold, italic, code, and strikethrough

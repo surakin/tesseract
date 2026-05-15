@@ -108,18 +108,19 @@ class QtTextLayout : public QtTextLayoutBase {
 public:
     QtTextLayout(QString text, QFont font, QTextOption option,
                  QSizeF measured, int line_count, qreal max_width,
-                 qreal max_height, bool elide_single_line)
+                 qreal max_height, bool elide_single_line, qreal ascent)
         : text_(std::move(text)), font_(std::move(font)),
           option_(option), measured_(measured),
           line_count_(line_count), max_width_(max_width),
           max_height_(max_height),
-          elide_single_line_(elide_single_line) {}
+          elide_single_line_(elide_single_line), ascent_(ascent) {}
 
-    Size measure()    const override {
+    Size  measure()    const override {
         return Size{ static_cast<float>(measured_.width()),
                      static_cast<float>(measured_.height()) };
     }
-    int  line_count() const override { return line_count_; }
+    int   line_count() const override { return line_count_; }
+    float ascent()     const override { return static_cast<float>(ascent_); }
 
     void draw(QPainter& p, Point origin, Color c) const override {
         p.save();
@@ -151,6 +152,7 @@ private:
     qreal       max_width_  = -1;
     qreal       max_height_ = -1;
     bool        elide_single_line_ = false;
+    qreal       ascent_     = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -302,11 +304,14 @@ public:
         lines_ = doc_->blockCount();
     }
 
-    Size measure()    const override {
+    Size  measure()    const override {
         return { static_cast<float>(sz_.width()),
                  static_cast<float>(sz_.height()) };
     }
-    int line_count() const override { return lines_; }
+    int   line_count() const override { return lines_; }
+    float ascent()     const override {
+        return static_cast<float>(QFontMetricsF(doc_->defaultFont()).ascent());
+    }
 
     void draw(QPainter& p, Point origin, Color c) const override {
         p.save();
@@ -396,7 +401,7 @@ public:
 
         return std::make_unique<QtTextLayout>(
             std::move(text), std::move(f), opt, measured,
-            line_count, max_w, max_h, elide_single_line);
+            line_count, max_w, max_h, elide_single_line, fm.ascent());
     }
 
     std::unique_ptr<TextLayout>

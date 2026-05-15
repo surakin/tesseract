@@ -264,8 +264,9 @@ public:
     CTLayout(const CTLayout&) = delete;
     CTLayout& operator=(const CTLayout&) = delete;
 
-    Size measure()    const override { return measured_; }
-    int  line_count() const override { return line_count_; }
+    Size  measure()    const override { return measured_; }
+    int   line_count() const override { return line_count_; }
+    float ascent()     const override { return static_cast<float>(font_ascent()); }
 
     void draw(CGContextRef ctx, Point origin, Color c) const {
         if (!framesetter_) return;
@@ -302,6 +303,16 @@ public:
         // Pick up the fill colour for the run; CT respects the context fill.
         CTFrameDraw(frame.get(), ctx);
         CGContextRestoreGState(ctx);
+    }
+
+    CGFloat font_ascent() const {
+        if (!attr_ || CFAttributedStringGetLength(attr_) == 0) return measured_.h * 0.78f;
+        CFDictionaryRef d = CFAttributedStringGetAttributes(attr_, 0, nullptr);
+        if (!d) return measured_.h * 0.78f;
+        CTFontRef f = static_cast<CTFontRef>(
+            CFDictionaryGetValue(d, kCTFontAttributeName));
+        if (!f) return measured_.h * 0.78f;
+        return CTFontGetAscent(f);
     }
 
     CGFloat font_line_height() const {
