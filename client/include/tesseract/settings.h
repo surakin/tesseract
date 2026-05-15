@@ -32,6 +32,7 @@ public:
     int font_unread_badge    = 10;
     int font_title           = 14;
     int font_ui_semibold     = 10;
+    int font_big_emoji       = 24;  // 2× body — emoji-only messages
 
     // ── Reaction chip ────────────────────────────────────────────────
     int reaction_chip_height = 28;

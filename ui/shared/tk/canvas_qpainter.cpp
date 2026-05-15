@@ -48,6 +48,7 @@ QFont font_for(FontRole role) {
         case FontRole::UnreadBadge:     f.setPointSize(s.font_unread_badge);    f.setWeight(QFont::DemiBold); break;
         case FontRole::Title:           f.setPointSize(s.font_title);           f.setWeight(QFont::DemiBold); break;
         case FontRole::UiSemibold:      f.setPointSize(s.font_ui_semibold);     f.setWeight(QFont::DemiBold); break;
+        case FontRole::BigEmoji:        f.setPointSize(s.font_big_emoji);       f.setWeight(QFont::Normal);   break;
     }
     return f;
 }

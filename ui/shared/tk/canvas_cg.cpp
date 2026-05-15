@@ -90,6 +90,7 @@ FontDesc desc_for(FontRole role) {
         case FontRole::UnreadBadge:     return { static_cast<CGFloat>(s.font_unread_badge),    true  };
         case FontRole::Title:           return { static_cast<CGFloat>(s.font_title),           true  };
         case FontRole::UiSemibold:      return { static_cast<CGFloat>(s.font_ui_semibold),     true  };
+        case FontRole::BigEmoji:        return { static_cast<CGFloat>(s.font_big_emoji),       false };
     }
     return { static_cast<CGFloat>(s.font_body), false };
 }

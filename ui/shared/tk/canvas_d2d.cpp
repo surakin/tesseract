@@ -113,6 +113,7 @@ static FontDesc desc_for(FontRole r) {
         case FontRole::UnreadBadge:     return { L"Segoe UI Variable Text",     static_cast<float>(s.font_unread_badge),    DWRITE_FONT_WEIGHT_SEMI_BOLD };
         case FontRole::Title:           return { L"Segoe UI Variable Display", static_cast<float>(s.font_title),           DWRITE_FONT_WEIGHT_SEMI_BOLD };
         case FontRole::UiSemibold:      return { L"Segoe UI Variable Text",     static_cast<float>(s.font_ui_semibold),     DWRITE_FONT_WEIGHT_SEMI_BOLD };
+        case FontRole::BigEmoji:        return { L"Segoe UI Variable Text",     static_cast<float>(s.font_big_emoji),       DWRITE_FONT_WEIGHT_REGULAR  };
     }
     return { L"Segoe UI", static_cast<float>(s.font_body), DWRITE_FONT_WEIGHT_REGULAR };
 }

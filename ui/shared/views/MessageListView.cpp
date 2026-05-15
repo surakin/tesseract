@@ -1242,18 +1242,92 @@ private:
         }
     }
 
-    static tk::TextStyle body_style(float w) {
+    // Returns true when every non-whitespace character in `utf8` is a Unicode
+    // emoji codepoint (including ZWJ sequences, skin-tone modifiers, variation
+    // selectors, regional indicators, and keycap sequences). Used to pick the
+    // 2× BigEmoji font for emoji-only message bodies.
+    static bool is_emoji_only(const std::string& utf8) {
+        if (utf8.empty()) return false;
+
+        // Decode UTF-8 to codepoints.
+        std::vector<uint32_t> cps;
+        cps.reserve(utf8.size());
+        const auto* p   = reinterpret_cast<const unsigned char*>(utf8.data());
+        const auto* end = p + utf8.size();
+        while (p < end) {
+            uint32_t cp;
+            unsigned char c = *p;
+            if      (c < 0x80)                        { cp = c;                                                               p += 1; }
+            else if ((c & 0xE0) == 0xC0 && p+1 < end) { cp = uint32_t(c&0x1F)<<6  | (p[1]&0x3F);                            p += 2; }
+            else if ((c & 0xF0) == 0xE0 && p+2 < end) { cp = uint32_t(c&0x0F)<<12 | uint32_t(p[1]&0x3F)<<6  | (p[2]&0x3F); p += 3; }
+            else if ((c & 0xF8) == 0xF0 && p+3 < end) { cp = uint32_t(c&0x07)<<18 | uint32_t(p[1]&0x3F)<<12
+                                                               | uint32_t(p[2]&0x3F)<<6 | (p[3]&0x3F);                       p += 4; }
+            else return false; // invalid UTF-8 → not emoji-only
+            cps.push_back(cp);
+        }
+
+        bool has_emoji = false;
+        std::size_t i  = 0;
+        while (i < cps.size()) {
+            uint32_t cp = cps[i];
+            // Transparent combining characters — skip without counting.
+            if (cp == 0x200D                          ||  // ZWJ
+                (cp >= 0xFE00 && cp <= 0xFE0F)        ||  // variation selectors
+                cp == 0x20E3                           ||  // combining enclosing keycap
+                (cp >= 0x1F3FB && cp <= 0x1F3FF))          // skin-tone modifiers
+            { ++i; continue; }
+            // Whitespace.
+            if (cp == 0x20 || cp == 0x09 || cp == 0x0A || cp == 0x0D) { ++i; continue; }
+            // Keycap sequence: [0-9*#] followed by optional U+FE0F then U+20E3.
+            if ((cp >= 0x30 && cp <= 0x39) || cp == 0x2A || cp == 0x23) {
+                std::size_t j = i + 1;
+                if (j < cps.size() && cps[j] == 0xFE0F) ++j;
+                if (j < cps.size() && cps[j] == 0x20E3) { has_emoji = true; i = j + 1; continue; }
+                return false; // bare digit / * / # → not emoji-only
+            }
+            // Emoji codepoint ranges (mirrors the Twemoji fallback table).
+            if (cp == 0x00A9 || cp == 0x00AE                         ||
+                cp == 0x203C || cp == 0x2049                         ||
+                cp == 0x2122 || cp == 0x2139                         ||
+                (cp >= 0x2194 && cp <= 0x2199)                       ||
+                (cp >= 0x21A9 && cp <= 0x21AA)                       ||
+                (cp >= 0x231A && cp <= 0x231B)                       ||
+                cp == 0x2328 || cp == 0x23CF                         ||
+                (cp >= 0x23E9 && cp <= 0x23FA)                       ||
+                cp == 0x24C2                                          ||
+                (cp >= 0x25AA && cp <= 0x25FE)                       ||
+                (cp >= 0x2600 && cp <= 0x27BF)                       ||
+                (cp >= 0x2934 && cp <= 0x2935)                       ||
+                (cp >= 0x2B05 && cp <= 0x2B55)                       ||
+                cp == 0x3030 || cp == 0x303D                         ||
+                cp == 0x3297 || cp == 0x3299                         ||
+                cp == 0x1F004 || cp == 0x1F0CF                       ||
+                (cp >= 0x1F170 && cp <= 0x1F171)                     ||
+                (cp >= 0x1F17E && cp <= 0x1F17F)                     ||
+                cp == 0x1F18E                                         ||
+                (cp >= 0x1F191 && cp <= 0x1F19A)                     ||
+                (cp >= 0x1F1E0 && cp <= 0x1F1FF)                     ||  // regional indicators
+                (cp >= 0x1F201 && cp <= 0x1F251)                     ||
+                (cp >= 0x1F300 && cp <= 0x1F9FF)                     ||  // main emoji block
+                (cp >= 0x1FA00 && cp <= 0x1FAFF))                        // extended
+            { has_emoji = true; ++i; continue; }
+            return false; // non-emoji codepoint
+        }
+        return has_emoji;
+    }
+
+    static tk::TextStyle body_style(float w, bool emoji_only = false) {
         tk::TextStyle s{};
-        s.role      = tk::FontRole::Body;
+        s.role      = emoji_only ? tk::FontRole::BigEmoji : tk::FontRole::Body;
         s.wrap      = true;
         s.max_width = w;
         return s;
     }
 
     float measure_text_height(const std::string& text, tk::LayoutCtx& ctx,
-                                float w) const {
+                                float w, bool emoji_only = false) const {
         if (text.empty()) return 0;
-        auto layout = ctx.factory.build_text(text, body_style(w));
+        auto layout = ctx.factory.build_text(text, body_style(w, emoji_only));
         return layout ? layout->measure().h : 0;
     }
 
@@ -1285,22 +1359,24 @@ private:
     // formatted_body is present, otherwise falls back to plain text.
     float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
                              float w) const {
+        bool eo = is_emoji_only(m.body);
         if (!m.formatted_body.empty()) {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
             auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
-                auto layout = ctx.factory.build_rich_text(spans, body_style(w));
+                auto layout = ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout) return layout->measure().h;
             }
         }
         return measure_text_height(
-            m.body.empty() ? std::string("(empty message)") : m.body, ctx, w);
+            m.body.empty() ? std::string("(empty message)") : m.body, ctx, w, eo);
     }
 
     float paint_wrapped_text(const std::string& text, tk::PaintCtx& ctx,
-                              float x, float y, float w, tk::Color color) const {
+                              float x, float y, float w, tk::Color color,
+                              bool emoji_only = false) const {
         if (text.empty()) return 0;
-        auto layout = ctx.factory.build_text(text, body_style(w));
+        auto layout = ctx.factory.build_text(text, body_style(w, emoji_only));
         if (!layout) return 0;
         ctx.canvas.draw_text(*layout, { x, y }, color);
         return layout->measure().h;
@@ -1310,11 +1386,12 @@ private:
     // present, otherwise falls back to plain text.
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx,
                            float x, float y, float w) const {
+        bool eo = is_emoji_only(m.body);
         if (!m.formatted_body.empty()) {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
             auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
-                auto layout = ctx.factory.build_rich_text(spans, body_style(w));
+                auto layout = ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout) {
                     ctx.canvas.draw_text(*layout, { x, y },
                                           ctx.theme.palette.text_primary);
@@ -1324,7 +1401,7 @@ private:
         }
         return paint_wrapped_text(
             m.body.empty() ? std::string("(empty message)") : m.body,
-            ctx, x, y, w, ctx.theme.palette.text_primary);
+            ctx, x, y, w, ctx.theme.palette.text_primary, eo);
     }
 
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,

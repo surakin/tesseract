@@ -69,6 +69,7 @@ enum class FontRole {
     UnreadBadge,     // 11 pt semibold — number inside the accent pill
     Title,           // 15 pt semibold — room header
     UiSemibold,      // 11 pt semibold — button label
+    BigEmoji,        // 24 pt regular — emoji-only message body (2× Body)
 };
 
 enum class TextHAlign { Leading, Center, Trailing };

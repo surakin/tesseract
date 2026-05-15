@@ -37,6 +37,7 @@ PangoFontDescription* desc_for(FontRole role) {
         case FontRole::UnreadBadge:     pt = s.font_unread_badge;    w = PANGO_WEIGHT_SEMIBOLD; break;
         case FontRole::Title:           pt = s.font_title;           w = PANGO_WEIGHT_SEMIBOLD; break;
         case FontRole::UiSemibold:      pt = s.font_ui_semibold;     w = PANGO_WEIGHT_SEMIBOLD; break;
+        case FontRole::BigEmoji:        pt = s.font_big_emoji;       w = PANGO_WEIGHT_NORMAL;   break;
         default:                        pt = s.font_body;            w = PANGO_WEIGHT_NORMAL;   break;
     }
     pango_font_description_set_size(d, pt * PANGO_SCALE);
