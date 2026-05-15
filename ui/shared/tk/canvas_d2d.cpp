@@ -921,7 +921,8 @@ std::unique_ptr<Canvas> make_canvas(Backend& b, ID2D1RenderTarget* rt) {
 
 Factories factories(Backend& b) {
     Backend::Impl& impl = b.impl();
-    return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get() };
+    return Factories{ impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
+                      impl.font_fallback.Get() };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

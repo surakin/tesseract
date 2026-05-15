@@ -1299,4 +1299,8 @@ std::vector<tk::d2d::AnimatedFrame> decode_animation(
     return tk::d2d::decode_animation(backend_singleton(), bytes);
 }
 
+IDWriteFontFallback* dwrite_font_fallback() {
+    return tk::d2d::factories(backend_singleton()).font_fallback;
+}
+
 } // namespace tk::win32

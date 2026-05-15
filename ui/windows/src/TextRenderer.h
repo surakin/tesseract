@@ -16,6 +16,8 @@
 //
 // All call sites pass HDC, RECT, COLORREF and wstring; D2D/DWrite stay
 // fully encapsulated inside the .cpp.
+struct IDWriteFontFallback;
+
 namespace win32::text {
 
 enum class Weight { Regular, Semibold, Bold };
@@ -53,5 +55,10 @@ Metrics measure(const wchar_t* text, int len,
 bool init();
 void shutdown();
 void on_dpi_changed(UINT dpi);
+
+// Override the font fallback used for all subsequent draw/measure calls.
+// Call after the D2D backend initializes to share its Twemoji-first
+// fallback chain so flag emoji render the same as in the tk surfaces.
+void set_font_fallback(IDWriteFontFallback* fallback);
 
 } // namespace win32::text

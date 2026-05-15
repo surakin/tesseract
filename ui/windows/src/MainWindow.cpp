@@ -1038,6 +1038,10 @@ void MainWindow::on_create(HWND hwnd) {
     // Room list — shared toolkit Surface hosting tesseract::views::RoomListView.
     room_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
+    // The first Surface creation initialises the D2D backend singleton,
+    // which builds the Twemoji-first font fallback. Share it with the
+    // TextRenderer so the room header draws flag emoji the same way.
+    win32::text::set_font_fallback(tk::win32::dwrite_font_fallback());
     {
         auto view = std::make_unique<tesseract::views::RoomListView>();
         room_list_view_ = view.get();
