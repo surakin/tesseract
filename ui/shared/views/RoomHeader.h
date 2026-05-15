@@ -34,7 +34,18 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
 
+    bool on_pointer_down(tk::Point local)                  override;
+    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    void on_pointer_move(tk::Point local)                  override;
+    void on_pointer_leave()                                override;
+
+    // Fired when the user clicks the calendar/jump-to-date button.
+    std::function<void()> on_jump_to_date_requested;
+
 private:
+    bool     hover_calendar_ = false;
+    bool     press_calendar_ = false;
+    tk::Rect calendar_btn_rect_{};  // updated each paint pass
     tk::Label* name_label_  = nullptr;
     tk::Label* topic_label_ = nullptr;
 

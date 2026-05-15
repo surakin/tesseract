@@ -12,6 +12,10 @@ constexpr float kPadX       = 16.0f;
 constexpr float kAvatarSize = 40.0f;
 constexpr float kAvatarGap  = 12.0f;
 
+constexpr float kCalBtnSize   = 28.0f;
+constexpr float kCalBtnMargin =  8.0f;
+constexpr float kCalBtnRadius =  6.0f;
+
 // Vertical offsets for the name/topic block (from the top of the strip).
 // Two-line layout (with topic): name at 12 px, topic at 34 px.
 // One-line layout (name only):  name centred → 21 px.
@@ -59,8 +63,10 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+    // Reserve space on the right for the calendar button.
+    const float right_reserve = kCalBtnMargin + kCalBtnSize + kCalBtnMargin;
     const float text_w = std::max(0.0f,
-        bounds.w - kPadX - kAvatarSize - kAvatarGap - kPadX);
+        bounds.w - kPadX - kAvatarSize - kAvatarGap - right_reserve);
 
     const bool has_topic = !topic_.empty();
 
@@ -113,6 +119,83 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
 
     if (name_label_)  name_label_->paint(ctx);
     if (topic_label_ && topic_label_->visible()) topic_label_->paint(ctx);
+
+    // Calendar / jump-to-date button — 28×28 rounded-rect at the right edge.
+    calendar_btn_rect_ = {
+        bounds_.x + bounds_.w - kCalBtnMargin - kCalBtnSize,
+        bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
+        kCalBtnSize,
+        kCalBtnSize
+    };
+
+    const tk::Color btn_bg = press_calendar_
+        ? ctx.theme.palette.subtle_pressed
+        : hover_calendar_
+            ? ctx.theme.palette.subtle_hover
+            : ctx.theme.palette.chrome_bg;  // blends with header when idle
+
+    ctx.canvas.fill_rounded_rect(calendar_btn_rect_, kCalBtnRadius, btn_bg);
+
+    // Draw a calendar glyph centred inside the button.
+    tk::TextStyle ts;
+    ts.role   = tk::FontRole::Body;
+    ts.halign = tk::TextHAlign::Center;
+    ts.valign = tk::TextVAlign::Center;
+    auto glyph = ctx.factory.build_text("\U0001F4C5", ts);
+    if (glyph) {
+        const tk::Size gs = glyph->measure();
+        const tk::Point glyph_origin{
+            calendar_btn_rect_.x + (kCalBtnSize - gs.w) * 0.5f,
+            calendar_btn_rect_.y + (kCalBtnSize - gs.h) * 0.5f
+        };
+        ctx.canvas.draw_text(*glyph, glyph_origin, ctx.theme.palette.text_primary);
+    }
+}
+
+bool RoomHeader::on_pointer_down(tk::Point local) {
+    // calendar_btn_rect_ is in world coords; reconstruct the world point
+    // from the widget-local `local` by adding the widget's own origin.
+    const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
+    if (world.x >= calendar_btn_rect_.x &&
+        world.x <  calendar_btn_rect_.x + calendar_btn_rect_.w &&
+        world.y >= calendar_btn_rect_.y &&
+        world.y <  calendar_btn_rect_.y + calendar_btn_rect_.h)
+    {
+        press_calendar_ = true;
+        return true;
+    }
+    return false;
+}
+
+void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
+    if (!press_calendar_) return;
+    press_calendar_ = false;
+
+    if (!inside_self) return;
+    const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
+    if (world.x >= calendar_btn_rect_.x &&
+        world.x <  calendar_btn_rect_.x + calendar_btn_rect_.w &&
+        world.y >= calendar_btn_rect_.y &&
+        world.y <  calendar_btn_rect_.y + calendar_btn_rect_.h)
+    {
+        if (on_jump_to_date_requested) on_jump_to_date_requested();
+    }
+}
+
+void RoomHeader::on_pointer_move(tk::Point local) {
+    const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
+    hover_calendar_ =
+        world.x >= calendar_btn_rect_.x &&
+        world.x <  calendar_btn_rect_.x + calendar_btn_rect_.w &&
+        world.y >= calendar_btn_rect_.y &&
+        world.y <  calendar_btn_rect_.y + calendar_btn_rect_.h;
+    // Host calls request_repaint() after dispatching pointer-move.
+}
+
+void RoomHeader::on_pointer_leave() {
+    hover_calendar_ = false;
+    press_calendar_ = false;
+    // Host calls request_repaint() after dispatching pointer-leave.
 }
 
 } // namespace tesseract::views
