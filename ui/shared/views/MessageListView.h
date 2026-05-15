@@ -236,6 +236,11 @@ public:
     std::function<void(const std::string& event_id,
                         const std::string& current_body)> on_edit_requested;
 
+    // Delete affordance — fires when the user clicks the "🗑" delete button on
+    // a hover row they own. Fires for any non-Redacted own message kind.
+    // The host should call `Client::redact_event(room_id, event_id, "")`.
+    std::function<void(const std::string& event_id)> on_delete_requested;
+
     // Sticker right-click hit. Native shells call this with the world-coord
     // pointer position from their secondary-click handler. Returns the
     // sticker event metadata when the click lands on a Kind::Sticker rect,
@@ -314,8 +319,9 @@ public:
         std::vector<tk::Rect> receipt_discs;  // one per visible read-receipt disc
         tk::Rect          add_button{};    // 0-area when not painted
         bool              add_visible = false;
-        tk::Rect          reply_button{};  // 0-area when not painted
+        tk::Rect          reply_button{};   // 0-area when not painted
         tk::Rect          edit_button{};   // 0-area when not painted
+        tk::Rect          delete_button{}; // 0-area when not painted
         tk::Rect          row_bounds{};
     };
 
@@ -370,6 +376,10 @@ private:
     // Edit button press state (own text messages only).
     bool                           press_edit_btn_       = false;
     std::string                    press_edit_event_id_;
+
+    // Delete button press state (own non-redacted messages).
+    bool                           press_delete_btn_     = false;
+    std::string                    press_delete_event_id_;
 
     // Image / sticker click-to-view press state.
     mutable std::unordered_map<std::string, ImageHit> image_geom_;

@@ -852,6 +852,12 @@ MainWindow::MainWindow(QWidget* parent)
             }
         };
 
+    messageListView_->on_delete_requested =
+        [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            client_->redact_event(current_room_id_, event_id);
+        };
+
     composeShared_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
         if (new_body.empty() || current_room_id_.empty()) return;
