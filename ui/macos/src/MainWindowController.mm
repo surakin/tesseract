@@ -1002,7 +1002,6 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             if (!s || !s->_messageListView) return;
             auto hit = s->_messageListView->sticker_hit_at(p);
             if (!hit) return;
-            if (s->_shell->client_->user_pack_has_sticker(hit->mxc_url)) return;
             s->_ctxStickerEventId  = hit->event_id;
             s->_ctxStickerMxcUrl   = hit->mxc_url;
             s->_ctxStickerBody     = hit->body;
@@ -2749,10 +2748,12 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt {
     if (_ctxStickerMxcUrl.empty()) return;
+    BOOL alreadySaved = _shell->client_->user_pack_has_sticker(_ctxStickerMxcUrl);
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Sticker"];
     NSMenuItem* item = [[NSMenuItem alloc]
-        initWithTitle:@"Add to Saved Stickers"
-               action:@selector(_onStickerSave:)
+        initWithTitle: alreadySaved ? @"Already in Saved Stickers"
+                                    : @"Add to Saved Stickers"
+               action: alreadySaved ? nil : @selector(_onStickerSave:)
         keyEquivalent:@""];
     item.target = self;
     [menu addItem:item];

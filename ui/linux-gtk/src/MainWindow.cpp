@@ -2545,7 +2545,6 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
     auto hit = self->message_list_view_->sticker_hit_at(
         tk::Point{ static_cast<float>(x), static_cast<float>(y) });
     if (!hit) return;
-    if (self->client_->user_pack_has_sticker(hit->mxc_url)) return;
 
     // Claim the gesture so the underlying surface doesn't also process it
     // (e.g. as a drag-start or text-selection event).
@@ -2558,6 +2557,17 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture,
     self->ctx_sticker_mxc_url_   = hit->mxc_url;
     self->ctx_sticker_body_      = hit->body;
     self->ctx_sticker_info_json_ = hit->info_json;
+
+    // Disable the action when the sticker is already saved so the menu item
+    // renders grayed-out rather than the menu being suppressed entirely.
+    {
+        const bool already_saved =
+            self->client_->user_pack_has_sticker(hit->mxc_url);
+        GAction* act = g_action_map_lookup_action(
+            G_ACTION_MAP(self->sticker_ctx_actions_), "save");
+        if (act)
+            g_simple_action_set_enabled(G_SIMPLE_ACTION(act), !already_saved);
+    }
 
     GdkRectangle r{
         .x      = static_cast<int>(x),

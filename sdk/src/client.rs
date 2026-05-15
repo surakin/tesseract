@@ -2356,6 +2356,7 @@ impl ClientFfi {
             .unwrap_or_default();
 
         if crate::image_packs::pack_contains_url(&current_content, image_url) {
+            self.update_user_pack_in_cache(&current_content);
             return ok("");
         }
 
