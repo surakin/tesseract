@@ -82,6 +82,12 @@ public:
     virtual void set_on_submit        (std::function<void()>)                    = 0;
     virtual void set_on_height_changed(std::function<void(float)>)               = 0;
 
+    // Insert `text` at the current cursor position (or replace the
+    // selection). Leaves the cursor after the inserted text, so successive
+    // insertions compose correctly. Preferred over set_text() for emoji /
+    // autocomplete injection since it preserves cursor position and undo.
+    virtual void insert_at_cursor(std::string text) = 0;
+
     // Hook for clipboard image pastes. When set, and the user pastes a
     // payload that includes image MIME types, the host invokes the handler
     // with the raw image bytes + mime ("image/png", "image/jpeg", …) and

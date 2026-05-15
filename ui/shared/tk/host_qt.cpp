@@ -281,6 +281,12 @@ public:
     void set_on_image_paste(ImagePasteHandler cb) override {
         if (edit_) edit_->on_image_paste_ = std::move(cb);
     }
+    void insert_at_cursor(std::string text) override {
+        if (!edit_) return;
+        QTextCursor cursor = edit_->textCursor();
+        cursor.insertText(QString::fromStdString(text));
+        edit_->setTextCursor(cursor);
+    }
 
 private:
     QPointer<ComposeTextEdit>                edit_;

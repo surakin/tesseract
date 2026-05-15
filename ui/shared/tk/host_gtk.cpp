@@ -243,6 +243,12 @@ public:
     void set_on_image_paste(ImagePasteHandler cb) override {
         on_image_paste_ = std::move(cb);
     }
+    void insert_at_cursor(std::string text) override {
+        if (!buffer_) return;
+        gtk_text_buffer_insert_at_cursor(buffer_,
+                                          text.c_str(),
+                                          static_cast<int>(text.size()));
+    }
 
 private:
     static void on_changed_cb(GtkTextBuffer*, gpointer p) {

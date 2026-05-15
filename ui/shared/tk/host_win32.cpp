@@ -456,6 +456,12 @@ public:
     void set_on_image_paste(ImagePasteHandler cb) override {
         on_image_paste_ = std::move(cb);
     }
+    void insert_at_cursor(std::string text) override {
+        if (!hwnd_) return;
+        std::wstring w = utf8_to_wide(text);
+        SendMessageW(hwnd_, EM_REPLACESEL, TRUE,
+                      reinterpret_cast<LPARAM>(w.c_str()));
+    }
 
     void notify_changed() {
         if (suppress_changed_) return;

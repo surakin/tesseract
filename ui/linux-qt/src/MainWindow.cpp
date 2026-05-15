@@ -786,20 +786,16 @@ MainWindow::MainWindow(QWidget* parent)
             return;
         }
         if (!composeTextArea_) return;
-        std::string cur = composeTextArea_->text();
-        cur += glyph.toStdString();
-        composeTextArea_->set_text(cur);
-        if (composeShared_) composeShared_->set_current_text(cur);
+        composeTextArea_->insert_at_cursor(glyph.toStdString());
+        if (composeShared_) composeShared_->set_current_text(composeTextArea_->text());
         composeTextArea_->set_focused(true);
         client_->recent_emoji_bump(glyph.toStdString());
     };
 
     emojiPicker_->onEmoticonSelected = [this](const tesseract::ImagePackImage& img) {
         if (!composeTextArea_) return;
-        std::string cur = composeTextArea_->text();
-        cur += ":" + img.shortcode + ":";
-        composeTextArea_->set_text(cur);
-        if (composeShared_) composeShared_->set_current_text(cur);
+        composeTextArea_->insert_at_cursor(":" + img.shortcode + ":");
+        if (composeShared_) composeShared_->set_current_text(composeTextArea_->text());
         composeTextArea_->set_focused(true);
     };
 

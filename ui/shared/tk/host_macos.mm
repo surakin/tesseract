@@ -423,6 +423,7 @@ public:
     void set_on_image_paste(ImagePasteHandler cb) override {
         on_image_paste_ = std::move(cb);
     }
+    void insert_at_cursor(std::string text) override;
 
     void notify_changed();
     void notify_submit ();
@@ -585,6 +586,19 @@ void NSTextViewNative::notify_changed() {
 }
 void NSTextViewNative::notify_submit() {
     if (on_submit_) on_submit_();
+}
+
+void NSTextViewNative::insert_at_cursor(std::string text) {
+    if (!view_) return;
+    NSString* s = [NSString stringWithUTF8String:text.c_str()];
+    if (!s) return;
+    NSRange sel = view_.selectedRange;
+    if ([view_ shouldChangeTextInRange:sel replacementString:s]) {
+        [view_.textStorage replaceCharactersInRange:sel withString:s];
+        [view_ didChangeText];
+        NSRange after = NSMakeRange(sel.location + s.length, 0);
+        [view_ setSelectedRange:after];
+    }
 }
 
 bool NSTextViewNative::maybe_handle_paste() {

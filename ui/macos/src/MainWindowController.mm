@@ -1464,10 +1464,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             return;
         }
         if (!s->_composeTextArea) return;
-        std::string cur = s->_composeTextArea->text();
-        cur += glyph.UTF8String ?: "";
-        s->_composeTextArea->set_text(cur);
-        if (s->_composeShared) s->_composeShared->set_current_text(cur);
+        s->_composeTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
+        if (s->_composeShared) s->_composeShared->set_current_text(s->_composeTextArea->text());
         s->_composeTextArea->set_focused(true);
     };
     NSView* anchor = (__bridge NSView*)_composeSurface->view_handle();
@@ -1493,10 +1491,8 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
             return;
         }
         if (!s->_composeTextArea) return;
-        std::string cur = s->_composeTextArea->text();
-        cur += glyph.UTF8String ?: "";
-        s->_composeTextArea->set_text(cur);
-        if (s->_composeShared) s->_composeShared->set_current_text(cur);
+        s->_composeTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
+        if (s->_composeShared) s->_composeShared->set_current_text(s->_composeTextArea->text());
         s->_composeTextArea->set_focused(true);
     };
     NSView* anchorView = (__bridge NSView*)_msgSurface->view_handle();

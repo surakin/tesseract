@@ -3163,10 +3163,8 @@ void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {
         return;
     }
     if (!compose_text_area_) return;
-    std::string cur = compose_text_area_->text();
-    cur += glyph;
-    compose_text_area_->set_text(cur);
-    if (compose_shared_) compose_shared_->set_current_text(cur);
+    compose_text_area_->insert_at_cursor(glyph);
+    if (compose_shared_) compose_shared_->set_current_text(compose_text_area_->text());
     compose_text_area_->set_focused(true);
     // The shared picker already called recent_emoji_bump before invoking
     // this callback — no need to re-bump here.
