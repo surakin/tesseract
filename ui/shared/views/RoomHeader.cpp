@@ -37,11 +37,18 @@ RoomHeader::RoomHeader() {
 void RoomHeader::set_room(const tesseract::RoomInfo& info) {
     display_name_ = info.name;
     topic_        = info.topic;
+    topic_html_   = info.topic_html;
     avatar_url_   = info.avatar_url;
     if (name_label_)  name_label_->set_text(display_name_);
     if (topic_label_) {
-        topic_label_->set_text(topic_);
-        topic_label_->set_visible(!topic_.empty());
+        if (!topic_html_.empty()) {
+            topic_spans_ = html_to_spans(topic_html_);
+            topic_label_->set_visible(false);
+        } else {
+            topic_spans_.clear();
+            topic_label_->set_text(topic_);
+            topic_label_->set_visible(!topic_.empty());
+        }
     }
 }
 
@@ -62,7 +69,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     const float text_w = std::max(0.0f,
         bounds.w - kPadX - kAvatarSize - kAvatarGap - kPadX);
 
-    const bool has_topic = !topic_.empty();
+    const bool has_topic = !topic_.empty() || !topic_html_.empty();
 
     const float name_y = has_topic
         ? bounds.y + kNameY_Pair
@@ -72,11 +79,13 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         name_label_->arrange(ctx, { text_x, name_y, text_w, kNameH });
     }
 
+    topic_rect_ = { text_x, bounds.y + kTopicY, text_w, kTopicH };
+
     if (topic_label_) {
-        topic_label_->set_visible(has_topic);
-        if (has_topic) {
-            topic_label_->arrange(ctx,
-                { text_x, bounds.y + kTopicY, text_w, kTopicH });
+        const bool show_label = has_topic && topic_html_.empty();
+        topic_label_->set_visible(show_label);
+        if (show_label) {
+            topic_label_->arrange(ctx, topic_rect_);
         }
     }
 }
@@ -112,7 +121,20 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
     }
 
     if (name_label_)  name_label_->paint(ctx);
-    if (topic_label_ && topic_label_->visible()) topic_label_->paint(ctx);
+    if (!topic_spans_.empty()) {
+        tk::TextStyle ts{};
+        ts.role      = tk::FontRole::SidebarPreview;
+        ts.trim      = tk::TextTrim::Ellipsis;
+        ts.max_width = topic_rect_.w;
+        auto lo = ctx.factory.build_rich_text(topic_spans_, ts);
+        if (lo) {
+            ctx.canvas.draw_text(*lo,
+                { topic_rect_.x, topic_rect_.y },
+                ctx.theme.palette.text_primary);
+        }
+    } else if (topic_label_ && topic_label_->visible()) {
+        topic_label_->paint(ctx);
+    }
 }
 
 } // namespace tesseract::views
