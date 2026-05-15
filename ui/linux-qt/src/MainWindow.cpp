@@ -1653,12 +1653,12 @@ void MainWindow::handle_timeline_reset_ui_(
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (roomView_) roomView_->set_messages(std::move(rows));
+    if (chatSurface_) chatSurface_->relayout();
     if (roomView_ && roomView_->message_list()) {
         roomView_->message_list()->set_historical_mode(pagination_[room_id].is_focused);
         if (pagination_[room_id].is_focused)
             roomView_->message_list()->scroll_to_event_id(pagination_[room_id].focus_event_id);
     }
-    if (chatSurface_) chatSurface_->relayout();
 }
 
 void MainWindow::handle_message_inserted_ui_(
