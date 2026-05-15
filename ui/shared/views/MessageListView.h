@@ -338,6 +338,19 @@ public:
     bool      pill_visible() const { return pill_visible_; }
     tk::Rect  pill_bounds()  const { return pill_rect_;    }
 
+    // Scroll to the row matching `event_id`. Returns true if found and
+    // scrolled; false if event_id is not currently loaded.
+    bool scroll_to_event_id(const std::string& event_id);
+
+    // Show/hide historical mode — the pill stays visible even at the loaded
+    // bottom, and clicking it fires on_return_to_live instead of
+    // scroll_to_bottom().
+    void set_historical_mode(bool historical);
+
+    // Fired when the user clicks the scroll-to-bottom pill while in
+    // historical mode.
+    std::function<void()> on_return_to_live;
+
 private:
     class Adapter;
     friend class Adapter;
@@ -418,6 +431,7 @@ private:
     mutable tk::Rect               pill_rect_{};      // world coords
     mutable bool                   pill_visible_ = false;
     bool                           press_pill_   = false;
+    bool                           historical_mode_ = false;
 
     bool should_show_pill() const;
 
