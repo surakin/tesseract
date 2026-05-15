@@ -3107,10 +3107,31 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .map(|tags| tags.contains_key(
                 &matrix_sdk::ruma::events::tag::TagName::Favorite))
             .unwrap_or(false);
+        // MSC3765: extract HTML body from the m.topic content block when present.
+        let topic_html = {
+            use matrix_sdk::ruma::events::{
+                room::topic::RoomTopicEventContent,
+                SyncStateEvent,
+            };
+            use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+            room.get_state_event_static::<RoomTopicEventContent>().await
+                .ok()
+                .flatten()
+                .and_then(|raw| raw.deserialize().ok())
+                .and_then(|ev| {
+                    let SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) = ev else {
+                        return None;
+                    };
+                    o.content.topic_block.text.find_html().map(str::to_owned)
+                })
+                .unwrap_or_default()
+        };
+
         result.push(crate::ffi::RoomInfo {
             id:                room.room_id().to_string(),
             name,
             topic:             room.topic().unwrap_or_default(),
+            topic_html,
             unread_count,
             is_direct:         room.is_direct().await.unwrap_or(false),
             avatar_url:        room.avatar_url()

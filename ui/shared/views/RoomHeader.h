@@ -11,11 +11,13 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/widget.h"
+#include "views/html_spans.h"
 
 #include <tesseract/types.h>
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace tesseract::views {
 
@@ -40,6 +42,9 @@ private:
 
     std::string display_name_;
     std::string topic_;
+    std::string topic_html_;
+    std::vector<tk::TextSpan> topic_spans_;
+    tk::Rect    topic_rect_{};
     std::string avatar_url_;
 
     std::function<const tk::Image*(const std::string&)> avatar_provider_;

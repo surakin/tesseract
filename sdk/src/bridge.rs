@@ -15,6 +15,8 @@ pub mod ffi {
         id:                String,
         name:              String,
         topic:             String,
+        /// HTML body from the MSC3765 `m.topic` block; empty when absent.
+        topic_html:        String,
         unread_count:      u64,
         is_direct:         bool,
         /// mxc:// URI of the room avatar, empty string if none.

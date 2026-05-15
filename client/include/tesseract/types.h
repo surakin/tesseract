@@ -175,6 +175,8 @@ struct RoomInfo {
     uint64_t    last_activity_ts   = 0;
     bool        is_space           = false;
     bool        is_favorite        = false;
+    /// HTML body from the MSC3765 m.topic block; empty when absent.
+    std::string topic_html;
 };
 
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed
