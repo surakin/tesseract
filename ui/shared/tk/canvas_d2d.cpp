@@ -7,10 +7,15 @@
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <dwrite_2.h>
+#include <dwrite_3.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
+// Matches IDR_TWEMOJI_FONT in ui/windows/src/resource.h
+static constexpr int kTwemojiFontResourceId = 201;
+
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -117,11 +122,12 @@ static FontDesc desc_for(FontRole r) {
 // ─────────────────────────────────────────────────────────────────────────
 
 struct Backend::Impl {
-    ComPtr<ID2D1Factory1>      d2d;
-    ComPtr<IDWriteFactory2>    dwrite;
-    ComPtr<IWICImagingFactory>  wic;
-    ComPtr<IDWriteFontFallback> font_fallback;
-    bool                       com_initialised_here = false;
+    ComPtr<ID2D1Factory1>                 d2d;
+    ComPtr<IDWriteFactory2>               dwrite;
+    ComPtr<IWICImagingFactory>            wic;
+    ComPtr<IDWriteFontFallback>           font_fallback;
+    ComPtr<IDWriteFontFileLoader>         mem_font_loader; // keeps Twemoji alive
+    bool                                 com_initialised_here = false;
 
     ComPtr<ID3D11Device>  d3d;
     ComPtr<IDXGIDevice1>  dxgi_dev;
@@ -170,6 +176,144 @@ struct Backend::Impl {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Twemoji emoji-first font fallback
+// ─────────────────────────────────────────────────────────────────────────
+
+// Chains two IDWriteFontFallback objects: tries `emoji_` first (covers only
+// emoji Unicode ranges → Twemoji Mozilla), then delegates to `system_` for
+// everything not resolved by the emoji fallback.
+struct TwemojiFirstFallback : IDWriteFontFallback {
+    TwemojiFirstFallback(ComPtr<IDWriteFontFallback> emoji,
+                         ComPtr<IDWriteFontFallback> system)
+        : emoji_(std::move(emoji)), system_(std::move(system)) {}
+
+    IFACEMETHOD(MapCharacters)(
+        IDWriteTextAnalysisSource* src, UINT32 pos, UINT32 len,
+        IDWriteFontCollection* base_coll, const wchar_t* base_family,
+        DWRITE_FONT_WEIGHT bw, DWRITE_FONT_STYLE bs, DWRITE_FONT_STRETCH bst,
+        UINT32* mapped_len, IDWriteFont** mapped_font, FLOAT* scale) override
+    {
+        *mapped_font = nullptr;
+        emoji_->MapCharacters(src, pos, len, base_coll, base_family,
+                              bw, bs, bst, mapped_len, mapped_font, scale);
+        if (*mapped_font) return S_OK;
+        return system_->MapCharacters(src, pos, len, base_coll, base_family,
+                                      bw, bs, bst, mapped_len, mapped_font, scale);
+    }
+
+    IFACEMETHOD_(ULONG, AddRef)() override { return ++ref_; }
+    IFACEMETHOD_(ULONG, Release)() override {
+        ULONG r = --ref_; if (!r) delete this; return r;
+    }
+    IFACEMETHOD(QueryInterface)(REFIID riid, void** p) override {
+        if (riid == __uuidof(IDWriteFontFallback) || riid == __uuidof(IUnknown))
+            return *p = this, AddRef(), S_OK;
+        return *p = nullptr, E_NOINTERFACE;
+    }
+
+    ComPtr<IDWriteFontFallback> emoji_, system_;
+    std::atomic<ULONG>          ref_{ 1 };
+};
+
+// Loads the Twemoji Mozilla TTF from the embedded RCDATA resource and builds
+// an emoji-first IDWriteFontFallback that checks Twemoji for all emoji Unicode
+// ranges before falling through to the system fallback.
+// Returns nullptr (and leaves mem_loader_out untouched) on any failure — the
+// caller then keeps using the system-only fallback.
+static ComPtr<IDWriteFontFallback> build_twemoji_fallback(
+    ComPtr<IDWriteFactory2>&       dwrite,
+    ComPtr<IDWriteFontFallback>    system_fallback,
+    ComPtr<IDWriteFontFileLoader>& mem_loader_out)
+{
+    // 1. Read font bytes from the embedded RCDATA resource.
+    HMODULE hmod  = GetModuleHandleW(nullptr);
+    HRSRC   hrsrc = FindResourceW(hmod,
+        MAKEINTRESOURCEW(kTwemojiFontResourceId), RT_RCDATA);
+    if (!hrsrc) return nullptr;
+    HGLOBAL hglob = LoadResource(hmod, hrsrc);
+    if (!hglob) return nullptr;
+    const void* data = LockResource(hglob);
+    DWORD       size = SizeofResource(hmod, hrsrc);
+    if (!data || !size) return nullptr;
+
+    // 2. QI to IDWriteFactory5 (Win10 1709+) for CreateInMemoryFontFileLoader.
+    //    Falls back to system-only fallback on older builds.
+    ComPtr<IDWriteFactory5> dwrite5;
+    if (FAILED(dwrite.As(&dwrite5))) return nullptr;
+
+    // 3. Register an in-memory font file loader and create a file reference.
+    ComPtr<IDWriteInMemoryFontFileLoader> mem_loader;
+    if (FAILED(dwrite5->CreateInMemoryFontFileLoader(&mem_loader))) return nullptr;
+    if (FAILED(dwrite5->RegisterFontFileLoader(mem_loader.Get()))) return nullptr;
+
+    ComPtr<IDWriteFontFile> font_file;
+    if (FAILED(mem_loader->CreateInMemoryFontFileReference(
+            dwrite5.Get(), data, size, nullptr, &font_file))) return nullptr;
+
+    // 4. Build a font set containing just Twemoji, then a font collection.
+    //    IDWriteFactory5 inherits IDWriteFactory3, so we use it directly.
+    ComPtr<IDWriteFontFaceReference> face_ref;
+    if (FAILED(dwrite5->CreateFontFaceReference(
+            font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
+        return nullptr;
+
+    ComPtr<IDWriteFontSetBuilder> set_builder;
+    if (FAILED(dwrite5->CreateFontSetBuilder(&set_builder))) return nullptr;
+    if (FAILED(set_builder->AddFontFaceReference(face_ref.Get()))) return nullptr;
+
+    ComPtr<IDWriteFontSet> font_set;
+    if (FAILED(set_builder->CreateFontSet(&font_set))) return nullptr;
+
+    ComPtr<IDWriteFontCollection1> twemoji_coll;
+    if (FAILED(dwrite5->CreateFontCollectionFromFontSet(
+            font_set.Get(), &twemoji_coll))) return nullptr;
+
+    // 5. Build a fallback that maps emoji Unicode ranges → Twemoji Mozilla.
+    static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
+        { 0x00A9, 0x00A9 }, { 0x00AE, 0x00AE },   // © ®
+        { 0x203C, 0x203C }, { 0x2049, 0x2049 },   // ‼ ⁉
+        { 0x2122, 0x2122 }, { 0x2139, 0x2139 },   // ™ ℹ
+        { 0x2194, 0x2199 }, { 0x21A9, 0x21AA },   // arrows
+        { 0x231A, 0x231B }, { 0x2328, 0x2328 },   // watch, keyboard
+        { 0x23CF, 0x23CF }, { 0x23E9, 0x23FA },   // eject, media controls
+        { 0x24C2, 0x24C2 },                        // Ⓜ
+        { 0x25AA, 0x25FE },                        // geometric shapes
+        { 0x2600, 0x27BF },                        // misc symbols + dingbats
+        { 0x2934, 0x2935 }, { 0x2B05, 0x2B55 },   // arrows, squares, star
+        { 0x3030, 0x3030 }, { 0x303D, 0x303D },
+        { 0x3297, 0x3297 }, { 0x3299, 0x3299 },
+        { 0x1F004, 0x1F004 }, { 0x1F0CF, 0x1F0CF },
+        { 0x1F170, 0x1F171 }, { 0x1F17E, 0x1F17F },
+        { 0x1F18E, 0x1F18E }, { 0x1F191, 0x1F19A },
+        { 0x1F1E0, 0x1F1FF },  // Regional Indicator (country flags)
+        { 0x1F201, 0x1F251 },  // enclosed ideographic
+        { 0x1F300, 0x1F9FF },  // main emoji block
+        { 0x1FA00, 0x1FAFF },  // extended (chess, medical, misc)
+        { 0xFE00,  0xFE0F  },  // variation selectors
+    };
+    const wchar_t* family[] = { L"Twemoji Mozilla" };
+
+    ComPtr<IDWriteFontFallbackBuilder> fb_builder;
+    if (FAILED(dwrite->CreateFontFallbackBuilder(&fb_builder))) return nullptr;
+    if (FAILED(fb_builder->AddMapping(
+            kEmojiRanges, ARRAYSIZE(kEmojiRanges),
+            family, 1, twemoji_coll.Get(),
+            nullptr, nullptr, 1.0f))) return nullptr;
+
+    ComPtr<IDWriteFontFallback> emoji_fallback;
+    if (FAILED(fb_builder->CreateFontFallback(&emoji_fallback))) return nullptr;
+
+    // 6. Wrap emoji fallback + system fallback into a composite chain.
+    auto* raw = new TwemojiFirstFallback(std::move(emoji_fallback),
+                                         std::move(system_fallback));
+    ComPtr<IDWriteFontFallback> result;
+    result.Attach(static_cast<IDWriteFontFallback*>(raw));
+
+    mem_loader_out = std::move(mem_loader);
+    return result;
+}
+
 Backend::Backend() : impl_(std::make_unique<Impl>()) {
     HRESULT hr_co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (SUCCEEDED(hr_co)) {
@@ -193,6 +337,10 @@ Backend::Backend() : impl_(std::make_unique<Impl>()) {
                               reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
     check(hr, "DWriteCreateFactory");
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
+    if (auto twemoji = build_twemoji_fallback(impl_->dwrite,
+                                              impl_->font_fallback,
+                                              impl_->mem_font_loader))
+        impl_->font_fallback = std::move(twemoji);
 
     hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
                           CLSCTX_INPROC_SERVER,
@@ -205,6 +353,9 @@ Backend::Backend() : impl_(std::make_unique<Impl>()) {
 Backend::~Backend() {
     impl_->text_formats.clear();
     impl_->wic.Reset();
+    if (impl_->mem_font_loader)
+        impl_->dwrite->UnregisterFontFileLoader(impl_->mem_font_loader.Get());
+    impl_->mem_font_loader.Reset();
     impl_->dwrite.Reset();
     impl_->d2d_dev.Reset();
     impl_->dxgi_dev.Reset();
