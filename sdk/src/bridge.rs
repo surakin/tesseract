@@ -174,14 +174,19 @@ pub mod ffi {
         message: String,
     }
 
-    /// Outcome of a back-pagination call. `reached_start` is `true` when
-    /// matrix-sdk-ui reports the timeline has no further history to load
-    /// (the room's first event has been seen). UIs use this to stop firing
-    /// the "near top" pagination trigger.
+    /// Outcome of a back-pagination or forward-pagination call.
+    /// `reached_start` is `true` when matrix-sdk-ui reports the timeline has
+    /// no further history to load (the room's first event has been seen). UIs
+    /// use this to stop firing the "near top" pagination trigger.
+    /// `reached_end` is `true` when forward-pagination signals that the live
+    /// end of the timeline has been reached (only meaningful for focused
+    /// timelines; always `false` for live timelines). UIs use this to switch
+    /// back to live mode after the user scrolls past the focus point.
     struct PaginateResult {
         ok:            bool,
         message:       String,
         reached_start: bool,
+        reached_end:   bool,
     }
 
     /// First-phase result of an OAuth flow.
@@ -441,6 +446,35 @@ pub mod ffi {
         fn paginate_back_with_status(self: &mut ClientFfi,
                                      room_id: &str,
                                      count: u16) -> PaginateResult;
+
+        /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
+        /// nearest event ID in `room_id`. `dir` is `"f"` (forward — first
+        /// event ≥ ts) or `"b"` (backward — last event ≤ ts). On success
+        /// `OpResult.message` holds the event ID string; on failure it holds
+        /// the error description.
+        fn timestamp_to_event(self: &mut ClientFfi,
+                              room_id: &str,
+                              ts_ms:   u64,
+                              dir:     &str) -> OpResult;
+
+        /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
+        /// specific event. Behaves like `subscribe_room` but builds a
+        /// `TimelineFocus::Event` timeline centered on `focus_event_id`. Sets
+        /// `is_focused = true` on the per-room state so `paginate_forward`
+        /// can gate itself. Fires `on_timeline_reset` + individual event
+        /// callbacks identically to `subscribe_room`.
+        fn subscribe_room_at(self: &mut ClientFfi,
+                             room_id:        &str,
+                             focus_event_id: &str) -> OpResult;
+
+        /// MSC3030 Jump to Date: paginate forward in a focused timeline.
+        /// Only valid after `subscribe_room_at`; returns
+        /// `ok=false, message="not in focused mode"` for live timelines.
+        /// `reached_end` is `true` when the live end of the timeline has been
+        /// reached and the UI should switch back to a live subscription.
+        fn paginate_forward(self: &mut ClientFfi,
+                            room_id: &str,
+                            count:   u16) -> PaginateResult;
 
         /// Kick off a background pass that paginates every joined room not
         /// currently subscribed, up to ~50 events each, with bounded

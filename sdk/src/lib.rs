@@ -91,6 +91,7 @@ pub mod ffi {
         pub ok:            bool,
         pub message:       String,
         pub reached_start: bool,
+        pub reached_end:   bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
