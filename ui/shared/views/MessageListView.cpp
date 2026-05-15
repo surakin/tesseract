@@ -2190,7 +2190,7 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         std::size_t row = hovered_row_geom_.row_index;
         if (row < messages_.size()) {
             const auto& m = messages_[row];
-            if (Adapter::has_spoilers(m) &&
+            if (m.formatted_body.find("data-mx-spoiler") != std::string::npos &&
                 revealed_spoilers_.count(m.event_id) == 0) {
                 press_spoiler_     = true;
                 press_spoiler_eid_ = m.event_id;
