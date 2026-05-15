@@ -2465,6 +2465,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 if (auto img = msg_surface_->factory().decode_image(bytes))
                     tk_images_.emplace(cache_key, std::move(img));
             }
+            if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
+            msg_surface_->relayout();
             invalidate_hwnd = msg_surface_->hwnd();
         }
         break;

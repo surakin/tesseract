@@ -1920,12 +1920,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 anim_cache_.store(cache_key, std::move(frames),
                                   std::move(anim->delays_ms), now_ms);
                 start_anim_tick_if_needed_();
+                if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
                 if (msg_surface_) msg_surface_->relayout();
             }
         } else if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
             auto img = tk::cairo_pango::make_image(surface);
             cairo_surface_destroy(surface);
             tk_images_.emplace(cache_key, std::move(img));
+            if (message_list_view_) message_list_view_->notify_image_ready(cache_key);
             if (msg_surface_) msg_surface_->relayout();
         }
     }

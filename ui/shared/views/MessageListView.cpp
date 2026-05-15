@@ -919,9 +919,14 @@ private:
                     ctx, col_w);
 
             case MessageRowData::Kind::Image: {
-                tk::Size sz = fit_media(m.media_w, m.media_h,
-                                         std::min(col_w, kImageMaxW),
-                                         kImageMaxH);
+                float max_w = std::min(col_w, kImageMaxW);
+                const tk::Image* img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz =
+                    (img && img->width() > 0 && img->height() > 0)
+                        ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
+                        : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
                 float h = sz.h;
                 if (m.has_filename_caption && !m.body.empty()) {
                     h += 4.0f + measure_text_height(m.body, ctx, col_w);
@@ -1009,15 +1014,21 @@ private:
                 return y + h;
             }
             case MessageRowData::Kind::Image: {
-                tk::Size sz = fit_media(m.media_w, m.media_h,
-                                         std::min(col_w, kImageMaxW),
-                                         kImageMaxH);
+                float max_w = std::min(col_w, kImageMaxW);
+                const tk::Image* img =
+                    (owner_.image_provider_ && !m.media_url.empty())
+                        ? owner_.image_provider_(m.media_url) : nullptr;
+                tk::Size sz =
+                    (img && img->width() > 0 && img->height() > 0)
+                        ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
+                        : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
                 tk::Rect r{ x, y, sz.w, sz.h };
                 paint_inline_media(m, ctx, r);
                 if (!m.event_id.empty()) {
+                    int iw = (img && img->width()  > 0) ? img->width()  : m.media_w;
+                    int ih = (img && img->height() > 0) ? img->height() : m.media_h;
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                        m.event_id, m.media_url, m.body,
-                        m.media_w, m.media_h, r
+                        m.event_id, m.media_url, m.body, iw, ih, r
                     };
                 }
                 float cursor = y + sz.h;
@@ -1811,6 +1822,20 @@ void MessageListView::notify_url_preview_ready(const std::string& url) {
         }
     }
     invalidate_data();
+}
+
+void MessageListView::notify_image_ready(const std::string& url) {
+    auto [first, last] = visible_range();
+    for (std::size_t i = 0; i < messages_.size(); ++i) {
+        if (messages_[i].media_url == url) {
+            if (first > 0 && static_cast<int>(i) < first) {
+                preserve_top_through([&]{ invalidate_data(); });
+            } else {
+                invalidate_data();
+            }
+            return;
+        }
+    }
 }
 
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player) {

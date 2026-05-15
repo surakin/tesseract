@@ -172,6 +172,12 @@ public:
     // is preserved (preview card grows upward, not into the visible region).
     void notify_url_preview_ready(const std::string& url);
 
+    // Called by the host shell when a media image finishes decoding and is
+    // stored in the image_provider cache. Invalidates cached row heights so
+    // Kind::Image rows that were measured against a zero-dimension placeholder
+    // are remeasured with the actual pixel dimensions.
+    void notify_image_ready(const std::string& url);
+
     // Voice-message playback (MSC3245). Shells wire all three after
     // construction; the view stays inert (clicks become no-ops) when any
     // of them is missing — Win32 currently lacks an audio backend, so

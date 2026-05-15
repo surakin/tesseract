@@ -1555,7 +1555,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                               QDateTime::currentMSecsSinceEpoch());
             if (tk_anim_timer_ && !tk_anim_timer_->isActive())
                 tk_anim_timer_->start();
-            if (msgSurface_) msgSurface_->update();
+            if (messageListView_) messageListView_->notify_image_ready(cache_key);
+            if (msgSurface_) { msgSurface_->relayout(); msgSurface_->update(); }
             return;
         }
         buf.seek(0);
@@ -1569,7 +1570,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
     tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
-    if (msgSurface_) msgSurface_->update();
+    if (messageListView_) messageListView_->notify_image_ready(cache_key);
+    if (msgSurface_) { msgSurface_->relayout(); msgSurface_->update(); }
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
