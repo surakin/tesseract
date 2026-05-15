@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace tk::cg {
 
@@ -39,7 +40,16 @@ struct CFRetained {
     }
     T get() const { return ref; }
     operator T() const { return ref; }
+    T release() noexcept { T r = ref; ref = nullptr; return r; }
 };
+
+// kCTStrikethroughStyleAttributeName is not in the 10.15 SDK and CoreText
+// doesn't render strikethrough itself anyway. We tag spans with this private
+// key and draw the line manually after CTFrameDraw.
+static CFStringRef tk_strikethrough_key() {
+    static auto* k = CFSTR("TKStrikethrough");
+    return k;
+}
 
 CGRect to_cgrect(Rect r) {
     return CGRectMake(r.x, r.y, r.w, r.h);
@@ -247,18 +257,29 @@ public:
                 &fit_range);
             measured_ = Size{ static_cast<float>(size.width),
                               static_cast<float>(size.height) };
-            // Approximate line count by dividing height by font height —
-            // CTFramesetter doesn't expose a direct line count, and we
-            // don't need a CTFrame just for measure().
             CGFloat lh = font_line_height();
             if (lh < 1) lh = 1;
             line_count_ = elide_single_line_
                 ? 1
                 : std::max(1, static_cast<int>(std::ceil(size.height / lh)));
+
+            // Pre-build the CTFrame once so draw() never allocates.
+            if (!elide_single_line_) {
+                CGFloat fw = max_width_ > 0 ? max_width_ : measured_.w;
+                CGFloat fh = measured_.h;
+                if (fw > 0 && fh > 0) {
+                    CFRetained<CGMutablePathRef> path{ CGPathCreateMutable() };
+                    CGPathAddRect(path.get(), nullptr,
+                                  CGRectMake(0, 0, fw, fh));
+                    frame_ = CTFramesetterCreateFrame(
+                        framesetter_, CFRangeMake(0, 0), path.get(), nullptr);
+                }
+            }
         }
     }
 
     ~CTLayout() override {
+        if (frame_)       CFRelease(frame_);
         if (framesetter_) CFRelease(framesetter_);
         if (attr_)        CFRelease(attr_);
     }
@@ -277,33 +298,54 @@ public:
             return;
         }
 
-        // The CTFrame draws at origin = bottom-left of its frame rect, and
-        // CoreText assumes the context has a bottom-up coordinate system.
-        // The host NSView reports isFlipped=YES so we get a top-left
-        // context; we flip locally around the frame so CT lays glyphs out
-        // right-side-up against that flipped CTM.
-        CGFloat h = measured_.h;
-        CGRect frame_rect = CGRectMake(origin.x, origin.y,
-                                        max_width_ > 0 ? max_width_ : measured_.w,
-                                        h);
-        CFRetained<CGMutablePathRef> path{ CGPathCreateMutable() };
-        CGPathAddRect(path.get(), nullptr, CGRectMake(0, 0,
-                                                       frame_rect.size.width,
-                                                       frame_rect.size.height));
-        CFRetained<CTFrameRef> frame{
-            CTFramesetterCreateFrame(framesetter_, CFRangeMake(0, 0),
-                                      path.get(), nullptr)
-        };
-        if (!frame.get()) return;
+        if (!frame_) return;
 
+        // The CTFrame origin is (0,0); translate the context to `origin`
+        // and flip from AppKit's top-left to CoreText's bottom-up system.
+        CGFloat h = measured_.h;
         CGContextSaveGState(ctx);
-        CGContextTranslateCTM(ctx, frame_rect.origin.x,
-                                    frame_rect.origin.y + h);
+        CGContextTranslateCTM(ctx, origin.x, origin.y + h);
         CGContextScaleCTM(ctx, 1, -1);
         set_fill(ctx, c);
-        // Pick up the fill colour for the run; CT respects the context fill.
-        CTFrameDraw(frame.get(), ctx);
+        CTFrameDraw(frame_, ctx);
+        draw_strikethrough(ctx, c);
         CGContextRestoreGState(ctx);
+    }
+
+    // Draw strikethrough lines for any runs tagged with tk_strikethrough_key().
+    // Called inside the flipped coordinate transform already set up by draw().
+    void draw_strikethrough(CGContextRef ctx, Color c) const {
+        CFArrayRef lines = CTFrameGetLines(frame_);
+        CFIndex n = CFArrayGetCount(lines);
+        if (n == 0) return;
+        std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+        CTFrameGetLineOrigins(frame_, CFRangeMake(0, n), origins.data());
+
+        set_stroke(ctx, c);
+        CGContextSetLineWidth(ctx, 1.0f);
+
+        for (CFIndex li = 0; li < n; ++li) {
+            CTLineRef line = static_cast<CTLineRef>(CFArrayGetValueAtIndex(lines, li));
+            CFArrayRef runs = CTLineGetGlyphRuns(line);
+            CFIndex nr = CFArrayGetCount(runs);
+            for (CFIndex ri = 0; ri < nr; ++ri) {
+                CTRunRef run = static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, ri));
+                CFDictionaryRef attrs = CTRunGetAttributes(run);
+                CFTypeRef flag = CFDictionaryGetValue(attrs, tk_strikethrough_key());
+                if (!flag || flag == kCFBooleanFalse) continue;
+
+                CGFloat asc = 0;
+                CGFloat runW = CTRunGetTypographicBounds(run, CFRangeMake(0, 0), &asc, nullptr, nullptr);
+                CFIndex loc = CTRunGetStringRange(run).location;
+                CGFloat runX = CTLineGetOffsetForStringIndex(line, loc, nullptr);
+                CGFloat strikeY = origins[li].y + asc * 0.4f;
+
+                CGContextBeginPath(ctx);
+                CGContextMoveToPoint(ctx, origins[li].x + runX, strikeY);
+                CGContextAddLineToPoint(ctx, origins[li].x + runX + runW, strikeY);
+                CGContextStrokePath(ctx);
+            }
+        }
     }
 
     CGFloat font_ascent() const {
@@ -371,6 +413,7 @@ private:
 
     CFAttributedStringRef attr_        = nullptr;
     CTFramesetterRef      framesetter_ = nullptr;
+    CTFrameRef            frame_       = nullptr;
     Size                  measured_{};
     int                   line_count_  = 0;
     CGFloat               max_width_   = -1;
@@ -597,9 +640,91 @@ public:
 
     std::unique_ptr<TextLayout>
     build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
-        std::string plain;
-        for (const auto& sp : spans) plain += sp.text;
-        return build_text(plain, s);
+        if (spans.empty()) return nullptr;
+
+        CTTextAlignment align = kCTTextAlignmentLeft;
+        switch (s.halign) {
+            case TextHAlign::Leading:  align = kCTTextAlignmentLeft;   break;
+            case TextHAlign::Center:   align = kCTTextAlignmentCenter; break;
+            case TextHAlign::Trailing: align = kCTTextAlignmentRight;  break;
+        }
+        CTParagraphStyleSetting ps[] = {
+            { kCTParagraphStyleSpecifierAlignment, sizeof(CTTextAlignment), &align }
+        };
+        CFRetained<CTParagraphStyleRef> para{ CTParagraphStyleCreate(ps, 1) };
+
+        CFRetained<CFMutableAttributedStringRef> mattr{
+            CFAttributedStringCreateMutable(kCFAllocatorDefault, 0)
+        };
+        if (!mattr.get()) return nullptr;
+
+        FontDesc base_desc = desc_for(s.role);
+
+        for (const auto& span : spans) {
+            if (span.text.empty()) continue;
+            CFRetained<CFStringRef> text{ cfstr_from_utf8(span.text) };
+            if (!text.get() || CFStringGetLength(text.get()) == 0) continue;
+
+            CFRetained<CTFontRef> span_font;
+            if (span.code) {
+                span_font = CFRetained<CTFontRef>{
+                    CTFontCreateWithName(CFSTR("Menlo"), base_desc.size_pt, nullptr)
+                };
+                if (!span_font.get())
+                    span_font = CFRetained<CTFontRef>{ create_font(s.role) };
+            } else {
+                CFRetained<CTFontRef> base{ create_font(s.role) };
+                CTFontSymbolicTraits need = 0;
+                if (span.bold)   need |= kCTFontTraitBold;
+                if (span.italic) need |= kCTFontTraitItalic;
+                if (need) {
+                    CFRetained<CTFontRef> styled{
+                        CTFontCreateCopyWithSymbolicTraits(
+                            base.get(), 0.0, nullptr, need, need)
+                    };
+                    span_font = styled.get() ? std::move(styled) : std::move(base);
+                } else {
+                    span_font = std::move(base);
+                }
+            }
+
+            CFTypeRef st_flag = span.strikethrough ? kCFBooleanTrue : kCFBooleanFalse;
+            CFTypeRef keys[] = {
+                kCTFontAttributeName,
+                kCTParagraphStyleAttributeName,
+                kCTForegroundColorFromContextAttributeName,
+                tk_strikethrough_key(),
+            };
+            CFTypeRef vals[] = {
+                span_font.get(), para.get(), kCFBooleanTrue, st_flag
+            };
+            CFRetained<CFDictionaryRef> attrs{
+                CFDictionaryCreate(kCFAllocatorDefault, keys, vals, 4,
+                                   &kCFTypeDictionaryKeyCallBacks,
+                                   &kCFTypeDictionaryValueCallBacks)
+            };
+            CFRetained<CFAttributedStringRef> aspan{
+                CFAttributedStringCreate(kCFAllocatorDefault,
+                                         text.get(), attrs.get())
+            };
+            if (!aspan.get()) continue;
+            CFAttributedStringReplaceAttributedString(
+                mattr.get(),
+                CFRangeMake(CFAttributedStringGetLength(mattr.get()), 0),
+                aspan.get());
+        }
+
+        if (CFAttributedStringGetLength(mattr.get()) == 0) return nullptr;
+
+        CFRetained<CFAttributedStringRef> iattr{
+            CFAttributedStringCreateCopy(kCFAllocatorDefault, mattr.get())
+        };
+        if (!iattr.get()) return nullptr;
+
+        bool   elide = (s.trim == TextTrim::Ellipsis);
+        CGFloat max_w = s.max_width  > 0 ? s.max_width  : -1;
+        CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
+        return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide);
     }
 };
 

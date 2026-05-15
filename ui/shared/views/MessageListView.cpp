@@ -459,14 +459,19 @@ public:
 
             // Sender name — vertically centered against the avatar disc.
             float sender_y = bounds.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
-            tk::TextStyle s{};
-            s.role      = tk::FontRole::SenderName;
-            s.trim      = tk::TextTrim::Ellipsis;
-            s.max_width = col_w;
-            auto layout = ctx.factory.build_text(
-                m.sender_name.empty() ? m.sender : m.sender_name, s);
-            if (layout)
-                ctx.canvas.draw_text(*layout, { col_x, sender_y },
+            auto& rc = cache_for(index);
+            const std::string skey = m.sender_name.empty() ? m.sender : m.sender_name;
+            if (!rc.sender || rc.sender_key != skey || rc.sender_col_w != col_w) {
+                tk::TextStyle s{};
+                s.role      = tk::FontRole::SenderName;
+                s.trim      = tk::TextTrim::Ellipsis;
+                s.max_width = col_w;
+                rc.sender     = ctx.factory.build_text(skey, s);
+                rc.sender_key = skey;
+                rc.sender_col_w = col_w;
+            }
+            if (rc.sender)
+                ctx.canvas.draw_text(*rc.sender, { col_x, sender_y },
                                       ctx.theme.palette.text_secondary);
         }
 
@@ -482,12 +487,10 @@ public:
         // the row taller. Built right-to-left so the cluster stays flush with
         // the right edge regardless of which buttons are present.
         if (hovered && m.reactions.empty()) {
-            // Vertical centre: inside the avatar band for full rows, top of
-            // body for continuation rows (no avatar band).
+            static_cache_.ensure(ctx.factory);
             float btn_y = cont
                 ? (bounds.y + kContPadY)
                 : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
-            // Leave room on the right for any read-receipt cluster.
             float btn_right = bounds.x + bounds.w - kPadX;
             if (!m.read_receipts.empty()) {
                 const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
@@ -496,10 +499,7 @@ public:
                 btn_right -= cluster_w + chip_gap();
             }
 
-            auto paint_btn = [&](const char* glyph, tk::Rect& geom_out) {
-                tk::TextStyle st{};
-                st.role = tk::FontRole::Title;
-                auto l = ctx.factory.build_text(glyph, st);
+            auto paint_btn = [&](const tk::TextLayout* l, tk::Rect& geom_out) {
                 if (!l) return;
                 tk::Size sz = l->measure();
                 float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
@@ -516,36 +516,29 @@ public:
                 btn_right -= w + chip_gap();
             };
 
-            // Right-to-left: delete (rightmost for own), edit, reply, add-reaction.
             if (m.is_own && m.kind != MessageRowData::Kind::Redacted)
-                paint_btn("\xF0\x9F\x97\x91", owner_.hovered_row_geom_.delete_button); // 🗑
+                paint_btn(static_cache_.trash.get(), owner_.hovered_row_geom_.delete_button);
             if (m.is_own && m.kind == MessageRowData::Kind::Text)
-                paint_btn("\xE2\x9C\x8F", owner_.hovered_row_geom_.edit_button); // ✏
-            paint_btn("\xE2\x86\xA9", owner_.hovered_row_geom_.reply_button);    // ↩
-            {
-                // "+" — needs HoverTarget::AddButton tracking.
-                tk::TextStyle st{};
-                st.role = tk::FontRole::Title;
-                auto l = ctx.factory.build_text("+", st);
-                if (l) {
-                    tk::Size sz = l->measure();
-                    float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
-                    tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
-                    bool add_hov = owner_.hover_target_ == HoverTarget::AddButton;
-                    ctx.canvas.fill_rounded_rect(pill, chip_radius(),
-                        add_hov ? ctx.theme.palette.subtle_pressed
-                                : ctx.theme.palette.subtle_hover);
-                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                        add_hov ? ctx.theme.palette.accent
-                                : ctx.theme.palette.border,
-                        add_hov ? 1.5f : 1.0f);
-                    ctx.canvas.draw_text(*l,
-                        { pill.x + kChipPadX,
-                          pill.y + (pill.h - sz.h) * 0.5f },
-                        ctx.theme.palette.text_secondary);
-                    owner_.hovered_row_geom_.add_button  = pill;
-                    owner_.hovered_row_geom_.add_visible = true;
-                }
+                paint_btn(static_cache_.edit.get(), owner_.hovered_row_geom_.edit_button);
+            paint_btn(static_cache_.reply.get(), owner_.hovered_row_geom_.reply_button);
+            if (const auto* l = static_cache_.plus.get()) {
+                tk::Size sz = l->measure();
+                float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
+                tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
+                bool add_hov = owner_.hover_target_ == HoverTarget::AddButton;
+                ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                    add_hov ? ctx.theme.palette.subtle_pressed
+                            : ctx.theme.palette.subtle_hover);
+                ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                    add_hov ? ctx.theme.palette.accent
+                            : ctx.theme.palette.border,
+                    add_hov ? 1.5f : 1.0f);
+                ctx.canvas.draw_text(*l,
+                    { pill.x + kChipPadX,
+                      pill.y + (pill.h - sz.h) * 0.5f },
+                    ctx.theme.palette.text_secondary);
+                owner_.hovered_row_geom_.add_button  = pill;
+                owner_.hovered_row_geom_.add_visible = true;
             }
         }
 
@@ -567,26 +560,37 @@ public:
                 constexpr float kImgPad       = 4.0f;
                 const bool is_img = !r.source_json.empty();
 
-                tk::TextStyle cst{};
-                cst.role = tk::FontRole::UiSemibold;
-                auto count_layout =
-                    ctx.factory.build_text(std::to_string(r.count), cst);
+                auto& rc = cache_for(index);
+                if (rc.reactions.size() <= ri) rc.reactions.resize(ri + 1);
+                auto& rxc = rc.reactions[ri];
+                if (rxc.key != r.key || rxc.count != r.count) {
+                    rxc.key   = r.key;
+                    rxc.count = r.count;
+                    tk::TextStyle cst{}; cst.role = tk::FontRole::UiSemibold;
+                    rxc.count_layout = ctx.factory.build_text(
+                        std::to_string(r.count), cst);
+                    if (!r.source_json.empty()) {
+                        rxc.glyph_layout.reset();
+                    } else {
+                        tk::TextStyle est{}; est.role = tk::FontRole::Title;
+                        rxc.glyph_layout = ctx.factory.build_text(r.key, est);
+                    }
+                }
+                const auto& count_layout = rxc.count_layout;
                 if (!count_layout) {
                     if (hovered) owner_.hovered_row_geom_.chips.push_back({});
                     continue;
                 }
                 tk::Size csz = count_layout->measure();
 
-                std::unique_ptr<tk::TextLayout> emoji_layout;
+                const tk::TextLayout* emoji_layout = nullptr;
                 tk::Size esz{};
                 float content_w;
                 if (is_img) {
                     float img_side = chip_h() - kImgPad * 2;
                     content_w = img_side + kChipInnerGap + csz.w;
                 } else {
-                    tk::TextStyle est{};
-                    est.role = tk::FontRole::Title;
-                    emoji_layout = ctx.factory.build_text(r.key, est);
+                    emoji_layout = rxc.glyph_layout.get();
                     if (!emoji_layout) {
                         if (hovered) owner_.hovered_row_geom_.chips.push_back({});
                         continue;
@@ -650,10 +654,8 @@ public:
             // hovered. Reads as a discoverable affordance, not a real
             // reaction — muted background, subtle border.
             if (hovered) {
-                tk::TextStyle st{};
-                st.role = tk::FontRole::Title;
-                auto layout = ctx.factory.build_text("+", st);
-                if (layout) {
+                static_cache_.ensure(ctx.factory);
+                if (const auto* layout = static_cache_.plus.get()) {
                     tk::Size sz = layout->measure();
                     float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
                     tk::Rect pill{ chip_x, chip_y, w, chip_h() };
@@ -678,73 +680,31 @@ public:
                     chip_x += w + chip_gap();
                 }
 
-                // Reply button "↩" — painted immediately after the "+" chip.
-                {
-                    tk::TextStyle st{};
-                    st.role = tk::FontRole::Title;
-                    auto layout = ctx.factory.build_text("↩", st);  // ↩
-                    if (layout) {
-                        tk::Size sz = layout->measure();
-                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
-                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
-                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
-                                                      ctx.theme.palette.subtle_hover);
-                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                                                        ctx.theme.palette.border, 1.0f);
-                        ctx.canvas.draw_text(
-                            *layout,
-                            { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - sz.h) * 0.5f },
-                            ctx.theme.palette.text_secondary);
-                        owner_.hovered_row_geom_.reply_button = pill;
-                        chip_x += w + chip_gap();
-                    }
-                }
+                auto paint_strip_btn = [&](const tk::TextLayout* l,
+                                           tk::Rect& geom_out, bool last) {
+                    if (!l) return;
+                    tk::Size sz = l->measure();
+                    float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
+                    tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                    ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                                                  ctx.theme.palette.subtle_hover);
+                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                                                    ctx.theme.palette.border, 1.0f);
+                    ctx.canvas.draw_text(*l,
+                        { pill.x + kReplyBtnPadX, pill.y + (pill.h - sz.h) * 0.5f },
+                        ctx.theme.palette.text_secondary);
+                    geom_out = pill;
+                    if (!last) chip_x += w + chip_gap();
+                };
 
-                // Edit button "✏" — only for own text messages.
-                if (m.is_own && m.kind == MessageRowData::Kind::Text) {
-                    tk::TextStyle st{};
-                    st.role = tk::FontRole::Title;
-                    auto layout = ctx.factory.build_text("\xE2\x9C\x8F", st);  // ✏
-                    if (layout) {
-                        tk::Size sz = layout->measure();
-                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
-                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
-                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
-                                                      ctx.theme.palette.subtle_hover);
-                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                                                        ctx.theme.palette.border, 1.0f);
-                        ctx.canvas.draw_text(
-                            *layout,
-                            { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - sz.h) * 0.5f },
-                            ctx.theme.palette.text_secondary);
-                        owner_.hovered_row_geom_.edit_button = pill;
-                        chip_x += w + chip_gap();
-                    }
-                }
-
-                // Delete button "🗑" — own non-redacted messages.
-                if (m.is_own && m.kind != MessageRowData::Kind::Redacted) {
-                    tk::TextStyle st{};
-                    st.role = tk::FontRole::Title;
-                    auto layout = ctx.factory.build_text("\xF0\x9F\x97\x91", st);  // 🗑
-                    if (layout) {
-                        tk::Size sz = layout->measure();
-                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
-                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
-                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
-                                                      ctx.theme.palette.subtle_hover);
-                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                                                        ctx.theme.palette.border, 1.0f);
-                        ctx.canvas.draw_text(
-                            *layout,
-                            { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - sz.h) * 0.5f },
-                            ctx.theme.palette.text_secondary);
-                        owner_.hovered_row_geom_.delete_button = pill;
-                    }
-                }
+                paint_strip_btn(static_cache_.reply.get(),
+                                owner_.hovered_row_geom_.reply_button, false);
+                if (m.is_own && m.kind == MessageRowData::Kind::Text)
+                    paint_strip_btn(static_cache_.edit.get(),
+                                    owner_.hovered_row_geom_.edit_button, false);
+                if (m.is_own && m.kind != MessageRowData::Kind::Redacted)
+                    paint_strip_btn(static_cache_.trash.get(),
+                                    owner_.hovered_row_geom_.delete_button, true);
             }
 
         }
@@ -842,6 +802,24 @@ public:
                 }
             }
         }
+    }
+
+    // Cache management — called from MessageListView mutation methods.
+    void clear_layout_cache() {
+        layout_cache_.clear();
+        static_cache_.clear();
+    }
+    void insert_layout_cache_at(std::size_t index) {
+        if (index <= layout_cache_.size())
+            layout_cache_.emplace(layout_cache_.begin() + index);
+    }
+    void erase_layout_cache_at(std::size_t index) {
+        if (index < layout_cache_.size())
+            layout_cache_.erase(layout_cache_.begin() + index);
+    }
+    void invalidate_layout_cache_at(std::size_t index) {
+        if (index < layout_cache_.size())
+            layout_cache_[index].clear();
     }
 
 private:
@@ -1766,6 +1744,57 @@ private:
         }
     }
 
+    // ── Layout caches ───────────────────────────────────────────────────────
+
+    // Glyphs that never change across rows — built once on first paint.
+    struct StaticLayouts {
+        std::unique_ptr<tk::TextLayout> plus;
+        std::unique_ptr<tk::TextLayout> reply;
+        std::unique_ptr<tk::TextLayout> edit;
+        std::unique_ptr<tk::TextLayout> trash;
+
+        void ensure(tk::CanvasFactory& f) {
+            if (plus) return;
+            tk::TextStyle st{}; st.role = tk::FontRole::Title;
+            plus  = f.build_text("+",                st);
+            reply = f.build_text("\xE2\x86\xA9",     st); // ↩
+            edit  = f.build_text("\xE2\x9C\x8F",     st); // ✏
+            trash = f.build_text("\xF0\x9F\x97\x91", st); // 🗑
+        }
+        void clear() { plus.reset(); reply.reset(); edit.reset(); trash.reset(); }
+    };
+
+    // Per-row cache: sender name layout + per-reaction count/glyph layouts.
+    struct RowLayoutCache {
+        std::string                     sender_key;
+        float                           sender_col_w = -1;
+        std::unique_ptr<tk::TextLayout> sender;
+
+        struct ReactionEntry {
+            std::string                     key;
+            int                             count = -1;
+            std::unique_ptr<tk::TextLayout> count_layout;
+            std::unique_ptr<tk::TextLayout> glyph_layout; // null for image reactions
+        };
+        std::vector<ReactionEntry> reactions;
+
+        void clear() {
+            sender_key.clear(); sender_col_w = -1; sender.reset();
+            reactions.clear();
+        }
+    };
+
+    // Returns a writable reference to the cache entry for `index`,
+    // growing the vector on demand (default-constructs new entries).
+    RowLayoutCache& cache_for(std::size_t index) const {
+        if (index >= layout_cache_.size())
+            layout_cache_.resize(index + 1);
+        return layout_cache_[index];
+    }
+
+    mutable StaticLayouts             static_cache_;
+    mutable std::vector<RowLayoutCache> layout_cache_;
+
     MessageListView& owner_;
 };
 
@@ -1827,6 +1856,7 @@ MessageListView::video_hit_at(tk::Point world) const {
 void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     inline_players_.clear();
     revealed_spoilers_.clear();
+    adapter_->clear_layout_cache();
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
@@ -1865,6 +1895,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
     // its row offset shifts by the new row's height, which is what
     // preserve_top_through compensates for).
     if (animated) start_inline_video(msg);
+    adapter_->insert_layout_cache_at(index);
     preserve_top_through([&]{
         messages_.insert(messages_.begin() + index, std::move(msg));
         invalidate_data();
@@ -1878,12 +1909,11 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg) {
                               (messages_[index].video_autoplay || messages_[index].video_gif);
     const bool now_animated = msg.kind == MessageRowData::Kind::Video &&
                               (msg.video_autoplay || msg.video_gif);
-    // Clean up player if no longer animated (e.g. redaction).
     if (was_animated && !now_animated)
         inline_players_.erase(old_eid);
-    // Start a new player if newly animated (rare: fi.mau.* edit).
     if (now_animated && !inline_players_.count(msg.event_id))
         start_inline_video(msg);
+    adapter_->invalidate_layout_cache_at(index);
     messages_[index] = std::move(msg);
     invalidate_data();
 }
@@ -1891,6 +1921,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg) {
 void MessageListView::remove_message(std::size_t index) {
     if (index >= messages_.size()) return;
     inline_players_.erase(messages_[index].event_id);
+    adapter_->erase_layout_cache_at(index);
     preserve_top_through([&]{
         messages_.erase(messages_.begin() + index);
         invalidate_data();

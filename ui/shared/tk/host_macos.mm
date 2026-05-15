@@ -145,6 +145,7 @@ private:
 - (void)drawRect:(NSRect)dirtyRect {
     if (!self.hostPtr) return;
     CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
+    CGContextClipToRect(ctx, NSRectToCGRect(dirtyRect));
     self.hostPtr->on_draw(ctx);
 }
 
