@@ -116,6 +116,10 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
         return;
     }
     if (heights_dirty_ || measured_width_ != bounds.w) {
+        // Snapshot the last-measured row count (from row_heights_, which
+        // rebuild_heights will overwrite) rather than querying the adapter,
+        // which may already reflect additions made before this arrange call.
+        std::size_t prev_count = row_heights_.size();
         rebuild_heights(ctx, bounds.w);
         if (anchor_pre_height_ >= 0.0f) {
             // Preserve the user's visual position: if rows were added
@@ -129,10 +133,13 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
             // the next time the user crosses the threshold.
             was_near_top_ = false;
         } else {
-            // Re-arm the near-bottom trigger when rows are appended:
-            // another page can be requested the next time the user
-            // crosses the threshold.
-            was_near_bottom_ = false;
+            // Re-arm the near-bottom trigger only when rows were actually
+            // appended. A pure resize (same row count, different width)
+            // must not spuriously re-fire on_near_bottom.
+            std::size_t new_count = adapter_ ? adapter_->count() : 0;
+            if (new_count > prev_count) {
+                was_near_bottom_ = false;
+            }
         }
     }
     if (stick_to_bottom_) {

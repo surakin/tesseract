@@ -159,6 +159,7 @@ public:
     // near_bottom_threshold_px zone (default 200px). Re-arms when content is
     // appended below or the user scrolls away from the bottom.
     // Not fired while stick_to_bottom_ is true.
+    // Also not fired when content fits within the viewport.
     std::function<void()> on_near_bottom;
     void  set_near_bottom_threshold_px(float px) { near_bottom_threshold_px_ = px; }
     float near_bottom_threshold_px() const       { return near_bottom_threshold_px_; }
