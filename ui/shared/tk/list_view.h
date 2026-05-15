@@ -155,6 +155,15 @@ public:
     // approach to the top fires again.
     void  reset_near_top_latch() { was_near_top_ = false; }
 
+    // Fired exactly once each time the viewport's bottom edge first enters the
+    // near_bottom_threshold_px zone (default 200px). Re-arms when content is
+    // appended below or the user scrolls away from the bottom.
+    // Not fired while stick_to_bottom_ is true.
+    std::function<void()> on_near_bottom;
+    void  set_near_bottom_threshold_px(float px) { near_bottom_threshold_px_ = px; }
+    float near_bottom_threshold_px() const       { return near_bottom_threshold_px_; }
+    void  reset_near_bottom_latch() { was_near_bottom_ = false; }
+
     // Run `mutate` (which is expected to change the adapter's row count
     // and call `invalidate_data`) while preserving the user's visual
     // position: if rows were added above the current viewport, the
@@ -203,6 +212,7 @@ private:
     void clamp_scroll();
     void update_hover(Point local);
     void maybe_fire_near_top();
+    void maybe_fire_near_bottom();
 
     // Scrollbar geometry helpers. Return the thumb rect (in widget-local
     // coords) and the visible scroll range, or 0-width thumb when there's
@@ -232,6 +242,10 @@ private:
     // `on_near_top` machinery — see public docs.
     float  near_top_threshold_px_ = 200.0f;
     bool   was_near_top_          = false;
+
+    // `on_near_bottom` machinery — see public docs.
+    float  near_bottom_threshold_px_ = 200.0f;
+    bool   was_near_bottom_          = false;
 
     // `preserve_top_through` machinery. Sentinel < 0 means "no anchor
     // pending". Set by `preserve_top_through`, consumed by `arrange` once

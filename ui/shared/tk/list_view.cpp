@@ -128,6 +128,11 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds) {
             // Re-arm the near-top trigger: another page can be requested
             // the next time the user crosses the threshold.
             was_near_top_ = false;
+        } else {
+            // Re-arm the near-bottom trigger when rows are appended:
+            // another page can be requested the next time the user
+            // crosses the threshold.
+            was_near_bottom_ = false;
         }
     }
     if (stick_to_bottom_) {
@@ -176,6 +181,21 @@ void ListView::maybe_fire_near_top() {
         if (on_near_top) on_near_top();
     } else if (!now_near && was_near_top_) {
         was_near_top_ = false;
+    }
+}
+
+void ListView::maybe_fire_near_bottom() {
+    if (!adapter_ || adapter_->count() == 0) return;
+    if (stick_to_bottom_) return;
+    if (scrollbar_drag_) return;
+    float total = content_height();
+    if (total <= bounds_.h) return;  // content not taller than viewport
+    bool now_near = (total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_;
+    if (now_near && !was_near_bottom_) {
+        was_near_bottom_ = true;
+        if (on_near_bottom) on_near_bottom();
+    } else if (!now_near && was_near_bottom_) {
+        was_near_bottom_ = false;
     }
 }
 
@@ -295,6 +315,7 @@ bool ListView::on_wheel(Point /*local*/, float /*dx*/, float dy) {
     stick_to_bottom_ = false;
     clamp_scroll();
     maybe_fire_near_top();
+    maybe_fire_near_bottom();
     bool changed = (scroll_y_ != prev);
     if (changed && on_scroll) on_scroll();
     return changed;
@@ -332,6 +353,7 @@ void ListView::on_pointer_drag(Point local) {
     scroll_y_ = t * (total - bounds_.h);
     clamp_scroll();
     maybe_fire_near_top();
+    maybe_fire_near_bottom();
     if (scroll_y_ != prev && on_scroll) on_scroll();
 }
 
@@ -339,6 +361,7 @@ void ListView::on_pointer_up(Point local, bool inside_self) {
     if (scrollbar_drag_) {
         scrollbar_drag_ = false;
         maybe_fire_near_top();  // check now that the drag guard is lifted
+        maybe_fire_near_bottom();  // check now that the drag guard is lifted
         return;     // drag releases never select a row
     }
     int idx = inside_self ? index_at(local) : kInvalidIndex;
