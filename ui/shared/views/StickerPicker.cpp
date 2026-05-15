@@ -215,7 +215,7 @@ void StickerPicker::rebuild_current_items() {
             current_items_ = favorites_;
             break;
         case Page::Pack: {
-            int pack_idx = active_tab_ - 1;
+            int pack_idx = active_tab_ - favorites_tab_offset();
             if (pack_idx < 0 ||
                 static_cast<std::size_t>(pack_idx) >= packs_.size()) break;
             // We already filtered the pack list to sticker-capable packs in
