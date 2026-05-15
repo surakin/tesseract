@@ -3278,6 +3278,7 @@ async fn timeline_item_to_ffi(
                 formatted_body:          String::new(),
                 blurhash:                String::new(),
                 sticker_info_json:       String::new(),
+                image_animated:          false,
             });
         }
     };
@@ -3338,6 +3339,7 @@ async fn timeline_item_to_ffi(
             formatted_body:          String::new(),
             blurhash:                String::new(),
             sticker_info_json:       String::new(),
+            image_animated:          false,
         });
     }
 
@@ -3410,6 +3412,7 @@ async fn timeline_item_to_ffi(
             blurhash:                c.info.blurhash.as_deref().unwrap_or("").to_owned(),
             sticker_info_json:       serde_json::to_string(&c.info)
                                          .unwrap_or_else(|_| "{}".to_owned()),
+            image_animated:          c.info.is_animated.unwrap_or(false),
         });
     }
 
@@ -3581,6 +3584,13 @@ async fn timeline_item_to_ffi(
         _ => String::new(),
     };
 
+    let image_animated = match msg_content.msgtype() {
+        MessageType::Image(i) => i.info.as_ref()
+            .and_then(|info| info.is_animated)
+            .unwrap_or(false),
+        _ => false,
+    };
+
     let (sender_name, sender_avatar_url) =
         if let TimelineDetails::Ready(p) = event_item.sender_profile() {
             (
@@ -3678,6 +3688,7 @@ async fn timeline_item_to_ffi(
         formatted_body,
         blurhash,
         sticker_info_json: String::new(),
+        image_animated,
     })
 }
 

@@ -51,6 +51,8 @@ struct MessageRowData {
     // supplied a distinct `filename`, in which case `body` is a user
     // caption to render beneath the image.
     bool        has_filename_caption = false;
+    // MSC4230: sender flagged this image/sticker as animated.
+    bool        image_animated       = false;
     // JSON-serialised ImageInfo from the sticker event (empty for Kind::Image).
     std::string sticker_info_json;
 
