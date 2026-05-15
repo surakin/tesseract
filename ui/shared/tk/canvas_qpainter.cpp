@@ -18,6 +18,8 @@
 #include <QtCore/QSizeF>
 #include <QtCore/QString>
 
+#include <array>
+#include <unordered_map>
 #include <utility>
 
 namespace tk::qt6 {
@@ -226,15 +228,20 @@ public:
     void draw_circle_image(const Image& image, Point centre,
                             float diameter) override {
         const auto& qi = static_cast<const QtImage&>(image);
+        static std::unordered_map<int, QPainterPath> s_paths;
+        const int diam_int = static_cast<int>(diameter);
+        auto& path = s_paths[diam_int];
+        if (path.isEmpty()) {
+            const qreal r = static_cast<qreal>(diameter) * 0.5;
+            path.addEllipse(QPointF(0.0, 0.0), r, r);
+        }
         p_.save();
-        QPainterPath clip;
-        clip.addEllipse(QPointF(centre.x, centre.y),
-                         diameter * 0.5, diameter * 0.5);
-        p_.setClipPath(clip, Qt::IntersectClip);
-        QRectF dst(centre.x - diameter * 0.5,
-                    centre.y - diameter * 0.5,
-                    diameter, diameter);
-        p_.drawImage(dst, qi.image());
+        p_.translate(static_cast<qreal>(centre.x),
+                      static_cast<qreal>(centre.y));
+        p_.setClipPath(path, Qt::IntersectClip);
+        p_.drawImage(QRectF(-diameter * 0.5, -diameter * 0.5,
+                              diameter, diameter),
+                      qi.image());
         p_.restore();
     }
 
@@ -336,7 +343,16 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 
 class QtFactory : public CanvasFactory {
+    static constexpr std::size_t kNumRoles =
+        static_cast<std::size_t>(FontRole::BigEmoji) + 1;
+    std::array<QFont, kNumRoles> font_cache_;
+
 public:
+    QtFactory() {
+        for (std::size_t i = 0; i < kNumRoles; ++i)
+            font_cache_[i] = font_for(static_cast<FontRole>(i));
+    }
+
     std::unique_ptr<Image>
     decode_image(std::span<const std::uint8_t> bytes) override {
         if (bytes.empty()) return nullptr;
@@ -349,7 +365,7 @@ public:
 
     std::unique_ptr<TextLayout>
     build_text(std::string_view utf8, const TextStyle& s) override {
-        QFont f = font_for(s.role);
+        QFont f = font_cache_[static_cast<std::size_t>(s.role)];
         QString text = QString::fromUtf8(utf8.data(),
                                           static_cast<int>(utf8.size()));
 
@@ -407,7 +423,7 @@ public:
 
     std::unique_ptr<TextLayout>
     build_rich_text(std::span<const TextSpan> spans, const TextStyle& s) override {
-        QFont base = font_for(s.role);
+        QFont base = font_cache_[static_cast<std::size_t>(s.role)];
 
         QString html;
         html.reserve(256);
