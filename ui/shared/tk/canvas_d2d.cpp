@@ -3,6 +3,9 @@
 #include <tesseract/settings.h>
 
 #include <d2d1_1.h>
+#include <d2d1_1helper.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #include <dwrite_2.h>
 #include <wincodec.h>
 #include <wrl/client.h>
@@ -114,16 +117,38 @@ static FontDesc desc_for(FontRole r) {
 // ─────────────────────────────────────────────────────────────────────────
 
 struct Backend::Impl {
-    ComPtr<ID2D1Factory1>     d2d;
-    ComPtr<IDWriteFactory2>   dwrite;
-    ComPtr<IWICImagingFactory> wic;
-    // Cached system font fallback — applied to every IDWriteTextLayout so
-    // emoji sequences (especially flag RIS pairs) shape via Segoe UI Emoji.
+    ComPtr<ID2D1Factory1>      d2d;
+    ComPtr<IDWriteFactory2>    dwrite;
+    ComPtr<IWICImagingFactory>  wic;
     ComPtr<IDWriteFontFallback> font_fallback;
-    bool                      com_initialised_here = false;
+    bool                       com_initialised_here = false;
 
-    // IDWriteTextFormat is cheap to keep around; one per FontRole.
+    ComPtr<ID3D11Device>  d3d;
+    ComPtr<IDXGIDevice1>  dxgi_dev;
+    ComPtr<ID2D1Device>   d2d_dev;
+    bool                  device_lost_ = false;
+
     std::unordered_map<int, ComPtr<IDWriteTextFormat>> text_formats;
+
+    void create_d3d_device() {
+        d2d_dev.Reset();
+        dxgi_dev.Reset();
+        d3d.Reset();
+        HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE,
+            nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+            D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
+        if (FAILED(hr)) {
+            hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP,
+                nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
+            check(hr, "D3D11CreateDevice");
+        }
+        check(d3d->QueryInterface(IID_PPV_ARGS(dxgi_dev.GetAddressOf())),
+              "QI IDXGIDevice1");
+        check(d2d->CreateDevice(dxgi_dev.Get(), d2d_dev.GetAddressOf()),
+              "ID2D1Factory1::CreateDevice");
+        device_lost_ = false;
+    }
 
     IDWriteTextFormat* text_format_for(FontRole role) {
         auto it = text_formats.find(static_cast<int>(role));
@@ -173,12 +198,17 @@ Backend::Backend() : impl_(std::make_unique<Impl>()) {
                           CLSCTX_INPROC_SERVER,
                           IID_PPV_ARGS(impl_->wic.GetAddressOf()));
     check(hr, "WICImagingFactory");
+
+    impl_->create_d3d_device();
 }
 
 Backend::~Backend() {
     impl_->text_formats.clear();
     impl_->wic.Reset();
     impl_->dwrite.Reset();
+    impl_->d2d_dev.Reset();
+    impl_->dxgi_dev.Reset();
+    impl_->d3d.Reset();
     impl_->d2d.Reset();
     if (impl_->com_initialised_here) {
         CoUninitialize();
@@ -459,48 +489,88 @@ private:
 // ─────────────────────────────────────────────────────────────────────────
 
 struct Surface::Impl {
-    Backend::Impl&                  backend;
-    HWND                            hwnd;
-    ComPtr<ID2D1HwndRenderTarget>   rt;
-    std::unique_ptr<D2DCanvas>      canvas;
-    bool                            painting = false;
+    Backend::Impl&              backend;
+    HWND                        hwnd;
+    ComPtr<ID2D1DeviceContext>  dc;
+    ComPtr<IDXGISwapChain1>     swap_chain;
+    ComPtr<ID2D1Bitmap1>        target_bmp;
+    std::unique_ptr<D2DCanvas>  canvas;
+    bool                        painting = false;
 
     Impl(Backend::Impl& b, HWND h) : backend(b), hwnd(h) {}
 
+    void create_target_bitmap() {
+        ComPtr<IDXGISurface> surf;
+        check(swap_chain->GetBuffer(0, IID_PPV_ARGS(surf.GetAddressOf())),
+              "IDXGISwapChain1::GetBuffer");
+        float dpi = static_cast<float>(GetDpiForWindow(hwnd));
+        if (dpi == 0.0f) dpi = 96.0f;
+        D2D1_BITMAP_PROPERTIES1 bp = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_IGNORE),
+            dpi, dpi);
+        check(dc->CreateBitmapFromDxgiSurface(surf.Get(), &bp,
+                                               target_bmp.GetAddressOf()),
+              "CreateBitmapFromDxgiSurface");
+        dc->SetTarget(target_bmp.Get());
+        dc->SetDpi(dpi, dpi);
+    }
+
     void ensure_target() {
-        if (rt) return;
-        RECT rc;
+        if (dc) return;
+        if (backend.device_lost_) backend.create_d3d_device();
+
+        check(backend.d2d_dev->CreateDeviceContext(
+            D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf()),
+            "ID2D1Device::CreateDeviceContext");
+
+        ComPtr<IDXGIAdapter> adapter;
+        check(backend.dxgi_dev->GetAdapter(adapter.GetAddressOf()),
+              "IDXGIDevice1::GetAdapter");
+        ComPtr<IDXGIFactory2> factory2;
+        check(adapter->GetParent(IID_PPV_ARGS(factory2.GetAddressOf())),
+              "IDXGIAdapter::GetParent");
+
+        RECT rc{};
         GetClientRect(hwnd, &rc);
-        D2D1_SIZE_U size = D2D1::SizeU(
-            static_cast<UINT32>(std::max<LONG>(rc.right  - rc.left, 1)),
-            static_cast<UINT32>(std::max<LONG>(rc.bottom - rc.top,  1)));
-        D2D1_RENDER_TARGET_PROPERTIES rt_props =
-            D2D1::RenderTargetProperties();
-        D2D1_HWND_RENDER_TARGET_PROPERTIES hwnd_props =
-            D2D1::HwndRenderTargetProperties(hwnd, size,
-                                              D2D1_PRESENT_OPTIONS_NONE);
-        HRESULT hr = backend.d2d->CreateHwndRenderTarget(
-            rt_props, hwnd_props, rt.GetAddressOf());
-        check(hr, "CreateHwndRenderTarget");
+        DXGI_SWAP_CHAIN_DESC1 desc{};
+        desc.Width       = static_cast<UINT>(std::max<LONG>(rc.right,  1));
+        desc.Height      = static_cast<UINT>(std::max<LONG>(rc.bottom, 1));
+        desc.Format      = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc  = {1, 0};
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 2;
+        desc.SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.AlphaMode   = DXGI_ALPHA_MODE_IGNORE;
+        check(factory2->CreateSwapChainForHwnd(
+            backend.d3d.Get(), hwnd, &desc, nullptr, nullptr,
+            swap_chain.GetAddressOf()),
+            "IDXGIFactory2::CreateSwapChainForHwnd");
 
-        UINT dpi = GetDpiForWindow(hwnd);
-        if (dpi == 0) dpi = 96;
-        rt->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
-
-        canvas = std::make_unique<D2DCanvas>(backend, rt.Get());
+        create_target_bitmap();
+        canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
     }
 
     void resize(int w, int h) {
-        if (!rt) return;
-        D2D1_SIZE_U size = D2D1::SizeU(
-            static_cast<UINT32>(std::max(w, 1)),
-            static_cast<UINT32>(std::max(h, 1)));
-        rt->Resize(size);
+        if (!dc || !swap_chain) return;
+        dc->SetTarget(nullptr);
+        target_bmp.Reset();
+        check(swap_chain->ResizeBuffers(0,
+            static_cast<UINT>(std::max(w, 1)),
+            static_cast<UINT>(std::max(h, 1)),
+            DXGI_FORMAT_UNKNOWN, 0),
+            "IDXGISwapChain1::ResizeBuffers");
+        create_target_bitmap();
     }
 
-    void drop_target() {
+    void drop_target(bool device_removed = false) {
         canvas.reset();
-        rt.Reset();
+        if (dc) dc->SetTarget(nullptr);
+        target_bmp.Reset();
+        swap_chain.Reset();
+        dc.Reset();
+        if (device_removed) backend.device_lost_ = true;
     }
 };
 
@@ -513,18 +583,25 @@ void Surface::resize(int w, int h) { impl_->resize(w, h); }
 
 Canvas& Surface::begin_paint() {
     impl_->ensure_target();
-    impl_->rt->BeginDraw();
+    impl_->dc->BeginDraw();
     impl_->painting = true;
-    impl_->canvas->rebind(impl_->rt.Get());
+    impl_->canvas->rebind(impl_->dc.Get());
     return *impl_->canvas;
 }
 
 bool Surface::end_paint() {
     if (!impl_->painting) return false;
     impl_->painting = false;
-    HRESULT hr = impl_->rt->EndDraw();
+    HRESULT hr = impl_->dc->EndDraw();
+    if (SUCCEEDED(hr)) {
+        hr = impl_->swap_chain->Present(1, 0);
+    }
     if (hr == D2DERR_RECREATE_TARGET) {
         impl_->drop_target();
+        return true;
+    }
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        impl_->drop_target(true);
         return true;
     }
     return false;

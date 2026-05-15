@@ -98,6 +98,13 @@ private:
         const char* title = RoomListView::kSectionTitles[item.section];
         bool collapsed = owner_.collapsed_[item.section];
 
+        // Sum unread counts for the section (used for badge when collapsed).
+        std::uint64_t section_unread = 0;
+        if (collapsed) {
+            for (const auto* r : owner_.section_rooms_[item.section])
+                section_unread += r->unread_count;
+        }
+
         // Section name (left-aligned, vertically centred).
         tk::TextStyle ts{};
         ts.role = tk::FontRole::Small;
@@ -114,12 +121,41 @@ private:
         tk::TextStyle cs{};
         cs.role = tk::FontRole::Small;
         auto clayout = ctx.factory.build_text(chevron, cs);
+        float chevron_x = bounds.x + bounds.w - kHeaderPadX;
         if (clayout) {
             float cw = clayout->measure().w;
             float cy = bounds.y + (bounds.h - clayout->measure().h) * 0.5f;
+            chevron_x -= cw;
             ctx.canvas.draw_text(*clayout,
-                                  { bounds.x + bounds.w - kHeaderPadX - cw, cy },
+                                  { chevron_x, cy },
                                   ctx.theme.palette.text_muted);
+        }
+
+        // Unread badge to the left of the chevron (collapsed sections only).
+        if (collapsed && section_unread > 0) {
+            std::string badge_text = format_unread(section_unread);
+            tk::TextStyle bs{};
+            bs.role   = tk::FontRole::UnreadBadge;
+            bs.halign = tk::TextHAlign::Center;
+            auto blayout = ctx.factory.build_text(badge_text, bs);
+            float tw = blayout ? blayout->measure().w : 0.0f;
+            float pill_w = std::max(kBadgeMinW, tw + kBadgePadX * 2);
+            tk::Rect pill{
+                chevron_x - kBadgePadX - pill_w,
+                bounds.y + (bounds.h - kBadgeH) * 0.5f,
+                pill_w,
+                kBadgeH
+            };
+            ctx.canvas.fill_rounded_rect(pill, kBadgeRadius,
+                                          ctx.theme.palette.unread_bg);
+            if (blayout) {
+                tk::Size ts2 = blayout->measure();
+                ctx.canvas.draw_text(
+                    *blayout,
+                    { pill.x + (pill.w - ts2.w) * 0.5f,
+                      pill.y + (pill.h - ts2.h) * 0.5f },
+                    ctx.theme.palette.unread_text);
+            }
         }
     }
 
@@ -376,7 +412,12 @@ void RoomListView::rebuild_items() {
     for (int s = 0; s < kNumSections; ++s) {
         if (section_rooms_[s].empty()) continue;
         items_.push_back({ Item::Kind::Header, s, 0 });
-        if (collapsed_[s] && search_text_.empty()) continue;
+        if (collapsed_[s] && search_text_.empty()) {
+            for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
+                if (section_rooms_[s][r]->unread_count > 0)
+                    items_.push_back({ Item::Kind::Room, s, r });
+            continue;
+        }
         for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
             items_.push_back({ Item::Kind::Room, s, r });
     }

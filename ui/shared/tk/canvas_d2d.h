@@ -47,10 +47,11 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// One per HWND. Owns the ID2D1HwndRenderTarget. Lost-device retry is
-// handled transparently: when EndDraw returns D2DERR_RECREATE_TARGET the
-// next begin_paint() drops and rebuilds the target. The window should
-// InvalidateRect() once after a recreate to repaint with the new target.
+// One per HWND. Owns a DXGI flip-model swap chain + ID2D1DeviceContext.
+// Presents via DWM's compositor for smooth, tear-free rendering. Lost-device
+// retry is handled transparently: when EndDraw or Present signals a lost
+// device the next begin_paint() drops and rebuilds the target. The window
+// should InvalidateRect() once after a recreate to repaint.
 class Surface {
 public:
     Surface(Backend&, HWND);

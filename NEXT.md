@@ -12,13 +12,14 @@ Add delete message
 
 Matrix stickers can have any aspect ratio but they show as squares.
 Twemoji font?
-Double buffered rendering on Win32?
 
 'Add to saved stickers' should check if the sticker is in any of the subscribed sticker packs too to decide if it can be saved or not.
 In the emoji picker, the emojis are not properly centered on their cells.
 Reaction chips: the emoji is not centered vertically on windows.
 
 Design the ability of opening a room in a separate separate room-only window (with its own message list and composer bar) Add a context menu to the room list with this single option for now.
+
+When the room search filter is empty, it should read 'Search' in a lighter color, like placeholder tip.
 
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/4230-animated-image-flag.md
 https://github.com/matrix-org/matrix-spec-proposals/blob/main/proposals/2010-spoilers.md

@@ -242,6 +242,9 @@ public:
 
     void set_rect(Rect r) override {
         if (!hwnd_) return;
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h) return;
+        last_rect_ = r;
         int x = static_cast<int>(std::floor(r.x));
         int w = static_cast<int>(std::round(r.w));
         // Single-line EDIT controls draw text top-aligned within their HWND.
@@ -332,6 +335,7 @@ private:
     int  id_         = 0;
     int  line_h_     = 0;
     bool suppress_changed_ = false;
+    Rect last_rect_  = {-1.f, -1.f, -1.f, -1.f};
     std::function<void(const std::string&)> on_changed_;
     std::function<void()>                   on_submit_;
 };
@@ -378,6 +382,9 @@ public:
 
     void set_rect(Rect r) override {
         if (!hwnd_) return;
+        if (r.x == last_rect_.x && r.y == last_rect_.y &&
+            r.w == last_rect_.w && r.h == last_rect_.h) return;
+        last_rect_ = r;
         SetWindowPos(hwnd_, nullptr,
                       static_cast<int>(std::floor(r.x)),
                       static_cast<int>(std::floor(r.y)),
@@ -503,6 +510,7 @@ private:
     int  id_         = 0;
     bool  suppress_changed_ = false;
     float last_height_      = 0.f;
+    Rect  last_rect_        = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
     std::function<void(const std::string&)>  on_changed_;
     std::function<void()>                    on_submit_;

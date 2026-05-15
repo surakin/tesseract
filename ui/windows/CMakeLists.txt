@@ -80,6 +80,8 @@ target_link_libraries(tesseract_win32 PRIVATE
     dwmapi
     uxtheme
     d2d1
+    d3d11
+    dxgi
     dwrite
     windowsapp
 )
