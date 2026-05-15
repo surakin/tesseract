@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace tesseract::views {
@@ -389,6 +390,11 @@ private:
     mutable std::unordered_map<std::string, PreviewCardHit> preview_card_geom_;
     bool                           press_preview_        = false;
     std::string                    press_preview_url_;
+
+    // MSC2010 spoiler reveal state.
+    std::unordered_set<std::string> revealed_spoilers_;
+    bool                            press_spoiler_     = false;
+    std::string                     press_spoiler_eid_;
 
     // Scroll-to-bottom pill. Geometry is recomputed in paint() (after
     // ListView::paint has updated scroll state), so the rect + visible

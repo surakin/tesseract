@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -88,16 +89,19 @@ void decode_entity(const char*& p, const char* end, std::string& out) {
 // ── Tag scanning ──────────────────────────────────────────────────────────
 
 struct Tag {
-    std::string name;  // lower-cased tag name
-    std::string href;  // non-empty only for <a href="http(s)://...">
+    std::string name;          // lower-cased tag name
+    std::string href;          // non-empty only for <a href="http(s)://...">
+    std::string spoiler_reason; // value of data-mx-spoiler (may be empty)
+    bool has_spoiler  = false; // true when data-mx-spoiler attribute present
     bool closing      = false;
     bool self_closing = false;
 };
 
-// Scan [p, end) for the attribute named `target` (case-insensitive), return
-// its quoted value. Used only for <a href=...>.
-static std::string extract_attr(const char* p, const char* end,
-                                const char* target) {
+// Scan [p, end) for the attribute named `target` (case-insensitive).
+// Returns the attribute value when found (empty string for boolean attributes
+// with no value), or std::nullopt when the attribute is absent entirely.
+static std::optional<std::string> extract_attr(const char* p, const char* end,
+                                               const char* target) {
     const std::size_t tlen = std::strlen(target);
     while (p < end) {
         // Skip whitespace between attributes.
@@ -141,7 +145,7 @@ static std::string extract_attr(const char* p, const char* end,
             if (match) return value;
         }
     }
-    return {};
+    return std::nullopt;
 }
 
 // Parse one tag starting at `p` (pointing at '<'). Advances `p` past '>'.
@@ -178,12 +182,22 @@ Tag parse_tag(const char*& p, const char* end) {
         }
     }
 
+    const char* attr_end = p - 1; // points just before '>'
+
     // For opening <a> tags extract the href attribute.
     if (t.name == "a" && !t.closing) {
-        const char* attr_end = p - 1; // points just past '>'
-        std::string href = extract_attr(attr_start, attr_end, "href");
-        if (href.rfind("http://", 0) == 0 || href.rfind("https://", 0) == 0)
-            t.href = std::move(href);
+        auto href = extract_attr(attr_start, attr_end, "href");
+        if (href && (href->rfind("http://", 0) == 0 || href->rfind("https://", 0) == 0))
+            t.href = std::move(*href);
+    }
+
+    // For opening <span> tags detect data-mx-spoiler (MSC2010).
+    if (t.name == "span" && !t.closing) {
+        auto v = extract_attr(attr_start, attr_end, "data-mx-spoiler");
+        if (v.has_value()) {
+            t.has_spoiler    = true;
+            t.spoiler_reason = std::move(*v);
+        }
     }
 
     return t;
@@ -193,6 +207,8 @@ Tag parse_tag(const char*& p, const char* end) {
 
 struct FmtState {
     std::string url;
+    std::string spoiler_reason;
+    bool spoiler       = false;
     bool bold          = false;
     bool italic        = false;
     bool code          = false;
@@ -224,6 +240,8 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
         if (!spans.empty()) {
             tk::TextSpan& prev = spans.back();
             if (prev.url == s.url &&
+                prev.spoiler == s.spoiler &&
+                prev.spoiler_reason == s.spoiler_reason &&
                 prev.bold == s.bold && prev.italic == s.italic &&
                 prev.code == s.code && prev.strikethrough == s.strikethrough) {
                 prev.text += cur_text;
@@ -232,12 +250,14 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
             }
         }
         tk::TextSpan sp;
-        sp.text          = cur_text;
-        sp.url           = s.url;
-        sp.bold          = s.bold;
-        sp.italic        = s.italic;
-        sp.code          = s.code;
-        sp.strikethrough = s.strikethrough;
+        sp.text           = cur_text;
+        sp.url            = s.url;
+        sp.spoiler        = s.spoiler;
+        sp.spoiler_reason = s.spoiler_reason;
+        sp.bold           = s.bold;
+        sp.italic         = s.italic;
+        sp.code           = s.code;
+        sp.strikethrough  = s.strikethrough;
         spans.push_back(std::move(sp));
         cur_text.clear();
     };
@@ -257,6 +277,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
                 else if (tag.name == "del" || tag.name == "s"
                          || tag.name == "strike")                  ns.strikethrough = true;
                 else if (tag.name == "a" && !tag.href.empty())     ns.url = tag.href;
+                else if (tag.name == "span" && tag.has_spoiler) {
+                    ns.spoiler        = true;
+                    ns.spoiler_reason = tag.spoiler_reason;
+                }
                 else if (tag.name == "p") {
                     // Paragraph separator — blank line between paras.
                     if (!first_block) {

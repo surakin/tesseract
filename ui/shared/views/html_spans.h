@@ -10,6 +10,7 @@ namespace tesseract::views {
 //
 // Recognised inline tags: <b>/<strong>, <i>/<em>, <code>, <del>/<s>/<strike>,
 //   <a href="http(s)://..."> (text kept; url field populated on the span),
+//   <span data-mx-spoiler[="reason"]> (MSC2010; spoiler+spoiler_reason set),
 //   <u> (no underline yet, text kept).
 // Block tags: <p> (paragraph break as '\n'), <br> (line break as '\n'),
 //   <pre> (treated as code block; inner <code> is redundant but harmless).

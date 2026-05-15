@@ -110,13 +110,17 @@ public:
 // may be combined; `text` is plain UTF-8 (no markup, newlines as '\n').
 // `url` is non-empty iff this run is a hyperlink — backends render it with
 // underline + link colour.
+// `spoiler` is true for MSC2010 spoiler spans; `spoiler_reason` is the
+// optional reason string from data-mx-spoiler="reason".
 struct TextSpan {
     std::string text;
     std::string url;
+    std::string spoiler_reason;
     bool bold          = false;
     bool italic        = false;
     bool code          = false;   // render in monospace
     bool strikethrough = false;
+    bool spoiler       = false;
 };
 
 // Per-platform factory for backend-owned resources. The platform host

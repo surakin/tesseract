@@ -1246,12 +1246,37 @@ private:
         return layout ? layout->measure().h : 0;
     }
 
+    static bool has_spoilers(const MessageRowData& m) {
+        return m.formatted_body.find("data-mx-spoiler") != std::string::npos;
+    }
+
+    // Pre-process spans for rendering: when unrevealed, replace hidden spoiler
+    // text with a bold label so the content is hidden but the span is visible.
+    std::vector<tk::TextSpan>
+    prepare_spans(const MessageRowData& m, bool revealed) const {
+        auto spans = html_to_spans(m.formatted_body);
+        if (!revealed) {
+            for (auto& sp : spans) {
+                if (!sp.spoiler) continue;
+                sp.text = sp.spoiler_reason.empty()
+                              ? "[Spoiler]"
+                              : "[Spoiler: " + sp.spoiler_reason + "]";
+                sp.bold          = true;
+                sp.italic        = false;
+                sp.strikethrough = false;
+                sp.url           = {};
+            }
+        }
+        return spans;
+    }
+
     // Measure height for a text message body — uses rich text when
     // formatted_body is present, otherwise falls back to plain text.
     float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
                              float w) const {
         if (!m.formatted_body.empty()) {
-            auto spans = html_to_spans(m.formatted_body);
+            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+            auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
                 auto layout = ctx.factory.build_rich_text(spans, body_style(w));
                 if (layout) return layout->measure().h;
@@ -1275,7 +1300,8 @@ private:
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx,
                            float x, float y, float w) const {
         if (!m.formatted_body.empty()) {
-            auto spans = html_to_spans(m.formatted_body);
+            bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+            auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
                 auto layout = ctx.factory.build_rich_text(spans, body_style(w));
                 if (layout) {
@@ -1685,6 +1711,7 @@ MessageListView::video_hit_at(tk::Point world) const {
 
 void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     inline_players_.clear();
+    revealed_spoilers_.clear();
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
@@ -2159,6 +2186,17 @@ bool MessageListView::on_pointer_down(tk::Point local) {
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
                                  local, chip_idx);
     if (t == HoverTarget::None) {
+        // Spoiler reveal: capture click if the row has unrevealed spoilers.
+        std::size_t row = hovered_row_geom_.row_index;
+        if (row < messages_.size()) {
+            const auto& m = messages_[row];
+            if (Adapter::has_spoilers(m) &&
+                revealed_spoilers_.count(m.event_id) == 0) {
+                press_spoiler_     = true;
+                press_spoiler_eid_ = m.event_id;
+                return true;
+            }
+        }
         return tk::ListView::on_pointer_down(local);
     }
     std::size_t row = hovered_row_geom_.row_index;
@@ -2172,6 +2210,17 @@ bool MessageListView::on_pointer_down(tk::Point local) {
 }
 
 void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (press_spoiler_) {
+        bool fire = inside_self && !press_spoiler_eid_.empty();
+        std::string eid = std::move(press_spoiler_eid_);
+        press_spoiler_     = false;
+        press_spoiler_eid_.clear();
+        if (fire) {
+            revealed_spoilers_.insert(eid);
+            invalidate_data();
+        }
+        return;
+    }
     if (press_pill_) {
         bool fire = inside_self;
         press_pill_ = false;
