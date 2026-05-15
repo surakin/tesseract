@@ -146,10 +146,24 @@ void StickerPicker::refresh_packs() {
         }
         favorites_ = client_->list_favorite_stickers();
     }
-    // Reclamp active tab so it points at a valid pack index.
+    // If we were on Favorites and there are no longer any, fall back to pack 0.
+    if (page_ == Page::Favorites && favorites_.empty()) {
+        if (!packs_.empty()) {
+            page_       = Page::Pack;
+            active_tab_ = favorites_tab_offset(); // == 0 now that favorites gone
+        } else {
+            active_tab_ = 0;
+        }
+    }
+    // Reclamp active tab so it points at a valid index.
     if (active_tab_ < 0 || active_tab_ > tab_count() - 1) {
-        active_tab_ = 0;
-        page_ = Page::Favorites;
+        if (!packs_.empty()) {
+            page_       = Page::Pack;
+            active_tab_ = favorites_tab_offset();
+        } else {
+            active_tab_ = 0;
+            page_       = Page::Favorites;
+        }
     }
     rebuild_current_items();
 }
@@ -180,7 +194,7 @@ void StickerPicker::switch_to_favorites() {
 void StickerPicker::switch_to_pack(int idx) {
     if (idx < 0 || static_cast<std::size_t>(idx) >= packs_.size()) return;
     page_       = Page::Pack;
-    active_tab_ = 1 + idx;
+    active_tab_ = favorites_tab_offset() + idx;
     rebuild_current_items();
 }
 
@@ -191,7 +205,7 @@ void StickerPicker::switch_to_search() {
 }
 
 int StickerPicker::tab_count() const {
-    return 1 + static_cast<int>(packs_.size());
+    return favorites_tab_offset() + static_cast<int>(packs_.size());
 }
 
 void StickerPicker::rebuild_current_items() {
@@ -312,10 +326,9 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
             ctx.canvas.fill_rect(tab, ctx.theme.palette.subtle_hover);
         }
 
-        // Tab content. Favorites = ⭐ glyph. Pack tabs = avatar bitmap when
-        // the host has it cached; otherwise the first letter of the pack
-        // name as a fallback affordance so empty packs still get clicked.
-        if (i == 0) {
+        // Tab content. Favorites = ⭐ glyph (only when has_favorites_tab()).
+        // Pack tabs = avatar bitmap when cached; otherwise first-letter fallback.
+        if (has_favorites_tab() && i == 0) {
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;
             auto layout = ctx.factory.build_text(
@@ -330,7 +343,7 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
             continue;
         }
 
-        const auto& pack = packs_[i - 1];
+        const auto& pack = packs_[static_cast<std::size_t>(i - favorites_tab_offset())];
         const tk::Image* avatar = nullptr;
         if (provider_ && !pack.avatar_url.empty()) {
             avatar = provider_(pack.avatar_url, pack.avatar_url);
@@ -396,10 +409,10 @@ void StickerPicker::on_pointer_up(tk::Point local, bool inside_self) {
     int hit = pressed_tab_idx_;
     pressed_tab_idx_ = -1;
     if (t != hit) return;
-    if (hit == 0) {
+    if (has_favorites_tab() && hit == 0) {
         switch_to_favorites();
     } else {
-        switch_to_pack(hit - 1);
+        switch_to_pack(hit - favorites_tab_offset());
     }
 }
 

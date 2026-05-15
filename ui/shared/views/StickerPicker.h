@@ -95,7 +95,9 @@ private:
 
     int  tab_at(tk::Point local) const;
     tk::Rect tab_strip_rect() const;
-    int  tab_count() const; // = 1 (Favorites) + packs_.size()
+    int  tab_count() const;           // = has_favorites_tab() + packs_.size()
+    bool has_favorites_tab() const { return !favorites_.empty(); }
+    int  favorites_tab_offset() const { return has_favorites_tab() ? 1 : 0; }
 
     tesseract::Client*                          client_   = nullptr;
     ImageProvider                                provider_;

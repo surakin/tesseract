@@ -377,12 +377,10 @@ public:
         bool  cont    = is_cont(index);
         float body_w  = body_text_max_width(width);
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h   = !m.reactions.empty() ? chip_h() : 0.0f;
-        float receipt_h = !m.read_receipts.empty() && m.reactions.empty()
-                              ? kReceiptSize + kPadY : 0.0f;
+        float chips_h  = !m.reactions.empty() ? chip_h() : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
-        return top_pad + header_h + body_h + chips_h + receipt_h + kPadY;
+        return top_pad + header_h + body_h + chips_h + kPadY;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -537,12 +535,11 @@ public:
             }
         }
 
-        // Disc centre Y for receipts. When reactions are present the disc shares
-        // their chip strip (overridden inside that block). When only receipts are
-        // present they get their own strip immediately below the body block.
-        float receipt_disc_cy = (!m.read_receipts.empty() && m.reactions.empty())
-            ? cursor + kReceiptSize * 0.5f
-            : cursor - kReceiptSize * 0.5f;
+        // Disc centre Y for receipts. Receipts always overlay the row — they
+        // never expand it. Default: centre in the bottom kPadY strip (cursor
+        // is its top edge). When reactions are present the block below
+        // overrides this to align with the chip strip centre.
+        float receipt_disc_cy = cursor - kReceiptSize * 0.5f;
 
         // ── Bottom chip strip (reactions) ────────────────────────────────────
         // Only created when there are persistent reaction chips to show.

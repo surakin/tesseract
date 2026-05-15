@@ -352,7 +352,7 @@ public:
         hwnd_ = CreateWindowExW(
             0,
             L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+            WS_CHILD | WS_VISIBLE |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
             0, 0, 200, 40,
             parent_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
@@ -919,6 +919,12 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
                                reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
             return TRUE;
         }
+        case WM_MOUSEACTIVATE:
+            // Prevent the Surface from stealing keyboard focus from native
+            // overlays (NativeTextArea, NativeTextField) when buttons are
+            // clicked. All input handling is mouse-driven; no WM_KEYDOWN
+            // handling lives in this proc.
+            return MA_NOACTIVATE;
         case WM_ERASEBKGND:
             return 1;   // we paint the full client area in WM_PAINT
         case WM_PAINT:
