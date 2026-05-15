@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tesseract UI Mockup</title>
+  <style>
+    /* ──────────────────────────────────────────────────────────────────
+       CSS custom properties — mirrors theme.cpp + visual.h + settings.h
+    ────────────────────────────────────────────────────────────────── */
+    :root {
+      /* Surfaces */
+      --bg:               #FFFFFF;
+      --sidebar-bg:       #F0F2F5;
+      --sidebar-selected: #E4E6EB;
+      --sidebar-hover:    #EBECF0;
+      --chrome-bg:        #F8F9FA;
+      --compose-card-bg:  #F0F2F5;
+      --border:           #D0D3D8;
+      --separator:        #D0D3D8;
+      --popup-border:     #BBBEC4;
+      /* Text */
+      --text-primary:     #111111;
+      --text-secondary:   #8E8E93;
+      --text-muted:       #A0A0A6;
+      --text-on-accent:   #FFFFFF;
+      /* Accent */
+      --accent:           #0084FF;
+      --accent-hover:     #1A92FF;
+      --accent-pressed:   #006BD1;
+      --subtle-hover:     rgba(0,0,0,0.06);
+      --subtle-pressed:   rgba(0,0,0,0.12);
+      /* Reaction chips */
+      --chip-bg:          #EBECF0;
+      --chip-bg-me:       #CFE3FF;
+      --chip-border:      #D0D3D8;
+      --chip-border-me:   #9CC4FF;
+      --chip-text:        #111111;
+      --chip-text-me:     #004A9E;
+      /* Unread / avatar */
+      --unread-bg:        #0084FF;
+      --unread-text:      #FFFFFF;
+      --avatar-bg:        #CFE3FF;
+      --avatar-text:      #004A9E;
+
+      /* Font sizes — pt → px at 96 dpi (× 1.333) */
+      --font-small:       11px;   /* 8 pt */
+      --font-body:        16px;   /* 12 pt */
+      --font-sender:      15px;   /* 11 pt */
+      --font-timestamp:   12px;   /*  9 pt */
+      --font-sidebar-name:16px;   /* 12 pt */
+      --font-sidebar-prev:13px;   /* 10 pt */
+      --font-badge:       13px;   /* 10 pt */
+      --font-title:       19px;   /* 14 pt */
+      --font-ui:          13px;   /* 10 pt */
+      --font-big-emoji:   32px;   /* 24 pt */
+
+      /* Layout — from visual.h */
+      --sidebar-width:    260px;
+      --room-row-h:       62px;
+      --room-avatar:      36px;
+      --msg-avatar:       32px;
+      --msg-avatar-gap:   8px;
+      --pad-x:            12px;
+      --pad-y:            6px;
+      --cont-pad-y:       2px;
+      --user-strip-h:     48px;
+      --compose-min-h:    40px;
+      --sender-h:         16px;
+      --chip-h:           28px;
+      --chip-pad-x:       10px;
+      --quote-h:          44px;
+      --quote-accent-w:   3px;
+    }
+
+    /* ── Reset ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #6b7280;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* ── App frame ──────────────────────────────────────────────────── */
+    #app-frame {
+      display: flex;
+      width: min(1160px, 100%);
+      height: min(740px, 90vh);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.40);
+      border: 1px solid rgba(0,0,0,0.15);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       SIDEBAR
+    ════════════════════════════════════════════════════════════════ */
+    #sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* search bar */
+    #sidebar-header {
+      padding: 10px 8px 8px;
+      background: var(--chrome-bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--compose-card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: var(--font-ui);
+      color: var(--text-muted);
+      cursor: text;
+    }
+
+    /* room list */
+    #room-list {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    #room-list::-webkit-scrollbar { width: 4px; }
+    #room-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .section-header {
+      font-size: var(--font-small);
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 14px 12px 4px;
+    }
+
+    .room-row {
+      display: flex;
+      align-items: center;
+      height: var(--room-row-h);
+      padding: 0 8px;
+      gap: 10px;
+      cursor: default;
+      position: relative;
+      transition: background 0.1s;
+    }
+    .room-row:hover { background: var(--sidebar-hover); }
+    .room-row.selected { background: var(--sidebar-selected); }
+
+    .room-avatar {
+      width: var(--room-avatar);
+      height: var(--room-avatar);
+      min-width: var(--room-avatar);
+      border-radius: 50%;
+      background: var(--avatar-bg);
+      color: var(--avatar-text);
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .av-green  { background: #D8F5E1 !important; color: #1A7A3C !important; }
+    .av-purple { background: #EDE3FF !important; color: #5B21B6 !important; }
+    .av-orange { background: #FFF0E0 !important; color: #C05600 !important; }
+    .av-pink   { background: #FFE0F0 !important; color: #9A1257 !important; }
+    .av-teal   { background: #E0F7F5 !important; color: #0D6E6E !important; }
+
+    .room-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .room-name-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .room-name {
+      font-size: var(--font-sidebar-name);
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+    }
+    .room-time {
+      font-size: var(--font-timestamp);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .room-preview {
+      font-size: var(--font-sidebar-prev);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .unread-badge {
+      background: var(--unread-bg);
+      color: var(--unread-text);
+      font-size: var(--font-badge);
+      font-weight: 700;
+      min-width: 20px;
+      height: 18px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      flex-shrink: 0;
+    }
+
+    /* user strip */
+    #user-strip {
+      height: var(--user-strip-h);
+      background: var(--chrome-bg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 8px;
+    }
+    .user-avatar-wrap { position: relative; }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--text-on-accent);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .status-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #22C55E;
+      border: 2px solid var(--chrome-bg);
+    }
+    .user-name {
+      flex: 1;
+      font-size: var(--font-ui);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .icon-btn-muted {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      cursor: default;
+      padding: 4px;
+      border-radius: 6px;
+    }
+    .icon-btn-muted:hover { background: var(--subtle-hover); }
+
+    /* ════════════════════════════════════════════════════════════════
+       MAIN CHAT
+    ════════════════════════════════════════════════════════════════ */
+    #chat {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* room header */
+    #room-header {
+      height: 48px;
+      background: var(--chrome-bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 var(--pad-x);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .rh-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--avatar-bg);
+      color: var(--avatar-text);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .room-title {
+      font-size: var(--font-title);
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+    }
+    .header-icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      cursor: default;
+    }
+    .header-icon-btn:hover { background: var(--subtle-hover); }
+
+    /* message list */
+    #message-list {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 4px 0 8px;
+    }
+    #message-list::-webkit-scrollbar { width: 6px; }
+    #message-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* day separator */
+    .day-sep {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px var(--pad-x);
+    }
+    .day-sep-line { flex: 1; height: 1px; background: var(--separator); }
+    .day-sep-label {
+      font-size: var(--font-small);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* read marker */
+    .read-marker {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 3px var(--pad-x);
+    }
+    .read-marker-line { flex: 1; height: 1px; background: var(--accent); opacity: 0.5; }
+    .read-marker-label {
+      font-size: var(--font-small);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    /* message row */
+    .msg-row {
+      display: flex;
+      align-items: flex-start;
+      padding: var(--pad-y) var(--pad-x);
+      cursor: default;
+      position: relative;
+    }
+    .msg-row:hover { background: var(--subtle-hover); }
+    .msg-row.cont { padding-top: var(--cont-pad-y); }
+
+    /* hover timestamp — shown for continuation rows on hover */
+    .msg-row.cont .hover-ts {
+      position: absolute;
+      left: var(--pad-x);
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: var(--font-timestamp);
+      color: var(--text-muted);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.1s;
+      width: var(--msg-avatar);
+      text-align: center;
+    }
+    .msg-row.cont:hover .hover-ts { opacity: 1; }
+
+    .msg-avatar-col {
+      width: calc(var(--msg-avatar) + var(--msg-avatar-gap));
+      min-width: calc(var(--msg-avatar) + var(--msg-avatar-gap));
+      padding-right: var(--msg-avatar-gap);
+      display: flex;
+      justify-content: center;
+    }
+    .msg-avatar {
+      width: var(--msg-avatar);
+      height: var(--msg-avatar);
+      border-radius: 50%;
+      background: var(--avatar-bg);
+      color: var(--avatar-text);
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .msg-body-col { flex: 1; min-width: 0; }
+
+    .msg-header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+    .sender-name {
+      font-size: var(--font-sender);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .msg-time {
+      font-size: var(--font-timestamp);
+      color: var(--text-muted);
+    }
+
+    /* body text */
+    .msg-text {
+      font-size: var(--font-body);
+      color: var(--text-primary);
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .msg-text.big-emoji {
+      font-size: var(--font-big-emoji);
+      line-height: 1.15;
+    }
+    .msg-text strong { font-weight: 700; }
+    .msg-text em     { font-style: italic; }
+    .msg-text s      { text-decoration: line-through; }
+    .msg-text code {
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.88em;
+      background: var(--compose-card-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .msg-text a { color: var(--accent); text-decoration: none; }
+    .msg-text a:hover { text-decoration: underline; }
+
+    .edited-badge {
+      font-size: var(--font-small);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* spoiler */
+    .spoiler {
+      display: inline-block;
+      background: var(--text-primary);
+      color: var(--text-primary);
+      border-radius: 3px;
+      padding: 1px 5px;
+      cursor: pointer;
+      transition: background 0.25s, color 0.25s;
+      font-weight: 700;
+      user-select: none;
+    }
+    .spoiler.revealed {
+      background: transparent;
+      color: var(--text-primary);
+    }
+    .spoiler:hover { opacity: 0.85; }
+
+    /* quote block */
+    .quote-block {
+      display: flex;
+      background: var(--chrome-bg);
+      border-radius: 6px;
+      margin-bottom: 5px;
+      overflow: hidden;
+      max-height: var(--quote-h);
+    }
+    .quote-accent-bar {
+      width: var(--quote-accent-w);
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .quote-content {
+      padding: 6px 10px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .quote-sender {
+      font-size: var(--font-small);
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+    .quote-text {
+      font-size: var(--font-small);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* reaction chips */
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: var(--chip-h);
+      padding: 0 var(--chip-pad-x);
+      border-radius: 14px;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      font-size: var(--font-sidebar-prev);
+      color: var(--chip-text);
+      cursor: default;
+      transition: opacity 0.1s;
+    }
+    .chip:hover { opacity: 0.75; }
+    .chip.me {
+      background: var(--chip-bg-me);
+      border-color: var(--chip-border-me);
+      color: var(--chip-text-me);
+    }
+    .chip.add {
+      background: transparent;
+      color: var(--text-muted);
+      border-style: dashed;
+    }
+
+    /* inline image */
+    .msg-image {
+      width: 320px;
+      max-width: 100%;
+      height: 200px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #dde6f0 0%, #e8d8ec 50%, #d8ece3 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.65);
+    }
+
+    /* voice card */
+    .voice-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 280px;
+      height: 48px;
+      background: var(--chrome-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 8px;
+    }
+    .play-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      cursor: default;
+    }
+    .waveform {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 32px;
+    }
+    .wf-bar {
+      width: 3px;
+      border-radius: 1.5px;
+      background: var(--border);
+    }
+    .wf-bar.played { background: var(--accent); }
+    .voice-dur {
+      font-size: var(--font-small);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* file card */
+    .file-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 280px;
+      height: 56px;
+      background: var(--chrome-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 10px;
+    }
+    .file-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name {
+      font-size: var(--font-ui);
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-size { font-size: var(--font-small); color: var(--text-muted); }
+
+    /* URL preview card */
+    .preview-card {
+      width: 280px;
+      height: 72px;
+      background: var(--chrome-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      display: flex;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .preview-thumb {
+      width: 56px;
+      background: linear-gradient(135deg, #c5d4e8, #d4c5e8);
+      flex-shrink: 0;
+    }
+    .preview-content {
+      flex: 1;
+      padding: 8px 10px;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+    }
+    .preview-site { font-size: var(--font-small); color: var(--accent); }
+    .preview-title {
+      font-size: var(--font-ui);
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .preview-desc {
+      font-size: var(--font-small);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* read receipts */
+    .receipt-row {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 var(--pad-x) 2px;
+    }
+    .receipt-av {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--avatar-bg);
+      color: var(--avatar-text);
+      font-size: 7px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px solid var(--bg);
+      margin-left: -5px;
+    }
+    .receipt-av:first-child { margin-left: 0; }
+
+    /* typing indicator */
+    .typing-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px var(--pad-x) 10px calc(var(--pad-x) + var(--msg-avatar) + var(--msg-avatar-gap));
+      font-size: var(--font-small);
+      color: var(--text-muted);
+    }
+    .typing-dots { display: flex; gap: 3px; }
+    .tdot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: tbounce 1.2s ease-in-out infinite;
+    }
+    .tdot:nth-child(2) { animation-delay: 0.2s; }
+    .tdot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes tbounce {
+      0%,60%,100% { transform: translateY(0); opacity: 1; }
+      30%          { transform: translateY(-5px); opacity: 0.6; }
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       COMPOSE BAR
+    ════════════════════════════════════════════════════════════════ */
+    #compose-area {
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 8px var(--pad-x);
+      flex-shrink: 0;
+    }
+    .compose-card {
+      display: flex;
+      align-items: flex-end;
+      background: var(--compose-card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .cmp-btn {
+      width: 36px; height: 36px;
+      margin: 4px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      cursor: default;
+      flex-shrink: 0;
+      transition: background 0.1s;
+    }
+    .cmp-btn:hover { background: var(--subtle-hover); }
+    .compose-input {
+      flex: 1;
+      min-height: var(--compose-min-h);
+      padding: 10px 4px;
+      font-size: var(--font-body);
+      color: var(--text-primary);
+      background: transparent;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      line-height: 1.4;
+    }
+    .compose-input::placeholder { color: var(--text-muted); }
+    .cmp-send {
+      width: 36px; height: 36px;
+      margin: 4px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+      flex-shrink: 0;
+      transition: background 0.1s;
+    }
+    .cmp-send:hover { background: var(--accent-hover); }
+
+    /* ════════════════════════════════════════════════════════════════
+       STYLE TWEAKER PANEL
+    ════════════════════════════════════════════════════════════════ */
+    #tweaker-wrap {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 200;
+      font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    }
+    #tweaker-toggle {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border: 1px solid #45475a;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.1s;
+    }
+    #tweaker-toggle:hover { background: #2a2a3e; }
+
+    #tweaker-panel {
+      width: 300px;
+      max-height: min(680px, 88vh);
+      overflow-y: auto;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border: 1px solid #45475a;
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+      margin-top: 8px;
+      display: none;
+    }
+    #tweaker-panel.open { display: block; }
+    #tweaker-panel::-webkit-scrollbar { width: 4px; }
+    #tweaker-panel::-webkit-scrollbar-thumb { background: #45475a; border-radius: 2px; }
+
+    .tw-section { margin-bottom: 18px; }
+    .tw-section-title {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #a6adc8;
+      margin-bottom: 9px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #313244;
+    }
+    .tw-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+    .tw-label {
+      flex: 1;
+      font-size: 12px;
+      color: #cdd6f4;
+      min-width: 0;
+    }
+    .tw-val {
+      font-size: 11px;
+      color: #a6adc8;
+      min-width: 38px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="color"].tw-swatch {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      border: 2px solid #45475a;
+      cursor: pointer;
+      padding: 1px;
+      background: none;
+    }
+    input[type="range"].tw-slider {
+      width: 90px;
+      accent-color: #89b4fa;
+      cursor: pointer;
+    }
+
+    .theme-toggle {
+      display: flex;
+      gap: 3px;
+      background: #313244;
+      border-radius: 8px;
+      padding: 3px;
+    }
+    .theme-btn {
+      padding: 4px 14px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: #a6adc8;
+      transition: background 0.1s, color 0.1s;
+    }
+    .theme-btn.active { background: #89b4fa; color: #1e1e2e; }
+
+    .tw-reset {
+      width: 100%;
+      margin-top: 2px;
+      padding: 7px;
+      border-radius: 6px;
+      background: #313244;
+      border: 1px solid #45475a;
+      color: #cdd6f4;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .tw-reset:hover { background: #45475a; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     APP
+══════════════════════════════════════════════════════════════ -->
+<div id="app-frame">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <aside id="sidebar">
+
+    <div id="sidebar-header">
+      <div class="search-bar">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+          <line x1="9.9" y1="9.9" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        Search
+      </div>
+    </div>
+
+    <div id="room-list">
+      <div class="section-header">Direct Messages</div>
+
+      <div class="room-row selected">
+        <div class="room-avatar">AL</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">Alice Laurent</span>
+            <span class="room-time">12:41</span>
+          </div>
+          <div class="room-preview">The build looks good this week</div>
+        </div>
+      </div>
+
+      <div class="room-row">
+        <div class="room-avatar av-green">BK</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">Bob Kowalski</span>
+            <span class="room-time">11:03</span>
+          </div>
+          <div class="room-preview">🎉🎊</div>
+        </div>
+        <div class="unread-badge">3</div>
+      </div>
+
+      <div class="room-row">
+        <div class="room-avatar av-purple">CE</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">Clara Evans</span>
+            <span class="room-time">Mon</span>
+          </div>
+          <div class="room-preview">Sure, sounds good!</div>
+        </div>
+      </div>
+
+      <div class="room-row">
+        <div class="room-avatar av-teal">DS</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">David Sato</span>
+            <span class="room-time">Sun</span>
+          </div>
+          <div class="room-preview">See you at the standup 👋</div>
+        </div>
+      </div>
+
+      <div class="section-header">Rooms</div>
+
+      <div class="room-row">
+        <div class="room-avatar av-orange" style="font-size:16px;font-weight:400">#</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">#general</span>
+            <span class="room-time">10:22</span>
+          </div>
+          <div class="room-preview">Alice: emoji picker looks great</div>
+        </div>
+      </div>
+
+      <div class="room-row">
+        <div class="room-avatar av-pink" style="font-size:16px;font-weight:400">#</div>
+        <div class="room-info">
+          <div class="room-name-row">
+            <span class="room-name">#random</span>
+            <span class="room-time">09:47</span>
+          </div>
+          <div class="room-preview">Bob: anyone up for lunch?</div>
+        </div>
+        <div class="unread-badge">12</div>
+      </div>
+    </div><!-- /#room-list -->
+
+    <div id="user-strip">
+      <div class="user-avatar-wrap">
+        <div class="user-avatar">MA</div>
+        <div class="status-dot"></div>
+      </div>
+      <span class="user-name">Marco A.</span>
+      <div class="icon-btn-muted">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <path d="M12 3a9 9 0 100 18A9 9 0 0012 3z" stroke="currentColor" stroke-width="1.6"/>
+          <line x1="12" y1="8" x2="12" y2="13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="12" cy="16" r="1" fill="currentColor"/>
+        </svg>
+      </div>
+      <div class="icon-btn-muted">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+          <path d="M12 1a3 3 0 00-3 3v1.07A7 7 0 005 12v4l-2 2v1h18v-1l-2-2v-4a7 7 0 00-4-6.93V4a3 3 0 00-3-3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN CHAT ────────────────────────────────────────────── -->
+  <main id="chat">
+
+    <div id="room-header">
+      <div class="rh-avatar">AL</div>
+      <span class="room-title">Alice Laurent</span>
+      <div class="header-icon-btn" title="Search">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="9.9" y1="9.9" x2="13.5" y2="13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="header-icon-btn" title="More">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>
+        </svg>
+      </div>
+    </div>
+
+    <div id="message-list">
+
+      <!-- ── Day separator ── -->
+      <div class="day-sep">
+        <div class="day-sep-line"></div>
+        <span class="day-sep-label">Monday, 12 May 2025</span>
+        <div class="day-sep-line"></div>
+      </div>
+
+      <!-- ── Full row: URL preview ── -->
+      <div class="msg-row">
+        <div class="msg-avatar-col">
+          <div class="msg-avatar">AL</div>
+        </div>
+        <div class="msg-body-col">
+          <div class="msg-header">
+            <span class="sender-name">Alice Laurent</span>
+            <span class="msg-time">10:14</span>
+          </div>
+          <div class="msg-text">
+            Check out the new spec: <a href="#">https://spec.matrix.org/latest/</a>
+          </div>
+          <div class="preview-card">
+            <div class="preview-thumb"></div>
+            <div class="preview-content">
+              <div class="preview-site">spec.matrix.org</div>
+              <div class="preview-title">Matrix Specification</div>
+              <div class="preview-desc">The Matrix protocol specification — latest stable release</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Continuation: rich text + reactions ── -->
+      <div class="msg-row cont">
+        <div class="hover-ts">10:15</div>
+        <div class="msg-avatar-col"></div>
+        <div class="msg-body-col">
+          <div class="msg-text">
+            The <strong>spoiler</strong> and <em>emoji-sizing</em> PRs both landed. Fixed <code>insert_at_cursor</code> too — cursor no longer jumps to end on emoji insert.
+          </div>
+          <div class="chip-row">
+            <div class="chip me">👍 3</div>
+            <div class="chip">❤️ 2</div>
+            <div class="chip">🎉 1</div>
+            <div class="chip add">＋</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Read receipts ── -->
+      <div class="receipt-row">
+        <div class="receipt-av av-green">BK</div>
+        <div class="receipt-av av-purple">CE</div>
+        <div class="receipt-av av-teal">DS</div>
+      </div>
+
+      <!-- ── Full row: Bob, emoji-only (BigEmoji) ── -->
+      <div class="msg-row">
+        <div class="msg-avatar-col">
+          <div class="msg-avatar av-green">BK</div>
+        </div>
+        <div class="msg-body-col">
+          <div class="msg-header">
+            <span class="sender-name" style="color:#1A7A3C">Bob Kowalski</span>
+            <span class="msg-time">10:21</span>
+          </div>
+          <div class="msg-text big-emoji">🎉🎊</div>
+        </div>
+      </div>
+
+      <!-- ── Full row: reply quote + body ── -->
+      <div class="msg-row">
+        <div class="msg-avatar-col">
+          <div class="msg-avatar">AL</div>
+        </div>
+        <div class="msg-body-col">
+          <div class="msg-header">
+            <span class="sender-name">Alice Laurent</span>
+            <span class="msg-time">10:22</span>
+          </div>
+          <div class="quote-block">
+            <div class="quote-accent-bar"></div>
+            <div class="quote-content">
+              <div class="quote-sender">Bob Kowalski</div>
+              <div class="quote-text">🎉🎊</div>
+            </div>
+          </div>
+          <div class="msg-text">Ha! Agreed — it's a good milestone 🙂</div>
+        </div>
+      </div>
+
+      <!-- ── Continuation: inline image ── -->
+      <div class="msg-row cont">
+        <div class="hover-ts">10:23</div>
+        <div class="msg-avatar-col"></div>
+        <div class="msg-body-col">
+          <div class="msg-image">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="3" width="18" height="18" rx="3" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+              <circle cx="8.5" cy="8.5" r="1.5" fill="rgba(255,255,255,0.7)"/>
+              <path d="M3 16l4-4 3 3 4-5 4 6" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Day separator: Today ── -->
+      <div class="day-sep">
+        <div class="day-sep-line"></div>
+        <span class="day-sep-label">Today</span>
+        <div class="day-sep-line"></div>
+      </div>
+
+      <!-- ── Read marker ── -->
+      <div class="read-marker">
+        <div class="read-marker-line"></div>
+        <span class="read-marker-label">New messages</span>
+        <div class="read-marker-line"></div>
+      </div>
+
+      <!-- ── Full row: Clara, voice message ── -->
+      <div class="msg-row">
+        <div class="msg-avatar-col">
+          <div class="msg-avatar av-purple">CE</div>
+        </div>
+        <div class="msg-body-col">
+          <div class="msg-header">
+            <span class="sender-name" style="color:#5B21B6">Clara Evans</span>
+            <span class="msg-time">12:03</span>
+          </div>
+          <div class="voice-card">
+            <div class="play-btn">
+              <svg width="11" height="13" viewBox="0 0 11 13" fill="white">
+                <path d="M1 1l9 5.5L1 12V1z"/>
+              </svg>
+            </div>
+            <div class="waveform" id="waveform"></div>
+            <span class="voice-dur">0:42</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Continuation: file attachment ── -->
+      <div class="msg-row cont">
+        <div class="hover-ts">12:03</div>
+        <div class="msg-avatar-col"></div>
+        <div class="msg-body-col">
+          <div class="file-card">
+            <div class="file-icon" style="background:#0084FF">PDF</div>
+            <div class="file-info">
+              <div class="file-name">MSC2010-spoilers-spec.pdf</div>
+              <div class="file-size">142 KB</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Full row: Alice, spoiler ── -->
+      <div class="msg-row">
+        <div class="msg-avatar-col">
+          <div class="msg-avatar">AL</div>
+        </div>
+        <div class="msg-body-col">
+          <div class="msg-header">
+            <span class="sender-name">Alice Laurent</span>
+            <span class="msg-time">12:38</span>
+          </div>
+          <div class="msg-text">
+            Did you watch the finale?
+            <span class="spoiler" onclick="this.classList.add('revealed')">[Spoiler: the ending]</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Continuation: edited ── -->
+      <div class="msg-row cont">
+        <div class="hover-ts">12:41</div>
+        <div class="msg-avatar-col"></div>
+        <div class="msg-body-col">
+          <div class="msg-text">The build is looking good this week</div>
+          <div class="edited-badge">(edited)</div>
+        </div>
+      </div>
+
+      <!-- ── Typing indicator ── -->
+      <div class="typing-row">
+        <div class="typing-dots">
+          <div class="tdot"></div>
+          <div class="tdot"></div>
+          <div class="tdot"></div>
+        </div>
+        Bob is typing…
+      </div>
+
+    </div><!-- /#message-list -->
+
+    <!-- ── COMPOSE BAR ── -->
+    <div id="compose-area">
+      <div class="compose-card">
+        <div class="cmp-btn" title="Emoji">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/>
+            <circle cx="9" cy="10" r="1.1" fill="currentColor"/>
+            <circle cx="15" cy="10" r="1.1" fill="currentColor"/>
+            <path d="M8 14.5c1 1.5 7 1.5 8 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="cmp-btn" title="Sticker">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 3C7 3 3 7 3 12s4 9 9 9h.5a2.5 2.5 0 002-4l-.5-.5a2.5 2.5 0 013.5-3.5l.5.5A2.5 2.5 0 0021 11.5V12c0-5-4-9-9-9z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <textarea class="compose-input" placeholder="Message Alice Laurent…" rows="1"
+          oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+        <div class="cmp-btn" title="Attach file">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M21.5 11.5l-9.5 9.5a5.5 5.5 0 01-7.8-7.8L13.7 3.7a3.5 3.5 0 115 5L9.5 17.8a1.5 1.5 0 01-2-2L16 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="cmp-send" title="Send">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /#app-frame -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     STYLE TWEAKER
+══════════════════════════════════════════════════════════════ -->
+<div id="tweaker-wrap">
+  <button id="tweaker-toggle" onclick="toggleTweaker()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.8"/>
+    </svg>
+    Style tweaker
+  </button>
+  <div id="tweaker-panel">
+
+    <!-- Theme preset -->
+    <div class="tw-section">
+      <div class="tw-section-title">Theme preset</div>
+      <div class="tw-row">
+        <span class="tw-label">Mode</span>
+        <div class="theme-toggle">
+          <button class="theme-btn active" id="btn-light" onclick="applyPreset('light')">Light</button>
+          <button class="theme-btn"        id="btn-dark"  onclick="applyPreset('dark')">Dark</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Surfaces -->
+    <div class="tw-section">
+      <div class="tw-section-title">Surfaces &amp; Chrome</div>
+      <div id="grp-surfaces"></div>
+    </div>
+
+    <!-- Text -->
+    <div class="tw-section">
+      <div class="tw-section-title">Text</div>
+      <div id="grp-text"></div>
+    </div>
+
+    <!-- Accent -->
+    <div class="tw-section">
+      <div class="tw-section-title">Accent &amp; Badges</div>
+      <div id="grp-accent"></div>
+    </div>
+
+    <!-- Reaction chips -->
+    <div class="tw-section">
+      <div class="tw-section-title">Reaction Chips</div>
+      <div id="grp-chips"></div>
+    </div>
+
+    <!-- Font sizes -->
+    <div class="tw-section">
+      <div class="tw-section-title">Font Sizes</div>
+      <div id="grp-fonts"></div>
+    </div>
+
+    <!-- Layout -->
+    <div class="tw-section">
+      <div class="tw-section-title">Layout &amp; Spacing</div>
+      <div id="grp-layout"></div>
+    </div>
+
+    <button class="tw-reset" onclick="resetAll()">↺ Reset to defaults</button>
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────────
+//  Theme data (mirrors theme.cpp light/dark palettes)
+// ──────────────────────────────────────────────────────────────
+const PRESETS = {
+  light: {
+    '--bg':               '#FFFFFF',
+    '--sidebar-bg':       '#F0F2F5',
+    '--sidebar-selected': '#E4E6EB',
+    '--sidebar-hover':    '#EBECF0',
+    '--chrome-bg':        '#F8F9FA',
+    '--compose-card-bg':  '#F0F2F5',
+    '--border':           '#D0D3D8',
+    '--separator':        '#D0D3D8',
+    '--text-primary':     '#111111',
+    '--text-secondary':   '#8E8E93',
+    '--text-muted':       '#A0A0A6',
+    '--text-on-accent':   '#FFFFFF',
+    '--accent':           '#0084FF',
+    '--accent-hover':     '#1A92FF',
+    '--accent-pressed':   '#006BD1',
+    '--chip-bg':          '#EBECF0',
+    '--chip-bg-me':       '#CFE3FF',
+    '--chip-border':      '#D0D3D8',
+    '--chip-border-me':   '#9CC4FF',
+    '--chip-text':        '#111111',
+    '--chip-text-me':     '#004A9E',
+    '--unread-bg':        '#0084FF',
+    '--unread-text':      '#FFFFFF',
+    '--avatar-bg':        '#CFE3FF',
+    '--avatar-text':      '#004A9E',
+  },
+  dark: {
+    '--bg':               '#1B1D21',
+    '--sidebar-bg':       '#16181C',
+    '--sidebar-selected': '#2A2D33',
+    '--sidebar-hover':    '#23262B',
+    '--chrome-bg':        '#202327',
+    '--compose-card-bg':  '#202327',
+    '--border':           '#33363B',
+    '--separator':        '#33363B',
+    '--text-primary':     '#F0F0F2',
+    '--text-secondary':   '#A0A0A8',
+    '--text-muted':       '#808088',
+    '--text-on-accent':   '#FFFFFF',
+    '--accent':           '#4DA3FF',
+    '--accent-hover':     '#66B3FF',
+    '--accent-pressed':   '#3388E0',
+    '--chip-bg':          '#2A2D33',
+    '--chip-bg-me':       '#1F3A66',
+    '--chip-border':      '#33363B',
+    '--chip-border-me':   '#2D55A0',
+    '--chip-text':        '#E6E6E8',
+    '--chip-text-me':     '#BFD8FF',
+    '--unread-bg':        '#4DA3FF',
+    '--unread-text':      '#0B1320',
+    '--avatar-bg':        '#1F3A66',
+    '--avatar-text':      '#BFD8FF',
+  },
+};
+
+const COLOR_GROUPS = {
+  'grp-surfaces': [
+    ['--bg',               'Chat background'],
+    ['--sidebar-bg',       'Sidebar background'],
+    ['--sidebar-selected', 'Sidebar selected'],
+    ['--sidebar-hover',    'Sidebar hover'],
+    ['--chrome-bg',        'Chrome / header'],
+    ['--compose-card-bg',  'Compose card'],
+    ['--border',           'Border'],
+    ['--separator',        'Separator'],
+  ],
+  'grp-text': [
+    ['--text-primary',   'Primary text'],
+    ['--text-secondary', 'Secondary text'],
+    ['--text-muted',     'Muted / timestamps'],
+    ['--text-on-accent', 'Text on accent'],
+  ],
+  'grp-accent': [
+    ['--accent',        'Accent'],
+    ['--accent-hover',  'Accent hover'],
+    ['--accent-pressed','Accent pressed'],
+    ['--unread-bg',     'Unread badge bg'],
+    ['--unread-text',   'Unread badge text'],
+    ['--avatar-bg',     'Avatar disc bg'],
+    ['--avatar-text',   'Avatar disc text'],
+  ],
+  'grp-chips': [
+    ['--chip-bg',        'Chip background'],
+    ['--chip-bg-me',     'Chip bg (mine)'],
+    ['--chip-border',    'Chip border'],
+    ['--chip-border-me', 'Chip border (mine)'],
+    ['--chip-text',      'Chip text'],
+    ['--chip-text-me',   'Chip text (mine)'],
+  ],
+};
+
+// [cssVar, label, defaultPx, min, max]
+const FONT_DEFS = [
+  ['--font-small',        'Small',          11,  6, 24],
+  ['--font-body',         'Body',           16,  8, 32],
+  ['--font-sender',       'Sender name',    15,  8, 28],
+  ['--font-timestamp',    'Timestamp',      12,  6, 20],
+  ['--font-sidebar-name', 'Sidebar name',   16,  8, 28],
+  ['--font-sidebar-prev', 'Sidebar preview',13,  6, 22],
+  ['--font-badge',        'Badge',          13,  6, 22],
+  ['--font-title',        'Room title',     19, 10, 36],
+  ['--font-ui',           'UI / buttons',   13,  6, 22],
+  ['--font-big-emoji',    'Big emoji',      32, 16, 64],
+];
+
+// [cssVar, label, defaultVal, min, max, unit]
+const LAYOUT_DEFS = [
+  ['--sidebar-width',   'Sidebar width',      260, 180, 360, 'px'],
+  ['--room-row-h',      'Room row height',     62,  44,  88, 'px'],
+  ['--room-avatar',     'Room avatar size',    36,  24,  52, 'px'],
+  ['--msg-avatar',      'Msg avatar size',     32,  20,  48, 'px'],
+  ['--msg-avatar-gap',  'Avatar → body gap',    8,   4,  16, 'px'],
+  ['--pad-x',           'Horizontal padding',  12,   4,  28, 'px'],
+  ['--pad-y',           'Row vertical pad',     6,   2,  18, 'px'],
+  ['--chip-h',          'Chip height',         28,  18,  44, 'px'],
+  ['--chip-pad-x',      'Chip horiz padding',  10,   4,  22, 'px'],
+  ['--quote-h',         'Quote block height',  44,  28,  72, 'px'],
+  ['--compose-min-h',   'Compose min height',  40,  28,  64, 'px'],
+  ['--user-strip-h',    'User strip height',   48,  32,  72, 'px'],
+];
+
+// ──────────────────────────────────────────────────────────────
+//  Helpers
+// ──────────────────────────────────────────────────────────────
+function cssToHex(v) {
+  v = v.trim();
+  if (v.startsWith('#')) return v.slice(0,7); // drop alpha if present
+  const m = v.match(/rgba?\s*\(\s*(\d+)[, ]+(\d+)[, ]+(\d+)/);
+  if (m) return '#' + [m[1],m[2],m[3]].map(n => (+n).toString(16).padStart(2,'0')).join('');
+  return '#888888';
+}
+
+function getVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function setVar(name, value) {
+  document.documentElement.style.setProperty(name, value);
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Build color rows
+// ──────────────────────────────────────────────────────────────
+function buildColorRow(varName, label, container) {
+  const row = document.createElement('div');
+  row.className = 'tw-row';
+  row.innerHTML =
+    `<span class="tw-label">${label}</span>` +
+    `<input type="color" class="tw-swatch" data-var="${varName}">`;
+  container.appendChild(row);
+
+  const inp = row.querySelector('input');
+  inp.value = cssToHex(getVar(varName));
+  inp.addEventListener('input', e => setVar(varName, e.target.value));
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Build slider rows
+// ──────────────────────────────────────────────────────────────
+function buildSliderRow(varName, label, def, min, max, unit, container) {
+  const cur = parseInt(getVar(varName)) || def;
+  const safeId = varName.replace(/[^a-z0-9]/gi, '_');
+  const row = document.createElement('div');
+  row.className = 'tw-row';
+  row.innerHTML =
+    `<span class="tw-label">${label}</span>` +
+    `<input type="range" class="tw-slider" min="${min}" max="${max}" value="${cur}" data-var="${varName}" data-unit="${unit}">` +
+    `<span class="tw-val" id="val_${safeId}">${cur}${unit}</span>`;
+  container.appendChild(row);
+
+  const inp = row.querySelector('input');
+  const val = row.querySelector('.tw-val');
+  inp.addEventListener('input', e => {
+    const v = e.target.value + unit;
+    setVar(varName, v);
+    val.textContent = v;
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Initialise all controls
+// ──────────────────────────────────────────────────────────────
+function initControls() {
+  for (const [grpId, pairs] of Object.entries(COLOR_GROUPS)) {
+    const container = document.getElementById(grpId);
+    pairs.forEach(([v, l]) => buildColorRow(v, l, container));
+  }
+  const fc = document.getElementById('grp-fonts');
+  FONT_DEFS.forEach(([v, l, d, mn, mx]) => buildSliderRow(v, l, d, mn, mx, 'px', fc));
+  const lc = document.getElementById('grp-layout');
+  LAYOUT_DEFS.forEach(([v, l, d, mn, mx, u]) => buildSliderRow(v, l, d, mn, mx, u, lc));
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Apply a theme preset
+// ──────────────────────────────────────────────────────────────
+let currentPreset = 'light';
+
+function applyPreset(name) {
+  currentPreset = name;
+  const p = PRESETS[name];
+  for (const [k, v] of Object.entries(p)) setVar(k, v);
+
+  // Sync all color swatches
+  document.querySelectorAll('input[type=color][data-var]').forEach(inp => {
+    const v = p[inp.dataset.var];
+    if (v) inp.value = cssToHex(v);
+  });
+  document.getElementById('btn-light').classList.toggle('active', name === 'light');
+  document.getElementById('btn-dark').classList.toggle('active',  name === 'dark');
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Reset everything to CSS defaults
+// ──────────────────────────────────────────────────────────────
+function resetAll() {
+  // Clear all inline style overrides on :root so the stylesheet defaults win
+  const root = document.documentElement;
+  [...root.style].forEach(p => root.style.removeProperty(p));
+
+  // Re-sync sliders + their value labels
+  FONT_DEFS.forEach(([v, , d, , , ]) => {
+    const safeId = v.replace(/[^a-z0-9]/gi, '_');
+    const inp = document.querySelector(`input[data-var="${v}"]`);
+    const lbl = document.getElementById(`val_${safeId}`);
+    if (inp) inp.value = d;
+    if (lbl) lbl.textContent = d + 'px';
+  });
+  LAYOUT_DEFS.forEach(([v, , d, , , u]) => {
+    const safeId = v.replace(/[^a-z0-9]/gi, '_');
+    const inp = document.querySelector(`input[data-var="${v}"]`);
+    const lbl = document.getElementById(`val_${safeId}`);
+    if (inp) inp.value = d;
+    if (lbl) lbl.textContent = d + u;
+  });
+
+  // Re-sync color swatches from computed styles
+  document.querySelectorAll('input[type=color][data-var]').forEach(inp => {
+    inp.value = cssToHex(getVar(inp.dataset.var));
+  });
+
+  document.getElementById('btn-light').classList.add('active');
+  document.getElementById('btn-dark').classList.remove('active');
+  currentPreset = 'light';
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Toggle tweaker panel
+// ──────────────────────────────────────────────────────────────
+function toggleTweaker() {
+  document.getElementById('tweaker-panel').classList.toggle('open');
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Voice waveform
+// ──────────────────────────────────────────────────────────────
+function buildWaveform() {
+  const heights = [5,9,15,11,19,24,17,13,26,21,17,19,13,9,17,21,24,19,15,11,9,13,17,15,11,9,13,7,11,9];
+  const wf = document.getElementById('waveform');
+  if (!wf) return;
+  heights.forEach((h, i) => {
+    const b = document.createElement('div');
+    b.className = 'wf-bar' + (i < 11 ? ' played' : '');
+    b.style.height = h + 'px';
+    wf.appendChild(b);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Boot
+// ──────────────────────────────────────────────────────────────
+initControls();
+buildWaveform();
+</script>
+</body>
+</html>
