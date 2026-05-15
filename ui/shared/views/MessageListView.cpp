@@ -425,6 +425,7 @@ public:
             owner_.hovered_row_geom_.add_visible    = false;
             owner_.hovered_row_geom_.reply_button   = tk::Rect{};
             owner_.hovered_row_geom_.edit_button    = tk::Rect{};
+            owner_.hovered_row_geom_.delete_button  = tk::Rect{};
         }
 
         // Avatar column centre — used both for painting and for the
@@ -515,7 +516,9 @@ public:
                 btn_right -= w + chip_gap();
             };
 
-            // Right-to-left: edit (rightmost), reply, add-reaction.
+            // Right-to-left: delete (rightmost for own), edit, reply, add-reaction.
+            if (m.is_own && m.kind != MessageRowData::Kind::Redacted)
+                paint_btn("\xF0\x9F\x97\x91", owner_.hovered_row_geom_.delete_button); // 🗑
             if (m.is_own && m.kind == MessageRowData::Kind::Text)
                 paint_btn("\xE2\x9C\x8F", owner_.hovered_row_geom_.edit_button); // ✏
             paint_btn("\xE2\x86\xA9", owner_.hovered_row_geom_.reply_button);    // ↩
@@ -717,6 +720,29 @@ public:
                               pill.y + (pill.h - layout->measure().h) * 0.5f },
                             ctx.theme.palette.text_secondary);
                         owner_.hovered_row_geom_.edit_button = pill;
+                        chip_x += w + chip_gap();
+                    }
+                }
+
+                // Delete button "🗑" — own non-redacted messages.
+                if (m.is_own && m.kind != MessageRowData::Kind::Redacted) {
+                    tk::TextStyle st{};
+                    st.role = tk::FontRole::Title;
+                    auto layout = ctx.factory.build_text("\xF0\x9F\x97\x91", st);  // 🗑
+                    if (layout) {
+                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
+                                            chip_h() + 4.0f);
+                        tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                        ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                                                      ctx.theme.palette.subtle_hover);
+                        ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                                                        ctx.theme.palette.border, 1.0f);
+                        ctx.canvas.draw_text(
+                            *layout,
+                            { pill.x + kReplyBtnPadX,
+                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                            ctx.theme.palette.text_secondary);
+                        owner_.hovered_row_geom_.delete_button = pill;
                     }
                 }
             }
@@ -2235,6 +2261,20 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         }
     }
 
+    // Delete button hit-test.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        const tk::Rect& db = hovered_row_geom_.delete_button;
+        if (db.w > 0 && rect_contains(db, world)) {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size()) {
+                press_delete_btn_      = true;
+                press_delete_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
     // Quote-block hit-test — lets the user jump to the original message.
     {
         tk::Point world{ local.x + bounds().x, local.y + bounds().y };
@@ -2401,6 +2441,20 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
                         break;
                     }
                 }
+            }
+        }
+        return;
+    }
+    if (press_delete_btn_) {
+        bool  fire = inside_self && !press_delete_event_id_.empty();
+        std::string ev = std::move(press_delete_event_id_);
+        press_delete_btn_      = false;
+        press_delete_event_id_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            const tk::Rect& db = hovered_row_geom_.delete_button;
+            if (db.w > 0 && rect_contains(db, world)) {
+                if (on_delete_requested) on_delete_requested(ev);
             }
         }
         return;

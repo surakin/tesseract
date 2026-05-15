@@ -903,6 +903,12 @@ void MacShell::update_typing_bar_(const std::string& text, bool visible) {
                     s->_composeTextArea->set_focused(true);
                 }
             };
+        _messageListView->on_delete_requested =
+            [weakSelf](const std::string& event_id) {
+                MainWindowController* s = weakSelf;
+                if (!s || s->_shell->current_room_id_.empty()) return;
+                s->_shell->client_->redact_event(s->_shell->current_room_id_, event_id);
+            };
         _messageListView->on_near_top = [weakSelf]{
             MainWindowController* s = weakSelf;
             if (!s) return;

@@ -1202,6 +1202,11 @@ void MainWindow::on_create(HWND hwnd) {
                     compose_text_area_->set_focused(true);
                 }
             };
+        message_list_view_->on_delete_requested =
+            [this](const std::string& event_id) {
+                if (current_room_id_.empty()) return;
+                client_->redact_event(current_room_id_, event_id);
+            };
         message_list_view_->on_near_top = [this]{
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);
