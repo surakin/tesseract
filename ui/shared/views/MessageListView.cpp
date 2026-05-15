@@ -501,8 +501,8 @@ public:
                 st.role = tk::FontRole::Title;
                 auto l = ctx.factory.build_text(glyph, st);
                 if (!l) return;
-                float w = std::max(l->measure().w + kReplyBtnPadX * 2,
-                                    chip_h() + 4.0f);
+                tk::Size sz = l->measure();
+                float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
                 tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
                 ctx.canvas.fill_rounded_rect(pill, chip_radius(),
                                               ctx.theme.palette.subtle_hover);
@@ -510,7 +510,7 @@ public:
                                                 ctx.theme.palette.border, 1.0f);
                 ctx.canvas.draw_text(*l,
                     { pill.x + kReplyBtnPadX,
-                      pill.y + (pill.h - l->measure().h) * 0.5f },
+                      pill.y + (pill.h - sz.h) * 0.5f },
                     ctx.theme.palette.text_secondary);
                 geom_out = pill;
                 btn_right -= w + chip_gap();
@@ -528,8 +528,8 @@ public:
                 st.role = tk::FontRole::Title;
                 auto l = ctx.factory.build_text("+", st);
                 if (l) {
-                    float w = std::max(l->measure().w + kChipPadX * 2,
-                                        chip_h() + 8.0f);
+                    tk::Size sz = l->measure();
+                    float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
                     tk::Rect pill{ btn_right - w, btn_y, w, chip_h() };
                     bool add_hov = owner_.hover_target_ == HoverTarget::AddButton;
                     ctx.canvas.fill_rounded_rect(pill, chip_radius(),
@@ -541,7 +541,7 @@ public:
                         add_hov ? 1.5f : 1.0f);
                     ctx.canvas.draw_text(*l,
                         { pill.x + kChipPadX,
-                          pill.y + (pill.h - l->measure().h) * 0.5f },
+                          pill.y + (pill.h - sz.h) * 0.5f },
                         ctx.theme.palette.text_secondary);
                     owner_.hovered_row_geom_.add_button  = pill;
                     owner_.hovered_row_geom_.add_visible = true;
@@ -654,8 +654,8 @@ public:
                 st.role = tk::FontRole::Title;
                 auto layout = ctx.factory.build_text("+", st);
                 if (layout) {
-                    float w = std::max(layout->measure().w + kChipPadX * 2,
-                                        chip_h() + 8.0f);
+                    tk::Size sz = layout->measure();
+                    float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
                     tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                     bool add_hovered =
                         owner_.hover_target_ == HoverTarget::AddButton;
@@ -671,7 +671,7 @@ public:
                     ctx.canvas.draw_text(
                         *layout,
                         { pill.x + kChipPadX,
-                          pill.y + (pill.h - layout->measure().h) * 0.5f },
+                          pill.y + (pill.h - sz.h) * 0.5f },
                         ctx.theme.palette.text_secondary);
                     owner_.hovered_row_geom_.add_button  = pill;
                     owner_.hovered_row_geom_.add_visible = true;
@@ -684,8 +684,8 @@ public:
                     st.role = tk::FontRole::Title;
                     auto layout = ctx.factory.build_text("↩", st);  // ↩
                     if (layout) {
-                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
-                                            chip_h() + 4.0f);
+                        tk::Size sz = layout->measure();
+                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
                         tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                         ctx.canvas.fill_rounded_rect(pill, chip_radius(),
                                                       ctx.theme.palette.subtle_hover);
@@ -694,7 +694,7 @@ public:
                         ctx.canvas.draw_text(
                             *layout,
                             { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                              pill.y + (pill.h - sz.h) * 0.5f },
                             ctx.theme.palette.text_secondary);
                         owner_.hovered_row_geom_.reply_button = pill;
                         chip_x += w + chip_gap();
@@ -707,8 +707,8 @@ public:
                     st.role = tk::FontRole::Title;
                     auto layout = ctx.factory.build_text("\xE2\x9C\x8F", st);  // ✏
                     if (layout) {
-                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
-                                            chip_h() + 4.0f);
+                        tk::Size sz = layout->measure();
+                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
                         tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                         ctx.canvas.fill_rounded_rect(pill, chip_radius(),
                                                       ctx.theme.palette.subtle_hover);
@@ -717,7 +717,7 @@ public:
                         ctx.canvas.draw_text(
                             *layout,
                             { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                              pill.y + (pill.h - sz.h) * 0.5f },
                             ctx.theme.palette.text_secondary);
                         owner_.hovered_row_geom_.edit_button = pill;
                         chip_x += w + chip_gap();
@@ -730,8 +730,8 @@ public:
                     st.role = tk::FontRole::Title;
                     auto layout = ctx.factory.build_text("\xF0\x9F\x97\x91", st);  // 🗑
                     if (layout) {
-                        float w = std::max(layout->measure().w + kReplyBtnPadX * 2,
-                                            chip_h() + 4.0f);
+                        tk::Size sz = layout->measure();
+                        float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
                         tk::Rect pill{ chip_x, chip_y, w, chip_h() };
                         ctx.canvas.fill_rounded_rect(pill, chip_radius(),
                                                       ctx.theme.palette.subtle_hover);
@@ -740,7 +740,7 @@ public:
                         ctx.canvas.draw_text(
                             *layout,
                             { pill.x + kReplyBtnPadX,
-                              pill.y + (pill.h - layout->measure().h) * 0.5f },
+                              pill.y + (pill.h - sz.h) * 0.5f },
                             ctx.theme.palette.text_secondary);
                         owner_.hovered_row_geom_.delete_button = pill;
                     }
