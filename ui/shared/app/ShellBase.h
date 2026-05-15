@@ -101,7 +101,14 @@ protected:
     std::string active_verification_flow_id_;   // "" = no flow in progress
 
     // ── Pagination ────────────────────────────────────────────────────────────
-    struct PaginationState { bool in_flight = false; bool reached_start = false; };
+    struct PaginationState {
+        bool        in_flight      = false;
+        bool        reached_start  = false;
+        bool        fwd_in_flight  = false;   // forward paginate guard
+        bool        reached_end    = false;
+        bool        is_focused     = false;   // true = using with_focus timeline
+        std::string focus_event_id;           // scroll target after timeline reset
+    };
     std::unordered_map<std::string, PaginationState> pagination_;
 
     // ── Read receipts ─────────────────────────────────────────────────────────
@@ -244,6 +251,16 @@ protected:
 
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
+
+    // MSC3030: begin a focused-timeline subscription centred on event_id.
+    void begin_focused_subscription_(const std::string& room_id,
+                                      const std::string& event_id);
+
+    // MSC3030: paginate forward in a focused timeline; switches to live when done.
+    void request_forward_history_(const std::string& room_id);
+
+    // MSC3030: tear down focused state and re-subscribe live.
+    void return_to_live_(const std::string& room_id);
 
     // Send public m.read and private m.read.private receipts for event_id in
     // room_id if it differs from the last one sent this session. No-op when
