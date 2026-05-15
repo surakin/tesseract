@@ -1,18 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-14**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-15**.
 
-> **Multi-account support — done on all four platforms.**
-> N accounts run concurrently, each on its own `Client` + `EventBridge` +
-> `INotifier`, scoped to its own `accounts/<sanitized-uid>/` on-disk directory.
-> Per-instance SDK data directory (`Client::set_data_dir`), one-shot legacy
-> migration (atomic move of `session.json` + `matrix-store/` with rollback),
-> shared `UserInfo` + `AccountPicker` widgets, `LoginView::Mode { Initial,
-> AddAccount }`. All four shells (Qt6, GTK4, macOS, Win32) wire
-> `accounts_` + `switch_active_account` + `begin_add_account` +
-> `logout_active_account`. Per-account `INotifier` lives in `AccountSession`;
-> toast-click switches the active account before navigating to the room on
-> every platform. 219/219 C++ tests pass.
+> **Win32 toast notifications fixed; Qt6 rendering optimised.**
+> Win32 now registers the AUMID in `HKCU\Software\Classes\AppUserModelId\`
+> at startup so WinRT toast infrastructure can resolve it (non-packaged apps
+> silently dropped toasts without this). Qt6 frame cost reduced: `measure()`
+> results cached at all hover-button callsites, `QFont` per `FontRole` cached
+> in `QtFactory`, avatar `QPainterPath` cached by diameter, and `paintEvent`
+> clipped to the dirty rect. 228/228 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -20,8 +16,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 69 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 219 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 72 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 228 |
 
 ## Platforms
 
@@ -150,7 +146,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 - Cross-platform `tesseract::INotifier` / `Notification` abstraction; per-platform impls created after login.
 - Push-rule evaluation via `evaluate_push_rules` in `sdk/src/client.rs`; fires on `VectorDiff::PushBack` (live events only); `is_mention` from `Action::is_highlight()`.
-- **Win32** — WinRT `Windows.UI.Notifications.ToastNotificationManager`; `ToastGeneric` XML with sender, optional room name (omitted for DMs), 120-char body preview; `WM_TESSERACT_NOTIFY_CLICK` navigates to the room.
+- **Win32** — WinRT `Windows.UI.Notifications.ToastNotificationManager`; `ToastGeneric` XML with sender, optional room name (omitted for DMs), 120-char body preview; `WM_TESSERACT_NOTIFY_CLICK` navigates to the room. AUMID registered in `HKCU\Software\Classes\AppUserModelId\` at startup (required for non-packaged apps); `notify()` wrapped in `try`/`catch(winrt::hresult_error)` for robustness.
 - **Qt6** — `QDBusInterface` against `org.freedesktop.Notifications`; replace-per-room; Flatpak portal path supported; click navigates + raises window.
 - **GTK4** — `GDBusConnection` (session bus); same replace-per-room and Flatpak portal patterns as Qt6.
 - **macOS** — `UNUserNotificationCenter`; `UNUserNotificationCenterDelegate` on `MainWindowController`; in-foreground suppression when the source room is active; click navigates to the room.
