@@ -168,23 +168,12 @@ public:
     void     paint  (tk::PaintCtx&)                        override;
 
 private:
-    static constexpr float kTypingH = 20.0f;
-    static constexpr float kTypingPadX = 8.0f;
-
     void wire_internal_callbacks();
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
     RoomHeader*      header_       = nullptr;
     MessageListView* message_list_ = nullptr;
     ComposeBar*      compose_bar_  = nullptr;
-
-    // Typing-strip text; painted directly in paint(), not via a child widget.
-    std::string typing_text_;
-
-    // Cached text layout for the typing strip (rebuilt when text changes
-    // or bounds width changes).
-    std::unique_ptr<tk::TextLayout> typing_layout_;
-    float typing_layout_w_ = -1.0f;
 };
 
 } // namespace tesseract::views

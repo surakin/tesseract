@@ -188,6 +188,7 @@ constexpr float kContPadY       =  2.0f;
 constexpr float kDaySepH        = 28.0f;
 constexpr float kReadMarkerH    = 20.0f;
 constexpr float kTimelineStartH = 20.0f;
+constexpr float kTypingRowH     = 20.0f;
 
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
@@ -352,7 +353,19 @@ class MessageListView::Adapter : public tk::ListAdapter {
 public:
     explicit Adapter(MessageListView& owner) : owner_(owner) {}
 
-    std::size_t count() const override { return owner_.messages_.size(); }
+    // The optional trailing typing row is a synthetic UI row that is NOT
+    // part of messages_ (which mirrors the SDK timeline 1:1). It always
+    // sits at index == messages_.size() when active, so it scrolls with
+    // the tail and is naturally outside the viewport when the user scrolls
+    // up — exactly the requested behaviour.
+    bool has_typing_row() const { return !owner_.typing_text_.empty(); }
+    bool is_typing_index(std::size_t i) const {
+        return has_typing_row() && i == owner_.messages_.size();
+    }
+
+    std::size_t count() const override {
+        return owner_.messages_.size() + (has_typing_row() ? 1 : 0);
+    }
 
     // True when `index` is a continuation of the previous row: same
     // sender, not a reply, within the grouping window. Continuation
@@ -380,6 +393,7 @@ public:
 
     float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
                               float width) override {
+        if (is_typing_index(index)) return kTypingRowH;
         if (index >= owner_.messages_.size()) return 0;
         const auto& m = owner_.messages_[index];
         using Kind = MessageRowData::Kind;
@@ -397,6 +411,7 @@ public:
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                     bool /*selected*/, bool hovered) override {
+        if (is_typing_index(index)) { paint_typing_row(ctx, bounds); return; }
         if (index >= owner_.messages_.size()) return;
         const auto& m = owner_.messages_[index];
 
@@ -896,6 +911,22 @@ private:
             ctx.theme.palette.text_muted);
     }
 
+    // Trailing synthetic "X is typing…" row. Left-aligned + ellipsized
+    // muted text, matching the look the old RoomView strip had.
+    void paint_typing_row(tk::PaintCtx& ctx, tk::Rect bounds) const {
+        tk::TextStyle st{};
+        st.role      = tk::FontRole::Small;
+        st.trim      = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kPadX * 2);
+        auto lo = ctx.factory.build_text(owner_.typing_text_, st);
+        if (!lo) return;
+        tk::Size sz = lo->measure();
+        ctx.canvas.draw_text(*lo,
+            { bounds.x + kPadX,
+              bounds.y + (kTypingRowH - sz.h) * 0.5f },
+            ctx.theme.palette.text_muted);
+    }
+
     // ── Message row paint helpers ─────────────────────────────────────────────
 
     float measure_body_block_height(const MessageRowData& m,
@@ -1049,8 +1080,14 @@ private:
                     }
                 }
                 if (!m.event_id.empty()) {
-                    int iw = (img && img->width()  > 0) ? img->width()  : m.media_w;
-                    int ih = (img && img->height() > 0) ? img->height() : m.media_h;
+                    // Prefer the ORIGINAL (sender-supplied) dimensions so
+                    // the viewer opens at true 1:1 of the full image, not
+                    // the downscaled inline thumbnail. Fall back to the
+                    // decoded size only when metadata is absent.
+                    int iw = (m.media_w > 0) ? m.media_w
+                                             : (img ? img->width()  : 0);
+                    int ih = (m.media_h > 0) ? m.media_h
+                                             : (img ? img->height() : 0);
                     owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
                         m.event_id, m.media_url, m.body, iw, ih, r
                     };
@@ -1958,6 +1995,18 @@ void MessageListView::remove_message(std::size_t index) {
 
 void MessageListView::append_message(MessageRowData msg) {
     insert_message(messages_.size(), std::move(msg));
+}
+
+void MessageListView::set_typing_text(std::string text) {
+    if (text == typing_text_) return;
+    // Adding/removing the synthetic trailing row changes content height
+    // exactly like an append/remove at the tail. Keep the user pinned to
+    // the bottom if they already were, so the row is actually visible.
+    const bool at_bottom =
+        scroll_y() + bounds().h + 1.0f >= content_height();
+    typing_text_ = std::move(text);
+    invalidate_data();
+    if (at_bottom) scroll_to_bottom();
 }
 
 void MessageListView::set_avatar_provider(ImageProvider p) {

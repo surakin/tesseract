@@ -213,10 +213,10 @@ void RoomView::notify_url_preview_ready(const std::string& url) {
 }
 
 void RoomView::set_typing_text(std::string text) {
-    if (typing_text_ == text) return;
-    typing_text_ = std::move(text);
-    typing_layout_.reset();  // invalidate cached layout
-    if (on_layout_changed) on_layout_changed();
+    // The typing indicator is now a synthetic trailing row inside the
+    // message list, so it scrolls with the timeline and is hidden when
+    // the user scrolls up.
+    if (message_list_) message_list_->set_typing_text(std::move(text));
 }
 
 // ── Compose integration ────────────────────────────────────────────────────
@@ -254,8 +254,9 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 
     const float header_bottom = bounds.y + RoomHeader::kHeight;
     const float compose_top   = bounds.y + bounds.h - compose_h;
-    const float typing_top    = compose_top - kTypingH;
-    const float msg_h         = std::max(0.0f, typing_top - header_bottom);
+    // The message list spans header → composer; the typing indicator is a
+    // synthetic trailing row inside it, so no strip space is reserved here.
+    const float msg_h         = std::max(0.0f, compose_top - header_bottom);
 
     if (header_) {
         header_->arrange(ctx,
@@ -267,55 +268,18 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
             { bounds.x, header_bottom, bounds.w, msg_h });
     }
 
-    // Typing strip: no child widget — painted inline.
-    // (Bounds are tracked via typing_top / kTypingH in paint().)
-
     if (compose_bar_) {
         compose_bar_->arrange(ctx,
             { bounds.x, compose_top, bounds.w, compose_h });
     }
-
-    // Rebuild the typing text layout if the width changed.
-    const float tw = bounds.w - kTypingPadX * 2;
-    if (typing_layout_w_ != tw) {
-        typing_layout_.reset();
-        typing_layout_w_ = tw;
-    }
-    if (!typing_text_.empty() && !typing_layout_) {
-        tk::TextStyle ts;
-        ts.role      = tk::FontRole::Small;
-        ts.trim      = tk::TextTrim::Ellipsis;
-        ts.max_width = tw;
-        typing_layout_ = ctx.factory.build_text(typing_text_, ts);
-    }
 }
 
 void RoomView::paint(tk::PaintCtx& ctx) {
-    // Background — the message list and compose bar each paint their own
-    // backgrounds; we paint a strip for the typing area only.
-    const float compose_h = compose_bar_
-        ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
-    const float compose_top = bounds_.y + bounds_.h - compose_h;
-    const float typing_top  = compose_top - kTypingH;
-
-    // Typing strip background (matches the chat area / message list).
-    tk::Rect typing_rect{
-        bounds_.x, typing_top, bounds_.w, kTypingH
-    };
-    ctx.canvas.fill_rect(typing_rect, ctx.theme.palette.bg);
-
+    // Each child paints its own background; the typing indicator now lives
+    // inside the message list (synthetic trailing row), so RoomView paints
+    // no strip of its own.
     if (header_)       header_->paint(ctx);
     if (message_list_) message_list_->paint(ctx);
-
-    // Typing indicator text.
-    if (!typing_text_.empty() && typing_layout_) {
-        tk::Point origin{
-            bounds_.x + kTypingPadX,
-            typing_top + (kTypingH - typing_layout_->measure().h) * 0.5f
-        };
-        ctx.canvas.draw_text(*typing_layout_, origin,
-                             ctx.theme.palette.text_muted);
-    }
 
     if (compose_bar_) compose_bar_->paint(ctx);
 }

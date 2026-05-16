@@ -174,6 +174,13 @@ public:
     // is preserved (preview card grows upward, not into the visible region).
     void notify_url_preview_ready(const std::string& url);
 
+    // Set/clear the "X is typing…" indicator. Rendered as a synthetic
+    // trailing row at the end of the list (not part of the SDK timeline
+    // model), so it scrolls with the tail and is hidden when the user
+    // scrolls up. Empty string removes the row. Stays pinned to the
+    // bottom when the user was already there.
+    void set_typing_text(std::string text);
+
     // Called by the host shell when a media image finishes decoding and is
     // stored in the image_provider cache. Invalidates cached row heights so
     // Kind::Image rows that were measured against a zero-dimension placeholder
@@ -359,6 +366,8 @@ private:
     friend class Adapter;
 
     std::vector<MessageRowData>   messages_;
+    // Non-empty → render a synthetic trailing typing row (see Adapter).
+    std::string                    typing_text_;
     ImageProvider                  avatar_provider_;
     ImageProvider                  image_provider_;
     std::unique_ptr<Adapter>       adapter_;
