@@ -26,7 +26,13 @@ bool icontains(std::string_view hay, std::string_view needle) {
 
 // Rank: 0 = exact, 1 = starts-with, 2 = substring
 int match_rank(std::string_view sc, std::string_view prefix) {
-    if (sc.size() == prefix.size()) return 0;
+    if (sc.size() == prefix.size() &&
+        std::equal(sc.begin(), sc.end(), prefix.begin(),
+                   [](char a, char b) {
+                       return std::tolower((unsigned char)a) ==
+                              std::tolower((unsigned char)b);
+                   }))
+        return 0;
     if (sc.size() >= prefix.size() &&
         std::equal(prefix.begin(), prefix.end(), sc.begin(),
                    [](char a, char b){ return std::tolower((unsigned char)a)

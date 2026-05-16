@@ -138,9 +138,9 @@ TEST_CASE("lookup — returns custom emoticon matches") {
     CHECK(found_custom);
 }
 
-TEST_CASE("lookup — empty prefix returns nothing beyond max_results") {
+TEST_CASE("lookup — empty prefix returns empty result") {
     ShortcodeEngine eng;
     std::vector<tesseract::ImagePackImage> no_packs;
     auto results = eng.lookup("", no_packs, 8);
-    CHECK(results.size() <= 8);
+    CHECK(results.empty());
 }
