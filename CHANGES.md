@@ -1,71 +1,160 @@
-# Completed Work
+# Changelog
 
-## Core / Infrastructure
+Newest first. Unreleased work is listed per day, one bullet per change.
+Tagged releases summarize all changes since the previous tag.
 
-- **Step 1 — OAuth fix-ups**: real `logout`, `SessionStore` + restore-or-login on startup, full `PersistedSession` on token refresh, `WHOLE_ARCHIVE` link visibility on Win32/GTK, `tracing_subscriber` hardening.
-- **Step 2 — Sliding-sync**: `SyncService` + `RoomListService` replace `sync_once`; per-room `Timeline` in a `HashMap`; new FFI `subscribe_room` / `unsubscribe_room` / `paginate_back`.
-- **Step 3 — Room avatar polish**: `kRoomAvatarSize = 36`; uniform icon slot on room-list cells.
-- **Step 4 — Sender identity + media infrastructure**: `sender_name` / `sender_avatar_url` in `TimelineEvent`; `ImageEvent` / `FileEvent` types; `fetch_media_bytes` / `fetch_source_bytes` FFI (handles encrypted files transparently); 21 C++ tests.
-- **Stability hardening**: `soft_logout` threaded to all UIs; tombstoned rooms filtered; `Drop` on `ClientFfi` calls `stop_sync`; matrix-sdk upgraded to 0.16.1.
-- **OAuth session flush on shutdown**: `stop_sync()` persists the full session before tearing down SyncService, preventing `invalid_grant` on next startup.
-- **Shutdown stability hardening**: two-phase fix drains background workers before tokio teardown; re-entrant `stop_sync` no longer double-frees.
-- **Media fetches off UI thread — all four platforms**: per-miss worker threads + platform post-back (Win32 `WM_TESSERACT_MEDIA_BYTES`, Qt6 signal, GTK4 `g_idle_add`, macOS `dispatch_async`); room list renders instantly, avatars fade in.
-- **Account-data prefs (`im.gnomos.tesseract`) — all four platforms**: `last_room` and future prefs stored as Matrix account-data instead of a local file; `load_prefs` / `save_prefs` / `on_account_prefs_updated` FFI; 6 C++ tests + 2 Rust tests.
-- **Recent emoji (MSC4356)**: `m.recent_emoji` account-data with stable → unstable → legacy read precedence; `sdk/src/recent_emoji.rs` with move-to-front, 100-entry cap; 16 Rust unit tests.
-- **Initial-sync + key-backfill progress in status bar — Qt6 / GTK4 / Win32**: `room_list_state_code()` FFI; `on_room_list_state` callback; "Syncing rooms…" / "Downloading encryption keys (N)…" status text with 300 ms debounce.
-- **Initial-sync progress in window title — macOS**: `on_room_list_state_ui_()` override in `MacShell` appends "— Syncing rooms…" / "— Reconnecting…" / "— Downloading encryption keys (N)…" to the window title; clears to "Tesseract" on Running. `pending_restore_room_` navigation gated on `RoomListState::Running` to avoid a data race in matrix-sdk-ui during initial timeline subscription.
-- **`ShellBase` / `EventHandlerBase` refactor**: Extracted all platform-agnostic shell state and event-marshaling logic into `ui/shared/app/ShellBase.h` / `ShellBase.cpp` and `EventHandlerBase.h` / `EventHandlerBase.cpp`. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; macOS uses composition (`MacShell : public ShellBase` held as `std::unique_ptr<MacShell>` in `MainWindowController`) with C++ `using` declarations in a `public:` section of `MacShell` to expose protected members to ObjC++ code.
-- **i18n — Qt6 + GTK4**: Qt6 uses `QObject::tr()` + `QTranslator`; GTK4 uses GNU gettext; all user-visible shell strings wrapped; CMake extract targets.
-- **Whole-app code-review hardening pass**: Multi-agent review of the entire stack with fixes landed across four commits. **SDK** (`sdk/`): poison-safe `Mutex` handling at every FFI/async lock site (no more panic-across-FFI); `oauth_begin` no longer wipes the SQLite store while a session is active; the sync loop retries indefinitely with capped backoff instead of dying after 5 errors; `start_sync` tasks + event handlers are tracked and aborted in `stop_sync` and `logout` (closes a UAF into the C++ handler); `build_push_rule_json` built via `serde_json` so all fields are escaped; bounded-retry for incoming verification requests; account-data read-modify-write (`recent_emoji_bump` / `save_sticker` / `toggle_favorite`) serialised through a shared async mutex; 64 MiB media-download cap; bounds-checked timeline `VectorDiff` handlers; typing strip resolves display names. **Client** (`client/`): every `EventHandlerBridge` callback wrapped in a catch-all so no C++ exception unwinds into Rust; `session_store` writes are `0600` + `fsync` + move-aside atomic rename, JSON-escaped, with read-error detection and a path-traversal-safe `sanitize_user_id`; hardened the hand-rolled JSON field parser; `PackUsage` masked, `BackupState` initialised, `u64→size_t` range-checked; `open_in_browser` double-forks. **Toolkit** (`tesseract_tk`): widget pointer-dispatch snapshots children before iterating; `ListView` paint/scroll bounds-checked against `row_offsets_`; `markdown` recursion-depth cap and `html_spans` tag-stack cap (server-input DoS); Cairo divide-by-zero / NUL-in-markup guards; `video_gtk` copies the frame into a cairo-owned surface (use-after-free); `RoomHeader` topic-link hit-test coordinate fix; `MessageListView` reaction row resolved by event_id, inline-player leak fixed, async video-fetch liveness sentinel. **Linux shells**: GTK `logout_active_account` dangling-reference UAF; Qt/GTK logout-from-Space null-deref; GTK notifier `gdk_pixbuf_scale_simple` null-deref; UnifiedPush distributor endpoint URL validation (https-only); GTK one-shot timers carry a liveness weak_ptr and are `g_source_remove`d on teardown; `client_` snapshotted before worker hand-off in pickers / LoginView / pagination workers; per-account state cleared on account switch; notifier portal-id sanitised + body markup-escaped.
+## Unreleased
 
-## UI Toolkit (`tesseract_tk`)
+### 2026-05-16
 
-- **Step 5a — Shared UI toolkit**: `tk::Canvas` abstract 2D backend (D2D / QPainter / Cairo / CG); `tk::Widget` measure/arrange/paint + pointer dispatch; `tk::Host` per-platform integration; `NativeTextField` / `NativeTextArea` native text overlays; all four platforms mount shared views.
-- **macOS migration**: moved from Mac Catalyst to native AppKit; `macos-appkit-arm64/x86_64` presets; `tk::macos::Surface` as `NSView` subclass (`isFlipped = YES`); legacy Obj-C view controllers deleted.
-- **macOS shell stabilisation**: SDK compat guard for 10.15; user identity strip + space back-button bar; session-restore fix; login flash fix; emoji/sticker tab centering fix; space children hidden from root list.
+- fix(win32): snapshot client_ + guard null hCal in openJumpToDateDialog
+- fix(views): scroll_to_event_id guards empty id; document set_historical_mode repaint contract
+- fix(tk): address toolkit code-review findings
+- fix(sdk): remove event cache clear workaround from subscribe_room
+- fix(sdk,client): address full-app code-review findings (SDK + client)
+- fix(sdk): add topic_html to cfg(test) RoomInfo stub
+- fix(room-view): match typing strip background to chat area
+- fix(qt6): wire image/sticker/video viewer click callbacks
+- fix(qt6): use QTextCursor to query charFormat in link_at
+- fix(qt6): image viewer shows full resolution instead of downscaled thumbnail
+- fix(qt6): guard QCalendarWidget against pre-epoch dates
+- fix(linux-shells): address Qt/GTK shell code-review findings
+- fix(linux-gtk): drop GTK3-only gtk_window_set_urgency_hint (GTK4 build)
+- fix(join-room): address all code-review findings
+- fix: invisible unread badge numbers; style search box like compose input
+- fix: crash in draw_elided_line on empty attributed string
+- fix(compose): vertically center text in the composer input
+- fix(app): relayout before scroll_to_event_id so row_offsets_ are populated
+- fix(app): clear stale focused-timeline state on live room selection
+- feat(win32): MSC3030 jump-to-date — MonthCal picker + focused timeline callbacks
+- feat(views): RoomHeader calendar button + RoomView near-bottom/return-to-live/jump-to-date callbacks
+- feat(views): MessageListView scroll_to_event_id + historical pill mode
+- feat(room-header): vector-drawn calendar icon
+- feat(qt6): wire near-bottom/return-to-live + openJumpToDateDialog with QCalendarWidget
+- feat(macos): wire near-bottom/return-to-live + openJumpToDateDialog with NSDatePicker sheet
+- feat(login): homeserver discovery with .well-known + inline status
+- feat(linux-gtk): GTK4 attention request via GNotification
+- feat(gtk4): wire near-bottom/return-to-live + open_jump_to_date_dialog with GtkCalendar
+- feat(app): ShellBase focused-timeline state (begin_focused_subscription_, request_forward_history_, return_to_live_)
+- feat: clickable inline hyperlinks across all backends
+- feat: MSC3266 room summary lookup + join-room dialog
+- feat: attention requests when notifications arrive with window visible
+- docs: record homeserver discovery, attention requests, hardening pass
+- docs: implementation plan + design for vector-drawn room-header calendar icon
 
-## Features
+### 2026-05-15
 
-- **Step 5 (partial) — Inline images + stickers**: `m.image` thumbnail (max 320×200, MSC2530 caption rule); `m.sticker` borderless 256×256 thumbnail; scroll-to-bottom timing fixed on Qt6 + GTK4.
-- **Step 5 — Reply-to indicator + message editing — all four platforms**: `in_reply_to_*` FFI fields, quote block, hover "↩ Reply", `ComposeBar` reply-preview banner, `send_reply` FFI; `send_edit` FFI, `(edited)` badge, hover "✏", edit-mode banner; 19 C++ tests.
-- **Step 5 — ComposeBar**: shared `tesseract::views::ComposeBar`; multi-line `NativeTextArea` (56→160 px); send-on-Enter, Shift+Enter newline; emoji + send buttons.
-- **Step 6 — Device verification + key backup**: `needs_recovery` / `recover` / `backup_state` FFI; `on_backup_progress` callback; `RecoveryBanner` widget shown after login; all 4 shells wired.
-- **Step 7 — Spaces**: `is_space` in `RoomInfo`; `space_children` FFI; stack-based drill-in navigation; Back button + space name label; space children hidden from root list; all 4 shells wired.
-- **Step 8 (partial) — MSC2545 receive + send**: `sdk/src/image_packs.rs` aggregator (16 Rust tests); encrypted-sticker decryption; `list_image_packs` / `send_sticker` / `save_sticker_to_user_pack` / `toggle_favorite_sticker` FFI; `StickerPicker` shared view; `EmojiPicker` custom-pack tabs; Qt6 + GTK4 + Win32 wired end-to-end; macOS `StickerPickerPanel` wired.
-- **Step 9 (partial) — MSC2545 send**: `send_sticker` FFI landed; `:shortcode:` plain-text insertion from EmojiPicker custom tabs landed.
-- **Step 10 (partial) — Pack management**: `save_sticker_to_user_pack` / `toggle_favorite_sticker` / `user_pack_has_sticker` FFI + Qt6 + GTK4 right-click "Add to Saved Stickers" wired.
-- **Read receipts + hover timestamps — all four platforms**: `ReadReceipt` FFI struct; up-to-5 mini-avatar disc cluster (16 px, 5 px overlap) + `+N` overflow pill per row; hover-only `HH:MM` timestamp under sender avatar; 3 Catch2 tests.
-- **Voice messages (MSC3245) — receive + playback**: `m.voice` card (280×48); scrubbable waveform; `1×`/`1.5×`/`2×` speed pill; per-platform `tk::AudioPlayer` (Qt6 / GTK4 / macOS / Win32); background prefetch; 4 C++ tests + 3 Rust tests.
-- **Animated stickers (GIF / APNG / animated WebP) — all four platforms**: per-URL animated frame cache; 60 Hz tick; per-platform decode (Qt6 `QImageReader`, GTK4 `GdkPixbufAnimationIter`, Win32 WIC, macOS `CGImageSource`).
-- **Video messages (`m.video`) — receive + playback, all four platforms**: thumbnail card with play-triangle + duration badge; `tk::VideoPlayer` interface; `VideoViewerOverlay` lightbox with scrub bar + speed pill; client-side first-frame thumbnail generation; all four shells wired; 10 Catch2 tests.
-- **Room list sections — all four platforms**: Favorites / Direct Messages / Rooms / Spaces collapsible sections; `▾`/`▸` chevron headers; `is_favorite` FFI field; 4 Catch2 tests.
-- **System tray + minimize-to-tray — all four platforms**: `ITrayIcon` interface; hide-on-close when tray is available; Qt6 `QSystemTrayIcon`, GTK4 `libayatana-appindicator3`, Win32 `Shell_NotifyIcon`, macOS `NSStatusItem`.
-- **Step 11 — Foreground notifications — all four platforms**: `INotifier` + `Notification`; push-rule evaluation via `Ruleset::get_actions()`; Win32 WinRT toasts, Qt6 D-Bus, GTK4 D-Bus, macOS `UNUserNotificationCenter`; account-aware suppression; click navigates to room.
-- **Step 13 — Multi-account support — all four platforms**: `AccountSession` type; per-account directory layout + one-shot legacy migration; `AccountPicker` + `UserInfo` shared widgets; `LoginView::Mode { Initial, AddAccount }`; left-click avatar opens picker, right-click opens add/logout menu; per-account notifier wiring; 219 ctest pass.
-- **`ShellBase` / `EventHandlerBase` refactor**: Extracted all platform-agnostic shell state and event-marshaling logic into `ui/shared/app/ShellBase.h` / `ShellBase.cpp` and `EventHandlerBase.h` / `EventHandlerBase.cpp`. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; macOS uses composition (`MacShell : public ShellBase` held as `std::unique_ptr<MacShell>` in `MainWindowController`) with C++ `using` declarations in a `public:` section to expose protected members to ObjC++ code.
-- **i18n — Qt6 + GTK4**: Qt6 uses `QObject::tr()` + `QTranslator` (loads `share/translations/tesseract_<locale>.qm`); GTK4 uses GNU gettext (`bindtextdomain` + `textdomain`); all user-visible shell strings wrapped on both platforms; CMake extract targets (`i18n_extract_qt`, `i18n_extract_gtk`). macOS (`NSLocalizedString`) and Win32 (`LoadString`) not yet wired.
-- **Three UI fixes**: Emoji/sticker buttons moved inside the compose input card; `×` clear button added to the room filter search header (shown when non-empty, fires `on_search_clear`); play triangle in voice/video cards corrected to a proper right-pointing `▶` (symmetric row-width formula centered at triangle centroid).
-- **Day separators + virtual timeline items**: `VirtualTimelineItem` variants (`DateDivider`, `ReadMarker`, `TimelineStart`) surfaced through the FFI as `TimelineEvent` rows with `msg_type` sentinels (`"virtual.date_divider"` etc.). New `EventType` values `DaySeparator`, `ReadMarker`, `TimelineStart`. `MessageListView` renders date separators as a flanked rule with a date label ("Today" / "Yesterday" / weekday / "Month DD, YYYY"), read markers as an accent "New messages" divider, and timeline start as a muted "Start of conversation" label. Continuation grouping breaks at all virtual rows.
-- **Emoticon image loading + tab scrolling + compose-bar height fix**: Qt6 `EmojiPicker` async-fetches custom-pack emoticon thumbnails via `QThreadPool`; `onEmoticonSelected` inserts `:shortcode:` text. Shared `EmojiPicker` tab strip scrolls on wheel when it overflows; `tab_at()` accounts for scroll offset. `NativeTextArea` (GTK4, Qt6, Win32) fires `on_height_changed_` after programmatic `set_text()` so compose bar auto-resizes on draft restore.
-- **Inline markdown / HTML formatting**: `formatted_body` exposed through the Rust FFI bridge. New `ui/shared/views/html_spans.cpp` parses the Matrix HTML subset into flat `tk::TextSpan` lists (bold, italic, code, strikethrough, links, block elements, HTML entities). `CanvasFactory` extended with `build_rich_text()` — full Pango markup on Cairo/GTK4, `QTextDocument` on Qt6, plain-text fallback on D2D/CG. `MessageListView` prefers the rich path when `formatted_body` is present.
-- **Device verification banner (`VerificationBanner`)**: New `ui/shared/views/VerificationBanner.h/.cpp` shared widget for the cross-signing SAS verification flow. States: `Prompt` → `IncomingRequest` → `EmojiComparison` (7-emoji display with labels) → `Confirm` / `Cancelled` / `Done`. Mirrors `RecoveryBanner` layout. 9 Catch2 tests added.
-- **Typing indicators — all four platforms**: `send_typing_notice` FFI + `on_typing_changed(room_id, localparts)` callback. `ShellBase` sends `typing=true`/`false` notices on compose-text state transitions (empty↔non-empty) and on room-switch. All four shells display a fixed-height 20 px typing label between the message list and compose bar; cleared on room switch.
-- **Read receipts sending — all four platforms**: `send_read_receipt` FFI (public `m.read`) + `send_both_receipts` helper (public `m.read` + private `m.read.private` per MSC2285). `MessageListView::paint()` walks backward from the last visible row to find the newest real `event_id` and fires `on_receipt_needed` on change; `ShellBase::maybe_send_read_receipt_` deduplicates per-room and dispatches on a background thread. On room open: optimistic local unread-badge clear + send both receipt types for the latest cached event.
-- **GPL v3 license**: `LICENSE` file added; project is now GPLv3.
-- **Qt6 sidebar user strip refactored to shared `UserInfo` widget**: `userStrip_` replaced with a `tk::qt6::Surface` hosting the shared `tesseract::views::UserInfo` widget, closing the long-standing known gap.
-- **URL previews + inline hyperlinks — Qt6, GTK4, and Win32**: `get_url_preview` FFI via ruma `get_media_preview::v3::Request`; `Client::get_url_preview` parses `og:title`/`description`/`image`; `ShellBase::ensure_url_preview_` deduplicates fetches (failed sentinel). `html_spans`: `<a href>` extraction, `TextSpan.url` field, `first_url_from_html/plain`. `MessageListView`: `UrlPreviewData` / `PreviewProvider`; preview card (title, description, thumbnail) painted below body; `on_link_clicked` callback. Links in `formatted_body` render with underline + link colour. Win32: `on_url_preview_ready_` override + `set_preview_provider` wired in `MainWindow`. macOS wiring deferred.
-- **Markdown-to-HTML for sent messages — Qt6 + GTK4**: Plain-text compose input parsed as Markdown at send time; `formatted_body` (`org.matrix.custom.html`) added when the text contains formatting markers. Supports `**bold**`, `*italic*`, `***bold+italic***`, backtick-delimited inline code, `~~strike~~`, `[links](url)`, `> blockquotes`, fenced code blocks, unordered and ordered lists; single newlines → `<br>`, blank lines → paragraphs. Applied to send, reply, and edit. New `ui/shared/views/markdown.cpp/h`.
-- **MSC2448: BlurHash placeholders — all four platforms**: `blurhash` field added to `ImageEvent`, `StickerEvent`, `VideoEvent`; ruma `unstable-msc2448` feature enabled. New `tk::decode_blurhash` (base83 → DC/AC cosine → RGBA) in `blurhash.{h,cpp}`. `ShellBase::ensure_blurhash_image_` decodes at aspect-correct ≤ 32 px; per-platform `cache_rgba_image_` virtual: Qt6 (`QImage::Format_RGBA8888`), GTK4 (`GdkPixbuf` + Cairo), Win32 (`CanvasFactory::create_image_rgba` via IWICBitmap), macOS (`CGBitmapContextCreate`). `MessageListView` paints blurhash placeholder while real bytes download, grey rect fallback when absent.
-- **MSC4027: custom images in reactions — all four platforms**: `collect_reactions()` sets `source_json = key` when key starts with `mxc://`; `MessageListView` chip renderer draws scaled image (or placeholder while loading) instead of emoji glyph for image reactions. New `send_reaction_custom(room_id, event_id, key, shortcode)` FFI + C++ wrapper (sends `m.reaction` with `key=mxc://` + `com.beeper.reaction.shortcode`).
-- **Device display name in OAuth flow**: `build_device_display_name()` helper in `sdk/src/oauth.rs` constructs `"Tesseract on <hostname> (<PLATFORM>)"`; name is appended to the OAuth authorisation URL as `device_display_name` (visible on the consent page) and applied via `PUT /devices` after `finish_login`. Prevents duplicate "Tesseract" entries in the device list when re-logging in from the same machine.
-- **VerificationBanner enhancements**: "Use recovery key" link button added to `Prompt` state (`on_use_recovery_key` callback); `request_self_verification()` now uses `get_user_identity()` instead of `get_own_device()` so the request broadcasts to all other E2EE sessions rather than looping back to the sender. Win32 shell: verification banner hides the recovery banner when shown (and vice versa); `on_use_recovery_key` handler transitions from verification to recovery flow. Crash fix: `on_login_succeeded()` nulled the `pending_login_client_` raw pointer before calling `LoginView::reset()` which called `cancel_oauth()` on it — fix nulls the `LoginView` client reference immediately after `reset()`.
-- **Step 12 — UnifiedPush server pusher — Linux (Qt6 + GTK4)**: `register_pusher` / `remove_pusher` FFI wrapping `client.pusher().set(PusherInit{...})` / `.delete(PusherIds{...})`; `PushFormat::EventIdOnly`. Endpoint URL stripped to host + `/_matrix/push/v1/notify` (Matrix push gateway convention). `IUpConnector` abstract interface; `up_connector` field on `AccountSession` (destroyed before `client`, after `notifier`). Qt6: `LinuxUpConnectorQt` + `UpSharedBusQt` process singleton owns `im.gnomos.Tesseract` bus name and `/org/unifiedpush/Connector` object; `UpConnector1Adaptor` routes `NewEndpoint`/`Unregistered` by token; `asyncCall` used for `Register` to avoid D-Bus deadlock on re-registration. GTK4: `LinuxUpConnectorGtk` + `UpSharedBusGtk` via `g_dbus_connection_register_object` + synchronous `RequestName` (`DBUS_NAME_FLAG_DO_NOT_QUEUE`; second instance skips silently). `stop()` releases local D-Bus state only (homeserver pusher kept so push works while the app is closed); `logout()` calls `Unregister` + `remove_pusher` for full teardown. Both shells wire one connector per `AccountSession` in restore-session and add-account paths; `logout()` called from `logoutActiveAccount`. Windows/macOS deferred. 2 new Rust unit tests; 228/228 ctest pass, 72 Rust unit tests pass.
-- **UI polish — read markers, Win32 scrollbar, picker tabs, compose focus**: Read receipt discs are now overlaid on the bottom-right of each row's existing padding and never expand the row height (only reactions expand rows). Win32 `NativeTextArea` no longer shows a scrollbar when empty (`WS_VSCROLL` removed; `ES_AUTOVSCROLL` kept). `EmojiPicker` hides the Frequents (⭐) tab and `StickerPicker` hides the Favorites (⭐) tab when the respective list is empty; both fall back to the first category/pack automatically. `tk::win32::Surface` returns `MA_NOACTIVATE` from `WM_MOUSEACTIVATE` so clicking compose-bar buttons no longer steals keyboard focus from the `NativeTextArea`.
-- **Win32 toast notifications fix**: Non-packaged apps must register their AUMID under `HKCU\Software\Classes\AppUserModelId\<aumid>` or the WinRT notification infrastructure silently drops every `Show()` call; `SetCurrentProcessExplicitAppUserModelID` alone is insufficient. `wWinMain` now registers the key with `DisplayName` + `IconUri` at startup. `Win32Notifier::notify()` wrapped in `try`/`catch(winrt::hresult_error)` so a failed `CreateToastNotifier` or `LoadXml` no longer escapes through the message pump.
-- **Qt6 rendering optimisations**: `MessageListView` hover buttons and reaction-strip buttons each called `layout->measure()` twice per frame; all six callsites now cache the result in a local `tk::Size`. `RoomListView` chevron and badge callsites fixed the same way. `QtFactory::build_text` / `build_rich_text` constructed a new `QFont` (+ `Settings::instance()` call) on every invocation; `QtFactory` now holds a `std::array<QFont, 10>` pre-built in its constructor, indexed by `FontRole`. `QtCanvas::draw_circle_image` allocated a `QPainterPath` per avatar per frame; it now uses a `static std::unordered_map<int, QPainterPath>` keyed by `round(diameter × 2)` so fractional sizes each get a correct cached path. `Surface::paintEvent` clips the QPainter to `QPaintEvent::rect()` so Qt's raster engine skips pixels outside the dirty region; the drag overlay section resets clipping before painting.
-- **`RoomView` + `RoomHeader` shared widget — all four platforms**: Extracted `RoomHeader` (room name + topic label) and `RoomView` (header + `MessageListView` + typing strip + `ComposeBar`) into new shared widgets `ui/shared/views/RoomView.h/.cpp` and `RoomHeader.h/.cpp`. Every shell now mounts a single `tk::Surface` hosting `RoomView` instead of independently wiring separate surfaces, native header controls, and native typing labels. Removes ~830 lines of duplicated per-shell wiring; eliminates the Win32 GDI+ `room_header_wnd_proc` custom HWND class and the macOS native `NSTextField` room-title / typing bar. `NativeTextArea` overlay positioned via `RoomView::compose_text_area_rect()`; reply/edit hover → compose-mode transitions now live inside `RoomView`.
-- **`GridView` overlay scrollbar**: `EmojiPicker` and `StickerPicker` grid now shows an overlay scrollbar thumb that mirrors the `ListView` pattern exactly — pill geometry, hit-test, drag-to-scroll via `on_pointer_drag`. `content_height()` extracted as a private helper to avoid duplicating the row-count calculation across `clamp_scroll`, `thumb_geom`, and `paint`.
-- **macOS AppKit / CoreGraphics rendering optimisations**: `drawRect:` now passes `dirtyRect` to `CGContextClipToRect` so Core Graphics skips pixels outside the damaged region. `CTLayout` pre-builds its `CTFrameRef` once in the constructor (dimensions are fixed post-construction) so `draw()` never allocates. `build_rich_text` rewritten to produce a proper `CFMutableAttributedString` with per-span CoreText attributes (bold/italic from `CTFontCreateCopyWithSymbolicTraits`, Menlo for code, strikethrough drawn manually via `CTLine`/`CTRun` iteration — `kCTStrikethroughStyleAttributeName` is absent from the 10.15 SDK). `MessageListView::Adapter` caches static button glyph layouts (↩ ✏ 🗑 +) in `StaticLayouts` and per-row sender-name / reaction-count layouts in `RowLayoutCache`; entries are content-keyed (sender key + column width; reaction key + count) and invalidated on mutation.
-- **Stability fixes**: EXC_BAD_ACCESS crash on timeline initialisation traced to a use-after-free in `imbl` 6.1.0's `Vector::push_back` → `promote_front` path, triggered by `collect()` inside `replace_with_remote_events` during `init_focus`. Fixed by clearing the room event cache via `RoomEventCache::clear()` before calling `room.timeline()`, so `init_focus` receives zero events and skips the `collect()` call. ObjC warnings fixed: `TkVideoDelegate::dealloc` (MRC code in `video_macos.mm`) was missing `[super dealloc]`; three `EmojiPickerPanel` / `StickerPickerPanel` blocks in `MainWindowController.mm` captured strong panel references, creating ARC retain cycles — fixed with `__weak` captures. Avatar clip-path cache in `QtCanvas::draw_circle_image` used the diameter as radius (`diameter/2` → `diameter`); fixed. Right-click "Add to Saved Stickers" now shows "Already in Saved Stickers" (greyed out) when the sticker is already present, instead of suppressing the context menu item entirely.
-- **Homeserver discovery (.well-known) — all four platforms**: `discover_homeserver` FFI resolves a server name or a full `@user:server` MXID via `.well-known/matrix/client` with a 300 ms debounce; the shared `LoginView` shows inline discovery status (Discovering / Resolved base URL / Failed) and `on_sign_in` uses the pre-resolved base URL (or the MXID's server part) so `begin_oauth` never receives a raw `@user:server` string.
-- **Attention requests when a notification arrives with the window visible — all four platforms**: when the window is on screen but unfocused the disruptive system popup is suppressed and OS attention is requested instead — Win32 `FlashWindowEx`, macOS `requestUserAttention:`, Qt6 `QApplication::alert`; all cleared on activation. GTK4 has no urgency-hint API (`gtk_window_set_urgency_hint` was removed in GTK4, not merely deprecated), so it requests attention via a `GNotification` (`g_application_send_notification`) under a single reusable id — a newer message replaces the previous banner and it is `g_application_withdraw_notification`'d when the window regains focus. Window minimised/hidden still sends the rich D-Bus notification.
+- feat(sdk): MSC3030 FFI — timestamp_to_event, subscribe_room_at, paginate_forward
+- feat(client): MSC3030 C++ client API — timestamp_to_event, subscribe_room_at, paginate_forward
+- feat(tk): add on_near_bottom to ListView (symmetric to on_near_top)
+- feat: MSC4230 animated image flag with GIF badge
+- feat: MSC3765 rich room topics in the room header
+- feat: MSC2010 spoiler rendering and reveal interaction
+- feat: MSC2010-compatible message deletion via hover trash button
+- feat: overlay scrollbar on GridView (EmojiPicker + StickerPicker)
+- feat: insert_at_cursor on NativeTextArea; fix emoji cursor staying put
+- refactor: consolidate chat area into shared RoomView widget across all shells
+- perf: clip Qt paintEvent to dirty rect; cache dur_lo measure() in voice card
+- perf: cache QFont by FontRole in QtFactory; cache avatar clip path by diameter
+- perf: cache measure() result in RoomListView chevron/badge callsites
+- perf: cache measure() result at hover-button callsites in MessageListView
+- perf: optimize AppKit/CoreGraphics rendering
+- Win32 D2D flip-model swap chain; dedupe NativeField set_rect; show unread rooms in collapsed sections
+- Share Twemoji-first font fallback with Win32 TextRenderer for flag-emoji consistency
+- Embed Twemoji Mozilla font on Windows to fix missing emoji flags
+- Send fully_read marker alongside public+private read receipts
+- Reserve receipt-cluster width during text wrap to prevent overlap
+- Render emoji-only messages at 2x body size (BigEmoji font role)
+- Rename device after OAuth login; fix Win32 typing-bar visibility
+- Four UI fixes: search placeholder, reaction emoji centering, sticker aspect ratio
+- fix: Win32 toast notifications not appearing
+- fix: verification banner and crash on login
+- fix: undeclared kRoomHeaderH in Win32 MainWindow
+- fix(tk): guard on_near_bottom re-arm against resize; add nearBottom test
+- fix: StickerPicker pack index when favorites tab is hidden
+- fix: startup freeze — run UnifiedPush distributor scan off the UI thread
+- fix: show 'Already in Saved Stickers' instead of suppressing context menu
+- fix(sdk): MSC3030 code review — dedupe streaming tasks, fix from_ffi reached_end
+- fix: save_sticker_to_user_pack info_json; Win32 right-click; notify_url_preview_ready
+- fix: macOS compilation errors
+- fix: Kind::Image rows not resizing when the image loads
+- fix: double-text on login view homeserver field
+- fix: build warnings and EXC_BAD_ACCESS crash on timeline init
+- fix: build — spoiler access error and missing D3D11 test link
+- fix: build after upstream RoomView refactor
+- fix: avatar clip radius was diameter not diameter/2 in cached QPainterPath
+- docs: update CHANGES/STATUS for RoomView refactor, scrollbar, CG opts, Win32 toast, perf
+- Add list of MSCs to implement; HTML UI mockup with live style tweaker
+
+### 2026-05-14 (after v0.1.1)
+
+- feat: markdown-to-HTML formatting for sent messages
+- feat: MSC4027 custom images in reactions
+- feat: MSC2448 BlurHash placeholders for media
+- feat: Win32 URL preview — on_url_preview_ready_ + set_preview_provider
+- refactor: Qt6 sidebar user strip uses shared UserInfo widget
+- Restore last room when switching accounts
+- Match compose-bar font to message body text (FontRole::Body)
+- Hide sub-spaces from the root room list
+- Always show the room search field
+- Relicense under GPL v3
+- fix: typing indicator hides the bar when no one is typing (Qt6)
+- fix: typing indicator hides the bar when no one is typing (GTK4/macOS/Win32)
+- fix: RoomListView tests for always-visible search bar
+- fix: RoomListView search bar — show only when content overflows
+- fix: MSVC build (M_PI); update docs for new features
+- fix: image viewer drag — override on_pointer_drag instead of on_pointer_move
+
+## v0.1.1 — 2026-05-14
+
+Changes since v0.1:
+
+- URL previews + inline hyperlink rendering (OpenGraph card; row-height invalidation on arrival)
+- UnifiedPush server pusher for Linux / Step 12 (Qt6 + GTK4): D-Bus connector, endpoint rewrite to `/_matrix/push/v1/notify`, Register/Unregister signature + deadlock fixes, stop/logout split
+- Typing indicators: send `m.typing` and display incoming
+- Read receipts: public `m.read` send; mark rooms read on open (`m.read` + `m.read.private`)
+- Inline markdown rendered from `formatted_body`; day separators + virtual timeline items
+- Emoticon image loading, picker tab scrolling, compose-bar height fix
+- Sticker fixes: saved-pack visibility, aspect ratio, right-click viewer, dedupe-by-URL on save
+- Qt6: transparent native text overlays
+- Fix use-after-free crash when selecting a room; fix two pre-existing test failures
+- Three UI fixes: compose icons inside input, search clear button, play triangle
+
+## v0.1 — 2026-05-14
+
+First tagged release. All work up to v0.1, by area:
+
+### Core / SDK
+
+- Initial C++/Rust scaffold; renamed to Tesseract; OAuth/MAS loopback login; CLAUDE.md + Catch2 test framework
+- matrix-sdk 0.16.1 → 0.17.0; refresh-token handling; tokio Drop context for client swap
+- Step 2 — sliding sync (SyncService + RoomListService) replacing `sync_once`; per-room Timeline map; subscribe/unsubscribe/paginate FFI
+- SQLite-backed timeline persistence via EventCache
+- Session: SessionStore restore-or-login; full PersistedSession on token refresh; OAuth flush on `stop_sync`; UnknownToken / soft_logout handling; auto-recover from sync `State::Error`; infinite-reconnect-loop fixes
+- Multi-account support (infrastructure + all four shells); per-account notifier; restore last room on switch
+- Prefs stored as Matrix account-data (`im.gnomos.tesseract`)
+- `ShellBase` + `EventHandlerBase` refactor extracted from all four shells
+- Background backfill (all rooms, limited to visible); cancellable media fetches; shutdown-stability hardening (worker drain, double-callback fix, `panic_in_cleanup` fixes)
+- i18n for Qt6 + GTK4; device rename to hostname after OAuth (`device_display_name`)
+
+### UI toolkit (`tesseract_tk`)
+
+- Shared `tk::Canvas` / `tk::Widget` / `tk::Host` toolkit across all four platforms (Direct2D / QPainter / Cairo / CoreGraphics)
+- Native text overlays; ListView scrollbar drag; `tesseract::Settings`; CoreGraphics + D2D test surfaces
+- macOS port: AppKit → Mac Catalyst → native AppKit
+- DirectWrite colour-emoji text on Windows; Twemoji fallback
+
+### Features
+
+- Message rows: sender identity + avatars, grouping, day separators, redactions, editing, reply-to + scroll-to-original, reactions + MSC4027 custom-image reactions, read receipts + hover timestamps, typing indicators
+- Media: inline images/stickers, MSC2545 image packs (sticker/emoji pickers, encrypted, animated GIF/WebP/APNG), MSC3245 voice messages, `m.video` receive + playback, `m.file` drag-and-drop, clipboard image paste + MSC2530 captions
+- Text: Markdown→HTML on send; inline markdown render from `formatted_body`; URL previews + inline hyperlinks
+- Navigation: spaces drill-in; room search + 500 ms debounce + activity sort; collapsible room-list sections; favorites
+- Encryption: device verification (SAS) + key-backup recovery (Step 6); recovery + verification banners
+- Notifications: Linux (Qt6/GTK4 D-Bus), macOS (UNUserNotificationCenter), Win32 (WinRT toast); system tray + minimize-to-tray on all four; UnifiedPush server pusher (Linux)
+
+### Build & packaging
+
+- App icons (Win32 `.ico` / macOS `.icns` / GTK4 / Qt6) generated from a shared SVG
+- CPack installers — NSIS (Windows) + DMG (macOS); Debian + Arch packaging helpers
+- MinGW cross-compile support; `WHOLE_ARCHIVE` link for the 3-way FFI cycle; bundled SQLite (rustls, no system OpenSSL)
