@@ -12,6 +12,7 @@
 #include <tesseract/emoji.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
+#include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
 #include "views/AccountPicker.h"
@@ -302,14 +303,38 @@ void MainWindow::apply_default_font(HWND h) {
                        TRUE);
 }
 
+tk::ThemeMode MainWindow::os_color_scheme_() const {
+    return win32::theme::current_mode() == win32::theme::Mode::Dark
+        ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MainWindow::apply_theme_ui_(const tk::Theme& t) {
+    // Sync the Win32-native palette and title bar to match the chosen mode.
+    win32::theme::set_mode(t.mode == tk::ThemeMode::Dark
+        ? win32::theme::Mode::Dark : win32::theme::Mode::Light);
+    win32::theme::apply_window_attributes(hwnd_);
+    InvalidateRect(hwnd_, nullptr, TRUE);
+    if (hUserStrip_) InvalidateRect(hUserStrip_, nullptr, TRUE);
+    if (hStatus_)    InvalidateRect(hStatus_,    nullptr, TRUE);
+
+    // Update all tk surfaces.
+    if (room_surface_)          room_surface_->set_theme(t);
+    if (chat_surface_)          chat_surface_->set_theme(t);
+    if (emoji_picker_surface_)  emoji_picker_surface_->set_theme(t);
+    if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
+    if (join_room_surface_)     join_room_surface_->set_theme(t);
+    if (img_viewer_surface_)    img_viewer_surface_->set_theme(t);
+    if (vid_viewer_surface_)    vid_viewer_surface_->set_theme(t);
+    if (recovery_surface_)      recovery_surface_->set_theme(t);
+    if (verif_surface_)         verif_surface_->set_theme(t);
+    if (account_picker_surface_) account_picker_surface_->set_theme(t);
+}
+
 void MainWindow::on_system_theme_changed() {
     if (!theme::refresh_from_system()) return;
-    theme::apply_window_attributes(hwnd_);
-    InvalidateRect(hwnd_, nullptr, TRUE);
-    if (room_surface_) room_surface_->relayout();
-    if (chat_surface_) chat_surface_->relayout();
-    if (hUserStrip_)   InvalidateRect(hUserStrip_, nullptr, TRUE);
-    if (hStatus_)      InvalidateRect(hStatus_,    nullptr, TRUE);
+    if (tesseract::Settings::instance().theme_pref ==
+            tesseract::Settings::ThemePreference::System)
+        apply_current_theme_();
 }
 
 void MainWindow::paint_main_background(HDC hdc, const RECT& rc) {
@@ -1522,6 +1547,10 @@ void MainWindow::on_create(HWND hwnd) {
     login_view_->set_on_success([this]() { on_login_succeeded(); });
     login_view_->set_on_cancel([this]() { on_login_cancelled(); });
     ShowWindow(login_view_->hwnd(), SW_HIDE);
+
+    // Load saved theme preference and apply it.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    apply_current_theme_();
 
     start_login();
 }

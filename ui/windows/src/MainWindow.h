@@ -418,6 +418,8 @@ private:
     std::string pending_search_text_;
 
     // ShellBase virtual hooks (Win32 implementations).
+    void apply_theme_ui_(const tk::Theme& t) override;
+    tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
     void on_media_bytes_ready_(const std::string& cache_key,

@@ -59,6 +59,9 @@ const Palette& palette();
 // Pull the latest mode from the registry. Returns true if the mode changed.
 bool refresh_from_system();
 
+// Force a specific mode (user preference override). Clears the brush cache.
+void set_mode(Mode);
+
 // Register the main window so apply_window_attributes() can be re-applied
 // when the system theme flips at runtime (WM_SETTINGCHANGE).
 void register_main_window(HWND);

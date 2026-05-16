@@ -206,6 +206,13 @@ bool refresh_from_system() {
     return true;
 }
 
+void set_mode(Mode m) {
+    g_mode_initialised = true;
+    if (m == g_mode) return;
+    g_mode = m;
+    clear_brush_cache();
+}
+
 void register_main_window(HWND hwnd) { g_main_hwnd = hwnd; }
 
 void apply_window_attributes(HWND hwnd) {
