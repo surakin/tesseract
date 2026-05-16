@@ -134,6 +134,18 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         return ev;
     }
 
+    if (msg_type == "m.notice") {
+        auto ev = std::make_unique<NoticeEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
+    if (msg_type == "m.emote") {
+        auto ev = std::make_unique<EmoteEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     if (msg_type == "m.image") {
         auto ev = std::make_unique<ImageEvent>();
         assign_base(*ev, e);

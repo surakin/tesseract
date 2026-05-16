@@ -4252,6 +4252,40 @@ async fn timeline_item_to_ffi(
                  thumb_json, dur_ms, mime,
                  video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif)
             }
+            MessageType::Emote(e) => {
+                let fmt = e.formatted.as_ref()
+                    .filter(|f| matches!(
+                        f.format,
+                        matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                    ))
+                    .map(|f| f.body.clone())
+                    .unwrap_or_default();
+                (
+                    e.body.clone(), fmt, "m.emote".to_owned(),
+                    String::new(), 0u64, 0u64,
+                    String::new(), String::new(), 0u64, String::new(),
+                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
+                    String::new(), 0u64, String::new(),
+                    false, false, false, false, false,
+                )
+            }
+            MessageType::Notice(n) => {
+                let fmt = n.formatted.as_ref()
+                    .filter(|f| matches!(
+                        f.format,
+                        matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                    ))
+                    .map(|f| f.body.clone())
+                    .unwrap_or_default();
+                (
+                    n.body.clone(), fmt, "m.notice".to_owned(),
+                    String::new(), 0u64, 0u64,
+                    String::new(), String::new(), 0u64, String::new(),
+                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
+                    String::new(), 0u64, String::new(),
+                    false, false, false, false, false,
+                )
+            }
             _ => return None,
         };
 

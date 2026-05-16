@@ -38,6 +38,8 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
 
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
+        case tesseract::EventType::Notice:  row.kind = Kind::Notice;  break;
+        case tesseract::EventType::Emote:   row.kind = Kind::Emote;   break;
         case tesseract::EventType::Image: {
             row.kind = Kind::Image;
             const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
@@ -105,7 +107,8 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     }
 
     // Extract the first URL from text messages for preview card display.
-    if (row.kind == Kind::Text || row.kind == Kind::Unhandled) {
+    if (row.kind == Kind::Text || row.kind == Kind::Notice
+        || row.kind == Kind::Emote || row.kind == Kind::Unhandled) {
         if (!row.formatted_body.empty())
             row.first_url = first_url_from_html(row.formatted_body);
         if (row.first_url.empty() && !row.body.empty())
@@ -946,6 +949,7 @@ private:
         float quote_h = m.has_reply() ? (kQuoteBlockH + kQuoteGapAfter) : 0.0f;
         switch (m.kind) {
             case MessageRowData::Kind::Text:
+            case MessageRowData::Kind::Notice:
             case MessageRowData::Kind::Unhandled: {
                 float th = measure_body_text(m, ctx, col_w);
                 float badge_h = 0.0f;
@@ -1011,6 +1015,24 @@ private:
                 }
                 return quote_h + h;
             }
+            case MessageRowData::Kind::Emote: {
+                bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+                auto spans = build_emote_spans(m, revealed);
+                float th = 0.0f;
+                if (!spans.empty()) {
+                    auto layout = ctx.factory.build_rich_text(spans, body_style(col_w));
+                    if (layout) th = layout->measure().h;
+                }
+                float badge_h = m.is_edited
+                    ? kEditedBadgeGap + measure_text_height("(edited)", ctx, col_w) : 0.0f;
+                float preview_h = 0.0f;
+                if (!m.first_url.empty() && owner_.preview_provider_) {
+                    const auto* p = owner_.preview_provider_(m.first_url);
+                    if (p && p->has_content())
+                        preview_h = kPreviewCardGapTop + kPreviewCardH;
+                }
+                return quote_h + th + badge_h + preview_h;
+            }
             // Virtual items are handled before this function is called.
             case MessageRowData::Kind::DaySeparator:
             case MessageRowData::Kind::ReadMarker:
@@ -1029,9 +1051,74 @@ private:
         switch (m.kind) {
             case MessageRowData::Kind::Text:
             case MessageRowData::Kind::Unhandled: {
-                float h = paint_body_text(m, ctx, x, y, col_w);
+                float h = paint_body_text(m, ctx, x, y, col_w,
+                                          ctx.theme.palette.text_primary);
                 float end_y = y + h;
                 // "(edited)" badge on a new inline line below the body.
+                if (m.is_edited) {
+                    tk::TextStyle st{};
+                    st.role      = tk::FontRole::Small;
+                    st.trim      = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo) {
+                        ctx.canvas.draw_text(*lo,
+                            { x, end_y + kEditedBadgeGap },
+                            ctx.theme.palette.text_muted);
+                        end_y += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
+                if (!m.first_url.empty() && owner_.preview_provider_) {
+                    const auto* p = owner_.preview_provider_(m.first_url);
+                    if (p && p->has_content()) {
+                        end_y += kPreviewCardGapTop;
+                        paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                        end_y += kPreviewCardH;
+                    }
+                }
+                return end_y;
+            }
+            case MessageRowData::Kind::Notice: {
+                float h = paint_body_text(m, ctx, x, y, col_w,
+                                          ctx.theme.palette.text_muted);
+                float end_y = y + h;
+                if (m.is_edited) {
+                    tk::TextStyle st{};
+                    st.role      = tk::FontRole::Small;
+                    st.trim      = tk::TextTrim::Ellipsis;
+                    st.max_width = col_w;
+                    auto lo = ctx.factory.build_text("(edited)", st);
+                    if (lo) {
+                        ctx.canvas.draw_text(*lo,
+                            { x, end_y + kEditedBadgeGap },
+                            ctx.theme.palette.text_muted);
+                        end_y += kEditedBadgeGap + lo->measure().h;
+                    }
+                }
+                if (!m.first_url.empty() && owner_.preview_provider_) {
+                    const auto* p = owner_.preview_provider_(m.first_url);
+                    if (p && p->has_content()) {
+                        end_y += kPreviewCardGapTop;
+                        paint_preview_card_(m, *p, ctx, x, end_y, col_w);
+                        end_y += kPreviewCardH;
+                    }
+                }
+                return end_y;
+            }
+            case MessageRowData::Kind::Emote: {
+                bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
+                auto spans = build_emote_spans(m, revealed);
+                float end_y = y;
+                if (!spans.empty()) {
+                    auto layout = ctx.factory.build_rich_text(spans, body_style(col_w));
+                    if (layout) {
+                        ctx.canvas.draw_text(*layout, { x, y },
+                                              ctx.theme.palette.text_primary);
+                        end_y = y + layout->measure().h;
+                        owner_.link_layout_cache_[m.event_id] =
+                            { std::move(layout), { x, y } };
+                    }
+                }
                 if (m.is_edited) {
                     tk::TextStyle st{};
                     st.role      = tk::FontRole::Small;
@@ -1427,6 +1514,29 @@ private:
         return spans;
     }
 
+    // Build italic TextSpan vector for an m.emote row:
+    // "* SenderName body_text" with every span forced italic.
+    std::vector<tk::TextSpan>
+    build_emote_spans(const MessageRowData& m, bool revealed) const {
+        const std::string prefix =
+            "* " + (m.sender_name.empty() ? m.sender : m.sender_name) + " ";
+        std::vector<tk::TextSpan> result;
+        if (!m.formatted_body.empty()) {
+            auto body = prepare_spans(m, revealed);
+            tk::TextSpan pfx;
+            pfx.text   = prefix;
+            pfx.italic = true;
+            result.push_back(std::move(pfx));
+            for (auto& s : body) { s.italic = true; result.push_back(std::move(s)); }
+        } else {
+            tk::TextSpan sp;
+            sp.text   = prefix + (m.body.empty() ? "(empty message)" : m.body);
+            sp.italic = true;
+            result.push_back(std::move(sp));
+        }
+        return result;
+    }
+
     // Measure height for a text message body — uses rich text when
     // formatted_body is present, otherwise falls back to plain text.
     float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
@@ -1467,7 +1577,7 @@ private:
     // Paint a text message body — uses rich text when formatted_body is
     // present, otherwise falls back to plain text.
     float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx,
-                           float x, float y, float w) const {
+                           float x, float y, float w, tk::Color color) const {
         bool eo = is_emoji_only(m.body);
         if (!m.formatted_body.empty()) {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
@@ -1475,8 +1585,7 @@ private:
             if (!spans.empty()) {
                 auto layout = ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout) {
-                    ctx.canvas.draw_text(*layout, { x, y },
-                                          ctx.theme.palette.text_primary);
+                    ctx.canvas.draw_text(*layout, { x, y }, color);
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] =
                         { std::move(layout), { x, y } };
@@ -1493,8 +1602,7 @@ private:
                 auto layout =
                     ctx.factory.build_rich_text(link_spans, body_style(w, eo));
                 if (layout) {
-                    ctx.canvas.draw_text(*layout, { x, y },
-                                          ctx.theme.palette.text_primary);
+                    ctx.canvas.draw_text(*layout, { x, y }, color);
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] =
                         { std::move(layout), { x, y } };
@@ -1504,7 +1612,7 @@ private:
         }
         return paint_wrapped_text(
             m.body.empty() ? std::string("(empty message)") : m.body,
-            ctx, x, y, w, ctx.theme.palette.text_primary, eo);
+            ctx, x, y, w, color, eo);
     }
 
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,

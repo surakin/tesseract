@@ -6,7 +6,7 @@
 namespace tesseract {
 
 enum class EventType {
-    Text, Image, File, Sticker, Voice, Video, Redacted, Unhandled,
+    Text, Image, File, Sticker, Voice, Video, Redacted, Notice, Emote, Unhandled,
     DaySeparator, ReadMarker, TimelineStart,
 };
 
@@ -67,6 +67,14 @@ struct Event {
 
 struct TextEvent : public Event {
     TextEvent() { type = EventType::Text; }
+};
+
+struct NoticeEvent : public Event {
+    NoticeEvent() { type = EventType::Notice; }
+};
+
+struct EmoteEvent : public Event {
+    EmoteEvent() { type = EventType::Emote; }
 };
 
 struct ImageEvent : public Event {
