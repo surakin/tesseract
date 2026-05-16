@@ -638,7 +638,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Image / sticker click → open the lightbox overlay. The overlay's own
     // image provider falls back to the inline thumbnail in tk_images_ /
-    // anim_cache_, so it renders immediately with no extra fetch.
+    // anim_cache_, so it renders immediately while the full-res fetch lands.
     roomView_->on_image_clicked =
         [this](const tesseract::views::MessageListView::ImageHit& hit) {
             if (!imgViewer_ || !imgViewerHost_) return;
@@ -648,6 +648,36 @@ MainWindow::MainWindow(QWidget* parent)
             imgViewerHost_->show();
             imgViewerHost_->raise();
             imgViewerSurface_->setFocus();
+
+            // tk_images_ stores a 320×200-capped thumbnail for inline display;
+            // fetch the original bytes off the UI thread and decode at full size.
+            // Skip animated images — anim_cache_ already plays them full-size.
+            const std::string url = hit.media_url;
+            if (!url.empty()
+                && !viewerFullresCache_.count(url)
+                && !anim_cache_.has(url)
+                && viewerFullresInFlight_.insert(url).second)
+            {
+                runOnPool_([this, url]() {
+                    auto bytes = client_->fetch_source_bytes(url);
+                    QMetaObject::invokeMethod(this,
+                        [this, url, bytes = std::move(bytes)]() mutable {
+                            viewerFullresInFlight_.erase(url);
+                            if (bytes.empty() || viewerFullresCache_.count(url)) return;
+                            QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
+                                          static_cast<int>(bytes.size()));
+                            QBuffer buf(&qb);
+                            buf.open(QIODevice::ReadOnly);
+                            QImageReader reader(&buf);
+                            reader.setAutoTransform(true);
+                            QImage img;
+                            if (!reader.read(&img)) return;
+                            viewerFullresCache_.emplace(
+                                url, tk::qt6::make_image(std::move(img)));
+                            if (imgViewerSurface_) imgViewerSurface_->update();
+                        }, Qt::QueuedConnection);
+                });
+            }
         };
 
     // Video click → open the video overlay with the thumbnail, then fetch
