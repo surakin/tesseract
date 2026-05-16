@@ -53,15 +53,31 @@ tk::Size ImageViewerOverlay::measure(tk::LayoutCtx&, tk::Size constraints) {
 
 void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b) {
     tk::Widget::arrange(lc, b);
-    base_ = fit_media(static_cast<float>(natural_w_),
-                       static_cast<float>(natural_h_),
-                       b.w - kMarginX, b.h - kMarginY);
+    recompute_base_(b);
     recompute_image_rect();
     close_btn_ = { b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f,
                    kCloseBtnS, kCloseBtnS };
 }
 
 // ── private helpers ───────────────────────────────────────────────────────
+
+void ImageViewerOverlay::recompute_base_(tk::Rect b) {
+    const float avail_w = std::max(1.0f, b.w - kMarginX);
+    const float avail_h = std::max(1.0f, b.h - kMarginY);
+    if (natural_w_ > 0 && natural_h_ > 0) {
+        // zoom 1.0 == native pixels (true 1:1). fit_zoom_ is the factor at
+        // which the whole image fits the viewport (≤ 1.0; never upscale
+        // the floor above 1:1).
+        base_     = { static_cast<float>(natural_w_),
+                      static_cast<float>(natural_h_) };
+        fit_zoom_ = std::min({ 1.0f, avail_w / base_.w, avail_h / base_.h });
+    } else {
+        // Unknown intrinsic size — fall back to a reasonable placeholder.
+        base_     = { avail_w, avail_h * 0.5f };
+        fit_zoom_ = 1.0f;
+    }
+    zoom_ = std::clamp(zoom_, fit_zoom_, kZoomMax);
+}
 
 void ImageViewerOverlay::recompute_image_rect() {
     const tk::Rect b = bounds();
@@ -88,9 +104,7 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx) {
     const tk::Rect b = bounds();
 
     // Recompute geometry here too — zoom/pan may have changed since arrange.
-    base_ = fit_media(static_cast<float>(natural_w_),
-                       static_cast<float>(natural_h_),
-                       b.w - kMarginX, b.h - kMarginY);
+    recompute_base_(b);
     recompute_image_rect();
     close_btn_ = { b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f,
                    kCloseBtnS, kCloseBtnS };
@@ -159,7 +173,10 @@ bool ImageViewerOverlay::on_pointer_down(tk::Point local) {
         return true;
     }
     if (rect_contains(image_rect_, w)) {
-        if (zoom_ > 1.0f) {
+        // Pan whenever the image is larger than the viewport (true at
+        // 1:1 for any image bigger than the window, not only when zoomed).
+        const tk::Rect b = bounds();
+        if (base_.w * zoom_ > b.w || base_.h * zoom_ > b.h) {
             press_drag_ = true;
             drag_last_  = local;
         }
@@ -207,7 +224,7 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy) {
     // GTK DISCRETE: ±1/notch). Sub-notch values (smooth-scroll trackpads) are
     // preserved proportionally.
     float factor   = std::pow(kZoomStep, -std::clamp(dy, -1.0f, 1.0f));
-    float new_zoom = std::clamp(zoom_ * factor, 1.0f, kZoomMax);
+    float new_zoom = std::clamp(zoom_ * factor, fit_zoom_, kZoomMax);
     if (new_zoom == zoom_) return true;
 
     // Anchor zoom at cursor position
@@ -224,8 +241,13 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy) {
     pan_x_ = w.x - (b.x + b.w * 0.5f) - frac_x * base_.w * zoom_;
     pan_y_ = w.y - (b.y + b.h * 0.5f) - frac_y * base_.h * zoom_;
 
-    if (zoom_ <= 1.0f) { zoom_ = 1.0f; pan_x_ = 0.0f; pan_y_ = 0.0f; }
-    else                { clamp_pan(); }
+    // Centre when the whole image fits the viewport at the new zoom;
+    // otherwise keep the cursor-anchored pan within bounds.
+    if (base_.w * zoom_ <= b.w && base_.h * zoom_ <= b.h) {
+        pan_x_ = 0.0f; pan_y_ = 0.0f;
+    } else {
+        clamp_pan();
+    }
 
     return true;
 }

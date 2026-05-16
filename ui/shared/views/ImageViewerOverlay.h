@@ -17,8 +17,11 @@ namespace tesseract::views {
 //   3. Call open() when the user clicks an image thumbnail.
 //   4. The shell handles Escape natively by calling close() when is_open().
 //
-// Zoom: scroll wheel zooms in/out anchored at cursor position (1× = fit,
-//       max 8×). Click-drag pans when zoomed in. No zoom below fit level.
+// Zoom: opens at true 1:1 (zoom 1.0 = one image pixel per screen pixel).
+//       Scroll wheel zooms anchored at the cursor; min zoom is the
+//       whole-image fit ratio (so you can shrink an oversized image to
+//       see all of it), max 8×. Click-drag pans whenever the image is
+//       larger than the viewport.
 class ImageViewerOverlay : public tk::Widget {
 public:
     // Show the overlay for the given image or sticker.
@@ -48,6 +51,9 @@ public:
     bool on_wheel       (tk::Point local, float dx, float dy) override;
 
 private:
+    // Set base_ to the native image size and fit_zoom_ to the
+    // whole-image-fit ratio for the current bounds; re-clamp zoom_.
+    void recompute_base_(tk::Rect b);
     void recompute_image_rect();
     void clamp_pan();
 
@@ -59,11 +65,15 @@ private:
 
     std::function<const tk::Image*(const std::string&)> image_provider_;
 
-    // Base fit-to-window size at zoom 1.0. Stored in arrange and reused in
-    // paint / on_wheel to avoid calling fit_media on every frame.
+    // Native image size (zoom 1.0 = 1:1 pixels). Set in arrange/paint and
+    // reused in on_wheel. base_ * zoom_ is the on-screen image size.
     tk::Size base_{};
 
-    // Zoom level: 1.0 = fit to window, clamped [1.0, 8.0].
+    // Lowest allowed zoom: the ratio at which the whole image fits the
+    // viewport (≤ 1.0; 1.0 when the image already fits at 1:1).
+    float    fit_zoom_ = 1.0f;
+
+    // Zoom level: 1.0 = true 1:1 (native pixels), clamped [fit_zoom_, 8.0].
     // pan_x/y are pixel offsets of the image centre from the viewport centre.
     float    zoom_  = 1.0f;
     float    pan_x_ = 0.0f;
