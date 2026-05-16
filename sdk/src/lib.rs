@@ -21,6 +21,7 @@ pub mod ffi {
         pub id:                String,
         pub name:              String,
         pub topic:             String,
+        pub topic_html:        String,
         pub unread_count:      u64,
         pub is_direct:         bool,
         pub avatar_url:        String,
