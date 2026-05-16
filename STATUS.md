@@ -1,14 +1,16 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-15**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-16**.
 
-> **Win32 toast notifications fixed; Qt6 rendering optimised.**
-> Win32 now registers the AUMID in `HKCU\Software\Classes\AppUserModelId\`
-> at startup so WinRT toast infrastructure can resolve it (non-packaged apps
-> silently dropped toasts without this). Qt6 frame cost reduced: `measure()`
-> results cached at all hover-button callsites, `QFont` per `FontRole` cached
-> in `QtFactory`, avatar `QPainterPath` cached by diameter, and `paintEvent`
-> clipped to the dirty rect. 228/228 C++ tests pass.
+> **Homeserver discovery + whole-app code-review hardening pass.**
+> Login now does `.well-known` homeserver discovery with inline status and
+> accepts a full `@user:server` MXID. A comprehensive multi-agent code
+> review of the entire stack (Rust SDK, C++ client, `tesseract_tk` toolkit,
+> and the Qt6/GTK4 shells) landed its fixes: poison-safe FFI mutex handling,
+> sync-loop recovery, account-data write serialisation, a media-size cap,
+> session-store `0600` + fsync + atomic-rename, FFI exception safety, parser
+> DoS caps, and several use-after-free / null-deref / data-race fixes in the
+> shells plus UnifiedPush endpoint validation. 233/233 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -16,8 +18,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 72 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 228 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 73 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 233 |
 
 ## Platforms
 
