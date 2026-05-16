@@ -398,7 +398,8 @@ public:
         const auto& m = owner_.messages_[index];
         using Kind = MessageRowData::Kind;
         if (m.kind == Kind::DaySeparator)  return kDaySepH;
-        if (m.kind == Kind::ReadMarker)    return kReadMarkerH;
+        if (m.kind == Kind::ReadMarker)
+            return owner_.suppress_read_marker_ ? 0.0f : kReadMarkerH;
         if (m.kind == Kind::TimelineStart) return kTimelineStartH;
         bool  cont    = is_cont(index);
         float body_w  = std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m));
@@ -422,7 +423,7 @@ public:
             return;
         }
         if (m.kind == Kind::ReadMarker) {
-            paint_read_marker(ctx, bounds);
+            if (!owner_.suppress_read_marker_) paint_read_marker(ctx, bounds);
             return;
         }
         if (m.kind == Kind::TimelineStart) {
@@ -1918,6 +1919,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     revealed_spoilers_.clear();
     link_layout_cache_.clear();
     adapter_->clear_layout_cache();
+    suppress_read_marker_ = false;
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
@@ -1936,6 +1938,14 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
+
+    // Suppress the read marker while the SDK catches up to the new position.
+    // update_message() clears this flag when it delivers the updated marker.
+    using Kind = MessageRowData::Kind;
+    if (msg.kind != Kind::ReadMarker &&
+        msg.kind != Kind::DaySeparator &&
+        msg.kind != Kind::TimelineStart)
+        suppress_read_marker_ = true;
 
     // Insertion at (or past) the end is an append: follow the live tail
     // when the user is already pinned there.
@@ -1965,6 +1975,8 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
 void MessageListView::update_message(std::size_t index, MessageRowData msg) {
     if (index >= messages_.size()) return;
+    if (msg.kind == MessageRowData::Kind::ReadMarker)
+        suppress_read_marker_ = false;
     // Copy, not reference: messages_[index] is reassigned below.
     const std::string old_eid = messages_[index].event_id;
     const bool was_animated = messages_[index].kind == MessageRowData::Kind::Video &&

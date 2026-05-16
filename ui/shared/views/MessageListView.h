@@ -371,6 +371,11 @@ private:
     friend class Adapter;
 
     std::vector<MessageRowData>   messages_;
+    // True while waiting for the SDK to relocate the read marker after a
+    // new real message was appended. The adapter returns height 0 and skips
+    // painting the ReadMarker row; cleared when update_message receives a
+    // ReadMarker row (SDK confirmed the new position).
+    bool                           suppress_read_marker_ = false;
     // Non-empty → render a synthetic trailing typing row (see Adapter).
     std::string                    typing_text_;
     ImageProvider                  avatar_provider_;
