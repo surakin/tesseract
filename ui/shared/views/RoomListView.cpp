@@ -207,7 +207,7 @@ private:
 
         bool has_preview = !room.last_message_body.empty();
         tk::TextStyle name_style{};
-        name_style.role      = tk::FontRole::SidebarName;
+        name_style.role      = tk::FontRole::Body;
         name_style.trim      = tk::TextTrim::Ellipsis;
         name_style.max_width = text_w;
         auto name_layout = ctx.factory.build_text(
