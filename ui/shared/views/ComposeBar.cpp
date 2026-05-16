@@ -674,22 +674,23 @@ void ComposeBar::paint(tk::PaintCtx& ctx) {
 }
 
 bool ComposeBar::on_pointer_down(tk::Point local) {
+    const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
     press_reply_cancel_ = false;
     press_edit_cancel_  = false;
     if (has_editing() && !edit_cancel_rect_.empty()) {
-        if (local.x >= edit_cancel_rect_.x
-            && local.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
-            && local.y >= edit_cancel_rect_.y
-            && local.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
+        if (world.x >= edit_cancel_rect_.x
+            && world.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
+            && world.y >= edit_cancel_rect_.y
+            && world.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
             press_edit_cancel_ = true;
             return true;
         }
     }
     if (has_reply() && !reply_cancel_rect_.empty()) {
-        if (local.x >= reply_cancel_rect_.x
-            && local.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
-            && local.y >= reply_cancel_rect_.y
-            && local.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
+        if (world.x >= reply_cancel_rect_.x
+            && world.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
+            && world.y >= reply_cancel_rect_.y
+            && world.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
             press_reply_cancel_ = true;
             return true;
         }
@@ -698,13 +699,14 @@ bool ComposeBar::on_pointer_down(tk::Point local) {
 }
 
 void ComposeBar::on_pointer_up(tk::Point local, bool inside_self) {
+    const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
     if (press_edit_cancel_) {
         press_edit_cancel_ = false;
         if (inside_self
-            && local.x >= edit_cancel_rect_.x
-            && local.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
-            && local.y >= edit_cancel_rect_.y
-            && local.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
+            && world.x >= edit_cancel_rect_.x
+            && world.x <  edit_cancel_rect_.x + edit_cancel_rect_.w
+            && world.y >= edit_cancel_rect_.y
+            && world.y <  edit_cancel_rect_.y + edit_cancel_rect_.h) {
             clear_editing();
             if (on_edit_cancelled) on_edit_cancelled();
             return;
@@ -713,10 +715,10 @@ void ComposeBar::on_pointer_up(tk::Point local, bool inside_self) {
     if (press_reply_cancel_) {
         press_reply_cancel_ = false;
         if (inside_self
-            && local.x >= reply_cancel_rect_.x
-            && local.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
-            && local.y >= reply_cancel_rect_.y
-            && local.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
+            && world.x >= reply_cancel_rect_.x
+            && world.x <  reply_cancel_rect_.x + reply_cancel_rect_.w
+            && world.y >= reply_cancel_rect_.y
+            && world.y <  reply_cancel_rect_.y + reply_cancel_rect_.h) {
             clear_reply();
             return;
         }
