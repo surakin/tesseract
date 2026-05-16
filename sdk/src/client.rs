@@ -3770,7 +3770,12 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             avatar_url:        room.avatar_url()
                                    .map(|u| u.to_string())
                                    .unwrap_or_default(),
-            last_message_body: String::new(),
+            last_message_body: {
+                // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
+                // with an async version (same trick as mark_room_as_read, line 2148).
+                let lev = std::ops::Deref::deref(&room).latest_event();
+                latest_event_body(&lev).unwrap_or_default()
+            },
             last_activity_ts,
             is_space,
             is_favorite,
