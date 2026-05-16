@@ -48,7 +48,7 @@ cmake --build build/macos-appkit-arm64-debug
 open build/macos-appkit-arm64-debug/ui/macos/Tesseract.app
 ```
 
-**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
+**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-gtk-release`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
 
