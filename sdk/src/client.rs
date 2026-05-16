@@ -365,7 +365,15 @@ impl ClientFfi {
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
-            rt:         Runtime::new().expect("tokio runtime"),
+            rt:         tokio::runtime::Builder::new_multi_thread()
+                            .enable_all()
+                            // Timeline construction collects cached events
+                            // into an `imbl::Vector`; chunk promotion for
+                            // large `TimelineEvent`s recurses deeply. The
+                            // 2 MB tokio default is tight, so widen it.
+                            .thread_stack_size(8 * 1024 * 1024)
+                            .build()
+                            .expect("tokio runtime"),
         }
     }
 
@@ -1325,9 +1333,19 @@ impl ClientFfi {
 
         let Some(room) = client.get_room(&room_id) else { return err("room not found") };
 
-        let timeline = match self.rt.block_on(room.timeline()) {
-            Ok(t)  => Arc::new(t),
-            Err(e) => return err(format!("build timeline: {e}")),
+        // Build the timeline on a runtime worker thread, not the calling FFI
+        // thread. `Timeline::init_focus` collects the cached events into an
+        // `imbl::Vector`; chunk promotion for large `TimelineEvent`s recurses
+        // deep enough to overflow the small stack of the macOS libdispatch
+        // worker that drives this FFI call (EXC_BAD_ACCESS). Worker threads
+        // have the widened 8 MB stack configured on the runtime above.
+        let room_for_build = room.clone();
+        let timeline = match self.rt.block_on(
+            self.rt.spawn(async move { room_for_build.timeline().await })
+        ) {
+            Ok(Ok(t))  => Arc::new(t),
+            Ok(Err(e)) => return err(format!("build timeline: {e}")),
+            Err(e)     => return err(format!("build timeline task: {e}")),
         };
 
         let room_id_str = room_id.to_string();
@@ -1530,11 +1548,15 @@ impl ClientFfi {
             },
         };
 
-        let timeline = match self.rt.block_on(
-            room.timeline_builder().with_focus(focus).build()
-        ) {
-            Ok(t)  => Arc::new(t),
-            Err(e) => return err(format!("build focused timeline: {e}")),
+        // Build off the calling FFI thread — see the note in `subscribe_room`;
+        // the focused build runs the same imbl `collect()` over cached events.
+        let room_for_build = room.clone();
+        let timeline = match self.rt.block_on(self.rt.spawn(async move {
+            room_for_build.timeline_builder().with_focus(focus).build().await
+        })) {
+            Ok(Ok(t))  => Arc::new(t),
+            Ok(Err(e)) => return err(format!("build focused timeline: {e}")),
+            Err(e)     => return err(format!("build focused timeline task: {e}")),
         };
 
         let room_id_str = room_id.to_string();
