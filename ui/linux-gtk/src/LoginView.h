@@ -73,6 +73,11 @@ private:
     std::thread                 worker_;
     std::atomic<bool>           cancelled_{ false };
     std::atomic<uint32_t>       discovery_gen_{ 0 };
+    // Liveness sentinel: GTK post_to_ui (g_idle_add) is not auto-cancelled
+    // on destruction (unlike Qt's QObject queue), so a worker that posts its
+    // completion just before ~LoginView's join returns would fire the idle
+    // on a freed `this`. The posted lambda holds a weak_ptr and bails.
+    std::shared_ptr<bool>       alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace gtk4

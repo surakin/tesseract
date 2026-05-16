@@ -288,6 +288,12 @@ private:
     guint        search_debounce_id_  = 0;
     guint        scroll_debounce_id_  = 0;
     std::string  search_pending_text_;
+
+    // Liveness sentinel for one-shot g_timeout_add payloads (verification
+    // auto-hide, sync reconnect). These can outnumber a single tracked
+    // source id and must not fire on a destroyed `this`; payloads hold a
+    // weak_ptr and bail if it has expired.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace gtk4

@@ -141,8 +141,12 @@ void LoginView::on_sign_in() {
 
     join_worker();
     cancelled_.store(false);
-    worker_ = std::thread([this, hs] {
-        auto flow = client_->begin_oauth(hs);
+    // Snapshot client_ on the GUI thread: set_client() (via MainWindow's
+    // beginAddAccount) can rebind it concurrently with this worker, which
+    // would be a data race on the raw pointer.
+    auto* c = client_;
+    worker_ = std::thread([this, hs, c] {
+        auto flow = c->begin_oauth(hs);
         if (cancelled_.load()) return;
         bool        ok      = static_cast<bool>(flow);
         std::string payload = ok ? flow.auth_url : flow.message;
@@ -170,8 +174,9 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url) {
     }
 
     cancelled_.store(false);
-    worker_ = std::thread([this] {
-        auto res = client_->await_oauth();
+    auto* c = client_;
+    worker_ = std::thread([this, c] {
+        auto res = c->await_oauth();
         if (cancelled_.load()) return;
         bool        ok  = static_cast<bool>(res);
         std::string msg = res.message;

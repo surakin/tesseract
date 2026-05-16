@@ -112,8 +112,13 @@ void StickerPicker::request_image_(const std::string& cache_key) {
     // fetch (auto-cleanup on dtor isn't needed because the picker is
     // owned by the QMainWindow for the app's lifetime).
     QString qkey = QString::fromStdString(cache_key);
-    auto* runner = QRunnable::create([this, key = cache_key, qkey]() {
-        auto bytes = client_->fetch_source_bytes(key);
+    // Snapshot client_ now (GUI thread): setClient() can rebind it on an
+    // account switch while this worker runs, which would be a data race and
+    // could fetch against the wrong account.
+    auto* c = client_;
+    if (!c) { fetches_in_flight_.erase(cache_key); return; }
+    auto* runner = QRunnable::create([c, key = cache_key, qkey, this]() {
+        auto bytes = c->fetch_source_bytes(key);
         QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<int>(bytes.size()));
         emit imageLoadedSignal_(qkey, qb);

@@ -1217,15 +1217,20 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     auto visible_ids = roomListView_ ? roomListView_->visible_room_ids()
                                      : std::vector<std::string>{};
     std::string sub_room = current_room_id_;
-    runOnPool_([this, sub_room, visible_ids = std::move(visible_ids)]{
-        auto res = client_->subscribe_room(sub_room);
+    // Snapshot client_ on the GUI thread: an account switch while this
+    // worker runs would otherwise race the raw pointer and could subscribe /
+    // paginate against the wrong account's client.
+    auto* c = client_;
+    if (!c) return;
+    runOnPool_([this, c, sub_room, visible_ids = std::move(visible_ids)]{
+        auto res = c->subscribe_room(sub_room);
         bool ok  = res.ok;
         std::string msg = res.message;
         bool reached = false;
         if (ok) {
-            auto pr = client_->paginate_back_with_status(sub_room, kPaginationBatch);
+            auto pr = c->paginate_back_with_status(sub_room, kPaginationBatch);
             reached = pr.ok && pr.reached_start;
-            client_->start_background_backfill(visible_ids);
+            c->start_background_backfill(visible_ids);
         }
         QMetaObject::invokeMethod(
             this,
@@ -1256,8 +1261,10 @@ void MainWindow::requestMoreHistory(const std::string& room_id) {
     // Run the blocking SDK call off the UI thread; bounce the result back
     // via a queued connection. `client_` is thread-safe (Rust runtime
     // serialises concurrent calls).
-    runOnPool_([this, room_id]{
-        auto res = client_->paginate_back_with_status(room_id, kPaginationBatch);
+    auto* c = client_;   // snapshot: avoid account-switch race on client_
+    if (!c) { state.in_flight = false; return; }
+    runOnPool_([this, c, room_id]{
+        auto res = c->paginate_back_with_status(room_id, kPaginationBatch);
         bool reached = res.ok && res.reached_start;
         QMetaObject::invokeMethod(
             this,
@@ -1543,6 +1550,13 @@ void MainWindow::showRooms(const std::vector<tesseract::RoomInfo>& rooms) {
 }
 
 void MainWindow::refreshRoomList() {
+    // Both branches below dereference client_ (space_children). After logout
+    // client_ is null; show an empty list rather than crash.
+    if (!client_) {
+        showRooms({});
+        roomNavBar_->setVisible(false);
+        return;
+    }
     if (space_stack_.empty()) {
         if (!roomSearchPendingText_.empty()) {
             showRooms(rooms_);
@@ -2001,6 +2015,12 @@ void MainWindow::switchActiveAccount(int new_idx) {
         client_->unsubscribe_room(current_room_id_);
     }
     current_room_id_.clear();
+    // Per-account, room-id-keyed state must not bleed into the next account
+    // (a room id present in both accounts would otherwise inherit stale
+    // pagination / space-drill / reply-fetch state).
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
     clearMessages();
 
     active_account_index_ = new_idx;
@@ -2094,6 +2114,7 @@ void MainWindow::logoutActiveAccount() {
 
     // Reset visible state regardless of where we go next.
     current_room_id_.clear();
+    space_stack_.clear();
     my_user_id_.clear();
     my_display_name_.clear();
     my_avatar_url_.clear();

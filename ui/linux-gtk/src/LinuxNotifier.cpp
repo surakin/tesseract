@@ -1,6 +1,21 @@
 #include "LinuxNotifier.h"
+#include <cctype>
 #include <cstdlib>
+#include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+
+namespace {
+// XDG portal notification ids must match [a-zA-Z0-9_-]+; Matrix room ids
+// contain '!', ':' and '.'.
+std::string sanitize_portal_id(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s)
+        out += (std::isalnum(c) || c == '_' || c == '-')
+                   ? static_cast<char>(c) : '_';
+    return out.empty() ? std::string("_") : out;
+}
+} // namespace
 
 LinuxNotifierGtk::LinuxNotifierGtk(std::function<void(std::string)> on_activate)
     : on_activate_(std::move(on_activate))
@@ -57,11 +72,14 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
         if (pb) {
             GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
                 pb, 64, 64, GDK_INTERP_BILINEAR);
-            if (gdk_pixbuf_get_has_alpha(scaled)) {
-                rgba = scaled;
-            } else {
-                rgba = gdk_pixbuf_add_alpha(scaled, FALSE, 0, 0, 0);
-                g_object_unref(scaled);
+            // scale_simple returns NULL on allocation failure / bad dims.
+            if (scaled) {
+                if (gdk_pixbuf_get_has_alpha(scaled)) {
+                    rgba = scaled;
+                } else {
+                    rgba = gdk_pixbuf_add_alpha(scaled, FALSE, 0, 0, 0);
+                    g_object_unref(scaled);
+                }
             }
         }
     }
@@ -88,7 +106,8 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             "/org/freedesktop/portal/desktop",
             "org.freedesktop.portal.Notification",
             "AddNotification",
-            g_variant_new("(sa{sv})", n.room_id.c_str(), &notif_b),
+            g_variant_new("(sa{sv})",
+                          sanitize_portal_id(n.room_id).c_str(), &notif_b),
             nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
         if (rgba)   g_object_unref(rgba);
         if (loader) g_object_unref(loader);
@@ -121,16 +140,23 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             g_variant_new("(iiibii@ay)", w, h, rs, ha, 8, ch, data_v));
     }
 
+    // Several daemons (dunst, mako, GNOME Shell) render Pango markup in the
+    // legacy Notify body; escape server-supplied text so it can't inject
+    // markup. g_variant_new("s", ...) copies, so free right after.
+    gchar* esc_sender = g_markup_escape_text(n.sender.c_str(), -1);
+    gchar* esc_body   = g_markup_escape_text(n.body.c_str(), -1);
     GVariant* params = g_variant_new(
         "(susssasa{sv}i)",
         "Tesseract",
         replaces,
         "tesseract",
-        n.sender.c_str(),
-        n.body.c_str(),
+        esc_sender,
+        esc_body,
         &actions_b,
         &hints_b,
         5000);
+    g_free(esc_sender);
+    g_free(esc_body);
 
     GVariant* result = g_dbus_connection_call_sync(
         bus_,

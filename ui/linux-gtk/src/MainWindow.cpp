@@ -238,13 +238,20 @@ void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
     GtkWidget* w = verif_surface_->widget();
     gtk_widget_set_size_request(w, -1, 48);
     verif_surface_->relayout();
-    // Hide after 1.5 s.
+    // Hide after 1.5 s. The payload carries a liveness weak_ptr so a
+    // window destroyed within that window doesn't get called on freed `this`.
+    struct DoneData { MainWindow* w; std::weak_ptr<bool> alive; };
+    auto* dd = new DoneData{ this, alive_ };
     g_timeout_add(1500, [](gpointer data) -> gboolean {
-        auto* self = static_cast<MainWindow*>(data);
-        if (self->verif_shared_ && self->verif_shared_->on_done)
-            self->verif_shared_->on_done();
+        auto* d = static_cast<DoneData*>(data);
+        if (!d->alive.expired()) {
+            auto* self = d->w;
+            if (self->verif_shared_ && self->verif_shared_->on_done)
+                self->verif_shared_->on_done();
+        }
+        delete d;
         return G_SOURCE_REMOVE;
-    }, this);
+    }, dd);
 }
 
 void MainWindow::handle_verification_cancelled_ui_(
@@ -1067,6 +1074,14 @@ MainWindow::~MainWindow() {
         g_source_remove(scroll_debounce_id_);
         scroll_debounce_id_ = 0;
     }
+    if (tk_anim_tick_id_) {
+        g_source_remove(tk_anim_tick_id_);
+        tk_anim_tick_id_ = 0;
+    }
+    if (sync_status_debounce_id_) {
+        g_source_remove(sync_status_debounce_id_);
+        sync_status_debounce_id_ = 0;
+    }
     // GTK4 top-level windows hold their own reference and must be destroyed
     // explicitly; they are not freed when their transient parent is destroyed.
     if (join_room_dialog_window_) {
@@ -1548,14 +1563,16 @@ void MainWindow::handle_reconnect(const std::string& user_id) {
     // Restart the affected account's sync after a short delay.  do not
     // call do_login() (which rebuilds all sessions), as that causes a tight
     // loop when the server rejects key uploads on every new session.
-    struct DelayData { MainWindow* w; std::string uid; };
-    auto* dd = new DelayData{ this, user_id };
+    struct DelayData { MainWindow* w; std::string uid; std::weak_ptr<bool> alive; };
+    auto* dd = new DelayData{ this, user_id, alive_ };
     g_timeout_add(5000, [](gpointer data) -> gboolean {
         auto* d = static_cast<DelayData*>(data);
-        for (auto& s : d->w->accounts_) {
-            if (s->user_id == d->uid && !s->sync_started && s->client) {
-                s->sync_started = true;
-                s->client->start_sync(s->bridge.get());
+        if (!d->alive.expired()) {
+            for (auto& s : d->w->accounts_) {
+                if (s->user_id == d->uid && !s->sync_started && s->client) {
+                    s->sync_started = true;
+                    s->client->start_sync(s->bridge.get());
+                }
             }
         }
         delete d;
@@ -1881,6 +1898,13 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
 }
 
 void MainWindow::refresh_room_list() {
+    // Both branches dereference client_ (space_children). client_ is null
+    // after the last account logs out — render an empty list, don't crash.
+    if (!client_) {
+        show_rooms({});
+        gtk_widget_set_visible(room_nav_bar_, FALSE);
+        return;
+    }
     if (space_stack_.empty()) {
         if (!search_pending_text_.empty()) {
             show_rooms(rooms_);
@@ -2385,24 +2409,33 @@ void MainWindow::populate_user_strip() {
     gtk_label_set_text(GTK_LABEL(user_name_lbl_), shown.c_str());
     gtk_label_set_text(GTK_LABEL(user_id_lbl_), my_user_id_.c_str());
 
-    bool has_avatar = false;
-    if (!my_avatar_url_.empty() && client_) {
-        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
-        if (!bytes.empty()) {
-            GdkTexture* tex = make_scaled_texture(bytes, 32, 32);
-            if (tex) {
-                gtk_image_set_from_paintable(GTK_IMAGE(user_avatar_img_),
-                                             GDK_PAINTABLE(tex));
-                g_object_unref(tex);
-                has_avatar = true;
-            }
-        }
-    }
-    if (!has_avatar) {
-        gtk_image_set_from_icon_name(GTK_IMAGE(user_avatar_img_),
-                                     "avatar-default-symbolic");
-    }
+    // Default icon immediately; fetch the real avatar off the UI thread.
+    // fetch_media_bytes does a blocking network round-trip — calling it
+    // synchronously here froze the UI on every login / account switch.
+    gtk_image_set_from_icon_name(GTK_IMAGE(user_avatar_img_),
+                                 "avatar-default-symbolic");
     gtk_widget_set_visible(user_strip_, TRUE);
+
+    if (!my_avatar_url_.empty() && client_) {
+        auto* c = client_;
+        std::string mxc = my_avatar_url_;
+        std::weak_ptr<bool> w = alive_;
+        run_async_([this, c, mxc, w] {
+            auto bytes = c->fetch_media_bytes(mxc);
+            post_to_ui_([this, w, mxc, bytes = std::move(bytes)]() mutable {
+                // Bail if the window is gone or the active account changed
+                // out from under this fetch.
+                if (w.expired() || mxc != my_avatar_url_ || bytes.empty())
+                    return;
+                GdkTexture* tex = make_scaled_texture(bytes, 32, 32);
+                if (tex) {
+                    gtk_image_set_from_paintable(GTK_IMAGE(user_avatar_img_),
+                                                 GDK_PAINTABLE(tex));
+                    g_object_unref(tex);
+                }
+            });
+        });
+    }
 }
 
 void MainWindow::on_user_strip_right_click_(GtkGestureClick* gesture,
@@ -2739,6 +2772,16 @@ void MainWindow::emoji_selected(const std::string& glyph) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::switch_active_account(int new_idx) {
+    // Unsubscribe the previous account's open room and drop per-account,
+    // room-id-keyed state so it can't bleed into the next account.
+    if (client_ && !current_room_id_.empty())
+        client_->unsubscribe_room(current_room_id_);
+    current_room_id_.clear();
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
+    clear_messages();
+
     active_account_index_ = new_idx;
     auto& sess = *accounts_[new_idx];
 
@@ -2795,6 +2838,9 @@ void MainWindow::logout_active_account() {
     if (active_account_index_ < 0) return;
 
     auto& sess = *accounts_[active_account_index_];
+    // Copy before the accounts_.erase() below: `sess` dangles afterward but
+    // the user id is still needed to prune accounts.json.
+    const std::string logged_out_uid = sess.user_id;
 
     if (!current_room_id_.empty()) {
         client_->unsubscribe_room(current_room_id_);
@@ -2813,6 +2859,9 @@ void MainWindow::logout_active_account() {
     // Reset UI state.
     clear_messages();
     rooms_.clear();
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
     refresh_room_list();
     if (recovery_surface_)
         gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
@@ -2850,7 +2899,8 @@ void MainWindow::logout_active_account() {
         idx.active_user_id = my_user_id_;
         // Remove logged-out uid from index.
         idx.user_ids.erase(
-            std::remove(idx.user_ids.begin(), idx.user_ids.end(), sess.user_id),
+            std::remove(idx.user_ids.begin(), idx.user_ids.end(),
+                        logged_out_uid),
             idx.user_ids.end());
         tesseract::SessionStore::save_index(idx);
     }

@@ -248,9 +248,17 @@ void LinuxUpConnectorQt::logout() {
 
 void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint) {
     if (!client_) return;
+    // The endpoint string is supplied by the UnifiedPush distributor over
+    // D-Bus — untrusted. Reject anything that isn't a valid https URL before
+    // registering it as this account's Matrix push gateway, otherwise a
+    // malicious/buggy distributor could redirect push traffic anywhere.
+    QUrl url(QString::fromStdString(endpoint), QUrl::StrictMode);
+    if (!url.isValid() || url.scheme() != QLatin1String("https") ||
+        url.host().isEmpty()) {
+        return;
+    }
     // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
     // By UP convention the push provider exposes a Matrix gateway at that path.
-    QUrl url(QString::fromStdString(endpoint));
     url.setPath(QStringLiteral("/_matrix/push/v1/notify"));
     url.setQuery(QString{});
     url.setFragment(QString{});

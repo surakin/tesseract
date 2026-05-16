@@ -154,13 +154,14 @@ void UpSharedBusGtk::release(GDBusConnection* bus) {
             if (reg_id_) g_dbus_connection_unregister_object(bus, reg_id_);
             reg_id_  = 0;
             active_ = false;
-            g_dbus_connection_call_sync(
+            GVariant* rel = g_dbus_connection_call_sync(
                 bus,
                 "org.freedesktop.DBus", "/org/freedesktop/DBus",
                 "org.freedesktop.DBus", "ReleaseName",
                 g_variant_new("(s)", "im.gnomos.Tesseract"),
                 G_VARIANT_TYPE("(u)"),
                 G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+            if (rel) g_variant_unref(rel);
         }
     }
 }
@@ -288,16 +289,26 @@ void LinuxUpConnectorGtk::logout() {
 
 void LinuxUpConnectorGtk::on_new_endpoint(const std::string& endpoint) {
     if (!client_) return;
-    // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
-    // By UP convention the push provider exposes a Matrix gateway at that path.
+    // The endpoint is supplied by the UnifiedPush distributor over D-Bus —
+    // untrusted. Require a well-formed https:// URL with a host before
+    // registering it as this account's Matrix push gateway; a malicious or
+    // buggy distributor must not be able to redirect push traffic.
+    constexpr const char* kScheme = "https://";
+    if (endpoint.rfind(kScheme, 0) != 0) return;
     std::string gateway = endpoint;
     const std::string prefix = "://";
     auto host_start = gateway.find(prefix);
-    if (host_start != std::string::npos) {
-        auto path_start = gateway.find('/', host_start + prefix.size());
-        if (path_start != std::string::npos)
-            gateway.erase(path_start);
-    }
+    if (host_start == std::string::npos) return;
+    std::size_t host_begin = host_start + prefix.size();
+    auto path_start = gateway.find('/', host_begin);
+    std::string host = gateway.substr(
+        host_begin,
+        path_start == std::string::npos ? std::string::npos
+                                        : path_start - host_begin);
+    if (host.empty()) return;
+    if (path_start != std::string::npos)
+        gateway.erase(path_start);
+    // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
     gateway += "/_matrix/push/v1/notify";
     client_->register_pusher(
         token_,
