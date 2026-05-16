@@ -2,10 +2,13 @@
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
+#include "tk/theme.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -128,6 +131,23 @@ protected:
         UserAvatar, // → tk_avatars_, triggers message-list repaint
         MediaImage, // → anim_cache_ or tk_images_, triggers message-list repaint
     };
+
+    // ── Theme ─────────────────────────────────────────────────────────────────
+
+    // Returns the OS-preferred color scheme. Default: Light.
+    // Each platform shell overrides with its native API.
+    virtual tk::ThemeMode os_color_scheme_() const { return tk::ThemeMode::Light; }
+
+    // Apply theme to all surfaces owned by this shell. Called on the UI thread.
+    // Each platform shell overrides to call set_theme() on each of its surfaces.
+    virtual void apply_theme_ui_(const tk::Theme&) {}
+
+    // Resolve the current ThemePreference to a concrete ThemeMode (calling
+    // os_color_scheme_() for System), then call apply_theme_ui_.
+    void apply_current_theme_();
+
+    // Change the stored preference, save to disk, then call apply_current_theme_.
+    void set_theme_preference_(tesseract::Settings::ThemePreference pref);
 
     // ── Abstract platform hooks ───────────────────────────────────────────────
 

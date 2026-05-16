@@ -1,6 +1,9 @@
 #include "app/ShellBase.h"
 #include "tk/blurhash.h"
+#include "tk/theme.h"
 #include "views/html_spans.h"
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <thread>
 
@@ -291,6 +294,21 @@ void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id) {
     if (!compose_typing_active_ || old_room_id.empty() || !client_) return;
     compose_typing_active_ = false;
     client_->send_typing_notice(old_room_id, false);
+}
+
+void ShellBase::apply_current_theme_() {
+    auto& s = tesseract::Settings::instance();
+    tk::ThemeMode mode =
+        s.theme_pref == tesseract::Settings::ThemePreference::Dark   ? tk::ThemeMode::Dark  :
+        s.theme_pref == tesseract::Settings::ThemePreference::Light  ? tk::ThemeMode::Light :
+        os_color_scheme_();   // System → ask the OS
+    apply_theme_ui_(mode == tk::ThemeMode::Dark ? tk::Theme::dark() : tk::Theme::light());
+}
+
+void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref) {
+    tesseract::Settings::instance().theme_pref = pref;
+    tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+    apply_current_theme_();
 }
 
 } // namespace tesseract
