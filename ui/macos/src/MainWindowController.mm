@@ -3,6 +3,7 @@
 #import "EmojiPicker.h"
 #import "StickerPicker.h"
 #import "MacOSTrayIcon.h"
+#import "RoomWindowController.h"
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
@@ -118,6 +119,8 @@ protected:
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(
+        const std::string& room_id) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -315,6 +318,12 @@ void MacShell::on_rooms_updated_() {
             }
         }
     }
+
+    for (const auto& [room_id, w] : secondary_windows_) {
+        for (const auto& r : rooms_) {
+            if (r.id == room_id) { w->on_room_info_updated(r); break; }
+        }
+    }
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
@@ -407,6 +416,17 @@ void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        std::vector<tesseract::views::MessageRowData> rows;
+        rows.reserve(snapshot.size());
+        for (auto& p : snapshot) {
+            if (!p) continue;
+            ensure_row_media_(*p);
+            rows.push_back(tesseract::views::make_row_data(*p, my_user_id_));
+        }
+        w->on_timeline_reset(std::move(rows));
+    });
+
     MainWindowController* c = ctrl_;
     if (!c) return;
     std::vector<tesseract::Event*> raw;
@@ -420,6 +440,12 @@ void MacShell::handle_message_inserted_ui_(
     std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
+    if (ev && ev->type != tesseract::EventType::Unhandled) {
+        dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+            ensure_row_media_(*ev);
+            w->on_message_inserted(index, tesseract::views::make_row_data(*ev, my_user_id_));
+        });
+    }
     MainWindowController* c = ctrl_;
     if (!c || !ev) return;
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
@@ -430,6 +456,12 @@ void MacShell::handle_message_updated_ui_(
     std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
+    if (ev && ev->type != tesseract::EventType::Unhandled) {
+        dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+            ensure_row_media_(*ev);
+            w->on_message_updated(index, tesseract::views::make_row_data(*ev, my_user_id_));
+        });
+    }
     MainWindowController* c = ctrl_;
     if (!c || !ev) return;
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
@@ -437,6 +469,9 @@ void MacShell::handle_message_updated_ui_(
 }
 
 void MacShell::handle_message_removed_ui_(std::string room_id, std::size_t index) {
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        w->on_message_removed(index);
+    });
     MainWindowController* c = ctrl_;
     if (!c) return;
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
@@ -541,6 +576,19 @@ void MacShell::on_url_preview_ready_(const std::string& url,
 
     if (room_view_) room_view_->notify_url_preview_ready(url);
     if (ctrl_) [ctrl_ _relayoutChatSurface];
+
+    for (const auto& [rid, w] : secondary_windows_) {
+        if (w->room_view()) {
+            w->room_view()->notify_url_preview_ready(url);
+            w->request_relayout();
+        }
+    }
+}
+
+tesseract::RoomWindowBase* MacShell::create_secondary_room_window_(
+    const std::string& room_id)
+{
+    return tesseract::make_mac_room_window(this, room_id, &url_preview_data_);
 }
 
 tk::ThemeMode MacShell::os_color_scheme_() const {

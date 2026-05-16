@@ -27,6 +27,7 @@ target_compile_definitions(tesseract_gtk_tray PRIVATE
 add_executable(tesseract_gtk
     src/main.cpp
     src/MainWindow.cpp
+    src/RoomWindow.cpp
     src/LoginView.cpp
     src/LinuxNotifier.cpp
     src/LinuxUpConnectorGtk.cpp

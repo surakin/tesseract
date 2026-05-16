@@ -1263,6 +1263,12 @@ void MainWindow::on_rooms_updated_() {
             }
         }
     }
+
+    for (const auto& [room_id, w] : secondary_windows_) {
+        for (const auto& r : rooms_) {
+            if (r.id == room_id) { w->on_room_info_updated(r); break; }
+        }
+    }
 }
 
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
@@ -1424,6 +1430,13 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     if (mainAppSurface_) {
         mainAppSurface_->relayout();
         mainAppSurface_->update();
+    }
+
+    for (const auto& [rid, w] : secondary_windows_) {
+        if (w->room_view()) {
+            w->room_view()->notify_url_preview_ready(url);
+            w->request_relayout();
+        }
     }
 }
 
@@ -1710,58 +1723,92 @@ void MainWindow::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    if (room_id != current_room_id_) return;
-    std::vector<tesseract::views::MessageRowData> rows;
-    rows.reserve(snapshot.size());
-    for (auto& ev : snapshot) {
-        if (!ev) continue;
-        ensureRowMedia(*ev);
-        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
-        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+    if (room_id == current_room_id_) {
+        std::vector<tesseract::views::MessageRowData> rows;
+        rows.reserve(snapshot.size());
+        for (auto& ev : snapshot) {
+            if (!ev) continue;
+            ensureRowMedia(*ev);
+            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        if (mainApp_) mainApp_->room_view()->set_messages(std::move(rows));
+        if (mainAppSurface_) mainAppSurface_->relayout();
+        if (mainApp_ && mainApp_->room_view()->message_list()) {
+            mainApp_->room_view()->message_list()->set_historical_mode(pagination_[room_id].is_focused);
+            if (pagination_[room_id].is_focused)
+                mainApp_->room_view()->message_list()->scroll_to_event_id(pagination_[room_id].focus_event_id);
+        }
     }
-    if (mainApp_) mainApp_->room_view()->set_messages(std::move(rows));
-    if (mainAppSurface_) mainAppSurface_->relayout();
-    if (mainApp_ && mainApp_->room_view()->message_list()) {
-        mainApp_->room_view()->message_list()->set_historical_mode(pagination_[room_id].is_focused);
-        if (pagination_[room_id].is_focused)
-            mainApp_->room_view()->message_list()->scroll_to_event_id(pagination_[room_id].focus_event_id);
-    }
+
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        std::vector<tesseract::views::MessageRowData> rows;
+        rows.reserve(snapshot.size());
+        for (auto& ev : snapshot) {
+            if (!ev) continue;
+            ensureRowMedia(*ev);
+            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+        }
+        w->on_timeline_reset(std::move(rows));
+    });
 }
 
 void MainWindow::handle_message_inserted_ui_(
     std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    if (!ev || room_id != current_room_id_
-            || ev->type == tesseract::EventType::Unhandled)
-        return;
-    ensureRowMedia(*ev);
-    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
-    if (mainApp_) mainApp_->room_view()->insert_message(index,
-        tesseract::views::make_row_data(*ev, my_user_id_));
-    if (mainAppSurface_) mainAppSurface_->relayout();
+    if (!ev || ev->type == tesseract::EventType::Unhandled) return;
+
+    if (room_id == current_room_id_) {
+        ensureRowMedia(*ev);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+        if (mainApp_) mainApp_->room_view()->insert_message(index,
+            tesseract::views::make_row_data(*ev, my_user_id_));
+        if (mainAppSurface_) mainAppSurface_->relayout();
+    }
+
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        ensureRowMedia(*ev);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+        w->on_message_inserted(index,
+            tesseract::views::make_row_data(*ev, my_user_id_));
+    });
 }
 
 void MainWindow::handle_message_updated_ui_(
     std::string room_id, std::size_t index,
     std::unique_ptr<tesseract::Event> ev)
 {
-    if (!ev || room_id != current_room_id_
-            || ev->type == tesseract::EventType::Unhandled)
-        return;
-    ensureRowMedia(*ev);
-    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
-    if (mainApp_) mainApp_->room_view()->update_message(index,
-        tesseract::views::make_row_data(*ev, my_user_id_));
-    if (mainAppSurface_) mainAppSurface_->relayout();
+    if (!ev || ev->type == tesseract::EventType::Unhandled) return;
+
+    if (room_id == current_room_id_) {
+        ensureRowMedia(*ev);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+        if (mainApp_) mainApp_->room_view()->update_message(index,
+            tesseract::views::make_row_data(*ev, my_user_id_));
+        if (mainAppSurface_) mainAppSurface_->relayout();
+    }
+
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        ensureRowMedia(*ev);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
+        w->on_message_updated(index,
+            tesseract::views::make_row_data(*ev, my_user_id_));
+    });
 }
 
 void MainWindow::handle_message_removed_ui_(
     std::string room_id, std::size_t index)
 {
-    if (room_id != current_room_id_) return;
-    if (mainApp_) mainApp_->room_view()->remove_message(index);
-    if (mainAppSurface_) mainAppSurface_->relayout();
+    if (room_id == current_room_id_) {
+        if (mainApp_) mainApp_->room_view()->remove_message(index);
+        if (mainAppSurface_) mainAppSurface_->relayout();
+    }
+
+    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
+        w->on_message_removed(index);
+    });
 }
 
 void MainWindow::handle_sync_error_ui_(

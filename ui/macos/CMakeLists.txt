@@ -36,6 +36,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/StickerPicker.mm
     src/MacOSTrayIcon.h
     src/MacOSTrayIcon.mm
+    src/RoomWindowController.h
+    src/RoomWindowController.mm
     "${_icns}"
 )
 

@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-05-17
+
+- feat(app): secondary room windows — `open_room_in_new_window(room_id)` opens any room in its own native window (Win32, Qt6, GTK4, macOS); raise-existing policy prevents duplicates; `RoomWindowBase` shared C++ base handles lifecycle, SDK subscription ref-counting, and event dispatch; all four shells dispatch timeline/message/typing/rooms-updated/url-preview events to open secondary windows
+
 ### 2026-05-16
 
 - feat(matrix): `m.notice` renders with muted colour to distinguish bot/automated messages; `m.emote` renders as "* SenderName body" with italic spans — both support `formatted_body`, spoilers, URL cards, links, and reactions

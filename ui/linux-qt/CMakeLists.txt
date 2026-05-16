@@ -7,6 +7,8 @@ qt_add_executable(tesseract_qt
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h          # MOC input
+    src/RoomWindow.cpp
+    src/RoomWindow.h          # MOC input
     src/LoginView.cpp
     src/LoginView.h           # MOC input
     src/EmojiPicker.cpp

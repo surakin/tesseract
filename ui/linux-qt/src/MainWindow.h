@@ -59,6 +59,7 @@ public:
 // ---------------------------------------------------------------------------
 
 class MainWindow final : public QMainWindow, public tesseract::ShellBase {
+    friend class RoomWindow;  // accesses url_preview_data_ for preview provider
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
@@ -193,6 +194,8 @@ private:
                                 const tesseract::Client::UrlPreview& preview) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(
+        const std::string& room_id) override;
 
     std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 

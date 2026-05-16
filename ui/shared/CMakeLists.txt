@@ -12,6 +12,8 @@ set(_tk_sources
     app/ShellBase.cpp
     app/EventHandlerBase.h
     app/EventHandlerBase.cpp
+    app/RoomWindowBase.h
+    app/RoomWindowBase.cpp
     tk/audio.h
     tk/video.h
     tk/canvas.h

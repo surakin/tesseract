@@ -106,7 +106,12 @@
       "Bash(awk '/unsafe/,/^[[:space:]]*}/' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)",
       "Bash(ls -d ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-* 2>/dev/null | sort -V)",
       "Bash(awk '/^[[:space:]]*unsafe[[:space:]]*\\\\{/,/^[[:space:]]*\\\\}/' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)",
-      "Bash(awk 'NR>=2036 && NR<=2040' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)"
+      "Bash(awk 'NR>=2036 && NR<=2040' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)",
+      "Bash(git commit *)",
+      "Bash(xargs grep -l \"enum.*EventType\\\\|DaySeparator\")",
+      "Bash(xargs grep -l \"insert.*message\\\\|push_back.*message\\\\|set_messages\")",
+      "Bash(git restore *)",
+      "Bash(git rebase *)"
     ]
   }
 }

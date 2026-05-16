@@ -1,10 +1,12 @@
 #include "app/ShellBase.h"
+#include "app/RoomWindowBase.h"
 #include "tk/blurhash.h"
 #include "tk/theme.h"
 #include "views/html_spans.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
+#include <algorithm>
 #include <thread>
 
 namespace tesseract {
@@ -254,6 +256,66 @@ void ShellBase::push_room_list_state_(RoomListState state) {
     last_room_list_state_ = state;
 }
 
+// ── Secondary window registry ─────────────────────────────────────────────────
+
+void ShellBase::register_room_window_(RoomWindowBase* w) {
+    secondary_windows_[w->room_id()] = w;
+}
+
+void ShellBase::unregister_room_window_(RoomWindowBase* w) {
+    auto it = secondary_windows_.find(w->room_id());
+    if (it != secondary_windows_.end() && it->second == w)
+        secondary_windows_.erase(it);
+}
+
+void ShellBase::acquire_room_subscription_(const std::string& room_id) {
+    int& refs = room_subscription_refs_[room_id];
+    if (++refs > 1) return;
+    // If the main window is already showing this room its subscription is live.
+    if (room_id == current_room_id_) return;
+    run_async_([this, room_id] {
+        if (client_) client_->subscribe_room(room_id);
+    });
+}
+
+void ShellBase::release_room_subscription_(const std::string& room_id) {
+    auto it = room_subscription_refs_.find(room_id);
+    if (it == room_subscription_refs_.end()) return;
+    if (--it->second > 0) return;
+    room_subscription_refs_.erase(it);
+    if (room_id == current_room_id_) return;
+    run_async_([this, room_id] {
+        if (client_) client_->unsubscribe_room(room_id);
+    });
+}
+
+void ShellBase::dispatch_to_secondary_windows_(
+    const std::string& room_id,
+    const std::function<void(RoomWindowBase*)>& fn)
+{
+    auto it = secondary_windows_.find(room_id);
+    if (it != secondary_windows_.end()) fn(it->second);
+}
+
+void ShellBase::open_room_in_new_window(const std::string& room_id) {
+    if (room_id.empty()) return;
+    auto it = secondary_windows_.find(room_id);
+    if (it != secondary_windows_.end()) {
+        it->second->bring_to_front();
+        return;
+    }
+    RoomWindowBase* w = create_secondary_room_window_(room_id);
+    if (w) owned_secondary_windows_.emplace_back(w);
+}
+
+void ShellBase::release_owned_window_(RoomWindowBase* w) {
+    auto it = std::find_if(owned_secondary_windows_.begin(),
+                           owned_secondary_windows_.end(),
+                           [w](const auto& up) { return up.get() == w; });
+    if (it != owned_secondary_windows_.end())
+        owned_secondary_windows_.erase(it);  // unique_ptr destructor runs here
+}
+
 void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
                                           const std::string& event_id) {
     if (room_id.empty() || event_id.empty()) return;
@@ -293,9 +355,15 @@ static std::string format_typing_text(const std::vector<std::string>& names) {
 
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                            std::vector<std::string> names) {
-    if (room_id != current_room_id_) return;
-    typing_bar_visible_ = !names.empty();
-    update_typing_bar_(format_typing_text(names), typing_bar_visible_);
+    const std::string text    = format_typing_text(names);
+    const bool        visible = !names.empty();
+    if (room_id == current_room_id_) {
+        typing_bar_visible_ = visible;
+        update_typing_bar_(text, visible);
+    }
+    dispatch_to_secondary_windows_(room_id, [&](RoomWindowBase* w) {
+        w->on_typing_changed(text, visible);
+    });
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text) {

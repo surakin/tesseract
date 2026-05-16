@@ -24,6 +24,8 @@
 #include <unordered_set>
 #include <vector>
 
+namespace tesseract { class RoomWindowBase; }
+
 namespace tesseract {
 
 // ShellBase holds all state and platform-agnostic logic that is identical
@@ -41,9 +43,17 @@ class ShellBase {
     // captured on the worker thread — these are protected but EventHandlerBase
     // is not a subclass, so grant friendship.
     friend class EventHandlerBase;
+    // RoomWindowBase accesses client_, rooms_, current_room_id_,
+    // pagination_, my_user_id_, and post_to_ui_ from its helper methods.
+    friend class RoomWindowBase;
 
 public:
     virtual ~ShellBase() = default;
+
+    // Open room_id in a new native window. If a secondary window for that room
+    // is already open, it is raised instead of duplicated. The platform shell
+    // must override create_secondary_room_window_() for this to have effect.
+    void open_room_in_new_window(const std::string& room_id);
 
 protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
@@ -121,6 +131,15 @@ protected:
     // room_id → last event_id for which a receipt was sent in this session.
     std::unordered_map<std::string, std::string> last_sent_receipt_;
     static constexpr std::uint16_t kPaginationBatch = 50;
+
+    // ── Secondary (pop-out) room windows ──────────────────────────────────────
+    // One window per room_id at most (raise-existing policy).
+    // owned_secondary_windows_ holds lifetime; secondary_windows_ is a fast-
+    // lookup index into it (raw pointers, always valid while owned_ holds them).
+    std::vector<std::unique_ptr<RoomWindowBase>>     owned_secondary_windows_;
+    std::unordered_map<std::string, RoomWindowBase*> secondary_windows_;
+    // Ref-count of active subscriptions per room_id across all secondary windows.
+    std::unordered_map<std::string, int> room_subscription_refs_;
 
     // ── Worker threads ────────────────────────────────────────────────────────
     std::atomic<bool>       shutting_down_{false};
@@ -240,6 +259,35 @@ protected:
     void handle_compose_text_changed_(const std::string& text);
     // Call BEFORE updating current_room_id_ on room switch / account switch.
     void handle_compose_room_leaving_(const std::string& old_room_id);
+
+    // ── Secondary window registry ─────────────────────────────────────────────
+
+    // Register/unregister a secondary window. Called by RoomWindowBase.
+    void register_room_window_  (RoomWindowBase* w);
+    void unregister_room_window_(RoomWindowBase* w);
+    // Remove the owning unique_ptr for w from owned_secondary_windows_,
+    // destroying the C++ object. Called by RoomWindowBase::schedule_self_close_()
+    // via post_to_ui_ so deletion happens outside the window's own message handler.
+    void release_owned_window_  (RoomWindowBase* w);
+
+    // Subscription ref-counting for secondary windows. acquire_() starts an
+    // async subscribe_room when the ref goes from 0→1 (unless the main window
+    // already holds the subscription). release_() unsubscribes when the ref
+    // goes from 1→0 and the main window is not showing that room.
+    void acquire_room_subscription_(const std::string& room_id);
+    void release_room_subscription_(const std::string& room_id);
+
+    // Call fn on the secondary window showing room_id, if one is open.
+    void dispatch_to_secondary_windows_(
+        const std::string& room_id,
+        const std::function<void(RoomWindowBase*)>& fn);
+
+    // Override in a platform shell to instantiate the concrete RoomWindow
+    // subclass. The subclass constructor must call finish_init_() before
+    // returning. Default: no-op (secondary windows are inert until a shell
+    // overrides this).
+    virtual RoomWindowBase* create_secondary_room_window_(
+        const std::string& /*room_id*/) { return nullptr; }
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 
