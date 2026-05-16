@@ -12,7 +12,7 @@ namespace tesseract::views {
 
 namespace {
 
-constexpr float kRowH         = tesseract::visual::kRoomRowHeight;     // 62
+constexpr float kRowH         = tesseract::visual::kRoomRowHeight;     // 48
 constexpr float kAvatarSize   = tesseract::visual::kRoomAvatarSize;    // 36
 constexpr float kPadX         = 6.0f;  // halved from kSpaceMD (12)
 constexpr float kPadY         = 4.0f;  // halved from kSpaceSM (8)
