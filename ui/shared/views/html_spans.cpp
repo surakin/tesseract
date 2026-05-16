@@ -342,14 +342,23 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
 
 // ── URL extraction helpers ────────────────────────────────────────────────
 
+// matrix.to permalinks (https://matrix.to/#/@user:s, #!room:s, $event, etc.)
+// are Matrix entity references, not web pages — skip them for URL preview.
+static bool is_matrix_to_url(const std::string& url) {
+    return url.rfind("https://matrix.to", 0) == 0
+        || url.rfind("http://matrix.to",  0) == 0;
+}
+
 std::string first_url_from_html(std::string_view html) {
-    // Walk the HTML looking for the first <a href="http(s)://..."> tag.
+    // Walk the HTML looking for the first <a href="http(s)://..."> tag that
+    // is not a matrix.to permalink.
     const char* p   = html.data();
     const char* end = p + html.size();
     while (p < end) {
         if (*p == '<') {
             Tag tag = parse_tag(p, end);
-            if (!tag.href.empty()) return tag.href;
+            if (!tag.href.empty() && !is_matrix_to_url(tag.href))
+                return tag.href;
         } else {
             ++p;
         }
@@ -358,7 +367,8 @@ std::string first_url_from_html(std::string_view html) {
 }
 
 std::string first_url_from_plain(std::string_view text) {
-    // Scan for the first "https://" or "http://" prefix.
+    // Scan for the first "https://" or "http://" prefix that is not a
+    // matrix.to permalink.
     static constexpr std::string_view kHttps = "https://";
     static constexpr std::string_view kHttp  = "http://";
     const char* p   = text.data();
@@ -385,7 +395,7 @@ std::string first_url_from_plain(std::string_view text) {
         };
         std::string url = try_prefix(kHttps);
         if (url.empty()) url = try_prefix(kHttp);
-        if (!url.empty()) return url;
+        if (!url.empty() && !is_matrix_to_url(url)) return url;
         ++p;
     }
     return {};
