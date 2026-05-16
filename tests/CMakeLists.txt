@@ -34,6 +34,7 @@ add_executable(tesseract_tests
     cpp/test_tk_image_viewer.cpp
     cpp/test_tk_video_viewer.cpp
     cpp/test_tk_reply.cpp
+    cpp/test_html_spans.cpp
     cpp/test_prefs.cpp
 )
 

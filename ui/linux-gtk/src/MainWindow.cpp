@@ -871,6 +871,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     room_view_->on_link_clicked = [](const std::string& url) {
         tesseract::Client::open_in_browser(url);
     };
+    room_view_->on_link_hovered = [this](const std::string& url) {
+        GtkWidget* w = chat_surface_->widget();
+        gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
+    };
 
     room_view_->on_receipt_needed = [this](const std::string& eid) {
         maybe_send_read_receipt_(current_room_id_, eid);

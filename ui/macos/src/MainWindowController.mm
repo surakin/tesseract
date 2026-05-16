@@ -119,7 +119,7 @@ protected:
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
-                                const Client::UrlPreview& preview) override;
+                                const tesseract::Client::UrlPreview& preview) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -527,7 +527,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
 }
 
 void MacShell::on_url_preview_ready_(const std::string& url,
-                                      const Client::UrlPreview& preview) {
+                                      const tesseract::Client::UrlPreview& preview) {
     tesseract::views::UrlPreviewData d;
     d.title       = preview.title;
     d.description = preview.description;
@@ -1762,7 +1762,7 @@ void MacShell::on_url_preview_ready_(const std::string& url,
 
     if (!_shell->my_avatar_url_.empty()) {
         std::string url = _shell->my_avatar_url_;
-        auto* clientPtr = _shell->client_.get();
+        auto* clientPtr = _shell->client_;
         __weak MainWindowController* weakSelf = self;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             auto bytes = clientPtr->fetch_media_bytes(url);

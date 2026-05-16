@@ -7,6 +7,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
+- fix: typing row is always present at fixed height so the layout never shifts when typing starts/stops
+- fix: no grouping flicker on new messages — is_cont skips suppressed read marker; suppress_read_marker_ collapses the row until SDK moves it
+- fix: crash in newest_visible_real_event_id when typing row is visible — clamp visible_range() last index to messages_.size()-1
+- fix(qt6): inline hyperlinks now clickable — change Qt::ExactHit → Qt::FuzzyHit in link_at; add on_link_hovered callback + pointing-hand cursor on Qt6 and GTK4
 - feat(ui): room list redesign — last-message preview per row, regular-weight room name, 1px inter-room separators, halved row padding (kPadX 12→6, kPadY 8→4, kRowH 62→48)
 - feat(sdk): populate last_message_body from latest cached room event via LatestEventValue
 - feat(sdk): add latest_event_body helper (text/image/file/audio/video; local send variants) with 9 unit tests

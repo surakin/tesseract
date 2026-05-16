@@ -735,11 +735,12 @@ TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-righ
     // Layout: right_edge = bounds.x + bounds.w - kPadX = 320 - 12 = 308.
     // Rightmost disc centre is (308 - kReceiptSize/2, disc_cy) = (300, ~).
     // The disc fills its area with a coloured initials background.
-    // sample_y is content_height - 14 to hit the disc vertical centre
-    // (disc_cy = cursor - kReceiptSize/2; sampling near the top edge hits
-    // the stadium corner rounding and misses the fill).
+    // sample_y is content_height - kTypingRowH - 14 to hit the disc vertical
+    // centre within the message row (content_height includes the always-present
+    // 20 px typing row at the tail; sampling near the top edge hits the
+    // stadium corner rounding and misses the fill).
     int sample_x = 300;
-    int sample_y = static_cast<int>(view.content_height()) - 14;
+    int sample_y = static_cast<int>(view.content_height()) - 20 - 14;
     auto disc_px = st.surface->read_pixel(sample_x, sample_y);
     auto bg_px   = st.surface->read_pixel(300, 0);
     CHECK(pixel_differs(disc_px, bg_px));
@@ -768,12 +769,12 @@ TEST_CASE("MessageListView paints hover timestamp under the avatar",
     auto pc = st.paint_ctx();
     view.paint(pc);
 
-    int row_h = static_cast<int>(view.content_height());
-    // Pixel inside the row (avatar column, near the row's bottom edge):
-    // gets the row highlight + the HH:MM glyph painted on top.
+    // content_height() includes the always-present 20 px typing row; subtract
+    // it to get the bottom of the message row, then offset by 13 to land on
+    // the HH:MM glyph painted in the avatar column.
+    int row_h = static_cast<int>(view.content_height()) - 20;
     auto hovered_px = st.surface->read_pixel(28, row_h - 13);
-    // Pixel well below the only row: untouched by any paint — pristine
-    // white background.
+    // Pixel well below the only row: untouched by any paint — pristine bg.
     auto bg_px      = st.surface->read_pixel(28, 300);
     CHECK(pixel_differs(hovered_px, bg_px));
 }

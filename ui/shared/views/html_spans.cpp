@@ -391,4 +391,78 @@ std::string first_url_from_plain(std::string_view text) {
     return {};
 }
 
+namespace {
+
+// Length of the http(s) URL starting exactly at text[pos], or 0 if none
+// starts there. Mirrors first_url_from_plain's extent and trailing-prose-
+// punctuation rules, plus a word-boundary guard so we never link mid-token
+// (e.g. the "https://x" inside "ahttps://x").
+std::size_t plain_url_len_at(std::string_view text, std::size_t pos) {
+    static constexpr std::string_view kHttps = "https://";
+    static constexpr std::string_view kHttp  = "http://";
+
+    std::string_view rest = text.substr(pos);
+    std::string_view prefix;
+    if      (rest.rfind(kHttps, 0) == 0) prefix = kHttps;
+    else if (rest.rfind(kHttp,  0) == 0) prefix = kHttp;
+    else return 0;
+
+    // Word-boundary guard: the char before the scheme must not be
+    // alphanumeric (start-of-text is fine).
+    if (pos > 0
+        && std::isalnum(static_cast<unsigned char>(text[pos - 1])))
+        return 0;
+
+    std::size_t i = prefix.size();
+    while (i < rest.size()
+           && !std::isspace(static_cast<unsigned char>(rest[i])))
+        ++i;
+    while (i > prefix.size()) {
+        char last = rest[i - 1];
+        if (last == '.' || last == ',' || last == ':' || last == ';'
+            || last == '!' || last == '?' || last == ')' || last == ']')
+            --i;
+        else
+            break;
+    }
+    // Need at least one host character after the scheme.
+    return i > prefix.size() ? i : 0;
+}
+
+} // namespace
+
+std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text) {
+    std::vector<tk::TextSpan> spans;
+    std::size_t plain_start = 0;
+    std::size_t i           = 0;
+    bool        found       = false;
+
+    while (i < text.size()) {
+        std::size_t len = plain_url_len_at(text, i);
+        if (len == 0) { ++i; continue; }
+
+        found = true;
+        if (i > plain_start) {
+            tk::TextSpan s;
+            s.text = std::string(text.substr(plain_start, i - plain_start));
+            spans.push_back(std::move(s));
+        }
+        tk::TextSpan link;
+        link.text = std::string(text.substr(i, len));
+        link.url  = link.text;
+        spans.push_back(std::move(link));
+
+        i += len;
+        plain_start = i;
+    }
+
+    if (!found) return {};
+    if (plain_start < text.size()) {
+        tk::TextSpan s;
+        s.text = std::string(text.substr(plain_start));
+        spans.push_back(std::move(s));
+    }
+    return spans;
+}
+
 } // namespace tesseract::views

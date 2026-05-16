@@ -358,13 +358,12 @@ public:
     // sits at index == messages_.size() when active, so it scrolls with
     // the tail and is naturally outside the viewport when the user scrolls
     // up — exactly the requested behaviour.
-    bool has_typing_row() const { return !owner_.typing_text_.empty(); }
     bool is_typing_index(std::size_t i) const {
-        return has_typing_row() && i == owner_.messages_.size();
+        return i == owner_.messages_.size();
     }
 
     std::size_t count() const override {
-        return owner_.messages_.size() + (has_typing_row() ? 1 : 0);
+        return owner_.messages_.size() + 1;  // +1 for always-present typing row
     }
 
     // True when `index` is a continuation of the previous row: same
@@ -379,7 +378,18 @@ public:
             curr.kind == Kind::ReadMarker   ||
             curr.kind == Kind::TimelineStart) return false;
         if (curr.has_reply()) return false;
-        const auto& prev = owner_.messages_[index - 1];
+        // When the read marker is suppressed (waiting for the SDK to move
+        // it after a new message), skip over it so a message from the same
+        // sender is still treated as a continuation rather than a new group.
+        std::size_t prev_idx = index - 1;
+        if (owner_.suppress_read_marker_) {
+            while (prev_idx > 0 &&
+                   owner_.messages_[prev_idx].kind == Kind::ReadMarker)
+                --prev_idx;
+            if (owner_.messages_[prev_idx].kind == Kind::ReadMarker)
+                return false;
+        }
+        const auto& prev = owner_.messages_[prev_idx];
         if (prev.kind == Kind::DaySeparator ||
             prev.kind == Kind::ReadMarker   ||
             prev.kind == Kind::TimelineStart) return false;
@@ -398,7 +408,8 @@ public:
         const auto& m = owner_.messages_[index];
         using Kind = MessageRowData::Kind;
         if (m.kind == Kind::DaySeparator)  return kDaySepH;
-        if (m.kind == Kind::ReadMarker)    return kReadMarkerH;
+        if (m.kind == Kind::ReadMarker)
+            return owner_.suppress_read_marker_ ? 0.0f : kReadMarkerH;
         if (m.kind == Kind::TimelineStart) return kTimelineStartH;
         bool  cont    = is_cont(index);
         float body_w  = std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m));
@@ -422,7 +433,7 @@ public:
             return;
         }
         if (m.kind == Kind::ReadMarker) {
-            paint_read_marker(ctx, bounds);
+            if (!owner_.suppress_read_marker_) paint_read_marker(ctx, bounds);
             return;
         }
         if (m.kind == Kind::TimelineStart) {
@@ -1429,6 +1440,16 @@ private:
                 if (layout) return layout->measure().h;
             }
         }
+        // Plain text: autolink bare URLs so they render (and measure) as a
+        // rich-text layout — must mirror paint_body_text exactly.
+        if (!eo && !m.body.empty()) {
+            auto link_spans = autolink_plain_to_spans(m.body);
+            if (!link_spans.empty()) {
+                auto layout =
+                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
+                if (layout) return layout->measure().h;
+            }
+        }
         return measure_text_height(
             m.body.empty() ? std::string("(empty message)") : m.body, ctx, w, eo);
     }
@@ -1453,6 +1474,24 @@ private:
             auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
                 auto layout = ctx.factory.build_rich_text(spans, body_style(w, eo));
+                if (layout) {
+                    ctx.canvas.draw_text(*layout, { x, y },
+                                          ctx.theme.palette.text_primary);
+                    float h = layout->measure().h;
+                    owner_.link_layout_cache_[m.event_id] =
+                        { std::move(layout), { x, y } };
+                    return h;
+                }
+            }
+        }
+        // Plain text: autolink bare URLs into a rich-text layout and cache
+        // it so link_at() hit-testing fires on_link_clicked. Must mirror
+        // measure_body_text exactly so the row height matches.
+        if (!eo && !m.body.empty()) {
+            auto link_spans = autolink_plain_to_spans(m.body);
+            if (!link_spans.empty()) {
+                auto layout =
+                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
                 if (layout) {
                     ctx.canvas.draw_text(*layout, { x, y },
                                           ctx.theme.palette.text_primary);
@@ -1918,6 +1957,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
     revealed_spoilers_.clear();
     link_layout_cache_.clear();
     adapter_->clear_layout_cache();
+    suppress_read_marker_ = false;
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
@@ -1936,6 +1976,14 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
+
+    // Suppress the read marker while the SDK catches up to the new position.
+    // update_message() clears this flag when it delivers the updated marker.
+    using Kind = MessageRowData::Kind;
+    if (msg.kind != Kind::ReadMarker &&
+        msg.kind != Kind::DaySeparator &&
+        msg.kind != Kind::TimelineStart)
+        suppress_read_marker_ = true;
 
     // Insertion at (or past) the end is an append: follow the live tail
     // when the user is already pinned there.
@@ -1965,6 +2013,8 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
 void MessageListView::update_message(std::size_t index, MessageRowData msg) {
     if (index >= messages_.size()) return;
+    if (msg.kind == MessageRowData::Kind::ReadMarker)
+        suppress_read_marker_ = false;
     // Copy, not reference: messages_[index] is reassigned below.
     const std::string old_eid = messages_[index].event_id;
     const bool was_animated = messages_[index].kind == MessageRowData::Kind::Video &&
@@ -1999,14 +2049,7 @@ void MessageListView::append_message(MessageRowData msg) {
 
 void MessageListView::set_typing_text(std::string text) {
     if (text == typing_text_) return;
-    // Adding/removing the synthetic trailing row changes content height
-    // exactly like an append/remove at the tail. Keep the user pinned to
-    // the bottom if they already were, so the row is actually visible.
-    const bool at_bottom =
-        scroll_y() + bounds().h + 1.0f >= content_height();
     typing_text_ = std::move(text);
-    invalidate_data();
-    if (at_bottom) scroll_to_bottom();
     if (request_repaint_) request_repaint_();
 }
 
@@ -2289,6 +2332,27 @@ void MessageListView::on_pointer_move(tk::Point local) {
     if (t != hover_target_ || chip_idx != hover_chip_idx_) {
         hover_target_   = t;
         hover_chip_idx_ = chip_idx;
+    }
+
+    // Inline hyperlink hover — detect URL under pointer and fire
+    // on_link_hovered when it changes so the shell can set the cursor.
+    std::string new_link_url;
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        std::size_t hrow = hovered_row_geom_.row_index;
+        if (hrow < messages_.size()) {
+            const auto& m = messages_[hrow];
+            auto it = link_layout_cache_.find(m.event_id);
+            if (it != link_layout_cache_.end() && it->second.layout) {
+                tk::Point ll{ world.x - it->second.origin.x,
+                              world.y - it->second.origin.y };
+                new_link_url = it->second.layout->link_at(ll);
+            }
+        }
+    }
+    if (new_link_url != hover_link_url_) {
+        hover_link_url_ = new_link_url;
+        if (on_link_hovered) on_link_hovered(hover_link_url_);
     }
 }
 
@@ -2747,9 +2811,12 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 
 std::string MessageListView::newest_visible_real_event_id() const {
     auto [first, last] = visible_range();
-    if (last < 0) return {};
+    // Clamp: the adapter count includes the virtual typing row at index
+    // messages_.size(), so visible_range() can return last == messages_.size().
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (actual_last < 0) return {};
     using Kind = MessageRowData::Kind;
-    for (int i = last; i >= first; --i) {
+    for (int i = actual_last; i >= first; --i) {
         const auto& row = messages_[static_cast<std::size_t>(i)];
         if (row.kind != Kind::DaySeparator &&
             row.kind != Kind::ReadMarker   &&
