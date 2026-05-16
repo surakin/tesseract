@@ -24,8 +24,10 @@
 
 #include "canvas_cairo.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -246,13 +248,29 @@ private:
             auto* c = static_cast<Ctx*>(data);
             if (*c->alive) {
                 int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, c->w);
-                cairo_surface_t* surf = cairo_image_surface_create_for_data(
-                    c->pixels.data(), CAIRO_FORMAT_ARGB32, c->w, c->h, stride);
-                if (surf) {
-                    // cairo_image_surface_create_for_data does NOT copy — we
-                    // must keep `pixels` alive until after flush, so finish
-                    // drawing before wrapping.
-                    cairo_surface_flush(surf);
+                // Own the pixels: make_image() retains the surface via
+                // cairo_surface_reference, but `delete c` below frees
+                // c->pixels. A *_create_for_data surface would then point at
+                // freed memory (use-after-free on the next paint). Allocate
+                // a cairo-owned buffer and copy into it instead.
+                cairo_surface_t* surf =
+                    cairo_image_surface_create(CAIRO_FORMAT_ARGB32, c->w, c->h);
+                if (surf &&
+                    cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS) {
+                    unsigned char* dst = cairo_image_surface_get_data(surf);
+                    int dst_stride = cairo_image_surface_get_stride(surf);
+                    const std::size_t src_stride =
+                        static_cast<std::size_t>(stride);
+                    const std::size_t copy_bytes =
+                        std::min<std::size_t>(src_stride,
+                            static_cast<std::size_t>(dst_stride));
+                    for (int y = 0; y < c->h; ++y) {
+                        std::memcpy(dst + static_cast<std::size_t>(y) * dst_stride,
+                                    c->pixels.data() +
+                                        static_cast<std::size_t>(y) * src_stride,
+                                    copy_bytes);
+                    }
+                    cairo_surface_mark_dirty(surf);
                     {
                         std::lock_guard lk(c->player->frame_mutex_);
                         c->player->current_frame_ =
@@ -260,6 +278,8 @@ private:
                     }
                     cairo_surface_destroy(surf);
                     if (c->player->on_frame) c->player->on_frame();
+                } else if (surf) {
+                    cairo_surface_destroy(surf);
                 }
             }
             delete c;

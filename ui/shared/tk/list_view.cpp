@@ -48,7 +48,10 @@ void ListView::scroll_to_bottom() {
 void ListView::scroll_to_index(int idx, bool align_top) {
     if (!adapter_ || idx < 0 ||
         static_cast<std::size_t>(idx) >= adapter_->count()) return;
-    if (row_offsets_.empty()) return;
+    // row_offsets_ is sized (count+1) as of the last rebuild_heights(); the
+    // adapter count can have grown since (heights dirty), so bound against
+    // row_offsets_ itself, not the live adapter count, to avoid OOB.
+    if (static_cast<std::size_t>(idx) + 1 >= row_offsets_.size()) return;
     if (align_top) {
         scroll_y_ = row_offsets_[idx];
     } else {
@@ -278,7 +281,13 @@ void ListView::paint(PaintCtx& ctx) {
         ? 0
         : static_cast<std::size_t>(first_it - row_offsets_.begin() - 1);
 
-    for (std::size_t i = first; i < adapter_->count(); ++i) {
+    // Bound by row_offsets_ (size = count+1 as of the last rebuild), not the
+    // live adapter count: if rows were appended without invalidate_data()
+    // since the last rebuild, the two diverge and row_offsets_[i+1] would be
+    // out of bounds. The next layout pass reconciles them.
+    std::size_t row_limit = row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+    std::size_t paint_end = std::min(adapter_->count(), row_limit);
+    for (std::size_t i = first; i < paint_end; ++i) {
         float row_top    = row_offsets_[i];
         float row_bottom = row_offsets_[i + 1];
         if (row_top >= viewport_bot) break;

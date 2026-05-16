@@ -45,6 +45,9 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info) {
     topic_        = info.topic;
     topic_html_   = info.topic_html;
     avatar_url_   = info.avatar_url;
+    // Drop the previous room's rich-topic layout so a click arriving before
+    // the next paint rebuilds it can't hit-test against stale spans.
+    topic_layout_.reset();
     if (name_label_)  name_label_->set_text(display_name_);
     if (topic_label_) {
         if (!topic_html_.empty()) {
@@ -231,9 +234,13 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
         return;
     }
 
-    // Topic hyperlink click.
+    // Topic hyperlink click. `local` is widget-local but topic_rect_ is in
+    // world coordinates (set in arrange() from bounds_.{x,y}); convert to
+    // world first, exactly like the calendar-button hit-test above, else
+    // links are unhittable on any layout whose origin isn't (0,0).
     if (!inside_self || !topic_layout_) return;
-    tk::Point ll{ local.x - topic_rect_.x, local.y - topic_rect_.y };
+    tk::Point ll{ (bounds_.x + local.x) - topic_rect_.x,
+                  (bounds_.y + local.y) - topic_rect_.y };
     std::string url = topic_layout_->link_at(ll);
     if (!url.empty() && on_link_clicked) on_link_clicked(url);
 }

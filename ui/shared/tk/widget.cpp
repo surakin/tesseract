@@ -25,11 +25,23 @@ bool Widget::contains_world(Point world) const {
            world.y <  bounds_.y + bounds_.h;
 }
 
+// Snapshot child raw pointers (topmost-first) before dispatching. A pointer
+// handler can rebuild this widget's child list (e.g. a click that swaps
+// views); iterating children_ directly would then invalidate the live
+// reverse-iterator. The snapshot is stable across such a mutation.
+static std::vector<Widget*> snapshot_children_rev(
+    const std::vector<std::unique_ptr<Widget>>& children) {
+    std::vector<Widget*> out;
+    out.reserve(children.size());
+    for (auto it = children.rbegin(); it != children.rend(); ++it)
+        out.push_back(it->get());
+    return out;
+}
+
 Widget* Widget::dispatch_pointer_down(Point world) {
     if (!visible_ || !contains_world(world)) return nullptr;
 
-    for (auto it = children().rbegin(); it != children().rend(); ++it) {
-        Widget* ch = it->get();
+    for (Widget* ch : snapshot_children_rev(children())) {
         if (!ch->visible()) continue;
         if (Widget* hit = ch->dispatch_pointer_down(world)) return hit;
     }
@@ -40,8 +52,7 @@ Widget* Widget::dispatch_pointer_down(Point world) {
 Widget* Widget::dispatch_pointer_move(Point world) {
     if (!visible_ || !contains_world(world)) return nullptr;
 
-    for (auto it = children().rbegin(); it != children().rend(); ++it) {
-        Widget* ch = it->get();
+    for (Widget* ch : snapshot_children_rev(children())) {
         if (!ch->visible()) continue;
         if (Widget* hit = ch->dispatch_pointer_move(world)) return hit;
     }
@@ -58,8 +69,7 @@ bool Widget::dispatch_wheel(Point world, float dx, float dy) {
     if (!visible_ || !contains_world(world)) return false;
 
     // Try children first (topmost paint order).
-    for (auto it = children().rbegin(); it != children().rend(); ++it) {
-        Widget* ch = it->get();
+    for (Widget* ch : snapshot_children_rev(children())) {
         if (!ch->visible()) continue;
         if (ch->dispatch_wheel(world, dx, dy)) return true;
     }

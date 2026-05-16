@@ -62,7 +62,17 @@ static bool has_formatting_tags(const std::string& html) {
 // Inline parser — appends HTML to `out`, recurses for nested spans
 // ---------------------------------------------------------------------------
 
-static void parse_inline(std::string_view text, std::string& out) {
+static void parse_inline(std::string_view text, std::string& out,
+                         int depth = 0) {
+    // Bound recursion: a hostile/garbled formatted_body of deeply nested
+    // emphasis markers (***…, __…) would otherwise recurse per nesting
+    // level on the UI thread and overflow the stack. Past the cap, emit the
+    // remainder as escaped plain text.
+    constexpr int kMaxInlineDepth = 16;
+    if (depth > kMaxInlineDepth) {
+        html_escape_to(text, out);
+        return;
+    }
     const size_t n = text.size();
     size_t i = 0;
     while (i < n) {
@@ -85,7 +95,7 @@ static void parse_inline(std::string_view text, std::string& out) {
             size_t j = text.find("~~", i + 2);
             if (j != std::string_view::npos) {
                 out += "<del>";
-                parse_inline(text.substr(i + 2, j - (i + 2)), out);
+                parse_inline(text.substr(i + 2, j - (i + 2)), out, depth + 1);
                 out += "</del>";
                 i = j + 2;
                 continue;
@@ -97,7 +107,7 @@ static void parse_inline(std::string_view text, std::string& out) {
             size_t j = text.find("***", i + 3);
             if (j != std::string_view::npos) {
                 out += "<strong><em>";
-                parse_inline(text.substr(i + 3, j - (i + 3)), out);
+                parse_inline(text.substr(i + 3, j - (i + 3)), out, depth + 1);
                 out += "</em></strong>";
                 i = j + 3;
                 continue;
@@ -109,7 +119,7 @@ static void parse_inline(std::string_view text, std::string& out) {
             size_t j = text.find("**", i + 2);
             if (j != std::string_view::npos) {
                 out += "<strong>";
-                parse_inline(text.substr(i + 2, j - (i + 2)), out);
+                parse_inline(text.substr(i + 2, j - (i + 2)), out, depth + 1);
                 out += "</strong>";
                 i = j + 2;
                 continue;
@@ -121,7 +131,7 @@ static void parse_inline(std::string_view text, std::string& out) {
             size_t j = text.find('*', i + 1);
             if (j != std::string_view::npos) {
                 out += "<em>";
-                parse_inline(text.substr(i + 1, j - (i + 1)), out);
+                parse_inline(text.substr(i + 1, j - (i + 1)), out, depth + 1);
                 out += "</em>";
                 i = j + 1;
                 continue;
@@ -138,7 +148,7 @@ static void parse_inline(std::string_view text, std::string& out) {
                                      || !std::isalnum(static_cast<unsigned char>(text[j + 2])));
                     if (right_ok) {
                         out += "<strong>";
-                        parse_inline(text.substr(i + 2, j - (i + 2)), out);
+                        parse_inline(text.substr(i + 2, j - (i + 2)), out, depth + 1);
                         out += "</strong>";
                         i = j + 2;
                         continue;
@@ -157,7 +167,7 @@ static void parse_inline(std::string_view text, std::string& out) {
                                      || !std::isalnum(static_cast<unsigned char>(text[j + 1])));
                     if (right_ok) {
                         out += "<em>";
-                        parse_inline(text.substr(i + 1, j - (i + 1)), out);
+                        parse_inline(text.substr(i + 1, j - (i + 1)), out, depth + 1);
                         out += "</em>";
                         i = j + 1;
                         continue;
@@ -180,7 +190,7 @@ static void parse_inline(std::string_view text, std::string& out) {
                         out += "<a href=\"";
                         html_escape_to(url, out);
                         out += "\">";
-                        parse_inline(text.substr(i + 1, close_br - (i + 1)), out);
+                        parse_inline(text.substr(i + 1, close_br - (i + 1)), out, depth + 1);
                         out += "</a>";
                         i = url_end + 1;
                         continue;

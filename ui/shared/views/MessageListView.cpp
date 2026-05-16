@@ -1928,12 +1928,16 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
 
 void MessageListView::update_message(std::size_t index, MessageRowData msg) {
     if (index >= messages_.size()) return;
-    const std::string& old_eid = messages_[index].event_id;
+    // Copy, not reference: messages_[index] is reassigned below.
+    const std::string old_eid = messages_[index].event_id;
     const bool was_animated = messages_[index].kind == MessageRowData::Kind::Video &&
                               (messages_[index].video_autoplay || messages_[index].video_gif);
     const bool now_animated = msg.kind == MessageRowData::Kind::Video &&
                               (msg.video_autoplay || msg.video_gif);
-    if (was_animated && !now_animated)
+    // Erase the old player when it no longer applies — also when the
+    // event_id changed, otherwise the old keyed player would leak (and
+    // could exceed the inline-player cap for the view's lifetime).
+    if ((was_animated && !now_animated) || old_eid != msg.event_id)
         inline_players_.erase(old_eid);
     if (now_animated && !inline_players_.count(msg.event_id))
         start_inline_video(msg);
@@ -2029,7 +2033,11 @@ void MessageListView::start_inline_video(const MessageRowData& m) {
     if (!player) return;
     player->set_loop(m.video_loop);
     player->set_muted(m.video_no_audio);
-    player->on_frame = [this]{ if (request_repaint_) request_repaint_(); };
+    std::weak_ptr<bool> walive = alive_;
+    player->on_frame = [this, walive]{
+        if (walive.expired()) return;
+        if (request_repaint_) request_repaint_();
+    };
     inline_players_[m.event_id] = { std::move(player) };
 
     const std::string eid     = m.event_id;
@@ -2038,7 +2046,10 @@ void MessageListView::start_inline_video(const MessageRowData& m) {
     const bool        autoplay = m.video_autoplay;
 
     video_fetch_provider_(src,
-        [this, eid, mime, autoplay](std::vector<std::uint8_t> bytes) {
+        [this, walive, eid, mime, autoplay](std::vector<std::uint8_t> bytes) {
+            // The view is destroyed on every room switch; the fetch may
+            // still be in flight. Bail if we've been torn down.
+            if (walive.expired()) return;
             auto it = inline_players_.find(eid);
             if (it == inline_players_.end() || !it->second.player) return;
             if (bytes.empty()) { inline_players_.erase(eid); return; }
@@ -2657,11 +2668,17 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
         HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(),
                                          local, now_idx);
         if (now_t != HoverTarget::Chip || now_idx != idx) return;
-        // Find the row that geometry was captured for and read the
-        // reaction key directly off the model.
-        std::size_t row = hovered_row_geom_.row_index;
-        if (row >= messages_.size()) return;
-        const auto& reactions = messages_[row].reactions;
+        // Resolve the row by the event_id captured at press, NOT by the
+        // positional row_index painted into hovered_row_geom_: an SDK
+        // insert/remove between paint and this release can shift rows, and
+        // a stale positional index would read the reaction key off the
+        // wrong message.
+        if (ev.empty()) return;
+        const MessageRowData* mrow = nullptr;
+        for (const auto& m : messages_)
+            if (m.event_id == ev) { mrow = &m; break; }
+        if (!mrow) return;
+        const auto& reactions = mrow->reactions;
         if (idx < 0 || static_cast<std::size_t>(idx) >= reactions.size())
             return;
         if (on_reaction_toggled) {

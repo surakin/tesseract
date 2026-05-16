@@ -48,19 +48,26 @@ void decode_entity(const char*& p, const char* end, std::string& out) {
             ++p;
             const char* hex_start = p;
             while (p < end && std::isxdigit(static_cast<unsigned char>(*p))) {
-                cp = cp * 16u;
-                if (std::isdigit(static_cast<unsigned char>(*p)))
-                    cp += static_cast<uint32_t>(*p - '0');
-                else
-                    cp += static_cast<uint32_t>(
-                        std::tolower(static_cast<unsigned char>(*p)) - 'a' + 10);
+                if (cp <= 0x10FFFF) {
+                    cp = cp * 16u;
+                    if (std::isdigit(static_cast<unsigned char>(*p)))
+                        cp += static_cast<uint32_t>(*p - '0');
+                    else
+                        cp += static_cast<uint32_t>(
+                            std::tolower(static_cast<unsigned char>(*p)) - 'a' + 10);
+                }
+                // else: keep consuming digits but stop accumulating so the
+                // uint32_t can't silently wrap into a small valid codepoint.
                 ++p;
             }
             if (p == hex_start) { out += '&'; p = start + 1; return; }
         } else {
             const char* dec_start = p;
-            while (p < end && std::isdigit(static_cast<unsigned char>(*p)))
-                cp = cp * 10u + static_cast<uint32_t>(*p++ - '0');
+            while (p < end && std::isdigit(static_cast<unsigned char>(*p))) {
+                if (cp <= 0x10FFFF)
+                    cp = cp * 10u + static_cast<uint32_t>(*p - '0');
+                ++p;
+            }
             if (p == dec_start) { out += '&'; p = start + 1; return; }
         }
         if (p < end && *p == ';') ++p;
@@ -226,7 +233,11 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
     const char* p   = html.data();
     const char* end = p + html.size();
 
-    // Formatting stack: bottom entry = no formatting.
+    // Formatting stack: bottom entry = no formatting. Capped so a hostile
+    // body of deeply nested tags (<b><b><b>… ×100k) can't grow it without
+    // bound and exhaust the heap; past the cap, opening tags are flattened
+    // (no formatting change) rather than pushed.
+    constexpr std::size_t kMaxTagDepth = 64;
     std::vector<FmtState> stack;
     stack.push_back(FmtState{});
 
@@ -288,13 +299,13 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html) {
                         cur_text += '\n';
                     }
                     first_block = false;
-                    stack.push_back(ns);
+                    if (stack.size() < kMaxTagDepth) stack.push_back(ns);
                     continue;
                 }
                 // All other opening tags (u, span, h1-h6, li, …): preserve
                 // text content without changing formatting.
                 flush();
-                stack.push_back(ns);
+                if (stack.size() < kMaxTagDepth) stack.push_back(ns);
             } else if (tag.self_closing || tag.name == "br") {
                 flush();
                 cur_text += '\n';

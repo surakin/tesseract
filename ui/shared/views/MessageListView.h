@@ -475,6 +475,12 @@ private:
     VoiceBytesProvider               voice_bytes_provider_;
     std::function<void()>            request_repaint_;
 
+    // Liveness sentinel. Async media-fetch / player callbacks capture a
+    // weak_ptr to this and bail if it has expired — the view is destroyed
+    // on every room switch while a fetch may still be in flight, so a raw
+    // `this` capture would be a use-after-free.
+    std::shared_ptr<bool>            alive_ = std::make_shared<bool>(true);
+
     // The event_id of the currently-loaded clip in `audio_player_`. Empty
     // when nothing is loaded.
     std::string                      playing_event_id_;

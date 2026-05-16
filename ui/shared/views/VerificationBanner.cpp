@@ -298,12 +298,14 @@ void VerificationBanner::paint(tk::PaintCtx& ctx) {
                 ? emojis_[i].symbol : "";
             if (!sym.empty()) {
                 auto layout = ctx.factory.build_text(sym, glyph_style);
-                tk::Rect glyph_rect{ r.x, r.y, r.w, kEmojiGlyphH };
-                tk::Point origin{
-                    glyph_rect.x + (glyph_rect.w - layout->measure().w) * 0.5f,
-                    glyph_rect.y + (glyph_rect.h - layout->measure().h) * 0.5f
-                };
-                ctx.canvas.draw_text(*layout, origin, kLabelText);
+                if (layout) {
+                    tk::Rect glyph_rect{ r.x, r.y, r.w, kEmojiGlyphH };
+                    tk::Point origin{
+                        glyph_rect.x + (glyph_rect.w - layout->measure().w) * 0.5f,
+                        glyph_rect.y + (glyph_rect.h - layout->measure().h) * 0.5f
+                    };
+                    ctx.canvas.draw_text(*layout, origin, kLabelText);
+                }
             }
 
             // Description label
@@ -311,12 +313,14 @@ void VerificationBanner::paint(tk::PaintCtx& ctx) {
                 ? emojis_[i].description : "";
             if (!desc.empty()) {
                 auto layout = ctx.factory.build_text(desc, caption_style);
+                if (layout) {
                 const auto& lr = emoji_label_rects_[i];
                 tk::Point origin{
                     lr.x + (lr.w - layout->measure().w) * 0.5f,
                     lr.y + (lr.h - layout->measure().h) * 0.5f
                 };
                 ctx.canvas.draw_text(*layout, origin, kLabelText);
+                }
             }
         }
 

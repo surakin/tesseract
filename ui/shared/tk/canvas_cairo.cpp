@@ -140,7 +140,11 @@ private:
 
 // Extends PangoTextLayout with hyperlink hit-testing for rich-text layouts.
 class PangoRichTextLayout : public PangoTextLayout {
+public:
+    // Public: CairoPangoFactory::build_rich_text constructs these and passes
+    // them to the constructor below, so the type must be nameable there.
     struct UrlRange { int start_byte, end_byte; std::string url; };
+private:
     std::vector<UrlRange> url_ranges_;
 public:
     PangoRichTextLayout(PangoLayout* layout, std::vector<UrlRange> urls)
@@ -215,6 +219,11 @@ public:
     void draw_image_subregion(const Image& image, Rect src,
                                Rect dst) override {
         const auto& ci = static_cast<const CairoImage&>(image);
+        // A zero src dimension (corrupt/garbled decoded image) would make
+        // sx/sy non-finite; cairo_scale(NaN) then poisons the context for
+        // the rest of the frame. Skip the draw instead.
+        if (src.w <= 0.0f || src.h <= 0.0f || dst.w <= 0.0f || dst.h <= 0.0f)
+            return;
         cairo_save(cr_);
         cairo_rectangle(cr_, dst.x, dst.y, dst.w, dst.h);
         cairo_clip(cr_);
@@ -326,6 +335,11 @@ private:
     }
 
     void blit(const CairoImage& image, Rect dst) {
+        // Guard against a zero-dimension decoded image / dst: a non-finite
+        // scale poisons the cairo context for the whole frame.
+        if (image.width() <= 0 || image.height() <= 0 ||
+            dst.w <= 0.0f || dst.h <= 0.0f)
+            return;
         cairo_save(cr_);
         double sx = dst.w / image.width();
         double sy = dst.h / image.height();
@@ -489,7 +503,14 @@ private:
                 case '>':  out += "&gt;";   break;
                 case '"':  out += "&quot;"; break;
                 case '\'': out += "&apos;"; break;
-                default:   out += static_cast<char>(c);
+                default:
+                    // Drop C0 control bytes (except \t \n \r). An embedded
+                    // NUL would terminate markup.c_str() and silently
+                    // truncate the whole layout; other control bytes can
+                    // corrupt Pango markup parsing.
+                    if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+                        break;
+                    out += static_cast<char>(c);
             }
         }
         return out;
