@@ -192,6 +192,8 @@ private:
     void ensure_sticker_image_async(std::string url);
 
     // ShellBase virtual hooks (GTK4 implementations).
+    void apply_theme_ui_(const tk::Theme& t) override;
+    tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
     void on_media_bytes_ready_(const std::string& cache_key,
@@ -280,6 +282,8 @@ private:
     GtkWidget*                                    account_picker_popover_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface>            account_picker_surface_;
     tesseract::views::AccountPicker*              account_picker_         = nullptr;
+
+    GtkCssProvider*                        theme_css_provider_ = nullptr;
 
     std::unique_ptr<LinuxGtkTrayIcon>     tray_;
 

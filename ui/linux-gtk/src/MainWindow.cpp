@@ -11,6 +11,7 @@
 #include <tesseract/emoji.h>
 #include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
+#include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <filesystem>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <optional>
@@ -307,8 +309,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_object_set_data(G_OBJECT(window_), "cpp_window", this);
 
     // ---- CSS ----
-    GtkCssProvider* css = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(css, R"css(
+    theme_css_provider_ = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(theme_css_provider_, R"css(
         .sidebar {
             background-color: #F0F2F5;
         }
@@ -361,9 +363,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     )css");
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER(theme_css_provider_),
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(css);
 
     // ---- Layout ----
     // Top-level stack swaps between the inline login view and the main UI.
@@ -1075,6 +1076,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             }
         }), this);
 
+    // Load saved theme preference and apply it.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    apply_current_theme_();
+
+    // Re-apply when the OS dark-mode setting changes (System mode only).
+    g_signal_connect(gtk_settings_get_default(),
+                     "notify::gtk-application-prefer-dark-theme",
+                     G_CALLBACK(+[](GObject*, GParamSpec*, gpointer data) {
+                         auto* self = static_cast<MainWindow*>(data);
+                         if (tesseract::Settings::instance().theme_pref ==
+                             tesseract::Settings::ThemePreference::System)
+                             self->apply_current_theme_();
+                     }), this);
+
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
         return G_SOURCE_REMOVE;
@@ -1110,7 +1125,48 @@ gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/, gpointer us
     return FALSE;
 }
 
+tk::ThemeMode MainWindow::os_color_scheme_() const {
+    gboolean prefer_dark = FALSE;
+    g_object_get(gtk_settings_get_default(),
+                 "gtk-application-prefer-dark-theme", &prefer_dark, nullptr);
+    return prefer_dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MainWindow::apply_theme_ui_(const tk::Theme& t) {
+    if (room_surface_)           room_surface_->set_theme(t);
+    if (chat_surface_)           chat_surface_->set_theme(t);
+    if (emoji_picker_surface_)   emoji_picker_surface_->set_theme(t);
+    if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
+    if (img_viewer_surface_)     img_viewer_surface_->set_theme(t);
+    if (vid_viewer_surface_)     vid_viewer_surface_->set_theme(t);
+    if (join_room_surface_)      join_room_surface_->set_theme(t);
+    if (recovery_surface_)       recovery_surface_->set_theme(t);
+    if (verif_surface_)          verif_surface_->set_theme(t);
+    if (account_picker_surface_) account_picker_surface_->set_theme(t);
+
+    // Tell GTK itself about the dark preference so native chrome follows.
+    bool dark = (t.mode == tk::ThemeMode::Dark);
+    g_object_set(gtk_settings_get_default(),
+                 "gtk-application-prefer-dark-theme",
+                 dark ? TRUE : FALSE, nullptr);
+
+    // Rebuild the two dynamic CSS rules for the sidebar and separator.
+    if (theme_css_provider_) {
+        char css[256];
+        std::snprintf(css, sizeof(css),
+            ".sidebar { background-color: #%02x%02x%02x; }\n"
+            ".sidebar-separator { background-color: #%02x%02x%02x; min-width: 1px; }\n",
+            t.palette.sidebar_bg.r, t.palette.sidebar_bg.g, t.palette.sidebar_bg.b,
+            t.palette.separator.r,  t.palette.separator.g,  t.palette.separator.b);
+        gtk_css_provider_load_from_string(theme_css_provider_, css);
+    }
+}
+
 MainWindow::~MainWindow() {
+    if (theme_css_provider_) {
+        g_object_unref(theme_css_provider_);
+        theme_css_provider_ = nullptr;
+    }
     if (search_debounce_id_) {
         g_source_remove(search_debounce_id_);
         search_debounce_id_ = 0;

@@ -27,8 +27,6 @@
 #include <QMessageBox>
 #include <QMetaType>
 #include <QApplication>
-#include <QActionGroup>
-#include <QMenuBar>
 #include <QStyleHints>
 #include <QCloseEvent>
 #include <QKeyEvent>
@@ -791,54 +789,17 @@ MainWindow::MainWindow(QWidget* parent)
 
     statusBar()->showMessage(tr("Not logged in"));
 
-    // View > Theme menu — Light / Dark / Follow System
-    {
-        auto* viewMenu  = menuBar()->addMenu(tr("View"));
-        auto* themeMenu = viewMenu->addMenu(tr("Theme"));
-        auto* group     = new QActionGroup(this);
-        group->setExclusive(true);
+    // Load saved theme preference and apply it.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    apply_current_theme_();
 
-        auto* actLight  = themeMenu->addAction(tr("Light"));
-        auto* actDark   = themeMenu->addAction(tr("Dark"));
-        auto* actSystem = themeMenu->addAction(tr("Follow System"));
-        actLight->setCheckable(true);  group->addAction(actLight);
-        actDark->setCheckable(true);   group->addAction(actDark);
-        actSystem->setCheckable(true); group->addAction(actSystem);
-
-        auto syncChecks = [=] {
-            using P = tesseract::Settings::ThemePreference;
-            auto p = tesseract::Settings::instance().theme_pref;
-            actLight->setChecked(p == P::Light);
-            actDark->setChecked(p == P::Dark);
-            actSystem->setChecked(p == P::System);
-        };
-
-        connect(actLight,  &QAction::triggered, this, [this, syncChecks] {
-            set_theme_preference_(tesseract::Settings::ThemePreference::Light);
-            syncChecks();
-        });
-        connect(actDark,   &QAction::triggered, this, [this, syncChecks] {
-            set_theme_preference_(tesseract::Settings::ThemePreference::Dark);
-            syncChecks();
-        });
-        connect(actSystem, &QAction::triggered, this, [this, syncChecks] {
-            set_theme_preference_(tesseract::Settings::ThemePreference::System);
-            syncChecks();
-        });
-
-        // Load preference from disk, apply, and sync the checkmarks.
-        tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-        apply_current_theme_();
-        syncChecks();
-
-        // Re-apply when the OS switches light/dark (only relevant in System mode).
-        connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
-                this, [this] {
-                    if (tesseract::Settings::instance().theme_pref ==
-                        tesseract::Settings::ThemePreference::System)
-                        apply_current_theme_();
-                });
-    }
+    // Re-apply when the OS switches light/dark (only relevant in System mode).
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+            this, [this] {
+                if (tesseract::Settings::instance().theme_pref ==
+                    tesseract::Settings::ThemePreference::System)
+                    apply_current_theme_();
+            });
 
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
