@@ -101,8 +101,8 @@ public:
 private:
     void paint_header(const Item& item, tk::PaintCtx& ctx, tk::Rect bounds,
                        bool hovered) {
-        if (hovered)
-            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+        ctx.canvas.fill_rect(bounds, hovered ? ctx.theme.palette.sidebar_selected
+                                              : ctx.theme.palette.sidebar_hover);
 
         const char* title = RoomListView::kSectionTitles[item.section];
         bool collapsed = owner_.collapsed_[item.section];
