@@ -70,6 +70,8 @@ set(_tk_sources
     views/VideoViewerOverlay.cpp
     views/JoinRoomView.h
     views/JoinRoomView.cpp
+    views/MainAppWidget.h
+    views/MainAppWidget.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")

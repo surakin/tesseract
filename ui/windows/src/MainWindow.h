@@ -30,12 +30,7 @@ using std::min;
 #include "tk/host_win32.h"
 #include "views/EmojiPicker.h"
 #include "views/format.h"
-#include "views/ImageViewerOverlay.h"
-#include "views/VideoViewerOverlay.h"
-#include "views/RecoveryBanner.h"
-#include "views/RoomListView.h"
-#include "views/RoomView.h"
-#include "views/VerificationBanner.h"
+#include "views/MainAppWidget.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
 
@@ -91,8 +86,6 @@ class LoginView;
 // ---------------------------------------------------------------------------
 
 class MainWindow : public tesseract::ShellBase {
-    // Owner-drawn sidebar widgets need access to MainWindow state for paint.
-    friend LRESULT CALLBACK user_strip_wnd_proc (HWND, UINT, WPARAM, LPARAM);
 
 public:
     static bool register_class(HINSTANCE hInst);
@@ -103,11 +96,11 @@ public:
     bool create(int nCmdShow);
 
     // MediaKind is inherited from tesseract::ShellBase.
-    // RoomAvatar → tk_avatars_, relayout room_surface_ + chat_surface_
-    // UserAvatar → tk_avatars_, invalidate chat_surface_
-    // MediaImage → anim_cache_/tk_images_[url], invalidate chat_surface_
+    // RoomAvatar → tk_avatars_, relayout main_app_surface_
+    // UserAvatar → tk_avatars_, invalidate main_app_surface_
+    // MediaImage → anim_cache_/tk_images_[url], invalidate main_app_surface_
 
-    // ── EventHandlerBase UI-thread hook overrides (Win32) ─────────────────────
+    // ── EventHandlerBase UI-thread hook overrides (Win32) ────────────────────
     void handle_timeline_reset_ui_(
         std::string room_id,
         std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
@@ -273,6 +266,7 @@ private:
     void   apply_default_font(HWND);     // SegoeUI / SegoeUI Variable
     void   on_system_theme_changed();    // re-apply DWM + invalidate
     void   paint_main_background(HDC, const RECT&);  // compose card etc.
+    void   show_user_context_menu_(int screen_x, int screen_y);
 
     static constexpr int kEmojiCellW = 36;
     static constexpr int kEmojiCols  = 8;
@@ -284,36 +278,34 @@ private:
     static constexpr int kJoinRoomPickW = static_cast<int>(tesseract::views::JoinRoomView::kPreferredW);
     static constexpr int kJoinRoomPickH = static_cast<int>(tesseract::views::JoinRoomView::kPreferredH);
 
-    Gdiplus::Bitmap* get_user_avatar(const std::string& mxc_url);
-    void draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
-                             int x, int y, int size);
-    void draw_initials_circle(Gdiplus::Graphics& g, const std::string& name,
-                               int x, int y, int size);
-    static void fill_rounded_rect(Gdiplus::Graphics& g, Gdiplus::Brush& brush,
-                                   float x, float y, float w, float h, float r);
-
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize  = tesseract::visual::kMsgAvatarSize;
-    static constexpr int kSpaceNavBarH   = 36;
     static constexpr int kRoomRowH       = tesseract::visual::kRoomRowHeight;
     static constexpr int kMsgRowPad      = tesseract::visual::kMsgRowVerticalPad;
     static constexpr int kMsgMaxWidth    = 520;            // matches Qt
-    static constexpr int kUserStripH     = tesseract::visual::kUserStripHeight;
 
     HINSTANCE hInst_;
     HWND      hwnd_       = nullptr;
     std::unique_ptr<LoginView> login_view_;
     bool      login_visible_ = false;
-    std::unique_ptr<tk::win32::Surface>            room_surface_;
-    tesseract::views::RoomListView*                room_list_view_   = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField>           room_search_field_;
-    HWND      hSideSep_      = nullptr;   // 1px vertical separator at x=ROOM_W
-    HWND      hSpaceNavBack_ = nullptr;   // ← button shown when inside a space
-    HWND      hSpaceNavLabel_= nullptr;   // space name label next to back button
-    // Combined chat area: RoomHeader + MessageListView + typing + ComposeBar.
-    std::unique_ptr<tk::win32::Surface>            chat_surface_;
-    tesseract::views::RoomView*                    room_view_         = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextArea>            room_text_area_;
+
+    // Single surface hosting the full MainAppWidget tree.
+    std::unique_ptr<tk::win32::Surface>   main_app_surface_;
+    tesseract::views::MainAppWidget*      main_app_ = nullptr;  // borrowed
+
+    // Borrowed sub-view pointers (extracted from main_app_ for convenience).
+    tesseract::views::RoomListView*       room_list_view_  = nullptr;
+    tesseract::views::RoomView*           room_view_       = nullptr;
+    tesseract::views::RecoveryBanner*     recovery_shared_ = nullptr;
+    tesseract::views::VerificationBanner* verif_shared_    = nullptr;
+    tesseract::views::ImageViewerOverlay* img_viewer_      = nullptr;
+    tesseract::views::VideoViewerOverlay* vid_viewer_      = nullptr;
+
+    // Native overlays hosted on main_app_surface_.
+    std::unique_ptr<tk::NativeTextField>  room_search_field_;
+    std::unique_ptr<tk::NativeTextArea>   room_text_area_;
+    std::unique_ptr<tk::NativeTextField>  recovery_key_field_;
+
     HWND      hEmojiPicker_ = nullptr;       // floating WS_POPUP host
     std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
@@ -329,35 +321,13 @@ private:
     std::unique_ptr<tk::NativeTextField>    join_room_alias_field_;
     uint32_t  join_room_gen_ = 0;           // incremented on each open; guards stale callbacks
 
-    // Full-window image/sticker lightbox overlay (WS_CHILD of hwnd_).
-    std::unique_ptr<tk::win32::Surface>      img_viewer_surface_;
-    tesseract::views::ImageViewerOverlay*    img_viewer_ = nullptr;  // borrowed
-
-    // Full-window video lightbox overlay (WS_CHILD of hwnd_).
-    std::unique_ptr<tk::win32::Surface>      vid_viewer_surface_;
-    tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;  // borrowed
-
     HWND      hStatus_            = nullptr;
 
-    // Recovery banner — shared widget on a tk::win32::Surface. Key
-    // input is a NativeTextField overlay (Win32 EDIT under the hood).
-    std::unique_ptr<tk::win32::Surface>      recovery_surface_;
-    tesseract::views::RecoveryBanner*         recovery_shared_   = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField>     recovery_key_field_;
     bool      recovery_banner_visible_   = false;
     // recovery_banner_dismissed_ is inherited from tesseract::ShellBase.
     bool      recovery_in_flight_        = false;
 
-    // Verification banner — shared widget on a tk::win32::Surface. Initially
-    // hidden; shown by handle_verification_state_ui_ when is_verified=false.
-    std::unique_ptr<tk::win32::Surface>      verif_surface_;
-    tesseract::views::VerificationBanner*    verif_shared_      = nullptr; // borrowed
     bool      verif_banner_visible_      = false;
-
-    HWND             hUserStrip_     = nullptr;
-    HWND             hUserIdLabel_   = nullptr;  // Matrix ID second line
-    // my_display_name_, my_avatar_url_, my_user_id_ are inherited from ShellBase.
-    Gdiplus::Bitmap* user_avatar_bmp_ = nullptr;  // owned; null = use initials
 
     // Multi-account state: accounts_, active_account_index_, client_,
     // event_handler_, per_account_rooms_, pending_login_client_,
@@ -377,10 +347,6 @@ private:
     // pagination_ and kPaginationBatch are inherited from tesseract::ShellBase.
 
     ULONG_PTR  gdiplus_token_ = 0;
-    // GDI+ bitmap cache for the user-strip avatar (drawn in user_strip_wnd_proc).
-    // Room-list + message-list avatars and inline media now flow through the
-    // tk::Image caches below.
-    std::unordered_map<std::string, Gdiplus::Bitmap*> user_avatar_cache_;
 
     // URL preview cache: keyed by URL, populated by on_url_preview_ready_.
     std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
@@ -431,11 +397,9 @@ private:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
-    static constexpr const wchar_t* CLASS_NAME  = L"TesseractMainWnd";
-    static constexpr int            IDC_SIDE_SEPARATOR   = 112;
-    static constexpr int            IDC_SPACE_BACK       = 113;
-    static constexpr int            IDM_LOGOUT           = 120;
-    static constexpr int            IDM_ADD_ACCOUNT      = 121;
+    static constexpr const wchar_t* CLASS_NAME    = L"TesseractMainWnd";
+    static constexpr int            IDM_LOGOUT    = 120;
+    static constexpr int            IDM_ADD_ACCOUNT = 121;
 };
 
 } // namespace win32

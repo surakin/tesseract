@@ -1,0 +1,122 @@
+#pragma once
+
+// Cross-platform main-application view. Owns all chat-UI widgets in a
+// single tk::Widget tree so the host can mount it on one Surface and
+// show/hide it as a unit — swapping in other screens is a Surface swap.
+//
+// Layout — horizontal split:
+//   Sidebar (kSidebarW fixed)
+//     Space-nav bar (kSpaceNavH, hidden until navigating a space)
+//     RoomListView (flex)
+//     UserInfo (kUserStripH)
+//   1px Separator
+//   Chat panel (flex)
+//     RecoveryBanner (kBannerH, hidden by default)
+//     VerificationBanner (kBannerH…124, hidden by default)
+//     RoomView (flex)
+//   ImageViewerOverlay (full widget bounds, hidden by default)
+//   VideoViewerOverlay (full widget bounds, hidden by default)
+//
+// Shell wires three native overlays via the surface's set_on_layout():
+//   compose_text_area_rect()    → NativeTextArea position
+//   room_search_field_rect()    → NativeTextField position
+//   recovery_key_field_rect()   → NativeTextField position
+
+#include "ImageViewerOverlay.h"
+#include "RecoveryBanner.h"
+#include "RoomListView.h"
+#include "RoomView.h"
+#include "UserInfo.h"
+#include "VerificationBanner.h"
+#include "VideoViewerOverlay.h"
+
+#include "tk/controls.h"
+#include "tk/widget.h"
+
+#include <tesseract/visual.h>
+
+#include <functional>
+#include <string>
+#include <string_view>
+
+namespace tesseract::views {
+
+class MainAppWidget : public tk::Widget {
+public:
+    MainAppWidget();
+    ~MainAppWidget() override = default;
+
+    // ── Space navigation bar ──────────────────────────────────────────────
+
+    // Show/hide the space-nav bar at the top of the sidebar.
+    // Pass show=false to return to the plain room list.
+    void set_space_nav(bool show, std::string_view space_name = {});
+
+    // ── Banner visibility ─────────────────────────────────────────────────
+
+    void show_recovery_banner(bool show);
+    void show_verif_banner   (bool show);
+
+    // ── Lightbox overlays ─────────────────────────────────────────────────
+
+    void show_image_viewer(bool show);
+    void show_video_viewer(bool show);
+
+    // ── Sub-view accessors ────────────────────────────────────────────────
+
+    RoomListView*       room_list_view()  const { return room_list_view_; }
+    RoomView*           room_view()       const { return room_view_; }
+    RecoveryBanner*     recovery_banner() const { return recovery_banner_; }
+    VerificationBanner* verif_banner()    const { return verif_banner_; }
+    ImageViewerOverlay* image_viewer()    const { return img_viewer_; }
+    VideoViewerOverlay* video_viewer()    const { return vid_viewer_; }
+    UserInfo*           user_info()       const { return user_info_; }
+
+    // ── Native overlay rects (call from the surface's set_on_layout) ──────
+
+    tk::Rect compose_text_area_rect()     const;
+    bool     room_search_field_visible()  const;
+    tk::Rect room_search_field_rect()     const;
+    bool     recovery_key_field_visible() const;
+    tk::Rect recovery_key_field_rect()    const;
+
+    // ── Callbacks ─────────────────────────────────────────────────────────
+
+    // Fires when the user taps ← in the space nav bar.
+    std::function<void()> on_space_back;
+
+    // ── tk::Widget overrides ──────────────────────────────────────────────
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
+    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
+    void     paint  (tk::PaintCtx&)                        override;
+
+private:
+    static constexpr float kSidebarW   = static_cast<float>(tesseract::visual::kSidebarWidth);
+    static constexpr float kSepW       = 1.0f;
+    static constexpr float kSpaceNavH  = 36.0f;
+    static constexpr float kUserStripH = static_cast<float>(tesseract::visual::kUserStripHeight);
+    static constexpr float kBannerH    = 48.0f;
+
+    bool space_nav_visible_ = false;
+
+    // Sidebar children — borrowed raw pointers back from add_child()
+    tk::Button*         nav_back_btn_    = nullptr;
+    tk::Label*          nav_name_lbl_    = nullptr;
+    RoomListView*       room_list_view_  = nullptr;
+    UserInfo*           user_info_       = nullptr;
+
+    // Chat panel children
+    RecoveryBanner*     recovery_banner_ = nullptr;
+    VerificationBanner* verif_banner_    = nullptr;
+    RoomView*           room_view_       = nullptr;
+
+    // Full-surface lightbox overlays (painted last — highest z-order)
+    ImageViewerOverlay* img_viewer_      = nullptr;
+    VideoViewerOverlay* vid_viewer_      = nullptr;
+
+    bool recovery_visible_ = false;
+    bool verif_visible_    = false;
+};
+
+} // namespace tesseract::views

@@ -21,13 +21,9 @@
 #include "views/format.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
-#include "views/RecoveryBanner.h"
-#include "views/VerificationBanner.h"
-#include "views/RoomListView.h"
-#include "views/RoomView.h"
+#include "views/MainAppWidget.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
-#include "views/UserInfo.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -119,7 +115,6 @@ private:
                            const std::string& sender, const std::string& body,
                            bool is_mention, std::vector<uint8_t> avatar_bytes);
     static void    on_login_clicked(GtkButton*, gpointer user_data);
-    static void    on_back_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
     void           on_send_clicked();
@@ -136,12 +131,6 @@ public:
     void emoji_selected(const std::string& glyph);
     void apply_image_packs_updated();
 private:
-    static void    on_user_strip_right_click_(GtkGestureClick* gesture,
-                                              int n_press, double x, double y,
-                                              gpointer user_data);
-    static void    on_user_strip_left_click_(GtkGestureClick* gesture,
-                                             int n_press, double x, double y,
-                                             gpointer user_data);
     static void    on_msg_right_click_(GtkGestureClick* gesture,
                                        int n_press, double x, double y,
                                        gpointer user_data);
@@ -219,16 +208,16 @@ private:
     GtkApplication* app_              = nullptr;
     GtkWidget*      window_             = nullptr;
     GtkWidget*      content_stack_      = nullptr;
-    GtkWidget*      main_content_       = nullptr;
     std::unique_ptr<LoginView> login_view_;
-    GtkWidget*      room_nav_bar_       = nullptr;
-    GtkWidget*      back_button_        = nullptr;
-    GtkWidget*      space_name_lbl_     = nullptr;
-    std::unique_ptr<tk::gtk4::Surface>            room_surface_;
+
+    // Single surface hosting the full main-app widget tree.
+    std::unique_ptr<tk::gtk4::Surface>            main_app_surface_;
+    tesseract::views::MainAppWidget*              main_app_          = nullptr;
+
+    // Borrowed pointers into main_app_ (extracted in constructor).
     tesseract::views::RoomListView*               room_list_view_   = nullptr;
     std::unique_ptr<tk::NativeTextField>          room_search_field_;
-    std::unique_ptr<tk::gtk4::Surface>            chat_surface_;
-    tesseract::views::RoomView*                   room_view_         = nullptr;  // borrowed
+    tesseract::views::RoomView*                   room_view_         = nullptr;
     std::unique_ptr<tk::NativeTextArea>           room_text_area_;
     GtkWidget*      emoji_popover_      = nullptr;
     std::unique_ptr<tk::gtk4::Surface>      emoji_picker_surface_;
@@ -241,10 +230,8 @@ private:
     tesseract::views::StickerPicker*        sticker_picker_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
 
-    std::unique_ptr<tk::gtk4::Surface>       img_viewer_surface_;
     tesseract::views::ImageViewerOverlay*    img_viewer_ = nullptr;
 
-    std::unique_ptr<tk::gtk4::Surface>       vid_viewer_surface_;
     tesseract::views::VideoViewerOverlay*    vid_viewer_ = nullptr;
 
     GtkWidget*      join_room_dialog_window_ = nullptr;
@@ -265,18 +252,11 @@ private:
     void                     refresh_sync_status();
     static gboolean          on_sync_status_debounce_(gpointer user_data);
 
-    std::unique_ptr<tk::gtk4::Surface>      recovery_surface_;
     tesseract::views::RecoveryBanner*       recovery_shared_   = nullptr;
 
-    std::unique_ptr<tk::gtk4::Surface>      verif_surface_;
     tesseract::views::VerificationBanner*   verif_shared_      = nullptr;
     std::unique_ptr<tk::NativeTextField>    recovery_key_field_;
 
-    // Sidebar user identity strip.
-    GtkWidget*      user_strip_       = nullptr;
-    GtkWidget*      user_avatar_img_  = nullptr;
-    GtkWidget*      user_name_lbl_    = nullptr;
-    GtkWidget*      user_id_lbl_      = nullptr;  // Matrix ID second line
     GtkWidget*      user_popover_     = nullptr;
 
     // Account-picker popover (left-click, only when ≥2 accounts).

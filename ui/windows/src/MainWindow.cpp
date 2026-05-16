@@ -48,28 +48,6 @@ std::string wstr_to_utf8(const wchar_t* w) {
     return s;
 }
 
-Gdiplus::Bitmap* bitmap_from_bytes(const std::vector<uint8_t>& data) {
-    if (data.empty()) return nullptr;
-    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, data.size());
-    if (!hg) return nullptr;
-    void* p = GlobalLock(hg);
-    if (!p) { GlobalFree(hg); return nullptr; }
-    memcpy(p, data.data(), data.size());
-    GlobalUnlock(hg);
-    IStream* stream = nullptr;
-    if (FAILED(CreateStreamOnHGlobal(hg, TRUE, &stream))) {
-        GlobalFree(hg);
-        return nullptr;
-    }
-    auto* bmp = Gdiplus::Bitmap::FromStream(stream);
-    stream->Release();
-    if (!bmp || bmp->GetLastStatus() != Gdiplus::Ok) {
-        delete bmp;
-        return nullptr;
-    }
-    return bmp;
-}
-
 } // namespace
 
 namespace win32 {
@@ -99,118 +77,6 @@ struct VideoBytesPayload {
     std::vector<std::uint8_t>   bytes;
 };
 } // namespace
-
-// ---------------------------------------------------------------------------
-// User-strip WndProc (sidebar footer with avatar + display name + right-click)
-// ---------------------------------------------------------------------------
-
-LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    switch (msg) {
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        Gdiplus::Graphics g(hdc);
-        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
-
-        const auto& pal = theme::palette();
-
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        int x0 = rc.left, y0 = rc.top;
-        int w = rc.right - rc.left, h = rc.bottom - rc.top;
-
-        // Background
-        Gdiplus::SolidBrush bg(theme::gpc(pal.sidebar_bg));
-        g.FillRectangle(&bg, x0, y0, w, h);
-
-        // Top border
-        Gdiplus::Pen border(theme::gpc(pal.separator), 1.0f);
-        g.DrawLine(&border, (float)x0, (float)y0, (float)rc.right, (float)y0);
-
-        const std::string& shown = self->my_display_name_.empty()
-            ? self->my_user_id_
-            : self->my_display_name_;
-        if (shown.empty()) {
-            EndPaint(hwnd, &ps);
-            return 0;
-        }
-
-        constexpr int AVATAR = 32;
-        int ax = x0 + 8;
-        int ay = y0 + (h - AVATAR) / 2;
-        if (self->user_avatar_bmp_)
-            self->draw_circle_bitmap(g, self->user_avatar_bmp_, ax, ay, AVATAR);
-        else
-            self->draw_initials_circle(g, shown, ax, ay, AVATAR);
-
-        int tx = ax + AVATAR + 10;
-        int text_w = rc.right - tx - 8;
-        bool has_id = !self->my_display_name_.empty() && !self->my_user_id_.empty();
-        auto wname = utf8_to_wstr(shown);
-        RECT name_rc{ tx, has_id ? y0 + 7 : y0, tx + text_w,
-                      has_id ? y0 + 27 : y0 + h };
-        win32::text::draw(hdc, name_rc, wname.c_str(), -1,
-            win32::text::Style{
-                .family = L"Segoe UI",
-                .size   = 10.5f,
-                .weight = win32::text::Weight::Bold,
-                .color  = pal.text_primary,
-                .valign = has_id ? win32::text::VAlign::Top
-                                 : win32::text::VAlign::Center,
-                .trim   = win32::text::Trim::EllipsisChar,
-            });
-        if (has_id) {
-            auto wid = utf8_to_wstr(self->my_user_id_);
-            RECT id_rc{ tx, y0 + 28, tx + text_w, y0 + h - 5 };
-            win32::text::draw(hdc, id_rc, wid.c_str(), -1,
-                win32::text::Style{
-                    .family = L"Segoe UI",
-                    .size   = 9.0f,
-                    .color  = pal.text_secondary,
-                    .trim   = win32::text::Trim::EllipsisChar,
-                });
-        }
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_LBUTTONUP:
-        self->open_account_picker();
-        return 0;
-    case WM_CONTEXTMENU: {
-        HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, MainWindow::IDM_ADD_ACCOUNT, L"Add Account…");
-        std::wstring logout_label = L"Log Out";
-        if (!self->my_display_name_.empty()) {
-            logout_label += L" ";
-            logout_label += utf8_to_wstr(self->my_display_name_);
-        }
-        AppendMenuW(menu, MF_STRING, MainWindow::IDM_LOGOUT, logout_label.c_str());
-        int x = GET_X_LPARAM(lParam);
-        int y = GET_Y_LPARAM(lParam);
-        if (x == -1 && y == -1) {
-            RECT rc; GetWindowRect(hwnd, &rc);
-            x = rc.left + (rc.right - rc.left) / 2;
-            y = rc.top  + (rc.bottom - rc.top) / 2;
-        }
-        UINT pick = TrackPopupMenu(menu,
-            TPM_RIGHTBUTTON | TPM_RETURNCMD,
-            x, y, 0, hwnd, nullptr);
-        DestroyMenu(menu);
-        if (pick)
-            PostMessageW(GetParent(hwnd), WM_COMMAND, MAKEWPARAM(pick, 0), 0);
-        return 0;
-    }
-    default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Status-bar WndProc — flat custom-painted strip replacing the comctl32
@@ -314,19 +180,13 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t) {
         ? win32::theme::Mode::Dark : win32::theme::Mode::Light);
     win32::theme::apply_window_attributes(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
-    if (hUserStrip_) InvalidateRect(hUserStrip_, nullptr, TRUE);
-    if (hStatus_)    InvalidateRect(hStatus_,    nullptr, TRUE);
+    if (hStatus_) InvalidateRect(hStatus_, nullptr, TRUE);
 
     // Update all tk surfaces.
-    if (room_surface_)          room_surface_->set_theme(t);
-    if (chat_surface_)          chat_surface_->set_theme(t);
-    if (emoji_picker_surface_)  emoji_picker_surface_->set_theme(t);
+    if (main_app_surface_)       main_app_surface_->set_theme(t);
+    if (emoji_picker_surface_)   emoji_picker_surface_->set_theme(t);
     if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
-    if (join_room_surface_)     join_room_surface_->set_theme(t);
-    if (img_viewer_surface_)    img_viewer_surface_->set_theme(t);
-    if (vid_viewer_surface_)    vid_viewer_surface_->set_theme(t);
-    if (recovery_surface_)      recovery_surface_->set_theme(t);
-    if (verif_surface_)         verif_surface_->set_theme(t);
+    if (join_room_surface_)      join_room_surface_->set_theme(t);
     if (account_picker_surface_) account_picker_surface_->set_theme(t);
 }
 
@@ -406,7 +266,7 @@ void MainWindow::handle_image_packs_updated_ui_()
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
 {
-    if (!verif_surface_ || !verif_surface_->hwnd()) return;
+    if (!main_app_) return;
     if (!is_verified && !verification_banner_dismissed_) {
         if (!verif_banner_visible_) {
             if (verif_shared_) verif_shared_->set_state(
@@ -415,28 +275,25 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
             // appeared before the verification state callback arrived.
             // But if recovery is actively in progress (Verifying/Importing), let
             // it finish rather than interrupting with the verification banner.
-            if (recovery_banner_visible_ && recovery_surface_ && recovery_shared_) {
+            if (recovery_banner_visible_ && recovery_shared_) {
                 auto rs = recovery_shared_->state();
                 if (rs == tesseract::views::RecoveryBanner::State::Form
                  || rs == tesseract::views::RecoveryBanner::State::Failed) {
-                    if (recovery_surface_->hwnd())
-                        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+                    main_app_->show_recovery_banner(false);
                     recovery_banner_visible_ = false;
                 } else {
                     return;
                 }
             }
-            ShowWindow(verif_surface_->hwnd(), SW_SHOW);
+            main_app_->show_verif_banner(true);
             verif_banner_visible_ = true;
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
+            if (main_app_surface_) main_app_surface_->relayout();
         }
     } else {
         if (verif_banner_visible_) {
-            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
+            if (main_app_surface_) main_app_surface_->relayout();
         }
     }
 }
@@ -455,7 +312,7 @@ void MainWindow::handle_verification_request_ui_(
             tesseract::views::VerificationBanner::State::Waiting);
         if (client_) client_->start_sas(active_verification_flow_id_);
     }
-    if (verif_surface_) verif_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::handle_sas_ready_ui_(
@@ -463,14 +320,7 @@ void MainWindow::handle_sas_ready_ui_(
 {
     if (!verif_shared_) return;
     verif_shared_->set_emojis(emojis);
-    if (verif_surface_ && verif_surface_->hwnd()) {
-        SetWindowPos(verif_surface_->hwnd(), nullptr,
-                     0, 0, 0, 124,
-                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-        verif_surface_->relayout();
-        RECT rc; GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
-    }
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
@@ -478,7 +328,7 @@ void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
     if (!verif_shared_) return;
     verif_shared_->set_state(
         tesseract::views::VerificationBanner::State::Done);
-    if (verif_surface_) verif_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
     if (hwnd_) SetTimer(hwnd_, kVerifDoneTimerId, 1500, nullptr);
 }
 
@@ -489,7 +339,7 @@ void MainWindow::handle_verification_cancelled_ui_(
     verif_shared_->set_state(
         tesseract::views::VerificationBanner::State::Cancelled);
     verif_shared_->set_cancel_reason(std::move(reason));
-    if (verif_surface_) verif_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::handle_account_prefs_updated_ui_(
@@ -541,78 +391,11 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
         ensure_media_image_(preview.image_mxc, 64, 64);
 
     if (room_view_) room_view_->notify_url_preview_ready(url);
-    if (chat_surface_) {
-        chat_surface_->relayout();
-        if (HWND cs = chat_surface_->hwnd())
-            InvalidateRect(cs, nullptr, FALSE);
+    if (main_app_surface_) {
+        main_app_surface_->relayout();
+        if (HWND s = main_app_surface_->hwnd())
+            InvalidateRect(s, nullptr, FALSE);
     }
-}
-
-// ---------------------------------------------------------------------------
-// GDI+ helpers
-// ---------------------------------------------------------------------------
-
-void MainWindow::fill_rounded_rect(Gdiplus::Graphics& g, Gdiplus::Brush& brush,
-                                     float x, float y, float w, float h, float r) {
-    Gdiplus::GraphicsPath path;
-    path.AddArc(x,         y,         r*2, r*2, 180, 90);
-    path.AddArc(x+w-r*2,   y,         r*2, r*2, 270, 90);
-    path.AddArc(x+w-r*2,   y+h-r*2,   r*2, r*2,   0, 90);
-    path.AddArc(x,         y+h-r*2,   r*2, r*2,  90, 90);
-    path.CloseFigure();
-    g.FillPath(&brush, &path);
-}
-
-void MainWindow::draw_circle_bitmap(Gdiplus::Graphics& g, Gdiplus::Bitmap* bmp,
-                                      int x, int y, int size) {
-    Gdiplus::GraphicsPath clip;
-    clip.AddEllipse(x, y, size, size);
-    Gdiplus::Region region(&clip);
-    g.SetClip(&region);
-    Gdiplus::Rect dst(x, y, size, size);
-    g.DrawImage(bmp, dst);
-    g.ResetClip();
-}
-
-void MainWindow::draw_initials_circle(Gdiplus::Graphics& g, const std::string& name,
-                                        int x, int y, int size) {
-    static const Gdiplus::ARGB kColors[] = {
-        0xFF5B6ABF, 0xFF3A9BD5, 0xFF2ECC71,
-        0xFFE74C3C, 0xFF9B59B6, 0xFF1ABC9C,
-    };
-    int ci = name.empty() ? 0 : (unsigned char)name[0] % 6;
-    Gdiplus::SolidBrush bg(kColors[ci]);
-    g.FillEllipse(&bg, x, y, size, size);
-
-    std::wstring wn = utf8_to_wstr(name);
-    wchar_t init[2] = { wn.empty() ? L'?' : static_cast<wchar_t>(towupper(wn[0])), L'\0' };
-
-    // GDI+ Graphics holds the DC; flush before handing the DC to D2D so
-    // any pending circle-fill operations are present when text draws on top.
-    g.Flush(Gdiplus::FlushIntentionSync);
-    HDC hdc = g.GetHDC();
-    RECT rc{ x, y, x + size, y + size };
-    win32::text::draw(hdc, rc, init, 1,
-        win32::text::Style{
-            .family = L"Segoe UI",
-            .size   = (float)size * 0.38f,
-            .unit   = win32::text::SizeUnit::Pixel,
-            .weight = win32::text::Weight::Bold,
-            .color  = RGB(0xFF, 0xFF, 0xFF),
-            .halign = win32::text::HAlign::Center,
-            .valign = win32::text::VAlign::Center,
-        });
-    g.ReleaseHDC(hdc);
-}
-
-Gdiplus::Bitmap* MainWindow::get_user_avatar(const std::string& mxc_url) {
-    if (mxc_url.empty()) return nullptr;
-    auto it = user_avatar_cache_.find(mxc_url);
-    if (it != user_avatar_cache_.end()) return it->second;
-    auto bytes = client_->fetch_media_bytes(mxc_url);
-    Gdiplus::Bitmap* bmp = bitmap_from_bytes(bytes);
-    user_avatar_cache_[mxc_url] = bmp;
-    return bmp;
 }
 
 // ---------------------------------------------------------------------------
@@ -665,27 +448,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // Compose bar Send / Emoji + recovery banner clicks go through
         // the shared widgets' callbacks now — no WM_COMMAND wiring. The
         // emoji-picker search field is a NativeTextField overlay handled
-        // by its set_on_changed lambda. Only the logout menu and space
-        // navigation remain.
-        if (LOWORD(wParam) == IDC_SPACE_BACK)
-            self->on_space_back();
+        // by its set_on_changed lambda. Only the logout / add-account
+        // items posted by show_user_context_menu_ remain.
         if (LOWORD(wParam) == IDM_LOGOUT)
             self->logout_active_account();
         if (LOWORD(wParam) == IDM_ADD_ACCOUNT)
             self->begin_add_account();
         return 0;
-
-    case WM_DRAWITEM: {
-        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (dis->CtlID == IDC_SIDE_SEPARATOR) {
-            FillRect(dis->hDC, &dis->rcItem,
-                     theme::brush(theme::palette().separator));
-        }
-        else if (dis->CtlType == ODT_BUTTON) {
-            theme::draw_button(dis);
-        }
-        return TRUE;
-    }
 
     case WM_ERASEBKGND: {
         // The parent paints behind any pixel a child doesn't cover. Use the
@@ -790,9 +559,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             // through to the static-decode path.
             self->try_load_animation(p->cache_key, p->bytes);
             if (!self->anim_cache_.has(p->cache_key) &&
-                self->chat_surface_)
+                self->main_app_surface_)
             {
-                if (auto img = self->chat_surface_->factory().decode_image(p->bytes))
+                if (auto img = self->main_app_surface_->factory().decode_image(p->bytes))
                     self->tk_images_.emplace(p->cache_key, std::move(img));
             }
             if (self->sticker_picker_shared_)
@@ -964,7 +733,6 @@ MainWindow::~MainWindow() {
     // login_view_ calls cancel_oauth() + joins its worker on destruction.
     // Tear it down while the client pointers are still alive.
     login_view_.reset();
-    for (auto& [k, v] : user_avatar_cache_) delete v;
     theme::shutdown();
     win32::text::shutdown();
     if (gdiplus_token_)
@@ -999,16 +767,49 @@ void MainWindow::on_create(HWND hwnd) {
     theme::register_main_window(hwnd);
     theme::apply_window_attributes(hwnd);
 
-    // Room list — shared toolkit Surface hosting tesseract::views::RoomListView.
-    room_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
-    // The first Surface creation initialises the D2D backend singleton,
-    // which builds the Twemoji-first font fallback. Share it with the
-    // TextRenderer so the room header draws flag emoji the same way.
-    win32::text::set_font_fallback(tk::win32::dwrite_font_fallback());
+    // Single surface hosting the full MainAppWidget tree (sidebar + chat +
+    // banners + lightbox overlays). The first Surface creation initialises the
+    // D2D backend singleton which builds the Twemoji-first font fallback.
     {
-        auto view = std::make_unique<tesseract::views::RoomListView>();
-        room_list_view_ = view.get();
+        auto mainAppRoot = std::make_unique<tesseract::views::MainAppWidget>();
+        main_app_ = mainAppRoot.get();
+
+        main_app_surface_ = std::make_unique<tk::win32::Surface>(
+            hInst_, hwnd, tk::Theme::light());
+        main_app_surface_->set_root(std::move(mainAppRoot));
+
+        // Share the DWrite font fallback built by the Surface with TextRenderer
+        // so the room header draws flag emoji the same way.
+        win32::text::set_font_fallback(tk::win32::dwrite_font_fallback());
+
+        // Wire borrowed sub-view pointers.
+        room_list_view_  = main_app_->room_list_view();
+        room_view_       = main_app_->room_view();
+        recovery_shared_ = main_app_->recovery_banner();
+        verif_shared_    = main_app_->verif_banner();
+        img_viewer_      = main_app_->image_viewer();
+        vid_viewer_      = main_app_->video_viewer();
+
+        // Space nav callback.
+        main_app_->on_space_back = [this] { on_space_back(); };
+
+        // UserInfo callbacks.
+        main_app_->user_info()->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        main_app_->user_info()->on_primary = [this](tk::Point /*p*/) {
+            open_account_picker();
+        };
+        main_app_->user_info()->on_secondary = [this](tk::Point p) {
+            POINT sp{ static_cast<LONG>(p.x), static_cast<LONG>(p.y) };
+            if (main_app_surface_ && main_app_surface_->hwnd())
+                ClientToScreen(main_app_surface_->hwnd(), &sp);
+            show_user_context_menu_(sp.x, sp.y);
+        };
+
+        // ── RoomListView wiring ─────────────────────────────────────────────
         room_list_view_->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image* {
                 auto it = tk_avatars_.find(mxc);
@@ -1020,92 +821,16 @@ void MainWindow::on_create(HWND hwnd) {
             KillTimer(hwnd_, kScrollDebounceTimerId);
             SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
         };
-        room_surface_->set_root(std::move(view));
-
-        // Search field — host-overlaid NativeTextField shown when the
-        // list overflows the viewport (decided inside RoomListView).
-        room_search_field_ = room_surface_->host().make_text_field();
-        room_search_field_->set_placeholder("Search");
-        room_search_field_->set_visible(false);
-        room_search_field_->set_on_changed([this](const std::string& q) {
-            pending_search_text_ = q;
-            KillTimer(hwnd_, kSearchDebounceTimer);
-            SetTimer(hwnd_, kSearchDebounceTimer, 500, nullptr);
-        });
-        room_surface_->set_on_layout([this] {
-            if (!room_list_view_ || !room_search_field_) return;
-            bool visible = room_list_view_->search_field_visible();
-            room_search_field_->set_visible(visible);
-            if (visible) {
-                room_search_field_->set_rect(
-                    room_list_view_->search_field_rect());
-            }
-        });
         room_list_view_->on_search_clear = [this] {
             KillTimer(hwnd_, kSearchDebounceTimer);
             pending_search_text_.clear();
-            room_search_field_->set_text("");
+            if (room_search_field_) room_search_field_->set_text("");
             room_list_view_->set_search_text("");
             refresh_room_list();
         };
         room_list_view_->on_join_room_requested = [this] { open_join_room_dialog(); };
-    }
-    if (HWND rs = room_surface_->hwnd()) {
-        SetWindowPos(rs, nullptr, 0, 0, 240, 600,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-    }
 
-    // 1px vertical separator between the sidebar and the chat area.
-    hSideSep_ = CreateWindowExW(
-        0, L"STATIC", nullptr,
-        WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
-        240, 0, 1, 600,
-        hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SIDE_SEPARATOR)),
-        hInst_, nullptr);
-
-    // User identity strip (sidebar footer)
-    WNDCLASSEXW uswc{};
-    uswc.cbSize = sizeof(uswc);
-    uswc.lpfnWndProc = user_strip_wnd_proc;
-    uswc.hInstance = hInst_;
-    uswc.lpszClassName = L"TesseractUserStrip";
-    uswc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    RegisterClassExW(&uswc);
-
-    hUserStrip_ = CreateWindowExW(
-        0, L"TesseractUserStrip", nullptr,
-        WS_CHILD,
-        0, 600 - kUserStripH, 240, kUserStripH,
-        hwnd, nullptr, hInst_, nullptr);
-    SetWindowLongPtrW(hUserStrip_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-
-    // Space navigation bar: ← back button + space name label.
-    // Hidden until the user drills into a space; refresh_room_list shows them.
-    hSpaceNavBack_ = CreateWindowExW(
-        0, L"BUTTON", L"\x2190",
-        WS_CHILD | BS_PUSHBUTTON,
-        4, 8, 28, 20,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SPACE_BACK)),
-        hInst_, nullptr);
-    if (hSpaceNavBack_) apply_default_font(hSpaceNavBack_);
-
-    hSpaceNavLabel_ = CreateWindowExW(
-        0, L"STATIC", L"",
-        WS_CHILD | SS_LEFT | SS_NOPREFIX | SS_CENTERIMAGE,
-        36, 0, 240 - 40, kSpaceNavBarH,
-        hwnd, nullptr, hInst_, nullptr);
-    if (hSpaceNavLabel_) apply_default_font(hSpaceNavLabel_);
-
-    // Chat area — single tk::win32::Surface hosting RoomView (header +
-    // message list + typing strip + compose bar). A NativeTextArea overlay
-    // sits at the compose text rect; its position is updated by set_on_layout.
-    chat_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
-    {
-        auto rv = std::make_unique<tesseract::views::RoomView>();
-        room_view_ = rv.get();
-
+        // ── RoomView wiring ─────────────────────────────────────────────────
         room_view_->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image* {
                 auto it = tk_avatars_.find(mxc);
@@ -1127,7 +852,7 @@ void MainWindow::on_create(HWND hwnd) {
                     ensure_media_image_(it->second.image_mxc, 64, 64);
                 return &it->second;
             });
-        if (auto player = chat_surface_->host().make_audio_player())
+        if (auto player = main_app_surface_->host().make_audio_player())
             room_view_->set_audio_player(std::move(player));
         room_view_->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t> {
@@ -1170,11 +895,11 @@ void MainWindow::on_create(HWND hwnd) {
                                             std::string caption,
                                             int /*src_w*/, int /*src_h*/,
                                             std::string reply_event_id) {
-            if (current_room_id_.empty() || !chat_surface_) return;
+            if (current_room_id_.empty() || !main_app_surface_) return;
             const bool compress =
                 tesseract::Settings::instance().image_quality
                 == tesseract::Settings::ImageQuality::Compressed;
-            auto enc = chat_surface_->host().encode_for_send(
+            auto enc = main_app_surface_->host().encode_for_send(
                 bytes.data(), bytes.size(), compress);
             if (enc.bytes.empty()) return;
             std::string out_name = filename;
@@ -1227,8 +952,8 @@ void MainWindow::on_create(HWND hwnd) {
             [this](const std::string& event_id, tk::Rect anchor) {
                 if (current_room_id_.empty()) return;
                 pending_reaction_event_id_ = event_id;
-                if (chat_surface_ && chat_surface_->hwnd())
-                    popup_emoji_at_rect(chat_surface_->hwnd(), anchor);
+                if (main_app_surface_ && main_app_surface_->hwnd())
+                    popup_emoji_at_rect(main_app_surface_->hwnd(), anchor);
                 else
                     toggle_emoji_picker();
             };
@@ -1261,29 +986,30 @@ void MainWindow::on_create(HWND hwnd) {
         room_view_->on_jump_to_date_requested = [this] {
             openJumpToDateDialog();
         };
-        room_view_->on_emoji   = [this](tk::Rect btn) {
+        room_view_->on_emoji = [this](tk::Rect btn) {
             ensure_emoji_picker_created();
             if (hEmojiPicker_ && IsWindowVisible(hEmojiPicker_))
                 ShowWindow(hEmojiPicker_, SW_HIDE);
-            else if (chat_surface_)
-                popup_emoji_at_rect(chat_surface_->hwnd(), btn);
+            else if (main_app_surface_)
+                popup_emoji_at_rect(main_app_surface_->hwnd(), btn);
         };
         room_view_->on_sticker = [this](tk::Rect btn) {
             ensure_sticker_picker_created();
             if (hStickerPicker_ && IsWindowVisible(hStickerPicker_))
                 ShowWindow(hStickerPicker_, SW_HIDE);
-            else if (chat_surface_)
-                popup_sticker_at_rect(chat_surface_->hwnd(), btn);
+            else if (main_app_surface_)
+                popup_sticker_at_rect(main_app_surface_->hwnd(), btn);
         };
         room_view_->set_repaint_requester([this] {
-            if (chat_surface_) InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
+            if (main_app_surface_)
+                InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
         });
         room_view_->on_layout_changed = [this] {
-            if (chat_surface_) chat_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         };
 
-        chat_surface_->set_root(std::move(rv));
-        chat_surface_->set_on_right_click([this](tk::Point p) {
+        // ── Sticker right-click on main surface ─────────────────────────────
+        main_app_surface_->set_on_right_click([this](tk::Point p) {
             if (!room_view_ || !client_) return;
             auto hit = room_view_->message_list()->sticker_hit_at(p);
             if (!hit) return;
@@ -1297,7 +1023,7 @@ void MainWindow::on_create(HWND hwnd) {
                 1,
                 already_saved ? L"Already in Saved Stickers" : L"Add to Saved Stickers");
             POINT sp{ static_cast<LONG>(p.x), static_cast<LONG>(p.y) };
-            ClientToScreen(chat_surface_->hwnd(), &sp);
+            ClientToScreen(main_app_surface_->hwnd(), &sp);
             int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                       sp.x, sp.y, 0, hwnd_, nullptr);
             DestroyMenu(menu);
@@ -1305,25 +1031,35 @@ void MainWindow::on_create(HWND hwnd) {
                 client_->save_sticker_to_user_pack(body, body, mxc, info);
         });
 
-        auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
-                                   std::string mime,
-                                   std::string filename) {
-            if (!room_view_) return;
-            const auto limit = client_->media_upload_limit();
-            if (limit > 0 && bytes.size() > limit) {
-                if (hStatus_) SetWindowTextW(hStatus_, L"File exceeds server limit");
-                return;
-            }
-            if (mime.rfind("image/", 0) == 0)
-                room_view_->compose_bar()->set_pending_image(
-                    std::move(bytes), std::move(mime), std::move(filename));
-            else
-                room_view_->compose_bar()->set_pending_file(
-                    std::move(bytes), std::move(mime), std::move(filename));
-        };
-        chat_surface_->set_on_file_drop(on_file_drop);
+        // ── File drop ───────────────────────────────────────────────────────
+        main_app_surface_->set_on_file_drop(
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename) {
+                if (!room_view_) return;
+                const auto limit = client_->media_upload_limit();
+                if (limit > 0 && bytes.size() > limit) {
+                    if (hStatus_) SetWindowTextW(hStatus_, L"File exceeds server limit");
+                    return;
+                }
+                if (mime.rfind("image/", 0) == 0)
+                    room_view_->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime), std::move(filename));
+                else
+                    room_view_->compose_bar()->set_pending_file(
+                        std::move(bytes), std::move(mime), std::move(filename));
+            });
 
-        room_text_area_ = chat_surface_->host().make_text_area();
+        // ── Native overlays ──────────────────────────────────────────────────
+        room_search_field_ = main_app_surface_->host().make_text_field();
+        room_search_field_->set_placeholder("Search");
+        room_search_field_->set_visible(false);
+        room_search_field_->set_on_changed([this](const std::string& q) {
+            pending_search_text_ = q;
+            KillTimer(hwnd_, kSearchDebounceTimer);
+            SetTimer(hwnd_, kSearchDebounceTimer, 500, nullptr);
+        });
+
+        room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder("Message…");
         room_text_area_->set_on_changed([this](const std::string& s) {
             handle_compose_text_changed_(s);
@@ -1332,7 +1068,7 @@ void MainWindow::on_create(HWND hwnd) {
         room_text_area_->set_on_submit([this] { on_send_clicked(); });
         room_text_area_->set_on_height_changed([this](float h) {
             if (room_view_) room_view_->set_text_area_natural_height(h);
-            if (chat_surface_) chat_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         });
         room_text_area_->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime) {
@@ -1341,66 +1077,21 @@ void MainWindow::on_create(HWND hwnd) {
                         std::move(bytes), std::move(mime));
             });
 
-        chat_surface_->set_on_layout([this] {
-            if (room_view_ && room_text_area_)
-                room_text_area_->set_rect(room_view_->compose_text_area_rect());
-        });
-    }
-
-    // Emoji picker creation is deferred until first toggle so the cold-
-    // start path stays cheap. Recents live in account-data
-    // (io.element.recent_emoji), read on demand by the shared picker.
-
-    // Custom flat status strip. Replaces STATUSCLASSNAMEW which carries a 9x
-    // size-grip and chunky inset borders.
-    register_status_bar_class(hInst_);
-    hStatus_ = CreateWindowExW(
-        0, L"TesseractStatusBar", L"Not logged in",
-        WS_CHILD | WS_VISIBLE,
-        0, 0, 0, 0,
-        hwnd, nullptr, hInst_, nullptr);
-
-    // Recovery banner — shared widget on a tk::win32::Surface. Initially
-    // hidden; toggled by maybe_show_recovery_banner() after start_sync.
-    recovery_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
-    {
-        auto banner = std::make_unique<tesseract::views::RecoveryBanner>();
-        recovery_shared_ = banner.get();
-        recovery_shared_->on_verify =
-            [this](const std::string& /*key*/) { on_recovery_verify_clicked(); };
-        recovery_shared_->on_dismiss =
-            [this] { on_recovery_dismiss_clicked(); };
-        recovery_surface_->set_root(std::move(banner));
-
-        recovery_key_field_ = recovery_surface_->host().make_text_field();
+        recovery_key_field_ = main_app_surface_->host().make_text_field();
         recovery_key_field_->set_placeholder("Recovery key or passphrase");
         recovery_key_field_->set_password(true);
         recovery_key_field_->set_on_changed([this](const std::string& k) {
             if (recovery_shared_) recovery_shared_->set_current_key(k);
         });
         recovery_key_field_->set_on_submit([this] { on_recovery_verify_clicked(); });
-        recovery_surface_->set_on_layout([this] {
-            if (!recovery_shared_ || !recovery_key_field_) return;
-            recovery_key_field_->set_visible(
-                recovery_shared_->recovery_key_field_visible());
-            recovery_key_field_->set_rect(
-                recovery_shared_->recovery_key_field_rect());
-        });
-    }
-    if (HWND rb = recovery_surface_->hwnd()) {
-        SetWindowPos(rb, nullptr, 240, static_cast<int>(tesseract::views::RoomHeader::kHeight), 784, 48,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(rb, SW_HIDE);
-    }
 
-    // Verification banner — shared widget on a tk::win32::Surface. Initially
-    // hidden; shown by handle_verification_state_ui_ when is_verified=false.
-    verif_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
-    {
-        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
-        verif_shared_ = banner.get();
+        // ── RecoveryBanner callbacks ─────────────────────────────────────────
+        recovery_shared_->on_verify =
+            [this](const std::string& /*key*/) { on_recovery_verify_clicked(); };
+        recovery_shared_->on_dismiss =
+            [this] { on_recovery_dismiss_clicked(); };
+
+        // ── VerificationBanner callbacks ─────────────────────────────────────
         verif_shared_->on_verify = [this] {
             if (client_) client_->request_self_verification();
         };
@@ -1414,7 +1105,7 @@ void MainWindow::on_create(HWND hwnd) {
             if (client_) client_->confirm_sas(active_verification_flow_id_);
             if (verif_shared_) verif_shared_->set_state(
                 tesseract::views::VerificationBanner::State::Confirming);
-            if (verif_surface_) verif_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         };
         verif_shared_->on_mismatch = [this] {
             if (client_) client_->cancel_verification(active_verification_flow_id_);
@@ -1424,40 +1115,23 @@ void MainWindow::on_create(HWND hwnd) {
         };
         verif_shared_->on_dismiss = [this] {
             verification_banner_dismissed_ = true;
-            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
+            if (main_app_surface_) main_app_surface_->relayout();
         };
         verif_shared_->on_done = [this] {
-            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
+            if (main_app_surface_) main_app_surface_->relayout();
         };
         verif_shared_->on_use_recovery_key = [this] {
-            ShowWindow(verif_surface_->hwnd(), SW_HIDE);
+            main_app_->show_verif_banner(false);
             verif_banner_visible_ = false;
             maybe_show_recovery_banner();
-            RECT rc; GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
+            if (main_app_surface_) main_app_surface_->relayout();
         };
-        verif_surface_->set_root(std::move(banner));
-    }
-    if (HWND vb = verif_surface_->hwnd()) {
-        SetWindowPos(vb, nullptr, 240, static_cast<int>(tesseract::views::RoomHeader::kHeight), 784, 48,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(vb, SW_HIDE);
-    }
 
-    // Image/sticker lightbox overlay — WS_CHILD Surface that covers the
-    // entire content area when open. Created hidden; shown/hidden by
-    // on_image_clicked / ImageViewerOverlay::on_close.
-    img_viewer_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light(), /*transparent=*/true);
-    {
-        auto viewer = std::make_unique<tesseract::views::ImageViewerOverlay>();
-        img_viewer_ = viewer.get();
+        // ── ImageViewerOverlay callbacks ─────────────────────────────────────
         img_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
                 if (auto* f = anim_cache_.current_frame(url)) return f;
@@ -1465,95 +1139,110 @@ void MainWindow::on_create(HWND hwnd) {
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
         img_viewer_->on_close = [this] {
-            if (img_viewer_surface_ && img_viewer_surface_->hwnd())
-                ShowWindow(img_viewer_surface_->hwnd(), SW_HIDE);
-        };
-        img_viewer_surface_->set_root(std::move(viewer));
-    }
-    if (HWND iv = img_viewer_surface_->hwnd())
-        ShowWindow(iv, SW_HIDE);
-
-    room_view_->on_image_clicked =
-        [this](const tesseract::views::MessageListView::ImageHit& hit) {
-            if (!img_viewer_ || !img_viewer_surface_) return;
-            img_viewer_->open(hit.media_url, hit.body,
-                               hit.natural_w, hit.natural_h);
-            RECT cr; GetClientRect(hwnd_, &cr);
-            constexpr int STATUS_H = 24;
-            if (HWND iv = img_viewer_surface_->hwnd()) {
-                SetWindowPos(iv, HWND_TOP,
-                              0, 0, cr.right, cr.bottom - STATUS_H,
-                              SWP_NOACTIVATE);
-                ShowWindow(iv, SW_SHOWNOACTIVATE);
-                SetFocus(iv);
-                InvalidateRect(iv, nullptr, FALSE);
-            }
+            if (main_app_) main_app_->show_image_viewer(false);
+            if (main_app_surface_) main_app_surface_->relayout();
         };
 
-    // Video lightbox overlay — WS_CHILD Surface covering the full content area.
-    vid_viewer_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light(), /*transparent=*/true);
-    {
-        auto vid_viewer = std::make_unique<tesseract::views::VideoViewerOverlay>();
-        vid_viewer_ = vid_viewer.get();
+        room_view_->on_image_clicked =
+            [this](const tesseract::views::MessageListView::ImageHit& hit) {
+                if (!img_viewer_ || !main_app_) return;
+                img_viewer_->open(hit.media_url, hit.body,
+                                   hit.natural_w, hit.natural_h);
+                main_app_->show_image_viewer(true);
+                if (main_app_surface_) main_app_surface_->relayout();
+            };
+
+        // ── VideoViewerOverlay callbacks ─────────────────────────────────────
         vid_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image* {
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        vid_viewer_->set_video_player(chat_surface_->host().make_video_player());
+        vid_viewer_->set_video_player(main_app_surface_->host().make_video_player());
         vid_viewer_->set_repaint_requester([this] {
-            if (vid_viewer_surface_) vid_viewer_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         });
         vid_viewer_->on_close = [this] {
-            if (vid_viewer_surface_ && vid_viewer_surface_->hwnd())
-                ShowWindow(vid_viewer_surface_->hwnd(), SW_HIDE);
-        };
-        vid_viewer_surface_->set_root(std::move(vid_viewer));
-    }
-    if (HWND vv = vid_viewer_surface_->hwnd())
-        ShowWindow(vv, SW_HIDE);
-
-    room_view_->on_video_clicked =
-        [this](const tesseract::views::MessageListView::VideoHit& hit) {
-            if (!vid_viewer_ || !vid_viewer_surface_) return;
-            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                              hit.duration_ms, hit.natural_w, hit.natural_h,
-                              hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
-            RECT cr; GetClientRect(hwnd_, &cr);
-            constexpr int STATUS_H = 24;
-            if (HWND vv = vid_viewer_surface_->hwnd()) {
-                SetWindowPos(vv, HWND_TOP,
-                              0, 0, cr.right, cr.bottom - STATUS_H,
-                              SWP_NOACTIVATE);
-                ShowWindow(vv, SW_SHOWNOACTIVATE);
-                SetFocus(vv);
-                InvalidateRect(vv, nullptr, FALSE);
-            }
-            // Async byte fetch via PostMessage.
-            HWND target = hwnd_;
-            std::string src = hit.source_json;
-            run_async_([this, target, src = std::move(src)]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                auto* p = new VideoBytesPayload{ src, std::move(bytes) };
-                if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
-                                  reinterpret_cast<LPARAM>(p)))
-                    delete p;
-            });
+            if (main_app_) main_app_->show_video_viewer(false);
+            if (main_app_surface_) main_app_surface_->relayout();
         };
 
-    room_view_->set_video_player_factory(
-        [this]() { return chat_surface_->host().make_video_player(); });
-    room_view_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready) {
-            run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                post_to_ui_([on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
-                    on_ready(std::move(bytes));
+        room_view_->on_video_clicked =
+            [this](const tesseract::views::MessageListView::VideoHit& hit) {
+                if (!vid_viewer_ || !main_app_) return;
+                vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                                  hit.duration_ms, hit.natural_w, hit.natural_h,
+                                  hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
+                main_app_->show_video_viewer(true);
+                if (main_app_surface_) main_app_surface_->relayout();
+                // Async byte fetch via PostMessage.
+                HWND target = hwnd_;
+                std::string src = hit.source_json;
+                run_async_([this, target, src = std::move(src)]() mutable {
+                    auto bytes = client_->fetch_source_bytes(src);
+                    auto* p = new VideoBytesPayload{ src, std::move(bytes) };
+                    if (!PostMessageW(target, WM_TESSERACT_VIDEO_BYTES, 0,
+                                      reinterpret_cast<LPARAM>(p)))
+                        delete p;
+                });
+            };
+
+        room_view_->set_video_player_factory(
+            [this]() { return main_app_surface_->host().make_video_player(); });
+        room_view_->set_video_fetch_provider(
+            [this](const std::string& src,
+                   std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
+                    auto bytes = client_->fetch_source_bytes(src);
+                    post_to_ui_([on_ready = std::move(on_ready), bytes = std::move(bytes)]() mutable {
+                        on_ready(std::move(bytes));
+                    });
                 });
             });
+
+        // ── set_on_layout: keep native overlays aligned ──────────────────────
+        main_app_surface_->set_on_layout([this] {
+            if (!main_app_) return;
+
+            // Compose text area.
+            if (room_text_area_)
+                room_text_area_->set_rect(main_app_->compose_text_area_rect());
+
+            // Room search field.
+            if (room_search_field_) {
+                bool srch = main_app_->room_search_field_visible();
+                room_search_field_->set_visible(srch);
+                if (srch)
+                    room_search_field_->set_rect(main_app_->room_search_field_rect());
+            }
+
+            // Recovery key field.
+            if (recovery_key_field_) {
+                bool rec = main_app_->recovery_key_field_visible();
+                recovery_key_field_->set_visible(rec);
+                if (rec)
+                    recovery_key_field_->set_rect(main_app_->recovery_key_field_rect());
+            }
         });
+    }
+
+    // Size the main app surface to fill the content area initially.
+    if (HWND ms = main_app_surface_->hwnd())
+        SetWindowPos(ms, nullptr, 0, 0, 1024, 744,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // Emoji picker creation is deferred until first toggle so the cold-
+    // start path stays cheap. Recents live in account-data
+    // (io.element.recent_emoji), read on demand by the shared picker.
+
+    // Custom flat status strip. Replaces STATUSCLASSNAMEW which carries a 9x
+    // size-grip and chunky inset borders.
+    register_status_bar_class(hInst_);
+    hStatus_ = CreateWindowExW(
+        0, L"TesseractStatusBar", L"Not logged in",
+        WS_CHILD | WS_VISIBLE,
+        0, 0, 0, 0,
+        hwnd, nullptr, hInst_, nullptr);
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
     login_view_->set_on_success([this]() { on_login_succeeded(); });
@@ -1593,75 +1282,26 @@ void MainWindow::on_destroy() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::on_size(int w, int h) {
-    constexpr int ROOM_W   = 240;
-    constexpr int SEP_W    = 1;
-    constexpr int CHAT_X   = ROOM_W + SEP_W;
-    constexpr int STATUS_H  = 24;
-    constexpr int BANNER_H  = 48;
+    constexpr int STATUS_H = 24;
 
     if (hStatus_) SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H, SWP_NOZORDER);
 
+    int content_h = h - STATUS_H;
+
     if (login_visible_ && login_view_ && login_view_->hwnd()) {
-        SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, h - STATUS_H, SWP_NOZORDER);
-        login_view_->layout(w, h - STATUS_H);
+        SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, content_h, SWP_NOZORDER);
+        login_view_->layout(w, content_h);
         return;
     }
 
-    int content_h = h - STATUS_H;
-
-    // Sidebar.
-    bool nav_bar_visible = hSpaceNavBack_ && IsWindowVisible(hSpaceNavBack_);
-    int  room_surface_y  = nav_bar_visible ? kSpaceNavBarH : 0;
-    if (nav_bar_visible) {
-        SetWindowPos(hSpaceNavBack_,  nullptr, 4,  8,          28,          20,          SWP_NOZORDER);
-        SetWindowPos(hSpaceNavLabel_, nullptr, 36, 0, ROOM_W - 40, kSpaceNavBarH, SWP_NOZORDER);
-    }
-    bool user_strip_visible = hUserStrip_ && IsWindowVisible(hUserStrip_);
-    int sidebar_h   = content_h;
-    int room_list_h = (user_strip_visible ? sidebar_h - kUserStripH : sidebar_h) - room_surface_y;
-    if (room_surface_ && room_surface_->hwnd())
-        SetWindowPos(room_surface_->hwnd(), nullptr,
-                      0, room_surface_y, ROOM_W, room_list_h,
+    // The MainAppWidget tree owns all sidebar/chat/banner layout internally.
+    // Just resize the single surface to fill the content area and relayout.
+    if (main_app_surface_ && main_app_surface_->hwnd()) {
+        SetWindowPos(main_app_surface_->hwnd(), nullptr,
+                      0, 0, w, content_h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
-    if (hUserStrip_)
-        SetWindowPos(hUserStrip_, nullptr,
-                     0, room_surface_y + room_list_h, ROOM_W, kUserStripH, SWP_NOZORDER);
-    if (hSideSep_)
-        SetWindowPos(hSideSep_, nullptr, ROOM_W, 0, SEP_W, sidebar_h, SWP_NOZORDER);
-
-    // Chat area: banners stack at the top, chat_surface_ fills the rest.
-    int chat_y = 0;
-    int chat_h = content_h;
-    if (recovery_banner_visible_ && recovery_surface_ && recovery_surface_->hwnd()) {
-        SetWindowPos(recovery_surface_->hwnd(), nullptr,
-                      CHAT_X, chat_y, w - CHAT_X, BANNER_H,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        chat_y += BANNER_H;
-        chat_h -= BANNER_H;
+        main_app_surface_->relayout();
     }
-    if (verif_banner_visible_ && verif_surface_ && verif_surface_->hwnd()) {
-        using VBState = tesseract::views::VerificationBanner::State;
-        int verif_h = (verif_shared_ && verif_shared_->state() == VBState::ShowEmojis) ? 124 : 48;
-        SetWindowPos(verif_surface_->hwnd(), nullptr,
-                      CHAT_X, chat_y, w - CHAT_X, verif_h,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        verif_surface_->relayout();
-        chat_y += verif_h;
-        chat_h -= verif_h;
-    }
-    if (chat_surface_ && chat_surface_->hwnd()) {
-        SetWindowPos(chat_surface_->hwnd(), nullptr,
-                      CHAT_X, chat_y, w - CHAT_X, chat_h,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
-        chat_surface_->relayout();
-    }
-
-    if (img_viewer_surface_ && img_viewer_surface_->hwnd()
-        && IsWindowVisible(img_viewer_surface_->hwnd()))
-        SetWindowPos(img_viewer_surface_->hwnd(), HWND_TOP, 0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
-    if (vid_viewer_surface_ && vid_viewer_surface_->hwnd()
-        && IsWindowVisible(vid_viewer_surface_->hwnd()))
-        SetWindowPos(vid_viewer_surface_->hwnd(), HWND_TOP, 0, 0, w, h - STATUS_H, SWP_NOACTIVATE);
 
     SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
@@ -1821,18 +1461,10 @@ void MainWindow::on_login_succeeded() {
 
 void MainWindow::show_login_view() {
     login_visible_ = true;
-    if (login_view_ && login_view_->hwnd()) {
+    if (login_view_ && login_view_->hwnd())
         ShowWindow(login_view_->hwnd(), SW_SHOW);
-    }
-    // Hide all main-content widgets.
-    if (room_surface_ && room_surface_->hwnd())
-        ShowWindow(room_surface_->hwnd(), SW_HIDE);
-    ShowWindow(hSideSep_,   SW_HIDE);
-    ShowWindow(hUserStrip_, SW_HIDE);
-    if (chat_surface_ && chat_surface_->hwnd())
-        ShowWindow(chat_surface_->hwnd(), SW_HIDE);
-    if (recovery_surface_ && recovery_surface_->hwnd())
-        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -1841,17 +1473,10 @@ void MainWindow::show_login_view() {
 
 void MainWindow::show_main_content() {
     login_visible_ = false;
-    if (login_view_ && login_view_->hwnd()) {
+    if (login_view_ && login_view_->hwnd())
         ShowWindow(login_view_->hwnd(), SW_HIDE);
-    }
-    // Unconditional main-content widgets. Conditional widgets
-    // (hUserStrip_, recovery/verif banners) are shown by their own
-    // code paths once their state is set.
-    if (room_surface_ && room_surface_->hwnd())
-        ShowWindow(room_surface_->hwnd(), SW_SHOW);
-    ShowWindow(hSideSep_, SW_SHOW);
-    if (chat_surface_ && chat_surface_->hwnd())
-        ShowWindow(chat_surface_->hwnd(), SW_SHOW);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        ShowWindow(main_app_surface_->hwnd(), SW_SHOW);
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -2095,7 +1720,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     room_view_->set_messages(std::move(rows));
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
     const auto& pstate = pagination_[payload->room_id];
     room_view_->set_historical_mode(pstate.is_focused);
     if (pstate.is_focused)
@@ -2112,7 +1737,7 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
     if (!payload->event->in_reply_to_id.empty()) ensure_reply_details_(payload->event->event_id);
     room_view_->insert_message(payload->index,
                                tesseract::views::make_row_data(*payload->event, my_user_id_));
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
@@ -2125,7 +1750,7 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
     if (!payload->event->in_reply_to_id.empty()) ensure_reply_details_(payload->event->event_id);
     room_view_->update_message(payload->index,
                                tesseract::views::make_row_data(*payload->event, my_user_id_));
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
@@ -2133,7 +1758,7 @@ void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload) {
     if (payload->room_id != current_room_id_) return;
     if (!room_view_) return;
     room_view_->remove_message(payload->index);
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::on_tesseract_rooms(RoomsPayload* payload) {
@@ -2367,15 +1992,15 @@ void MainWindow::refresh_room_list() {
 
     std::vector<tesseract::RoomInfo> filtered;
     if (space_stack_.empty()) {
-        if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_HIDE);
-        if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_HIDE);
+        // Hide the space nav bar via the widget tree.
+        if (main_app_) main_app_->set_space_nav(false);
+
         if (!pending_search_text_.empty()) {
             for (const auto& r : rooms_) ensure_room_avatar_(r);
             room_list_view_->set_rooms(rooms_);
             if (!current_room_id_.empty())
                 room_list_view_->set_selected_room(current_room_id_);
-            if (hwnd_) { RECT rc; GetClientRect(hwnd_, &rc); on_size(rc.right, rc.bottom); }
-            if (room_surface_) room_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
             return;
         }
         // Build the root list, excluding rooms that are children of any space
@@ -2389,15 +2014,15 @@ void MainWindow::refresh_room_list() {
         for (const auto& r : rooms_) if ( r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
     } else {
         // Show the navigation bar with the current space's name.
+        std::string space_name;
         for (const auto& r : rooms_) {
             if (r.id == space_stack_.back()) {
-                if (hSpaceNavLabel_)
-                    SetWindowTextW(hSpaceNavLabel_, utf8_to_wstr(r.name).c_str());
+                space_name = r.name;
                 break;
             }
         }
-        if (hSpaceNavBack_)  ShowWindow(hSpaceNavBack_,  SW_SHOWNA);
-        if (hSpaceNavLabel_) ShowWindow(hSpaceNavLabel_, SW_SHOWNA);
+        if (main_app_) main_app_->set_space_nav(true, space_name);
+
         auto child_ids = client_->space_children(space_stack_.back());
         for (const auto& r : rooms_) {
             if (std::find(child_ids.begin(), child_ids.end(), r.id)
@@ -2412,14 +2037,7 @@ void MainWindow::refresh_room_list() {
     if (!current_room_id_.empty())
         room_list_view_->set_selected_room(current_room_id_);
 
-    // Re-run the size layout so the room surface shifts up/down as the
-    // nav bar appears or disappears.
-    if (hwnd_) {
-        RECT rc;
-        GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
-    }
-    if (room_surface_) room_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::on_space_back() {
@@ -2483,8 +2101,8 @@ void MainWindow::on_anim_tick() {
     }
     const std::int64_t now = static_cast<std::int64_t>(GetTickCount64());
     if (!anim_cache_.advance(now)) return;
-    if (chat_surface_ && chat_surface_->hwnd())
-        InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
     if (sticker_picker_surface_ && sticker_picker_surface_->hwnd() &&
         hStickerPicker_ && IsWindowVisible(hStickerPicker_))
     {
@@ -2536,35 +2154,26 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     // the relevant surface.
     if (bytes.empty()) return;
 
-    HWND invalidate_hwnd = nullptr;
+    if (!main_app_surface_) return;
+    HWND invalidate_hwnd = main_app_surface_->hwnd();
     switch (kind) {
     case MediaKind::RoomAvatar:
-        if (room_surface_) {
-            if (auto img = room_surface_->factory().decode_image(bytes))
-                tk_avatars_.emplace(cache_key, std::move(img));
-            invalidate_hwnd = room_surface_->hwnd();
-        }
-        // Also refresh the RoomHeader inside chat_surface_.
-        if (chat_surface_) chat_surface_->relayout();
+        if (auto img = main_app_surface_->factory().decode_image(bytes))
+            tk_avatars_.emplace(cache_key, std::move(img));
+        main_app_surface_->relayout();
         break;
     case MediaKind::UserAvatar:
-        if (chat_surface_) {
-            if (auto img = chat_surface_->factory().decode_image(bytes))
-                tk_avatars_.emplace(cache_key, std::move(img));
-            invalidate_hwnd = chat_surface_->hwnd();
-        }
+        if (auto img = main_app_surface_->factory().decode_image(bytes))
+            tk_avatars_.emplace(cache_key, std::move(img));
         break;
     case MediaKind::MediaImage:
-        if (chat_surface_) {
-            try_load_animation(cache_key, bytes);
-            if (!anim_cache_.has(cache_key)) {
-                if (auto img = chat_surface_->factory().decode_image(bytes))
-                    tk_images_.emplace(cache_key, std::move(img));
-            }
-            if (room_view_) room_view_->notify_image_ready(cache_key);
-            chat_surface_->relayout();
-            invalidate_hwnd = chat_surface_->hwnd();
+        try_load_animation(cache_key, bytes);
+        if (!anim_cache_.has(cache_key)) {
+            if (auto img = main_app_surface_->factory().decode_image(bytes))
+                tk_images_.emplace(cache_key, std::move(img));
         }
+        if (room_view_) room_view_->notify_image_ready(cache_key);
+        main_app_surface_->relayout();
         break;
     }
     if (invalidate_hwnd)
@@ -2581,12 +2190,12 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                     std::vector<uint8_t> rgba) {
-    if (tk_images_.count(key) || !chat_surface_) return;
-    auto img = chat_surface_->factory().create_image_rgba(rgba.data(), w, h);
+    if (tk_images_.count(key) || !main_app_surface_) return;
+    auto img = main_app_surface_->factory().create_image_rgba(rgba.data(), w, h);
     if (!img) return;
     tk_images_.emplace(key, std::move(img));
-    if (chat_surface_->hwnd())
-        InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
+    if (HWND ms = main_app_surface_->hwnd())
+        InvalidateRect(ms, nullptr, FALSE);
 }
 
 // ---------------------------------------------------------------------------
@@ -2603,7 +2212,7 @@ void MainWindow::clear_messages() {
     if (!room_view_) return;
     room_view_->clear_room();
     room_view_->set_messages({});
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -2629,7 +2238,7 @@ void MainWindow::maybe_show_recovery_banner() {
     if (!client_->needs_recovery())  return;
     if (recovery_banner_visible_) return;
     if (verif_banner_visible_) return;
-    if (!recovery_surface_ || !recovery_surface_->hwnd()) return;
+    if (!main_app_) return;
 
     if (recovery_shared_) {
         recovery_shared_->set_state(
@@ -2640,12 +2249,10 @@ void MainWindow::maybe_show_recovery_banner() {
         recovery_key_field_->set_text("");
         recovery_key_field_->set_enabled(true);
     }
-    ShowWindow(recovery_surface_->hwnd(), SW_SHOW);
-    recovery_surface_->relayout();
+    main_app_->show_recovery_banner(true);
+    if (main_app_surface_) main_app_surface_->relayout();
     recovery_banner_visible_ = true;
     recovery_in_flight_      = false;
-    RECT rc; GetClientRect(hwnd_, &rc);
-    on_size(rc.right, rc.bottom);
 }
 
 void MainWindow::on_recovery_verify_clicked() {
@@ -2659,7 +2266,7 @@ void MainWindow::on_recovery_verify_clicked() {
                 tesseract::views::RecoveryBanner::State::Failed);
             recovery_shared_->set_failure_message(
                 "Please enter a recovery key or passphrase.");
-            if (recovery_surface_) recovery_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         }
         return;
     }
@@ -2669,7 +2276,7 @@ void MainWindow::on_recovery_verify_clicked() {
         recovery_shared_->set_state(
             tesseract::views::RecoveryBanner::State::Verifying);
     if (recovery_key_field_) recovery_key_field_->set_enabled(false);
-    if (recovery_surface_) recovery_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
     recovery_in_flight_ = true;
 
     HWND target = hwnd_;
@@ -2688,7 +2295,7 @@ void MainWindow::on_recover_done(bool ok, std::wstring msg) {
             recovery_shared_->set_state(
                 tesseract::views::RecoveryBanner::State::Importing);
         }
-        if (recovery_surface_) recovery_surface_->relayout();
+        if (main_app_surface_) main_app_surface_->relayout();
         return;
     }
     if (recovery_shared_) {
@@ -2708,17 +2315,15 @@ void MainWindow::on_recover_done(bool ok, std::wstring msg) {
         recovery_key_field_->set_enabled(true);
         recovery_key_field_->set_focused(true);
     }
-    if (recovery_surface_) recovery_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
     recovery_in_flight_ = false;
 }
 
 void MainWindow::on_recovery_dismiss_clicked() {
     recovery_banner_dismissed_ = true;
-    if (recovery_surface_ && recovery_surface_->hwnd())
-        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+    if (main_app_) main_app_->show_recovery_banner(false);
     recovery_banner_visible_ = false;
-    RECT rc; GetClientRect(hwnd_, &rc);
-    on_size(rc.right, rc.bottom);
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
@@ -2732,16 +2337,14 @@ void MainWindow::on_backup_progress(tesseract::BackupProgress* progress) {
         && progress->imported_keys > 0)
     {
         recovery_shared_->set_import_progress(progress->imported_keys);
-        if (recovery_surface_) recovery_surface_->relayout();
+        if (main_app_surface_) main_app_surface_->relayout();
     }
     if (progress->state == tesseract::BackupState::Enabled
         && !client_->needs_recovery())
     {
-        if (recovery_surface_ && recovery_surface_->hwnd())
-            ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+        if (main_app_) main_app_->show_recovery_banner(false);
         recovery_banner_visible_ = false;
-        RECT rc; GetClientRect(hwnd_, &rc);
-        on_size(rc.right, rc.bottom);
+        if (main_app_surface_) main_app_surface_->relayout();
     }
 
     last_backup_state_  = progress->state;
@@ -2805,18 +2408,15 @@ void MainWindow::refresh_sync_status() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populate_user_strip() {
-    if (user_avatar_bmp_) {
-        delete user_avatar_bmp_;
-        user_avatar_bmp_ = nullptr;
-    }
-    if (client_ && !my_avatar_url_.empty()) {
-        auto bytes = client_->fetch_media_bytes(my_avatar_url_);
-        if (!bytes.empty()) user_avatar_bmp_ = bitmap_from_bytes(bytes);
-    }
-    ShowWindow(hUserStrip_, SW_SHOW);
-    InvalidateRect(hUserStrip_, nullptr, FALSE);
-    RECT rc; GetClientRect(hwnd_, &rc);
-    on_size(rc.right, rc.bottom);
+    if (!main_app_) return;
+    auto* ui = main_app_->user_info();
+    if (!ui) return;
+    ui->set_display_name(my_display_name_);
+    ui->set_user_id(my_user_id_);
+    ui->set_avatar_url(my_avatar_url_);
+    // Kick off async avatar fetch so the UserInfo disc fills in.
+    if (!my_avatar_url_.empty()) ensure_user_avatar_(my_avatar_url_);
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -2850,13 +2450,13 @@ void MainWindow::switch_active_account(int new_idx) {
 
     if (room_list_view_) room_list_view_->set_rooms({});
     if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
-    if (room_surface_)   room_surface_->relayout();
-    if (chat_surface_)   chat_surface_->relayout();
 
     recovery_banner_visible_   = false;
     recovery_banner_dismissed_ = false;
-    if (recovery_surface_ && recovery_surface_->hwnd())
-        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+    if (main_app_) main_app_->show_recovery_banner(false);
+    if (main_app_) main_app_->show_verif_banner(false);
+    verif_banner_visible_ = false;
+    if (main_app_surface_) main_app_surface_->relayout();
 
     populate_user_strip();
     refresh_room_list();
@@ -2945,17 +2545,17 @@ void MainWindow::logout_active_account() {
     my_user_id_.clear();
     my_display_name_.clear();
     my_avatar_url_.clear();
-    if (user_avatar_bmp_) { delete user_avatar_bmp_; user_avatar_bmp_ = nullptr; }
     rooms_.clear();
     if (room_list_view_) room_list_view_->set_rooms({});
     if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
-    if (room_surface_)   room_surface_->relayout();
-    if (chat_surface_)   chat_surface_->relayout();
-    ShowWindow(hUserStrip_, SW_HIDE);
-    if (recovery_surface_ && recovery_surface_->hwnd())
-        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+    if (main_app_) {
+        main_app_->show_recovery_banner(false);
+        main_app_->show_verif_banner(false);
+    }
     recovery_banner_visible_   = false;
     recovery_banner_dismissed_ = false;
+    verif_banner_visible_ = false;
+    if (main_app_surface_) main_app_surface_->relayout();
 
     if (accounts_.empty()) {
         client_        = nullptr;
@@ -3068,9 +2668,14 @@ void MainWindow::open_account_picker() {
     constexpr int kRowH    = 56;
     int kPickerH = kRowH * static_cast<int>(accounts_.size());
 
-    RECT sr{}; GetWindowRect(hUserStrip_, &sr);
+    // Anchor to the bottom-left of the main app surface (where the user strip lives).
+    RECT sr{};
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        GetWindowRect(main_app_surface_->hwnd(), &sr);
+    else if (hwnd_)
+        GetWindowRect(hwnd_, &sr);
     int x = sr.left;
-    int y = sr.top - kPickerH - 4;
+    int y = sr.bottom - kPickerH - 4;
 
     HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{}; mi.cbSize = sizeof(mi);
@@ -3082,6 +2687,22 @@ void MainWindow::open_account_picker() {
     SetWindowPos(hAccountPicker_, HWND_TOPMOST,
                  x, y, kPickerW, kPickerH, SWP_NOACTIVATE);
     ShowWindow(hAccountPicker_, SW_SHOWNOACTIVATE);
+}
+
+void MainWindow::show_user_context_menu_(int screen_x, int screen_y) {
+    HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, IDM_ADD_ACCOUNT, L"Add Account…");
+    std::wstring logout_label = L"Log Out";
+    if (!my_display_name_.empty()) {
+        logout_label += L" ";
+        logout_label += utf8_to_wstr(my_display_name_);
+    }
+    AppendMenuW(menu, MF_STRING, IDM_LOGOUT, logout_label.c_str());
+    UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                               screen_x, screen_y, 0, hwnd_, nullptr);
+    DestroyMenu(menu);
+    if (pick)
+        PostMessageW(hwnd_, WM_COMMAND, MAKEWPARAM(pick, 0), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3168,10 +2789,10 @@ void MainWindow::toggle_emoji_picker() {
         return;
     }
 
-    // Anchor the picker above the chat surface (which hosts the compose bar).
+    // Anchor the picker above the main app surface (compose bar is at its bottom).
     RECT btn_rc{};
-    if (chat_surface_ && chat_surface_->hwnd())
-        GetWindowRect(chat_surface_->hwnd(), &btn_rc);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        GetWindowRect(main_app_surface_->hwnd(), &btn_rc);
     else
         GetWindowRect(hwnd_, &btn_rc);
     int x = btn_rc.left + 8;
@@ -3397,10 +3018,10 @@ void MainWindow::toggle_sticker_picker() {
         return;
     }
 
-    // Anchor above the chat surface (which hosts the compose bar).
+    // Anchor above the main app surface (compose bar is at its bottom).
     RECT btn_rc{};
-    if (chat_surface_ && chat_surface_->hwnd())
-        GetWindowRect(chat_surface_->hwnd(), &btn_rc);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        GetWindowRect(main_app_surface_->hwnd(), &btn_rc);
     else
         GetWindowRect(hwnd_, &btn_rc);
     int x = btn_rc.right - kStickerPickW - 8;

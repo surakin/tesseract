@@ -1,16 +1,10 @@
 #pragma once
 #include <QMainWindow>
 #include <QHash>
-#include <QLabel>
-#include <QLineEdit>
 #include <QPixmap>
 #include <QStackedWidget>
-#include <QTextEdit>
-#include <QToolButton>
-#include <QPushButton>
 #include <QStatusBar>
 #include <QTimer>
-#include <QVBoxLayout>
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
@@ -29,13 +23,7 @@
 #include "LinuxQtTrayIcon.h"
 #include "views/AccountPicker.h"
 #include "views/format.h"
-#include "views/ImageViewerOverlay.h"
-#include "views/VideoViewerOverlay.h"
-#include "views/RoomView.h"
-#include "views/RecoveryBanner.h"
-#include "views/VerificationBanner.h"
-#include "views/RoomListView.h"
-#include "views/UserInfo.h"
+#include "views/MainAppWidget.h"
 
 #include <atomic>
 #include <filesystem>
@@ -240,17 +228,16 @@ private:
     static constexpr int kMaxStickerSize  = tesseract::visual::kStickerSize;
     static constexpr int kMsgMaxWidth     = 520;
 
-    // Recovery banner — replaces the legacy QFrame + QLineEdit + buttons
-    // with a tk::qt6::Surface hosting the shared widget. The password
-    // field is a NativeTextField overlay.
-    tk::qt6::Surface*                       recoverySurface_   = nullptr;
-    tesseract::views::RecoveryBanner*       recoveryShared_    = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField>    recoveryKeyField_;
+    // Single surface hosting the full main-app widget tree (sidebar + chat
+    // panel + lightbox overlays). Three NativeTextField / NativeTextArea
+    // overlays are positioned via set_on_layout().
+    tk::qt6::Surface*                    mainAppSurface_ = nullptr;
+    tesseract::views::MainAppWidget*     mainApp_        = nullptr;  // borrowed
 
-    // Verification banner — inline strip above the message list shown when
-    // the device's cross-signing identity is Unverified.
-    tk::qt6::Surface*                          verifSurface_  = nullptr;
-    tesseract::views::VerificationBanner*      verifShared_   = nullptr;  // borrowed
+    // Native overlays wired to mainAppSurface_.
+    std::unique_ptr<tk::NativeTextField> recoveryKeyField_;
+    std::unique_ptr<tk::NativeTextField> roomSearchField_;
+    std::unique_ptr<tk::NativeTextArea>  roomTextArea_;
 
     // Sync-progress status text (initial room hydration + key backfill).
     // Single-shot timer that defers entering the "Syncing rooms…" message
@@ -259,36 +246,9 @@ private:
     QTimer*                  syncStatusDebounce_ = nullptr;
     void refreshSyncStatus();
 
-    QWidget*                          sidePanel_        = nullptr;
-    QFrame*                           sideSeparator_    = nullptr;
-
-    QWidget*                          userStrip_        = nullptr;
-    tk::qt6::Surface*                 userStripSurface_ = nullptr;
-    tesseract::views::UserInfo*       userInfo_         = nullptr;  // borrowed
-
-    tk::qt6::Surface*               roomSurface_    = nullptr;
-    tesseract::views::RoomListView* roomListView_   = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField> roomSearchField_;
-    QWidget*             roomNavBar_      = nullptr;
-    QPushButton*         backButton_      = nullptr;
-    QLabel*              spaceNameLabel_  = nullptr;
-    // Combined room-chat surface: RoomHeader + MessageListView + ComposeBar.
-    tk::qt6::Surface*                  chatSurface_     = nullptr;
-    tesseract::views::RoomView*        roomView_        = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextArea> roomTextArea_;
     EmojiPicker*                            emojiPicker_     = nullptr;
     ::StickerPicker*                        stickerPicker_   = nullptr;
     JoinRoomDialog*                         joinRoomDialog_  = nullptr;
-
-    // Full-window image/sticker lightbox overlay.
-    QWidget*                                imgViewerHost_    = nullptr;
-    tk::qt6::Surface*                       imgViewerSurface_ = nullptr;
-    tesseract::views::ImageViewerOverlay*   imgViewer_        = nullptr;  // borrowed
-
-    // Full-window video lightbox overlay.
-    QWidget*                                vidViewerHost_    = nullptr;
-    tk::qt6::Surface*                       vidViewerSurface_ = nullptr;
-    tesseract::views::VideoViewerOverlay*   vidViewer_        = nullptr;  // borrowed
 
     // When the user opens the emoji picker from a message's "+" chip
     // (rather than from the compose bar), this holds the target event
@@ -300,7 +260,6 @@ private:
 
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;
-    QWidget*             mainContent_     = nullptr;
 
     // Account-switcher popover anchored under the user strip. Opened by
     // left-click on the avatar when `accounts_.size() >= 2`; a single

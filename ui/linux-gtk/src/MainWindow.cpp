@@ -44,39 +44,6 @@ namespace { constexpr char kAttentionNotifId[] = "tesseract-attention"; }
 // Image helpers
 // ---------------------------------------------------------------------------
 
-// Decode raw image bytes, scale down to fit within max_w×max_h (preserving
-// aspect ratio), and return a new GdkTexture owned by the caller.
-// Returns nullptr on decode failure.
-static GdkTexture* make_scaled_texture(const std::vector<uint8_t>& data,
-                                        int max_w, int max_h) {
-    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
-    GError* err = nullptr;
-    gdk_pixbuf_loader_write(loader,
-        reinterpret_cast<const guchar*>(data.data()),
-        static_cast<gsize>(data.size()), &err);
-    if (err) { g_error_free(err); g_object_unref(loader); return nullptr; }
-    gdk_pixbuf_loader_close(loader, nullptr);
-    GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
-    if (!pb) { g_object_unref(loader); return nullptr; }
-
-    int w = gdk_pixbuf_get_width(pb);
-    int h = gdk_pixbuf_get_height(pb);
-    GdkTexture* tex = nullptr;
-    if (w > max_w || h > max_h) {
-        double scale = std::min(static_cast<double>(max_w) / w,
-                                static_cast<double>(max_h) / h);
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
-            pb, static_cast<int>(w * scale), static_cast<int>(h * scale),
-            GDK_INTERP_BILINEAR);
-        tex = gdk_texture_new_for_pixbuf(scaled);
-        g_object_unref(scaled);
-    } else {
-        tex = gdk_texture_new_for_pixbuf(pb);
-    }
-    g_object_unref(loader);
-    return tex;
-}
-
 // ---------------------------------------------------------------------------
 // g_idle_add helpers (for async workers that are NOT part of EventHandlerBase)
 // ---------------------------------------------------------------------------
@@ -191,36 +158,27 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
 {
-    if (!verif_surface_) return;
-    GtkWidget* w = verif_surface_->widget();
+    if (!main_app_ || !verif_shared_) return;
     if (is_verified) {
-        gtk_widget_set_visible(w, FALSE);
+        main_app_->show_verif_banner(false);
+        main_app_surface_->relayout();
         return;
     }
     if (verification_banner_dismissed_) return;
-    if (!gtk_widget_get_visible(w)) {
+    if (!main_app_->verif_banner()->visible()) {
         active_verification_flow_id_.clear();
-        if (verif_shared_)
-            verif_shared_->set_state(
-                tesseract::views::VerificationBanner::State::Prompt);
-        // Verification takes priority — hide recovery banner if it appeared
-        // before the verification state callback arrived (race on first sync).
-        // But if recovery is actively in progress (Verifying/Importing), let
-        // it finish rather than interrupting with the verification banner.
-        if (recovery_surface_ && recovery_shared_) {
-            GtkWidget* rw = recovery_surface_->widget();
-            if (gtk_widget_get_visible(rw)) {
-                auto rs = recovery_shared_->state();
-                if (rs == tesseract::views::RecoveryBanner::State::Form
-                 || rs == tesseract::views::RecoveryBanner::State::Failed)
-                    gtk_widget_set_visible(rw, FALSE);
-                else
-                    return;
+        verif_shared_->set_state(tesseract::views::VerificationBanner::State::Prompt);
+        if (recovery_shared_ && main_app_->recovery_banner()->visible()) {
+            auto rs = recovery_shared_->state();
+            if (rs == tesseract::views::RecoveryBanner::State::Form
+             || rs == tesseract::views::RecoveryBanner::State::Failed) {
+                main_app_->show_recovery_banner(false);
+            } else {
+                return;
             }
         }
-        gtk_widget_set_size_request(w, -1, 48);
-        gtk_widget_set_visible(w, TRUE);
-        verif_surface_->relayout();
+        main_app_->show_verif_banner(true);
+        main_app_surface_->relayout();
     }
 }
 
@@ -228,40 +186,32 @@ void MainWindow::handle_verification_request_ui_(
     std::string flow_id, std::string /*user_id*/,
     std::string /*device_id*/, bool incoming)
 {
-    if (!verif_surface_ || !verif_shared_) return;
+    if (!main_app_ || !verif_shared_) return;
     active_verification_flow_id_ = flow_id;
-    if (incoming) {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::IncomingRequest);
-    } else {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::Waiting);
+    if (incoming)
+        verif_shared_->set_state(tesseract::views::VerificationBanner::State::IncomingRequest);
+    else {
+        verif_shared_->set_state(tesseract::views::VerificationBanner::State::Waiting);
         if (client_) client_->start_sas(flow_id);
     }
-    GtkWidget* w = verif_surface_->widget();
-    gtk_widget_set_size_request(w, -1, 48);
-    gtk_widget_set_visible(w, TRUE);
-    verif_surface_->relayout();
+    main_app_->show_verif_banner(true);
+    main_app_surface_->relayout();
 }
 
 void MainWindow::handle_sas_ready_ui_(
     std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
 {
-    if (!verif_surface_ || !verif_shared_) return;
+    if (!main_app_ || !verif_shared_) return;
     verif_shared_->set_emojis(emojis);
-    GtkWidget* w = verif_surface_->widget();
-    gtk_widget_set_size_request(w, -1, 124);
-    gtk_widget_set_visible(w, TRUE);
-    verif_surface_->relayout();
+    main_app_->show_verif_banner(true);
+    main_app_surface_->relayout();
 }
 
 void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
 {
-    if (!verif_surface_ || !verif_shared_) return;
+    if (!main_app_ || !verif_shared_) return;
     verif_shared_->set_state(tesseract::views::VerificationBanner::State::Done);
-    GtkWidget* w = verif_surface_->widget();
-    gtk_widget_set_size_request(w, -1, 48);
-    verif_surface_->relayout();
+    main_app_surface_->relayout();
     // Hide after 1.5 s. The payload carries a liveness weak_ptr so a
     // window destroyed within that window doesn't get called on freed `this`.
     struct DoneData { MainWindow* w; std::weak_ptr<bool> alive; };
@@ -281,13 +231,11 @@ void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
 void MainWindow::handle_verification_cancelled_ui_(
     std::string /*flow_id*/, std::string reason)
 {
-    if (!verif_surface_ || !verif_shared_) return;
+    if (!main_app_ || !verif_shared_) return;
     verif_shared_->set_state(tesseract::views::VerificationBanner::State::Cancelled);
     verif_shared_->set_cancel_reason(std::move(reason));
-    GtkWidget* w = verif_surface_->widget();
-    gtk_widget_set_size_request(w, -1, 48);
-    gtk_widget_set_visible(w, TRUE);
-    verif_surface_->relayout();
+    main_app_->show_verif_banner(true);
+    main_app_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -367,174 +315,515 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // ---- Layout ----
-    // Top-level stack swaps between the inline login view and the main UI.
     content_stack_ = gtk_stack_new();
-    gtk_stack_set_transition_type(
-        GTK_STACK(content_stack_), GTK_STACK_TRANSITION_TYPE_NONE);
+    gtk_stack_set_transition_type(GTK_STACK(content_stack_), GTK_STACK_TRANSITION_TYPE_NONE);
     gtk_window_set_child(GTK_WINDOW(window_), content_stack_);
 
     login_view_ = std::make_unique<LoginView>();
     login_view_->set_on_success([this]() { on_login_succeeded(); });
     login_view_->set_on_cancel([this]() { on_login_cancelled(); });
-    gtk_stack_add_named(GTK_STACK(content_stack_),
-                        login_view_->widget(), "login");
+    gtk_stack_add_named(GTK_STACK(content_stack_), login_view_->widget(), "login");
 
-    GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    main_content_ = hbox;
-    GtkWidget* main_overlay = gtk_overlay_new();
-    gtk_overlay_set_child(GTK_OVERLAY(main_overlay), hbox);
-    gtk_stack_add_named(GTK_STACK(content_stack_), main_overlay, "main");
-
-    // Sidebar (nav bar + room list, wrapped in a vertical box)
-    GtkWidget* side_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_size_request(side_vbox, 260, -1);
-    gtk_widget_add_css_class(side_vbox, "sidebar");
-    gtk_box_append(GTK_BOX(hbox), side_vbox);
-
-    // Nav bar (hidden at root, shown when inside a space)
-    room_nav_bar_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_widget_set_margin_start(room_nav_bar_, 4);
-    gtk_widget_set_margin_end(room_nav_bar_, 4);
-    gtk_widget_set_margin_top(room_nav_bar_, 4);
-    gtk_widget_set_margin_bottom(room_nav_bar_, 4);
-    back_button_ = gtk_button_new_with_label("←");
-    space_name_lbl_ = gtk_label_new("");
-    gtk_label_set_ellipsize(GTK_LABEL(space_name_lbl_), PANGO_ELLIPSIZE_END);
-    gtk_widget_set_hexpand(space_name_lbl_, TRUE);
-    gtk_box_append(GTK_BOX(room_nav_bar_), back_button_);
-    gtk_box_append(GTK_BOX(room_nav_bar_), space_name_lbl_);
-    gtk_widget_set_visible(room_nav_bar_, FALSE);
-    g_signal_connect(back_button_, "clicked", G_CALLBACK(on_back_clicked_), this);
-    gtk_box_append(GTK_BOX(side_vbox), room_nav_bar_);
-
-    // Shared-toolkit room list. The Surface hosts a tk::Widget tree
-    // painted via Cairo + Pango; RoomListView inside owns the actual
-    // layout, selection state, and unread-badge rendering.
-    room_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    auto room_view_owner = std::make_unique<tesseract::views::RoomListView>();
-    room_list_view_ = room_view_owner.get();
-    room_list_view_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        });
-    room_list_view_->on_room_selected =
-        [this](const std::string& room_id) { on_room_selected(room_id); };
-    room_list_view_->on_scroll = [this] {
-        if (scroll_debounce_id_) {
-            g_source_remove(scroll_debounce_id_);
-            scroll_debounce_id_ = 0;
-        }
-        scroll_debounce_id_ = g_timeout_add(300, [](gpointer ud) -> gboolean {
-            auto* self = static_cast<MainWindow*>(ud);
-            self->scroll_debounce_id_ = 0;
-            if (!self->room_list_view_ || !self->client_) return G_SOURCE_REMOVE;
-            auto ids = self->room_list_view_->visible_room_ids();
-            self->client_->stop_background_backfill();
-            self->client_->start_background_backfill(ids);
-            return G_SOURCE_REMOVE;
-        }, this);
-    };
-    room_surface_->set_root(std::move(room_view_owner));
-
-    // Search field — host-overlaid NativeTextField (a GtkEntry under
-    // the hood) shown only when the list overflows the viewport; the
-    // RoomListView itself decides visibility in its arrange() pass.
-    room_search_field_ = room_surface_->host().make_text_field();
-    room_search_field_->set_placeholder("Search");
-    room_search_field_->set_visible(false);
-    room_search_field_->set_on_changed([this](const std::string& q) {
-        search_pending_text_ = q;
-        if (search_debounce_id_) {
-            g_source_remove(search_debounce_id_);
-            search_debounce_id_ = 0;
-        }
-        search_debounce_id_ = g_timeout_add(500, [](gpointer ud) -> gboolean {
-            auto* self = static_cast<MainWindow*>(ud);
-            self->search_debounce_id_ = 0;
-            if (self->room_list_view_)
-                self->room_list_view_->set_search_text(self->search_pending_text_);
-            self->refresh_room_list();
-            return G_SOURCE_REMOVE;
-        }, this);
-    });
-    room_surface_->set_on_layout([this] {
-        if (!room_list_view_ || !room_search_field_) return;
-        bool visible = room_list_view_->search_field_visible();
-        room_search_field_->set_visible(visible);
-        if (visible) {
-            room_search_field_->set_rect(
-                room_list_view_->search_field_rect());
-        }
-    });
-    room_list_view_->on_search_clear = [this] {
-        if (search_debounce_id_) {
-            g_source_remove(search_debounce_id_);
-            search_debounce_id_ = 0;
-        }
-        search_pending_text_.clear();
-        room_search_field_->set_text("");
-        room_list_view_->set_search_text("");
-        refresh_room_list();
-    };
-    room_list_view_->on_join_room_requested = [this] { open_join_room_dialog(); };
-
-    GtkWidget* room_surface_widget = room_surface_->widget();
-    gtk_widget_set_vexpand(room_surface_widget, TRUE);
-    gtk_widget_set_hexpand(room_surface_widget, TRUE);
-    gtk_box_append(GTK_BOX(side_vbox), room_surface_widget);
-
-    // ---- User identity strip (sidebar footer) ----
-    user_strip_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_add_css_class(user_strip_, "user-strip");
-    gtk_widget_set_margin_start(user_strip_, 8);
-    gtk_widget_set_margin_end(user_strip_,   8);
-    gtk_widget_set_margin_top(user_strip_,   6);
-    gtk_widget_set_margin_bottom(user_strip_, 6);
-    gtk_widget_set_visible(user_strip_, FALSE);
+    // Single surface hosting the full main-app widget tree.
+    main_app_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     {
-        user_avatar_img_ = gtk_image_new();
-        gtk_widget_set_size_request(user_avatar_img_, 32, 32);
-        gtk_image_set_pixel_size(GTK_IMAGE(user_avatar_img_), 32);
-        gtk_box_append(GTK_BOX(user_strip_), user_avatar_img_);
+        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>();
+        main_app_       = main_app_owner.get();
+        room_list_view_ = main_app_->room_list_view();
+        room_view_       = main_app_->room_view();
+        recovery_shared_ = main_app_->recovery_banner();
+        verif_shared_    = main_app_->verif_banner();
+        img_viewer_      = main_app_->image_viewer();
+        vid_viewer_      = main_app_->video_viewer();
 
-        // Name + Matrix ID stacked vertically.
-        GtkWidget* name_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
-        gtk_widget_set_hexpand(name_vbox, TRUE);
+        // Wire UserInfo callbacks (replaces native GTK user-strip gestures).
+        main_app_->user_info()->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        main_app_->user_info()->on_primary = [this](tk::Point world) {
+            open_account_picker(world.x, world.y);
+        };
+        main_app_->user_info()->on_secondary = [this](tk::Point world) {
+            if (!user_popover_) return;
+            GdkRectangle r = { static_cast<int>(world.x), static_cast<int>(world.y), 1, 1 };
+            gtk_popover_set_pointing_to(GTK_POPOVER(user_popover_), &r);
+            gtk_popover_popup(GTK_POPOVER(user_popover_));
+        };
 
-        user_name_lbl_ = gtk_label_new("");
-        gtk_label_set_xalign(GTK_LABEL(user_name_lbl_), 0.0f);
-        gtk_label_set_ellipsize(GTK_LABEL(user_name_lbl_), PANGO_ELLIPSIZE_END);
-        gtk_box_append(GTK_BOX(name_vbox), user_name_lbl_);
+        // Space nav back button.
+        main_app_->on_space_back = [this] {
+            if (!space_stack_.empty()) space_stack_.pop_back();
+            refresh_room_list();
+        };
 
-        user_id_lbl_ = gtk_label_new("");
-        gtk_label_set_xalign(GTK_LABEL(user_id_lbl_), 0.0f);
-        gtk_label_set_ellipsize(GTK_LABEL(user_id_lbl_), PANGO_ELLIPSIZE_END);
-        gtk_widget_add_css_class(user_id_lbl_, "timestamp");  // smaller, muted
-        gtk_box_append(GTK_BOX(name_vbox), user_id_lbl_);
+        // Wire RoomListView callbacks.
+        room_list_view_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        room_list_view_->on_room_selected =
+            [this](const std::string& room_id) { on_room_selected(room_id); };
+        room_list_view_->on_scroll = [this] {
+            if (scroll_debounce_id_) {
+                g_source_remove(scroll_debounce_id_);
+                scroll_debounce_id_ = 0;
+            }
+            scroll_debounce_id_ = g_timeout_add(300, [](gpointer ud) -> gboolean {
+                auto* self = static_cast<MainWindow*>(ud);
+                self->scroll_debounce_id_ = 0;
+                if (!self->room_list_view_ || !self->client_) return G_SOURCE_REMOVE;
+                auto ids = self->room_list_view_->visible_room_ids();
+                self->client_->stop_background_backfill();
+                self->client_->start_background_backfill(ids);
+                return G_SOURCE_REMOVE;
+            }, this);
+        };
+        room_list_view_->on_search_clear = [this] {
+            if (search_debounce_id_) {
+                g_source_remove(search_debounce_id_);
+                search_debounce_id_ = 0;
+            }
+            search_pending_text_.clear();
+            if (room_search_field_) room_search_field_->set_text("");
+            room_list_view_->set_search_text("");
+            refresh_room_list();
+        };
+        room_list_view_->on_join_room_requested = [this] { open_join_room_dialog(); };
 
-        gtk_box_append(GTK_BOX(user_strip_), name_vbox);
+        // Wire RoomView callbacks.
+        room_view_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+        room_view_->set_image_provider(
+            [this](const std::string& mxc) -> const tk::Image* {
+                if (const auto* f = anim_cache_.current_frame(mxc)) return f;
+                auto it = tk_images_.find(mxc);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        room_view_->set_preview_provider(
+            [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+                auto it = url_preview_data_.find(url);
+                if (it == url_preview_data_.end()) return nullptr;
+                if (!it->second.image_mxc.empty()
+                    && !tk_images_.count(it->second.image_mxc)
+                    && !anim_cache_.has(it->second.image_mxc))
+                    ensure_media_image_(it->second.image_mxc, 64, 64);
+                return &it->second;
+            });
+        if (auto player = main_app_surface_->host().make_audio_player())
+            room_view_->set_audio_player(std::move(player));
+        room_view_->set_voice_bytes_provider(
+            [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+                return client_->fetch_source_bytes(source_json);
+            });
+        {
+            tk::gtk4::Surface* sfp = main_app_surface_.get();
+            room_view_->set_repaint_requester([sfp]() {
+                if (sfp) gtk_widget_queue_draw(sfp->widget());
+            });
+        }
 
-        // Left-click → account picker (only when ≥2 accounts).
-        GtkGesture* lclick = gtk_gesture_click_new();
-        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(lclick), GDK_BUTTON_PRIMARY);
-        g_signal_connect(lclick, "pressed",
-                         G_CALLBACK(on_user_strip_left_click_), this);
-        gtk_widget_add_controller(user_strip_, GTK_EVENT_CONTROLLER(lclick));
+        // Compose text area overlay.
+        room_text_area_ = main_app_surface_->host().make_text_area();
+        room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
+        room_text_area_->set_on_changed([this](const std::string& s) {
+            handle_compose_text_changed_(s);
+            room_view_->set_current_text(s);
+        });
+        room_text_area_->set_on_submit([this] { on_send_clicked(); });
+        room_text_area_->set_on_height_changed([this](float h) {
+            room_view_->set_text_area_natural_height(h);
+            main_app_surface_->relayout();
+        });
+        room_text_area_->set_on_image_paste(
+            [this](std::vector<std::uint8_t> bytes, std::string mime) {
+                if (room_view_)
+                    room_view_->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime));
+            });
 
-        // Right-click gesture → popover menu.
-        GtkGesture* gesture = gtk_gesture_click_new();
-        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
-        g_signal_connect(gesture, "pressed",
-                         G_CALLBACK(on_user_strip_right_click_), this);
-        gtk_widget_add_controller(user_strip_, GTK_EVENT_CONTROLLER(gesture));
+        // File drop.
+        auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
+                                   std::string mime,
+                                   std::string filename) {
+            if (!room_view_) return;
+            const auto limit = client_->media_upload_limit();
+            if (limit > 0 && bytes.size() > limit) {
+                if (status_bar_) {
+                    std::string msg = std::string(_("File exceeds server limit ("))
+                                    + tesseract::views::format_size(limit) + ")";
+                    gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+                }
+                return;
+            }
+            if (mime.rfind("image/", 0) == 0)
+                room_view_->compose_bar()->set_pending_image(
+                    std::move(bytes), std::move(mime), std::move(filename));
+            else
+                room_view_->compose_bar()->set_pending_file(
+                    std::move(bytes), std::move(mime), std::move(filename));
+        };
+        main_app_surface_->set_on_file_drop(on_file_drop);
 
-        // Build the GMenu model + GSimpleActionGroup once.
+        room_view_->on_layout_changed = [this] { main_app_surface_->relayout(); };
+
+        room_view_->on_send = [this](const std::string& body) {
+            if (current_room_id_.empty()) return;
+            auto l = body.find_first_not_of(" \t\n\r");
+            auto r = body.find_last_not_of(" \t\n\r");
+            if (l == std::string::npos) return;
+            std::string trimmed = body.substr(l, r - l + 1);
+            if (trimmed.empty()) return;
+            auto md = tesseract::views::markdown_to_html(trimmed);
+            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+            }
+        };
+        room_view_->on_send_reply = [this](const std::string& reply_event_id,
+                                            const std::string& body) {
+            if (body.empty() || current_room_id_.empty()) return;
+            auto md = tesseract::views::markdown_to_html(body);
+            auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+            } else if (status_bar_) {
+                std::string msg = std::string(_("Send reply failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+        };
+        room_view_->on_send_edit = [this](const std::string& event_id,
+                                           const std::string& new_body) {
+            if (new_body.empty() || current_room_id_.empty()) return;
+            auto md = tesseract::views::markdown_to_html(new_body);
+            auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+            } else if (status_bar_) {
+                std::string msg = std::string(_("Edit failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+        };
+        room_view_->on_send_image = [this](std::vector<std::uint8_t> bytes,
+                                            std::string mime,
+                                            std::string filename,
+                                            std::string caption,
+                                            int /*src_w*/, int /*src_h*/,
+                                            std::string reply_event_id) {
+            if (current_room_id_.empty()) return;
+            const bool compress =
+                tesseract::Settings::instance().image_quality
+                == tesseract::Settings::ImageQuality::Compressed;
+            auto enc = main_app_surface_->host().encode_for_send(
+                bytes.data(), bytes.size(), compress);
+            if (enc.bytes.empty()) return;
+            std::string out_name = filename;
+            if (enc.mime == "image/jpeg") {
+                auto dot = out_name.find_last_of('.');
+                if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+                out_name += ".jpg";
+            }
+            auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                            out_name, caption,
+                                            enc.width, enc.height, reply_event_id);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+            }
+        };
+        room_view_->on_send_file = [this](std::vector<std::uint8_t> bytes,
+                                           std::string mime,
+                                           std::string filename,
+                                           std::string caption,
+                                           std::string reply_event_id) {
+            if (current_room_id_.empty()) return;
+            auto res = client_->send_file(current_room_id_, bytes, mime,
+                                          filename, caption, reply_event_id);
+            if (res) {
+                if (room_text_area_) room_text_area_->set_text("");
+                room_view_->clear_compose_text();
+            } else if (status_bar_) {
+                std::string msg = std::string(_("Send file failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+        };
+        room_view_->on_edit_cancelled = [this] {
+            if (room_text_area_) room_text_area_->set_text("");
+            room_view_->clear_compose_text();
+        };
+        room_view_->on_reply_focus = [this] {
+            if (room_text_area_) room_text_area_->set_focused(true);
+        };
+        room_view_->on_edit_prefill = [this](const std::string& body) {
+            if (room_text_area_) {
+                room_text_area_->set_text(body);
+                room_view_->set_current_text(body);
+                room_text_area_->set_focused(true);
+            }
+        };
+        room_view_->on_delete_requested = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            client_->redact_event(current_room_id_, event_id);
+        };
+        room_view_->on_reaction_toggled =
+            [this](const std::string& event_id, const std::string& key) {
+                if (current_room_id_.empty()) return;
+                client_->send_reaction(current_room_id_, event_id, key);
+            };
+        room_view_->on_add_reaction_requested =
+            [this](const std::string& event_id, tk::Rect anchor) {
+                if (!emoji_popover_ || current_room_id_.empty()) return;
+                pending_reaction_event_id_ = event_id;
+                popup_emoji_at_rect(main_app_surface_->widget(), anchor);
+            };
+        room_view_->on_link_clicked = [](const std::string& url) {
+            tesseract::Client::open_in_browser(url);
+        };
+        room_view_->on_link_hovered = [this](const std::string& url) {
+            GtkWidget* w = main_app_surface_->widget();
+            gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
+        };
+        room_view_->on_receipt_needed = [this](const std::string& eid) {
+            maybe_send_read_receipt_(current_room_id_, eid);
+        };
+        room_view_->on_near_top = [this] {
+            if (current_room_id_.empty()) return;
+            request_more_history(current_room_id_);
+        };
+        room_view_->on_near_bottom = [this] {
+            if (!current_room_id_.empty()) request_forward_history_(current_room_id_);
+        };
+        room_view_->on_return_to_live = [this] {
+            if (!current_room_id_.empty()) return_to_live_(current_room_id_);
+        };
+        room_view_->on_scroll_to_original = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            std::string room = current_room_id_;
+            begin_focused_subscription_(room, event_id);
+            run_async_([this, room, event_id] {
+                client_->subscribe_room_at(room, event_id);
+            });
+        };
+        room_view_->on_jump_to_date_requested = [this] {
+            open_jump_to_date_dialog();
+        };
+        room_view_->on_emoji = [this](tk::Rect btn) {
+            if (!emoji_popover_) return;
+            if (gtk_widget_get_visible(emoji_popover_))
+                gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+            else
+                popup_emoji_at_rect(main_app_surface_->widget(), btn);
+        };
+        room_view_->on_sticker = [this](tk::Rect btn) {
+            if (!sticker_popover_) return;
+            if (gtk_widget_get_visible(sticker_popover_))
+                gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+            else
+                popup_sticker_at_rect(main_app_surface_->widget(), btn);
+        };
+
+        // Image viewer.
+        img_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                if (const auto* f = anim_cache_.current_frame(url)) return f;
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        img_viewer_->on_close = [this] {
+            main_app_->show_image_viewer(false);
+            main_app_surface_->relayout();
+        };
+
+        room_view_->on_image_clicked =
+            [this](const tesseract::views::MessageListView::ImageHit& hit) {
+                img_viewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
+                main_app_->show_image_viewer(true);
+                main_app_surface_->relayout();
+                gtk_widget_grab_focus(main_app_surface_->widget());
+            };
+
+        // Video viewer.
+        vid_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
+        vid_viewer_->set_video_player(main_app_surface_->host().make_video_player());
+        vid_viewer_->set_repaint_requester([this] {
+            if (main_app_surface_) main_app_surface_->relayout();
+        });
+        vid_viewer_->on_close = [this] {
+            main_app_->show_video_viewer(false);
+            main_app_surface_->relayout();
+        };
+
+        room_view_->on_video_clicked =
+            [this](const tesseract::views::MessageListView::VideoHit& hit) {
+                vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                                 hit.duration_ms, hit.natural_w, hit.natural_h,
+                                 hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
+                main_app_->show_video_viewer(true);
+                main_app_surface_->relayout();
+                gtk_widget_grab_focus(main_app_surface_->widget());
+                std::string src = hit.source_json;
+                run_async_([this, src = std::move(src)]() mutable {
+                    auto bytes = client_->fetch_source_bytes(src);
+                    struct Ctx { MainWindow* self; std::vector<uint8_t> bytes; };
+                    auto* ctx = new Ctx{ this, std::move(bytes) };
+                    g_idle_add([](gpointer p) -> gboolean {
+                        auto* c = static_cast<Ctx*>(p);
+                        if (c->self->vid_viewer_)
+                            c->self->vid_viewer_->load_bytes(c->bytes.data(), c->bytes.size());
+                        delete c;
+                        return G_SOURCE_REMOVE;
+                    }, ctx);
+                });
+            };
+
+        room_view_->set_video_player_factory(
+            [this]() { return main_app_surface_->host().make_video_player(); });
+        room_view_->set_video_fetch_provider(
+            [this](const std::string& src,
+                   std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
+                    auto bytes = client_->fetch_source_bytes(src);
+                    struct Ctx {
+                        std::function<void(std::vector<std::uint8_t>)> cb;
+                        std::vector<std::uint8_t> bytes;
+                    };
+                    auto* ctx = new Ctx{ std::move(on_ready), std::move(bytes) };
+                    g_idle_add([](gpointer p) -> gboolean {
+                        auto* c = static_cast<Ctx*>(p);
+                        c->cb(std::move(c->bytes));
+                        delete c;
+                        return G_SOURCE_REMOVE;
+                    }, ctx);
+                });
+            });
+
+        // Recovery banner callbacks.
+        recovery_shared_->on_verify = [this](const std::string& /*key*/) {
+            on_recovery_verify_clicked_(nullptr, this);
+        };
+        recovery_shared_->on_dismiss = [this] {
+            on_recovery_dismiss_clicked_(nullptr, this);
+        };
+
+        // Verification banner callbacks.
+        verif_shared_->on_verify = [this] {
+            if (client_) client_->request_self_verification();
+        };
+        verif_shared_->on_accept = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                client_->accept_verification(active_verification_flow_id_);
+                client_->start_sas(active_verification_flow_id_);
+            }
+        };
+        verif_shared_->on_match = [this] {
+            if (client_ && !active_verification_flow_id_.empty()) {
+                if (verif_shared_)
+                    verif_shared_->set_state(
+                        tesseract::views::VerificationBanner::State::Confirming);
+                main_app_surface_->relayout();
+                client_->confirm_sas(active_verification_flow_id_);
+            }
+        };
+        verif_shared_->on_mismatch = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_cancel = [this] {
+            if (client_ && !active_verification_flow_id_.empty())
+                client_->cancel_verification(active_verification_flow_id_);
+        };
+        verif_shared_->on_dismiss = [this] {
+            verification_banner_dismissed_ = true;
+            main_app_->show_verif_banner(false);
+            main_app_surface_->relayout();
+        };
+        verif_shared_->on_done = [this] {
+            main_app_->show_verif_banner(false);
+            main_app_surface_->relayout();
+        };
+        verif_shared_->on_use_recovery_key = [this] {
+            main_app_->show_verif_banner(false);
+            main_app_surface_->relayout();
+            maybe_show_recovery_banner();
+        };
+
+        // Room search field overlay.
+        room_search_field_ = main_app_surface_->host().make_text_field();
+        room_search_field_->set_placeholder("Search");
+        room_search_field_->set_visible(false);
+        room_search_field_->set_on_changed([this](const std::string& q) {
+            search_pending_text_ = q;
+            if (search_debounce_id_) {
+                g_source_remove(search_debounce_id_);
+                search_debounce_id_ = 0;
+            }
+            search_debounce_id_ = g_timeout_add(500, [](gpointer ud) -> gboolean {
+                auto* self = static_cast<MainWindow*>(ud);
+                self->search_debounce_id_ = 0;
+                if (self->room_list_view_)
+                    self->room_list_view_->set_search_text(self->search_pending_text_);
+                self->refresh_room_list();
+                return G_SOURCE_REMOVE;
+            }, this);
+        });
+
+        // Recovery key field overlay.
+        recovery_key_field_ = main_app_surface_->host().make_text_field();
+        recovery_key_field_->set_placeholder(_("Recovery key or passphrase"));
+        recovery_key_field_->set_password(true);
+        recovery_key_field_->set_on_changed([this](const std::string& k) {
+            if (recovery_shared_) recovery_shared_->set_current_key(k);
+        });
+        recovery_key_field_->set_on_submit([this] {
+            on_recovery_verify_clicked_(nullptr, this);
+        });
+
+        // Unified layout callback — positions all 3 native overlays.
+        main_app_surface_->set_on_layout([this] {
+            if (!main_app_) return;
+
+            bool search_visible = main_app_->room_search_field_visible();
+            if (room_search_field_) {
+                room_search_field_->set_visible(search_visible);
+                if (search_visible)
+                    room_search_field_->set_rect(main_app_->room_search_field_rect());
+            }
+
+            if (room_text_area_)
+                room_text_area_->set_rect(main_app_->compose_text_area_rect());
+
+            if (recovery_key_field_) {
+                bool rec_visible = main_app_->recovery_key_field_visible();
+                recovery_key_field_->set_visible(rec_visible);
+                if (rec_visible)
+                    recovery_key_field_->set_rect(main_app_->recovery_key_field_rect());
+            }
+        });
+
+        main_app_surface_->set_root(std::move(main_app_owner));
+    }
+
+    // User context menu (right-click on user strip) — parented to main_app_surface_
+    // so it can float anywhere in the window. Position is set via pointing_to in
+    // UserInfo::on_secondary.
+    {
         GMenu* menu = g_menu_new();
         g_menu_append(menu, _("Add Account\xe2\x80\xa6"), "user.add_account");
         g_menu_append(menu, _("Log Out"), "user.logout");
         user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
-        gtk_widget_set_parent(user_popover_, user_strip_);
+        gtk_widget_set_parent(user_popover_, main_app_surface_->widget());
         gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
         g_object_unref(menu);
 
@@ -551,509 +840,25 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
             g_object_unref(act);
         }
-        gtk_widget_insert_action_group(user_strip_, "user", G_ACTION_GROUP(group));
+        gtk_widget_insert_action_group(main_app_surface_->widget(), "user", G_ACTION_GROUP(group));
         g_object_unref(group);
     }
-    gtk_box_append(GTK_BOX(side_vbox), user_strip_);
 
-    // 1px vertical separator between sidebar and chat area. A dedicated
-    // widget is used instead of the sidebar's CSS `border-right`, because
-    // the scrolled-window's own background paints over the parent border.
-    GtkWidget* side_separator =
-        gtk_separator_new(GTK_ORIENTATION_VERTICAL);
-    gtk_widget_add_css_class(side_separator, "sidebar-separator");
-    gtk_box_append(GTK_BOX(hbox), side_separator);
-
-    // Chat area
-    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_hexpand(vbox, TRUE);
-    gtk_box_append(GTK_BOX(hbox), vbox);
-
-
-    // Recovery banner — shared widget on a tk::gtk4::Surface. Hidden
-    // until needs_recovery() is true; surfaced via maybe_show_recovery_banner.
-    recovery_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    {
-        auto banner = std::make_unique<tesseract::views::RecoveryBanner>();
-        recovery_shared_ = banner.get();
-        recovery_shared_->on_verify = [this](const std::string& /*key*/) {
-            on_recovery_verify_clicked_(nullptr, this);
-        };
-        recovery_shared_->on_dismiss = [this] {
-            on_recovery_dismiss_clicked_(nullptr, this);
-        };
-        recovery_surface_->set_root(std::move(banner));
-
-        recovery_key_field_ = recovery_surface_->host().make_text_field();
-        recovery_key_field_->set_placeholder(_("Recovery key or passphrase"));
-        recovery_key_field_->set_password(true);
-        recovery_key_field_->set_on_changed([this](const std::string& k) {
-            if (recovery_shared_) recovery_shared_->set_current_key(k);
-        });
-        recovery_key_field_->set_on_submit([this] {
-            on_recovery_verify_clicked_(nullptr, this);
-        });
-        recovery_surface_->set_on_layout([this] {
-            if (!recovery_shared_ || !recovery_key_field_) return;
-            recovery_key_field_->set_visible(
-                recovery_shared_->recovery_key_field_visible());
-            recovery_key_field_->set_rect(
-                recovery_shared_->recovery_key_field_rect());
-        });
-    }
-    GtkWidget* recovery_widget = recovery_surface_->widget();
-    gtk_widget_set_size_request(recovery_widget, -1, 48);
-    gtk_widget_set_visible(recovery_widget, FALSE);
-    gtk_box_append(GTK_BOX(vbox), recovery_widget);
-
-    // Verification banner — inline strip shown when the device is unverified.
-    verif_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    {
-        auto banner = std::make_unique<tesseract::views::VerificationBanner>();
-        verif_shared_ = banner.get();
-        verif_shared_->on_verify = [this] {
-            if (client_) client_->request_self_verification();
-        };
-        verif_shared_->on_accept = [this] {
-            if (client_ && !active_verification_flow_id_.empty()) {
-                client_->accept_verification(active_verification_flow_id_);
-                client_->start_sas(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_match = [this] {
-            if (client_ && !active_verification_flow_id_.empty()) {
-                if (verif_shared_)
-                    verif_shared_->set_state(
-                        tesseract::views::VerificationBanner::State::Confirming);
-                verif_surface_->relayout();
-                client_->confirm_sas(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_mismatch = [this] {
-            if (client_ && !active_verification_flow_id_.empty())
-                client_->cancel_verification(active_verification_flow_id_);
-        };
-        verif_shared_->on_cancel = [this] {
-            if (client_ && !active_verification_flow_id_.empty())
-                client_->cancel_verification(active_verification_flow_id_);
-        };
-        verif_shared_->on_dismiss = [this] {
-            verification_banner_dismissed_ = true;
-            if (verif_surface_)
-                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
-        };
-        verif_shared_->on_done = [this] {
-            if (verif_surface_)
-                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
-        };
-        verif_shared_->on_use_recovery_key = [this] {
-            if (verif_surface_)
-                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
-            maybe_show_recovery_banner();
-        };
-        verif_surface_->set_root(std::move(banner));
-    }
-    {
-        GtkWidget* w = verif_surface_->widget();
-        gtk_widget_set_size_request(w, -1, 48);
-        gtk_widget_set_visible(w, FALSE);
-        gtk_box_append(GTK_BOX(vbox), w);
-    }
-
-    // Combined room-chat surface: RoomHeader + MessageListView + typing strip +
-    // ComposeBar. RoomView owns all three sub-widgets on a single Surface.
-    chat_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    auto chat_view_owner = std::make_unique<tesseract::views::RoomView>();
-    room_view_ = chat_view_owner.get();
-    room_view_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        });
-    room_view_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
-            if (const auto* f = anim_cache_.current_frame(mxc)) return f;
-            auto it = tk_images_.find(mxc);
-            return it == tk_images_.end() ? nullptr : it->second.get();
-        });
-    room_view_->set_preview_provider(
-        [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
-            auto it = url_preview_data_.find(url);
-            if (it == url_preview_data_.end()) return nullptr;
-            if (!it->second.image_mxc.empty()
-                && !tk_images_.count(it->second.image_mxc)
-                && !anim_cache_.has(it->second.image_mxc))
-                ensure_media_image_(it->second.image_mxc, 64, 64);
-            return &it->second;
-        });
-    if (auto player = chat_surface_->host().make_audio_player())
-        room_view_->set_audio_player(std::move(player));
-    room_view_->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return client_->fetch_source_bytes(source_json);
-        });
-    {
-        tk::gtk4::Surface* sfp = chat_surface_.get();
-        room_view_->set_repaint_requester([sfp]() {
-            if (sfp) gtk_widget_queue_draw(sfp->widget());
-        });
-    }
-    chat_surface_->set_root(std::move(chat_view_owner));
-
-    room_text_area_ = chat_surface_->host().make_text_area();
-    room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
-    room_text_area_->set_on_changed([this](const std::string& s) {
-        handle_compose_text_changed_(s);
-        room_view_->set_current_text(s);
-    });
-    room_text_area_->set_on_submit([this] { on_send_clicked(); });
-    room_text_area_->set_on_height_changed([this](float h) {
-        room_view_->set_text_area_natural_height(h);
-        chat_surface_->relayout();
-    });
-    room_text_area_->set_on_image_paste(
-        [this](std::vector<std::uint8_t> bytes, std::string mime) {
-            if (room_view_)
-                room_view_->compose_bar()->set_pending_image(
-                    std::move(bytes), std::move(mime));
-        });
-
-    auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
-                               std::string mime,
-                               std::string filename) {
-        if (!room_view_) return;
-        const auto limit = client_->media_upload_limit();
-        if (limit > 0 && bytes.size() > limit) {
-            if (status_bar_) {
-                std::string msg = std::string(_("File exceeds server limit ("))
-                                + tesseract::views::format_size(limit) + ")";
-                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-            }
-            return;
-        }
-        if (mime.rfind("image/", 0) == 0)
-            room_view_->compose_bar()->set_pending_image(
-                std::move(bytes), std::move(mime), std::move(filename));
-        else
-            room_view_->compose_bar()->set_pending_file(
-                std::move(bytes), std::move(mime), std::move(filename));
-    };
-    chat_surface_->set_on_file_drop(on_file_drop);
-    chat_surface_->set_on_layout([this] {
-        if (room_view_ && room_text_area_)
-            room_text_area_->set_rect(room_view_->compose_text_area_rect());
-    });
-
-    room_view_->on_layout_changed = [this] { chat_surface_->relayout(); };
-
-    room_view_->on_send = [this](const std::string& body) {
-        if (current_room_id_.empty()) return;
-        auto l = body.find_first_not_of(" \t\n\r");
-        auto r = body.find_last_not_of(" \t\n\r");
-        if (l == std::string::npos) return;
-        std::string trimmed = body.substr(l, r - l + 1);
-        if (trimmed.empty()) return;
-        auto md = tesseract::views::markdown_to_html(trimmed);
-        auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
-        if (res) {
-            if (room_text_area_) room_text_area_->set_text("");
-            room_view_->clear_compose_text();
-        }
-    };
-
-    room_view_->on_send_reply = [this](const std::string& reply_event_id,
-                                        const std::string& body) {
-        if (body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(body);
-        auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
-        if (res) {
-            if (room_text_area_) room_text_area_->set_text("");
-            room_view_->clear_compose_text();
-        } else if (status_bar_) {
-            std::string msg = std::string(_("Send reply failed: ")) + res.message;
-            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-        }
-    };
-
-    room_view_->on_send_edit = [this](const std::string& event_id,
-                                       const std::string& new_body) {
-        if (new_body.empty() || current_room_id_.empty()) return;
-        auto md = tesseract::views::markdown_to_html(new_body);
-        auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
-        if (res) {
-            if (room_text_area_) room_text_area_->set_text("");
-            room_view_->clear_compose_text();
-        } else if (status_bar_) {
-            std::string msg = std::string(_("Edit failed: ")) + res.message;
-            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-        }
-    };
-
-    room_view_->on_send_image = [this](std::vector<std::uint8_t> bytes,
-                                        std::string mime,
-                                        std::string filename,
-                                        std::string caption,
-                                        int /*src_w*/, int /*src_h*/,
-                                        std::string reply_event_id) {
-        if (current_room_id_.empty()) return;
-        const bool compress =
-            tesseract::Settings::instance().image_quality
-            == tesseract::Settings::ImageQuality::Compressed;
-        auto enc = chat_surface_->host().encode_for_send(
-            bytes.data(), bytes.size(), compress);
-        if (enc.bytes.empty()) return;
-        std::string out_name = filename;
-        if (enc.mime == "image/jpeg") {
-            auto dot = out_name.find_last_of('.');
-            if (dot != std::string::npos) out_name = out_name.substr(0, dot);
-            out_name += ".jpg";
-        }
-        auto res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
-                                        out_name, caption,
-                                        enc.width, enc.height, reply_event_id);
-        if (res) {
-            if (room_text_area_) room_text_area_->set_text("");
-            room_view_->clear_compose_text();
-        }
-    };
-
-    room_view_->on_send_file = [this](std::vector<std::uint8_t> bytes,
-                                       std::string mime,
-                                       std::string filename,
-                                       std::string caption,
-                                       std::string reply_event_id) {
-        if (current_room_id_.empty()) return;
-        auto res = client_->send_file(current_room_id_, bytes, mime,
-                                      filename, caption, reply_event_id);
-        if (res) {
-            if (room_text_area_) room_text_area_->set_text("");
-            room_view_->clear_compose_text();
-        } else if (status_bar_) {
-            std::string msg = std::string(_("Send file failed: ")) + res.message;
-            gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
-        }
-    };
-
-    room_view_->on_edit_cancelled = [this] {
-        if (room_text_area_) room_text_area_->set_text("");
-        room_view_->clear_compose_text();
-    };
-
-    room_view_->on_reply_focus = [this] {
-        if (room_text_area_) room_text_area_->set_focused(true);
-    };
-
-    room_view_->on_edit_prefill = [this](const std::string& body) {
-        if (room_text_area_) {
-            room_text_area_->set_text(body);
-            room_view_->set_current_text(body);
-            room_text_area_->set_focused(true);
-        }
-    };
-
-    room_view_->on_delete_requested = [this](const std::string& event_id) {
-        if (current_room_id_.empty()) return;
-        client_->redact_event(current_room_id_, event_id);
-    };
-
-    room_view_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key) {
-            if (current_room_id_.empty()) return;
-            client_->send_reaction(current_room_id_, event_id, key);
-        };
-
-    room_view_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor) {
-            if (!emoji_popover_ || current_room_id_.empty()) return;
-            pending_reaction_event_id_ = event_id;
-            popup_emoji_at_rect(chat_surface_->widget(), anchor);
-        };
-
-    room_view_->on_link_clicked = [](const std::string& url) {
-        tesseract::Client::open_in_browser(url);
-    };
-    room_view_->on_link_hovered = [this](const std::string& url) {
-        GtkWidget* w = chat_surface_->widget();
-        gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
-    };
-
-    room_view_->on_receipt_needed = [this](const std::string& eid) {
-        maybe_send_read_receipt_(current_room_id_, eid);
-    };
-
-    room_view_->on_near_top = [this] {
-        if (current_room_id_.empty()) return;
-        request_more_history(current_room_id_);
-    };
-    room_view_->on_near_bottom = [this] {
-        if (!current_room_id_.empty()) request_forward_history_(current_room_id_);
-    };
-    room_view_->on_return_to_live = [this] {
-        if (!current_room_id_.empty()) return_to_live_(current_room_id_);
-    };
-    room_view_->on_scroll_to_original = [this](const std::string& event_id) {
-        if (current_room_id_.empty()) return;
-        std::string room = current_room_id_;
-        begin_focused_subscription_(room, event_id);
-        run_async_([this, room, event_id] {
-            client_->subscribe_room_at(room, event_id);
-        });
-    };
-    room_view_->on_jump_to_date_requested = [this] {
-        open_jump_to_date_dialog();
-    };
-
-    room_view_->on_emoji   = [this](tk::Rect btn) {
-        if (!emoji_popover_) return;
-        if (gtk_widget_get_visible(emoji_popover_))
-            gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
-        else
-            popup_emoji_at_rect(chat_surface_->widget(), btn);
-    };
-    room_view_->on_sticker = [this](tk::Rect btn) {
-        if (!sticker_popover_) return;
-        if (gtk_widget_get_visible(sticker_popover_))
-            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
-        else
-            popup_sticker_at_rect(chat_surface_->widget(), btn);
-    };
-
-    GtkWidget* chat_widget = chat_surface_->widget();
-    gtk_widget_set_vexpand(chat_widget, TRUE);
-    gtk_widget_set_hexpand(chat_widget, TRUE);
-    gtk_box_append(GTK_BOX(vbox), chat_widget);
-
-    // Lazily build the picker — the popover is parented to the compose
-    // surface widget. Recents live in account-data now
-    // (io.element.recent_emoji); no local-disk load.
-    build_emoji_popover();
-    build_sticker_popover();
-    build_sticker_context_menu();
-    build_join_room_dialog();
-
-    // Right-click on the chat surface: hit-test sticker rects and
-    // pop the context menu. Gesture is added after chat_surface_ +
-    // sticker_ctx_menu_ both exist.
+    // Right-click on the chat area: hit-test sticker rects.
     {
         GtkGesture* gesture = gtk_gesture_click_new();
-        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
-                                       GDK_BUTTON_SECONDARY);
-        g_signal_connect(gesture, "pressed",
-                         G_CALLBACK(on_msg_right_click_), this);
-        gtk_widget_add_controller(chat_surface_->widget(),
-                                   GTK_EVENT_CONTROLLER(gesture));
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
+        g_signal_connect(gesture, "pressed", G_CALLBACK(on_msg_right_click_), this);
+        gtk_widget_add_controller(main_app_surface_->widget(), GTK_EVENT_CONTROLLER(gesture));
     }
 
-    // Image / sticker lightbox overlay — an extra GtkOverlay child that
-    // paints a dark backdrop + the selected image over the entire main area.
-    // Shown on `on_image_clicked`, hidden on `on_close` or Escape.
-    {
-        img_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light(),
-                                                                   /*transparent=*/true);
-        auto img_viewer_owner = std::make_unique<tesseract::views::ImageViewerOverlay>();
-        img_viewer_ = img_viewer_owner.get();
-        img_viewer_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image* {
-                if (const auto* f = anim_cache_.current_frame(url)) return f;
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
-        img_viewer_->on_close = [this] {
-            if (img_viewer_surface_)
-                gtk_widget_set_visible(img_viewer_surface_->widget(), FALSE);
-        };
-        img_viewer_surface_->set_root(std::move(img_viewer_owner));
+    GtkWidget* main_widget = main_app_surface_->widget();
+    gtk_widget_set_hexpand(main_widget, TRUE);
+    gtk_widget_set_vexpand(main_widget, TRUE);
+    gtk_stack_add_named(GTK_STACK(content_stack_), main_widget, "main");
 
-        GtkWidget* overlay_widget = img_viewer_surface_->widget();
-        gtk_widget_set_hexpand(overlay_widget, TRUE);
-        gtk_widget_set_vexpand(overlay_widget, TRUE);
-        gtk_overlay_add_overlay(GTK_OVERLAY(main_overlay), overlay_widget);
-        gtk_widget_set_visible(overlay_widget, FALSE);
-    }
-
-    room_view_->on_image_clicked =
-        [this](const tesseract::views::MessageListView::ImageHit& hit) {
-            if (!img_viewer_ || !img_viewer_surface_) return;
-            img_viewer_->open(hit.media_url, hit.body, hit.natural_w, hit.natural_h);
-            gtk_widget_set_visible(img_viewer_surface_->widget(), TRUE);
-            gtk_widget_grab_focus(img_viewer_surface_->widget());
-        };
-
-    // Video lightbox overlay — full-window surface for m.video playback.
-    {
-        vid_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light(),
-                                                                   /*transparent=*/true);
-        auto vid_viewer_owner = std::make_unique<tesseract::views::VideoViewerOverlay>();
-        vid_viewer_ = vid_viewer_owner.get();
-        vid_viewer_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image* {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
-        vid_viewer_->set_video_player(chat_surface_->host().make_video_player());
-        vid_viewer_->set_repaint_requester([this] {
-            if (vid_viewer_surface_) vid_viewer_surface_->relayout();
-        });
-        vid_viewer_->on_close = [this] {
-            if (vid_viewer_surface_)
-                gtk_widget_set_visible(vid_viewer_surface_->widget(), FALSE);
-        };
-        vid_viewer_surface_->set_root(std::move(vid_viewer_owner));
-
-        GtkWidget* vid_overlay_widget = vid_viewer_surface_->widget();
-        gtk_widget_set_hexpand(vid_overlay_widget, TRUE);
-        gtk_widget_set_vexpand(vid_overlay_widget, TRUE);
-        gtk_overlay_add_overlay(GTK_OVERLAY(main_overlay), vid_overlay_widget);
-        gtk_widget_set_visible(vid_overlay_widget, FALSE);
-    }
-
-    room_view_->on_video_clicked =
-        [this](const tesseract::views::MessageListView::VideoHit& hit) {
-            if (!vid_viewer_ || !vid_viewer_surface_) return;
-            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
-                             hit.duration_ms, hit.natural_w, hit.natural_h,
-                             hit.autoplay, hit.loop, hit.no_audio, hit.hide_controls);
-            gtk_widget_set_visible(vid_viewer_surface_->widget(), TRUE);
-            gtk_widget_grab_focus(vid_viewer_surface_->widget());
-            // Async byte fetch on a detached thread.
-            std::string src = hit.source_json;
-            run_async_([this, src = std::move(src)]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                struct Ctx { MainWindow* self; std::vector<uint8_t> bytes; };
-                auto* ctx = new Ctx{ this, std::move(bytes) };
-                g_idle_add([](gpointer p) -> gboolean {
-                    auto* c = static_cast<Ctx*>(p);
-                    if (c->self->vid_viewer_)
-                        c->self->vid_viewer_->load_bytes(c->bytes.data(), c->bytes.size());
-                    delete c;
-                    return G_SOURCE_REMOVE;
-                }, ctx);
-            });
-        };
-
-    room_view_->set_video_player_factory(
-        [this]() { return chat_surface_->host().make_video_player(); });
-    room_view_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready) {
-            run_async_([this, src, on_ready = std::move(on_ready)]() mutable {
-                auto bytes = client_->fetch_source_bytes(src);
-                struct Ctx {
-                    std::function<void(std::vector<std::uint8_t>)> cb;
-                    std::vector<std::uint8_t> bytes;
-                };
-                auto* ctx = new Ctx{ std::move(on_ready), std::move(bytes) };
-                g_idle_add([](gpointer p) -> gboolean {
-                    auto* c = static_cast<Ctx*>(p);
-                    c->cb(std::move(c->bytes));
-                    delete c;
-                    return G_SOURCE_REMOVE;
-                }, ctx);
-            });
-        });
-
-    // Escape key: close the image viewer if it's open. Attached to the
-    // window so it fires regardless of which widget holds focus.
+    // Escape key: close viewer overlays. Attached to the window so it fires
+    // regardless of which widget holds focus.
     {
         GtkEventController* key_ctl = gtk_event_controller_key_new();
         g_signal_connect(key_ctl, "key-pressed",
@@ -1061,11 +866,25 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         gtk_widget_add_controller(window_, key_ctl);
     }
 
+    // Status bar floats below the main stack (outside the stack so it is
+    // always visible regardless of which page is shown).
     status_bar_ = gtk_label_new(_("Not logged in"));
     gtk_widget_set_halign(status_bar_, GTK_ALIGN_START);
     gtk_widget_set_margin_start(status_bar_, 4);
     gtk_widget_set_margin_bottom(status_bar_, 2);
-    gtk_box_append(GTK_BOX(vbox), status_bar_);
+    {
+        // Wrap content_stack_ + status_bar_ in an outer vbox so the status
+        // bar stays below the stack on all pages.
+        GtkWidget* outer_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        // Reparent: the constructor already set content_stack_ as child of
+        // window_; swap it out for the outer vbox.
+        g_object_ref(content_stack_);
+        gtk_window_set_child(GTK_WINDOW(window_), nullptr);
+        gtk_box_append(GTK_BOX(outer_vbox), content_stack_);
+        g_object_unref(content_stack_);
+        gtk_box_append(GTK_BOX(outer_vbox), status_bar_);
+        gtk_window_set_child(GTK_WINDOW(window_), outer_vbox);
+    }
 
     gtk_widget_set_visible(window_, TRUE);
 
@@ -1145,15 +964,10 @@ tk::ThemeMode MainWindow::os_color_scheme_() const {
 }
 
 void MainWindow::apply_theme_ui_(const tk::Theme& t) {
-    if (room_surface_)           room_surface_->set_theme(t);
-    if (chat_surface_)           chat_surface_->set_theme(t);
+    if (main_app_surface_)       main_app_surface_->set_theme(t);
     if (emoji_picker_surface_)   emoji_picker_surface_->set_theme(t);
     if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
-    if (img_viewer_surface_)     img_viewer_surface_->set_theme(t);
-    if (vid_viewer_surface_)     vid_viewer_surface_->set_theme(t);
     if (join_room_surface_)      join_room_surface_->set_theme(t);
-    if (recovery_surface_)       recovery_surface_->set_theme(t);
-    if (verif_surface_)          verif_surface_->set_theme(t);
     if (account_picker_surface_) account_picker_surface_->set_theme(t);
 
     // Tell GTK itself about the dark preference so native chrome follows.
@@ -1623,7 +1437,7 @@ void MainWindow::push_message_inserted(
     ensure_row_media_(*ev);
     if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     room_view_->insert_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
-    chat_surface_->relayout();
+    main_app_surface_->relayout();
 }
 
 void MainWindow::push_message_updated(
@@ -1637,13 +1451,13 @@ void MainWindow::push_message_updated(
     ensure_row_media_(*ev);
     if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     room_view_->update_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
-    chat_surface_->relayout();
+    main_app_surface_->relayout();
 }
 
 void MainWindow::push_message_removed(std::string room_id, std::size_t index) {
     if (room_id != current_room_id_) return;
     room_view_->remove_message(index);
-    chat_surface_->relayout();
+    main_app_surface_->relayout();
 }
 
 void MainWindow::push_rooms(std::string user_id,
@@ -1740,7 +1554,7 @@ void MainWindow::push_timeline_reset(
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (room_view_) room_view_->set_messages(std::move(rows));
-    chat_surface_->relayout();
+    main_app_surface_->relayout();
     if (room_view_ && room_view_->message_list()) {
         room_view_->message_list()->set_historical_mode(pagination_[room_id].is_focused);
         if (pagination_[room_id].is_focused)
@@ -1750,7 +1564,7 @@ void MainWindow::push_timeline_reset(
 
 void MainWindow::clear_messages() {
     if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1918,7 +1732,7 @@ void MainWindow::start_anim_tick_if_needed_() {
 }
 
 void MainWindow::invalidate_anim_consumers_() {
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
     if (sticker_picker_shared_)
         sticker_picker_shared_->invalidate_image_cache();
     if (sticker_picker_surface_) sticker_picker_surface_->relayout();
@@ -2011,7 +1825,7 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
     room_list_view_->set_rooms(std::move(sorted));
     if (!current_room_id_.empty())
         room_list_view_->set_selected_room(current_room_id_);
-    room_surface_->relayout();
+    main_app_surface_->relayout();
 }
 
 void MainWindow::refresh_room_list() {
@@ -2019,13 +1833,13 @@ void MainWindow::refresh_room_list() {
     // after the last account logs out — render an empty list, don't crash.
     if (!client_) {
         show_rooms({});
-        gtk_widget_set_visible(room_nav_bar_, FALSE);
+        if (main_app_) main_app_->set_space_nav(false);
         return;
     }
     if (space_stack_.empty()) {
         if (!search_pending_text_.empty()) {
             show_rooms(rooms_);
-            gtk_widget_set_visible(room_nav_bar_, FALSE);
+            if (main_app_) main_app_->set_space_nav(false);
             return;
         }
         std::unordered_set<std::string> in_space;
@@ -2040,7 +1854,7 @@ void MainWindow::refresh_room_list() {
         for (const auto& r : rooms_)
             if ( r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
         show_rooms(filtered);
-        gtk_widget_set_visible(room_nav_bar_, FALSE);
+        if (main_app_) main_app_->set_space_nav(false);
     } else {
         const std::string& space_id = space_stack_.back();
         auto child_ids = client_->space_children(space_id);
@@ -2049,19 +1863,14 @@ void MainWindow::refresh_room_list() {
             if (std::find(child_ids.begin(), child_ids.end(), r.id) != child_ids.end())
                 filtered.push_back(r);
         show_rooms(filtered);
-        for (const auto& r : rooms_)
-            if (r.id == space_id) {
-                gtk_label_set_text(GTK_LABEL(space_name_lbl_), r.name.c_str());
-                break;
-            }
-        gtk_widget_set_visible(room_nav_bar_, TRUE);
+        if (main_app_) {
+            for (const auto& r : rooms_)
+                if (r.id == space_id) {
+                    main_app_->set_space_nav(true, r.name);
+                    break;
+                }
+        }
     }
-}
-
-void MainWindow::on_back_clicked_(GtkButton*, gpointer user_data) {
-    auto* self = static_cast<MainWindow*>(user_data);
-    if (!self->space_stack_.empty()) self->space_stack_.pop_back();
-    self->refresh_room_list();
 }
 
 // ---------------------------------------------------------------------------
@@ -2089,10 +1898,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             auto img = tk::cairo_pango::make_image(surface);
             cairo_surface_destroy(surface);
             tk_avatars_.emplace(cache_key, std::move(img));
-            if (kind == MediaKind::RoomAvatar && room_surface_)
-                room_surface_->relayout();
-            else if (chat_surface_)
-                chat_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         }
     } else { // MediaImage
         if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
@@ -2109,14 +1915,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                   std::move(anim->delays_ms), now_ms);
                 start_anim_tick_if_needed_();
                 if (room_view_) room_view_->notify_image_ready(cache_key);
-                if (chat_surface_) chat_surface_->relayout();
+                if (main_app_surface_) main_app_surface_->relayout();
             }
         } else if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
             auto img = tk::cairo_pango::make_image(surface);
             cairo_surface_destroy(surface);
             tk_images_.emplace(cache_key, std::move(img));
             if (room_view_) room_view_->notify_image_ready(cache_key);
-            if (chat_surface_) chat_surface_->relayout();
+            if (main_app_surface_) main_app_surface_->relayout();
         }
     }
 }
@@ -2217,7 +2023,7 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                     c->self->tk_images_.emplace(
                         c->key, tk::cairo_pango::make_image(surf));
                     cairo_surface_destroy(surf);
-                    if (c->self->chat_surface_) c->self->chat_surface_->relayout();
+                    if (c->self->main_app_surface_) c->self->main_app_surface_->relayout();
                 } else if (surf) {
                     cairo_surface_destroy(surf);
                 }
@@ -2242,7 +2048,7 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
         ensure_media_image_(preview.image_mxc, 64, 64);
 
     if (room_view_) room_view_->notify_url_preview_ready(url);
-    if (chat_surface_) chat_surface_->relayout();
+    if (main_app_surface_) main_app_surface_->relayout();
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
@@ -2260,7 +2066,7 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
     g_object_unref(pb);
     tk_images_.emplace(key, tk::cairo_pango::make_image(surf));
     cairo_surface_destroy(surf);
-    if (chat_surface_) gtk_widget_queue_draw(chat_surface_->widget());
+    if (main_app_surface_) gtk_widget_queue_draw(main_app_surface_->widget());
 }
 
 // ---------------------------------------------------------------------------
@@ -2268,23 +2074,21 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
 void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_->needs_recovery()) return;
-    if (!recovery_surface_) return;
+    if (!main_app_) return;
     // Verification takes priority — don't show recovery banner while the
     // verification banner is active. The "Use recovery key" link hands off.
-    if (verif_surface_ && gtk_widget_get_visible(verif_surface_->widget())) return;
-    GtkWidget* w = recovery_surface_->widget();
-    if (!gtk_widget_get_visible(w)) {
+    if (main_app_->verif_banner()->visible()) return;
+    if (!main_app_->recovery_banner()->visible()) {
         if (recovery_shared_) {
-            recovery_shared_->set_state(
-                tesseract::views::RecoveryBanner::State::Form);
+            recovery_shared_->set_state(tesseract::views::RecoveryBanner::State::Form);
             recovery_shared_->set_current_key("");
         }
         if (recovery_key_field_) {
             recovery_key_field_->set_text("");
             recovery_key_field_->set_enabled(true);
         }
-        gtk_widget_set_visible(w, TRUE);
-        recovery_surface_->relayout();
+        main_app_->show_recovery_banner(true);
+        main_app_surface_->relayout();
     }
 }
 
@@ -2300,7 +2104,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
                 tesseract::views::RecoveryBanner::State::Failed);
             self->recovery_shared_->set_failure_message(
                 _("Please enter a recovery key or passphrase."));
-            self->recovery_surface_->relayout();
+            if (self->main_app_surface_) self->main_app_surface_->relayout();
         }
         return;
     }
@@ -2310,7 +2114,7 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
         self->recovery_shared_->set_state(
             tesseract::views::RecoveryBanner::State::Verifying);
     if (self->recovery_key_field_) self->recovery_key_field_->set_enabled(false);
-    self->recovery_surface_->relayout();
+    if (self->main_app_surface_) self->main_app_surface_->relayout();
 
     struct RecoverDone {
         MainWindow* window;
@@ -2338,8 +2142,8 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
                     d->window->recovery_key_field_->set_focused(true);
                 }
             }
-            if (d->window->recovery_surface_)
-                d->window->recovery_surface_->relayout();
+            if (d->window->main_app_surface_)
+                d->window->main_app_surface_->relayout();
             delete d;
             return G_SOURCE_REMOVE;
         }, p);
@@ -2349,8 +2153,10 @@ void MainWindow::on_recovery_verify_clicked_(GtkButton*, gpointer user_data) {
 void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
     self->recovery_banner_dismissed_ = true;
-    if (self->recovery_surface_)
-        gtk_widget_set_visible(self->recovery_surface_->widget(), FALSE);
+    if (self->main_app_) {
+        self->main_app_->show_recovery_banner(false);
+        if (self->main_app_surface_) self->main_app_surface_->relayout();
+    }
 }
 
 void MainWindow::push_image_packs_updated() {
@@ -2454,21 +2260,21 @@ void MainWindow::apply_image_packs_updated() {
 void MainWindow::push_backup_progress(tesseract::BackupProgress progress) {
     maybe_show_recovery_banner();
 
-    if (recovery_surface_ && recovery_shared_
-        && gtk_widget_get_visible(recovery_surface_->widget())
-        && recovery_shared_->state()
-            == tesseract::views::RecoveryBanner::State::Importing
+    if (main_app_ && recovery_shared_
+        && main_app_->recovery_banner()->visible()
+        && recovery_shared_->state() == tesseract::views::RecoveryBanner::State::Importing
         && progress.state == tesseract::BackupState::Downloading
         && progress.imported_keys > 0)
     {
         recovery_shared_->set_import_progress(progress.imported_keys);
-        recovery_surface_->relayout();
+        main_app_surface_->relayout();
     }
     if (progress.state == tesseract::BackupState::Enabled
         && !client_->needs_recovery()
-        && recovery_surface_)
+        && main_app_)
     {
-        gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
+        main_app_->show_recovery_banner(false);
+        main_app_surface_->relayout();
     }
 
     last_backup_state_  = progress.state;
@@ -2545,48 +2351,22 @@ void MainWindow::refresh_sync_status() {
 // ---------------------------------------------------------------------------
 
 void MainWindow::populate_user_strip() {
+    if (!main_app_) return;
+    auto* ui = main_app_->user_info();
     std::string shown = my_display_name_.empty() ? my_user_id_ : my_display_name_;
-    gtk_label_set_text(GTK_LABEL(user_name_lbl_), shown.c_str());
-    gtk_label_set_text(GTK_LABEL(user_id_lbl_), my_user_id_.c_str());
+    ui->set_display_name(shown);
+    ui->set_user_id(my_user_id_);
+    ui->set_avatar_url(my_avatar_url_);
+    ui->set_image_provider([this](const std::string& mxc) -> const tk::Image* {
+        auto it = tk_avatars_.find(mxc);
+        return it == tk_avatars_.end() ? nullptr : it->second.get();
+    });
+    if (main_app_surface_) main_app_surface_->relayout();
 
-    // Default icon immediately; fetch the real avatar off the UI thread.
-    // fetch_media_bytes does a blocking network round-trip — calling it
-    // synchronously here froze the UI on every login / account switch.
-    gtk_image_set_from_icon_name(GTK_IMAGE(user_avatar_img_),
-                                 "avatar-default-symbolic");
-    gtk_widget_set_visible(user_strip_, TRUE);
-
-    if (!my_avatar_url_.empty() && client_) {
-        auto* c = client_;
-        std::string mxc = my_avatar_url_;
-        std::weak_ptr<bool> w = alive_;
-        run_async_([this, c, mxc, w] {
-            auto bytes = c->fetch_media_bytes(mxc);
-            post_to_ui_([this, w, mxc, bytes = std::move(bytes)]() mutable {
-                // Bail if the window is gone or the active account changed
-                // out from under this fetch.
-                if (w.expired() || mxc != my_avatar_url_ || bytes.empty())
-                    return;
-                GdkTexture* tex = make_scaled_texture(bytes, 32, 32);
-                if (tex) {
-                    gtk_image_set_from_paintable(GTK_IMAGE(user_avatar_img_),
-                                                 GDK_PAINTABLE(tex));
-                    g_object_unref(tex);
-                }
-            });
-        });
-    }
-}
-
-void MainWindow::on_user_strip_right_click_(GtkGestureClick* gesture,
-                                            int /*n_press*/,
-                                            double x, double y,
-                                            gpointer user_data) {
-    auto* self = static_cast<MainWindow*>(user_data);
-    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-    GdkRectangle r = { static_cast<int>(x), static_cast<int>(y), 1, 1 };
-    gtk_popover_set_pointing_to(GTK_POPOVER(self->user_popover_), &r);
-    gtk_popover_popup(GTK_POPOVER(self->user_popover_));
+    // Kick off avatar fetch if not yet cached (result arrives via
+    // on_media_bytes_ready_ → tk_avatars_ → relayout).
+    if (!my_avatar_url_.empty() && client_)
+        ensure_user_avatar_(my_avatar_url_);
 }
 
 void MainWindow::on_add_account_activate_(GSimpleAction* /*action*/,
@@ -2618,7 +2398,7 @@ void MainWindow::do_logout() {
 
 void MainWindow::build_emoji_popover() {
     emoji_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(emoji_popover_, chat_surface_->widget());
+    gtk_widget_set_parent(emoji_popover_, main_app_surface_->widget());
     gtk_popover_set_position(GTK_POPOVER(emoji_popover_), GTK_POS_TOP);
     gtk_popover_set_has_arrow(GTK_POPOVER(emoji_popover_), TRUE);
     gtk_popover_set_autohide(GTK_POPOVER(emoji_popover_), TRUE);
@@ -2663,7 +2443,7 @@ void MainWindow::build_emoji_popover() {
 
 void MainWindow::build_sticker_popover() {
     sticker_popover_ = gtk_popover_new();
-    gtk_widget_set_parent(sticker_popover_, chat_surface_->widget());
+    gtk_widget_set_parent(sticker_popover_, main_app_surface_->widget());
     gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
     gtk_popover_set_has_arrow(GTK_POPOVER(sticker_popover_), TRUE);
     gtk_popover_set_autohide(GTK_POPOVER(sticker_popover_), TRUE);
@@ -2724,7 +2504,7 @@ void MainWindow::toggle_sticker_picker() {
         return;
     }
     GtkWidget* desired_parent =
-        chat_surface_ ? chat_surface_->widget() : nullptr;
+        main_app_surface_ ? main_app_surface_->widget() : nullptr;
     if (desired_parent &&
         gtk_widget_get_parent(sticker_popover_) != desired_parent) {
         gtk_widget_unparent(sticker_popover_);
@@ -2749,7 +2529,7 @@ void MainWindow::build_sticker_context_menu() {
 
     sticker_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
     gtk_popover_set_has_arrow(GTK_POPOVER(sticker_ctx_menu_), FALSE);
-    gtk_widget_set_parent(sticker_ctx_menu_, chat_surface_->widget());
+    gtk_widget_set_parent(sticker_ctx_menu_, main_app_surface_->widget());
     g_object_unref(menu);
 
     sticker_ctx_actions_ = g_simple_action_group_new();
@@ -2759,7 +2539,7 @@ void MainWindow::build_sticker_context_menu() {
     g_action_map_add_action(G_ACTION_MAP(sticker_ctx_actions_),
                             G_ACTION(save));
     g_object_unref(save);
-    gtk_widget_insert_action_group(chat_surface_->widget(), "sticker",
+    gtk_widget_insert_action_group(main_app_surface_->widget(), "sticker",
                                     G_ACTION_GROUP(sticker_ctx_actions_));
 }
 
@@ -2814,10 +2594,16 @@ gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
     auto* self = static_cast<MainWindow*>(user_data);
     if (keyval == GDK_KEY_Escape) {
         if (self->vid_viewer_ && self->vid_viewer_->is_open()) {
-            self->vid_viewer_->close(); return TRUE;
+            self->vid_viewer_->close();
+            if (self->main_app_) self->main_app_->show_video_viewer(false);
+            if (self->main_app_surface_) self->main_app_surface_->relayout();
+            return TRUE;
         }
         if (self->img_viewer_ && self->img_viewer_->is_open()) {
-            self->img_viewer_->close(); return TRUE;
+            self->img_viewer_->close();
+            if (self->main_app_) self->main_app_->show_image_viewer(false);
+            if (self->main_app_surface_) self->main_app_surface_->relayout();
+            return TRUE;
         }
     }
     return FALSE;
@@ -2847,10 +2633,10 @@ void MainWindow::toggle_emoji_picker() {
         gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
         return;
     }
-    // Compose-bar path: ensure the popover is parented to the chat
-    // surface and clear any prior `pointing_to` from a reaction popup.
+    // Compose-bar path: ensure the popover is parented to the main surface
+    // and clear any prior `pointing_to` from a reaction popup.
     GtkWidget* desired_parent =
-        chat_surface_ ? chat_surface_->widget() : nullptr;
+        main_app_surface_ ? main_app_surface_->widget() : nullptr;
     if (desired_parent && gtk_widget_get_parent(emoji_popover_) != desired_parent) {
         gtk_widget_unparent(emoji_popover_);
         gtk_widget_set_parent(emoji_popover_, desired_parent);
@@ -3026,8 +2812,10 @@ void MainWindow::logout_active_account() {
     pagination_.clear();
     reply_details_requested_.clear();
     refresh_room_list();
-    if (recovery_surface_)
-        gtk_widget_set_visible(recovery_surface_->widget(), FALSE);
+    if (main_app_) {
+        main_app_->show_recovery_banner(false);
+        if (main_app_surface_) main_app_surface_->relayout();
+    }
     recovery_banner_dismissed_ = false;
 
     gtk_label_set_text(GTK_LABEL(status_bar_),
@@ -3041,7 +2829,6 @@ void MainWindow::logout_active_account() {
         my_user_id_.clear();
         my_display_name_.clear();
         my_avatar_url_.clear();
-        gtk_widget_set_visible(user_strip_, FALSE);
 
         // Update accounts.json.
         tesseract::SessionStore::AccountIndex idx;
@@ -3141,7 +2928,7 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/) {
         account_picker_popover_ = gtk_popover_new();
         gtk_popover_set_child(GTK_POPOVER(account_picker_popover_),
                               account_picker_surface_->widget());
-        gtk_widget_set_parent(account_picker_popover_, user_strip_);
+        gtk_widget_set_parent(account_picker_popover_, main_app_surface_->widget());
         gtk_popover_set_position(GTK_POPOVER(account_picker_popover_),
                                  GTK_POS_TOP);
         gtk_popover_set_has_arrow(GTK_POPOVER(account_picker_popover_), FALSE);
@@ -3156,15 +2943,6 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/) {
 
     rebuild_account_picker();
     gtk_popover_popup(GTK_POPOVER(account_picker_popover_));
-}
-
-void MainWindow::on_user_strip_left_click_(GtkGestureClick* gesture,
-                                            int /*n_press*/,
-                                            double x, double y,
-                                            gpointer user_data) {
-    auto* self = static_cast<MainWindow*>(user_data);
-    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-    self->open_account_picker(x, y);
 }
 
 // ---------------------------------------------------------------------------
