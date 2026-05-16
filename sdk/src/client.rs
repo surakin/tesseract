@@ -3674,6 +3674,7 @@ fn latest_event_body(value: &matrix_sdk::latest_events::LatestEventValue) -> Opt
                 _ => return None,
             };
             let body = match msgtype {
+                // Use plain body for previews; formatted_body is HTML and not suited for sidebar display.
                 MessageType::Text(t)  => t.body.trim().to_owned(),
                 MessageType::Image(i) => i.body.trim().to_owned(),
                 MessageType::File(f)  => f.body.trim().to_owned(),
@@ -5236,5 +5237,37 @@ mod tests_latest_event_body {
             content,
         });
         assert_eq!(latest_event_body(&value), Some("sending\u{2026}".to_owned()));
+    }
+
+    #[test]
+    fn local_cannot_be_sent_returns_body() {
+        let content = SerializableEventContent::new(
+            &AnyMessageLikeEventContent::RoomMessage(
+                RoomMessageEventContent::text_plain("stuck message")
+            )
+        ).unwrap();
+        let value = LatestEventValue::LocalCannotBeSent(LocalLatestEventValue {
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            content,
+        });
+        assert_eq!(latest_event_body(&value), Some("stuck message".to_owned()));
+    }
+
+    #[test]
+    fn local_has_been_sent_returns_body() {
+        use matrix_sdk::ruma::owned_event_id;
+        let content = SerializableEventContent::new(
+            &AnyMessageLikeEventContent::RoomMessage(
+                RoomMessageEventContent::text_plain("sent!")
+            )
+        ).unwrap();
+        let value = LatestEventValue::LocalHasBeenSent {
+            event_id: owned_event_id!("$ev_sent"),
+            value: LocalLatestEventValue {
+                timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+                content,
+            },
+        };
+        assert_eq!(latest_event_body(&value), Some("sent!".to_owned()));
     }
 }
