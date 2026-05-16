@@ -1440,6 +1440,16 @@ private:
                 if (layout) return layout->measure().h;
             }
         }
+        // Plain text: autolink bare URLs so they render (and measure) as a
+        // rich-text layout — must mirror paint_body_text exactly.
+        if (!eo && !m.body.empty()) {
+            auto link_spans = autolink_plain_to_spans(m.body);
+            if (!link_spans.empty()) {
+                auto layout =
+                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
+                if (layout) return layout->measure().h;
+            }
+        }
         return measure_text_height(
             m.body.empty() ? std::string("(empty message)") : m.body, ctx, w, eo);
     }
@@ -1464,6 +1474,24 @@ private:
             auto spans = prepare_spans(m, revealed);
             if (!spans.empty()) {
                 auto layout = ctx.factory.build_rich_text(spans, body_style(w, eo));
+                if (layout) {
+                    ctx.canvas.draw_text(*layout, { x, y },
+                                          ctx.theme.palette.text_primary);
+                    float h = layout->measure().h;
+                    owner_.link_layout_cache_[m.event_id] =
+                        { std::move(layout), { x, y } };
+                    return h;
+                }
+            }
+        }
+        // Plain text: autolink bare URLs into a rich-text layout and cache
+        // it so link_at() hit-testing fires on_link_clicked. Must mirror
+        // measure_body_text exactly so the row height matches.
+        if (!eo && !m.body.empty()) {
+            auto link_spans = autolink_plain_to_spans(m.body);
+            if (!link_spans.empty()) {
+                auto layout =
+                    ctx.factory.build_rich_text(link_spans, body_style(w, eo));
                 if (layout) {
                     ctx.canvas.draw_text(*layout, { x, y },
                                           ctx.theme.palette.text_primary);
