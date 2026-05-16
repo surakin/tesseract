@@ -469,6 +469,40 @@ public:
                       reinterpret_cast<LPARAM>(w.c_str()));
     }
 
+    tk::Rect cursor_rect() const override {
+        if (!hwnd_) return {};
+        DWORD sel_start = 0;
+        SendMessageW(hwnd_, EM_GETSEL, (WPARAM)&sel_start, 0);
+        LRESULT pos = SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start, 0);
+        int cx = LOWORD(pos), cy = HIWORD(pos);
+        TEXTMETRICW tm;
+        HDC hdc = GetDC(hwnd_);
+        GetTextMetricsW(hdc, &tm);
+        ReleaseDC(hwnd_, hdc);
+        POINT pt{cx, cy};
+        MapWindowPoints(hwnd_, GetParent(hwnd_), &pt, 1);
+        return { float(pt.x), float(pt.y), 1.0f, float(tm.tmHeight) };
+    }
+
+    void replace_range(int start, int end, std::string utf8_text) override {
+        if (!hwnd_) return;
+        std::string current = this->text();
+        int w_start = utf8_byte_to_utf16_len(current, start);
+        int w_end   = utf8_byte_to_utf16_len(current, end);
+        suppress_changed_ = true;
+        SendMessageW(hwnd_, EM_SETSEL, w_start, w_end);
+        int n = MultiByteToWideChar(CP_UTF8, 0, utf8_text.c_str(), -1, nullptr, 0);
+        std::wstring wide(n - 1, 0);
+        MultiByteToWideChar(CP_UTF8, 0, utf8_text.c_str(), -1, wide.data(), n);
+        SendMessageW(hwnd_, EM_REPLACESEL, TRUE, (LPARAM)wide.c_str());
+        suppress_changed_ = false;
+        if (on_changed_) on_changed_(this->text());
+    }
+
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
+        popup_nav_ = std::move(fn);
+    }
+
     void notify_changed() {
         if (suppress_changed_) return;
         std::string t = text();
@@ -490,6 +524,15 @@ private:
         auto* self = reinterpret_cast<Win32NativeTextArea*>(ref);
         if (msg == WM_NCPAINT)
             return 0;
+        if (msg == WM_KEYDOWN && self->popup_nav_) {
+            NativeTextArea::NavKey nk{};
+            bool is_nav = true;
+            if      (wParam == VK_UP)     nk = NativeTextArea::NavKey::Up;
+            else if (wParam == VK_DOWN)   nk = NativeTextArea::NavKey::Down;
+            else if (wParam == VK_ESCAPE) nk = NativeTextArea::NavKey::Escape;
+            else is_nav = false;
+            if (is_nav && self->popup_nav_(nk)) return 0;
+        }
         if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (!shift) {
@@ -517,6 +560,12 @@ private:
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
+    static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset) {
+        byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
+        return wlen < 0 ? 0 : wlen;
+    }
+
     HWND parent_     = nullptr;
     HWND hwnd_       = nullptr;
     int  id_         = 0;
@@ -524,10 +573,11 @@ private:
     float last_height_      = 0.f;
     Rect  last_rect_        = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
-    std::function<void(const std::string&)>  on_changed_;
-    std::function<void()>                    on_submit_;
-    std::function<void(float)>               on_height_changed_;
-    ImagePasteHandler                        on_image_paste_;
+    std::function<void(const std::string&)>      on_changed_;
+    std::function<void()>                        on_submit_;
+    std::function<void(float)>                   on_height_changed_;
+    ImagePasteHandler                            on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)>  popup_nav_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can

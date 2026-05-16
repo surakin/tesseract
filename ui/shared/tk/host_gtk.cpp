@@ -257,7 +257,54 @@ public:
                                           static_cast<int>(text.size()));
     }
 
+    tk::Rect cursor_rect() const override {
+        GdkRectangle rect;
+        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect, nullptr);
+        int wx, wy;
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_),
+                                              GTK_TEXT_WINDOW_TEXT,
+                                              rect.x, rect.y, &wx, &wy);
+        double ox = 0, oy = 0;
+        GtkWidget* toplevel = gtk_widget_get_root(view_) ?
+                              GTK_WIDGET(gtk_widget_get_root(view_)) : nullptr;
+        if (toplevel)
+            gtk_widget_translate_coordinates(view_, toplevel, wx, wy, &ox, &oy);
+        return { float(ox), float(oy), float(rect.width), float(rect.height) };
+    }
+
+    void replace_range(int start, int end, std::string text) override {
+        if (!buffer_) return;
+        GtkTextIter si, ej;
+        gtk_text_buffer_get_start_iter(buffer_, &si);
+        gtk_text_buffer_get_end_iter(buffer_, &ej);
+        gchar* buf_text = gtk_text_buffer_get_text(buffer_, &si, &ej, FALSE);
+        int char_start = utf8_byte_to_char_offset(buf_text, start);
+        int char_end   = utf8_byte_to_char_offset(buf_text, end);
+        g_free(buf_text);
+        gtk_text_buffer_get_iter_at_offset(buffer_, &si, char_start);
+        gtk_text_buffer_get_iter_at_offset(buffer_, &ej, char_end);
+        gtk_text_buffer_delete(buffer_, &si, &ej);
+        gtk_text_buffer_insert(buffer_, &si, text.c_str(), (int)text.size());
+    }
+
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
+        popup_nav_ = std::move(fn);
+    }
+
 private:
+    static int utf8_byte_to_char_offset(const gchar* utf8_str, int byte_offset) {
+        const gchar* p = utf8_str;
+        int chars = 0;
+        int bytes = 0;
+        while (bytes < byte_offset && *p) {
+            gchar* next = g_utf8_next_char(p);
+            bytes += (int)(next - p);
+            p = next;
+            ++chars;
+        }
+        return chars;
+    }
+
     static void on_changed_cb(GtkTextBuffer*, gpointer p) {
         auto* self = static_cast<GtkNativeTextArea*>(p);
         std::string t = self->text();
@@ -272,6 +319,15 @@ private:
                                        guint keyval, guint /*keycode*/,
                                        GdkModifierType state, gpointer p) {
         auto* self = static_cast<GtkNativeTextArea*>(p);
+        if (self->popup_nav_) {
+            NativeTextArea::NavKey nk{};
+            bool is_nav = true;
+            if      (keyval == GDK_KEY_Up)     nk = NativeTextArea::NavKey::Up;
+            else if (keyval == GDK_KEY_Down)   nk = NativeTextArea::NavKey::Down;
+            else if (keyval == GDK_KEY_Escape) nk = NativeTextArea::NavKey::Escape;
+            else is_nav = false;
+            if (is_nav && self->popup_nav_(nk)) return TRUE;
+        }
         bool is_return = (keyval == GDK_KEY_Return ||
                           keyval == GDK_KEY_KP_Enter ||
                           keyval == GDK_KEY_ISO_Enter);
@@ -357,10 +413,11 @@ private:
     gulong           changed_id_ = 0;
     gulong           paste_id_   = 0;
     float            last_height_ = 0.f;
-    std::function<void(const std::string&)>  on_changed_;
-    std::function<void()>                    on_submit_;
-    std::function<void(float)>               on_height_changed_;
-    ImagePasteHandler                        on_image_paste_;
+    std::function<void(const std::string&)>      on_changed_;
+    std::function<void()>                        on_submit_;
+    std::function<void(float)>                   on_height_changed_;
+    ImagePasteHandler                            on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)>  popup_nav_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

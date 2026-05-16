@@ -127,6 +127,7 @@ public:
     explicit ComposeTextEdit(QWidget* parent) : QTextEdit(parent) {}
     std::function<void()> on_return_;
     NativeTextArea::ImagePasteHandler on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)> popup_nav_;
 
     bool canInsertFromMimeData(const QMimeData* source) const override {
         if (on_image_paste_ && source && source->hasImage()) return true;
@@ -135,6 +136,15 @@ public:
 
 protected:
     void keyPressEvent(QKeyEvent* e) override {
+        if (popup_nav_) {
+            NativeTextArea::NavKey nk{};
+            bool is_nav = true;
+            if      (e->key() == Qt::Key_Up)     nk = NativeTextArea::NavKey::Up;
+            else if (e->key() == Qt::Key_Down)   nk = NativeTextArea::NavKey::Down;
+            else if (e->key() == Qt::Key_Escape) nk = NativeTextArea::NavKey::Escape;
+            else is_nav = false;
+            if (is_nav && popup_nav_(nk)) { e->accept(); return; }
+        }
         if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
             && !(e->modifiers() & Qt::ShiftModifier)) {
             if (on_return_) on_return_();
@@ -300,7 +310,37 @@ public:
         edit_->setTextCursor(cursor);
     }
 
+    tk::Rect cursor_rect() const override {
+        if (!edit_) return {};
+        QRect cr = edit_->cursorRect();
+        QPoint pt = edit_->viewport()->mapTo(edit_->parentWidget(), cr.topLeft());
+        return { float(pt.x()), float(pt.y()), float(cr.width()), float(cr.height()) };
+    }
+
+    void replace_range(int start, int end, std::string text) override {
+        if (!edit_) return;
+        const QSignalBlocker block(edit_);
+        QString full = edit_->toPlainText();
+        int qt_start = utf8_byte_to_qt_cursor(full, start);
+        int qt_end   = utf8_byte_to_qt_cursor(full, end);
+        QTextCursor cursor(edit_->document());
+        cursor.setPosition(qt_start);
+        cursor.setPosition(qt_end, QTextCursor::KeepAnchor);
+        cursor.insertText(QString::fromStdString(text));
+        if (on_changed_) on_changed_(edit_->toPlainText().toStdString());
+    }
+
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
+        if (edit_) edit_->popup_nav_ = std::move(fn);
+    }
+
 private:
+    static int utf8_byte_to_qt_cursor(const QString& qs, int byte_offset) {
+        QByteArray full = qs.toUtf8();
+        byte_offset = std::clamp(byte_offset, 0, (int)full.size());
+        return QString::fromUtf8(full.left(byte_offset)).size();
+    }
+
     QPointer<ComposeTextEdit>                edit_;
     std::function<void(const std::string&)>  on_changed_;
     std::function<void()>                    on_submit_;

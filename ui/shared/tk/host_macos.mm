@@ -456,6 +456,14 @@ public:
     // proceed with the default text paste.
     bool maybe_handle_paste();
 
+    tk::Rect cursor_rect() const override;
+    void replace_range(int start, int end, std::string text) override;
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
+        popup_nav_ = std::move(fn);
+    }
+
+    std::function<bool(NavKey)> popup_nav_;
+
 private:
     TKSurfaceView*      superview_ = nil;
     NSScrollView*       scroll_    = nil;
@@ -487,6 +495,19 @@ private:
 - (void)pasteAsPlainText:(id)sender {
     if (self.owner && self.owner->maybe_handle_paste()) return;
     [super pasteAsPlainText:sender];
+}
+- (void)keyDown:(NSEvent*)event {
+    if (self.owner && self.owner->popup_nav_) {
+        unsigned short kc = event.keyCode;
+        tk::NativeTextArea::NavKey nk{};
+        bool is_nav = true;
+        if      (kc == 126) nk = tk::NativeTextArea::NavKey::Up;
+        else if (kc == 125) nk = tk::NativeTextArea::NavKey::Down;
+        else if (kc ==  53) nk = tk::NativeTextArea::NavKey::Escape;
+        else is_nav = false;
+        if (is_nav && self.owner->popup_nav_(nk)) return;
+    }
+    [super keyDown:event];
 }
 @end
 
@@ -631,6 +652,38 @@ void NSTextViewNative::insert_at_cursor(std::string text) {
         NSRange after = NSMakeRange(sel.location + s.length, 0);
         [view_ setSelectedRange:after];
     }
+}
+
+tk::Rect NSTextViewNative::cursor_rect() const {
+    if (!view_) return {};
+    NSRange sel = view_.selectedRange;
+    NSRange glyph = [view_.layoutManager
+                     glyphRangeForCharacterRange:NSMakeRange(sel.location, 0)
+                     actualCharacterRange:nullptr];
+    NSRect cr = [view_.layoutManager boundingRectForGlyphRange:NSMakeRange(glyph.location, 0)
+                                        inTextContainer:view_.textContainer];
+    cr.origin.x += view_.textContainerInset.width;
+    cr.origin.y += view_.textContainerInset.height;
+    NSRect inSuper = [view_ convertRect:cr toView:view_.superview];
+    return { float(inSuper.origin.x), float(inSuper.origin.y),
+             float(inSuper.size.width), float(inSuper.size.height) };
+}
+
+void NSTextViewNative::replace_range(int start, int end, std::string text) {
+    if (!view_) return;
+    NSString* ns = view_.string;
+    NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
+    int bounded_start = std::min(start, (int)utf8.length);
+    int bounded_end   = std::min(end,   (int)utf8.length);
+    NSString* prefix_s = [[NSString alloc] initWithData:
+                          [utf8 subdataWithRange:NSMakeRange(0, bounded_start)]
+                          encoding:NSUTF8StringEncoding];
+    NSString* prefix_e = [[NSString alloc] initWithData:
+                          [utf8 subdataWithRange:NSMakeRange(0, bounded_end)]
+                          encoding:NSUTF8StringEncoding];
+    NSRange range = NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
+    [view_ insertText:[NSString stringWithUTF8String:text.c_str()]
+     replacementRange:range];
 }
 
 bool NSTextViewNative::maybe_handle_paste() {

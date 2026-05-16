@@ -92,6 +92,19 @@ public:
     // autocomplete injection since it preserves cursor position and undo.
     virtual void insert_at_cursor(std::string text) = 0;
 
+    enum class NavKey { Up, Down, Escape };
+
+    /// Bounding rect of the insertion cursor in surface-local coordinates.
+    virtual tk::Rect cursor_rect() const = 0;
+
+    /// Replace the UTF-8 byte range [start, end) with `text`.
+    /// Preserves undo history.
+    virtual void replace_range(int start, int end, std::string text) = 0;
+
+    /// Install a navigation callback for when the shortcode popup is open.
+    /// Return true from the callback to suppress default key handling.
+    virtual void set_on_popup_nav(std::function<bool(NavKey)> fn) = 0;
+
     // Hook for clipboard image pastes. When set, and the user pastes a
     // payload that includes image MIME types, the host invokes the handler
     // with the raw image bytes + mime ("image/png", "image/jpeg", …) and
