@@ -17,11 +17,12 @@ namespace tesseract::views {
 //   3. Call open() when the user clicks an image thumbnail.
 //   4. The shell handles Escape natively by calling close() when is_open().
 //
-// Zoom: opens at true 1:1 (zoom 1.0 = one image pixel per screen pixel).
-//       Scroll wheel zooms anchored at the cursor; min zoom is the
-//       whole-image fit ratio (so you can shrink an oversized image to
-//       see all of it), max 8×. Click-drag pans whenever the image is
-//       larger than the viewport.
+// Zoom: opens zoomed to fit — an oversized image shrinks so the whole of
+//       it is visible; an image that already fits opens at true 1:1
+//       (zoom 1.0 = one image pixel per screen pixel; fit_zoom_ is never
+//       above 1.0, so small images are not upscaled). Scroll wheel zooms
+//       anchored at the cursor, clamped to [fit, 8×]. Click-drag pans
+//       whenever the image is larger than the viewport.
 class ImageViewerOverlay : public tk::Widget {
 public:
     // Show the overlay for the given image or sticker.
@@ -30,6 +31,10 @@ public:
     // Hide the overlay and reset zoom/pan state.
     void close();
     bool is_open() const { return is_open_; }
+
+    // On-screen image bounds after zoom + pan (valid once arrange/paint has
+    // run while open). Exposed for shells and tests.
+    tk::Rect image_rect() const { return image_rect_; }
 
     // Same provider lambda used by MessageListView — returns a cached tk::Image*.
     // Called during paint; may return nullptr if bytes are still loading.
@@ -52,7 +57,8 @@ public:
 
 private:
     // Set base_ to the native image size and fit_zoom_ to the
-    // whole-image-fit ratio for the current bounds; re-clamp zoom_.
+    // whole-image-fit ratio for the current bounds. On the first pass
+    // after open() set zoom_ = fit_zoom_; otherwise re-clamp zoom_.
     void recompute_base_(tk::Rect b);
     void recompute_image_rect();
     void clamp_pan();
@@ -78,6 +84,11 @@ private:
     float    zoom_  = 1.0f;
     float    pan_x_ = 0.0f;
     float    pan_y_ = 0.0f;
+
+    // One-shot: set by open(), consumed by the first recompute_base_ to
+    // start zoom_ at fit_zoom_ (zoom-to-fit on open). Cleared thereafter so
+    // window resizes only re-clamp zoom rather than snapping back to fit.
+    bool     open_at_fit_ = false;
 
     tk::Rect image_rect_{};  // world-space image bounds (zoom + pan applied)
     tk::Rect close_btn_{};   // × button in top-right corner

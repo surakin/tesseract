@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+
 #include "tk/canvas.h"
 #include "tk/theme.h"
 #include "views/ImageViewerOverlay.h"
@@ -77,6 +79,48 @@ TEST_CASE("ImageViewerOverlay paint is no-op when not open", "[tk][imageviewer]"
     ImageViewerOverlay overlay;
     // overlay is closed — should not crash and should paint nothing
     REQUIRE_NOTHROW(st.run(overlay, { 0, 0, 600, 400 }));
+}
+
+// ── Open zoom (zoom-to-fit) ───────────────────────────────────────────────
+//
+// Surface is 600×400; the overlay reserves kMarginX=64 / kMarginY=96, so
+// the fit box is 536×304.
+
+TEST_CASE("ImageViewerOverlay opens an oversized image zoomed to fit",
+          "[tk][imageviewer]") {
+    Stage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/big", "", 3200, 1800);  // far larger than 536×304
+    st.run(overlay, { 0, 0, 600, 400 });
+
+    const Rect r = overlay.image_rect();
+
+    // Shrunk to fit inside the margin box (not opened at 1:1, which would
+    // be 3200×1800 and overflow the window).
+    CHECK(r.w <= 536.0f + 0.5f);
+    CHECK(r.h <= 304.0f + 0.5f);
+    CHECK(r.w < 3200.0f);
+    // Fully on-screen.
+    CHECK(r.x >= 0.0f);
+    CHECK(r.y >= 0.0f);
+    CHECK(r.x + r.w <= 600.0f);
+    CHECK(r.y + r.h <= 400.0f);
+    // Aspect ratio preserved (3200/1800 == 16/9).
+    CHECK(std::fabs(r.w / r.h - 3200.0f / 1800.0f) < 0.01f);
+}
+
+TEST_CASE("ImageViewerOverlay opens a small image at 1:1 (no upscaling)",
+          "[tk][imageviewer]") {
+    Stage st;
+    ImageViewerOverlay overlay;
+    overlay.open("mxc://example.org/small", "", 200, 150);  // fits at 1:1
+    st.run(overlay, { 0, 0, 600, 400 });
+
+    const Rect r = overlay.image_rect();
+
+    // Native pixel size — fit_zoom_ is capped at 1.0 so it is not enlarged.
+    CHECK(r.w == 200.0f);
+    CHECK(r.h == 150.0f);
 }
 
 // ── Pointer interactions ──────────────────────────────────────────────────

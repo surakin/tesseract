@@ -25,10 +25,14 @@ void ImageViewerOverlay::open(std::string media_url, std::string body,
     body_      = std::move(body);
     natural_w_ = natural_w;
     natural_h_ = natural_h;
-    zoom_      = 1.0f;
+    zoom_      = 1.0f;   // provisional until geometry (fit_zoom_) is known
     pan_x_     = 0.0f;
     pan_y_     = 0.0f;
     is_open_   = true;
+    // Open zoomed to fit: oversized images shrink to the viewport, images
+    // that already fit stay at 1:1 (fit_zoom_ is capped at 1.0). Resolved
+    // on the first recompute_base_ once bounds — and thus fit_zoom_ — exist.
+    open_at_fit_ = true;
     // Geometry is recomputed in paint() using current bounds.
 }
 
@@ -76,7 +80,13 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b) {
         base_     = { avail_w, avail_h * 0.5f };
         fit_zoom_ = 1.0f;
     }
-    zoom_ = std::clamp(zoom_, fit_zoom_, kZoomMax);
+    if (open_at_fit_) {
+        // First geometry pass after open(): start zoomed to fit.
+        zoom_        = fit_zoom_;
+        open_at_fit_ = false;
+    } else {
+        zoom_ = std::clamp(zoom_, fit_zoom_, kZoomMax);
+    }
 }
 
 void ImageViewerOverlay::recompute_image_rect() {
