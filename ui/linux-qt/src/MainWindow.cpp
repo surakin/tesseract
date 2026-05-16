@@ -500,8 +500,70 @@ MainWindow::MainWindow(QWidget* parent)
     roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     roomTextArea_->set_on_changed([this](const std::string& s) {
         if (mainApp_) mainApp_->room_view()->set_current_text(s);
+
+        int cursor = (int)s.size();
+
+        // Auto-expand: ":smile:" + space → replace with glyph
+        auto complete = shortcode_engine_.find_complete(s, cursor);
+        if (complete) {
+            auto hits = shortcode_engine_.lookup(complete->prefix, cached_emoticons_, 1);
+            std::string r = (!hits.empty() && !hits.front().glyph.empty())
+                ? hits.front().glyph
+                : ":" + complete->prefix + ":";
+            roomTextArea_->replace_range(complete->start, complete->end, r);
+            hide_shortcode_popup_();
+            return;
+        }
+
+        // Popup: ":gri" → show suggestions
+        auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
+        if (prefix_match && prefix_match->prefix.size() >= 2) {
+            shortcode_current_suggestions_ = shortcode_engine_.lookup(
+                prefix_match->prefix, cached_emoticons_);
+            if (!shortcode_current_suggestions_.empty()) {
+                shortcode_active_match_ = *prefix_match;
+                for (const auto& sugg : shortcode_current_suggestions_)
+                    if (!sugg.emoticon.url.empty())
+                        ensure_media_image_(sugg.emoticon.url, 28, 28);
+                show_shortcode_popup_(shortcode_current_suggestions_,
+                                      roomTextArea_->cursor_rect());
+                roomTextArea_->set_on_popup_nav([this](tk::NativeTextArea::NavKey nk) -> bool {
+                    if (!shortcode_popup_visible_()) return false;
+                    int cur = shortcode_popup_widget_->selected_index();
+                    int n   = shortcode_popup_widget_->visible_rows();
+                    if (nk == tk::NativeTextArea::NavKey::Up) {
+                        shortcode_popup_widget_->set_selected_index(std::max(0, cur - 1));
+                        return true;
+                    }
+                    if (nk == tk::NativeTextArea::NavKey::Down) {
+                        shortcode_popup_widget_->set_selected_index(std::min(n - 1, cur + 1));
+                        return true;
+                    }
+                    if (nk == tk::NativeTextArea::NavKey::Escape) {
+                        hide_shortcode_popup_();
+                        return true;
+                    }
+                    return false;
+                });
+                return;
+            }
+        }
+        hide_shortcode_popup_();
     });
-    roomTextArea_->set_on_submit([this] { onSendClicked(); });
+    roomTextArea_->set_on_submit([this] {
+        if (shortcode_popup_visible_()) {
+            int sel = shortcode_popup_widget_->selected_index();
+            if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size()) {
+                auto& s = shortcode_current_suggestions_[sel];
+                std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                roomTextArea_->replace_range(
+                    shortcode_active_match_.start, shortcode_active_match_.end, r);
+            }
+            hide_shortcode_popup_();
+            return;
+        }
+        onSendClicked();
+    });
     roomTextArea_->set_on_height_changed([this](float h) {
         if (!mainApp_ || !mainAppSurface_) return;
         mainApp_->room_view()->set_text_area_natural_height(h);
@@ -1095,6 +1157,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         }
     }
 
+    hide_shortcode_popup_();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id
             && room_subscription_refs_.count(current_room_id_) == 0)
@@ -1899,6 +1962,16 @@ void MainWindow::handle_image_packs_updated_ui_()
 {
     if (stickerPicker_)  stickerPicker_->refreshPacks();
     if (emojiPicker_)    emojiPicker_->refreshEmoticonPacks();
+
+    cached_emoticons_.clear();
+    if (client_) {
+        for (auto& pack : client_->list_image_packs()) {
+            for (auto& img : client_->list_pack_images(
+                    pack.id, tesseract::PackUsageFilter::Emoticon)) {
+                cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
 }
 
 void MainWindow::handle_account_prefs_updated_ui_(
@@ -2282,9 +2355,83 @@ tk::ThemeMode MainWindow::os_color_scheme_() const {
         ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
 }
 
+// ---------------------------------------------------------------------------
+// Shortcode popup
+// ---------------------------------------------------------------------------
+
+void MainWindow::show_shortcode_popup_(
+    const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+    tk::Rect cursor_local)
+{
+    if (!shortcode_popup_frame_) {
+        shortcode_popup_frame_ = new QWidget(nullptr,
+            Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+        shortcode_popup_frame_->setAttribute(Qt::WA_TranslucentBackground);
+
+        shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+            shortcode_popup_frame_,
+            /*transparent=*/true);
+
+        auto widget = std::make_unique<tesseract::views::ShortcodePopup>();
+        shortcode_popup_widget_ = widget.get();
+        shortcode_popup_surface_->set_root(std::move(widget));
+
+        shortcode_popup_widget_->on_accepted = [this](tesseract::views::ShortcodeSuggestion s) {
+            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+            roomTextArea_->replace_range(
+                shortcode_active_match_.start,
+                shortcode_active_match_.end,
+                std::move(r));
+            hide_shortcode_popup_();
+        };
+        shortcode_popup_widget_->on_dismissed = [this] { hide_shortcode_popup_(); };
+
+        auto* lay = new QVBoxLayout(shortcode_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(shortcode_popup_surface_.get());
+    }
+
+    shortcode_popup_widget_->set_suggestions(suggestions);
+
+    int rows = std::min((int)suggestions.size(),
+                        (int)tesseract::views::ShortcodePopup::kMaxRows);
+    int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
+    int w = int(tesseract::views::ShortcodePopup::kWidth);
+    shortcode_popup_frame_->resize(w, h);
+    shortcode_popup_surface_->resize(w, h);
+
+    // Map cursor rect from surface-local to screen coords.
+    QPoint screen_cursor = mainAppSurface_->mapToGlobal(
+        QPoint(int(cursor_local.x), int(cursor_local.y)));
+
+    QScreen* scr = screen();
+    QRect work   = scr ? scr->availableGeometry() : QRect(0, 0, 1920, 1080);
+    int x        = screen_cursor.x();
+    int y_above  = screen_cursor.y() - h - 4;
+    int y_below  = screen_cursor.y() + int(cursor_local.h) + 4;
+    int y        = (y_above >= work.top()) ? y_above : y_below;
+    x = std::clamp(x, work.left(), work.right()  - w);
+    y = std::clamp(y, work.top(),  work.bottom() - h);
+
+    shortcode_popup_frame_->move(x, y);
+    shortcode_popup_frame_->show();
+    shortcode_popup_surface_->relayout();
+}
+
+void MainWindow::hide_shortcode_popup_()
+{
+    if (shortcode_popup_frame_) shortcode_popup_frame_->hide();
+    if (roomTextArea_) roomTextArea_->set_on_popup_nav(nullptr);
+}
+
+// ---------------------------------------------------------------------------
+
 void MainWindow::apply_theme_ui_(const tk::Theme& t) {
     if (mainAppSurface_) mainAppSurface_->set_theme(t);
     if (accountPickerSurface_) accountPickerSurface_->set_theme(t);
+    if (shortcode_popup_surface_) shortcode_popup_surface_->set_theme(t);
     if (mainAppSurface_) mainAppSurface_->relayout();
 }
 

@@ -24,6 +24,8 @@
 #include "views/AccountPicker.h"
 #include "views/format.h"
 #include "views/MainAppWidget.h"
+#include "views/ShortcodeEngine.h"
+#include "views/ShortcodePopup.h"
 
 #include <atomic>
 #include <filesystem>
@@ -299,6 +301,24 @@ private:
     // Animated inline-media (GIF / WebP / APNG). `tk_anim_timer_` fires at
     // ~60 Hz and calls anim_cache_.advance(); a true return triggers repaint.
     QTimer*            tk_anim_timer_ = nullptr;
+
+    // ── Shortcode popup ──────────────────────────────────────────────────────
+    tesseract::views::ShortcodeEngine  shortcode_engine_;
+    tesseract::views::ShortcodeMatch   shortcode_active_match_{};
+    std::vector<tesseract::ImagePackImage>              cached_emoticons_;
+    std::vector<tesseract::views::ShortcodeSuggestion> shortcode_current_suggestions_;
+
+    QWidget*                          shortcode_popup_frame_   = nullptr;
+    std::unique_ptr<tk::qt6::Surface> shortcode_popup_surface_ = nullptr;
+    tesseract::views::ShortcodePopup* shortcode_popup_widget_  = nullptr;
+
+    void show_shortcode_popup_(
+        const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+        tk::Rect cursor_rect);
+    void hide_shortcode_popup_();
+    bool shortcode_popup_visible_() const {
+        return shortcode_popup_frame_ && shortcode_popup_frame_->isVisible();
+    }
 };
 
 } // namespace qt6
