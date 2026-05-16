@@ -42,6 +42,7 @@ public:
     // / hiding children, replacing labels with very different lengths,
     // …). resizeEvent already does this automatically.
     void relayout();
+    void set_theme(const Theme& t);
 
     // Callback fired at the tail of every relayout. Use this from
     // integration code to keep native overlays (QLineEdit, ...) aligned

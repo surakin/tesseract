@@ -52,6 +52,7 @@ public:
     }
     Widget* root() const { return root_.get(); }
     const Theme& theme() const { return *theme_; }
+    void set_theme(const Theme& t) { theme_ = &t; }
     CanvasFactory& factory() { return *factory_; }
     TKSurfaceView* view() const { return view_; }
     void detach() { view_ = nil; }
@@ -1065,6 +1066,11 @@ void Surface::set_root(std::unique_ptr<Widget> root) {
 Widget* Surface::root() const { return host_->root(); }
 
 void Surface::relayout() { host_->relayout(); }
+
+void Surface::set_theme(const Theme& t) {
+    host_->set_theme(t);
+    relayout();
+}
 
 void Surface::set_on_layout(std::function<void()> cb) {
     host_->set_on_layout(std::move(cb));

@@ -42,6 +42,7 @@ public:
     // Re-run measure + arrange + repaint on the existing root. The
     // NSView's `-layout` already triggers this on resize.
     void relayout();
+    void set_theme(const Theme& t);
 
     // Callback fired at the tail of every relayout. Use this to align
     // NSTextField overlays with shared widget rects.

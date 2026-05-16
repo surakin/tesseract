@@ -44,6 +44,7 @@ public:
     // after mutating widget state in a way that affects layout. The
     // GtkDrawingArea's "resize" signal also calls this automatically.
     void relayout();
+    void set_theme(const Theme& t);
 
     // Callback fired at the tail of every relayout (initial, resize,
     // explicit). Use this from integration code to keep native overlays

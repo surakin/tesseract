@@ -59,6 +59,7 @@ public:
     // Re-run measure + arrange + repaint on the existing root. WM_SIZE
     // calls this automatically.
     void relayout();
+    void set_theme(const Theme& t);
 
     // Callback fired at the tail of every relayout — use this from
     // integration code to keep native overlays aligned with the widget
