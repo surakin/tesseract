@@ -33,6 +33,8 @@ using std::min;
 #include "views/MainAppWidget.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
+#include "views/ShortcodeEngine.h"
+#include "views/ShortcodePopup.h"
 
 #include "views/AccountPicker.h"
 
@@ -306,6 +308,24 @@ private:
     std::unique_ptr<tk::NativeTextField>  room_search_field_;
     std::unique_ptr<tk::NativeTextArea>   room_text_area_;
     std::unique_ptr<tk::NativeTextField>  recovery_key_field_;
+
+    // ── Shortcode popup ───────────────────────────────────────────────────
+    tesseract::views::ShortcodeEngine       shortcode_engine_;
+    tesseract::views::ShortcodeMatch        shortcode_active_match_{};
+    std::vector<tesseract::ImagePackImage>  cached_emoticons_;
+    std::vector<tesseract::views::ShortcodeSuggestion> shortcode_current_suggestions_;
+
+    HWND                                   shortcode_popup_hwnd_    = nullptr;
+    std::unique_ptr<tk::win32::Surface>    shortcode_popup_surface_;
+    tesseract::views::ShortcodePopup*      shortcode_popup_widget_  = nullptr;
+
+    void show_shortcode_popup_(
+        const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+        tk::Rect cursor_rect);
+    void hide_shortcode_popup_();
+    bool shortcode_popup_visible_() const {
+        return shortcode_popup_hwnd_ && IsWindowVisible(shortcode_popup_hwnd_);
+    }
 
     HWND      hEmojiPicker_ = nullptr;       // floating WS_POPUP host
     std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;

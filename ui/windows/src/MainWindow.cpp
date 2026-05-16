@@ -263,6 +263,15 @@ void MainWindow::handle_image_packs_updated_ui_()
 {
     refresh_sticker_picker();
     refresh_emoji_picker();
+    cached_emoticons_.clear();
+    if (client_) {
+        for (auto& pack : client_->list_image_packs()) {
+            for (auto& img : client_->list_pack_images(
+                     pack.id, tesseract::PackUsageFilter::Emoticon)) {
+                cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
@@ -1115,8 +1124,75 @@ void MainWindow::on_create(HWND hwnd) {
         room_text_area_->set_on_changed([this](const std::string& s) {
             handle_compose_text_changed_(s);
             if (room_view_) room_view_->set_current_text(s);
+
+            // ── Shortcode detection ─────────────────────────────────────────
+            int cursor = (int)s.size();
+
+            auto complete = shortcode_engine_.find_complete(s, cursor);
+            if (complete) {
+                auto hits = shortcode_engine_.lookup(complete->prefix, cached_emoticons_, 1);
+                std::string r = (!hits.empty() && !hits.front().glyph.empty())
+                    ? hits.front().glyph
+                    : ":" + complete->prefix + ":";
+                room_text_area_->replace_range(complete->start, complete->end, r);
+                hide_shortcode_popup_();
+                return;
+            }
+
+            auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
+            if (prefix_match && prefix_match->prefix.size() >= 2) {
+                shortcode_current_suggestions_ = shortcode_engine_.lookup(
+                    prefix_match->prefix, cached_emoticons_);
+                if (!shortcode_current_suggestions_.empty()) {
+                    shortcode_active_match_ = *prefix_match;
+                    for (const auto& sugg : shortcode_current_suggestions_)
+                        if (!sugg.emoticon.url.empty())
+                            ensure_media_image_(sugg.emoticon.url, 28, 28);
+                    bool was_visible = shortcode_popup_visible_();
+                    show_shortcode_popup_(shortcode_current_suggestions_,
+                                          room_text_area_->cursor_rect());
+                    if (!was_visible)
+                        room_text_area_->set_on_popup_nav(
+                            [this](tk::NativeTextArea::NavKey nk) -> bool {
+                                if (!shortcode_popup_visible_()) return false;
+                                int cur = shortcode_popup_widget_->selected_index();
+                                int n   = shortcode_popup_widget_->visible_rows();
+                                if (nk == tk::NativeTextArea::NavKey::Up) {
+                                    shortcode_popup_widget_->set_selected_index(
+                                        std::max(0, cur - 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Down) {
+                                    shortcode_popup_widget_->set_selected_index(
+                                        std::min(n - 1, cur + 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Escape) {
+                                    hide_shortcode_popup_();
+                                    return true;
+                                }
+                                return false;
+                            });
+                    return;
+                }
+            }
+            hide_shortcode_popup_();
+            // ── End shortcode detection ─────────────────────────────────────
         });
-        room_text_area_->set_on_submit([this] { on_send_clicked(); });
+        room_text_area_->set_on_submit([this] {
+            if (shortcode_popup_visible_()) {
+                int sel = shortcode_popup_widget_->selected_index();
+                if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size()) {
+                    auto& s = shortcode_current_suggestions_[sel];
+                    std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                    room_text_area_->replace_range(
+                        shortcode_active_match_.start, shortcode_active_match_.end, r);
+                    hide_shortcode_popup_();
+                    return;
+                }
+                hide_shortcode_popup_();
+            }
+            on_send_clicked();
         room_text_area_->set_on_height_changed([this](float h) {
             if (room_view_) room_view_->set_text_area_natural_height(h);
             if (main_app_surface_) main_app_surface_->relayout();
@@ -1678,6 +1754,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         }
     }
 
+    hide_shortcode_popup_();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id
             && room_subscription_refs_.count(current_room_id_) == 0)
@@ -2266,6 +2343,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         }
         if (room_view_) room_view_->notify_image_ready(cache_key);
         main_app_surface_->relayout();
+        if (shortcode_popup_visible_() && shortcode_popup_surface_)
+            shortcode_popup_surface_->relayout();
         break;
     }
     if (invalidate_hwnd)
@@ -2915,6 +2994,73 @@ void MainWindow::toggle_emoji_picker() {
     if (emoji_picker_surface_) emoji_picker_surface_->relayout();
     if (emoji_picker_search_field_) emoji_picker_search_field_->set_focused(true);
 }
+
+// ---------------------------------------------------------------------------
+// Shortcode popup — WS_POPUP HWND hosting a tk::win32::Surface that paints
+// the shared tesseract::views::ShortcodePopup suggestion list.
+// ---------------------------------------------------------------------------
+
+void MainWindow::show_shortcode_popup_(
+    const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+    tk::Rect cursor_local)
+{
+    int w    = int(tesseract::views::ShortcodePopup::kWidth);
+    int rows = std::min((int)suggestions.size(),
+                        int(tesseract::views::ShortcodePopup::kMaxRows));
+    int h    = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
+
+    HWND parent = main_app_surface_->hwnd();
+    POINT pt{ LONG(cursor_local.x), LONG(cursor_local.y) };
+    ClientToScreen(parent, &pt);
+
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+
+    int x       = pt.x;
+    int y_above = pt.y - h - 4;
+    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y       = (y_above >= mi.rcWork.top) ? y_above : y_below;
+    x = std::clamp(x, mi.rcWork.left, mi.rcWork.right  - w);
+    y = std::clamp(y, mi.rcWork.top,  mi.rcWork.bottom - h);
+
+    if (!shortcode_popup_hwnd_) {
+        shortcode_popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            L"STATIC", L"", WS_POPUP,
+            x, y, w, h, nullptr, nullptr, hInst_, nullptr);
+        shortcode_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            shortcode_popup_hwnd_, main_app_surface_->theme());
+        auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
+        shortcode_popup_widget_ = pw.get();
+        shortcode_popup_surface_->set_root(std::move(pw));
+        shortcode_popup_widget_->on_accepted =
+            [this](tesseract::views::ShortcodeSuggestion s) {
+                std::string r = s.glyph.empty()
+                    ? ":" + s.shortcode + ":"
+                    : s.glyph;
+                room_text_area_->replace_range(
+                    shortcode_active_match_.start,
+                    shortcode_active_match_.end,
+                    std::move(r));
+                hide_shortcode_popup_();
+            };
+        shortcode_popup_widget_->on_dismissed = [this] { hide_shortcode_popup_(); };
+    }
+
+    shortcode_popup_widget_->set_suggestions(suggestions);
+    SetWindowPos(shortcode_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    shortcode_popup_surface_->relayout();
+}
+
+void MainWindow::hide_shortcode_popup_()
+{
+    if (shortcode_popup_hwnd_) ShowWindow(shortcode_popup_hwnd_, SW_HIDE);
+    if (room_text_area_)       room_text_area_->set_on_popup_nav(nullptr);
+}
+
+// ---------------------------------------------------------------------------
 
 void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
     ensure_emoji_picker_created();
