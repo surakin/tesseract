@@ -608,11 +608,24 @@ impl ClientFfi {
                             let room_name = room.display_name().await
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| room_id.clone());
+                            // Resolve the sender's display name for the
+                            // notification (push-rule eval above still uses
+                            // the raw MXID). Same cached-member pattern as
+                            // the typing handler; falls back to localpart.
+                            let sender_name = match
+                                room.get_member_no_sync(&ev.sender).await
+                            {
+                                Ok(Some(m)) => m.display_name()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(
+                                        || ev.sender.localpart().to_string()),
+                                _ => ev.sender.localpart().to_string(),
+                            };
                             let avatar = room.avatar(matrix_sdk::media::MediaFormat::File)
                                 .await.ok().flatten().unwrap_or_default();
                             if let Ok(g) = h.lock() {
                                 g.on_notification(&room_id, &room_name,
-                                                  &sender, &body, is_mention, &avatar);
+                                                  &sender_name, &body, is_mention, &avatar);
                             }
                         }
                     }
