@@ -3657,6 +3657,62 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     packs
 }
 
+fn latest_event_body(value: &matrix_sdk::latest_events::LatestEventValue) -> Option<String> {
+    use matrix_sdk::latest_events::LatestEventValue;
+    use matrix_sdk::ruma::events::{
+        AnySyncMessageLikeEvent, AnySyncTimelineEvent,
+        room::message::MessageType,
+    };
+
+    match value {
+        LatestEventValue::Remote(timeline_event) => {
+            let event = timeline_event.raw().deserialize().ok()?;
+            let msgtype = match event {
+                AnySyncTimelineEvent::MessageLike(
+                    AnySyncMessageLikeEvent::RoomMessage(ev)
+                ) => ev.as_original()?.content.msgtype.clone(),
+                _ => return None,
+            };
+            let body = match msgtype {
+                MessageType::Text(t)  => t.body.trim().to_owned(),
+                MessageType::Image(i) => i.body.trim().to_owned(),
+                MessageType::File(f)  => f.body.trim().to_owned(),
+                MessageType::Audio(a) => a.body.trim().to_owned(),
+                MessageType::Video(v) => v.body.trim().to_owned(),
+                _ => return None,
+            };
+            if body.is_empty() { None } else { Some(body) }
+        }
+        LatestEventValue::LocalIsSending(local)
+        | LatestEventValue::LocalCannotBeSent(local) => {
+            extract_local_body(&local.content)
+        }
+        LatestEventValue::LocalHasBeenSent { value: local, .. } => {
+            extract_local_body(&local.content)
+        }
+        LatestEventValue::None | LatestEventValue::RemoteInvite { .. } => None,
+    }
+}
+
+fn extract_local_body(
+    content: &matrix_sdk::store::SerializableEventContent,
+) -> Option<String> {
+    use matrix_sdk::ruma::events::{AnyMessageLikeEventContent, room::message::MessageType};
+    let msgtype = match content.deserialize().ok()? {
+        AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
+        _ => return None,
+    };
+    let body = match msgtype {
+        MessageType::Text(t)  => t.body.trim().to_owned(),
+        MessageType::Image(i) => i.body.trim().to_owned(),
+        MessageType::File(f)  => f.body.trim().to_owned(),
+        MessageType::Audio(a) => a.body.trim().to_owned(),
+        MessageType::Video(v) => v.body.trim().to_owned(),
+        _ => return None,
+    };
+    if body.is_empty() { None } else { Some(body) }
+}
+
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();
     for room in client.joined_rooms() {
@@ -5073,5 +5129,112 @@ mod tests {
         let r = c.remove_pusher("key", "im.gnomos.tesseract");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
+    }
+}
+
+#[cfg(test)]
+mod tests_latest_event_body {
+    use super::latest_event_body;
+    use matrix_sdk::latest_events::{LatestEventValue, LocalLatestEventValue, RemoteLatestEventValue};
+    use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, serde::Raw, events::AnySyncTimelineEvent};
+    use matrix_sdk::store::SerializableEventContent;
+    use matrix_sdk::ruma::events::{AnyMessageLikeEventContent, room::message::RoomMessageEventContent};
+
+    #[test]
+    fn none_returns_none() {
+        assert_eq!(latest_event_body(&LatestEventValue::None), None);
+    }
+
+    #[test]
+    fn remote_invite_returns_none() {
+        let value = LatestEventValue::RemoteInvite {
+            event_id: None,
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            inviter: None,
+        };
+        assert_eq!(latest_event_body(&value), None);
+    }
+
+    #[test]
+    fn remote_text_message_returns_body() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            serde_json::json!({
+                "type": "m.room.message",
+                "event_id": "$ev0",
+                "room_id": "!r0:example.com",
+                "sender": "@alice:example.com",
+                "origin_server_ts": 1000,
+                "content": { "msgtype": "m.text", "body": "hello world" }
+            }).to_string()
+        ).unwrap();
+        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
+        assert_eq!(latest_event_body(&value), Some("hello world".to_owned()));
+    }
+
+    #[test]
+    fn remote_image_returns_filename_body() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            serde_json::json!({
+                "type": "m.room.message",
+                "event_id": "$ev1",
+                "room_id": "!r0:example.com",
+                "sender": "@alice:example.com",
+                "origin_server_ts": 1000,
+                "content": {
+                    "msgtype": "m.image",
+                    "body": "photo.jpg",
+                    "url": "mxc://example.com/abc"
+                }
+            }).to_string()
+        ).unwrap();
+        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
+        assert_eq!(latest_event_body(&value), Some("photo.jpg".to_owned()));
+    }
+
+    #[test]
+    fn remote_state_event_returns_none() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            serde_json::json!({
+                "type": "m.room.member",
+                "event_id": "$ev2",
+                "room_id": "!r0:example.com",
+                "sender": "@alice:example.com",
+                "state_key": "@alice:example.com",
+                "origin_server_ts": 1000,
+                "content": { "membership": "join" }
+            }).to_string()
+        ).unwrap();
+        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
+        assert_eq!(latest_event_body(&value), None);
+    }
+
+    #[test]
+    fn remote_empty_body_returns_none() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            serde_json::json!({
+                "type": "m.room.message",
+                "event_id": "$ev3",
+                "room_id": "!r0:example.com",
+                "sender": "@alice:example.com",
+                "origin_server_ts": 1000,
+                "content": { "msgtype": "m.text", "body": "   " }
+            }).to_string()
+        ).unwrap();
+        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
+        assert_eq!(latest_event_body(&value), None);
+    }
+
+    #[test]
+    fn local_is_sending_text_returns_body() {
+        let content = SerializableEventContent::new(
+            &AnyMessageLikeEventContent::RoomMessage(
+                RoomMessageEventContent::text_plain("sending\u{2026}")
+            )
+        ).unwrap();
+        let value = LatestEventValue::LocalIsSending(LocalLatestEventValue {
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            content,
+        });
+        assert_eq!(latest_event_body(&value), Some("sending\u{2026}".to_owned()));
     }
 }
