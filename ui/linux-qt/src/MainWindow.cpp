@@ -2257,11 +2257,15 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         verifShared_->set_state(tesseract::views::VerificationBanner::State::Prompt);
         // Verification takes priority — hide recovery banner if it appeared
         // before the verification state callback arrived (race on first sync).
+        // But if recovery is actively in progress (Verifying/Importing), let
+        // it finish rather than interrupting with the verification banner.
         if (recoverySurface_ && recoverySurface_->isVisible() && recoveryShared_) {
             auto rs = recoveryShared_->state();
             if (rs == tesseract::views::RecoveryBanner::State::Form
              || rs == tesseract::views::RecoveryBanner::State::Failed) {
                 recoverySurface_->setVisible(false);
+            } else {
+                return;
             }
         }
         verifSurface_->setVisible(true);

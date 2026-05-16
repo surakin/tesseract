@@ -386,14 +386,23 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         if (!verif_banner_visible_) {
             if (verif_shared_) verif_shared_->set_state(
                 tesseract::views::VerificationBanner::State::Prompt);
-            ShowWindow(verif_surface_->hwnd(), SW_SHOW);
-            verif_banner_visible_ = true;
             // Verification takes priority — hide the recovery banner if it
             // appeared before the verification state callback arrived.
-            if (recovery_banner_visible_ && recovery_surface_ && recovery_surface_->hwnd()) {
-                ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
-                recovery_banner_visible_ = false;
+            // But if recovery is actively in progress (Verifying/Importing), let
+            // it finish rather than interrupting with the verification banner.
+            if (recovery_banner_visible_ && recovery_surface_ && recovery_shared_) {
+                auto rs = recovery_shared_->state();
+                if (rs == tesseract::views::RecoveryBanner::State::Form
+                 || rs == tesseract::views::RecoveryBanner::State::Failed) {
+                    if (recovery_surface_->hwnd())
+                        ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
+                    recovery_banner_visible_ = false;
+                } else {
+                    return;
+                }
             }
+            ShowWindow(verif_surface_->hwnd(), SW_SHOW);
+            verif_banner_visible_ = true;
             RECT rc; GetClientRect(hwnd_, &rc);
             on_size(rc.right, rc.bottom);
         }

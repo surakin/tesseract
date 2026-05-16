@@ -2203,6 +2203,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                 tesseract::views::VerificationBanner::State::Prompt);
             // Verification takes priority — hide recovery banner if it appeared
             // before the verification state callback arrived (race on first sync).
+            // But if recovery is actively in progress (Verifying/Importing), let
+            // it finish rather than interrupting with the verification banner.
             if (_recoverySurface && _recoveryShared) {
                 NSView* rv = (__bridge NSView*)_recoverySurface->view_handle();
                 if (!rv.hidden) {
@@ -2210,6 +2212,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                     if (rs == tesseract::views::RecoveryBanner::State::Form
                      || rs == tesseract::views::RecoveryBanner::State::Failed)
                         rv.hidden = YES;
+                    else
+                        return;
                 }
             }
             v.hidden = NO;

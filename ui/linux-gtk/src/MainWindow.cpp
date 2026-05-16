@@ -203,6 +203,8 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 tesseract::views::VerificationBanner::State::Prompt);
         // Verification takes priority — hide recovery banner if it appeared
         // before the verification state callback arrived (race on first sync).
+        // But if recovery is actively in progress (Verifying/Importing), let
+        // it finish rather than interrupting with the verification banner.
         if (recovery_surface_ && recovery_shared_) {
             GtkWidget* rw = recovery_surface_->widget();
             if (gtk_widget_get_visible(rw)) {
@@ -210,6 +212,8 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 if (rs == tesseract::views::RecoveryBanner::State::Form
                  || rs == tesseract::views::RecoveryBanner::State::Failed)
                     gtk_widget_set_visible(rw, FALSE);
+                else
+                    return;
             }
         }
         gtk_widget_set_size_request(w, -1, 48);
