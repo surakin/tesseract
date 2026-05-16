@@ -1225,6 +1225,14 @@ void MainWindow::on_create(HWND hwnd) {
             if (!current_room_id_.empty())
                 return_to_live_(current_room_id_);
         };
+        room_view_->on_scroll_to_original = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            std::string room = current_room_id_;
+            begin_focused_subscription_(room, event_id);
+            run_async_([this, room, event_id] {
+                client_->subscribe_room_at(room, event_id);
+            });
+        };
         room_view_->on_jump_to_date_requested = [this] {
             openJumpToDateDialog();
         };
@@ -2551,6 +2559,7 @@ void MainWindow::ensure_row_media(const tesseract::Event& ev) {
 
 void MainWindow::clear_messages() {
     if (!room_view_) return;
+    room_view_->clear_room();
     room_view_->set_messages({});
     if (chat_surface_) chat_surface_->relayout();
 }
@@ -2798,7 +2807,7 @@ void MainWindow::switch_active_account(int new_idx) {
         rooms_.clear();
 
     if (room_list_view_) room_list_view_->set_rooms({});
-    if (room_view_)      room_view_->set_messages({});
+    if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
     if (room_surface_)   room_surface_->relayout();
     if (chat_surface_)   chat_surface_->relayout();
 
@@ -2897,7 +2906,7 @@ void MainWindow::logout_active_account() {
     if (user_avatar_bmp_) { delete user_avatar_bmp_; user_avatar_bmp_ = nullptr; }
     rooms_.clear();
     if (room_list_view_) room_list_view_->set_rooms({});
-    if (room_view_)      room_view_->set_messages({});
+    if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
     if (room_surface_)   room_surface_->relayout();
     if (chat_surface_)   chat_surface_->relayout();
     ShowWindow(hUserStrip_, SW_HIDE);

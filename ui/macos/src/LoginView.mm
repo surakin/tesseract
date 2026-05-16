@@ -3,6 +3,7 @@
 #include "tk/host.h"
 #include "tk/host_macos.h"
 #include "tk/theme.h"
+#include "util.h"
 #include "views/LoginView.h"
 
 #include <atomic>
@@ -18,14 +19,9 @@ std::string nsstr(NSString* s) {
     return s ? std::string(s.UTF8String ? s.UTF8String : "") : std::string{};
 }
 
-std::string trim(std::string s) {
-    auto a = s.find_first_not_of(" \t\n\r");
-    auto b = s.find_last_not_of (" \t\n\r");
-    if (a == std::string::npos) return {};
-    return s.substr(a, b - a + 1);
-}
-
 } // namespace
+
+using tesseract::macos::trim;
 
 @implementation LoginView {
     tesseract::Client*                              _client;

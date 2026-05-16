@@ -50,6 +50,10 @@ public:
     // thread; the callable can mutate the widget tree freely.
     virtual void set_on_changed(std::function<void(const std::string&)>) = 0;
     virtual void set_on_submit (std::function<void()>)                    = 0;
+
+    // Focus-change hook. Called with `true` when the field gains focus,
+    // `false` when it loses it. Default no-op so backends can opt in.
+    virtual void set_on_focus_changed(std::function<void(bool)>) {}
 };
 
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the

@@ -886,6 +886,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     room_view_->on_return_to_live = [this] {
         if (!current_room_id_.empty()) return_to_live_(current_room_id_);
     };
+    room_view_->on_scroll_to_original = [this](const std::string& event_id) {
+        if (current_room_id_.empty()) return;
+        std::string room = current_room_id_;
+        begin_focused_subscription_(room, event_id);
+        run_async_([this, room, event_id] {
+            client_->subscribe_room_at(room, event_id);
+        });
+    };
     room_view_->on_jump_to_date_requested = [this] {
         open_jump_to_date_dialog();
     };
@@ -1666,7 +1674,7 @@ void MainWindow::push_timeline_reset(
 }
 
 void MainWindow::clear_messages() {
-    if (room_view_) room_view_->set_messages({});
+    if (room_view_) { room_view_->clear_room(); room_view_->set_messages({}); }
     if (chat_surface_) chat_surface_->relayout();
 }
 

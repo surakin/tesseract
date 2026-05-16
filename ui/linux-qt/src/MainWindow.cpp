@@ -398,6 +398,14 @@ MainWindow::MainWindow(QWidget* parent)
         roomView_->on_return_to_live = [this] {
             if (!current_room_id_.empty()) return_to_live_(current_room_id_);
         };
+        roomView_->on_scroll_to_original = [this](const std::string& event_id) {
+            if (current_room_id_.empty()) return;
+            std::string room = current_room_id_;
+            begin_focused_subscription_(room, event_id);
+            runOnPool_([this, room, event_id] {
+                client_->subscribe_room_at(room, event_id);
+            });
+        };
         roomView_->on_jump_to_date_requested = [this] {
             openJumpToDateDialog();
         };
@@ -1340,7 +1348,7 @@ void MainWindow::onPaginateFinished(QString roomId, bool reached_start) {
 
 
 void MainWindow::clearMessages() {
-    if (roomView_) roomView_->set_messages({});
+    if (roomView_) { roomView_->clear_room(); roomView_->set_messages({}); }
 }
 
 // ---------------------------------------------------------------------------

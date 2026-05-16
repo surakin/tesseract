@@ -19,6 +19,7 @@
 #include "views/ImageViewerOverlay.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/RecoveryBanner.h"
+#include "util.h"
 #include "views/RoomListView.h"
 #include "views/RoomView.h"
 #include "views/VerificationBanner.h"
@@ -117,6 +118,8 @@ protected:
         bool is_mention, std::vector<uint8_t> avatar_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
+    void on_url_preview_ready_(const std::string& url,
+                                const Client::UrlPreview& preview) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -186,16 +189,13 @@ public:
     // ObjC ivar boundary (which is private to @implementation).
     tesseract::views::RoomView* room_view_ = nullptr;
 
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
+
 private:
     MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
 };
 
-std::string trim(std::string s) {
-    auto a = s.find_first_not_of(" \t\n\r");
-    auto b = s.find_last_not_of (" \t\n\r");
-    if (a == std::string::npos) return {};
-    return s.substr(a, b - a + 1);
-}
+using tesseract::macos::trim;
 
 } // namespace
 
@@ -519,9 +519,28 @@ void MacShell::on_room_list_state_ui_() {
 }
 
 void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
+    // Typing-indicator visibility is driven by set_typing_text content inside
+    // MessageListView — the visible param is intentionally unused.
     MainWindowController* c = ctrl_;
     if (!c) return;
     if (room_view_) room_view_->set_typing_text(text);
+}
+
+void MacShell::on_url_preview_ready_(const std::string& url,
+                                      const Client::UrlPreview& preview) {
+    tesseract::views::UrlPreviewData d;
+    d.title       = preview.title;
+    d.description = preview.description;
+    d.image_mxc   = preview.image_mxc;
+    d.image_w     = preview.image_w;
+    d.image_h     = preview.image_h;
+    url_preview_data_.emplace(url, std::move(d));
+
+    if (!preview.image_mxc.empty())
+        ensure_media_image_(preview.image_mxc, 64, 64);
+
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    if (ctrl_) [ctrl_ _relayoutChatSurface];
 }
 
 } // namespace
@@ -582,10 +601,6 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     std::unique_ptr<tk::macos::Surface>              _vidViewerSurface;
     tesseract::views::VideoViewerOverlay*            _vidViewer;  // borrowed
     NSView*                                          _vidViewerView;
-    // macOS-specific: NSMutableSet used by _videoThumbInFlight check.
-    // ShellBase owns video_thumb_in_flight_ (C++ unordered_set); this ObjC
-    // set is no longer used — the C++ set in ShellBase deduplicates.
-
     // Right-click context menu sticker state.
     std::string                                      _ctxStickerEventId;
     std::string                                      _ctxStickerMxcUrl;
@@ -659,19 +674,13 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     _sidebar = [[NSView alloc] initWithFrame:NSZeroRect];
     _sidebar.wantsLayer = YES;
     _sidebar.layer.backgroundColor =
-        [NSColor colorWithCalibratedRed:0xF0/255.0
-                                    green:0xF2/255.0
-                                     blue:0xF5/255.0
-                                    alpha:1.0].CGColor;
+        [NSColor controlBackgroundColor].CGColor;
 
     // ── Space nav bar (top of sidebar; hidden until drilled into a space) ──
     _spaceNavBar = [[NSView alloc] initWithFrame:NSZeroRect];
     _spaceNavBar.wantsLayer = YES;
     _spaceNavBar.layer.backgroundColor =
-        [NSColor colorWithCalibratedRed:0xE8/255.0
-                                    green:0xEA/255.0
-                                     blue:0xEE/255.0
-                                    alpha:1.0].CGColor;
+        [NSColor windowBackgroundColor].CGColor;
     _spaceBackButton = [NSButton buttonWithTitle:@"←"
                                           target:self
                                           action:@selector(_onSpaceBack)];
@@ -749,10 +758,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     _userStrip = [[NSView alloc] initWithFrame:NSZeroRect];
     _userStrip.wantsLayer = YES;
     _userStrip.layer.backgroundColor =
-        [NSColor colorWithCalibratedRed:0xE8/255.0
-                                    green:0xEA/255.0
-                                     blue:0xEE/255.0
-                                    alpha:1.0].CGColor;
+        [NSColor windowBackgroundColor].CGColor;
     NSBox* stripSeparator = [[NSBox alloc] init];
     stripSeparator.boxType = NSBoxSeparator;
     stripSeparator.translatesAutoresizingMaskIntoConstraints = NO;
@@ -854,6 +860,18 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
                 if (auto* f = s->_shell->anim_cache_.current_frame(mxc)) return f;
                 auto it = s->_shell->tk_images_.find(mxc);
                 return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
+            });
+        _roomView->set_preview_provider(
+            [weakSelf](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+                MainWindowController* s = weakSelf;
+                if (!s) return nullptr;
+                auto it = s->_shell->url_preview_data_.find(url);
+                if (it == s->_shell->url_preview_data_.end()) return nullptr;
+                if (!it->second.image_mxc.empty()
+                    && !s->_shell->tk_images_.count(it->second.image_mxc)
+                    && !s->_shell->anim_cache_.has(it->second.image_mxc))
+                    s->_shell->ensure_media_image_(it->second.image_mxc, 64, 64);
+                return &it->second;
             });
         _roomView->set_voice_bytes_provider(
             [weakSelf](const std::string& source_json) -> std::vector<std::uint8_t> {
@@ -1013,6 +1031,16 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
             MainWindowController* s = weakSelf;
             if (!s || s->_shell->current_room_id_.empty()) return;
             s->_shell->return_to_live_(s->_shell->current_room_id_);
+        };
+        _roomView->on_scroll_to_original = [weakSelf](const std::string& event_id) {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty()) return;
+            std::string room = s->_shell->current_room_id_;
+            s->_shell->begin_focused_subscription_(room, event_id);
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                MainWindowController* s2 = weakSelf;
+                if (s2) s2->_shell->client_->subscribe_room_at(room, event_id);
+            });
         };
         _roomView->on_jump_to_date_requested = [weakSelf] {
             MainWindowController* s = weakSelf;
@@ -1649,7 +1677,7 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     _shell->rooms_ = (it != _shell->per_account_rooms_.end())
         ? it->second : std::vector<tesseract::RoomInfo>{};
     [self _refreshRoomList];
-    if (_roomView) _roomView->set_messages({});
+    if (_roomView) { _roomView->clear_room(); _roomView->set_messages({}); }
     [self _relayoutChatSurface];
 
     _splitView.hidden = NO;
@@ -1732,15 +1760,14 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
 
     if (!_shell->my_avatar_url_.empty()) {
         std::string url = _shell->my_avatar_url_;
+        auto* clientPtr = _shell->client_.get();
         __weak MainWindowController* weakSelf = self;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            auto bytes = s->_shell->client_->fetch_media_bytes(url);
+            auto bytes = clientPtr->fetch_media_bytes(url);
             dispatch_async(dispatch_get_main_queue(), ^{
-                MainWindowController* s2 = weakSelf;
-                if (!s2 || bytes.empty()) return;
-                [s2 _setUserAvatarBytes:bytes];
+                MainWindowController* s = weakSelf;
+                if (!s || bytes.empty()) return;
+                [s _setUserAvatarBytes:bytes];
             });
         });
     } else {
@@ -1923,7 +1950,9 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
         _shell->rooms_.clear();
         _shell->space_stack_.clear();
         [self _refreshRoomList];
-        if (_roomView) _roomView->set_messages({});
+        _shell->handle_compose_room_leaving_(_shell->current_room_id_);
+        _shell->current_room_id_.clear();
+        if (_roomView) { _roomView->clear_room(); _roomView->set_messages({}); }
         [self _relayoutChatSurface];
         _userStrip.hidden = YES;
         _userStripHeightCon.constant = 0;
@@ -2074,39 +2103,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     [NSApp activateIgnoringOtherApps:YES];
     [self onRoomSelected:roomId];
 }
-
-// ─────────────────────────────────────────────────────────────────────────
-//  Avatar / media decoding into tk::Image
-// ─────────────────────────────────────────────────────────────────────────
-
-- (void)_decodeAndCache:(const std::vector<uint8_t>&)bytes
-                  forKey:(const std::string&)key
-              destMap:(std::unordered_map<std::string, TkImagePtr>&)dest
-                 cap:(int)cap {
-    if (bytes.empty() || dest.count(key)) return;
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
-                                    bytes.data(),
-                                    static_cast<CFIndex>(bytes.size()));
-    if (!data) return;
-    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
-    CFRelease(data);
-    if (!src) return;
-    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
-    CFRelease(src);
-    if (!img) return;
-
-    // For avatars we keep the cap at the visual::kRoom/MsgAvatarSize;
-    // for inline media we use the inline-image / sticker caps. The
-    // shared views also clip + fit on paint, so over-large bytes here
-    // are merely wasteful, not wrong.
-    (void)cap;
-    auto wrapper = tk::cg::make_image(img);
-    CGImageRelease(img);
-    dest.emplace(key, std::move(wrapper));
-}
-
-// Note: _ensureRoomAvatar, _ensureUserAvatar, _ensureMediaImage, and
-// _ensureReplyDetails are now handled by ShellBase via MacShell.
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Event-bridge callbacks (main thread)

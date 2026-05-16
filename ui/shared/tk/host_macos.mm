@@ -285,9 +285,14 @@ public:
     void set_on_submit(std::function<void()> cb) override {
         on_submit_ = std::move(cb);
     }
+    void set_on_focus_changed(std::function<void(bool)> cb) override {
+        on_focus_changed_ = std::move(cb);
+    }
 
     void notify_changed();
     void notify_submit ();
+    void notify_focus_gained();
+    void notify_focus_lost  ();
 
 private:
     TKSurfaceView*                          superview_ = nil;
@@ -295,6 +300,7 @@ private:
     TKTextFieldBridge*                      bridge_    = nil;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()>                   on_submit_;
+    std::function<void(bool)>               on_focus_changed_;
 };
 
 } // namespace tk::macos
@@ -310,6 +316,11 @@ private:
     if (self.owner) self.owner->notify_changed();
 }
 
+// Fires when editing begins (field gains focus / field editor appears).
+- (void)controlTextDidBeginEditing:(NSNotification*)note {
+    if (self.owner) self.owner->notify_focus_gained();
+}
+
 // Fires when the field ends editing (return key, focus loss). The Return
 // key sets userInfo[@"NSTextMovement"] to NSReturnTextMovement, which is
 // how we distinguish "submit" from "tab away".
@@ -318,6 +329,7 @@ private:
     if (movement && movement.intValue == NSReturnTextMovement) {
         if (self.owner) self.owner->notify_submit();
     }
+    if (self.owner) self.owner->notify_focus_lost();
 }
 
 @end
@@ -327,11 +339,12 @@ namespace tk::macos {
 NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview)
     : superview_(superview) {
     field_ = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    field_.bezeled         = YES;
-    field_.bezelStyle      = NSTextFieldRoundedBezel;
-    field_.bordered        = YES;
-    field_.editable        = YES;
-    field_.selectable      = YES;
+    field_.bezeled            = NO;
+    field_.bordered           = NO;
+    field_.drawsBackground    = NO;
+    field_.focusRingType      = NSFocusRingTypeNone;
+    field_.editable           = YES;
+    field_.selectable         = YES;
     field_.usesSingleLineMode = YES;
     field_.translatesAutoresizingMaskIntoConstraints = YES;
     [superview_ addSubview:field_];
@@ -393,6 +406,12 @@ void NSTextFieldNative::notify_changed() {
 }
 void NSTextFieldNative::notify_submit() {
     if (on_submit_) on_submit_();
+}
+void NSTextFieldNative::notify_focus_gained() {
+    if (on_focus_changed_) on_focus_changed_(true);
+}
+void NSTextFieldNative::notify_focus_lost() {
+    if (on_focus_changed_) on_focus_changed_(false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
