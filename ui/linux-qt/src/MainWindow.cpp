@@ -2149,8 +2149,18 @@ void MainWindow::logoutActiveAccount() {
         loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
         pending_login_is_add_account_ = false;
         add_account_return_idx_ = -1;
+        pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
         loginView_->set_client(pending_login_client_.get());
+        loginView_->set_on_begin_oauth([this] {
+            if (!pending_login_temp_dir_.empty()) return;
+            pending_login_temp_dir_ = tesseract::SessionStore::account_dir(
+                "pending-" + std::to_string(QDateTime::currentMSecsSinceEpoch()));
+            std::error_code ec;
+            std::filesystem::create_directories(pending_login_temp_dir_, ec);
+            pending_login_client_->set_data_dir(
+                (pending_login_temp_dir_ / "matrix-store").string());
+        });
         loginView_->reset();
         contentStack_->setCurrentWidget(loginView_);
         statusBar()->showMessage(tr("Signed out"), 3000);

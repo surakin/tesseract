@@ -2943,7 +2943,18 @@ void MainWindow::logout_active_account() {
         tesseract::SessionStore::AccountIndex idx;
         tesseract::SessionStore::save_index(idx);
 
-        login_view_->set_client(nullptr);
+        pending_login_temp_dir_.clear();
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] {
+            if (!pending_login_temp_dir_.empty()) return;
+            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            pending_login_temp_dir_ =
+                tesseract::SessionStore::account_dir("pending-" + std::to_string(ts));
+            pending_login_client_->set_data_dir(
+                (pending_login_temp_dir_ / "matrix-store").string());
+        });
         login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
         login_view_->reset();
         gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "login");
