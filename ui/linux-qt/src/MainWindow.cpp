@@ -1946,13 +1946,23 @@ void MainWindow::handle_notification_ui_(
     std::string body, bool is_mention,
     std::vector<uint8_t> avatar_bytes)
 {
+    bool win_visible = isVisible() && !isMinimized();
+    bool win_focused = isActiveWindow();
+
     for (auto& sess : accounts_) {
         if (sess->user_id != user_id) continue;
-        if (isActiveWindow()
+        // Already watching this exact room — suppress silently.
+        if (win_focused
                 && active_account_index_ >= 0
                 && accounts_[active_account_index_]->user_id == user_id
                 && current_room_id_ == room_id)
             return;
+        // Window on screen: no popup. Alert if not focused.
+        if (win_visible) {
+            if (!win_focused) QApplication::alert(this, 0);
+            return;
+        }
+        // Window minimised / hidden: send system notification.
         if (sess->notifier) {
             tesseract::Notification n;
             n.room_id      = room_id;

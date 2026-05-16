@@ -1013,6 +1013,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_signal_connect(window_, "close-request",
                      G_CALLBACK(&MainWindow::on_window_close_request_), this);
 
+    // Clear urgency hint when the user brings the window to front.
+    g_signal_connect(window_, "notify::is-active", G_CALLBACK(
+        +[](GtkWindow* w, GParamSpec*, gpointer) {
+            if (gtk_window_is_active(w)) {
+                G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+                gtk_window_set_urgency_hint(w, FALSE);
+                G_GNUC_END_IGNORE_DEPRECATIONS
+            }
+        }), nullptr);
+
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
         return G_SOURCE_REMOVE;
@@ -2225,14 +2235,30 @@ void MainWindow::handle_notification(
         const std::string& sender,  const std::string& body, bool is_mention,
         std::vector<uint8_t> avatar_bytes)
 {
+    bool win_focused = gtk_window_is_active(GTK_WINDOW(window_));
+    auto* surface = gtk_native_get_surface(GTK_NATIVE(window_));
+    auto  state   = gdk_toplevel_get_state(GDK_TOPLEVEL(surface));
+    bool win_visible = gtk_widget_get_visible(GTK_WIDGET(window_))
+                    && !(state & GDK_TOPLEVEL_STATE_MINIMIZED);
+
     for (auto& sess : accounts_) {
         if (sess->user_id != user_id) continue;
-        // Suppress only when this account is active and its room is already open.
-        if (gtk_window_is_active(GTK_WINDOW(window_))
+        // Already watching this exact room — suppress silently.
+        if (win_focused
                 && active_account_index_ >= 0
                 && accounts_[active_account_index_]->user_id == user_id
                 && current_room_id_ == room_id)
             return;
+        // Window on screen: no popup. Set urgency hint if not focused.
+        if (win_visible) {
+            if (!win_focused) {
+                G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+                gtk_window_set_urgency_hint(GTK_WINDOW(window_), TRUE);
+                G_GNUC_END_IGNORE_DEPRECATIONS
+            }
+            return;
+        }
+        // Window minimised / hidden: send system notification.
         if (sess->notifier) {
             tesseract::Notification n;
             n.room_id      = room_id;

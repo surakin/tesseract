@@ -609,6 +609,9 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     NSPopover*                                        _accountPickerPopover;
     std::unique_ptr<tk::macos::Surface>               _accountPickerSurface;
     tesseract::views::AccountPicker*                  _accountPickerShared;  // borrowed
+
+    // Dock-bounce token; 0 = no request in flight.
+    NSInteger _attentionRequestToken;
 }
 
 - (instancetype)init {
@@ -1922,6 +1925,19 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
 //  Notifications (UNUserNotificationCenter)
 // ─────────────────────────────────────────────────────────────────────────
 
+- (void)_requestUserAttention {
+    if (_attentionRequestToken != 0) return;
+    _attentionRequestToken = [NSApp requestUserAttention:NSInformationalRequest];
+}
+
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    (void)notification;
+    if (_attentionRequestToken != 0) {
+        [NSApp cancelUserAttentionRequest:_attentionRequestToken];
+        _attentionRequestToken = 0;
+    }
+}
+
 - (void)handleNotification:(std::string)roomId
                   roomName:(std::string)roomName
                     sender:(std::string)sender
@@ -1929,12 +1945,21 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
                     userId:(std::string)userId
                  isMention:(BOOL)isMention {
     (void)isMention;
-    // Suppress if the window is focused, this account is active, and room is open.
-    if (self.window.isKeyWindow
+    BOOL winVisible = self.window.isVisible && !self.window.isMiniaturized;
+    BOOL winFocused = self.window.isKeyWindow;
+
+    // Already watching this exact room — suppress silently.
+    if (winFocused
             && _shell->active_account_index_ >= 0
             && (int)_shell->accounts_.size() > _shell->active_account_index_
             && _shell->accounts_[_shell->active_account_index_]->user_id == userId
             && _shell->current_room_id_ == roomId) return;
+
+    // Window on screen: no popup. Bounce dock if not focused.
+    if (winVisible) {
+        if (!winFocused) [self _requestUserAttention];
+        return;
+    }
 
     UNMutableNotificationContent* content =
         [[UNMutableNotificationContent alloc] init];

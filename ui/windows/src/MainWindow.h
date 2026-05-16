@@ -183,6 +183,7 @@ private:
     };
 
     void on_tesseract_notify(const NotificationPayload* p);
+    void request_attention_();
     void navigate_to_room(const std::string& room_id);
     void on_tesseract_timeline_reset(PostedTimelineReset* payload);
     void on_tesseract_message_inserted(PostedMessageEvent* payload);

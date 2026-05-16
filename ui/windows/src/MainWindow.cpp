@@ -605,6 +605,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         PostQuitMessage(0);
         return 0;
 
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) != WA_INACTIVE) {
+            FLASHWINFO fwi{ sizeof(fwi), hwnd, FLASHW_STOP, 0, 0 };
+            FlashWindowEx(&fwi);
+        }
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+
     case WM_SIZE:
         self->on_size(LOWORD(lParam), HIWORD(lParam));
         return 0;
@@ -1846,21 +1853,37 @@ void MainWindow::on_send_clicked() {
 
 void MainWindow::on_tesseract_notify(const NotificationPayload* p)
 {
-    // Find which account fired this notification by user_id.
+    bool win_visible = IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
+    bool win_focused = (GetForegroundWindow() == hwnd_);
+
     for (auto& sess : accounts_) {
         if (sess->user_id != p->user_id) continue;
-        // Suppress if the window is focused and the active room is the source room
-        // for the active account.
-        if (GetForegroundWindow() == hwnd_
+        // Already watching this exact room — suppress silently.
+        if (win_focused
                 && active_account_index_ >= 0
                 && accounts_[active_account_index_]->user_id == p->user_id
                 && current_room_id_ == p->room_id)
             return;
+        // Window on screen: no popup. Flash if not focused.
+        if (win_visible) {
+            if (!win_focused) request_attention_();
+            return;
+        }
+        // Window minimised / hidden: send system notification.
         if (sess->notifier)
             sess->notifier->notify({ p->room_id, p->room_name,
                                      p->sender, p->body, p->is_mention });
         return;
     }
+}
+
+void MainWindow::request_attention_() {
+    FLASHWINFO fwi{};
+    fwi.cbSize  = sizeof(fwi);
+    fwi.hwnd    = hwnd_;
+    fwi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
+    fwi.uCount  = 3;
+    FlashWindowEx(&fwi);
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)
