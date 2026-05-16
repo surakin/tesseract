@@ -298,11 +298,11 @@ void RoomView::paint(tk::PaintCtx& ctx) {
     const float compose_top = bounds_.y + bounds_.h - compose_h;
     const float typing_top  = compose_top - kTypingH;
 
-    // Typing strip background (same chrome colour as header).
+    // Typing strip background (matches the chat area / message list).
     tk::Rect typing_rect{
         bounds_.x, typing_top, bounds_.w, kTypingH
     };
-    ctx.canvas.fill_rect(typing_rect, ctx.theme.palette.chrome_bg);
+    ctx.canvas.fill_rect(typing_rect, ctx.theme.palette.bg);
 
     if (header_)       header_->paint(ctx);
     if (message_list_) message_list_->paint(ctx);
