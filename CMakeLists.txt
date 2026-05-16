@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.25)
 project(Tesseract VERSION 0.1.0 LANGUAGES CXX)
 
+# Generate version.h from the project() version so C++ code can read it
+# without any hardcoding.  The output lands in the build tree so it is
+# never accidentally committed.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/client/include/tesseract/version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/tesseract/version.h"
+)
+
 # OBJCXX must be enabled at root scope; enabling it from a subdirectory leaves
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)
@@ -246,6 +254,10 @@ target_include_directories(tesseract_sdk_bridge_cxx PRIVATE
 # Common client library
 # ---------------------------------------------------------------------------
 add_subdirectory(client)
+
+# Expose the generated version.h to every target that links tesseract_client.
+target_include_directories(tesseract_client PUBLIC
+    "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 # ---------------------------------------------------------------------------
 # Shared UI toolkit (tesseract_tk) — widget tree, theme, abstract Canvas,

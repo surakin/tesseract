@@ -8,6 +8,9 @@
 namespace tesseract::views {
 
 RoomView::RoomView() {
+    auto brand = std::make_unique<BrandView>();
+    brand_view_ = add_child(std::move(brand));
+
     auto header = std::make_unique<RoomHeader>();
     header_ = add_child(std::move(header));
 
@@ -15,7 +18,8 @@ RoomView::RoomView() {
     message_list_ = add_child(std::move(msg));
 
     auto compose = std::make_unique<ComposeBar>();
-    compose_bar_ = add_child(std::move(compose));
+    compose_bar_  = add_child(std::move(compose));
+    compose_bar_->set_enabled(false);
 
     wire_internal_callbacks();
 }
@@ -180,8 +184,14 @@ bool RoomView::scroll_to_event_id(const std::string& id) {
 // ── Room / message state ───────────────────────────────────────────────────
 
 void RoomView::set_room(const tesseract::RoomInfo& info) {
-    if (header_) header_->set_room(info);
+    has_room_ = true;
+    if (header_)      header_->set_room(info);
     if (compose_bar_) compose_bar_->set_enabled(true);
+}
+
+void RoomView::clear_room() {
+    has_room_ = false;
+    if (compose_bar_) compose_bar_->set_enabled(false);
 }
 
 void RoomView::set_messages(std::vector<MessageRowData> msgs) {
@@ -249,6 +259,11 @@ tk::Size RoomView::measure(tk::LayoutCtx&, tk::Size constraints) {
 void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
 
+    if (!has_room_) {
+        if (brand_view_) brand_view_->arrange(ctx, bounds);
+        return;
+    }
+
     const float compose_h =
         compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
 
@@ -275,6 +290,11 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 }
 
 void RoomView::paint(tk::PaintCtx& ctx) {
+    if (!has_room_) {
+        if (brand_view_) brand_view_->paint(ctx);
+        return;
+    }
+
     // Each child paints its own background; the typing indicator now lives
     // inside the message list (synthetic trailing row), so RoomView paints
     // no strip of its own.

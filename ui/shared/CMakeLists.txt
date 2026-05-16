@@ -32,6 +32,8 @@ set(_tk_sources
     tk/list_view.cpp
     tk/blurhash.h
     tk/blurhash.cpp
+    views/BrandView.h
+    views/BrandView.cpp
     views/LoginView.h
     views/LoginView.cpp
     views/RoomListView.h
