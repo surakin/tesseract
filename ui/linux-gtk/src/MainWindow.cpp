@@ -128,6 +128,15 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 void MainWindow::handle_image_packs_updated_ui_()
 {
     push_image_packs_updated();
+    cached_emoticons_.clear();
+    if (client_) {
+        for (auto& pack : client_->list_image_packs()) {
+            for (auto& img : client_->list_pack_images(
+                     pack.id, tesseract::PackUsageFilter::Emoticon)) {
+                cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
 }
 
 void MainWindow::handle_account_prefs_updated_ui_(
@@ -434,8 +443,76 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_text_area_->set_on_changed([this](const std::string& s) {
             handle_compose_text_changed_(s);
             room_view_->set_current_text(s);
+
+            // ── Shortcode detection ─────────────────────────────────────────
+            int cursor = (int)s.size();
+
+            auto complete = shortcode_engine_.find_complete(s, cursor);
+            if (complete) {
+                auto hits = shortcode_engine_.lookup(complete->prefix, cached_emoticons_, 1);
+                std::string r = (!hits.empty() && !hits.front().glyph.empty())
+                    ? hits.front().glyph
+                    : ":" + complete->prefix + ":";
+                room_text_area_->replace_range(complete->start, complete->end, r);
+                hide_shortcode_popup_();
+                return;
+            }
+
+            auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
+            if (prefix_match && prefix_match->prefix.size() >= 2) {
+                shortcode_current_suggestions_ = shortcode_engine_.lookup(
+                    prefix_match->prefix, cached_emoticons_);
+                if (!shortcode_current_suggestions_.empty()) {
+                    shortcode_active_match_ = *prefix_match;
+                    for (const auto& sugg : shortcode_current_suggestions_)
+                        if (!sugg.emoticon.url.empty())
+                            ensure_media_image_(sugg.emoticon.url, 28, 28);
+                    bool was_visible = shortcode_popup_visible_();
+                    show_shortcode_popup_(shortcode_current_suggestions_,
+                                          room_text_area_->cursor_rect());
+                    if (!was_visible)
+                        room_text_area_->set_on_popup_nav(
+                            [this](tk::NativeTextArea::NavKey nk) -> bool {
+                                if (!shortcode_popup_visible_()) return false;
+                                int cur = shortcode_popup_widget_->selected_index();
+                                int n   = shortcode_popup_widget_->visible_rows();
+                                if (nk == tk::NativeTextArea::NavKey::Up) {
+                                    shortcode_popup_widget_->set_selected_index(
+                                        std::max(0, cur - 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Down) {
+                                    shortcode_popup_widget_->set_selected_index(
+                                        std::min(n - 1, cur + 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Escape) {
+                                    hide_shortcode_popup_();
+                                    return true;
+                                }
+                                return false;
+                            });
+                    return;
+                }
+            }
+            hide_shortcode_popup_();
+            // ── End shortcode detection ─────────────────────────────────────
         });
-        room_text_area_->set_on_submit([this] { on_send_clicked(); });
+        room_text_area_->set_on_submit([this] {
+            if (shortcode_popup_visible_()) {
+                int sel = shortcode_popup_widget_->selected_index();
+                if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size()) {
+                    auto& s = shortcode_current_suggestions_[sel];
+                    std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                    room_text_area_->replace_range(
+                        shortcode_active_match_.start, shortcode_active_match_.end, r);
+                    hide_shortcode_popup_();
+                    return;
+                }
+                hide_shortcode_popup_();
+            }
+            on_send_clicked();
+        });
         room_text_area_->set_on_height_changed([this](float h) {
             room_view_->set_text_area_natural_height(h);
             main_app_surface_->relayout();
@@ -1247,6 +1324,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         }
     }
 
+    hide_shortcode_popup_();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id
             && room_subscription_refs_.count(current_room_id_) == 0)
@@ -1987,6 +2065,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             tk_images_.emplace(cache_key, std::move(img));
             if (room_view_) room_view_->notify_image_ready(cache_key);
             if (main_app_surface_) main_app_surface_->relayout();
+            if (shortcode_popup_visible_() && shortcode_popup_surface_)
+                shortcode_popup_surface_->relayout();
         }
     }
 }
@@ -2458,6 +2538,69 @@ void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
 
 void MainWindow::do_logout() {
     logout_active_account();
+}
+
+// ---------------------------------------------------------------------------
+// Shortcode popup — GtkPopover hosting a tk::gtk4::Surface that paints the
+// shared tesseract::views::ShortcodePopup suggestion list.
+// ---------------------------------------------------------------------------
+
+void MainWindow::show_shortcode_popup_(
+    const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+    tk::Rect cursor_local)
+{
+    if (!shortcode_popover_) {
+        shortcode_popover_ = gtk_popover_new();
+        gtk_widget_set_parent(shortcode_popover_, main_app_surface_->widget());
+        gtk_popover_set_position(GTK_POPOVER(shortcode_popover_), GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(shortcode_popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(shortcode_popover_), TRUE);
+
+        shortcode_popup_surface_ =
+            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
+
+        auto popup_widget = std::make_unique<tesseract::views::ShortcodePopup>();
+        shortcode_popup_widget_ = popup_widget.get();
+        shortcode_popup_surface_->set_root(std::move(popup_widget));
+
+        shortcode_popup_widget_->on_accepted =
+            [this](tesseract::views::ShortcodeSuggestion s) {
+                std::string r = s.glyph.empty()
+                    ? ":" + s.shortcode + ":"
+                    : s.glyph;
+                room_text_area_->replace_range(
+                    shortcode_active_match_.start,
+                    shortcode_active_match_.end,
+                    std::move(r));
+                hide_shortcode_popup_();
+            };
+        shortcode_popup_widget_->on_dismissed =
+            [this] { hide_shortcode_popup_(); };
+
+        GtkWidget* surface_widget = shortcode_popup_surface_->widget();
+        gtk_popover_set_child(GTK_POPOVER(shortcode_popover_), surface_widget);
+    }
+
+    shortcode_popup_widget_->set_suggestions(suggestions);
+
+    int rows = std::min((int)suggestions.size(),
+                        (int)tesseract::views::ShortcodePopup::kMaxRows);
+    int w    = int(tesseract::views::ShortcodePopup::kWidth);
+    int h    = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
+    gtk_widget_set_size_request(shortcode_popup_surface_->widget(), w, h);
+
+    GdkRectangle rect{
+        int(cursor_local.x), int(cursor_local.y),
+        int(cursor_local.w), int(cursor_local.h)
+    };
+    gtk_popover_set_pointing_to(GTK_POPOVER(shortcode_popover_), &rect);
+    gtk_popover_popup(GTK_POPOVER(shortcode_popover_));
+}
+
+void MainWindow::hide_shortcode_popup_()
+{
+    if (shortcode_popover_) gtk_popover_popdown(GTK_POPOVER(shortcode_popover_));
+    if (room_text_area_)   room_text_area_->set_on_popup_nav(nullptr);
 }
 
 // ---------------------------------------------------------------------------

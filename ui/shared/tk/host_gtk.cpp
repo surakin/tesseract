@@ -297,7 +297,7 @@ private:
         int chars = 0;
         int bytes = 0;
         while (bytes < byte_offset && *p) {
-            gchar* next = g_utf8_next_char(p);
+            const gchar* next = g_utf8_next_char(p);
             bytes += (int)(next - p);
             p = next;
             ++chars;

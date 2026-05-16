@@ -24,6 +24,8 @@
 #include "views/MainAppWidget.h"
 #include "views/StickerPicker.h"
 #include "views/JoinRoomView.h"
+#include "views/ShortcodeEngine.h"
+#include "views/ShortcodePopup.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -232,6 +234,24 @@ private:
     std::unique_ptr<tk::gtk4::Surface>      sticker_picker_surface_;
     tesseract::views::StickerPicker*        sticker_picker_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+
+    // ── Shortcode popup ───────────────────────────────────────────────────
+    tesseract::views::ShortcodeEngine       shortcode_engine_;
+    tesseract::views::ShortcodeMatch        shortcode_active_match_{};
+    std::vector<tesseract::ImagePackImage>  cached_emoticons_;
+    std::vector<tesseract::views::ShortcodeSuggestion> shortcode_current_suggestions_;
+
+    GtkWidget*                             shortcode_popover_       = nullptr;
+    std::unique_ptr<tk::gtk4::Surface>     shortcode_popup_surface_;
+    tesseract::views::ShortcodePopup*      shortcode_popup_widget_  = nullptr;
+
+    void show_shortcode_popup_(
+        const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
+        tk::Rect cursor_rect);
+    void hide_shortcode_popup_();
+    bool shortcode_popup_visible_() const {
+        return shortcode_popover_ && gtk_widget_get_visible(shortcode_popover_);
+    }
 
     GtkWidget*      topic_tooltip_popover_ = nullptr;
     GtkWidget*      topic_tooltip_label_   = nullptr;
