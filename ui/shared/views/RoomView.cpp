@@ -128,6 +128,13 @@ void RoomView::wire_internal_callbacks() {
     header_->on_jump_to_date_requested = [this] {
         if (on_jump_to_date_requested) on_jump_to_date_requested();
     };
+    header_->on_show_tooltip =
+        [this](std::string text, tk::Rect anchor) {
+            if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
+        };
+    header_->on_hide_tooltip = [this] {
+        if (on_hide_tooltip) on_hide_tooltip();
+    };
     message_list_->on_scroll_to_original =
         [this](const std::string& original_event_id) {
             if (on_scroll_to_original) on_scroll_to_original(original_event_id);

@@ -45,9 +45,11 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info) {
     topic_        = info.topic;
     topic_html_   = info.topic_html;
     avatar_url_   = info.avatar_url;
-    // Drop the previous room's rich-topic layout so a click arriving before
-    // the next paint rebuilds it can't hit-test against stale spans.
+    // Drop the previous room's rich-topic layout; mark dirty so arrange()
+    // rebuilds it and recomputes truncation before the next paint.
     topic_layout_.reset();
+    topic_dirty_     = true;
+    topic_truncated_ = false;
     if (name_label_)  name_label_->set_text(display_name_);
     if (topic_label_) {
         if (!topic_html_.empty()) {
@@ -80,7 +82,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     const float text_w = std::max(0.0f,
         bounds.w - kPadX - kAvatarSize - kAvatarGap - right_reserve);
 
-    const bool has_topic = !topic_.empty() || !topic_html_.empty();
+    const bool has_topic  = !topic_.empty() || !topic_html_.empty();
+    const bool show_label = has_topic && topic_html_.empty();
 
     const float name_y = has_topic
         ? bounds.y + kNameY_Pair
@@ -93,10 +96,40 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     topic_rect_ = { text_x, bounds.y + kTopicY, text_w, kTopicH };
 
     if (topic_label_) {
-        const bool show_label = has_topic && topic_html_.empty();
         topic_label_->set_visible(show_label);
         if (show_label) {
             topic_label_->arrange(ctx, topic_rect_);
+        }
+    }
+
+    // Rebuild topic layout and recompute truncation when the topic content
+    // changed (set_room() sets topic_dirty_) or the available width changed.
+    const bool needs_rebuild = topic_dirty_ || (text_w != last_topic_w_);
+    if (needs_rebuild) {
+        topic_dirty_     = false;
+        last_topic_w_    = text_w;
+        topic_truncated_ = false;
+        topic_layout_.reset();
+
+        if (!topic_spans_.empty()) {
+            // Rich text: constrained layout for painting.
+            tk::TextStyle ts{};
+            ts.role      = tk::FontRole::SidebarPreview;
+            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.max_width = text_w;
+            topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+
+            // Unconstrained layout to detect whether the text was clipped.
+            tk::TextStyle ts_nat{};
+            ts_nat.role = tk::FontRole::SidebarPreview;
+            auto nat = ctx.factory.build_rich_text(topic_spans_, ts_nat);
+            topic_truncated_ = nat && nat->measure().w > text_w;
+        } else if (!topic_.empty()) {
+            // Plain text: measure natural width for truncation detection.
+            tk::TextStyle ts_nat{};
+            ts_nat.role = tk::FontRole::SidebarPreview;
+            auto nat = ctx.factory.build_text(topic_, ts_nat);
+            topic_truncated_ = nat && nat->measure().w > text_w;
         }
     }
 }
@@ -134,12 +167,8 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
     if (name_label_)  name_label_->paint(ctx);
 
     // Topic: rich text (HTML) if present, plain label otherwise.
+    // topic_layout_ is built and cached in arrange(); no rebuild needed here.
     if (!topic_spans_.empty()) {
-        tk::TextStyle ts{};
-        ts.role      = tk::FontRole::SidebarPreview;
-        ts.trim      = tk::TextTrim::Ellipsis;
-        ts.max_width = topic_rect_.w;
-        topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
         if (topic_layout_) {
             ctx.canvas.draw_text(*topic_layout_,
                 { topic_rect_.x, topic_rect_.y },
@@ -247,17 +276,33 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
 
 void RoomHeader::on_pointer_move(tk::Point local) {
     const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
+
     hover_calendar_ =
         world.x >= calendar_btn_rect_.x &&
         world.x <  calendar_btn_rect_.x + calendar_btn_rect_.w &&
         world.y >= calendar_btn_rect_.y &&
         world.y <  calendar_btn_rect_.y + calendar_btn_rect_.h;
+
+    const bool new_hover_topic = !hover_calendar_ &&
+        world.x >= topic_rect_.x &&
+        world.x <  topic_rect_.x + topic_rect_.w &&
+        world.y >= topic_rect_.y &&
+        world.y <  topic_rect_.y + topic_rect_.h;
+
+    if (new_hover_topic && !hover_topic_ && topic_truncated_) {
+        if (on_show_tooltip) on_show_tooltip(topic_, topic_rect_);
+    } else if (!new_hover_topic && hover_topic_) {
+        if (on_hide_tooltip) on_hide_tooltip();
+    }
+    hover_topic_ = new_hover_topic;
     // Host calls request_repaint() after dispatching pointer-move.
 }
 
 void RoomHeader::on_pointer_leave() {
     hover_calendar_ = false;
     press_calendar_ = false;
+    if (hover_topic_ && on_hide_tooltip) on_hide_tooltip();
+    hover_topic_    = false;
     // Host calls request_repaint() after dispatching pointer-leave.
 }
 

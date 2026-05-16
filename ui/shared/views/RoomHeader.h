@@ -48,6 +48,12 @@ public:
     // Fired when the user clicks the calendar/jump-to-date button.
     std::function<void()> on_jump_to_date_requested;
 
+    // Tooltip for truncated topic text. on_show_tooltip fires when the pointer
+    // enters a topic that did not fit in the available width; on_hide_tooltip
+    // fires when the pointer leaves or the topic is not truncated.
+    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
+    std::function<void()>                                   on_hide_tooltip;
+
 private:
     // Draws a vector calendar icon centred in `button`, tinted with `tint`.
     void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
@@ -56,6 +62,11 @@ private:
     bool     hover_calendar_ = false;
     bool     press_calendar_ = false;
     tk::Rect calendar_btn_rect_{};  // updated each paint pass
+
+    bool     hover_topic_      = false;
+    bool     topic_truncated_  = false;
+    bool     topic_dirty_      = true;
+    float    last_topic_w_     = -1.0f;
 
     tk::Label* name_label_  = nullptr;
     tk::Label* topic_label_ = nullptr;
