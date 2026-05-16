@@ -1318,7 +1318,8 @@ void MacShell::on_url_preview_ready_(const std::string& url,
     // ── Image / sticker lightbox overlay ─────────────────────────────
     {
         __weak MainWindowController* weakSelf = self;
-        _imgViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        _imgViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light(),
+                                                                  /*transparent=*/true);
         auto img_view = std::make_unique<tesseract::views::ImageViewerOverlay>();
         _imgViewer = img_view.get();
         _imgViewer->set_image_provider(
@@ -1367,7 +1368,8 @@ void MacShell::on_url_preview_ready_(const std::string& url,
     // ── Video lightbox overlay ────────────────────────────────────────
     {
         __weak MainWindowController* weakSelf = self;
-        _vidViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        _vidViewerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light(),
+                                                                  /*transparent=*/true);
         auto vid_view = std::make_unique<tesseract::views::VideoViewerOverlay>();
         _vidViewer = vid_view.get();
         _vidViewer->set_image_provider(

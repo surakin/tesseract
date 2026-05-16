@@ -37,8 +37,14 @@ class Host;
 // SetWindowPos / MoveWindow it as the parent resizes.
 class Surface {
 public:
+    // transparent=true creates the HWND with WS_EX_NOREDIRECTIONBITMAP and
+    // uses a DXGI_ALPHA_MODE_PREMULTIPLIED swap chain so DWM composites the
+    // window's per-pixel alpha against the content behind it. The host clears
+    // each frame to {0,0,0,0} instead of palette.bg; the widget tree is
+    // responsible for painting whatever it wants to be visible.
     Surface(HINSTANCE inst, HWND parent,
-            const Theme& theme = Theme::light());
+            const Theme& theme = Theme::light(),
+            bool transparent   = false);
     ~Surface();
     Surface(const Surface&)            = delete;
     Surface& operator=(const Surface&) = delete;

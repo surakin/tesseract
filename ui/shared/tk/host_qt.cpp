@@ -314,10 +314,11 @@ private:
 
 class Host : public tk::Host {
 public:
-    Host(Surface* surface, const Theme& theme)
+    Host(Surface* surface, const Theme& theme, bool transparent = false)
         : surface_(surface),
           theme_(&theme),
-          factory_(make_factory()) {}
+          factory_(make_factory()),
+          transparent_(transparent) {}
 
     void request_repaint() override {
         if (surface_) surface_->update();
@@ -434,6 +435,7 @@ public:
     void paint(QPainter& painter) {
         if (!root_) return;
         auto canvas = make_canvas(painter);
+        canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         PaintCtx ctx{ *canvas, *factory_, *theme_ };
         root_->paint(ctx);
     }
@@ -516,6 +518,7 @@ private:
     Surface*                            surface_;
     const Theme*                        theme_;
     std::unique_ptr<CanvasFactory>      factory_;
+    bool                                transparent_    = false;
     std::unique_ptr<Widget>             root_;
     std::function<void()>               on_layout_;
     Widget*                             pressed_widget_ = nullptr;
@@ -527,10 +530,15 @@ private:
 //  Surface — QWidget that owns the host + dispatches events
 // ─────────────────────────────────────────────────────────────────────────
 
-Surface::Surface(const Theme& theme, QWidget* parent)
+Surface::Surface(const Theme& theme, QWidget* parent, bool transparent)
     : QWidget(parent),
-      host_(std::make_unique<Host>(this, theme)) {
-    setAttribute(Qt::WA_OpaquePaintEvent, true);
+      host_(std::make_unique<Host>(this, theme, transparent)) {
+    if (transparent) {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_NoSystemBackground);
+    } else {
+        setAttribute(Qt::WA_OpaquePaintEvent, true);
+    }
     setMouseTracking(true);
 }
 

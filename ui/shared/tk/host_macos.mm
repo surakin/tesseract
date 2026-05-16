@@ -30,10 +30,11 @@ namespace tk::macos {
 
 class Host : public tk::Host {
 public:
-    Host(TKSurfaceView* view, const Theme& theme)
+    Host(TKSurfaceView* view, const Theme& theme, bool transparent = false)
         : view_(view),
           theme_(&theme),
-          factory_(cg::make_factory()) {}
+          factory_(cg::make_factory()),
+          transparent_(transparent) {}
 
     void request_repaint() override;
     void post_to_ui(std::function<void()> task) override;
@@ -89,6 +90,7 @@ private:
     TKSurfaceView*                       view_;
     const Theme*                         theme_;
     std::unique_ptr<CanvasFactory>       factory_;
+    bool                                 transparent_   = false;
     std::unique_ptr<Widget>              root_;
     std::function<void()>                on_layout_;
     Widget*                              pressed_widget_ = nullptr;
@@ -112,6 +114,7 @@ private:
 @interface TKSurfaceView : NSView
 @property (nonatomic, assign) tk::macos::Host* hostPtr;
 @property (nonatomic, strong) NSTrackingArea*  trackingArea;
+@property (nonatomic, assign) BOOL             transparent;
 @end
 
 @implementation TKSurfaceView
@@ -140,7 +143,7 @@ private:
 
 - (BOOL)isFlipped       { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
-- (BOOL)isOpaque        { return YES; }
+- (BOOL)isOpaque        { return !self.transparent; }
 
 - (void)drawRect:(NSRect)dirtyRect {
     if (!self.hostPtr) return;
@@ -816,7 +819,7 @@ void Host::relayout() {
 void Host::on_draw(CGContextRef ctx) {
     if (!root_ || !ctx) return;
     auto canvas = cg::make_canvas(ctx);
-    canvas->clear(theme_->palette.bg);
+    canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
     PaintCtx pc{ *canvas, *factory_, *theme_ };
     root_->paint(pc);
 
@@ -1032,11 +1035,12 @@ bool Host::dispatch_file_drop(NSPasteboard* pb) {
 //  Surface — public glue
 // ─────────────────────────────────────────────────────────────────────────
 
-Surface::Surface(const Theme& theme) {
+Surface::Surface(const Theme& theme, bool transparent) {
     TKSurfaceView* view = [[TKSurfaceView alloc]
                             initWithFrame:NSMakeRect(0, 0, 100, 100)];
-    host_         = std::make_unique<Host>(view, theme);
-    view.hostPtr  = host_.get();
+    host_              = std::make_unique<Host>(view, theme, transparent);
+    view.hostPtr       = host_.get();
+    view.transparent   = transparent ? YES : NO;
 }
 
 Surface::~Surface() {

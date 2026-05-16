@@ -931,7 +931,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     // paints a dark backdrop + the selected image over the entire main area.
     // Shown on `on_image_clicked`, hidden on `on_close` or Escape.
     {
-        img_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+        img_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light(),
+                                                                   /*transparent=*/true);
         auto img_viewer_owner = std::make_unique<tesseract::views::ImageViewerOverlay>();
         img_viewer_ = img_viewer_owner.get();
         img_viewer_->set_image_provider(
@@ -963,7 +964,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
 
     // Video lightbox overlay — full-window surface for m.video playback.
     {
-        vid_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+        vid_viewer_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light(),
+                                                                   /*transparent=*/true);
         auto vid_viewer_owner = std::make_unique<tesseract::views::VideoViewerOverlay>();
         vid_viewer_ = vid_viewer_owner.get();
         vid_viewer_->set_image_provider(

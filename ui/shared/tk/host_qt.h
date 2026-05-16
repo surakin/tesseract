@@ -25,7 +25,8 @@ class Host;
 class Surface : public QWidget {
 public:
     explicit Surface(const Theme& theme = Theme::light(),
-                      QWidget* parent = nullptr);
+                     QWidget* parent    = nullptr,
+                     bool transparent   = false);
     ~Surface() override;
 
     tk::Host&   host();

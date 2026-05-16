@@ -24,7 +24,8 @@ class Host;
 // widgets like GtkEntry layer on top of the canvas via NativeTextField.
 class Surface {
 public:
-    explicit Surface(const Theme& theme = Theme::light());
+    explicit Surface(const Theme& theme = Theme::light(),
+                     bool transparent   = false);
     ~Surface();
     Surface(const Surface&)            = delete;
     Surface& operator=(const Surface&) = delete;

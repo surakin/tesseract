@@ -2,5 +2,3 @@
 members  = ["sdk"]
 resolver = "2"
 
-[patch.crates-io]
-imbl = { path = "vendor/imbl" }

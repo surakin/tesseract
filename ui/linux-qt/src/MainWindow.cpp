@@ -606,7 +606,8 @@ MainWindow::MainWindow(QWidget* parent)
         imgViewerHost_    = new QWidget(mainContent_);
         imgViewerHost_->setGeometry(mainContent_->rect());
         imgViewerHost_->hide();
-        imgViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), imgViewerHost_);
+        imgViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), imgViewerHost_,
+                                                  /*transparent=*/true);
         auto* ovLayout = new QVBoxLayout(imgViewerHost_);
         ovLayout->setContentsMargins(0, 0, 0, 0);
         ovLayout->addWidget(imgViewerSurface_);
@@ -631,7 +632,8 @@ MainWindow::MainWindow(QWidget* parent)
         vidViewerHost_    = new QWidget(mainContent_);
         vidViewerHost_->setGeometry(mainContent_->rect());
         vidViewerHost_->hide();
-        vidViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), vidViewerHost_);
+        vidViewerSurface_ = new tk::qt6::Surface(tk::Theme::light(), vidViewerHost_,
+                                                  /*transparent=*/true);
         auto* ovLayout = new QVBoxLayout(vidViewerHost_);
         ovLayout->setContentsMargins(0, 0, 0, 0);
         ovLayout->addWidget(vidViewerSurface_);

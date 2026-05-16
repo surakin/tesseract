@@ -1417,7 +1417,7 @@ void MainWindow::on_create(HWND hwnd) {
     // entire content area when open. Created hidden; shown/hidden by
     // on_image_clicked / ImageViewerOverlay::on_close.
     img_viewer_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
+        hInst_, hwnd, tk::Theme::light(), /*transparent=*/true);
     {
         auto viewer = std::make_unique<tesseract::views::ImageViewerOverlay>();
         img_viewer_ = viewer.get();
@@ -1455,7 +1455,7 @@ void MainWindow::on_create(HWND hwnd) {
 
     // Video lightbox overlay — WS_CHILD Surface covering the full content area.
     vid_viewer_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
+        hInst_, hwnd, tk::Theme::light(), /*transparent=*/true);
     {
         auto vid_viewer = std::make_unique<tesseract::views::VideoViewerOverlay>();
         vid_viewer_ = vid_viewer.get();

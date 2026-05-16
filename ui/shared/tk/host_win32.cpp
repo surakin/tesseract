@@ -546,10 +546,11 @@ make_video_player_win32(std::function<void(std::function<void()>)> post,
 
 class Host : public tk::Host {
 public:
-    Host(HWND hwnd, const Theme& theme)
+    Host(HWND hwnd, const Theme& theme, bool transparent = false)
         : hwnd_(hwnd),
           theme_(&theme),
-          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd)),
+          transparent_(transparent),
+          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd, transparent)),
           factory_(d2d::make_factory(backend_singleton())) {}
 
     void request_repaint() override {
@@ -751,7 +752,9 @@ public:
         BeginPaint(hwnd_, &ps);
 
         Canvas& canvas = d2d_surface_->begin_paint();
-        canvas.clear(theme_->palette.bg);
+        // Transparent surfaces (overlays) clear to fully transparent so DWM
+        // composites the per-pixel alpha against the content behind the window.
+        canvas.clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         if (root_) {
             PaintCtx ctx{ canvas, *factory_, *theme_ };
             root_->paint(ctx);
@@ -862,6 +865,7 @@ public:
 private:
     HWND                                 hwnd_;
     const Theme*                         theme_;
+    bool                                 transparent_    = false;
     std::unique_ptr<d2d::Surface>        d2d_surface_;
     std::unique_ptr<CanvasFactory>       factory_;
     std::unique_ptr<Widget>              root_;
@@ -1232,11 +1236,16 @@ std::unordered_map<HWND, DropTarget*>& drop_targets_by_hwnd() {
 }
 } // namespace
 
-Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme) {
+Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme, bool transparent) {
     if (!ensure_class_registered(inst)) return;
 
+    // WS_EX_NOREDIRECTIONBITMAP is required for DXGI_ALPHA_MODE_PREMULTIPLIED
+    // swap chains: it tells DWM not to create a GDI redirection surface for
+    // this HWND, so the flip-model swap chain's alpha channel reaches the
+    // compositor unchanged.
+    const DWORD ex_style = transparent ? WS_EX_NOREDIRECTIONBITMAP : 0;
     HWND hwnd = CreateWindowExW(
-        0,
+        ex_style,
         kSurfaceClass, L"",
         WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         0, 0, 100, 100,
@@ -1244,7 +1253,7 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme) {
         /*lpCreateParams=*/nullptr);
     if (!hwnd) return;
 
-    host_ = std::make_unique<Host>(hwnd, theme);
+    host_ = std::make_unique<Host>(hwnd, theme, transparent);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA,
                        reinterpret_cast<LONG_PTR>(host_.get()));
 

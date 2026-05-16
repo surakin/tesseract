@@ -369,11 +369,13 @@ private:
 
 class Host : public tk::Host {
 public:
-    Host(GtkWidget* overlay, GtkWidget* drawing_area, const Theme& theme)
+    Host(GtkWidget* overlay, GtkWidget* drawing_area, const Theme& theme,
+         bool transparent = false)
         : overlay_(overlay),
           drawing_area_(drawing_area),
           theme_(&theme),
-          factory_(tk::cairo_pango::make_factory()) {}
+          factory_(tk::cairo_pango::make_factory()),
+          transparent_(transparent) {}
 
     void request_repaint() override {
         if (drawing_area_) gtk_widget_queue_draw(drawing_area_);
@@ -592,6 +594,7 @@ public:
     void on_draw(cairo_t* cr, int w, int h) {
         if (!root_) return;
         auto canvas = tk::cairo_pango::make_canvas(cr);
+        canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
         PaintCtx ctx{ *canvas, *factory_, *theme_ };
         root_->paint(ctx);
 
@@ -730,6 +733,7 @@ private:
     GtkWidget*                          drawing_area_;
     const Theme*                        theme_;
     std::unique_ptr<CanvasFactory>      factory_;
+    bool                                transparent_    = false;
     std::unique_ptr<Widget>             root_;
     std::function<void()>               on_layout_;
     Widget*                             pressed_widget_ = nullptr;
@@ -827,14 +831,14 @@ void drop_leave_cb(GtkDropTarget* /*target*/, gpointer p) {
 
 } // namespace
 
-Surface::Surface(const Theme& theme) {
+Surface::Surface(const Theme& theme, bool transparent) {
     GtkWidget* overlay      = gtk_overlay_new();
     GtkWidget* drawing_area = gtk_drawing_area_new();
     gtk_widget_set_hexpand(drawing_area, TRUE);
     gtk_widget_set_vexpand(drawing_area, TRUE);
     gtk_overlay_set_child(GTK_OVERLAY(overlay), drawing_area);
 
-    host_ = std::make_unique<Host>(overlay, drawing_area, theme);
+    host_ = std::make_unique<Host>(overlay, drawing_area, theme, transparent);
 
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area),
                                     &draw_cb, host_.get(), nullptr);

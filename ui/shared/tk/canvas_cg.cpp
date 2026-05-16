@@ -474,11 +474,12 @@ public:
     }
 
     void clear(Color c) override {
-        // No direct "clear" — fill the clip bounding box. Caller normally
-        // clears via the platform host before invoking the widget tree.
         CGRect bbox = CGContextGetClipBoundingBox(ctx_);
+        CGContextSaveGState(ctx_);
+        CGContextSetBlendMode(ctx_, kCGBlendModeCopy);
         set_fill(ctx_, c);
         CGContextFillRect(ctx_, bbox);
+        CGContextRestoreGState(ctx_);
     }
 
     void fill_rect(Rect r, Color c) override {

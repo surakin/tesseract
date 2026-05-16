@@ -171,11 +171,13 @@ public:
     }
 
     void clear(Color c) override {
-        // No explicit clear in QPainter; just fill the device.
         QRectF r(0, 0,
                  p_.device()->width()  / p_.device()->devicePixelRatioF(),
                  p_.device()->height() / p_.device()->devicePixelRatioF());
+        const auto prev = p_.compositionMode();
+        p_.setCompositionMode(QPainter::CompositionMode_Source);
         p_.fillRect(r, to_qcolor(c));
+        p_.setCompositionMode(prev);
     }
 
     void fill_rect(Rect r, Color c) override {

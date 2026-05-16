@@ -53,9 +53,14 @@ private:
 // retry is handled transparently: when EndDraw or Present signals a lost
 // device the next begin_paint() drops and rebuilds the target. The window
 // should InvalidateRect() once after a recreate to repaint.
+//
+// When transparent=true the swap chain uses DXGI_ALPHA_MODE_PREMULTIPLIED so
+// DWM composites the window's per-pixel alpha channel against the content
+// behind it. The HWND must have WS_EX_NOREDIRECTIONBITMAP. The caller is
+// responsible for clearing each frame to {0,0,0,0} rather than an opaque bg.
 class Surface {
 public:
-    Surface(Backend&, HWND);
+    Surface(Backend&, HWND, bool transparent = false);
     ~Surface();
     Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;

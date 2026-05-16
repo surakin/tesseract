@@ -671,9 +671,11 @@ struct Surface::Impl {
     ComPtr<IDXGISwapChain1>     swap_chain;
     ComPtr<ID2D1Bitmap1>        target_bmp;
     std::unique_ptr<D2DCanvas>  canvas;
-    bool                        painting = false;
+    bool                        painting    = false;
+    bool                        transparent = false;
 
-    Impl(Backend::Impl& b, HWND h) : backend(b), hwnd(h) {}
+    Impl(Backend::Impl& b, HWND h, bool t = false)
+        : backend(b), hwnd(h), transparent(t) {}
 
     void create_target_bitmap() {
         ComPtr<IDXGISurface> surf;
@@ -681,10 +683,11 @@ struct Surface::Impl {
               "IDXGISwapChain1::GetBuffer");
         float dpi = static_cast<float>(GetDpiForWindow(hwnd));
         if (dpi == 0.0f) dpi = 96.0f;
+        const D2D1_ALPHA_MODE bmp_alpha = transparent
+            ? D2D1_ALPHA_MODE_PREMULTIPLIED : D2D1_ALPHA_MODE_IGNORE;
         D2D1_BITMAP_PROPERTIES1 bp = D2D1::BitmapProperties1(
             D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              D2D1_ALPHA_MODE_IGNORE),
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, bmp_alpha),
             dpi, dpi);
         check(dc->CreateBitmapFromDxgiSurface(surf.Get(), &bp,
                                                target_bmp.GetAddressOf()),
@@ -718,7 +721,8 @@ struct Surface::Impl {
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         desc.BufferCount = 2;
         desc.SwapEffect  = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        desc.AlphaMode   = DXGI_ALPHA_MODE_IGNORE;
+        desc.AlphaMode   = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
+                                       : DXGI_ALPHA_MODE_IGNORE;
         check(factory2->CreateSwapChainForHwnd(
             backend.d3d.Get(), hwnd, &desc, nullptr, nullptr,
             swap_chain.GetAddressOf()),
@@ -750,8 +754,8 @@ struct Surface::Impl {
     }
 };
 
-Surface::Surface(Backend& b, HWND h)
-    : impl_(std::make_unique<Impl>(b.impl(), h)) {}
+Surface::Surface(Backend& b, HWND h, bool transparent)
+    : impl_(std::make_unique<Impl>(b.impl(), h, transparent)) {}
 
 Surface::~Surface() = default;
 
