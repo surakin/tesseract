@@ -302,6 +302,24 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
     if (!url.empty() && on_link_clicked) on_link_clicked(url);
 }
 
+tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world) {
+    if (!visible_ || !contains_world(world)) return nullptr;
+
+    // Children (name_label_, topic_label_) are purely visual — they don't
+    // override on_pointer_move. But the default Widget::dispatch_pointer_move
+    // returns the deepest child and skips calling on_pointer_move() on the
+    // parent, so calendar-button hover and topic tooltip never fire when the
+    // cursor is over the label text. Fix: delegate first, then always call our
+    // own on_pointer_move(), and return `this` so the host tracks RoomHeader
+    // as hovered_widget_ and on_pointer_leave() reaches us on exit.
+    Widget* hit = Widget::dispatch_pointer_move(world);
+    if (hit && hit != this) {
+        tk::Point local{ world.x - bounds_.x, world.y - bounds_.y };
+        on_pointer_move(local);
+    }
+    return this;
+}
+
 void RoomHeader::on_pointer_move(tk::Point local) {
     const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
 

@@ -127,7 +127,7 @@ public:
     // received the event (or nullptr if `world` was outside). Hosts
     // call this on the root from their pointer-move handler when no
     // widget has claimed the press.
-    Widget* dispatch_pointer_move(Point world);
+    virtual Widget* dispatch_pointer_move(Point world);
 
     // Walk into the hit widget, then bubble up through parents until
     // someone consumes the wheel event. `world` is in root-surface

@@ -37,10 +37,11 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
 
-    bool on_pointer_down(tk::Point local)                   override;
-    void on_pointer_up  (tk::Point local, bool inside_self) override;
-    void on_pointer_move(tk::Point local)                   override;
-    void on_pointer_leave()                                 override;
+    bool     on_pointer_down(tk::Point local)                   override;
+    void     on_pointer_up  (tk::Point local, bool inside_self) override;
+    tk::Widget* dispatch_pointer_move(tk::Point world)          override;
+    void     on_pointer_move(tk::Point local)                   override;
+    void     on_pointer_leave()                                 override;
 
     // Fired when a hyperlink in the room topic is clicked.
     std::function<void(const std::string& url)> on_link_clicked;
