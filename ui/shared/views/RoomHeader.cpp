@@ -50,14 +50,34 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info) {
     topic_layout_.reset();
     topic_dirty_     = true;
     topic_truncated_ = false;
+    topic_multiline_ = false;
     if (name_label_)  name_label_->set_text(display_name_);
     if (topic_label_) {
         if (!topic_html_.empty()) {
             topic_spans_ = html_to_spans(topic_html_);
+            // Build first-line display spans: scan for \n, stop there.
+            topic_display_spans_ = {};
+            for (const auto& span : topic_spans_) {
+                const auto nl = span.text.find('\n');
+                if (nl != std::string::npos) {
+                    topic_multiline_ = true;
+                    tk::TextSpan trunc = span;
+                    trunc.text = span.text.substr(0, nl) + "…";
+                    topic_display_spans_.push_back(std::move(trunc));
+                    break;
+                }
+                topic_display_spans_.push_back(span);
+            }
+            if (!topic_multiline_) topic_display_spans_ = topic_spans_;
             topic_label_->set_visible(false);
         } else {
             topic_spans_.clear();
-            topic_label_->set_text(topic_);
+            topic_display_spans_.clear();
+            const auto nl = topic_.find('\n');
+            topic_multiline_ = (nl != std::string::npos);
+            const std::string display = topic_multiline_
+                ? topic_.substr(0, nl) + "…" : topic_;
+            topic_label_->set_text(display);
             topic_label_->set_visible(!topic_.empty());
         }
     }
@@ -111,25 +131,33 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         topic_truncated_ = false;
         topic_layout_.reset();
 
-        if (!topic_spans_.empty()) {
-            // Rich text: constrained layout for painting.
+        if (!topic_display_spans_.empty()) {
+            // Rich text: paint from display spans (first-line only when
+            // multiline; equals topic_spans_ for single-line topics).
             tk::TextStyle ts{};
             ts.role      = tk::FontRole::SidebarPreview;
             ts.trim      = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
-            topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+            topic_layout_ = ctx.factory.build_rich_text(topic_display_spans_, ts);
 
-            // Unconstrained layout to detect whether the text was clipped.
-            tk::TextStyle ts_nat{};
-            ts_nat.role = tk::FontRole::SidebarPreview;
-            auto nat = ctx.factory.build_rich_text(topic_spans_, ts_nat);
-            topic_truncated_ = nat && nat->measure().w > text_w;
+            if (topic_multiline_) {
+                topic_truncated_ = true;
+            } else {
+                tk::TextStyle ts_nat{};
+                ts_nat.role = tk::FontRole::SidebarPreview;
+                auto nat = ctx.factory.build_rich_text(topic_display_spans_, ts_nat);
+                topic_truncated_ = nat && nat->measure().w > text_w;
+            }
         } else if (!topic_.empty()) {
-            // Plain text: measure natural width for truncation detection.
-            tk::TextStyle ts_nat{};
-            ts_nat.role = tk::FontRole::SidebarPreview;
-            auto nat = ctx.factory.build_text(topic_, ts_nat);
-            topic_truncated_ = nat && nat->measure().w > text_w;
+            // Plain text: label already shows first-line + "…" when multiline.
+            if (topic_multiline_) {
+                topic_truncated_ = true;
+            } else {
+                tk::TextStyle ts_nat{};
+                ts_nat.role = tk::FontRole::SidebarPreview;
+                auto nat = ctx.factory.build_text(topic_, ts_nat);
+                topic_truncated_ = nat && nat->measure().w > text_w;
+            }
         }
     }
 }

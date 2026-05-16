@@ -75,6 +75,10 @@ private:
     std::string topic_;
     std::string topic_html_;
     std::vector<tk::TextSpan> topic_spans_;
+    // First-line-only spans used for painting (equals topic_spans_ when
+    // the topic is single-line; truncated at the first \n + "…" otherwise).
+    std::vector<tk::TextSpan> topic_display_spans_;
+    bool        topic_multiline_  = false;
     tk::Rect    topic_rect_{};
     std::string avatar_url_;
 
