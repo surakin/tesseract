@@ -136,8 +136,7 @@ private:
         if (collapsed && section_unread > 0) {
             std::string badge_text = format_unread(section_unread);
             tk::TextStyle bs{};
-            bs.role   = tk::FontRole::UnreadBadge;
-            bs.halign = tk::TextHAlign::Center;
+            bs.role = tk::FontRole::UnreadBadge;
             auto blayout = ctx.factory.build_text(badge_text, bs);
             float tw = blayout ? blayout->measure().w : 0.0f;
             float pill_w = std::max(kBadgeMinW, tw + kBadgePadX * 2);
@@ -240,8 +239,7 @@ private:
 
         if (!badge_text.empty()) {
             tk::TextStyle badge_style{};
-            badge_style.role   = tk::FontRole::UnreadBadge;
-            badge_style.halign = tk::TextHAlign::Center;
+            badge_style.role = tk::FontRole::UnreadBadge;
             auto badge_layout = ctx.factory.build_text(badge_text, badge_style);
             tk::Size badge_sz = badge_layout ? badge_layout->measure() : tk::Size{};
             float pill_w = std::max(kBadgeMinW,
@@ -493,6 +491,14 @@ void RoomListView::paint(tk::PaintCtx& ctx) {
             bounds_.x, bounds_.y + kSearchBarH - 1.0f, bounds_.w, 1.0f
         };
         ctx.canvas.fill_rect(sep, ctx.theme.palette.border);
+
+        // Search field card — same style as the compose input.
+        if (!search_field_rect_.empty()) {
+            ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
+                                          ctx.theme.palette.compose_card_bg);
+            ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
+                                            ctx.theme.palette.border, 1.0f);
+        }
 
         // Clear (×) button — shown only when the search query is non-empty.
         if (!search_clear_rect_.empty()) {
