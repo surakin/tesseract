@@ -310,10 +310,12 @@ private:
     std::unique_ptr<tk::win32::Surface>     emoji_picker_surface_;
     tesseract::views::EmojiPicker*           emoji_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
-    HWND      hStickerPicker_ = nullptr;     // floating WS_POPUP host
+    HWND      hStickerPicker_   = nullptr;     // floating WS_POPUP host
     std::unique_ptr<tk::win32::Surface>     sticker_picker_surface_;
     tesseract::views::StickerPicker*         sticker_picker_shared_ = nullptr; // borrowed
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+    HWND         hTopicTooltip_    = nullptr; // tracking tooltip for truncated room topics
+    std::wstring topic_tooltip_text_;         // backing store for TTM_UPDATETIPTEXTW
 
     HWND      hJoinRoom_ = nullptr;          // centred WS_POPUP host
     std::unique_ptr<tk::win32::Surface>     join_room_surface_;

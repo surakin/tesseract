@@ -963,6 +963,48 @@ void MainWindow::on_create(HWND hwnd) {
         room_view_->on_link_clicked = [](const std::string& url) {
             tesseract::Client::open_in_browser(url);
         };
+        room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor) {
+            if (!main_app_surface_) return;
+            if (!hTopicTooltip_) {
+                hTopicTooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+                    WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+                    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                    hwnd_, nullptr, GetModuleHandleW(nullptr), nullptr);
+                SendMessageW(hTopicTooltip_, TTM_SETMAXTIPWIDTH, 0, 400);
+                TOOLINFOW ti{};
+                ti.cbSize   = sizeof(ti);
+                ti.uFlags   = TTF_TRACK | TTF_ABSOLUTE;
+                ti.hwnd     = hwnd_;
+                ti.uId      = 1;
+                ti.lpszText = const_cast<LPWSTR>(L"");
+                SendMessageW(hTopicTooltip_, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+            }
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+            topic_tooltip_text_.resize(static_cast<std::size_t>(wlen));
+            MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1,
+                                topic_tooltip_text_.data(), wlen);
+            TOOLINFOW ti{};
+            ti.cbSize   = sizeof(ti);
+            ti.hwnd     = hwnd_;
+            ti.uId      = 1;
+            ti.lpszText = topic_tooltip_text_.data();
+            SendMessageW(hTopicTooltip_, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+            POINT pt{ static_cast<LONG>(anchor.x),
+                      static_cast<LONG>(anchor.y + anchor.h) };
+            ClientToScreen(main_app_surface_->hwnd(), &pt);
+            SendMessageW(hTopicTooltip_, TTM_TRACKPOSITION, 0,
+                         MAKELPARAM(static_cast<WORD>(pt.x),
+                                    static_cast<WORD>(pt.y)));
+            SendMessageW(hTopicTooltip_, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
+        };
+        room_view_->on_hide_tooltip = [this] {
+            if (!hTopicTooltip_) return;
+            TOOLINFOW ti{};
+            ti.cbSize = sizeof(ti);
+            ti.hwnd   = hwnd_;
+            ti.uId    = 1;
+            SendMessageW(hTopicTooltip_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
+        };
         room_view_->on_near_top = [this] {
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);

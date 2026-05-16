@@ -225,10 +225,13 @@ private:
     std::unique_ptr<tk::NativeTextField>    emoji_picker_search_field_;
     std::string                             pending_reaction_event_id_;
 
-    GtkWidget*      sticker_popover_      = nullptr;
+    GtkWidget*      sticker_popover_       = nullptr;
     std::unique_ptr<tk::gtk4::Surface>      sticker_picker_surface_;
     tesseract::views::StickerPicker*        sticker_picker_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField>    sticker_picker_search_field_;
+
+    GtkWidget*      topic_tooltip_popover_ = nullptr;
+    GtkWidget*      topic_tooltip_label_   = nullptr;
 
     tesseract::views::ImageViewerOverlay*    img_viewer_ = nullptr;
 

@@ -38,6 +38,7 @@
 #include <QScrollBar>
 #include <QStringList>
 #include <QToolButton>
+#include <QToolTip>
 #include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
@@ -277,6 +278,17 @@ MainWindow::MainWindow(QWidget* parent)
                 if (sfp) sfp->setCursor(url.empty() ? Qt::ArrowCursor
                                                     : Qt::PointingHandCursor);
             };
+        }
+        {
+            QPointer<tk::qt6::Surface> sfp = mainAppSurface_;
+            mainApp_->room_view()->on_show_tooltip = [sfp](std::string text, tk::Rect anchor) {
+                if (!sfp) return;
+                QPoint local(static_cast<int>(anchor.x),
+                             static_cast<int>(anchor.y + anchor.h));
+                QToolTip::showText(sfp->mapToGlobal(local),
+                                   QString::fromStdString(text), sfp);
+            };
+            mainApp_->room_view()->on_hide_tooltip = [] { QToolTip::hideText(); };
         }
         mainApp_->room_view()->on_receipt_needed = [this](const std::string& eid) {
             maybe_send_read_receipt_(current_room_id_, eid);
