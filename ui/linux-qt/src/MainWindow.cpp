@@ -27,6 +27,9 @@
 #include <QMessageBox>
 #include <QMetaType>
 #include <QApplication>
+#include <QActionGroup>
+#include <QMenuBar>
+#include <QStyleHints>
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -117,6 +120,8 @@ MainWindow::MainWindow(QWidget* parent)
     roomNavBar_->setVisible(false);
     connect(backButton_, &QPushButton::clicked, this, &MainWindow::onSpaceBack);
     sideLayout->addWidget(roomNavBar_);
+
+    sidePanel_ = sidePanel;
 
     // Shared-toolkit room list. The Surface is a QWidget that hosts a
     // tk::Widget tree painted via QPainter; the RoomListView inside
@@ -235,6 +240,7 @@ MainWindow::MainWindow(QWidget* parent)
     sideSeparator->setLineWidth(1);
     sideSeparator->setStyleSheet("color: #D0D3D8;");
     sideSeparator->setFixedWidth(1);
+    sideSeparator_ = sideSeparator;
     hLayout->addWidget(sideSeparator);
 
     // ---- Main chat area ----
@@ -784,6 +790,56 @@ MainWindow::MainWindow(QWidget* parent)
     };
 
     statusBar()->showMessage(tr("Not logged in"));
+
+    // View > Theme menu — Light / Dark / Follow System
+    {
+        auto* viewMenu  = menuBar()->addMenu(tr("View"));
+        auto* themeMenu = viewMenu->addMenu(tr("Theme"));
+        auto* group     = new QActionGroup(this);
+        group->setExclusive(true);
+
+        auto* actLight  = themeMenu->addAction(tr("Light"));
+        auto* actDark   = themeMenu->addAction(tr("Dark"));
+        auto* actSystem = themeMenu->addAction(tr("Follow System"));
+        actLight->setCheckable(true);  group->addAction(actLight);
+        actDark->setCheckable(true);   group->addAction(actDark);
+        actSystem->setCheckable(true); group->addAction(actSystem);
+
+        auto syncChecks = [=] {
+            using P = tesseract::Settings::ThemePreference;
+            auto p = tesseract::Settings::instance().theme_pref;
+            actLight->setChecked(p == P::Light);
+            actDark->setChecked(p == P::Dark);
+            actSystem->setChecked(p == P::System);
+        };
+
+        connect(actLight,  &QAction::triggered, this, [this, syncChecks] {
+            set_theme_preference_(tesseract::Settings::ThemePreference::Light);
+            syncChecks();
+        });
+        connect(actDark,   &QAction::triggered, this, [this, syncChecks] {
+            set_theme_preference_(tesseract::Settings::ThemePreference::Dark);
+            syncChecks();
+        });
+        connect(actSystem, &QAction::triggered, this, [this, syncChecks] {
+            set_theme_preference_(tesseract::Settings::ThemePreference::System);
+            syncChecks();
+        });
+
+        // Load preference from disk, apply, and sync the checkmarks.
+        tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+        apply_current_theme_();
+        syncChecks();
+
+        // Re-apply when the OS switches light/dark (only relevant in System mode).
+        connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+                this, [this] {
+                    if (tesseract::Settings::instance().theme_pref ==
+                        tesseract::Settings::ThemePreference::System)
+                        apply_current_theme_();
+                });
+    }
+
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
 
@@ -2349,6 +2405,47 @@ void MainWindow::handle_verification_cancelled_ui_(
     verifSurface_->setFixedHeight(48);
     verifSurface_->setVisible(true);
     verifSurface_->relayout();
+}
+
+tk::ThemeMode MainWindow::os_color_scheme_() const {
+    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
+        ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MainWindow::apply_theme_ui_(const tk::Theme& t) {
+    // Update all shared-toolkit surfaces.
+    for (auto* s : { roomSurface_, userStripSurface_, recoverySurface_,
+                     verifSurface_, chatSurface_, imgViewerSurface_,
+                     vidViewerSurface_, accountPickerSurface_ })
+        if (s) s->set_theme(t);
+
+    const auto& p = t.palette;
+    auto toQ = [](tk::Color c) { return QColor(c.r, c.g, c.b, c.a); };
+
+    // Sidebar panel native background.
+    if (sidePanel_)
+        sidePanel_->setStyleSheet(
+            QString("#sidePanel { background-color: %1; }")
+            .arg(toQ(p.sidebar_bg).name()));
+
+    // User-strip native background + top border.
+    if (userStrip_)
+        userStrip_->setStyleSheet(
+            QString("#userStrip { background-color:%1; border-top:1px solid %2; }")
+            .arg(toQ(p.sidebar_selected).name(), toQ(p.separator).name()));
+
+    // The Surface's Qt erase colour must match the strip background so
+    // there's no flicker between Qt's widget erase and our custom paint.
+    if (userStripSurface_) {
+        QPalette pal = userStripSurface_->palette();
+        pal.setColor(QPalette::Window, toQ(p.sidebar_selected));
+        userStripSurface_->setPalette(pal);
+    }
+
+    // 1px separator between sidebar and chat area.
+    if (sideSeparator_)
+        sideSeparator_->setStyleSheet(
+            QString("color: %1;").arg(toQ(p.separator).name()));
 }
 
 } // namespace qt6

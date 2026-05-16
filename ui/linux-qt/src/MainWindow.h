@@ -191,6 +191,9 @@ private:
     void     openJumpToDateDialog();
 
     // ShellBase virtual hooks (Qt6 implementations).
+    void apply_theme_ui_(const tk::Theme& t) override;
+    tk::ThemeMode os_color_scheme_() const override;
+
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
     void on_media_bytes_ready_(const std::string& cache_key,
@@ -255,6 +258,9 @@ private:
     // flash the status bar.
     QTimer*                  syncStatusDebounce_ = nullptr;
     void refreshSyncStatus();
+
+    QWidget*                          sidePanel_        = nullptr;
+    QFrame*                           sideSeparator_    = nullptr;
 
     QWidget*                          userStrip_        = nullptr;
     tk::qt6::Surface*                 userStripSurface_ = nullptr;
