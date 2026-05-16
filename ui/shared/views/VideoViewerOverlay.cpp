@@ -4,6 +4,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace tesseract::views {
@@ -220,17 +221,19 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx) {
         cv.fill_rect({ cx - gap * 0.5f - bar_w, cy, bar_w, bar_h }, glyph_col);
         cv.fill_rect({ cx + gap * 0.5f,         cy, bar_w, bar_h }, glyph_col);
     } else {
-        // Play triangle
+        // Play triangle (▶): symmetric stacked rects, widest at the vertical
+        // centre, tapering to near-zero at top and bottom.  tri_x is shifted
+        // by tri_w/3 so the visual centroid sits at the button centre.
         const float tri_h = kPlayBtnD * 0.50f;
         const float tri_w = kPlayBtnD * 0.38f;
-        const float tri_x = play_btn_.x + (kPlayBtnD - tri_w) * 0.5f + 1.5f;
+        const float tri_x = play_btn_.x + kPlayBtnD * 0.5f - tri_w / 3.0f;
         const float tri_y = play_btn_.y + (kPlayBtnD - tri_h) * 0.5f;
         constexpr int steps = 8;
         for (int i = 0; i < steps; ++i) {
-            const float t     = static_cast<float>(i) / static_cast<float>(steps - 1);
+            const float t     = (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
             const float row_h = tri_h / static_cast<float>(steps);
-            const float row_w = tri_w * (1.0f - t);
-            cv.fill_rect({ tri_x, tri_y + i * row_h, row_w, row_h }, glyph_col);
+            const float row_w = tri_w * (1.0f - 2.0f * std::abs(t - 0.5f));
+            cv.fill_rect({ tri_x, tri_y + i * row_h, std::max(1.0f, row_w), row_h }, glyph_col);
         }
     }
 
