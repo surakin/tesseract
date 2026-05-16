@@ -145,6 +145,7 @@ void LoginView::on_sign_in() {
 
     join_worker();
     cancelled_.store(false);
+    if (on_begin_oauth_) on_begin_oauth_();
     worker_ = std::thread([this, hs] {
         auto flow = client_->begin_oauth(hs);
         if (cancelled_.load()) return;

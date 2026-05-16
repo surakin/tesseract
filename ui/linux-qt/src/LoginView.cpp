@@ -146,6 +146,7 @@ void LoginView::on_sign_in() {
 
     join_worker();
     cancelled_.store(false);
+    if (on_begin_oauth_) on_begin_oauth_();
     // Snapshot client_ on the GUI thread: set_client() (via MainWindow's
     // beginAddAccount) can rebind it concurrently with this worker, which
     // would be a data race on the raw pointer.

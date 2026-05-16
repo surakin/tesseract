@@ -39,6 +39,11 @@ public:
     /// (Cancel visible in both Form and Waiting states) presentation.
     void set_mode(tesseract::views::LoginView::Mode m);
 
+    /// Called on the UI thread just before the OAuth worker thread starts.
+    /// Used by MainWindow to lazily create the pending account directory and
+    /// call set_data_dir() only when the user actually initiates login.
+    void set_on_begin_oauth(std::function<void()> cb) { on_begin_oauth_ = std::move(cb); }
+
     /// Called on the main thread when the OAuth flow completes successfully.
     void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
 
@@ -63,6 +68,7 @@ private:
     static std::string trim(std::string s);
 
     tesseract::Client*                     client_ = nullptr;  // non-owning
+    std::function<void()>                  on_begin_oauth_;
     std::function<void()>                  on_success_;
     std::function<void()>                  on_cancel_fn_;
 

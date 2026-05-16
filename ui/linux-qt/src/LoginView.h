@@ -39,6 +39,11 @@ public:
     /// Waiting states so the user can back out at any time.
     void set_mode(tesseract::views::LoginView::Mode m);
 
+    /// Called on the UI thread just before the OAuth worker thread starts.
+    /// Used by MainWindow to lazily create the pending account directory and
+    /// call set_data_dir() only when the user actually initiates login.
+    void set_on_begin_oauth(std::function<void()> cb) { on_begin_oauth_ = std::move(cb); }
+
     /// Return the view to its initial "form" state. Call before showing
     /// the view again after a successful sign-in or logout.
     void reset();
@@ -62,6 +67,7 @@ private:
     static std::string trim(std::string s);
 
     tesseract::Client* client_ = nullptr;   // non-owning; rebound per login attempt by `set_client`
+    std::function<void()>                    on_begin_oauth_;
 
     tk::qt6::Surface*                       surface_  = nullptr;
     tesseract::views::LoginView*            shared_   = nullptr;  // borrowed

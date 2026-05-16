@@ -1650,9 +1650,19 @@ void MainWindow::start_login() {
     }
 
     if (accounts_.empty()) {
+        pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
         if (login_view_) {
             login_view_->set_client(pending_login_client_.get());
+            login_view_->set_on_begin_oauth([this] {
+                if (!pending_login_temp_dir_.empty()) return;
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                pending_login_temp_dir_ =
+                    tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
+                pending_login_client_->set_data_dir(
+                    (pending_login_temp_dir_ / "matrix-store").string());
+            });
             login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
             login_view_->reset();
         }
@@ -2814,20 +2824,19 @@ void MainWindow::switch_active_account(int new_idx) {
 void MainWindow::begin_add_account() {
     add_account_return_idx_ = active_account_index_;
     pending_login_is_add_account_ = true;
-
-    // New client runs OAuth into a unique temp dir.
-    std::string ts = std::to_string(
-        static_cast<long long>(
-            std::chrono::steady_clock::now().time_since_epoch().count()));
-    pending_login_temp_dir_ =
-        tesseract::SessionStore::account_dir("pending-" + ts);
-
+    pending_login_temp_dir_.clear();
     pending_login_client_ = std::make_unique<tesseract::Client>();
-    pending_login_client_->set_data_dir(
-        (pending_login_temp_dir_ / "matrix-store").string());
-
     if (login_view_) {
         login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] {
+            if (!pending_login_temp_dir_.empty()) return;
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            pending_login_temp_dir_ =
+                tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
+            pending_login_client_->set_data_dir(
+                (pending_login_temp_dir_ / "matrix-store").string());
+        });
         login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
         login_view_->reset();
     }
@@ -2892,9 +2901,19 @@ void MainWindow::logout_active_account() {
         index.active_user_id.clear();
         tesseract::SessionStore::save_index(index);
 
+        pending_login_temp_dir_.clear();
         pending_login_client_ = std::make_unique<tesseract::Client>();
         if (login_view_) {
             login_view_->set_client(pending_login_client_.get());
+            login_view_->set_on_begin_oauth([this] {
+                if (!pending_login_temp_dir_.empty()) return;
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                pending_login_temp_dir_ =
+                    tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
+                pending_login_client_->set_data_dir(
+                    (pending_login_temp_dir_ / "matrix-store").string());
+            });
             login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
             login_view_->reset();
         }

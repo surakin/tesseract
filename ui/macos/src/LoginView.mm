@@ -203,6 +203,7 @@ std::string trim(std::string s) {
 
     if (_worker.joinable()) _worker.join();
     _cancelled = false;
+    if (self.onBeginOAuth) self.onBeginOAuth();
     __weak LoginView* weakSelf = self;
     _worker = std::thread([weakSelf, hs] {
         LoginView* strongSelf = weakSelf;

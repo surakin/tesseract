@@ -137,6 +137,7 @@ void LoginView::on_sign_in() {
 
     join_worker();
     cancelled_.store(false);
+    if (on_begin_oauth_) on_begin_oauth_();
     auto* c = client_;                  // snapshot: avoid set_client() race
     std::weak_ptr<bool> w = alive_;
     worker_ = std::thread([this, hs, c, w] {

@@ -1530,13 +1530,20 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
     }
 
     if (_shell->accounts_.empty()) {
+        _shell->pending_login_temp_dir_ = {};
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
-        auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-        _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
-        _shell->pending_login_client_->set_data_dir(
-            (_shell->pending_login_temp_dir_ / "matrix-store").string());
         [_loginView setClient:_shell->pending_login_client_.get()];
+        __weak MainWindowController* weakSelf = self;
+        _loginView.onBeginOAuth = ^{
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
+            auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            s->_shell->pending_login_temp_dir_ =
+                tesseract::SessionStore::account_dir("pending-" + ms);
+            s->_shell->pending_login_client_->set_data_dir(
+                (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+        };
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];
         _splitView.hidden = YES;
@@ -1690,13 +1697,20 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
 - (void)_beginAddAccount {
     _shell->pending_login_is_add_account_ = true;
     _shell->add_account_return_idx_ = _shell->active_account_index_;
+    _shell->pending_login_temp_dir_ = {};
     _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
-    auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
-    _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
-    _shell->pending_login_client_->set_data_dir(
-        (_shell->pending_login_temp_dir_ / "matrix-store").string());
     [_loginView setClient:_shell->pending_login_client_.get()];
+    __weak MainWindowController* weakSelf = self;
+    _loginView.onBeginOAuth = ^{
+        MainWindowController* s = weakSelf;
+        if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
+        auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        s->_shell->pending_login_temp_dir_ =
+            tesseract::SessionStore::account_dir("pending-" + ms);
+        s->_shell->pending_login_client_->set_data_dir(
+            (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+    };
     [_loginView setMode:tesseract::views::LoginView::Mode::AddAccount];
     [_loginView reset];
     _splitView.hidden = YES;
@@ -1910,13 +1924,20 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
         _userStrip.hidden = YES;
         _userStripHeightCon.constant = 0;
 
+        _shell->pending_login_temp_dir_ = {};
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
-        auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-        _shell->pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + ms);
-        _shell->pending_login_client_->set_data_dir(
-            (_shell->pending_login_temp_dir_ / "matrix-store").string());
         [_loginView setClient:_shell->pending_login_client_.get()];
+        __weak MainWindowController* weakSelf = self;
+        _loginView.onBeginOAuth = ^{
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
+            auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            s->_shell->pending_login_temp_dir_ =
+                tesseract::SessionStore::account_dir("pending-" + ms);
+            s->_shell->pending_login_client_->set_data_dir(
+                (s->_shell->pending_login_temp_dir_ / "matrix-store").string());
+        };
         [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
         [_loginView reset];
         _splitView.hidden = YES;

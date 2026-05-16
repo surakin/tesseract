@@ -22,6 +22,10 @@
 /// Rebind before each login attempt.
 - (void)setClient:(tesseract::Client*)client;
 
+/// Called on the main thread just before the OAuth worker thread starts.
+/// Set by MainWindow to lazily create the pending directory on first sign-in.
+@property (nonatomic, copy) void (^onBeginOAuth)(void);
+
 /// Initial = no cancel button; AddAccount = cancel visible in Form + Waiting.
 - (void)setMode:(tesseract::views::LoginView::Mode)mode;
 
