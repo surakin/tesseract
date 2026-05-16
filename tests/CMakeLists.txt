@@ -36,6 +36,7 @@ add_executable(tesseract_tests
     cpp/test_tk_reply.cpp
     cpp/test_html_spans.cpp
     cpp/test_prefs.cpp
+    cpp/test_settings.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

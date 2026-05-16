@@ -1,9 +1,9 @@
 #include "tesseract/settings.h"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 
 namespace tesseract {
 
@@ -38,7 +38,9 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir) {
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
-    std::filesystem::create_directories(config_dir);
+    std::error_code ec;
+    std::filesystem::create_directories(config_dir, ec);
+    // Ignore ec — if the directory doesn't exist the ofstream open-check catches it.
 
     const char* theme_str = "system";
     if (theme_pref == ThemePreference::Light)     theme_str = "light";
