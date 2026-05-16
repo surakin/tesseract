@@ -7,6 +7,17 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
+- feat: light/dark/system theme preference — all four shells detect OS appearance and honour a persisted `ThemePreference`; `set_theme()` added to every platform `Surface`; Win32 picks up `WM_SETTINGCHANGE`, macOS `effectiveAppearance`, Qt6 `QPalette::ColorScheme`, GTK4 `GtkSettings::gtk-application-prefer-dark-theme`
+- fix(settings): `create_directories` uses `std::error_code` overload to avoid exceptions; unit tests cover `ThemePreference` round-trip persistence
+- fix(sdk): build room timeline on a worker thread to avoid stack-overflow crash on macOS
+- fix(reply): pass `event_id` (not `in_reply_to_id`) to `ensure_reply_details_` so reply headers resolve correctly
+- fix(viewer): image/video overlay backdrop turned black on first mouse move — fixed on all four platforms by propagating `transparent` mode through the Surface/Host stack (Win32: `DXGI_ALPHA_MODE_PREMULTIPLIED` + `WS_EX_NOREDIRECTIONBITMAP`; Qt6: `WA_TranslucentBackground`; GTK4: Cairo `OPERATOR_SOURCE` clear; macOS: CG `kCGBlendModeCopy` clear + `isOpaque=NO`)
+- fix(message-list): bare URLs in plain-text bodies (no `formatted_body`) are now clickable
+- feat(image-viewer): oversized images open zoomed to fit rather than 1:1
+- fix(room-header): topic text extends to full available width with ellipsis on overflow; tooltip shows full topic only when the text is actually truncated
+- fix(ui): darken room list section header backgrounds for better visual separation
+- fix(ui): read marker is briefly suppressed when a new message arrives so it does not overlap the incoming row
+- fix(win32): compile cleanly under `/std:c++20` on SDK 19041 — cppwinrt + GDI+ compatibility
 - fix: typing row is always present at fixed height so the layout never shifts when typing starts/stops
 - fix: no grouping flicker on new messages — is_cont skips suppressed read marker; suppress_read_marker_ collapses the row until SDK moves it
 - fix: crash in newest_visible_real_event_id when typing row is visible — clamp visible_range() last index to messages_.size()-1
