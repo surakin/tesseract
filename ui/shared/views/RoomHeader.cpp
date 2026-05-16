@@ -3,6 +3,8 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 namespace tesseract::views {
 
@@ -160,19 +162,40 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
 
     ctx.canvas.fill_rounded_rect(calendar_btn_rect_, kCalBtnRadius, btn_bg);
 
-    // Draw a calendar glyph centred inside the button.
-    tk::TextStyle cal_ts;
-    cal_ts.role   = tk::FontRole::Body;
-    cal_ts.halign = tk::TextHAlign::Center;
-    cal_ts.valign = tk::TextVAlign::Center;
-    auto glyph = ctx.factory.build_text("\U0001F4C5", cal_ts);
-    if (glyph) {
-        const tk::Size gs = glyph->measure();
-        const tk::Point glyph_origin{
-            calendar_btn_rect_.x + (kCalBtnSize - gs.w) * 0.5f,
-            calendar_btn_rect_.y + (kCalBtnSize - gs.h) * 0.5f
-        };
-        ctx.canvas.draw_text(*glyph, glyph_origin, ctx.theme.palette.text_primary);
+    // Draw a crisp vector calendar icon centred inside the button.
+    draw_calendar_icon(ctx.canvas, calendar_btn_rect_,
+                       ctx.theme.palette.text_primary);
+}
+
+void RoomHeader::draw_calendar_icon(tk::Canvas& canvas,
+                                    tk::Rect button,
+                                    tk::Color tint) {
+    // 16x16 icon box, pixel-snapped and centred in the button rect so the
+    // 1.5 px strokes stay crisp on every backend.
+    const float ox = std::floor(button.x + (button.w - 16.0f) * 0.5f);
+    const float oy = std::floor(button.y + (button.h - 16.0f) * 0.5f);
+
+    // Calendar body: outline rounded rect, leaving 2 px at the top so the
+    // binding tabs straddle its edge.
+    const tk::Rect body{ ox, oy + 2.0f, 16.0f, 14.0f };
+    canvas.stroke_rounded_rect(body, 2.5f, tint, 1.5f);
+
+    // Two binding tabs straddling the top edge of the body.
+    canvas.fill_rounded_rect({ ox + 3.0f,  oy, 2.5f, 4.0f }, 1.0f, tint);
+    canvas.fill_rounded_rect({ ox + 10.5f, oy, 2.5f, 4.0f }, 1.0f, tint);
+
+    // Header / day-grid divider rule.
+    canvas.fill_rect({ ox + 1.5f, oy + 6.0f, 13.0f, 1.5f }, tint);
+
+    // 2x3 day-grid dots, faint so they read as texture, not noise.
+    const tk::Color dot = tint.with_alpha(
+        static_cast<std::uint8_t>(tint.a * 0.55f));
+    for (int row = 0; row < 2; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            const float cx = ox + 4.0f + static_cast<float>(col) * 4.0f;
+            const float cy = oy + 10.0f + static_cast<float>(row) * 3.0f;
+            canvas.fill_rect({ cx - 0.8f, cy - 0.8f, 1.6f, 1.6f }, dot);
+        }
     }
 }
 

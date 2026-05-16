@@ -49,6 +49,10 @@ public:
     std::function<void()> on_jump_to_date_requested;
 
 private:
+    // Draws a vector calendar icon centred in `button`, tinted with `tint`.
+    void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
+                            tk::Color tint);
+
     bool     hover_calendar_ = false;
     bool     press_calendar_ = false;
     tk::Rect calendar_btn_rect_{};  // updated each paint pass
