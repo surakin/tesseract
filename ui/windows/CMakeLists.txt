@@ -63,6 +63,19 @@ add_executable(tesseract_win32 WIN32
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
+# Windows SDK 10.0.19041's bundled C++/WinRT headers predate /permissive-
+# (implied by /std:c++20). winrt/impl/Windows.Foundation.0.h issues the
+# qualified call winrt::impl::wait_for() before that template is declared
+# (it's defined later in winrt/Windows.Foundation.h), which conforming
+# two-phase name lookup rejects. Relax two-phase lookup for just the two
+# TUs that pull in cppwinrt (the toast-notification path). The companion
+# <experimental/coroutine> incompatibility is handled in source by
+# src/winrt_coroutine_shim.h.
+if(MSVC)
+    set_source_files_properties(src/main.cpp src/Win32Notifier.cpp
+        PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
+endif()
+
 target_include_directories(tesseract_win32 PRIVATE src)
 
 # C++/WinRT headers live in <WinSDK>/include/<ver>/cppwinrt/ (SDK 10.0.17134+).

@@ -8,7 +8,12 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <ole2.h>
-#include <algorithm>  // std::min/std::max — must precede gdiplus.h with NOMINMAX
+// GdiplusTypes.h calls unqualified min()/max(); with NOMINMAX the Win32
+// macros are gone, so std::min/std::max must be brought into scope (a bare
+// <algorithm> is not enough — the names there are std-qualified) before it.
+#include <algorithm>
+using std::max;
+using std::min;
 #include <gdiplus.h>
 
 #include <tesseract/account_session.h>

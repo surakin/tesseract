@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include <ole2.h>
 #include <ShObjIdl_core.h>
+#include "winrt_coroutine_shim.h"  // must precede any <winrt/...> include
 #include <winrt/base.h>
 #include <stdexcept>
 

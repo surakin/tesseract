@@ -1,5 +1,7 @@
 #include "Win32Notifier.h"
 
+#include "winrt_coroutine_shim.h"  // must precede any <winrt/...> include
+
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Notifications.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
