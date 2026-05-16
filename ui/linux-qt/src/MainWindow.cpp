@@ -636,6 +636,44 @@ MainWindow::MainWindow(QWidget* parent)
         vidViewerSurface_->set_root(std::move(viewer_owner));
     }
 
+    // Image / sticker click → open the lightbox overlay. The overlay's own
+    // image provider falls back to the inline thumbnail in tk_images_ /
+    // anim_cache_, so it renders immediately with no extra fetch.
+    roomView_->on_image_clicked =
+        [this](const tesseract::views::MessageListView::ImageHit& hit) {
+            if (!imgViewer_ || !imgViewerHost_) return;
+            imgViewer_->open(hit.media_url, hit.body,
+                             hit.natural_w, hit.natural_h);
+            imgViewerHost_->setGeometry(mainContent_->rect());
+            imgViewerHost_->show();
+            imgViewerHost_->raise();
+            imgViewerSurface_->setFocus();
+        };
+
+    // Video click → open the video overlay with the thumbnail, then fetch
+    // the source bytes off the UI thread and feed them in once ready.
+    roomView_->on_video_clicked =
+        [this](const tesseract::views::MessageListView::VideoHit& hit) {
+            if (!vidViewer_ || !vidViewerHost_) return;
+            vidViewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+                             hit.duration_ms, hit.natural_w, hit.natural_h,
+                             hit.autoplay, hit.loop, hit.no_audio,
+                             hit.hide_controls);
+            vidViewerHost_->setGeometry(mainContent_->rect());
+            vidViewerHost_->show();
+            vidViewerHost_->raise();
+            vidViewerSurface_->setFocus();
+            std::string src = hit.source_json;
+            runOnPool_([this, src = std::move(src)]() mutable {
+                auto bytes = client_->fetch_source_bytes(src);
+                QMetaObject::invokeMethod(this,
+                    [this, bytes = std::move(bytes)]() mutable {
+                        if (vidViewer_)
+                            vidViewer_->load_bytes(bytes.data(), bytes.size());
+                    }, Qt::QueuedConnection);
+            });
+        };
+
     // Emoji picker: build the floating panel, wire selection → cursor
     // insert + account-data bump. Recents live in the SDK now (synced via
     // `io.element.recent_emoji`), so no local-disk load is needed.
