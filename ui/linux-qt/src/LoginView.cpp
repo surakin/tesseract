@@ -85,10 +85,13 @@ void LoginView::on_hs_text_changed(const std::string& text) {
     if (text.empty()) {
         shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
         surface_->relayout();
+        layout_overlays();   // discovery label hidden → field box moves
         return;
     }
     shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Discovering);
     surface_->relayout();
+    layout_overlays();       // discovery label shown → field box moves;
+                             // keep the native QLineEdit aligned with it
 
     auto* snap = client_;
     if (!snap) return;
@@ -108,6 +111,8 @@ void LoginView::on_hs_text_changed(const std::string& text) {
                     tesseract::views::LoginView::DiscoveryState::Failed,
                     result.error);
             surface_->relayout();
+            layout_overlays();   // Resolved/Failed label height differs from
+                                 // "Checking…" → realign the native field
         });
     }).detach();
 }
