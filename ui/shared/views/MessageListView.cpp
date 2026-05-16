@@ -365,6 +365,20 @@ public:
         return i == owner_.messages_.size();
     }
 
+    // Returns true if at least one real content row (not DaySeparator,
+    // ReadMarker, or TimelineStart) exists after `index`.
+    bool has_content_after(std::size_t index) const {
+        using Kind = MessageRowData::Kind;
+        for (std::size_t j = index + 1; j < owner_.messages_.size(); ++j) {
+            auto k = owner_.messages_[j].kind;
+            if (k != Kind::DaySeparator &&
+                k != Kind::ReadMarker   &&
+                k != Kind::TimelineStart)
+                return true;
+        }
+        return false;
+    }
+
     std::size_t count() const override {
         return owner_.messages_.size() + 1;  // +1 for always-present typing row
     }
@@ -410,7 +424,8 @@ public:
         if (index >= owner_.messages_.size()) return 0;
         const auto& m = owner_.messages_[index];
         using Kind = MessageRowData::Kind;
-        if (m.kind == Kind::DaySeparator)  return kDaySepH;
+        if (m.kind == Kind::DaySeparator)
+            return has_content_after(index) ? kDaySepH : 0.0f;
         if (m.kind == Kind::ReadMarker)
             return owner_.suppress_read_marker_ ? 0.0f : kReadMarkerH;
         if (m.kind == Kind::TimelineStart) return kTimelineStartH;
@@ -432,7 +447,7 @@ public:
         // Virtual items get their own minimal rendering — no avatar/body layout.
         using Kind = MessageRowData::Kind;
         if (m.kind == Kind::DaySeparator) {
-            paint_day_separator(m, ctx, bounds);
+            if (has_content_after(index)) paint_day_separator(m, ctx, bounds);
             return;
         }
         if (m.kind == Kind::ReadMarker) {
