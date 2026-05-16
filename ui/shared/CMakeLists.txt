@@ -110,6 +110,21 @@ endif()
 
 add_library(tesseract_tk STATIC ${_tk_sources})
 
+# Embed the application icon PNG as a C byte array so BrandView can decode it
+# cross-platform without per-shell resource loading. Runs at configure time.
+set(_icon_png "${CMAKE_SOURCE_DIR}/ui/icons/tesseract_160.png")
+if(EXISTS "${_icon_png}")
+    file(READ "${_icon_png}" _icon_hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " _icon_bytes "${_icon_hex}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/brand_icon.h"
+        "#pragma once\n"
+        "#include <cstdint>\n\n"
+        "static constexpr std::uint8_t kBrandIconPng[] = { ${_icon_bytes} };\n"
+    )
+    target_compile_definitions(tesseract_tk PRIVATE TESSERACT_HAS_BRAND_ICON=1)
+endif()
+target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+
 target_compile_features(tesseract_tk PUBLIC cxx_std_20)
 
 target_include_directories(tesseract_tk PUBLIC

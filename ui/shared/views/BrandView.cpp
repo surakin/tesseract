@@ -4,6 +4,10 @@
 
 #include <tesseract/version.h>
 
+#if TESSERACT_HAS_BRAND_ICON
+#include "brand_icon.h"
+#endif
+
 namespace tesseract::views {
 
 tk::Size BrandView::measure(tk::LayoutCtx&, tk::Size constraints) {
@@ -23,6 +27,13 @@ void BrandView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         ts.role = tk::FontRole::Small;
         version_layout_ = ctx.factory.build_text(tesseract::kVersion, ts);
     }
+
+#if TESSERACT_HAS_BRAND_ICON
+    if (!icon_) {
+        icon_ = ctx.factory.decode_image(
+            std::span<const std::uint8_t>(kBrandIconPng, sizeof(kBrandIconPng)));
+    }
+#endif
 }
 
 void BrandView::paint(tk::PaintCtx& ctx) {
@@ -42,14 +53,18 @@ void BrandView::paint(tk::PaintCtx& ctx) {
     const float stack_top = bounds_.y + (bounds_.h - stack_h) * 0.45f;
     const float cx = bounds_.x + bounds_.w * 0.5f;
 
-    // Icon — initials circle renders the first grapheme cluster of the app
-    // name ("T") in the accent colour with white-on-accent contrast.
-    ctx.canvas.draw_initials_circle(
-        tesseract::kAppName,
-        { cx, stack_top + kIconDiameter * 0.5f },
-        kIconDiameter,
-        pal.accent,
-        pal.text_on_accent);
+    // Icon — use the decoded PNG when available; fall back to initials circle.
+    const float r = kIconDiameter * 0.5f;
+    if (icon_) {
+        ctx.canvas.draw_image(*icon_, { cx - r, stack_top, kIconDiameter, kIconDiameter });
+    } else {
+        ctx.canvas.draw_initials_circle(
+            tesseract::kAppName,
+            { cx, stack_top + r },
+            kIconDiameter,
+            pal.accent,
+            pal.text_on_accent);
+    }
 
     // App name ("Tesseract") in Title weight.
     const float name_top = stack_top + kIconDiameter + kIconToName;

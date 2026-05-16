@@ -1,9 +1,9 @@
 #pragma once
 
 // Centered brand splash displayed in the chat area when no room is open.
-// Renders the app icon (initials circle), the app name, and the version
-// string, using only abstract canvas primitives so it works on all
-// four platform backends.
+// Renders the app icon (PNG decoded from the embedded brand_icon.h byte array,
+// with an initials-circle fallback), the app name, and the version string,
+// using only abstract canvas primitives so it works on all four backends.
 
 #include "tk/widget.h"
 
@@ -21,6 +21,7 @@ public:
     void     paint  (tk::PaintCtx&)                        override;
 
 private:
+    std::unique_ptr<tk::Image>      icon_;
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> version_layout_;
 
