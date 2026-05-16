@@ -385,6 +385,13 @@ MainWindow::MainWindow(QWidget* parent)
         roomView_->on_link_clicked = [](const std::string& url) {
             tesseract::Client::open_in_browser(url);
         };
+        {
+            QPointer<tk::qt6::Surface> sfp = chatSurface_;
+            roomView_->on_link_hovered = [sfp](const std::string& url) {
+                if (sfp) sfp->setCursor(url.empty() ? Qt::ArrowCursor
+                                                    : Qt::PointingHandCursor);
+            };
+        }
         roomView_->on_receipt_needed = [this](const std::string& eid) {
             maybe_send_read_receipt_(current_room_id_, eid);
         };

@@ -2290,6 +2290,27 @@ void MessageListView::on_pointer_move(tk::Point local) {
         hover_target_   = t;
         hover_chip_idx_ = chip_idx;
     }
+
+    // Inline hyperlink hover — detect URL under pointer and fire
+    // on_link_hovered when it changes so the shell can set the cursor.
+    std::string new_link_url;
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        std::size_t hrow = hovered_row_geom_.row_index;
+        if (hrow < messages_.size()) {
+            const auto& m = messages_[hrow];
+            auto it = link_layout_cache_.find(m.event_id);
+            if (it != link_layout_cache_.end() && it->second.layout) {
+                tk::Point ll{ world.x - it->second.origin.x,
+                              world.y - it->second.origin.y };
+                new_link_url = it->second.layout->link_at(ll);
+            }
+        }
+    }
+    if (new_link_url != hover_link_url_) {
+        hover_link_url_ = new_link_url;
+        if (on_link_hovered) on_link_hovered(hover_link_url_);
+    }
 }
 
 void MessageListView::on_pointer_leave() {

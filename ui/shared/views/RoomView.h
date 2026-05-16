@@ -140,6 +140,7 @@ public:
     std::function<void(std::string event_id,
                        tk::Rect anchor)>                   on_add_reaction_requested;
     std::function<void(std::string url)>                   on_link_clicked;
+    std::function<void(std::string url)>                   on_link_hovered;
     std::function<void(std::string event_id)>              on_receipt_needed;
     std::function<void(MessageListView::ImageHit)>         on_image_clicked;
     std::function<void(MessageListView::VideoHit)>         on_video_clicked;

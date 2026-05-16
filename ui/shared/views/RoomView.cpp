@@ -100,6 +100,10 @@ void RoomView::wire_internal_callbacks() {
         [this](const std::string& url) {
             if (on_link_clicked) on_link_clicked(url);
         };
+    message_list_->on_link_hovered =
+        [this](const std::string& url) {
+            if (on_link_hovered) on_link_hovered(url);
+        };
     header_->on_link_clicked =
         [this](const std::string& url) {
             if (on_link_clicked) on_link_clicked(url);

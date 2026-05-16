@@ -337,7 +337,7 @@ public:
         int pos = doc_->documentLayout()->hitTest(
             QPointF(static_cast<qreal>(local.x),
                     static_cast<qreal>(local.y)),
-            Qt::ExactHit);
+            Qt::FuzzyHit);
         if (pos < 0) return {};
         QTextCursor cur(doc_.get());
         cur.setPosition(pos);

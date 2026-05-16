@@ -233,6 +233,11 @@ public:
     // Fires when the user clicks a URL preview card or an inline hyperlink.
     std::function<void(const std::string& url)> on_link_clicked;
 
+    // Fires when the pointer enters or leaves an inline hyperlink. url is
+    // non-empty while hovering, empty when the pointer leaves. Used by the
+    // shell to switch the cursor to/from a pointing-hand cursor.
+    std::function<void(const std::string& url)> on_link_hovered;
+
     // Fires when the user clicks the quote block of a reply to scroll to
     // the original message. If the event is currently loaded the view scrolls
     // to it internally; this callback fires only when the original is not found
@@ -441,6 +446,7 @@ private:
     };
     mutable std::unordered_map<std::string, LinkLayout> link_layout_cache_;
     std::string                    press_link_url_;
+    std::string                    hover_link_url_;
 
     // MSC2010 spoiler reveal state.
     std::unordered_set<std::string> revealed_spoilers_;
