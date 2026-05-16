@@ -13,6 +13,13 @@ namespace tesseract {
 
 namespace fs = std::filesystem;
 
+// Resolves the per-user config directory from platform conventions. The
+// XDG/APPDATA/HOME environment variables are trusted here: a process that can
+// set them for this app can equally exec a tampered binary, so validating
+// them against the real home buys little while breaking legitimate sandboxed
+// / relocated setups (containers, Flatpak, custom XDG roots). Tokens written
+// under this directory are themselves protected by 0600 file permissions in
+// session_store.cpp.
 fs::path config_dir() {
 #if defined(_WIN32)
     // %APPDATA% is Roaming — the right place for per-user app data.

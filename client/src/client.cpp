@@ -74,23 +74,31 @@ bool Client::open_in_browser(const std::string& url) {
     HINSTANCE hi = ShellExecuteA(nullptr, "open", url.c_str(),
                                  nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(hi) > 32;
-#elif defined(__APPLE__)
-    pid_t pid = fork();
-    if (pid == 0) {
-        execlp("open", "open", url.c_str(), static_cast<const char*>(nullptr));
-        _exit(127);
-    }
-    if (pid < 0) return false;
-    int status = 0;
-    return waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 #else
+    // Double-fork so we never block the (typically UI) caller waiting for
+    // the launcher. The middle process exits immediately; the grandchild is
+    // reparented to init and exec's the opener, so there is no zombie and no
+    // wait on the browser itself. We can only report that the launch was
+    // dispatched, not its eventual exit code (which is fine — `xdg-open`
+    // returning does not mean the page is up anyway).
+#  if defined(__APPLE__)
+    const char* opener = "open";
+#  else
+    const char* opener = "xdg-open";
+#  endif
     pid_t pid = fork();
-    if (pid == 0) {
-        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<const char*>(nullptr));
-        _exit(127);
-    }
     if (pid < 0) return false;
+    if (pid == 0) {
+        pid_t inner = fork();
+        if (inner == 0) {
+            execlp(opener, opener, url.c_str(),
+                   static_cast<const char*>(nullptr));
+            _exit(127);
+        }
+        _exit(inner < 0 ? 1 : 0);
+    }
     int status = 0;
+    // Reaps only the fast middle process, not the opener.
     return waitpid(pid, &status, 0) == pid
         && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 #endif
@@ -311,14 +319,81 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source) {
 
 namespace {
 
-std::string json_string_field(std::string_view json, std::string_view key) {
+// Encode a Unicode scalar value as UTF-8 into `out`.
+void append_utf8(std::string& out, unsigned cp) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+bool parse_hex4(std::string_view json, size_t pos, unsigned& code) {
+    if (pos + 4 > json.size()) return false;
+    code = 0;
+    for (int i = 0; i < 4; ++i) {
+        char h = json[pos + static_cast<size_t>(i)];
+        code <<= 4;
+        if      (h >= '0' && h <= '9') code |= static_cast<unsigned>(h - '0');
+        else if (h >= 'a' && h <= 'f') code |= static_cast<unsigned>(h - 'a' + 10);
+        else if (h >= 'A' && h <= 'F') code |= static_cast<unsigned>(h - 'A' + 10);
+        else return false;
+    }
+    return true;
+}
+
+// Locate `key` as an *object key* and return the index of its value (first
+// non-whitespace char after the `:`), or npos. Only accepts a match whose
+// quoted key is at a structural key position (preceded by `{` or `,`, then
+// followed by `:`), so the key text appearing inside a string *value* no
+// longer produces a false match. The JSON we parse here is flat output from
+// serde_json, so this structural check is sufficient.
+size_t find_value(std::string_view json, std::string_view key) {
     std::string needle = "\"";
     needle += key;
     needle += "\"";
-    auto pos = json.find(needle);
+    size_t idx = 0;
+    while (true) {
+        auto hit = json.find(needle, idx);
+        if (hit == std::string_view::npos) return std::string_view::npos;
+
+        // Preceding non-whitespace char must be `{` or `,`.
+        size_t b = hit;
+        while (b > 0 && (json[b - 1] == ' ' || json[b - 1] == '\t' ||
+                         json[b - 1] == '\n' || json[b - 1] == '\r'))
+            --b;
+        bool key_pos = (b == 0) || json[b - 1] == '{' || json[b - 1] == ',';
+
+        if (key_pos) {
+            size_t p = hit + needle.size();
+            while (p < json.size() && (json[p] == ' ' || json[p] == '\t' ||
+                                       json[p] == '\n' || json[p] == '\r'))
+                ++p;
+            if (p < json.size() && json[p] == ':') {
+                ++p;
+                while (p < json.size() && (json[p] == ' ' || json[p] == '\t' ||
+                                           json[p] == '\n' || json[p] == '\r'))
+                    ++p;
+                return p;
+            }
+        }
+        idx = hit + 1;
+    }
+}
+
+std::string json_string_field(std::string_view json, std::string_view key) {
+    size_t pos = find_value(json, key);
     if (pos == std::string_view::npos) return {};
-    pos += needle.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
     if (pos >= json.size() || json[pos] != '"') return {};
     ++pos;
     std::string out;
@@ -329,32 +404,34 @@ std::string json_string_field(std::string_view json, std::string_view key) {
                 case '"':  out += '"';  break;
                 case '\\': out += '\\'; break;
                 case '/':  out += '/';  break;
+                case 'b':  out += '\b'; break;
+                case 'f':  out += '\f'; break;
                 case 'n':  out += '\n'; break;
                 case 'r':  out += '\r'; break;
                 case 't':  out += '\t'; break;
                 case 'u': {
-                    // Decode \uXXXX and re-encode as UTF-8.
-                    if (pos + 4 < json.size()) {
-                        unsigned code = 0;
-                        for (int i = 0; i < 4; ++i) {
-                            ++pos;
-                            char h = json[pos];
-                            code <<= 4;
-                            if      (h >= '0' && h <= '9') code |= static_cast<unsigned>(h - '0');
-                            else if (h >= 'a' && h <= 'f') code |= static_cast<unsigned>(h - 'a' + 10);
-                            else if (h >= 'A' && h <= 'F') code |= static_cast<unsigned>(h - 'A' + 10);
-                        }
-                        if (code < 0x80) {
-                            out += static_cast<char>(code);
-                        } else if (code < 0x800) {
-                            out += static_cast<char>(0xC0 | (code >> 6));
-                            out += static_cast<char>(0x80 | (code & 0x3F));
+                    unsigned code = 0;
+                    if (!parse_hex4(json, pos + 1, code)) break;
+                    pos += 4;
+                    // Combine a UTF-16 surrogate pair into one scalar so
+                    // supplementary-plane chars (emoji in og:title, …) are
+                    // valid UTF-8 instead of ill-formed surrogate halves.
+                    if (code >= 0xD800 && code <= 0xDBFF) {
+                        unsigned lo = 0;
+                        if (pos + 6 < json.size() && json[pos + 1] == '\\' &&
+                            json[pos + 2] == 'u' &&
+                            parse_hex4(json, pos + 3, lo) &&
+                            lo >= 0xDC00 && lo <= 0xDFFF) {
+                            code = 0x10000 + ((code - 0xD800) << 10)
+                                            + (lo - 0xDC00);
+                            pos += 6;
                         } else {
-                            out += static_cast<char>(0xE0 | (code >> 12));
-                            out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-                            out += static_cast<char>(0x80 | (code & 0x3F));
+                            code = 0xFFFD; // lone high surrogate
                         }
+                    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+                        code = 0xFFFD; // lone low surrogate
                     }
+                    append_utf8(out, code);
                     break;
                 }
                 default:   out += json[pos]; break;
@@ -367,27 +444,19 @@ std::string json_string_field(std::string_view json, std::string_view key) {
 }
 
 uint32_t json_int_field(std::string_view json, std::string_view key) {
-    std::string needle = "\"";
-    needle += key;
-    needle += "\"";
-    auto pos = json.find(needle);
+    size_t pos = find_value(json, key);
     if (pos == std::string_view::npos) return 0;
-    pos += needle.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
-    uint32_t v = 0;
-    while (pos < json.size() && std::isdigit(static_cast<unsigned char>(json[pos])))
-        v = v * 10 + static_cast<uint32_t>(json[pos++] - '0');
-    return v;
+    uint64_t v = 0;
+    while (pos < json.size() && std::isdigit(static_cast<unsigned char>(json[pos]))) {
+        v = v * 10 + static_cast<uint64_t>(json[pos++] - '0');
+        if (v >= 0xFFFFFFFFull) return 0xFFFFFFFFu; // saturate, never wrap
+    }
+    return static_cast<uint32_t>(v);
 }
 
 bool json_bool_field(std::string_view json, std::string_view key) {
-    std::string needle = "\"";
-    needle += key;
-    needle += "\"";
-    auto pos = json.find(needle);
+    size_t pos = find_value(json, key);
     if (pos == std::string_view::npos) return false;
-    pos += needle.size();
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
     return json.substr(pos, 4) == "true";
 }
 

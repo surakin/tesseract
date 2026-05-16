@@ -67,7 +67,11 @@ public:
                            const rust::Vec<rust::String>& user_ids) const;
 
 private:
-    tesseract::IEventHandler* handler_; // non-owning
+    // `const`: set once at construction and never reassigned. Rust calls the
+    // methods above from worker threads; making the pointer immutable keeps
+    // those reads data-race-free by construction and prevents a future
+    // setter from silently introducing a check-then-use race.
+    tesseract::IEventHandler* const handler_; // non-owning
 };
 
 } // namespace tesseract_ffi

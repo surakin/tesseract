@@ -17,7 +17,7 @@ inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r) {
 }
 
 inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p) {
-    BackupState state;
+    BackupState state = BackupState::Unknown;
     switch (p.state) {
         case 1:  state = BackupState::Disabled;    break;
         case 2:  state = BackupState::Enabled;     break;
@@ -40,7 +40,10 @@ inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p) {
         .display_name     = std::string(p.display_name),
         .avatar_url       = std::string(p.avatar_url),
         .attribution      = std::string(p.attribution),
-        .usage            = static_cast<PackUsage>(p.usage_mask),
+        // Mask to the defined bits (Sticker|Emoticon) so an out-of-range
+        // value from a future Rust extension can't produce an unnamed enum
+        // that silently matches no picker tab.
+        .usage            = static_cast<PackUsage>(p.usage_mask & 0x03),
         .source_kind      = kind,
         .source_room      = std::string(p.source_room),
         .source_state_key = std::string(p.source_state_key),
@@ -54,7 +57,7 @@ inline ImagePackImage from_ffi(const tesseract_ffi::ImageEntryFfi& e) {
         .url       = std::string(e.url),
         .body      = std::string(e.body),
         .info_json = std::string(e.info_json),
-        .usage     = static_cast<PackUsage>(e.usage_mask),
+        .usage     = static_cast<PackUsage>(e.usage_mask & 0x03),
         .favorite  = e.favorite,
     };
 }

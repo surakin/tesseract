@@ -194,6 +194,19 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     backfill_task: Option<tokio::task::AbortHandle>,
+    /// Abort handles for every long-lived task spawned by `start_sync`
+    /// (session-refresh watcher, room/pack watcher, backup watchers, sync
+    /// monitor, …). These outlive `self.handler.take()`, so without explicit
+    /// aborts they keep calling back through their own `Arc<SendHandler>`
+    /// clone into a C++ shell that may already be torn down (use-after-free).
+    /// Drained and aborted by `stop_sync`.
+    #[cfg(not(test))]
+    sync_tasks: Vec<tokio::task::AbortHandle>,
+    /// Handles for the `client.add_event_handler` registrations made by
+    /// `start_sync` (notification + typing handlers). Removed in `stop_sync`
+    /// so they stop firing into a destroyed handler.
+    #[cfg(not(test))]
+    event_handler_handles: Vec<matrix_sdk::event_handler::EventHandlerHandle>,
     /// Latest known backup state code (see BACKUP_STATE_* constants).
     /// Updated by the backup watcher task and read by `backup_state()`.
     #[cfg(not(test))]
@@ -210,6 +223,13 @@ pub struct ClientFfi {
     /// relevant event; read by the FFI list/* accessors without blocking.
     #[cfg(not(test))]
     image_packs: Arc<Mutex<Vec<crate::image_packs::ImagePack>>>,
+    /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
+    /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
+    /// account-data is last-write-wins with no server-side merge, so two
+    /// concurrent GET→modify→PUT cycles would drop one side's change. Held
+    /// across the whole cycle so writes apply on top of each other.
+    #[cfg(not(test))]
+    account_data_lock: Arc<tokio::sync::Mutex<()>>,
     /// Directory holding the matrix-sdk SQLite store for this client. Set via
     /// `set_data_dir` before `oauth_begin` / `restore_session`. Defaults to
     /// `default_data_dir()` for legacy single-account callers.
@@ -255,6 +275,17 @@ impl Drop for ClientFfi {
     }
 }
 
+/// Lock a `Mutex` without ever panicking. A poisoned mutex (a thread panicked
+/// while holding the guard) is recovered by taking the inner value: panicking
+/// here instead — via `.lock().unwrap()` — would unwind a tokio task and, on
+/// synchronous FFI entry points, propagate a panic across the C++ boundary
+/// (undefined behavior). The protected maps are plain caches whose worst-case
+/// post-poison state is a stale entry, so recovery is safe.
+#[cfg(not(test))]
+fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 /// Send public (`m.read`), private (`m.read.private`), and fully-read
 /// (`m.fully_read`) markers for `event_id` in a single request.
 ///
@@ -274,6 +305,24 @@ async fn send_both_receipts(
             .public_read_receipt(event_id.clone())
             .private_read_receipt(event_id),
     ).await
+}
+
+/// Hard upper bound on a single media download (64 MiB). A malicious or
+/// buggy homeserver can serve an arbitrarily large payload for any `mxc://`
+/// URI; matrix-sdk buffers the whole body into memory, so without a cap a
+/// single fetch can OOM the process. Oversized content is dropped (returns
+/// empty) rather than propagated into image decoders.
+const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
+
+fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
+    if bytes.len() > MAX_MEDIA_BYTES {
+        tracing::warn!(
+            "media download {} bytes exceeds {} byte cap; discarding",
+            bytes.len(), MAX_MEDIA_BYTES,
+        );
+        return Vec::new();
+    }
+    bytes
 }
 
 impl ClientFfi {
@@ -299,12 +348,18 @@ impl ClientFfi {
             #[cfg(not(test))]
             backfill_task: None,
             #[cfg(not(test))]
+            sync_tasks: Vec::new(),
+            #[cfg(not(test))]
+            event_handler_handles: Vec::new(),
+            #[cfg(not(test))]
             backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
             #[cfg(not(test))]
             imported_keys:    Arc::new(AtomicU64::new(0)),
             media_upload_limit: AtomicU64::new(0),
             #[cfg(not(test))]
             image_packs: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(not(test))]
+            account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir:   default_data_dir(),
             #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
@@ -338,7 +393,14 @@ impl ClientFfi {
         let hs   = homeserver.to_owned();
         let path = self.data_dir.clone();
 
-        let _ = std::fs::remove_dir_all(&path);
+        // Only start from a clean store when there is no active session. If a
+        // session was already restored (e.g. the user hit "Sign in again"
+        // after a timeout, or a second flow), wiping here would silently
+        // destroy the live SQLite cache for the restored account. The store
+        // is cleared explicitly on logout instead.
+        if self.client.is_none() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
         let _ = std::fs::create_dir_all(&path);
 
         match self.rt.block_on(oauth::begin(&hs, &path)) {
@@ -434,6 +496,17 @@ impl ClientFfi {
     // Sync loop (Step 2: SyncService + RoomListService)
     // -----------------------------------------------------------------------
 
+    /// Spawn a long-lived sync task and record its abort handle so
+    /// `stop_sync` can cancel it before the C++ handler is destroyed.
+    #[cfg(not(test))]
+    fn spawn_tracked<F>(&mut self, fut: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let h = self.rt.spawn(fut).abort_handle();
+        self.sync_tasks.push(h);
+    }
+
     #[cfg(not(test))]
     pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
         let Some(client) = self.client.clone() else { return };
@@ -464,7 +537,7 @@ impl ClientFfi {
         {
             let h            = Arc::clone(&handler);
             let client_clone = client.clone();
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 let mut changes = client_clone.subscribe_to_session_changes();
                 loop {
                     match changes.recv().await {
@@ -506,7 +579,7 @@ impl ClientFfi {
             use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
             let h            = Arc::clone(&handler);
             let client_clone = client.clone();
-            client.add_event_handler(
+            self.event_handler_handles.push(client.add_event_handler(
                 move |ev: OriginalSyncMessageLikeEvent<RoomMessageEventContent>,
                       room: Room| {
                     let h            = Arc::clone(&h);
@@ -544,7 +617,7 @@ impl ClientFfi {
                         }
                     }
                 },
-            );
+            ));
         }
 
         // Global typing-notification handler. Fires for every room whenever
@@ -554,22 +627,34 @@ impl ClientFfi {
             use matrix_sdk::ruma::events::typing::SyncTypingEvent;
             let h    = Arc::clone(&handler);
             let me   = client.user_id().map(|u| u.to_owned());
-            client.add_event_handler(
+            self.event_handler_handles.push(client.add_event_handler(
                 move |ev: SyncTypingEvent, room: Room| {
                     let h  = Arc::clone(&h);
                     let me = me.clone();
                     async move {
                         let rid  = room.room_id().to_string();
-                        let uids: Vec<String> = ev.content.user_ids.iter()
-                            .filter(|u| me.as_deref() != Some(u.as_ref()))
-                            .map(|u| u.localpart().to_string())
-                            .collect();
+                        let mut uids: Vec<String> = Vec::new();
+                        for u in ev.content.user_ids.iter() {
+                            if me.as_deref() == Some(u.as_ref()) { continue; }
+                            // Prefer the cached room-member display name so the
+                            // typing strip shows a readable name rather than an
+                            // opaque localpart (e.g. "@78fa3bcde:hs"). Falls
+                            // back to the localpart when no member profile is
+                            // cached (no extra network round-trip).
+                            let name = match room.get_member_no_sync(u).await {
+                                Ok(Some(m)) => m.display_name()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| u.localpart().to_string()),
+                                _ => u.localpart().to_string(),
+                            };
+                            uids.push(name);
+                        }
                         if let Ok(g) = h.lock() {
                             g.on_typing_changed(&rid, &uids);
                         }
                     }
                 },
-            );
+            ));
         }
 
         // Build SyncService.
@@ -594,7 +679,7 @@ impl ClientFfi {
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache       = Arc::clone(&self.image_packs);
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
                 // only fires on *notable* room transitions (display-name,
                 // member changes, encryption state, …). After
@@ -716,7 +801,7 @@ impl ClientFfi {
             let imported     = Arc::clone(&self.imported_keys);
             let mut stop_rx  = stop_rx.clone();
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 use futures_util::StreamExt;
                 let mut rec_stream = client_clone.encryption().recovery().state_stream();
                 loop {
@@ -755,7 +840,7 @@ impl ClientFfi {
             let imported     = Arc::clone(&self.imported_keys);
             let mut stop_rx  = stop_rx.clone();
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 use futures_util::StreamExt;
                 let mut state_stream = client_clone.encryption().backups().state_stream();
 
@@ -813,7 +898,7 @@ impl ClientFfi {
             let imported     = Arc::clone(&self.imported_keys);
             let mut stop_rx  = stop_rx.clone();
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 use futures_util::StreamExt;
 
                 let keys_stream = loop {
@@ -875,7 +960,7 @@ impl ClientFfi {
             let svc_clone    = Arc::clone(&sync_service);
             let mut stop_rx  = stop_rx.clone();
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 let rls          = svc_clone.room_list_service();
                 let mut state_rx = rls.state();
 
@@ -915,7 +1000,7 @@ impl ClientFfi {
             let client_clone = client.clone();
             let mut stop_rx  = stop_rx.clone();
 
-            self.rt.spawn(async move {
+            self.spawn_tracked(async move {
                 use matrix_sdk::encryption::VerificationState;
                 let mut state_rx = client_clone.encryption().verification_state();
 
@@ -960,7 +1045,7 @@ impl ClientFfi {
             let flow_users = Arc::clone(&self.verification_flow_users);
             let emoji_cache = Arc::clone(&self.sas_emoji_cache);
 
-            client.add_event_handler(
+            self.event_handler_handles.push(client.add_event_handler(
                 move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
                       client: Client| {
                     let h           = Arc::clone(&h);
@@ -971,17 +1056,26 @@ impl ClientFfi {
                         let user_id   = ev.sender.as_str().to_owned();
                         let device_id = ev.content.from_device.as_str().to_owned();
 
-                        // Brief yield so the OlmMachine processes the event
-                        // and adds the request to its internal map before we
-                        // try to retrieve it.
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-                        if let Some(req) = client
-                            .encryption()
-                            .get_verification_request(&ev.sender, &flow_id)
-                            .await
-                        {
-                            flow_users.lock().unwrap()
+                        // The OlmMachine processes the to-device event and
+                        // adds the request to its internal map asynchronously.
+                        // A single fixed sleep silently drops the request on
+                        // slow hardware / under sync load, so poll with a
+                        // bounded backoff (≈ 50+100+200+400+800+1600 ≈ 3.15s
+                        // total) instead.
+                        let mut req = None;
+                        let mut delay_ms = 50u64;
+                        for _ in 0..6 {
+                            tokio::time::sleep(
+                                std::time::Duration::from_millis(delay_ms)).await;
+                            req = client
+                                .encryption()
+                                .get_verification_request(&ev.sender, &flow_id)
+                                .await;
+                            if req.is_some() { break; }
+                            delay_ms *= 2;
+                        }
+                        if let Some(req) = req {
+                            lock_or_recover(&flow_users)
                                 .insert(flow_id.clone(), user_id.clone());
                             if let Ok(guard) = h.lock() {
                                 guard.on_verification_request(
@@ -997,10 +1091,15 @@ impl ClientFfi {
                             tokio::spawn(watch_verification_request(
                                 req, flow_id2, h2, flow_users2, emoji_cache2,
                             ));
+                        } else {
+                            tracing::warn!(
+                                "verification request {flow_id} from {user_id} \
+                                 not visible after retries; dropped",
+                            );
                         }
                     }
                 },
-            );
+            ));
         }
 
         // Start SyncService and monitor state.
@@ -1008,7 +1107,7 @@ impl ClientFfi {
         let h_state        = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
 
-        self.rt.spawn(async move {
+        self.spawn_tracked(async move {
             svc_clone.start().await;
 
             use matrix_sdk_ui::sync_service::State as SyncServiceState;
@@ -1018,10 +1117,10 @@ impl ClientFfi {
             loop {
                 tokio::select! {
                     _ = stop_rx_sv.changed() => {
-                        if *stop_rx_sv.borrow() {
-                            let _ = svc_clone.stop().await;
-                            break;
-                        }
+                        // Authoritative SyncService::stop() is owned by
+                        // stop_sync(); just exit the monitor here so the
+                        // service is not stopped twice concurrently.
+                        if *stop_rx_sv.borrow() { break; }
                     }
                     Some(state) = state_stream.next() => {
                         match state {
@@ -1031,18 +1130,21 @@ impl ClientFfi {
                             SyncServiceState::Error(_) => {
                                 let _ = svc_clone.stop().await;
                                 consecutive_errors += 1;
-                                if consecutive_errors >= 5 {
-                                    // Persistent error after multiple retries — report to C++
+                                // Keep retrying indefinitely — a transient
+                                // outage (tunnel, sleep, server restart) must
+                                // not permanently kill sync for the session.
+                                // Re-notify the UI every 5 failures so a long
+                                // outage isn't silent without spamming.
+                                if consecutive_errors % 5 == 0 {
                                     if let Ok(guard) = h_state.lock() {
                                         guard.on_error(
                                             "sync_reconnect",
-                                            "Sync service failed repeatedly; reconnecting…",
+                                            "Sync is failing repeatedly; retrying…",
                                             false,
                                         );
                                     }
-                                    break;
                                 }
-                                // Exponential backoff: 5s, 10s, 20s, 40s
+                                // Exponential backoff capped at 40s.
                                 let delay = std::time::Duration::from_secs(
                                     5 * (1u64 << consecutive_errors.saturating_sub(1).min(3)));
                                 tokio::select! {
@@ -1089,8 +1191,26 @@ impl ClientFfi {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(true);
         }
+        // Remove the global event-handler registrations so the notification /
+        // typing / verification handlers stop firing into a handler that is
+        // about to be dropped.
+        #[cfg(not(test))]
+        if let Some(client) = &self.client {
+            for eh in self.event_handler_handles.drain(..) {
+                client.remove_event_handler(eh);
+            }
+        }
         #[cfg(not(test))]
         if let Some(h) = self.backfill_task.take() {
+            h.abort();
+        }
+        // Hard-abort every long-lived sync task. The stop signal above lets
+        // the ones that select on it exit cleanly; aborting also cancels the
+        // session-refresh watcher (which has no stop-channel arm) and closes
+        // the use-after-free window where a task could still call back into
+        // the C++ handler after self.handler was taken.
+        #[cfg(not(test))]
+        for h in self.sync_tasks.drain(..) {
             h.abort();
         }
         #[cfg(not(test))]
@@ -1970,7 +2090,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
-        if self.client.is_none() { return err("not logged in"); }
+        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
@@ -1979,7 +2099,6 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let client = self.client.as_ref().unwrap();
         let room = match client.get_room(&room_id) {
             Some(r) => r,
             None    => return err("room not found"),
@@ -2000,12 +2119,11 @@ impl ClientFfi {
     /// requiring the room to be subscribed via `subscribe_room`.
     #[cfg(not(test))]
     pub fn mark_room_as_read(&mut self, room_id: &str) -> OpResult {
-        if self.client.is_none() { return err("not logged in"); }
+        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let client = self.client.as_ref().unwrap();
         let room = match client.get_room(&room_id) {
             Some(r) => r,
             None    => return err("room not found"),
@@ -2145,10 +2263,14 @@ impl ClientFfi {
         if glyph.is_empty() { return; }
         let Some(client) = self.client.clone() else { return; };
         let glyph = glyph.to_owned();
+        let ad_lock = Arc::clone(&self.account_data_lock);
         self.rt.spawn(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             use matrix_sdk::ruma::serde::Raw;
 
+            // Serialize the whole GET→modify→PUT against other account-data
+            // writers so rapid bumps build on each other instead of racing.
+            let _ad_guard = ad_lock.lock().await;
             let entries = read_recent_emoji_entries(&client).await;
             let bumped  = crate::recent_emoji::bump(entries, &glyph);
             let content = crate::recent_emoji::serialize_msc4356(&bumped);
@@ -2322,7 +2444,7 @@ impl ClientFfi {
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
-                    result.unwrap_or_default(),
+                    cap_media_bytes(result.unwrap_or_default()),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -2362,7 +2484,7 @@ impl ClientFfi {
             let media = client.media();
             tokio::select! {
                 result = media.get_media_content(&request, true) =>
-                    result.unwrap_or_default(),
+                    cap_media_bytes(result.unwrap_or_default()),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -2760,6 +2882,13 @@ impl ClientFfi {
         let ev_type =
             GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
 
+        // Hold the account-data lock across the whole read→modify→write so a
+        // concurrent toggle_favorite / save cannot clobber this change.
+        let _ad_guard = {
+            let l = Arc::clone(&self.account_data_lock);
+            self.rt.block_on(async move { l.lock_owned().await })
+        };
+
         let client_for_read = client.clone();
         let read_result = self.rt.block_on(async move {
             client_for_read.account().account_data_raw(ev_type.clone()).await
@@ -2861,6 +2990,14 @@ impl ClientFfi {
 
         let ev_type =
             GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+
+        // Hold the account-data lock across the whole read→modify→write so a
+        // concurrent save / favorite toggle cannot clobber this change.
+        let _ad_guard = {
+            let l = Arc::clone(&self.account_data_lock);
+            self.rt.block_on(async move { l.lock_owned().await })
+        };
+
         let client_for_read = client.clone();
         let read_result = self.rt.block_on(async move {
             client_for_read.account().account_data_raw(ev_type).await
@@ -2937,11 +3074,12 @@ impl ClientFfi {
     /// UI surfaces a "Verify this device" banner when this is true.
     #[cfg(not(test))]
     pub fn needs_recovery(&self) -> bool {
-        let Some(client) = self.client.clone() else { return false };
-        self.rt.block_on(async move {
-            use matrix_sdk::encryption::recovery::RecoveryState;
-            matches!(client.encryption().recovery().state(), RecoveryState::Incomplete)
-        })
+        let Some(client) = self.client.as_ref() else { return false };
+        // `Recovery::state()` is a synchronous observable read; no runtime
+        // block_on needed (the previous block_on of an already-ready future
+        // added no value and ran on the UI thread).
+        use matrix_sdk::encryption::recovery::RecoveryState;
+        matches!(client.encryption().recovery().state(), RecoveryState::Incomplete)
     }
 
     #[cfg(test)]
@@ -3014,7 +3152,7 @@ impl ClientFfi {
 
             let flow_id = req.flow_id().to_owned();
             let user_id = req.own_user_id().as_str().to_owned();
-            flow_users.lock().unwrap().insert(flow_id.clone(), user_id);
+            lock_or_recover(&flow_users).insert(flow_id.clone(), user_id);
 
             tokio::spawn(watch_verification_request(
                 req, flow_id, handler, flow_users, emoji_cache,
@@ -3034,7 +3172,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn accept_verification(&mut self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
             Some(u) => u,
             None    => return err("no pending verification request for this flow_id"),
         };
@@ -3063,7 +3201,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn start_sas(&mut self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
             Some(u) => u,
             None    => return err("no pending verification request for this flow_id"),
         };
@@ -3096,7 +3234,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn confirm_sas(&mut self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
             Some(u) => u,
             None    => return err("no active SAS for this flow_id"),
         };
@@ -3126,7 +3264,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn cancel_verification(&mut self, flow_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match self.verification_flow_users.lock().unwrap().get(flow_id).cloned() {
+        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
             Some(u) => u,
             None    => return err("no active verification for this flow_id"),
         };
@@ -3158,7 +3296,7 @@ impl ClientFfi {
     /// Return the 7 SAS emoji for `flow_id` after `on_sas_ready` has fired.
     #[cfg(not(test))]
     pub fn get_sas_emojis(&self, flow_id: &str) -> Vec<VerificationEmoji> {
-        self.sas_emoji_cache.lock().unwrap()
+        lock_or_recover(&self.sas_emoji_cache)
             .get(flow_id)
             .map(|pairs| pairs.iter().map(|(sym, desc)| VerificationEmoji {
                 symbol:      sym.clone(),
@@ -3179,8 +3317,17 @@ impl ClientFfi {
             oauth::cancel(&flow);
         }
 
+        // Abort each timeline's background tasks before dropping the handles,
+        // mirroring Drop. Plain `.clear()` drops the AbortHandles without
+        // cancelling the spawned futures, which would keep an Arc<Timeline>
+        // (and the HTTP client) alive past the token revocation below.
         #[cfg(not(test))]
-        { self.timelines.clear(); }
+        {
+            let _guard = self.rt.enter();
+            for (_, th) in self.timelines.drain() {
+                for h in th.abort_tasks { h.abort(); }
+            }
+        }
         #[cfg(not(test))]
         {
             self.imported_keys.store(0, Ordering::Relaxed);
@@ -4133,7 +4280,11 @@ async fn timeline_item_to_ffi(
 // visibility mirror — this is the visible index that maps to the C++
 // row vector for an op at matrix-sdk-ui slot `raw_index`.
 fn visible_index_of(visible: &[bool], raw_index: usize) -> u64 {
-    visible[..raw_index].iter().filter(|b| **b).count() as u64
+    // Clamp instead of slicing directly: a buggy / version-mismatched SDK
+    // delivering an out-of-range index must not panic on a tokio task thread
+    // (which would silently break timeline tracking for the room).
+    let end = raw_index.min(visible.len());
+    visible[..end].iter().filter(|b| **b).count() as u64
 }
 
 fn visible_len(visible: &[bool]) -> u64 {
@@ -4154,12 +4305,17 @@ fn build_push_rule_json(
 ) -> String {
     let msg_type  = if msg_type.is_empty()  { "m.text"    } else { msg_type  };
     let event_id  = if event_id.is_empty()  { "$unknown"  } else { event_id  };
-    let body_json   = serde_json::to_string(body)   .unwrap_or_else(|_| "\"\"".into());
-    let sender_json = serde_json::to_string(sender) .unwrap_or_else(|_| "\"\"".into());
-    let rid_json    = serde_json::to_string(room_id).unwrap_or_else(|_| "\"\"".into());
-    format!(
-        r#"{{"type":"m.room.message","event_id":"{event_id}","sender":{sender_json},"room_id":{rid_json},"origin_server_ts":{timestamp},"content":{{"msgtype":"{msg_type}","body":{body_json}}}}}"#,
-    )
+    // Every interpolated string is serialized through serde_json so a server
+    // that returns an event_id / msg_type containing `"` or `\` cannot break
+    // the envelope (or inject extra JSON keys into the push-rule evaluation).
+    serde_json::json!({
+        "type": "m.room.message",
+        "event_id": event_id,
+        "sender": sender,
+        "room_id": room_id,
+        "origin_server_ts": timestamp,
+        "content": { "msgtype": msg_type, "body": body },
+    }).to_string()
 }
 
 /// Evaluates Matrix push rules for `source_json` (a synthetic raw event
@@ -4260,6 +4416,10 @@ async fn handle_timeline_diff(
             }
         }
         VectorDiff::Insert { index, value } => {
+            // Vec::insert panics if index > len. matrix-sdk-ui should never
+            // emit that, but a bad index on a task thread must not crash
+            // timeline tracking — clamp to an append.
+            let index = index.min(visible.len());
             let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
             if let Some(ev) = ev {
                 let v_idx = visible_index_of(visible, index);
@@ -4276,6 +4436,16 @@ async fn handle_timeline_diff(
             // direction: a virtual item can be replaced by an event item
             // (decryption completes, day-divider repositions), or vice
             // versa. Map the four transitions explicitly.
+            if index >= visible.len() {
+                // Out-of-range Set means our mirror already disagrees with
+                // the SDK's vector. Emitting a phantom insert here would
+                // desync the C++ row count further; skip and log instead.
+                tracing::error!(
+                    "VectorDiff::Set index {} out of range (len {}) for {}",
+                    index, visible.len(), room_id,
+                );
+                return;
+            }
             let new_ev = timeline_item_to_ffi(&value, room_id, room, me).await;
             let was_visible = visible.get(index).copied().unwrap_or(false);
             match (was_visible, new_ev) {
@@ -4424,14 +4594,14 @@ async fn watch_verification_request(
                 if let Ok(guard) = handler.lock() {
                     guard.on_verification_done(&flow_id);
                 }
-                flow_users.lock().unwrap().remove(&flow_id);
+                lock_or_recover(&flow_users).remove(&flow_id);
                 break;
             }
             VerificationRequestState::Cancelled(info) => {
                 if let Ok(guard) = handler.lock() {
                     guard.on_verification_cancelled(&flow_id, info.reason());
                 }
-                flow_users.lock().unwrap().remove(&flow_id);
+                lock_or_recover(&flow_users).remove(&flow_id);
                 break;
             }
             _ => {}
@@ -4461,7 +4631,7 @@ async fn watch_sas(
                     let pairs: Vec<(String, String)> = emojis.emojis.iter()
                         .map(|e| (e.symbol.to_owned(), e.description.to_owned()))
                         .collect();
-                    emoji_cache.lock().unwrap().insert(flow_id.clone(), pairs.clone());
+                    lock_or_recover(&emoji_cache).insert(flow_id.clone(), pairs.clone());
                     let ve: Vec<VerificationEmoji> = pairs.into_iter()
                         .map(|(sym, desc)| VerificationEmoji {
                             symbol:      sym,
@@ -4477,7 +4647,7 @@ async fn watch_sas(
                 if let Ok(guard) = handler.lock() {
                     guard.on_verification_done(&flow_id);
                 }
-                emoji_cache.lock().unwrap().remove(&flow_id);
+                lock_or_recover(&emoji_cache).remove(&flow_id);
                 break;
             }
             SasState::Cancelled(info) => {
@@ -4487,7 +4657,7 @@ async fn watch_sas(
                         &format!("{}", info.reason()),
                     );
                 }
-                emoji_cache.lock().unwrap().remove(&flow_id);
+                lock_or_recover(&emoji_cache).remove(&flow_id);
                 break;
             }
             _ => {}

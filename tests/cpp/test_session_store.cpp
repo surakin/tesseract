@@ -140,8 +140,11 @@ TEST_CASE("save overwrites existing content", "[session_store]") {
 
 TEST_CASE("sanitize_user_id replaces awkward characters", "[session_store][accounts]") {
     using S = tesseract::SessionStore;
-    CHECK(S::sanitize_user_id("@alice:example.org") == "alice_example.org");
-    CHECK(S::sanitize_user_id("@bob:matrix.org")    == "bob_matrix.org");
+    // '.' is replaced too so a malicious user_id can't smuggle ".." into
+    // the account directory path.
+    CHECK(S::sanitize_user_id("@alice:example.org") == "alice_example_org");
+    CHECK(S::sanitize_user_id("@bob:matrix.org")    == "bob_matrix_org");
+    CHECK(S::sanitize_user_id("@../../etc:evil").find("..") == std::string::npos);
     // Leading underscores from the @ are stripped so the dir name doesn't
     // start with one — purely cosmetic, but it keeps `ls` readable.
     CHECK_FALSE(S::sanitize_user_id("@x:y").empty());

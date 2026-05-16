@@ -47,6 +47,11 @@ public:
 
     Client(const Client&)            = delete;
     Client& operator=(const Client&) = delete;
+    // Movable. A moved-from Client is in the standard "valid but unspecified,
+    // do not use" state: its members dereference an internal pimpl that is
+    // null after a move, so calling any method other than the destructor or
+    // move-assignment on a moved-from instance is undefined. Do not call
+    // methods on a Client after moving out of it.
     Client(Client&&)                 noexcept;
     Client& operator=(Client&&)      noexcept;
 

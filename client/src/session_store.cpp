@@ -1,6 +1,7 @@
 #include "tesseract/session_store.h"
 #include "tesseract/paths.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -10,9 +11,46 @@
 #include <system_error>
 #include <vector>
 
+#if defined(_WIN32)
+#  include <io.h>
+#  include <fcntl.h>
+#  include <sys/stat.h>
+#else
+#  include <fcntl.h>
+#  include <unistd.h>
+#  include <sys/stat.h>
+#endif
+
 namespace tesseract {
 
 namespace fs = std::filesystem;
+
+// JSON-escape a string value. The session/index/prefs writers build flat
+// objects by concatenation; a Matrix ID is *normally* free of `"` and `\`,
+// but a malformed value from the server must not be able to emit invalid
+// JSON (which would silently lose the whole session on the next load).
+static std::string json_escape(std::string_view s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20) {
+                    char buf[7];
+                    std::snprintf(buf, sizeof buf, "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
+        }
+    }
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 // Tiny JSON scanners (Matrix IDs never contain '"' or '\\', and the file
@@ -77,6 +115,32 @@ static std::vector<std::string> extract_string_array(std::string_view json,
 // filesystems that can't atomically replace an existing destination).
 // ---------------------------------------------------------------------------
 
+// Write `content` to `path` via a private temp file that is fsync'd before
+// being atomically renamed into place. The file holds live OAuth tokens, so:
+//   * it is created mode 0600 (never world-readable, even mid-write);
+//   * the bytes are flushed to disk (fsync) before the rename, so a crash or
+//     power loss can't leave a renamed-but-empty session file;
+//   * the rename never deletes the destination first — on a filesystem that
+//     rejects replace-rename the old file is moved aside and restored on
+//     failure, so there is no window with no session file at all.
+static bool write_all_fd(int fd, std::string_view content) {
+    const char* p = content.data();
+    size_t left = content.size();
+    while (left > 0) {
+#if defined(_WIN32)
+        int n = _write(fd, p, static_cast<unsigned>(
+                    left > 0x7fffffff ? 0x7fffffff : left));
+#else
+        ssize_t n = ::write(fd, p, left);
+        if (n < 0 && errno == EINTR) continue;
+#endif
+        if (n <= 0) return false;
+        p += n;
+        left -= static_cast<size_t>(n);
+    }
+    return true;
+}
+
 static bool atomic_write(const fs::path& p, std::string_view content) {
     std::error_code ec;
     fs::create_directories(p.parent_path(), ec);
@@ -86,21 +150,50 @@ static bool atomic_write(const fs::path& p, std::string_view content) {
     tmp += ".tmp";
 
     {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out) return false;
-        out.write(content.data(), static_cast<std::streamsize>(content.size()));
-        if (!out) return false;
+#if defined(_WIN32)
+        int fd = -1;
+        _wsopen_s(&fd, tmp.wstring().c_str(),
+                  _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY,
+                  _SH_DENYNO, _S_IREAD | _S_IWRITE);
+#else
+        int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+#endif
+        if (fd < 0) return false;
+        bool ok = write_all_fd(fd, content);
+#if defined(_WIN32)
+        if (ok) ok = (_commit(fd) == 0);
+        _close(fd);
+#else
+        if (ok) ok = (::fsync(fd) == 0);
+        ::close(fd);
+#endif
+        if (!ok) {
+            std::error_code rm;
+            fs::remove(tmp, rm);
+            return false;
+        }
     }
 
     fs::rename(tmp, p, ec);
     if (ec) {
-        fs::remove(p, ec);
+        // Filesystem rejected replace-rename. Move the existing file aside
+        // first so a crash here still leaves a recoverable session, then
+        // restore it if the final rename fails.
+        fs::path bak = p;
+        bak += ".bak";
+        std::error_code be;
+        fs::remove(bak, be);
+        const bool had_old = fs::exists(p, be);
+        if (had_old) fs::rename(p, bak, be);
         fs::rename(tmp, p, ec);
         if (ec) {
+            if (had_old) { std::error_code re; fs::rename(bak, p, re); }
             std::error_code ec2;
             fs::remove(tmp, ec2);
             return false;
         }
+        std::error_code re;
+        fs::remove(bak, re);
     }
     return true;
 }
@@ -114,15 +207,15 @@ std::string SessionStore::path() {
 }
 
 std::optional<std::string> SessionStore::load() {
-    std::error_code ec;
-    fs::path p = path();
-    if (!fs::exists(p, ec) || ec) return std::nullopt;
-
-    std::ifstream in(p, std::ios::binary);
+    std::ifstream in(fs::path(path()), std::ios::binary);
     if (!in) return std::nullopt;
 
     std::ostringstream buf;
     buf << in.rdbuf();
+    // A read error (truncated read, I/O error) must not be mistaken for a
+    // valid-but-short session blob: returning a partial token JSON would
+    // surface as a confusing login failure instead of a clean re-login.
+    if (in.bad()) return std::nullopt;
     std::string s = buf.str();
     if (s.empty()) return std::nullopt;
     return s;
@@ -146,7 +239,9 @@ std::string SessionStore::sanitize_user_id(const std::string& user_id) {
     out.reserve(user_id.size());
     for (char c : user_id) {
         switch (c) {
-            case '@': case ':': case '/': case '\\':
+            // '.' is replaced too: a user_id containing ".." must not be able
+            // to produce an account path that escapes the accounts/ directory.
+            case '@': case ':': case '/': case '\\': case '.':
             case '?': case '*': case '"': case '<': case '>': case '|':
                 out.push_back('_');
                 break;
@@ -171,12 +266,11 @@ SessionStore::AccountIndex SessionStore::load_index() {
     AccountIndex idx;
     std::error_code ec;
     fs::path p = config_dir() / "accounts.json";
-    if (!fs::exists(p, ec) || ec) return idx;
-
     std::ifstream in(p, std::ios::binary);
     if (!in) return idx;
     std::ostringstream buf;
     buf << in.rdbuf();
+    if (in.bad()) return idx;
     const std::string body = buf.str();
     if (body.empty()) return idx;
 
@@ -189,14 +283,14 @@ static std::string serialize_index(const SessionStore::AccountIndex& idx) {
     std::string out;
     out.reserve(64 + idx.user_ids.size() * 48);
     out.append("{\"active_user_id\":\"");
-    out.append(idx.active_user_id);
+    out.append(json_escape(idx.active_user_id));
     out.append("\",\"user_ids\":[");
     bool first = true;
     for (const auto& uid : idx.user_ids) {
         if (!first) out.push_back(',');
         first = false;
         out.push_back('"');
-        out.append(uid);
+        out.append(json_escape(uid));
         out.push_back('"');
     }
     out.append("]}");
@@ -208,14 +302,12 @@ bool SessionStore::save_index(const AccountIndex& idx) {
 }
 
 std::optional<std::string> SessionStore::load_account(const std::string& user_id) {
-    std::error_code ec;
     fs::path p = account_dir(user_id) / "session.json";
-    if (!fs::exists(p, ec) || ec) return std::nullopt;
-
     std::ifstream in(p, std::ios::binary);
     if (!in) return std::nullopt;
     std::ostringstream buf;
     buf << in.rdbuf();
+    if (in.bad()) return std::nullopt;
     std::string s = buf.str();
     if (s.empty()) return std::nullopt;
     return s;
@@ -339,8 +431,15 @@ bool SessionStore::migrate_legacy_layout() {
         if (!move_path(legacy_store, dst_store)) {
             std::error_code rb;
             fs::rename(dst_session, legacy_session, rb);
+            if (rb) {
+                std::fprintf(stderr,
+                    "[tesseract] migration rollback failed: session stranded "
+                    "at %s (%s)\n",
+                    dst_session.string().c_str(), rb.message().c_str());
+            }
             // Best-effort cleanup of the now-empty account dir.
-            fs::remove(dst, rb);
+            std::error_code rmc;
+            fs::remove(dst, rmc);
             return false;
         }
     }
@@ -353,8 +452,16 @@ bool SessionStore::migrate_legacy_layout() {
     if (!save_index(idx)) {
         std::error_code rb;
         fs::rename(dst_session, legacy_session, rb);
-        if (have_store) fs::rename(dst / "matrix-store", legacy_store, rb);
-        fs::remove(dst, rb);
+        if (rb) {
+            std::fprintf(stderr,
+                "[tesseract] migration rollback failed: session stranded "
+                "at %s (%s)\n",
+                dst_session.string().c_str(), rb.message().c_str());
+        }
+        std::error_code rb2;
+        if (have_store) fs::rename(dst / "matrix-store", legacy_store, rb2);
+        std::error_code rmc;
+        fs::remove(dst, rmc);
         return false;
     }
 

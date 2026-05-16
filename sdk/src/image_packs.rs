@@ -23,6 +23,21 @@ fn empty_object() -> Value {
     Value::Object(serde_json::Map::new())
 }
 
+/// Minimal `mxc://server/media-id` validator. Pack URLs come from arbitrary
+/// (possibly hostile) homeservers and flow over the FFI to the C++ image
+/// cache; anything that is not a well-formed mxc URI (`http://`,
+/// `javascript:`, …) must never reach that layer.
+pub fn is_valid_mxc(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix("mxc://") else { return false };
+    let mut parts = rest.splitn(2, '/');
+    match (parts.next(), parts.next()) {
+        (Some(server), Some(media_id)) => {
+            !server.is_empty() && !media_id.is_empty() && !media_id.contains('/')
+        }
+        _ => false,
+    }
+}
+
 /// Wire representation of a single image entry in an MSC2545 image pack
 /// (`images.<shortcode>`). Unknown keys are round-tripped through `extra`
 /// so data written by other clients survives a Tesseract upsert.
@@ -155,6 +170,7 @@ pub fn parse_pack_content(
         .to_owned();
     let avatar_url = pack_obj
         .and_then(|p| p.get("avatar_url").and_then(Value::as_str))
+        .filter(|u| is_valid_mxc(u))
         .unwrap_or("")
         .to_owned();
     let attribution = pack_obj
@@ -170,7 +186,7 @@ pub fn parse_pack_content(
     let mut entries: Vec<ImageEntry> = Vec::with_capacity(images_obj.len());
     for (shortcode, img) in images_obj {
         let Ok(pack_img) = serde_json::from_value::<PackImage>(img.clone()) else { continue };
-        if pack_img.url.is_empty() { continue; }
+        if !is_valid_mxc(&pack_img.url) { continue; }
         let info_json = serde_json::to_string(&pack_img.info).unwrap_or_else(|_| "{}".to_owned());
         let usage = pack_img.usage.as_deref()
             .map(usage_strs_to_mask)
@@ -224,7 +240,11 @@ pub fn pack_id_for(source: &PackSource) -> String {
     match source {
         PackSource::User => "user".to_owned(),
         PackSource::Room { room_id, state_key } => {
-            format!("room:{}/{}", room_id, state_key)
+            // Length-prefix room_id so no (room_id, state_key) pair can be
+            // confused with another even when state_key contains the
+            // separator. (Matrix room IDs never contain `/`, but state keys
+            // are arbitrary UTF-8.)
+            format!("room:{}:{}/{}", room_id.len(), room_id, state_key)
         }
     }
 }
@@ -334,11 +354,20 @@ pub fn suggest_shortcode(body: &str, existing: &serde_json::Map<String, Value>) 
         .collect();
     let base = if base.is_empty() { "sticker".to_owned() } else { base };
     if !existing.contains_key(&base) { return base; }
-    for n in 2..u32::MAX {
+    for n in 2..=10_000 {
         let candidate = format!("{base}_{n}");
         if !existing.contains_key(&candidate) { return candidate; }
     }
-    base
+    // Pathological pack (10k collisions). Fall back to a value that cannot
+    // already exist rather than overwriting an entry or looping for billions
+    // of iterations.
+    format!(
+        "{base}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +465,12 @@ mod tests {
         assert_eq!(pack_id_for(&PackSource::User), "user");
         assert_eq!(
             pack_id_for(&PackSource::Room { room_id: "!a:h".into(), state_key: "k".into() }),
-            "room:!a:h/k"
+            "room:4:!a:h/k"
+        );
+        // Length prefix keeps ambiguous (room_id, state_key) splits distinct.
+        assert_ne!(
+            pack_id_for(&PackSource::Room { room_id: "!a:h".into(), state_key: "b/c".into() }),
+            pack_id_for(&PackSource::Room { room_id: "!a:h/b".into(), state_key: "c".into() }),
         );
     }
 

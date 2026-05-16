@@ -47,13 +47,22 @@ public:
     virtual void on_message_removed(const std::string& room_id,
                                      std::size_t index) = 0;
 
+    /// The `rooms` reference is only valid for the duration of the call —
+    /// it points at a bridge-owned temporary. Implementations that need to
+    /// keep the data must copy it (the standard pattern is to copy/move it
+    /// onto the UI thread), never store the reference or a pointer into it.
     virtual void on_rooms_updated(const std::vector<RoomInfo>& rooms) = 0;
     virtual void on_sync_error(const std::string& context,
                                 const std::string& description,
                                 bool soft_logout) = 0;
 
-    /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the next
-    /// launch can call restore_session().
+    /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the
+    /// next launch can call restore_session().
+    ///
+    /// REQUIRED for any handler backing a persistent session: the default is
+    /// a no-op, so failing to override this silently drops every refreshed
+    /// token and forces a full re-login on the next launch. Only leave it
+    /// defaulted for throwaway/test handlers that never persist a session.
     virtual void on_session_saved(const std::string& /*session_json*/) {}
 
     /// Fired when the server-side key-backup state changes, or as room keys
@@ -129,8 +138,10 @@ public:
     virtual void on_verification_state_changed(bool /*is_verified*/) {}
 
     /// Fired when the set of typing users in `room_id` changes. `names`
-    /// contains the localpart of each typing user (excluding the local user).
-    /// Empty `names` means no one is typing. Called on a background thread.
+    /// contains each typing user's resolved display name (falling back to
+    /// the Matrix-ID localpart when no member profile is cached), excluding
+    /// the local user. Empty `names` means no one is typing. Called on a
+    /// background thread.
     virtual void on_typing_changed(const std::string& /*room_id*/,
                                     const std::vector<std::string>& /*names*/) {}
 };
