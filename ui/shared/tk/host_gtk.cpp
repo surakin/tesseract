@@ -182,11 +182,18 @@ public:
 
     void set_rect(Rect r) override {
         if (!scroll_) return;
+        // GtkTextView draws text top-aligned. Centre the scroller within
+        // the rect when its natural height is shorter than the rect (a
+        // single line in a tall card); fill the rect when content
+        // overflows so it scrolls instead. Mirrors GtkNativeTextField.
+        int rh = static_cast<int>(std::round(r.h));
+        int nh = static_cast<int>(natural_height());
+        int h  = (nh > 0 && nh < rh) ? nh : rh;
+        int y  = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
         gtk_widget_set_margin_start(scroll_, static_cast<int>(std::floor(r.x)));
-        gtk_widget_set_margin_top  (scroll_, static_cast<int>(std::floor(r.y)));
+        gtk_widget_set_margin_top  (scroll_, y);
         gtk_widget_set_size_request(scroll_,
-            static_cast<int>(std::round(r.w)),
-            static_cast<int>(std::round(r.h)));
+            static_cast<int>(std::round(r.w)), h);
     }
     void set_text(std::string text) override {
         if (!buffer_) return;

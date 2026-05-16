@@ -385,11 +385,17 @@ public:
         if (r.x == last_rect_.x && r.y == last_rect_.y &&
             r.w == last_rect_.w && r.h == last_rect_.h) return;
         last_rect_ = r;
+        // Multi-line EDIT controls draw text top-aligned within their
+        // HWND. Size the HWND to the content's natural height and centre
+        // it within the rect (matching Win32NativeTextField); when content
+        // overflows the rect, fill it so the control scrolls instead.
+        int rh = static_cast<int>(std::round(r.h));
+        int nh = static_cast<int>(natural_height());
+        int h  = (nh > 0 && nh < rh) ? nh : rh;
+        int y  = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
         SetWindowPos(hwnd_, nullptr,
-                      static_cast<int>(std::floor(r.x)),
-                      static_cast<int>(std::floor(r.y)),
-                      static_cast<int>(std::round(r.w)),
-                      static_cast<int>(std::round(r.h)),
+                      static_cast<int>(std::floor(r.x)), y,
+                      static_cast<int>(std::round(r.w)), h,
                       SWP_NOZORDER | SWP_NOACTIVATE);
     }
     void set_text(std::string text) override {

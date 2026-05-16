@@ -219,10 +219,22 @@ public:
 
     void set_rect(Rect r) override {
         if (!edit_) return;
-        edit_->setGeometry(static_cast<int>(r.x),
-                            static_cast<int>(r.y),
-                            static_cast<int>(r.w),
-                            static_cast<int>(r.h));
+        const int rx = static_cast<int>(r.x);
+        const int ry = static_cast<int>(r.y);
+        const int rw = static_cast<int>(r.w);
+        const int rh = static_cast<int>(r.h);
+        // QTextEdit draws text top-aligned. Apply the target width first
+        // so document()->size() (read by natural_height()) reflects
+        // wrapping at that width, then size the widget to its content and
+        // centre it within the rect — matching the emoji/sticker/send
+        // buttons. When content overflows the rect, fill it so the
+        // QTextEdit scrolls instead. Mirrors QtNativeTextField::set_rect.
+        if (edit_->width() != rw)
+            edit_->setGeometry(rx, ry, rw, rh);
+        const int nh = static_cast<int>(natural_height());
+        const int h  = (nh > 0 && nh < rh) ? nh : rh;
+        const int y  = ry + (rh - h) / 2;
+        edit_->setGeometry(rx, y, rw, h);
     }
     void set_text(std::string text) override {
         if (!edit_) return;

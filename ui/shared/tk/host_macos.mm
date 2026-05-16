@@ -542,8 +542,16 @@ NSTextViewNative::~NSTextViewNative() {
 }
 
 void NSTextViewNative::set_rect(Rect r) {
-    scroll_.frame = NSMakeRect(std::floor(r.x), std::floor(r.y),
-                                 std::round(r.w), std::round(r.h));
+    // Superview is flipped (y grows downward). NSTextView draws text
+    // top-aligned, so centre the scroller within the rect when its
+    // natural height is shorter than the rect (a single line in a tall
+    // card); fill the rect when content overflows so it scrolls instead.
+    // Mirrors NSTextFieldNative::set_rect.
+    CGFloat rh = std::round(r.h);
+    CGFloat nh = natural_height();
+    CGFloat h  = (nh > 0 && nh < rh) ? nh : rh;
+    CGFloat y  = std::floor(r.y) + (rh - h) / 2.0;
+    scroll_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
 }
 
 void NSTextViewNative::set_text(std::string t) {
