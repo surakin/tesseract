@@ -4293,9 +4293,11 @@ async fn timeline_item_to_ffi(
                 let (rname, rbody) = match &details.event {
                     TimelineDetails::Ready(replied) => {
                         let name = match &replied.sender_profile {
-                            TimelineDetails::Ready(p) =>
-                                p.display_name.clone().unwrap_or_default(),
-                            _ => String::new(),
+                            TimelineDetails::Ready(p) => p
+                                .display_name
+                                .clone()
+                                .unwrap_or_else(|| replied.sender.to_string()),
+                            _ => replied.sender.to_string(),
                         };
                         let snippet = match &replied.content {
                             TimelineItemContent::MsgLike(MsgLikeContent {

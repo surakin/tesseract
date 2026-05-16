@@ -2049,7 +2049,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
     for (auto& ev : payload->snapshot) {
         if (!ev) continue;
         ensure_row_media(*ev);
-        ensure_reply_details_(ev->in_reply_to_id);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     room_view_->set_messages(std::move(rows));
@@ -2067,7 +2067,7 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload) {
     if (!room_view_) return;
 
     ensure_row_media(*payload->event);
-    ensure_reply_details_(payload->event->in_reply_to_id);
+    if (!payload->event->in_reply_to_id.empty()) ensure_reply_details_(payload->event->event_id);
     room_view_->insert_message(payload->index,
                                tesseract::views::make_row_data(*payload->event, my_user_id_));
     if (chat_surface_) chat_surface_->relayout();
@@ -2080,7 +2080,7 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload) {
     if (!room_view_) return;
 
     ensure_row_media(*payload->event);
-    ensure_reply_details_(payload->event->in_reply_to_id);
+    if (!payload->event->in_reply_to_id.empty()) ensure_reply_details_(payload->event->event_id);
     room_view_->update_message(payload->index,
                                tesseract::views::make_row_data(*payload->event, my_user_id_));
     if (chat_surface_) chat_surface_->relayout();

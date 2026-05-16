@@ -1552,7 +1552,7 @@ void MainWindow::push_message_inserted(
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media_(*ev);
-    ensure_reply_details_(ev->in_reply_to_id);
+    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     room_view_->insert_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
     chat_surface_->relayout();
 }
@@ -1566,7 +1566,7 @@ void MainWindow::push_message_updated(
     if (room_id != current_room_id_) return;
     if (ev->type == tesseract::EventType::Unhandled) return;
     ensure_row_media_(*ev);
-    ensure_reply_details_(ev->in_reply_to_id);
+    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     room_view_->update_message(index, tesseract::views::make_row_data(*ev, my_user_id_));
     chat_surface_->relayout();
 }
@@ -1667,7 +1667,7 @@ void MainWindow::push_timeline_reset(
     for (auto& ev : snapshot) {
         if (!ev) continue;
         ensure_row_media_(*ev);
-        ensure_reply_details_(ev->in_reply_to_id);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (room_view_) room_view_->set_messages(std::move(rows));

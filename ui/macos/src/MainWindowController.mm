@@ -2119,7 +2119,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
     if (event->type == tesseract::EventType::Unhandled) return;
     _shell->ensure_row_media_(*event);
-    _shell->ensure_reply_details_(event->in_reply_to_id);
+    if (!event->in_reply_to_id.empty()) _shell->ensure_reply_details_(event->event_id);
     if (_roomView) _roomView->insert_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
     [self _relayoutChatSurface];
 }
@@ -2133,7 +2133,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
     if (event->type == tesseract::EventType::Unhandled) return;
     _shell->ensure_row_media_(*event);
-    _shell->ensure_reply_details_(event->in_reply_to_id);
+    if (!event->in_reply_to_id.empty()) _shell->ensure_reply_details_(event->event_id);
     if (_roomView) _roomView->update_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
     [self _relayoutChatSurface];
 }
@@ -2179,7 +2179,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         for (auto* ev : snapshot) {
             if (!ev) continue;
             _shell->ensure_row_media_(*ev);
-            _shell->ensure_reply_details_(ev->in_reply_to_id);
+            if (!ev->in_reply_to_id.empty()) _shell->ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, _shell->my_user_id_));
         }
         if (_roomView) _roomView->set_messages(std::move(rows));

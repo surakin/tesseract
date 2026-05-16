@@ -1837,7 +1837,7 @@ void MainWindow::handle_timeline_reset_ui_(
     for (auto& ev : snapshot) {
         if (!ev) continue;
         ensureRowMedia(*ev);
-        ensure_reply_details_(ev->in_reply_to_id);
+        if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
     if (roomView_) roomView_->set_messages(std::move(rows));
@@ -1857,7 +1857,7 @@ void MainWindow::handle_message_inserted_ui_(
             || ev->type == tesseract::EventType::Unhandled)
         return;
     ensureRowMedia(*ev);
-    ensure_reply_details_(ev->in_reply_to_id);
+    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     if (roomView_) roomView_->insert_message(index,
         tesseract::views::make_row_data(*ev, my_user_id_));
     if (chatSurface_) chatSurface_->relayout();
@@ -1871,7 +1871,7 @@ void MainWindow::handle_message_updated_ui_(
             || ev->type == tesseract::EventType::Unhandled)
         return;
     ensureRowMedia(*ev);
-    ensure_reply_details_(ev->in_reply_to_id);
+    if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
     if (roomView_) roomView_->update_message(index,
         tesseract::views::make_row_data(*ev, my_user_id_));
     if (chatSurface_) chatSurface_->relayout();
