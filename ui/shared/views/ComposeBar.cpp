@@ -62,7 +62,7 @@ ComposeBar::ComposeBar() {
         std::string("\xF0\x9F\x98\x80"),
         std::function<void()>{},
         tk::Button::Variant::Icon);
-    emoji->set_on_click([this] { if (on_emoji) on_emoji(); });
+    emoji->set_on_click([this] { if (on_emoji) on_emoji(emoji_rect_); });
     emoji->set_min_size({ kButtonSide, kButtonSide });
     emoji_btn_ = add_child(std::move(emoji));
 
@@ -73,7 +73,7 @@ ComposeBar::ComposeBar() {
         std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"),
         std::function<void()>{},
         tk::Button::Variant::Icon);
-    sticker->set_on_click([this] { if (on_sticker) on_sticker(); });
+    sticker->set_on_click([this] { if (on_sticker) on_sticker(sticker_rect_); });
     sticker->set_min_size({ kButtonSide, kButtonSide });
     sticker_btn_ = add_child(std::move(sticker));
 

@@ -133,13 +133,15 @@ public:
                        std::string caption,
                        std::string reply_event_id)> on_send_file;
 
-    /// Fires when the emoji button is clicked.
-    std::function<void()>                    on_emoji;
+    /// Fires when the emoji button is clicked. The rect is the button's
+    /// bounding box in surface-local (world) coordinates, for precise
+    /// picker anchoring.
+    std::function<void(tk::Rect)>            on_emoji;
 
-    /// Fires when the sticker button is clicked. Hosts open the
-    /// `StickerPicker` popup; the chosen entry is sent via
-    /// `Client::send_sticker`.
-    std::function<void()>                    on_sticker;
+    /// Fires when the sticker button is clicked. The rect is the button's
+    /// bounding box in surface-local (world) coordinates, for precise
+    /// picker anchoring.
+    std::function<void(tk::Rect)>            on_sticker;
 
     /// Fires when `natural_height()` may have changed due to an image
     /// being attached or detached. The host should re-apply its

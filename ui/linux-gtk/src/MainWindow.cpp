@@ -903,8 +903,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         open_jump_to_date_dialog();
     };
 
-    room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
-    room_view_->on_sticker = [this] { toggle_sticker_picker(); };
+    room_view_->on_emoji   = [this](tk::Rect btn) {
+        if (!emoji_popover_) return;
+        if (gtk_widget_get_visible(emoji_popover_))
+            gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+        else
+            popup_emoji_at_rect(chat_surface_->widget(), btn);
+    };
+    room_view_->on_sticker = [this](tk::Rect btn) {
+        if (!sticker_popover_) return;
+        if (gtk_widget_get_visible(sticker_popover_))
+            gtk_popover_popdown(GTK_POPOVER(sticker_popover_));
+        else
+            popup_sticker_at_rect(chat_surface_->widget(), btn);
+    };
 
     GtkWidget* chat_widget = chat_surface_->widget();
     gtk_widget_set_vexpand(chat_widget, TRUE);
@@ -2872,6 +2884,27 @@ void MainWindow::popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect) {
     if (emoji_picker_shared_) emoji_picker_shared_->set_search_query("");
     gtk_popover_popup(GTK_POPOVER(emoji_popover_));
     if (emoji_picker_surface_) emoji_picker_surface_->relayout();
+}
+
+void MainWindow::popup_sticker_at_rect(GtkWidget* parent, tk::Rect local_rect) {
+    if (!sticker_popover_ || !parent) return;
+    if (gtk_widget_get_parent(sticker_popover_) != parent) {
+        gtk_widget_unparent(sticker_popover_);
+        gtk_widget_set_parent(sticker_popover_, parent);
+    }
+    GdkRectangle r{
+        .x      = static_cast<int>(local_rect.x),
+        .y      = static_cast<int>(local_rect.y),
+        .width  = static_cast<int>(local_rect.w),
+        .height = static_cast<int>(local_rect.h),
+    };
+    gtk_popover_set_pointing_to(GTK_POPOVER(sticker_popover_), &r);
+    gtk_popover_set_position(GTK_POPOVER(sticker_popover_), GTK_POS_TOP);
+    if (sticker_picker_shared_) sticker_picker_shared_->refresh_packs();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_text("");
+    if (sticker_picker_shared_) sticker_picker_shared_->set_search_query("");
+    gtk_popover_popup(GTK_POPOVER(sticker_popover_));
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
 }
 
 void MainWindow::emoji_selected(const std::string& glyph) {

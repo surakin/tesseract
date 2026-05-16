@@ -44,6 +44,8 @@ public:
 
     /// Anchor and show against the compose-bar sticker button.
     void popupAt(QWidget* anchor);
+    /// Anchor above a specific rect (surface-local coords), centered on it.
+    void popupAtRect(QWidget* anchor, const tk::Rect& localRect);
 
     /// Fired when the user picks a sticker. The host forwards to
     /// `Client::send_sticker`.

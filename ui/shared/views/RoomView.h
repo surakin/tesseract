@@ -156,8 +156,8 @@ public:
     // pointer leaves, so the shell can dismiss it.
     std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
     std::function<void()>                                   on_hide_tooltip;
-    std::function<void()>                                  on_emoji;
-    std::function<void()>                                  on_sticker;
+    std::function<void(tk::Rect)>                          on_emoji;
+    std::function<void(tk::Rect)>                          on_sticker;
 
     // Fired when the compose bar or typing indicator changes the internal
     // layout. Shell should call roomSurface_->relayout() in response.

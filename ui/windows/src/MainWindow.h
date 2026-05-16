@@ -247,6 +247,7 @@ private:
     /// Open the emoji picker anchored to a sub-rect inside `parent_hwnd`
     /// (rect is in parent client coords). Used for the reaction "+" chip.
     void   popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect);
+    void   popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect);
     void   insert_emoji_at_cursor(const std::string& glyph);
 
     // ── Sticker picker ───────────────────────────────────────────────────

@@ -79,8 +79,8 @@ void RoomView::wire_internal_callbacks() {
     compose_bar_->on_edit_cancelled = [this] {
         if (on_edit_cancelled) on_edit_cancelled();
     };
-    compose_bar_->on_emoji   = [this] { if (on_emoji)   on_emoji(); };
-    compose_bar_->on_sticker = [this] { if (on_sticker) on_sticker(); };
+    compose_bar_->on_emoji   = [this](tk::Rect r) { if (on_emoji)   on_emoji(r); };
+    compose_bar_->on_sticker = [this](tk::Rect r) { if (on_sticker) on_sticker(r); };
 
     // Forward message-list callbacks that reach the shell.
     message_list_->on_delete_requested =

@@ -161,9 +161,9 @@ void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect) {
 
     QRect screen = QApplication::primaryScreen()->availableGeometry();
 
-    // Prefer popping above the rect, left-aligned with it. Fall back to
+    // Prefer popping above the rect, centered on it. Fall back to
     // below if there isn't room above. Clamp to the screen on x.
-    int x = topLeftGlobal.x();
+    int x = topLeftGlobal.x() + rectW / 2 - width() / 2;
     int y = topLeftGlobal.y() - height() - 4;
     if (y < screen.top()) y = topLeftGlobal.y() + rectH + 4;
     if (x + width() > screen.right()) x = screen.right() - width() - 4;

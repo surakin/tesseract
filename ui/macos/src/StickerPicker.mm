@@ -142,4 +142,42 @@ constexpr CGFloat kPanelHeight = 420;
     if (_surface) _surface->relayout();
 }
 
+- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor {
+    if (!anchor || !anchor.window) return;
+
+    if (_shared) {
+        _shared->refresh_packs();
+        _shared->set_search_query("");
+    }
+    if (_searchField) _searchField->set_text("");
+
+    // tk::Rect is in the surface's flipped (top-left origin) widget
+    // coordinates; the backing NSView has isFlipped == YES so it maps
+    // directly into the anchor view's local rect.
+    NSRect localR      = NSMakeRect(localRect.x, localRect.y,
+                                    localRect.w, localRect.h);
+    NSRect inWindow    = [anchor convertRect:localR toView:nil];
+    NSRect screenRect  = [anchor.window convertRectToScreen:inWindow];
+    NSScreen* ns       = anchor.window.screen ?: NSScreen.mainScreen;
+    NSRect visible     = ns.visibleFrame;
+
+    NSRect frame = self.frame;
+    // Center horizontally over the button; prefer above.
+    frame.origin.x = screenRect.origin.x
+                     + screenRect.size.width / 2.0
+                     - frame.size.width / 2.0;
+    frame.origin.y = NSMaxY(screenRect) + 4;
+    if (frame.origin.y + frame.size.height > NSMaxY(visible))
+        frame.origin.y = screenRect.origin.y - frame.size.height - 4;
+    if (frame.origin.x < visible.origin.x)
+        frame.origin.x = visible.origin.x + 4;
+    if (frame.origin.x + frame.size.width > NSMaxX(visible))
+        frame.origin.x = NSMaxX(visible) - frame.size.width - 4;
+
+    [self setFrame:frame display:NO];
+    [self orderFront:nil];
+    if (_searchField) _searchField->set_focused(true);
+    if (_surface) _surface->relayout();
+}
+
 @end

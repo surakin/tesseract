@@ -96,7 +96,7 @@ TEST_CASE("ComposeBar emoji-button click fires on_emoji",
     Stage st;
     ComposeBar bar;
     int hits = 0;
-    bar.on_emoji = [&] { ++hits; };
+    bar.on_emoji = [&](tk::Rect) { ++hits; };
     st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
 
     Button* emoji = nullptr;

@@ -153,9 +153,11 @@ constexpr CGFloat kPanelHeight = 360;
     NSRect visible   = screen.visibleFrame;
 
     NSRect frame = self.frame;
-    // Prefer popping above the rect, left-aligned with it. In NSWindow
+    // Prefer popping above the rect, centered on it. In NSWindow
     // (non-flipped) coordinates, "above" means a larger y.
-    frame.origin.x = anchorRectScreen.origin.x;
+    frame.origin.x = anchorRectScreen.origin.x
+                     + anchorRectScreen.size.width / 2.0
+                     - frame.size.width / 2.0;
     frame.origin.y = NSMaxY(anchorRectScreen) + 4;
     if (frame.origin.y + frame.size.height > NSMaxY(visible))
         frame.origin.y = anchorRectScreen.origin.y - frame.size.height - 4;

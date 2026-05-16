@@ -34,4 +34,7 @@ namespace tesseract { class Client; }
 /// Show the panel above anchorView.
 - (void)popupAboveView:(NSView*)anchorView;
 
+/// Show the panel above and centered on localRect (surface-local coords) inside anchor.
+- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor;
+
 @end

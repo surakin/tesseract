@@ -125,6 +125,7 @@ private:
     void           on_send_clicked();
     void           toggle_emoji_picker();
     void           popup_emoji_at_rect(GtkWidget* parent, tk::Rect local_rect);
+    void           popup_sticker_at_rect(GtkWidget* parent, tk::Rect local_rect);
     void           build_emoji_popover();
     void           build_sticker_popover();
     void           toggle_sticker_picker();

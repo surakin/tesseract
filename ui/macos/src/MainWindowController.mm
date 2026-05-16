@@ -276,6 +276,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleImagePacksUpdated;
 - (void)handleAccountPrefsUpdated:(NSString*)json;
 - (void)_showStickerPicker;
+- (void)_showStickerPickerAtRect:(tk::Rect)btn;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
 - (void)_onStickerSave:(id)sender;
 - (void)_startAnimTickIfNeeded;
@@ -1071,13 +1072,13 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             MainWindowController* s = weakSelf;
             if (s) [s openJumpToDateDialog];
         };
-        _roomView->on_emoji = [weakSelf] {
+        _roomView->on_emoji = [weakSelf](tk::Rect btn) {
             MainWindowController* s = weakSelf;
-            if (s) [s showEmojiPicker:nil];
+            if (s) [s showEmojiPickerAtRect:btn];
         };
-        _roomView->on_sticker = [weakSelf] {
+        _roomView->on_sticker = [weakSelf](tk::Rect btn) {
             MainWindowController* s = weakSelf;
-            if (s) [s _showStickerPicker];
+            if (s) [s _showStickerPickerAtRect:btn];
         };
         _roomView->on_edit_cancelled = [weakSelf] {
             MainWindowController* s = weakSelf;
@@ -2880,6 +2881,40 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
     NSView* anchor = (__bridge NSView*)_chatSurface->view_handle();
     [panel popupAboveView:anchor];
+}
+
+- (void)_showStickerPickerAtRect:(tk::Rect)btn {
+    if (!_chatSurface || _shell->current_room_id_.empty()) return;
+    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    panel.client = _shell->client_;
+
+    __weak MainWindowController* weakSelf = self;
+
+    [panel setImageProvider:
+        [weakSelf](const std::string& cache_key,
+                   const std::string& /*source_token*/) -> const tk::Image* {
+            MainWindowController* s = weakSelf;
+            if (!s) return nullptr;
+            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
+            auto it = s->_shell->tk_images_.find(cache_key);
+            if (it != s->_shell->tk_images_.end()) return it->second.get();
+            [s _ensureStickerImageAsync:cache_key];
+            return nullptr;
+        }];
+
+    __weak StickerPickerPanel* weakPanel = panel;
+    panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
+        MainWindowController* s = weakSelf;
+        if (!s || s->_shell->current_room_id_.empty()) return;
+        std::string u = url.UTF8String      ?: "";
+        std::string b = body.UTF8String     ?: "";
+        std::string j = infoJson.UTF8String ?: "{}";
+        s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
+        [weakPanel orderOut:nil];
+    };
+
+    NSView* anchor = (__bridge NSView*)_chatSurface->view_handle();
+    [panel popupAtRect:btn inView:anchor];
 }
 
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt {

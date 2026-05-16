@@ -252,6 +252,29 @@ void StickerPicker::popupAt(QWidget* anchor) {
     if (search_field_) search_field_->set_focused(true);
 }
 
+void StickerPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect) {
+    if (!anchor) return;
+    refreshPacks();
+    if (search_field_) search_field_->set_text("");
+    shared_->set_search_query("");
+
+    QPoint topLeftGlobal = anchor->mapToGlobal(
+        QPoint(static_cast<int>(localRect.x), static_cast<int>(localRect.y)));
+    int rectW = static_cast<int>(localRect.w);
+    int rectH = static_cast<int>(localRect.h);
+    QRect screen = QApplication::primaryScreen()->availableGeometry();
+
+    int x = topLeftGlobal.x() + rectW / 2 - width() / 2;   // centered over button
+    int y = topLeftGlobal.y() - height() - 4;               // above button
+    if (y < screen.top()) y = topLeftGlobal.y() + rectH + 4;
+    if (x + width() > screen.right()) x = screen.right() - width() - 4;
+    if (x < screen.left())            x = screen.left() + 4;
+    if (y + height() > screen.bottom()) y = screen.bottom() - height() - 4;
+    move(x, y);
+    show();
+    if (search_field_) search_field_->set_focused(true);
+}
+
 void StickerPicker::showEvent(QShowEvent* e) {
     QFrame::showEvent(e);
     layout_overlay();

@@ -1261,8 +1261,20 @@ void MainWindow::on_create(HWND hwnd) {
         room_view_->on_jump_to_date_requested = [this] {
             openJumpToDateDialog();
         };
-        room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
-        room_view_->on_sticker = [this] { toggle_sticker_picker(); };
+        room_view_->on_emoji   = [this](tk::Rect btn) {
+            ensure_emoji_picker_created();
+            if (hEmojiPicker_ && IsWindowVisible(hEmojiPicker_))
+                ShowWindow(hEmojiPicker_, SW_HIDE);
+            else if (chat_surface_)
+                popup_emoji_at_rect(chat_surface_->hwnd(), btn);
+        };
+        room_view_->on_sticker = [this](tk::Rect btn) {
+            ensure_sticker_picker_created();
+            if (hStickerPicker_ && IsWindowVisible(hStickerPicker_))
+                ShowWindow(hStickerPicker_, SW_HIDE);
+            else if (chat_surface_)
+                popup_sticker_at_rect(chat_surface_->hwnd(), btn);
+        };
         room_view_->set_repaint_requester([this] {
             if (chat_surface_) InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
         });
@@ -3196,9 +3208,9 @@ void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
     LONG rectW = static_cast<LONG>(local_rect.w);
     LONG rectH = static_cast<LONG>(local_rect.h);
 
-    // Prefer above, left-aligned with the rect; fall back to below if the
+    // Prefer above, centered on the rect; fall back to below if the
     // monitor doesn't have room. Clamp to the work area horizontally.
-    int x = pt.x;
+    int x = pt.x + rectW / 2 - kEmojiPickW / 2;
     int y = pt.y - kEmojiPickH - 4;
     HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{}; mi.cbSize = sizeof(mi);
@@ -3223,6 +3235,43 @@ void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
     ShowWindow(hEmojiPicker_, SW_SHOWNOACTIVATE);
     if (emoji_picker_surface_) emoji_picker_surface_->relayout();
     if (emoji_picker_search_field_) emoji_picker_search_field_->set_focused(true);
+}
+
+void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
+    ensure_sticker_picker_created();
+    if (!hStickerPicker_ || !parent_hwnd) return;
+
+    POINT pt{ static_cast<LONG>(local_rect.x), static_cast<LONG>(local_rect.y) };
+    ClientToScreen(parent_hwnd, &pt);
+    LONG rectW = static_cast<LONG>(local_rect.w);
+    LONG rectH = static_cast<LONG>(local_rect.h);
+
+    // Prefer above, centered on the rect; fall back to below if the
+    // monitor doesn't have room. Clamp to the work area horizontally.
+    int x = pt.x + rectW / 2 - kStickerPickW / 2;
+    int y = pt.y - kStickerPickH - 4;
+    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(mon, &mi)) {
+        if (y < mi.rcWork.top) y = pt.y + rectH + 4;
+        if (x + kStickerPickW > mi.rcWork.right)
+            x = mi.rcWork.right - kStickerPickW - 4;
+        if (x < mi.rcWork.left) x = mi.rcWork.left + 4;
+        if (y + kStickerPickH > mi.rcWork.bottom)
+            y = mi.rcWork.bottom - kStickerPickH - 4;
+    }
+    (void)rectW;
+
+    if (sticker_picker_shared_)       sticker_picker_shared_->refresh_packs();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_text("");
+    if (sticker_picker_shared_)       sticker_picker_shared_->set_search_query("");
+
+    SetWindowPos(hStickerPicker_, HWND_TOPMOST,
+                  x, y, kStickerPickW, kStickerPickH,
+                  SWP_NOACTIVATE);
+    ShowWindow(hStickerPicker_, SW_SHOWNOACTIVATE);
+    if (sticker_picker_surface_)      sticker_picker_surface_->relayout();
+    if (sticker_picker_search_field_) sticker_picker_search_field_->set_focused(true);
 }
 
 void MainWindow::insert_emoji_at_cursor(const std::string& glyph) {

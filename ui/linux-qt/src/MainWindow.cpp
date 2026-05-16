@@ -531,15 +531,15 @@ MainWindow::MainWindow(QWidget* parent)
         roomView_->on_reply_focus = [this] {
             if (roomTextArea_) roomTextArea_->set_focused(true);
         };
-        roomView_->on_emoji = [this] {
+        roomView_->on_emoji = [this](tk::Rect btn) {
             if (!emojiPicker_) return;
             if (emojiPicker_->isVisible()) emojiPicker_->hide();
-            else                            emojiPicker_->popupAt(chatSurface_);
+            else                            emojiPicker_->popupAtRect(chatSurface_, btn);
         };
-        roomView_->on_sticker = [this] {
+        roomView_->on_sticker = [this](tk::Rect btn) {
             if (!stickerPicker_) return;
             if (stickerPicker_->isVisible()) stickerPicker_->hide();
-            else                              stickerPicker_->popupAt(chatSurface_);
+            else                              stickerPicker_->popupAtRect(chatSurface_, btn);
         };
 
         chatSurface_->set_root(std::move(room_view_owner));
