@@ -1230,6 +1230,9 @@ void MainWindow::on_create(HWND hwnd) {
         };
         room_view_->on_emoji   = [this] { toggle_emoji_picker(); };
         room_view_->on_sticker = [this] { toggle_sticker_picker(); };
+        room_view_->set_repaint_requester([this] {
+            if (chat_surface_) InvalidateRect(chat_surface_->hwnd(), nullptr, FALSE);
+        });
         room_view_->on_layout_changed = [this] {
             if (chat_surface_) chat_surface_->relayout();
         };

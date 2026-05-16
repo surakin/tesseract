@@ -1043,6 +1043,10 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
             MainWindowController* s = weakSelf;
             if (s && s->_roomTextArea) s->_roomTextArea->set_focused(true);
         };
+        _roomView->set_repaint_requester([weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (s && s->_chatSurface) s->_chatSurface->relayout();
+        });
         _roomView->on_layout_changed = [weakSelf] {
             MainWindowController* s = weakSelf;
             if (s) [s _relayoutChatSurface];

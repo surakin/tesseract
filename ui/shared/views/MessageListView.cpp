@@ -2007,6 +2007,7 @@ void MessageListView::set_typing_text(std::string text) {
     typing_text_ = std::move(text);
     invalidate_data();
     if (at_bottom) scroll_to_bottom();
+    if (request_repaint_) request_repaint_();
 }
 
 void MessageListView::set_avatar_provider(ImageProvider p) {
