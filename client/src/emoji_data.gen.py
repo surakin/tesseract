@@ -112,16 +112,17 @@ def main(argv):
         "// Source: Unicode emoji-test.txt (UTS #51, fully-qualified entries only).\n"
         "// Re-run the generator to refresh; see the script for filters applied.\n"
         "//\n"
-        "// Format: { glyph_utf8, name, keywords, Category }.\n"
+        "// Format: { glyph_utf8, name, keywords, Category, shortcode }.\n"
         "// Count: " + str(len(entries)) + " entries.\n"
         "\n"
     )
     sys.stdout.write("// clang-format off\n")
     for cat, subgroup, glyph, name in entries:
         kw = keywords_from(name, subgroup)
+        sc = re.sub(r'_+', '_', re.sub(r'[^a-z0-9_]', '_', name.lower())).strip('_')
         sys.stdout.write(
             f"  {{{c_string(glyph)}, {c_string(name)}, {c_string(kw)}, "
-            f"Category::{cat}}},\n"
+            f"Category::{cat}, {c_string(sc)}}},\n"
         )
     sys.stdout.write("// clang-format on\n")
 

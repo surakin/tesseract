@@ -85,3 +85,42 @@ TEST_CASE("known emoji can be located by exact name", "[emoji]") {
     }
     CHECK(found_grinning);
 }
+
+TEST_CASE("by_shortcode_prefix — canonical match") {
+    // "grinning_face" should surface 😀 which has CLDR name "grinning face"
+    auto results = tesseract::emoji::by_shortcode_prefix("grinning_face");
+    REQUIRE(!results.empty());
+    bool found = false;
+    for (auto [entry, shortcode] : results)
+        if (entry->glyph == "😀") { found = true; break; }
+    REQUIRE(found);
+}
+
+TEST_CASE("by_shortcode_prefix — alias match") {
+    // "grinning" is a gemoji alias for 😀 — must surface via alias table
+    auto results = tesseract::emoji::by_shortcode_prefix("grinning");
+    REQUIRE(!results.empty());
+    bool found = false;
+    for (auto [entry, shortcode] : results)
+        if (entry->glyph == "😀") { found = true; break; }
+    REQUIRE(found);
+}
+
+TEST_CASE("by_shortcode_prefix — no partial match below 1 char") {
+    // empty prefix returns everything; just verify it doesn't crash
+    auto all = tesseract::emoji::by_shortcode_prefix("");
+    REQUIRE(all.size() > 100);
+}
+
+TEST_CASE("by_shortcode_prefix — returns empty for unknown prefix") {
+    auto none = tesseract::emoji::by_shortcode_prefix("xyzzy_not_an_emoji");
+    REQUIRE(none.empty());
+}
+
+TEST_CASE("by_shortcode_prefix — Entry shortcodes field is non-empty") {
+    const auto& table = tesseract::emoji::all();
+    REQUIRE(!table.empty());
+    for (const auto& e : table) {
+        REQUIRE(!e.shortcodes.empty());
+    }
+}

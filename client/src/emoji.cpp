@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <unordered_set>
 
 namespace tesseract::emoji {
 
@@ -56,6 +57,51 @@ std::vector<const Entry*> by_category(Category c) {
     for (const auto& e : table()) {
         if (e.category == c) out.push_back(&e);
     }
+    return out;
+}
+
+namespace {
+
+struct AliasEntry { std::string_view glyph; std::string_view alias; };
+const std::vector<AliasEntry>& alias_table() {
+    static const std::vector<AliasEntry> data = {
+#include "emoji_aliases.inc"
+    };
+    return data;
+}
+
+} // namespace
+
+std::vector<std::pair<const Entry*, std::string_view>>
+by_shortcode_prefix(std::string_view prefix) {
+    std::vector<std::pair<const Entry*, std::string_view>> out;
+    std::unordered_set<const Entry*> seen;
+
+    for (const auto& e : table()) {
+        std::string_view sc = e.shortcodes;
+        while (!sc.empty()) {
+            auto sp = sc.find(' ');
+            std::string_view tok = (sp == std::string_view::npos) ? sc : sc.substr(0, sp);
+            if (ascii_icontains(tok, prefix)) {
+                if (seen.insert(&e).second)
+                    out.emplace_back(&e, tok);
+                break;
+            }
+            sc = (sp == std::string_view::npos) ? std::string_view{} : sc.substr(sp + 1);
+        }
+    }
+
+    for (const auto& a : alias_table()) {
+        if (!ascii_icontains(a.alias, prefix)) continue;
+        for (const auto& e : table()) {
+            if (e.glyph == a.glyph) {
+                if (seen.insert(&e).second)
+                    out.emplace_back(&e, a.alias);
+                break;
+            }
+        }
+    }
+
     return out;
 }
 
