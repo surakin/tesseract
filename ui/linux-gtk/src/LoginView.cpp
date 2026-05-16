@@ -1,5 +1,7 @@
 #include "LoginView.h"
 
+#include <chrono>
+
 #include "tk/theme.h"
 
 namespace gtk4 {
@@ -14,9 +16,12 @@ LoginView::LoginView()
     surface_->set_root(std::move(shared_view));
 
     hs_field_ = surface_->host().make_text_field();
-    hs_field_->set_placeholder("e.g. matrix.org");
+    hs_field_->set_placeholder("matrix.org or @user:matrix.org");
     hs_field_->set_text("matrix.org");
     hs_field_->set_on_submit([this] { on_sign_in(); });
+    hs_field_->set_on_changed([this](const std::string& text) {
+        on_hs_text_changed(text);
+    });
 
     // Keep the GtkEntry aligned with the shared LoginView's
     // homeserver_field_rect across every layout pass.
@@ -24,6 +29,7 @@ LoginView::LoginView()
 }
 
 LoginView::~LoginView() {
+    ++discovery_gen_;
     cancelled_.store(true);
     if (client_) client_->cancel_oauth();
     join_worker();
@@ -45,17 +51,52 @@ void LoginView::position_overlay() {
 // ---------------------------------------------------------------------------
 
 void LoginView::reset() {
+    ++discovery_gen_;  // invalidate any in-flight discovery callback
     cancelled_.store(true);
     if (client_) client_->cancel_oauth();
     join_worker();
     cancelled_.store(false);
 
     shared_->set_status("");
+    shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
     shared_->set_state(tesseract::views::LoginView::State::Form);
     hs_field_->set_enabled(true);
     hs_field_->set_visible(true);
     hs_field_->set_focused(true);
     surface_->relayout();
+}
+
+void LoginView::on_hs_text_changed(const std::string& text) {
+    if (!shared_) return;
+    uint32_t gen = ++discovery_gen_;
+    if (text.empty()) {
+        shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
+        surface_->relayout();
+        return;
+    }
+    shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Discovering);
+    surface_->relayout();
+
+    auto* snap = client_;
+    if (!snap) return;
+
+    std::thread([this, gen, snap, text] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        if (gen != discovery_gen_.load()) return;
+        auto result = snap->discover_homeserver(text);
+        surface_->host().post_to_ui([this, gen, result = std::move(result)] {
+            if (gen != discovery_gen_.load() || !shared_) return;
+            if (result)
+                shared_->set_discovery_state(
+                    tesseract::views::LoginView::DiscoveryState::Resolved,
+                    result.base_url);
+            else
+                shared_->set_discovery_state(
+                    tesseract::views::LoginView::DiscoveryState::Failed,
+                    result.error);
+            surface_->relayout();
+        });
+    }).detach();
 }
 
 void LoginView::set_status_message(const std::string& msg) {
@@ -70,12 +111,24 @@ void LoginView::set_status_message(const std::string& msg) {
 
 void LoginView::on_sign_in() {
     if (!client_) return;
-    std::string hs = trim(hs_field_->text());
-    if (hs.empty()) {
+    std::string hs_raw = trim(hs_field_->text());
+    if (hs_raw.empty()) {
         shared_->set_status("Please enter a homeserver.",
                              tk::Color::rgb(0xB00020));
         surface_->relayout();
         return;
+    }
+    // Use the pre-resolved URL when available; extract server name from MXID
+    // otherwise so begin_oauth doesn't receive a raw @user:server string.
+    std::string hs;
+    using DS = tesseract::views::LoginView::DiscoveryState;
+    if (shared_->discovery_state() == DS::Resolved) {
+        hs = shared_->resolved_base_url();
+    } else if (!hs_raw.empty() && hs_raw.front() == '@') {
+        auto colon = hs_raw.find(':');
+        hs = (colon != std::string::npos) ? hs_raw.substr(colon + 1) : hs_raw;
+    } else {
+        hs = hs_raw;
     }
     shared_->set_status("");
     hs_field_->set_enabled(false);

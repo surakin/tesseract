@@ -766,6 +766,13 @@ pub mod ffi {
         /// Blocks the calling thread — call only from a worker thread.
         fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
 
+        /// Discover the homeserver URL for a server name or Matrix ID.
+        /// Accepts "matrix.org", "@user:matrix.org", or "https://matrix.org".
+        /// Returns JSON: `{"base_url":"https://...","error":""}` on success or
+        /// `{"base_url":"","error":"message"}` on failure.
+        /// Blocks the calling thread — call only from a worker thread.
+        fn discover_homeserver(self: &mut ClientFfi, server_name_or_mxid: &str) -> String;
+
         // ----- Spaces -----
 
         /// Returns the room IDs of all direct children declared by a space

@@ -74,6 +74,21 @@ public:
         explicit operator bool() const noexcept { return ok; }
     };
 
+    struct DiscoveryResult {
+        bool        ok = false;      ///< false when the server is unreachable
+        std::string base_url;        ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
+        std::string error;           ///< human-readable error when ok==false
+
+        explicit operator bool() const noexcept { return ok; }
+    };
+
+    /// Discover the homeserver URL for a server name or Matrix ID.
+    /// Accepts: "matrix.org", "@user:matrix.org", "https://matrix.org".
+    /// Fetches .well-known/matrix/client and validates the result.
+    /// Does not require the client to be logged in.
+    /// Blocks the calling thread — invoke only from a worker thread.
+    DiscoveryResult discover_homeserver(const std::string& server_name_or_mxid);
+
     OAuthFlow   begin_oauth(const std::string& homeserver);
     Result      await_oauth();
     void        cancel_oauth();

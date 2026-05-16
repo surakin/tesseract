@@ -6,6 +6,7 @@
 #include "views/LoginView.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -34,13 +35,15 @@ std::string trim(std::string s) {
 
     std::thread                                     _worker;
     std::atomic<bool>                               _cancelled;
+    std::atomic<uint32_t>                           _discoveryGen;
 }
 
 - (instancetype)init {
     self = [super initWithFrame:NSZeroRect];
     if (!self) return nil;
-    _client    = nullptr;
-    _cancelled = false;
+    _client       = nullptr;
+    _cancelled    = false;
+    _discoveryGen = 0;
 
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
@@ -68,11 +71,49 @@ std::string trim(std::string s) {
     ]];
 
     _hsField = _surface->host().make_text_field();
-    _hsField->set_placeholder("e.g. matrix.org");
+    _hsField->set_placeholder("matrix.org or @user:matrix.org");
     _hsField->set_text("matrix.org");
     _hsField->set_on_submit([weakSelf] {
         LoginView* s = weakSelf;
         if (s) [s _onSignIn];
+    });
+    _hsField->set_on_changed([weakSelf](const std::string& text) {
+        LoginView* s = weakSelf;
+        if (!s || !s->_shared) return;
+        uint32_t gen = ++s->_discoveryGen;
+        if (text.empty()) {
+            s->_shared->set_discovery_state(
+                tesseract::views::LoginView::DiscoveryState::Idle);
+            s->_surface->relayout();
+            return;
+        }
+        s->_shared->set_discovery_state(
+            tesseract::views::LoginView::DiscoveryState::Discovering);
+        s->_surface->relayout();
+
+        auto* snap = s->_client;
+        if (!snap) return;
+
+        std::thread([weakSelf, gen, snap, text] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            LoginView* strongSelf = weakSelf;
+            if (!strongSelf || gen != strongSelf->_discoveryGen.load()) return;
+            auto result = snap->discover_homeserver(text);
+            strongSelf->_surface->host().post_to_ui(
+                [weakSelf, gen, result = std::move(result)] {
+                    LoginView* s = weakSelf;
+                    if (!s || gen != s->_discoveryGen.load() || !s->_shared) return;
+                    if (result)
+                        s->_shared->set_discovery_state(
+                            tesseract::views::LoginView::DiscoveryState::Resolved,
+                            result.base_url);
+                    else
+                        s->_shared->set_discovery_state(
+                            tesseract::views::LoginView::DiscoveryState::Failed,
+                            result.error);
+                    s->_surface->relayout();
+                });
+        }).detach();
     });
 
     _surface->set_on_layout([weakSelf] {
@@ -93,6 +134,7 @@ std::string trim(std::string s) {
 }
 
 - (void)dealloc {
+    ++_discoveryGen;
     _cancelled = true;
     if (_client) _client->cancel_oauth();
     if (_worker.joinable()) _worker.join();
@@ -108,12 +150,14 @@ std::string trim(std::string s) {
 // ---------------------------------------------------------------------------
 
 - (void)reset {
+    ++_discoveryGen;  // invalidate any in-flight discovery callback
     _cancelled = true;
     if (_client) _client->cancel_oauth();
     if (_worker.joinable()) _worker.join();
     _cancelled = false;
 
     _shared->set_status("");
+    _shared->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
     _shared->set_state(tesseract::views::LoginView::State::Form);
     _hsField->set_enabled(true);
     _hsField->set_visible(true);
@@ -133,12 +177,24 @@ std::string trim(std::string s) {
 
 - (void)_onSignIn {
     if (!_client) return;
-    std::string hs = trim(_hsField->text());
-    if (hs.empty()) {
+    std::string hs_raw = trim(_hsField->text());
+    if (hs_raw.empty()) {
         _shared->set_status("Please enter a homeserver.",
                              tk::Color::rgb(0xB00020));
         _surface->relayout();
         return;
+    }
+    // Use the pre-resolved URL when available; extract server name from MXID
+    // otherwise so begin_oauth doesn't receive a raw @user:server string.
+    std::string hs;
+    using DS = tesseract::views::LoginView::DiscoveryState;
+    if (_shared->discovery_state() == DS::Resolved) {
+        hs = _shared->resolved_base_url();
+    } else if (!hs_raw.empty() && hs_raw.front() == '@') {
+        auto colon = hs_raw.find(':');
+        hs = (colon != std::string::npos) ? hs_raw.substr(colon + 1) : hs_raw;
+    } else {
+        hs = hs_raw;
     }
     _shared->set_status("");
     _hsField->set_enabled(false);

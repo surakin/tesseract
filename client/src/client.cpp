@@ -420,6 +420,14 @@ std::string Client::join_room(const std::string& room_id_or_alias) {
     return std::string(impl_->ffi->join_room(room_id_or_alias));
 }
 
+Client::DiscoveryResult Client::discover_homeserver(const std::string& server_name_or_mxid) {
+    std::string json     = std::string(impl_->ffi->discover_homeserver(server_name_or_mxid));
+    std::string base_url = json_string_field(json, "base_url");
+    std::string error    = json_string_field(json, "error");
+    return DiscoveryResult{ error.empty() && !base_url.empty(),
+                            std::move(base_url), std::move(error) };
+}
+
 Client::UrlPreview Client::get_url_preview(const std::string& url) {
     std::string json = std::string(impl_->ffi->get_url_preview(url));
     if (json.empty()) { UrlPreview p; p.failed = true; return p; }

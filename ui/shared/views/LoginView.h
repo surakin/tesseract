@@ -61,6 +61,17 @@ public:
     void set_homeserver_label(std::string url);
     const std::string& homeserver_label() const { return homeserver_label_; }
 
+    // Homeserver discovery result displayed beneath the input field.
+    enum class DiscoveryState { Idle, Discovering, Resolved, Failed };
+
+    /// Called by the shell when discovery state changes.
+    /// In Resolved state, `detail` is the resolved base URL.
+    /// In Failed state, `detail` is the error message (may be empty).
+    void set_discovery_state(DiscoveryState s, std::string detail = "");
+
+    DiscoveryState     discovery_state()    const { return discovery_state_; }
+    const std::string& resolved_base_url()  const { return resolved_base_url_; }
+
     // The host wires these to the OAuth flow. Defaults are no-ops so the
     // visual tree can be exercised standalone.
     std::function<void()> on_sign_in;
@@ -82,14 +93,18 @@ private:
     Mode         mode_        = Mode::Initial;
     std::string  homeserver_label_ = "matrix.org";
 
+    DiscoveryState discovery_state_    = DiscoveryState::Idle;
+    std::string    resolved_base_url_;
+
     // Borrowed: all of these are owned by `card_` which is owned by `this`.
-    tk::VBox*    card_         = nullptr;
-    tk::Label*   title_lbl_    = nullptr;
-    tk::Label*   caption_lbl_  = nullptr;
-    tk::Label*   hs_field_lbl_ = nullptr;
-    tk::Button*  sign_in_btn_  = nullptr;
-    tk::Button*  cancel_btn_   = nullptr;
-    tk::Label*   status_lbl_   = nullptr;
+    tk::VBox*    card_            = nullptr;
+    tk::Label*   title_lbl_       = nullptr;
+    tk::Label*   caption_lbl_     = nullptr;
+    tk::Label*   hs_field_lbl_    = nullptr;
+    tk::Label*   discovery_lbl_   = nullptr;
+    tk::Button*  sign_in_btn_     = nullptr;
+    tk::Button*  cancel_btn_      = nullptr;
+    tk::Label*   status_lbl_      = nullptr;
 
     tk::Rect     homeserver_field_rect_{};
 };

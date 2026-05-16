@@ -48,6 +48,13 @@ void LoginView::rebuild_tree() {
     hs_field->set_halign(tk::TextHAlign::Leading);
     hs_field->set_min_size({ 0.0f, kHSFieldHeight });
 
+    // Discovery result label — shown below the homeserver field once the
+    // shell has resolved (or failed to reach) the server. Invisible by
+    // default; collapses to zero height in the VBox when not visible.
+    auto discovery = std::make_unique<tk::Label>("", tk::FontRole::Small);
+    discovery->set_halign(tk::TextHAlign::Leading);
+    discovery->set_visible(false);
+
     auto sign_in = std::make_unique<tk::Button>("Sign in",
                                                    std::function<void()>{},
                                                    tk::Button::Variant::Primary);
@@ -66,12 +73,13 @@ void LoginView::rebuild_tree() {
     status->set_wrap(true);
     status->set_visible(false);
 
-    title_lbl_    = card->add_child(std::move(title));
-    caption_lbl_  = card->add_child(std::move(caption));
-    hs_field_lbl_ = card->add_child(std::move(hs_field));
-    sign_in_btn_  = card->add_child(std::move(sign_in));
-    cancel_btn_   = card->add_child(std::move(cancel));
-    status_lbl_   = card->add_child(std::move(status));
+    title_lbl_      = card->add_child(std::move(title));
+    caption_lbl_    = card->add_child(std::move(caption));
+    hs_field_lbl_   = card->add_child(std::move(hs_field));
+    discovery_lbl_  = card->add_child(std::move(discovery));
+    sign_in_btn_    = card->add_child(std::move(sign_in));
+    cancel_btn_     = card->add_child(std::move(cancel));
+    status_lbl_     = card->add_child(std::move(status));
 
     card_ = add_child(std::move(card));
 }
@@ -110,6 +118,42 @@ void LoginView::set_status(std::string message,
 
 void LoginView::set_homeserver_label(std::string url) {
     homeserver_label_ = std::move(url);
+}
+
+void LoginView::set_discovery_state(DiscoveryState s, std::string detail) {
+    discovery_state_ = s;
+    if (s == DiscoveryState::Resolved)
+        resolved_base_url_ = detail;
+    else if (s == DiscoveryState::Idle)
+        resolved_base_url_.clear();
+
+    if (!discovery_lbl_) return;
+
+    switch (s) {
+        case DiscoveryState::Idle:
+            discovery_lbl_->set_visible(false);
+            break;
+        case DiscoveryState::Discovering:
+            resolved_base_url_.clear();
+            discovery_lbl_->set_text("Checking\xe2\x80\xa6");
+            discovery_lbl_->set_colour({});
+            discovery_lbl_->set_visible(true);
+            break;
+        case DiscoveryState::Resolved:
+            discovery_lbl_->set_text("\xe2\x9c\x93 " + detail);
+            discovery_lbl_->set_colour(tk::Color::rgb(0x2e7d32));
+            discovery_lbl_->set_visible(true);
+            break;
+        case DiscoveryState::Failed:
+            discovery_lbl_->set_text(
+                "\xe2\x9c\x97 " +
+                (detail.empty() ? std::string("Could not reach this server") : detail));
+            discovery_lbl_->set_colour(tk::Color::rgb(0xCC2200));
+            discovery_lbl_->set_visible(true);
+            break;
+    }
+    // No invalidate() call — the shell calls surface_->relayout() after
+    // set_discovery_state() returns, which triggers a repaint.
 }
 
 tk::Size LoginView::measure(tk::LayoutCtx&, tk::Size constraints) {

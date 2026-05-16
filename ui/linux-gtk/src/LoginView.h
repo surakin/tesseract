@@ -56,6 +56,7 @@ private:
     void on_cancel();
     void on_begin_completed(bool ok, std::string err_or_url);
     void on_await_completed(bool ok, std::string err);
+    void on_hs_text_changed(const std::string& text);
     void position_overlay();
     void join_worker();
 
@@ -69,8 +70,9 @@ private:
     tesseract::views::LoginView*           shared_   = nullptr;  // borrowed
     std::unique_ptr<tk::NativeTextField>   hs_field_;
 
-    std::thread       worker_;
-    std::atomic<bool> cancelled_{ false };
+    std::thread                 worker_;
+    std::atomic<bool>           cancelled_{ false };
+    std::atomic<uint32_t>       discovery_gen_{ 0 };
 };
 
 } // namespace gtk4

@@ -2503,6 +2503,92 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // Homeserver discovery
+    // -----------------------------------------------------------------------
+
+    // Fetch .well-known/matrix/client and return m.homeserver.base_url, or
+    // None if the server returned non-2xx or the key is absent.
+    #[cfg(not(test))]
+    async fn fetch_well_known(http: &reqwest::Client, server: &str) -> Option<String> {
+        let url  = format!("https://{}/.well-known/matrix/client", server);
+        let resp = http.get(&url).send().await.ok()?;
+        if !resp.status().is_success() { return None; }
+        let body: serde_json::Value = resp.json().await.ok()?;
+        let base = body["m.homeserver"]["base_url"].as_str()?.trim_end_matches('/').to_owned();
+        Some(base)
+    }
+
+    // Confirm the candidate base URL actually speaks Matrix by hitting
+    // /_matrix/client/versions and expecting any 2xx response.
+    #[cfg(not(test))]
+    async fn validate_homeserver(http: &reqwest::Client, base_url: &str) -> bool {
+        let url = format!("{}/_matrix/client/versions", base_url);
+        http.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    }
+
+    /// Discover the homeserver base URL for a server name or Matrix ID.
+    /// Returns JSON: `{"base_url":"https://...","error":""}` on success or
+    /// `{"base_url":"","error":"..."}` on failure. Uses raw HTTP — no SDK
+    /// Client construction required.
+    #[cfg(not(test))]
+    pub fn discover_homeserver(&mut self, server_name_or_mxid: &str) -> String {
+        let input = server_name_or_mxid.trim();
+
+        // Extract server name from a full MXID (@user:server.org → server.org).
+        let server = if input.starts_with('@') {
+            match input.find(':') {
+                Some(i) => &input[i + 1..],
+                None    => return r#"{"base_url":"","error":"Invalid Matrix ID — expected @user:server"}"#.to_owned(),
+            }
+        } else {
+            input
+        };
+
+        if server.is_empty() {
+            return r#"{"base_url":"","error":""}"#.to_owned();
+        }
+
+        let server = server.to_owned();
+        self.rt.block_on(async move {
+            let http = match reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+            {
+                Ok(c)  => c,
+                Err(e) => {
+                    let msg = e.to_string().replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ");
+                    return format!(r#"{{"base_url":"","error":"{msg}"}}"#);
+                }
+            };
+
+            let base_url = if server.starts_with("https://") || server.starts_with("http://") {
+                // Caller passed a full URL — validate it directly.
+                let candidate = server.trim_end_matches('/').to_owned();
+                if Self::validate_homeserver(&http, &candidate).await { Some(candidate) } else { None }
+            } else {
+                // Try .well-known first; fall back to https://{server} on failure.
+                let candidate = Self::fetch_well_known(&http, &server)
+                    .await
+                    .unwrap_or_else(|| format!("https://{}", server));
+                if Self::validate_homeserver(&http, &candidate).await { Some(candidate) } else { None }
+            };
+
+            match base_url {
+                Some(url) => format!(r#"{{"base_url":"{url}","error":""}}"#),
+                None => {
+                    let msg = format!("Could not reach homeserver at {server}");
+                    format!(r#"{{"base_url":"","error":"{msg}"}}"#)
+                }
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn discover_homeserver(&mut self, _: &str) -> String {
+        r#"{"base_url":"","error":""}"#.to_owned()
+    }
+
+    // -----------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // -----------------------------------------------------------------------
 
