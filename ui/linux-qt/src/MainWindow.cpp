@@ -525,8 +525,10 @@ MainWindow::MainWindow(QWidget* parent)
                 for (const auto& sugg : shortcode_current_suggestions_)
                     if (!sugg.emoticon.url.empty())
                         ensure_media_image_(sugg.emoticon.url, 28, 28);
+                bool was_visible = shortcode_popup_visible_();
                 show_shortcode_popup_(shortcode_current_suggestions_,
                                       roomTextArea_->cursor_rect());
+                if (!was_visible)
                 roomTextArea_->set_on_popup_nav([this](tk::NativeTextArea::NavKey nk) -> bool {
                     if (!shortcode_popup_visible_()) return false;
                     int cur = shortcode_popup_widget_->selected_index();
@@ -558,9 +560,11 @@ MainWindow::MainWindow(QWidget* parent)
                 std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
                 roomTextArea_->replace_range(
                     shortcode_active_match_.start, shortcode_active_match_.end, r);
+                hide_shortcode_popup_();
+                return;
             }
+            // Nothing selected — dismiss popup and send the message
             hide_shortcode_popup_();
-            return;
         }
         onSendClicked();
     });
@@ -1417,6 +1421,8 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
     if (mainApp_) mainApp_->room_view()->notify_image_ready(cache_key);
     if (mainAppSurface_) { mainAppSurface_->relayout(); mainAppSurface_->update(); }
+    if (shortcode_popup_visible_() && shortcode_popup_surface_)
+        shortcode_popup_surface_->update();
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
