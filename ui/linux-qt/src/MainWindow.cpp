@@ -317,6 +317,10 @@ MainWindow::MainWindow(QWidget* parent)
         verifShared_->on_done = [this] {
             if (verifSurface_) verifSurface_->setVisible(false);
         };
+        verifShared_->on_use_recovery_key = [this] {
+            if (verifSurface_) verifSurface_->setVisible(false);
+            maybeShowRecoveryBanner();
+        };
         verifSurface_->set_root(std::move(banner));
     }
     vLayout->addWidget(verifSurface_);
@@ -1629,6 +1633,9 @@ void MainWindow::ensureRowMedia(const tesseract::Event& ev) {
 void MainWindow::maybeShowRecoveryBanner() {
     if (recovery_banner_dismissed_) return;
     if (!client_->needs_recovery()) return;
+    // Verification takes priority — don't show recovery banner while the
+    // verification banner is active. The "Use recovery key" link hands off.
+    if (verifSurface_ && verifSurface_->isVisible()) return;
     if (!recoverySurface_->isVisible()) {
         if (recoveryShared_) {
             recoveryShared_->set_state(
@@ -2237,6 +2244,15 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     if (!verifSurface_->isVisible()) {
         active_verification_flow_id_.clear();
         verifShared_->set_state(tesseract::views::VerificationBanner::State::Prompt);
+        // Verification takes priority — hide recovery banner if it appeared
+        // before the verification state callback arrived (race on first sync).
+        if (recoverySurface_ && recoverySurface_->isVisible() && recoveryShared_) {
+            auto rs = recoveryShared_->state();
+            if (rs == tesseract::views::RecoveryBanner::State::Form
+             || rs == tesseract::views::RecoveryBanner::State::Failed) {
+                recoverySurface_->setVisible(false);
+            }
+        }
         verifSurface_->setVisible(true);
         verifSurface_->relayout();
     }

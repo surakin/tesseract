@@ -201,6 +201,17 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
         if (verif_shared_)
             verif_shared_->set_state(
                 tesseract::views::VerificationBanner::State::Prompt);
+        // Verification takes priority — hide recovery banner if it appeared
+        // before the verification state callback arrived (race on first sync).
+        if (recovery_surface_ && recovery_shared_) {
+            GtkWidget* rw = recovery_surface_->widget();
+            if (gtk_widget_get_visible(rw)) {
+                auto rs = recovery_shared_->state();
+                if (rs == tesseract::views::RecoveryBanner::State::Form
+                 || rs == tesseract::views::RecoveryBanner::State::Failed)
+                    gtk_widget_set_visible(rw, FALSE);
+            }
+        }
         gtk_widget_set_size_request(w, -1, 48);
         gtk_widget_set_visible(w, TRUE);
         verif_surface_->relayout();
@@ -629,6 +640,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         verif_shared_->on_done = [this] {
             if (verif_surface_)
                 gtk_widget_set_visible(verif_surface_->widget(), FALSE);
+        };
+        verif_shared_->on_use_recovery_key = [this] {
+            if (verif_surface_)
+                gtk_widget_set_visible(verif_surface_->widget(), FALSE);
+            maybe_show_recovery_banner();
         };
         verif_surface_->set_root(std::move(banner));
     }
@@ -2163,6 +2179,9 @@ void MainWindow::maybe_show_recovery_banner() {
     if (recovery_banner_dismissed_) return;
     if (!client_->needs_recovery()) return;
     if (!recovery_surface_) return;
+    // Verification takes priority — don't show recovery banner while the
+    // verification banner is active. The "Use recovery key" link hands off.
+    if (verif_surface_ && gtk_widget_get_visible(verif_surface_->widget())) return;
     GtkWidget* w = recovery_surface_->widget();
     if (!gtk_widget_get_visible(w)) {
         if (recovery_shared_) {

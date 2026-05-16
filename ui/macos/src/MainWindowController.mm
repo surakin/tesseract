@@ -1210,6 +1210,14 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
             v.hidden = YES;
             s->_verifHeightCon.constant = 0;
         };
+        _verifShared->on_use_recovery_key = [weakSelf] {
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            NSView* v = (__bridge NSView*)s->_verifSurface->view_handle();
+            v.hidden = YES;
+            s->_verifHeightCon.constant = 0;
+            [s _maybeShowRecoveryBanner];
+        };
         _verifSurface->set_root(std::move(banner));
     }
     NSView* verifView = (__bridge NSView*)_verifSurface->view_handle();
@@ -2172,6 +2180,17 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         if (v.hidden) {
             if (_verifShared) _verifShared->set_state(
                 tesseract::views::VerificationBanner::State::Prompt);
+            // Verification takes priority — hide recovery banner if it appeared
+            // before the verification state callback arrived (race on first sync).
+            if (_recoverySurface && _recoveryShared) {
+                NSView* rv = (__bridge NSView*)_recoverySurface->view_handle();
+                if (!rv.hidden) {
+                    auto rs = _recoveryShared->state();
+                    if (rs == tesseract::views::RecoveryBanner::State::Form
+                     || rs == tesseract::views::RecoveryBanner::State::Failed)
+                        rv.hidden = YES;
+                }
+            }
             v.hidden = NO;
             _verifHeightCon.constant = 48;
             _verifSurface->relayout();
@@ -2307,6 +2326,12 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     if (_shell->recovery_banner_dismissed_)           return;
     if (!_shell->client_ || !_shell->client_->needs_recovery()) return;
     if (!_recoverySurface)                            return;
+    // Verification takes priority — don't show recovery banner while the
+    // verification banner is active. The "Use recovery key" link hands off.
+    if (_verifSurface) {
+        NSView* vv = (__bridge NSView*)_verifSurface->view_handle();
+        if (!vv.hidden) return;
+    }
     NSView* view = (__bridge NSView*)_recoverySurface->view_handle();
     if (view.hidden) {
         if (_recoveryShared) {
