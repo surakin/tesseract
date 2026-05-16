@@ -944,7 +944,7 @@ private:
     // muted text, matching the look the old RoomView strip had.
     void paint_typing_row(tk::PaintCtx& ctx, tk::Rect bounds) const {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
+        st.role      = tk::FontRole::Body;
         st.trim      = tk::TextTrim::Ellipsis;
         st.max_width = std::max(0.0f, bounds.w - kPadX * 2);
         auto lo = ctx.factory.build_text(owner_.typing_text_, st);
@@ -953,7 +953,7 @@ private:
         ctx.canvas.draw_text(*lo,
             { bounds.x + kPadX,
               bounds.y + (kTypingRowH - sz.h) * 0.5f },
-            ctx.theme.palette.text_muted);
+            ctx.theme.palette.text_secondary);
     }
 
     // ── Message row paint helpers ─────────────────────────────────────────────
@@ -2172,7 +2172,15 @@ void MessageListView::append_message(MessageRowData msg) {
 
 void MessageListView::set_typing_text(std::string text) {
     if (text == typing_text_) return;
+    bool was_empty = typing_text_.empty();
     typing_text_ = std::move(text);
+    // Snap to bottom when the indicator first appears so the user sees it
+    // without scrolling, but only when already near the bottom — avoids
+    // hijacking scroll position while browsing paginated history.
+    if (was_empty && !typing_text_.empty()) {
+        if (scroll_y() + bounds().h + kTypingRowH + 1.0f >= content_height())
+            scroll_to_bottom();
+    }
     if (request_repaint_) request_repaint_();
 }
 
