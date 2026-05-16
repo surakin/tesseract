@@ -10,6 +10,7 @@ add_library(tesseract_client STATIC
     src/paths.cpp
     src/emoji.cpp
     src/prefs.cpp
+    src/settings.cpp
 )
 
 target_compile_features(tesseract_client PUBLIC cxx_std_20)

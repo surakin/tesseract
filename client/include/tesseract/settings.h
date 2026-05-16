@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 // Runtime-mutable application settings. Today every field is hardcoded to
 // the historical visual default; a future settings dialog will mutate this
 // singleton in place (on the UI thread). Read sites should always go
@@ -52,6 +54,18 @@ public:
     //   Unmodified → pass clipboard bytes through unchanged.
     enum class ImageQuality { Compressed, Unmodified };
     ImageQuality image_quality = ImageQuality::Compressed;
+
+    // ── Theme preference ─────────────────────────────────────────────
+    // System → follow the OS light/dark setting (default).
+    // Light / Dark → override the OS preference.
+    enum class ThemePreference { Light, Dark, System };
+    ThemePreference theme_pref = ThemePreference::System;
+
+    // Persist / restore {"theme":"light"|"dark"|"system"} in
+    // <config_dir>/app_settings.json.  load_from_disk is a no-op when the
+    // file is missing.  save_to_disk creates the directory if needed.
+    void load_from_disk(const std::filesystem::path& config_dir);
+    void save_to_disk(const std::filesystem::path& config_dir) const;
 
 private:
     Settings() = default;
