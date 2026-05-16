@@ -14,8 +14,8 @@ namespace {
 
 constexpr float kRowH         = tesseract::visual::kRoomRowHeight;     // 62
 constexpr float kAvatarSize   = tesseract::visual::kRoomAvatarSize;    // 36
-constexpr float kPadX         = tesseract::visual::kSpaceMD;           // 12
-constexpr float kPadY         = tesseract::visual::kSpaceSM;           // 8
+constexpr float kPadX         = 6.0f;  // halved from kSpaceMD (12)
+constexpr float kPadY         = 4.0f;  // halved from kSpaceSM (8)
 constexpr float kAvatarGap    = tesseract::visual::kSpaceMD;           // 12
 constexpr float kBadgeMinW    = tesseract::visual::kUnreadBadgeMinWidth;  // 20
 constexpr float kBadgeH       = tesseract::visual::kUnreadBadgeHeight;    // 18

@@ -16,7 +16,7 @@ namespace tesseract::visual {
 // ── Sidebar / room list ─────────────────────────────────────────────────
 inline constexpr int kSidebarWidth         = 260;
 inline constexpr int kRoomAvatarSize       = 36;
-inline constexpr int kRoomRowHeight        = 62;
+inline constexpr int kRoomRowHeight        = 48;
 inline constexpr int kUnreadBadgeMinWidth  = 20;
 inline constexpr int kUnreadBadgeHeight    = 18;
 
