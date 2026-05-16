@@ -7,6 +7,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
+- feat(matrix): `m.notice` renders with muted colour to distinguish bot/automated messages; `m.emote` renders as "* SenderName body" with italic spans — both support `formatted_body`, spoilers, URL cards, links, and reactions
+- feat(ui): BrandView shows the application icon (160×160 PNG generated from `tesseract.svg` at CMake configure time, embedded as a C byte array) instead of initials; falls back to the initials circle if decoding fails
+- fix(room-header): multiline topics show only the first line with "…" appended; tooltip activates even when first-line text fits the available width
 - feat: light/dark/system theme preference — all four shells detect OS appearance and honour a persisted `ThemePreference`; `set_theme()` added to every platform `Surface`; Win32 picks up `WM_SETTINGCHANGE`, macOS `effectiveAppearance`, Qt6 `QPalette::ColorScheme`, GTK4 `GtkSettings::gtk-application-prefer-dark-theme`
 - fix(settings): `create_directories` uses `std::error_code` overload to avoid exceptions; unit tests cover `ThemePreference` round-trip persistence
 - fix(sdk): build room timeline on a worker thread to avoid stack-overflow crash on macOS
