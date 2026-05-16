@@ -2565,6 +2565,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         _roomView->compose_bar()->clear_editing();
     }
     if (_roomView) _roomView->set_typing_text({});
+    if (_roomTextArea) _roomTextArea->set_focused(true);
     for (const auto& r : _shell->rooms_) {
         if (r.id == _shell->current_room_id_) {
             if (_roomView) { _roomView->set_room(r); [self _relayoutChatSurface]; }

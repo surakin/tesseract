@@ -1416,6 +1416,7 @@ void MainWindow::on_room_selected(const std::string& room_id) {
         room_view_->compose_bar()->clear_editing();
     }
     if (room_text_area_) room_text_area_->set_text("");
+    if (room_text_area_) room_text_area_->set_focused(true);
     if (room_view_) room_view_->clear_compose_text();
 
     for (const auto& r : rooms_)

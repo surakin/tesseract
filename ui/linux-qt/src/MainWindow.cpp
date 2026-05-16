@@ -1253,6 +1253,7 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
         roomView_->clear_compose_text();
     }
     if (roomTextArea_) roomTextArea_->set_text("");
+    if (roomTextArea_) roomTextArea_->set_focused(true);
 
     for (const auto& r : rooms_)
         if (r.id == current_room_id_) { if (roomView_) roomView_->set_room(r); break; }
