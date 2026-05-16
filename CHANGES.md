@@ -7,6 +7,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
+- feat(ui): room list redesign — last-message preview per row, regular-weight room name, 1px inter-room separators, halved row padding (kPadX 12→6, kPadY 8→4, kRowH 62→48)
+- feat(sdk): populate last_message_body from latest cached room event via LatestEventValue
+- feat(sdk): add latest_event_body helper (text/image/file/audio/video; local send variants) with 9 unit tests
 - fix(win32): snapshot client_ + guard null hCal in openJumpToDateDialog
 - fix(views): scroll_to_event_id guards empty id; document set_historical_mode repaint contract
 - fix(tk): address toolkit code-review findings

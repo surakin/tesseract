@@ -140,12 +140,12 @@ Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending 
 
 ### Step 5 — UI redesign (in progress)
 
-Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages. Remaining:
+Done: inline images, stickers, reply-to, message editing, voice messages, ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing). Remaining:
 
 - **Emoji reactions** — reaction bar below each message (emoji + count); tap to toggle; `send_reaction` / `redact_reaction` FFI; reactions in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Threaded reply panel** — slide-in sidebar (deferred from reply-to landing).
-- **Sidebar polish** — unread badge, last-message preview, last-activity sort; DM rooms show the other user's avatar.
+- **Sidebar polish** — DM rooms show the other user's avatar.
 - **ComposeBar gaps** — `/` command hints; `NativeTextArea` placeholder on GTK4 + macOS (see Known gaps).
 
 ### Step 8 — MSC2545 phase A: remaining items
