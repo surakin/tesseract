@@ -1020,15 +1020,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_signal_connect(window_, "close-request",
                      G_CALLBACK(&MainWindow::on_window_close_request_), this);
 
-    // Clear urgency hint when the user brings the window to front.
-    g_signal_connect(window_, "notify::is-active", G_CALLBACK(
-        +[](GtkWindow* w, GParamSpec*, gpointer) {
-            if (gtk_window_is_active(w)) {
-                G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-                gtk_window_set_urgency_hint(w, FALSE);
-                G_GNUC_END_IGNORE_DEPRECATIONS
-            }
-        }), nullptr);
+    // NOTE: GTK4 removed gtk_window_set_urgency_hint entirely (it was not
+    // merely deprecated — the symbol does not exist), so a programmatic
+    // "demand attention" request is not available on the GTK4 backend. The
+    // notification path below degrades gracefully: the popup is still
+    // suppressed when the window is visible; there is simply no taskbar
+    // flash. Nothing to clear on focus, so no notify::is-active handler.
 
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
@@ -2273,13 +2270,12 @@ void MainWindow::handle_notification(
                 && accounts_[active_account_index_]->user_id == user_id
                 && current_room_id_ == room_id)
             return;
-        // Window on screen: no popup. Set urgency hint if not focused.
+        // Window on screen: suppress the popup. GTK4 has no
+        // programmatic attention/urgency API (gtk_window_set_urgency_hint
+        // was removed, not just deprecated), so there is no taskbar flash
+        // on this backend — the sidebar unread badge is the only signal.
         if (win_visible) {
-            if (!win_focused) {
-                G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-                gtk_window_set_urgency_hint(GTK_WINDOW(window_), TRUE);
-                G_GNUC_END_IGNORE_DEPRECATIONS
-            }
+            (void)win_focused;
             return;
         }
         // Window minimised / hidden: send system notification.
