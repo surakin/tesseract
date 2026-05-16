@@ -7,7 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
-- fix: hide read marker on new message insert until SDK delivers updated position (suppress_read_marker_ flag)
+- fix: no grouping flicker on new messages — is_cont skips suppressed read marker; suppress_read_marker_ collapses the row until SDK moves it
 - fix: crash in newest_visible_real_event_id when typing row is visible — clamp visible_range() last index to messages_.size()-1
 - fix(qt6): inline hyperlinks now clickable — change Qt::ExactHit → Qt::FuzzyHit in link_at; add on_link_hovered callback + pointing-hand cursor on Qt6 and GTK4
 - feat(ui): room list redesign — last-message preview per row, regular-weight room name, 1px inter-room separators, halved row padding (kPadX 12→6, kPadY 8→4, kRowH 62→48)

@@ -379,7 +379,18 @@ public:
             curr.kind == Kind::ReadMarker   ||
             curr.kind == Kind::TimelineStart) return false;
         if (curr.has_reply()) return false;
-        const auto& prev = owner_.messages_[index - 1];
+        // When the read marker is suppressed (waiting for the SDK to move
+        // it after a new message), skip over it so a message from the same
+        // sender is still treated as a continuation rather than a new group.
+        std::size_t prev_idx = index - 1;
+        if (owner_.suppress_read_marker_) {
+            while (prev_idx > 0 &&
+                   owner_.messages_[prev_idx].kind == Kind::ReadMarker)
+                --prev_idx;
+            if (owner_.messages_[prev_idx].kind == Kind::ReadMarker)
+                return false;
+        }
+        const auto& prev = owner_.messages_[prev_idx];
         if (prev.kind == Kind::DaySeparator ||
             prev.kind == Kind::ReadMarker   ||
             prev.kind == Kind::TimelineStart) return false;
