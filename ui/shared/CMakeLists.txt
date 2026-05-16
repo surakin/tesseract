@@ -70,6 +70,8 @@ set(_tk_sources
     views/ImageViewerOverlay.cpp
     views/VideoViewerOverlay.h
     views/VideoViewerOverlay.cpp
+    views/ShortcodeEngine.h
+    views/ShortcodeEngine.cpp
     views/JoinRoomView.h
     views/JoinRoomView.cpp
     views/MainAppWidget.h

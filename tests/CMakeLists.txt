@@ -31,6 +31,8 @@ add_executable(tesseract_tests
     cpp/test_tk_account_picker.cpp
     cpp/test_tk_login_view.cpp
     cpp/test_tk_sticker_picker.cpp
+    cpp/test_shortcode_engine.cpp
+    cpp/test_tk_shortcode_popup.cpp
     cpp/test_tk_image_viewer.cpp
     cpp/test_tk_video_viewer.cpp
     cpp/test_tk_reply.cpp
