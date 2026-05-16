@@ -1,8 +1,8 @@
 #include "tk/media_disk_cache.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
-#include <format>
 #include <system_error>
 
 namespace tk {
@@ -21,7 +21,9 @@ MediaDiskCache::MediaDiskCache(fs::path dir) : dir_(std::move(dir)) {
 }
 
 fs::path MediaDiskCache::path_for(const std::string& key) const {
-    return dir_ / std::format("{:016x}", fnv1a64(key));
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(fnv1a64(key)));
+    return dir_ / buf;
 }
 
 std::vector<uint8_t> MediaDiskCache::load(const std::string& key) const {

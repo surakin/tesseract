@@ -91,7 +91,22 @@
       "Skill(superpowers:writing-plans:*)",
       "Skill(superpowers:subagent-driven-development)",
       "Skill(superpowers:subagent-driven-development:*)",
-      "Bash(git -C /home/rayden/src/tesseract diff sdk/src/client.rs)"
+      "Bash(git -C /home/rayden/src/tesseract diff sdk/src/client.rs)",
+      "Bash(filterdiff --include='*/host.h' --include='*/host_macos.mm' --include='*/Cargo.toml' /tmp/wip.patch)",
+      "Bash(git apply *)",
+      "Read(//private/tmp/**)",
+      "Bash(grep -v \".mm$\")",
+      "Bash(xcode-select -p)",
+      "Bash(clang --version)",
+      "Bash(xcrun --show-sdk-path)",
+      "Bash(find /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src -name \"*.rs\" | xargs grep -l \"struct Chunk\")",
+      "Bash(find /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0 -name \"CHANGELOG*\" -o -name \"CHANGES*\" -o -name \"NEWS*\" | head -5)",
+      "Bash(grep -n \"impl.*From\\\\|impl.*Into\" /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-sized-chunks-0.1.3/src/inline_array/mod.rs | head -30)",
+      "Bash(grep -rn \"impl From<InlineArray\" ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-sized-chunks-0.1.3/)",
+      "Bash(awk '/unsafe/,/^[[:space:]]*}/' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)",
+      "Bash(ls -d ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-* 2>/dev/null | sort -V)",
+      "Bash(awk '/^[[:space:]]*unsafe[[:space:]]*\\\\{/,/^[[:space:]]*\\\\}/' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)",
+      "Bash(awk 'NR>=2036 && NR<=2040' /Users/rayden/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/imbl-6.1.0/src/vector/mod.rs)"
     ]
   }
 }

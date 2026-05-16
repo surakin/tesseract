@@ -176,6 +176,7 @@ public:
     using ShellBase::clear_focused_state_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
+    using ShellBase::apply_current_theme_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible) {
