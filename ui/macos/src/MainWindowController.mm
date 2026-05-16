@@ -8,6 +8,7 @@
 #include <tesseract/event_handler.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
+#include <tesseract/paths.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
@@ -120,6 +121,9 @@ protected:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
                                 const tesseract::Client::UrlPreview& preview) override;
+
+    tk::ThemeMode os_color_scheme_() const override;
+    void apply_theme_ui_(const tk::Theme& t) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -277,6 +281,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_startAnimTickIfNeeded;
 - (void)_animTick:(NSTimer*)timer;
 - (void)_ensureStickerImageAsync:(std::string)url;
+- (void)_applyTheme:(const tk::Theme&)t;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
 @end
@@ -543,6 +548,15 @@ void MacShell::on_url_preview_ready_(const std::string& url,
     if (ctrl_) [ctrl_ _relayoutChatSurface];
 }
 
+tk::ThemeMode MacShell::os_color_scheme_() const {
+    NSAppearanceName name = NSApp.effectiveAppearance.name;
+    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MacShell::apply_theme_ui_(const tk::Theme& t) {
+    if (ctrl_) [ctrl_ _applyTheme:t];
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -652,6 +666,17 @@ void MacShell::on_url_preview_ready_(const std::string& url,
     _accountPickerShared = nullptr;
     window.delegate = self;
     [self _buildChrome];
+
+    // Load saved theme preference and apply it to all surfaces.
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    _shell->apply_current_theme_();
+
+    // Re-apply when the OS switches light/dark (only in System mode).
+    [NSApp addObserver:self
+            forKeyPath:@"effectiveAppearance"
+               options:NSKeyValueObservingOptionNew
+               context:nil];
+
     return self;
 }
 
@@ -1404,11 +1429,39 @@ void MacShell::on_url_preview_ready_(const std::string& url,
 }
 
 - (void)dealloc {
+    [NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
     [self stopSync];
     if (_escapeMonitor) {
         [NSEvent removeMonitor:_escapeMonitor];
         _escapeMonitor = nil;
     }
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary*)change
+                       context:(void*)context {
+    if ([keyPath isEqualToString:@"effectiveAppearance"] && object == NSApp) {
+        if (_shell && tesseract::Settings::instance().theme_pref ==
+                          tesseract::Settings::ThemePreference::System)
+            _shell->apply_current_theme_();
+    } else {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    }
+}
+
+- (void)_applyTheme:(const tk::Theme&)t {
+    if (_roomSurface)          _roomSurface->set_theme(t);
+    if (_chatSurface)          _chatSurface->set_theme(t);
+    if (_recoverySurface)      _recoverySurface->set_theme(t);
+    if (_verifSurface)         _verifSurface->set_theme(t);
+    if (_imgViewerSurface)     _imgViewerSurface->set_theme(t);
+    if (_vidViewerSurface)     _vidViewerSurface->set_theme(t);
+    if (_accountPickerSurface) _accountPickerSurface->set_theme(t);
+
+    NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
+        ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+    NSApp.appearance = [NSAppearance appearanceNamed:name];
 }
 
 - (void)stopSync {
