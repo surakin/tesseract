@@ -1057,6 +1057,12 @@ MainWindow::~MainWindow() {
         g_source_remove(scroll_debounce_id_);
         scroll_debounce_id_ = 0;
     }
+    // GTK4 top-level windows hold their own reference and must be destroyed
+    // explicitly; they are not freed when their transient parent is destroyed.
+    if (join_room_dialog_window_) {
+        gtk_window_destroy(GTK_WINDOW(join_room_dialog_window_));
+        join_room_dialog_window_ = nullptr;
+    }
     // Drain background workers BEFORE tearing the client down. Each
     // worker calls `client_->fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
@@ -2944,10 +2950,12 @@ void MainWindow::build_join_room_dialog() {
             join_room_shared_->set_state(
                 tesseract::views::JoinRoomView::State::Loading);
             if (join_room_surface_) join_room_surface_->relayout();
-            run_async_([this, alias] {
-                tesseract::RoomSummary s = client_->get_room_summary(alias);
-                post_to_ui_([this, s = std::move(s)] {
-                    if (!join_room_shared_) return;
+            uint32_t gen = join_room_gen_;
+            auto snap = client_;
+            run_async_([this, alias, gen, snap] {
+                tesseract::RoomSummary s = snap->get_room_summary(alias);
+                post_to_ui_([this, s = std::move(s), gen] {
+                    if (!join_room_shared_ || join_room_gen_ != gen) return;
                     if (s.ok())
                         join_room_shared_->set_preview(s);
                     else
@@ -2963,15 +2971,16 @@ void MainWindow::build_join_room_dialog() {
             join_room_shared_->set_state(
                 tesseract::views::JoinRoomView::State::Joining);
             if (join_room_surface_) join_room_surface_->relayout();
-            run_async_([this, room_id_or_alias] {
-                bool ok = client_->join_room(room_id_or_alias);
-                std::string rid = ok ? room_id_or_alias : "";
-                post_to_ui_([this, ok, rid] {
-                    if (!join_room_shared_) return;
-                    if (ok) {
+            uint32_t gen = join_room_gen_;
+            auto snap = client_;
+            run_async_([this, room_id_or_alias, gen, snap] {
+                std::string canonical_id = snap->join_room(room_id_or_alias);
+                post_to_ui_([this, canonical_id, gen] {
+                    if (!join_room_shared_ || join_room_gen_ != gen) return;
+                    if (!canonical_id.empty()) {
                         if (join_room_dialog_window_)
                             gtk_widget_set_visible(join_room_dialog_window_, FALSE);
-                        navigate_to_room(rid);
+                        navigate_to_room(canonical_id);
                     } else {
                         join_room_shared_->set_error(_("Join failed."));
                         if (join_room_surface_) join_room_surface_->relayout();
@@ -3008,6 +3017,8 @@ void MainWindow::build_join_room_dialog() {
 
 void MainWindow::open_join_room_dialog() {
     if (!join_room_dialog_window_) return;
+
+    ++join_room_gen_;  // invalidate any in-flight lookup/join callbacks
 
     if (join_room_shared_) {
         join_room_shared_->set_state(tesseract::views::JoinRoomView::State::Idle);

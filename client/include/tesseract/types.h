@@ -200,9 +200,10 @@ struct RoomSummary {
     std::string membership;
 
     bool ok()     const { return !room_id.empty(); }
-    bool is_join_open() const { return join_rule == "public" || join_rule == "knock"
-                                    || join_rule == "restricted"
-                                    || join_rule == "knock_restricted"; }
+    /// True only for rules that allow joining without prior membership in
+    /// another room. "restricted" / "knock_restricted" require belonging to
+    /// a specific room and are therefore not freely open.
+    bool is_join_open() const { return join_rule == "public" || join_rule == "knock"; }
 };
 
 /// Server-side key-backup state. Mirrors the encoding of the `u8`-typed

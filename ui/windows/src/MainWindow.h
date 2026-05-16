@@ -320,6 +320,7 @@ private:
     std::unique_ptr<tk::win32::Surface>     join_room_surface_;
     tesseract::views::JoinRoomView*          join_room_shared_ = nullptr;       // borrowed
     std::unique_ptr<tk::NativeTextField>    join_room_alias_field_;
+    uint32_t  join_room_gen_ = 0;           // incremented on each open; guards stale callbacks
 
     // Full-window image/sticker lightbox overlay (WS_CHILD of hwnd_).
     std::unique_ptr<tk::win32::Surface>      img_viewer_surface_;

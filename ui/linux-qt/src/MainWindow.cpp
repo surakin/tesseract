@@ -1974,8 +1974,9 @@ void MainWindow::switchActiveAccount(int new_idx) {
     pending_restore_room_ = s.last_room;
 
     populateUserStrip();
-    if (emojiPicker_)   emojiPicker_->setClient(client_);
-    if (stickerPicker_) stickerPicker_->setClient(client_);
+    if (emojiPicker_)    emojiPicker_->setClient(client_);
+    if (stickerPicker_)  stickerPicker_->setClient(client_);
+    if (joinRoomDialog_) joinRoomDialog_->setClient(client_);
 
     // Use this account's last-known rooms snapshot if we have one
     // cached; otherwise wait for the next on_rooms_updated callback to

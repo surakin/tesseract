@@ -372,8 +372,10 @@ public:
     RoomSummary get_room_summary(const std::string& room_id_or_alias);
 
     /// Join a room by its ID or alias.
-    /// Returns true on success; blocks the calling thread.
-    bool join_room(const std::string& room_id_or_alias);
+    /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
+    /// empty string on failure. Blocks the calling thread — invoke only from
+    /// a worker thread.
+    std::string join_room(const std::string& room_id_or_alias);
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)

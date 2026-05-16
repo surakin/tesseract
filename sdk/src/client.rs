@@ -2473,28 +2473,33 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn join_room(&mut self, room_id_or_alias: &str) -> bool {
+    pub fn join_room(&mut self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else { return false };
-        if room_id_or_alias.is_empty() { return false; }
+        let Some(client) = self.client.clone() else { return String::new() };
+        if room_id_or_alias.is_empty() { return String::new(); }
 
         let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
             Ok(id) => id,
-            Err(_) => return false,
+            Err(_) => return String::new(),
         };
         let stop_rx = self.stop_rx.clone();
         self.rt.block_on(async move {
             tokio::select! {
-                result = client.join_room_by_id_or_alias(&id, &[]) => result.is_ok(),
-                _ = stop_fut(stop_rx) => false,
+                result = client.join_room_by_id_or_alias(&id, &[]) => {
+                    match result {
+                        Ok(room) => room.room_id().to_string(),
+                        Err(_)   => String::new(),
+                    }
+                }
+                _ = stop_fut(stop_rx) => String::new(),
             }
         })
     }
 
     #[cfg(test)]
-    pub fn join_room(&mut self, _room_id_or_alias: &str) -> bool {
-        false
+    pub fn join_room(&mut self, _room_id_or_alias: &str) -> String {
+        String::new()
     }
 
     // -----------------------------------------------------------------------

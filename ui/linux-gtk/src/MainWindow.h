@@ -248,6 +248,7 @@ private:
     std::unique_ptr<tk::gtk4::Surface>      join_room_surface_;
     tesseract::views::JoinRoomView*         join_room_shared_ = nullptr;
     std::unique_ptr<tk::NativeTextField>    join_room_alias_field_;
+    uint32_t        join_room_gen_ = 0;  // guards stale async callbacks
 
     GtkWidget*      sticker_ctx_menu_     = nullptr;
     GSimpleActionGroup* sticker_ctx_actions_ = nullptr;

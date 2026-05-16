@@ -30,12 +30,12 @@ constexpr float kBorderW    = 1.0f;
 
 // Pill colours for join rules
 tk::Color join_rule_bg(const std::string& rule) {
-    if (rule == "public" || rule == "knock" ||
-        rule == "restricted" || rule == "knock_restricted")
-        return tk::Color::rgba(0x2e, 0x7d, 0x32, 0xff);  // green
-    if (rule == "invite" || rule == "private")
-        return tk::Color::rgba(0xe6, 0x5c, 0x00, 0xff);  // amber
-    return tk::Color::rgba(0x60, 0x60, 0x60, 0xff);      // gray
+    if (rule == "public" || rule == "knock")
+        return tk::Color::rgba(0x2e, 0x7d, 0x32, 0xff);  // green — freely joinable
+    if (rule == "restricted" || rule == "knock_restricted"
+        || rule == "invite"  || rule == "private")
+        return tk::Color::rgba(0xe6, 0x5c, 0x00, 0xff);  // amber — restricted
+    return tk::Color::rgba(0x60, 0x60, 0x60, 0xff);      // gray — unknown
 }
 
 std::string join_rule_label(const std::string& rule) {
@@ -86,7 +86,8 @@ JoinRoomView::JoinRoomView() {
 
 void JoinRoomView::set_state(State s) {
     state_ = s;
-    if (s != State::Error) error_msg_.clear();
+    if (s != State::Error)   error_msg_.clear();
+    if (s != State::Preview) preview_ = {};
     apply_state();
 }
 
@@ -123,12 +124,16 @@ void JoinRoomView::apply_state() {
 
     if (status_lbl_) {
         status_lbl_->set_visible(show_status);
-        if (state_ == State::Loading)
+        if (state_ == State::Loading) {
             status_lbl_->set_text("Looking up room…");
-        else if (state_ == State::Error)
+            status_lbl_->set_colour({});  // reset to default
+        } else if (state_ == State::Error) {
             status_lbl_->set_text(error_msg_.empty() ? "Room not found." : error_msg_);
-        else
+            status_lbl_->set_colour(tk::Color::rgb(0xCC2200));
+        } else {
             status_lbl_->set_text("");
+            status_lbl_->set_colour({});
+        }
     }
 
     if (lookup_btn_)
@@ -229,11 +234,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx) {
 
     // Status label.
     if (status_lbl_ && status_lbl_->visible()) {
-        tk::Color text_col = (state_ == State::Error)
-            ? tk::Color::rgb(0xCC2200)
-            : pal.text_secondary;
         status_lbl_->paint(ctx);
-        (void)text_col;  // colour is set on the Label widget via apply_state
         y += kStatusH + kSmallGap;
     }
 

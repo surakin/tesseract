@@ -6,6 +6,7 @@
 #include <tesseract/types.h>
 
 #include <QHBoxLayout>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QRunnable>
 #include <QShowEvent>
@@ -35,26 +36,27 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
         surface_->relayout();
 
         struct LookupTask : public QRunnable {
-            JoinRoomDialog*  dialog;
-            tesseract::Client* client;
-            std::string        alias;
+            QPointer<JoinRoomDialog> guard;
+            tesseract::Client*       client;
+            std::string              alias;
+            uint32_t                 gen;
             void run() override {
                 tesseract::RoomSummary s = client->get_room_summary(alias);
-                // Post back to UI thread via queued invocation.
-                QMetaObject::invokeMethod(dialog, [d = dialog, s = std::move(s)] {
-                    if (!d->shared_) return;
+                QMetaObject::invokeMethod(guard, [g = guard, s = std::move(s), gen = gen] {
+                    if (!g || g->gen_ != gen) return;
                     if (s.ok())
-                        d->shared_->set_preview(s);
+                        g->shared_->set_preview(s);
                     else
-                        d->shared_->set_error("Room not found.");
-                    d->surface_->relayout();
+                        g->shared_->set_error("Room not found.");
+                    g->surface_->relayout();
                 }, Qt::QueuedConnection);
             }
         };
         auto* task    = new LookupTask;
-        task->dialog  = this;
+        task->guard   = this;
         task->client  = client_;
         task->alias   = alias;
+        task->gen     = gen_;
         task->setAutoDelete(true);
         QThreadPool::globalInstance()->start(task);
     };
@@ -65,28 +67,29 @@ JoinRoomDialog::JoinRoomDialog(QWidget* parent)
         surface_->relayout();
 
         struct JoinTask : public QRunnable {
-            JoinRoomDialog*  dialog;
-            tesseract::Client* client;
-            std::string        id;
+            QPointer<JoinRoomDialog> guard;
+            tesseract::Client*       client;
+            std::string              id;
+            uint32_t                 gen;
             void run() override {
-                bool ok = client->join_room(id);
-                std::string joined_id = ok ? id : "";
-                QMetaObject::invokeMethod(dialog, [d = dialog, ok, joined_id] {
-                    if (!d->shared_) return;
-                    if (ok) {
-                        d->hide();
-                        if (d->onJoined) d->onJoined(joined_id);
+                std::string canonical_id = client->join_room(id);
+                QMetaObject::invokeMethod(guard, [g = guard, canonical_id, gen = gen] {
+                    if (!g || g->gen_ != gen) return;
+                    if (!canonical_id.empty()) {
+                        g->hide();
+                        if (g->onJoined) g->onJoined(canonical_id);
                     } else {
-                        d->shared_->set_error("Join failed.");
-                        d->surface_->relayout();
+                        g->shared_->set_error("Join failed.");
+                        g->surface_->relayout();
                     }
                 }, Qt::QueuedConnection);
             }
         };
         auto* task    = new JoinTask;
-        task->dialog  = this;
+        task->guard   = this;
         task->client  = client_;
         task->id      = room_id_or_alias;
+        task->gen     = gen_;
         task->setAutoDelete(true);
         QThreadPool::globalInstance()->start(task);
     };
@@ -114,6 +117,7 @@ void JoinRoomDialog::setAvatarProvider(
 }
 
 void JoinRoomDialog::openDialog() {
+    ++gen_;  // invalidate any in-flight lookup/join callbacks
     if (shared_) {
         shared_->set_state(tesseract::views::JoinRoomView::State::Idle);
         shared_->set_alias_text("");

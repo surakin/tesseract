@@ -774,27 +774,32 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     }
     case WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE: {
         // lParam owns a heap-allocated RoomSummary (or empty room_id = error).
+        // wParam carries the generation counter; discard stale callbacks.
         auto* s = reinterpret_cast<tesseract::RoomSummary*>(lParam);
-        if (self->join_room_shared_) {
+        if (static_cast<uint32_t>(wParam) == self->join_room_gen_
+                && self->join_room_shared_) {
             if (s->ok())
                 self->join_room_shared_->set_preview(*s);
             else
                 self->join_room_shared_->set_error("Room not found.");
+            if (self->join_room_surface_) self->join_room_surface_->relayout();
         }
-        if (self->join_room_surface_) self->join_room_surface_->relayout();
         delete s;
         return 0;
     }
     case WM_TESSERACT_JOIN_ROOM_DONE: {
-        // wParam = 1 on success. lParam owns a heap-allocated room_id string.
+        // lParam owns a heap-allocated canonical room ID (empty = failure).
+        // wParam carries the generation counter; discard stale callbacks.
         auto* room_id = reinterpret_cast<std::string*>(lParam);
-        bool ok = (wParam == 1);
-        if (ok && self->join_room_shared_) {
-            if (self->hJoinRoom_) ShowWindow(self->hJoinRoom_, SW_HIDE);
-            if (!room_id->empty()) self->navigate_to_room(*room_id);
-        } else if (!ok && self->join_room_shared_) {
-            self->join_room_shared_->set_error("Join failed.");
-            if (self->join_room_surface_) self->join_room_surface_->relayout();
+        if (static_cast<uint32_t>(wParam) == self->join_room_gen_
+                && self->join_room_shared_) {
+            if (!room_id->empty()) {
+                if (self->hJoinRoom_) ShowWindow(self->hJoinRoom_, SW_HIDE);
+                self->navigate_to_room(*room_id);
+            } else {
+                self->join_room_shared_->set_error("Join failed.");
+                if (self->join_room_surface_) self->join_room_surface_->relayout();
+            }
         }
         delete room_id;
         return 0;
@@ -3302,7 +3307,7 @@ void MainWindow::ensure_join_room_created() {
 
     hJoinRoom_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-        kJoinRoomClass, L"Join a Room",
+        kJoinRoomClass, L"",
         WS_POPUP | WS_BORDER,
         0, 0, kJoinRoomPickW, kJoinRoomPickH,
         hwnd_, nullptr, hInst_, nullptr);
@@ -3328,11 +3333,12 @@ void MainWindow::ensure_join_room_created() {
                     tesseract::views::JoinRoomView::State::Loading);
             if (join_room_surface_) join_room_surface_->relayout();
             HWND target = hwnd_;
-            run_async_([this, alias, target] {
-                auto* s = new tesseract::RoomSummary(
-                    client_->get_room_summary(alias));
-                PostMessageW(target, WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE,
-                             0, reinterpret_cast<LPARAM>(s));
+            uint32_t gen = join_room_gen_;
+            run_async_([this, alias, target, gen, snap = client_] {
+                auto* s = new tesseract::RoomSummary(snap->get_room_summary(alias));
+                if (!PostMessageW(target, WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE,
+                                  static_cast<WPARAM>(gen), reinterpret_cast<LPARAM>(s)))
+                    delete s;
             });
         };
 
@@ -3344,11 +3350,12 @@ void MainWindow::ensure_join_room_created() {
                     tesseract::views::JoinRoomView::State::Joining);
             if (join_room_surface_) join_room_surface_->relayout();
             HWND target = hwnd_;
-            run_async_([this, room_id_or_alias, target] {
-                bool ok = client_->join_room(room_id_or_alias);
-                auto* rid = new std::string(ok ? room_id_or_alias : "");
-                PostMessageW(target, WM_TESSERACT_JOIN_ROOM_DONE,
-                             ok ? 1 : 0, reinterpret_cast<LPARAM>(rid));
+            uint32_t gen = join_room_gen_;
+            run_async_([this, room_id_or_alias, target, gen, snap = client_] {
+                auto* rid = new std::string(snap->join_room(room_id_or_alias));
+                if (!PostMessageW(target, WM_TESSERACT_JOIN_ROOM_DONE,
+                                  static_cast<WPARAM>(gen), reinterpret_cast<LPARAM>(rid)))
+                    delete rid;
             });
         };
 
@@ -3388,6 +3395,9 @@ void MainWindow::open_join_room_dialog() {
         return;
     }
 
+    // Bump generation to invalidate any in-flight lookup/join callbacks.
+    ++join_room_gen_;
+
     // Reset to Idle state.
     if (join_room_shared_)
         join_room_shared_->set_state(tesseract::views::JoinRoomView::State::Idle);
@@ -3400,10 +3410,9 @@ void MainWindow::open_join_room_dialog() {
     int cx = (rc.left + rc.right)  / 2 - kJoinRoomPickW / 2;
     int cy = (rc.top  + rc.bottom) / 2 - kJoinRoomPickH / 2;
     SetWindowPos(hJoinRoom_, HWND_TOPMOST,
-                 cx, cy, kJoinRoomPickW, kJoinRoomPickH,
-                 SWP_NOACTIVATE);
+                 cx, cy, kJoinRoomPickW, kJoinRoomPickH, 0);
 
-    ShowWindow(hJoinRoom_, SW_SHOWNOACTIVATE);
+    ShowWindow(hJoinRoom_, SW_SHOW);
     if (join_room_surface_) join_room_surface_->relayout();
     if (join_room_alias_field_) join_room_alias_field_->set_focused(true);
 }

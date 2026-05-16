@@ -332,6 +332,31 @@ std::string json_string_field(std::string_view json, std::string_view key) {
                 case 'n':  out += '\n'; break;
                 case 'r':  out += '\r'; break;
                 case 't':  out += '\t'; break;
+                case 'u': {
+                    // Decode \uXXXX and re-encode as UTF-8.
+                    if (pos + 4 < json.size()) {
+                        unsigned code = 0;
+                        for (int i = 0; i < 4; ++i) {
+                            ++pos;
+                            char h = json[pos];
+                            code <<= 4;
+                            if      (h >= '0' && h <= '9') code |= static_cast<unsigned>(h - '0');
+                            else if (h >= 'a' && h <= 'f') code |= static_cast<unsigned>(h - 'a' + 10);
+                            else if (h >= 'A' && h <= 'F') code |= static_cast<unsigned>(h - 'A' + 10);
+                        }
+                        if (code < 0x80) {
+                            out += static_cast<char>(code);
+                        } else if (code < 0x800) {
+                            out += static_cast<char>(0xC0 | (code >> 6));
+                            out += static_cast<char>(0x80 | (code & 0x3F));
+                        } else {
+                            out += static_cast<char>(0xE0 | (code >> 12));
+                            out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+                            out += static_cast<char>(0x80 | (code & 0x3F));
+                        }
+                    }
+                    break;
+                }
                 default:   out += json[pos]; break;
             }
         } else {
@@ -341,7 +366,7 @@ std::string json_string_field(std::string_view json, std::string_view key) {
     return out;
 }
 
-int json_int_field(std::string_view json, std::string_view key) {
+uint32_t json_int_field(std::string_view json, std::string_view key) {
     std::string needle = "\"";
     needle += key;
     needle += "\"";
@@ -349,9 +374,9 @@ int json_int_field(std::string_view json, std::string_view key) {
     if (pos == std::string_view::npos) return 0;
     pos += needle.size();
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
-    int v = 0;
+    uint32_t v = 0;
     while (pos < json.size() && std::isdigit(static_cast<unsigned char>(json[pos])))
-        v = v * 10 + (json[pos++] - '0');
+        v = v * 10 + static_cast<uint32_t>(json[pos++] - '0');
     return v;
 }
 
@@ -381,7 +406,7 @@ RoomSummary Client::get_room_summary(const std::string& room_id_or_alias) {
     s.name               = json_string_field(json, "name");
     s.topic              = json_string_field(json, "topic");
     s.avatar_url         = json_string_field(json, "avatar_url");
-    s.num_joined_members = static_cast<uint32_t>(json_int_field(json, "num_joined_members"));
+    s.num_joined_members = json_int_field(json, "num_joined_members");
     s.join_rule          = json_string_field(json, "join_rule");
     s.world_readable     = json_bool_field(json, "world_readable");
     s.guest_can_join     = json_bool_field(json, "guest_can_join");
@@ -391,8 +416,8 @@ RoomSummary Client::get_room_summary(const std::string& room_id_or_alias) {
     return s;
 }
 
-bool Client::join_room(const std::string& room_id_or_alias) {
-    return impl_->ffi->join_room(room_id_or_alias);
+std::string Client::join_room(const std::string& room_id_or_alias) {
+    return std::string(impl_->ffi->join_room(room_id_or_alias));
 }
 
 Client::UrlPreview Client::get_url_preview(const std::string& url) {

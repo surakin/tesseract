@@ -761,9 +761,10 @@ pub mod ffi {
         /// empty string on error. Blocks the calling thread.
         fn get_room_summary(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
 
-        /// Join a room by its ID or alias. Returns true on success.
+        /// Join a room by its ID or alias. Returns the canonical room ID
+        /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.
-        fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> bool;
+        fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
 
         // ----- Spaces -----
 

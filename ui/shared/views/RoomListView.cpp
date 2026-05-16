@@ -377,7 +377,7 @@ std::vector<std::string> RoomListView::visible_room_ids() const {
     auto [first, last] = list_->visible_range();
     if (last < first) return {};
     std::vector<std::string> ids;
-    for (int i = first; i <= last; ++i) {
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size(); ++i) {
         const auto& item = items_[static_cast<std::size_t>(i)];
         if (item.kind == Item::Kind::Room) {
             const auto& rooms = section_rooms_[item.section];
@@ -434,7 +434,6 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
     if (!list_) return;
 
-    list_->arrange(ctx, bounds);
     bool wants_search = true;
     search_field_visible_ = wants_search;
 
@@ -515,6 +514,9 @@ void RoomListView::paint(tk::PaintCtx& ctx) {
 
         // Join room "+" button — always in the far right of the header.
         if (!join_room_rect_.empty()) {
+            if (press_join_room_)
+                ctx.canvas.fill_rounded_rect(join_room_rect_, 4.0f,
+                                             ctx.theme.palette.sidebar_hover);
             tk::TextStyle xs{};
             xs.role = tk::FontRole::UiSemibold;
             auto plus_lo = ctx.factory.build_text(std::string("+"), xs);
