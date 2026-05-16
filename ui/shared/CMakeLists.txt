@@ -32,6 +32,8 @@ set(_tk_sources
     tk/list_view.cpp
     tk/blurhash.h
     tk/blurhash.cpp
+    tk/media_disk_cache.h
+    tk/media_disk_cache.cpp
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h

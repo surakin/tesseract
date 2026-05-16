@@ -8,6 +8,7 @@
 #include <tesseract/visual.h>
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
+#include "tk/media_disk_cache.h"
 #include "tk/theme.h"
 
 #include <atomic>
@@ -74,7 +75,9 @@ protected:
     // ── Image caches ──────────────────────────────────────────────────────────
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
-    tk::AnimImageCache anim_cache_;
+    tk::AnimImageCache    anim_cache_;
+    tk::MediaDiskCache    media_disk_cache_{tesseract::cache_dir() / "media"};
+    bool                  media_disk_cache_pruned_ = false;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;

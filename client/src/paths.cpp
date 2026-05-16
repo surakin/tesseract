@@ -48,4 +48,30 @@ fs::path config_dir() {
 #endif
 }
 
+fs::path cache_dir() {
+#if defined(_WIN32)
+    if (const char* local = std::getenv("LOCALAPPDATA"); local && *local) {
+        return fs::path(local) / "Tesseract";
+    }
+    wchar_t buf[MAX_PATH] = {};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, buf))) {
+        return fs::path(buf) / L"Tesseract";
+    }
+    return fs::temp_directory_path() / "Tesseract";
+#elif defined(__APPLE__)
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return fs::path(home) / "Library" / "Caches" / "Tesseract";
+    }
+    return fs::temp_directory_path() / "Tesseract";
+#else
+    if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg) {
+        return fs::path(xdg) / "tesseract";
+    }
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        return fs::path(home) / ".cache" / "tesseract";
+    }
+    return fs::temp_directory_path() / "tesseract";
+#endif
+}
+
 } // namespace tesseract

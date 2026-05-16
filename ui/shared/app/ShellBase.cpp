@@ -31,7 +31,11 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r) {
     const std::string room_id = r.id;
     const std::string mxc     = r.avatar_url;
     run_async_([this, room_id, mxc]() {
-        auto bytes = client_->fetch_avatar_bytes(room_id);
+        auto bytes = media_disk_cache_.load(mxc);
+        if (bytes.empty()) {
+            bytes = client_->fetch_avatar_bytes(room_id);
+            if (!bytes.empty()) media_disk_cache_.store(mxc, bytes);
+        }
         post_to_ui_([this, mxc, bytes = std::move(bytes)]() mutable {
             media_fetches_in_flight_.erase(mxc);
             on_media_bytes_ready_(mxc, MediaKind::RoomAvatar, std::move(bytes));
@@ -43,7 +47,11 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc) {
     if (mxc.empty() || tk_avatars_.count(mxc)) return;
     if (!media_fetches_in_flight_.insert(mxc).second) return;
     run_async_([this, mxc]() {
-        auto bytes = client_->fetch_media_bytes(mxc);
+        auto bytes = media_disk_cache_.load(mxc);
+        if (bytes.empty()) {
+            bytes = client_->fetch_media_bytes(mxc);
+            if (!bytes.empty()) media_disk_cache_.store(mxc, bytes);
+        }
         post_to_ui_([this, mxc, bytes = std::move(bytes)]() mutable {
             media_fetches_in_flight_.erase(mxc);
             on_media_bytes_ready_(mxc, MediaKind::UserAvatar, std::move(bytes));
@@ -56,7 +64,11 @@ void ShellBase::ensure_media_image_(const std::string& url,
     if (url.empty() || tk_images_.count(url) || anim_cache_.has(url)) return;
     if (!media_fetches_in_flight_.insert(url).second) return;
     run_async_([this, url]() {
-        auto bytes = client_->fetch_source_bytes(url);
+        auto bytes = media_disk_cache_.load(url);
+        if (bytes.empty()) {
+            bytes = client_->fetch_source_bytes(url);
+            if (!bytes.empty()) media_disk_cache_.store(url, bytes);
+        }
         post_to_ui_([this, url, bytes = std::move(bytes)]() mutable {
             media_fetches_in_flight_.erase(url);
             on_media_bytes_ready_(url, MediaKind::MediaImage, std::move(bytes));
@@ -101,6 +113,10 @@ void ShellBase::ensure_blurhash_image_(const std::string& event_id,
 }
 
 void ShellBase::ensure_row_media_(const Event& ev) {
+    if (!media_disk_cache_pruned_) {
+        media_disk_cache_pruned_ = true;
+        run_async_([this]() { media_disk_cache_.prune(); });
+    }
     ensure_user_avatar_(ev.sender_avatar_url);
     for (const auto& rr : ev.read_receipts)
         ensure_user_avatar_(rr.avatar_url);
