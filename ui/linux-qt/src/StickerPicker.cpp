@@ -241,7 +241,10 @@ void StickerPicker::popupAt(QWidget* anchor) {
     shared_->set_search_query("");
 
     QPoint anchorGlobal = anchor->mapToGlobal(QPoint(0, 0));
-    QRect  screen       = QApplication::primaryScreen()->availableGeometry();
+    QScreen* scr = QApplication::screenAt(anchorGlobal);
+    if (!scr) scr = anchor->screen();
+    if (!scr) scr = QApplication::primaryScreen();
+    QRect screen = scr->availableGeometry();
     int x = anchorGlobal.x() + anchor->width() - width();
     int y = anchorGlobal.y() - height() - 4;
     if (x < screen.left())            x = screen.left() + 4;
@@ -262,7 +265,10 @@ void StickerPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect) {
         QPoint(static_cast<int>(localRect.x), static_cast<int>(localRect.y)));
     int rectW = static_cast<int>(localRect.w);
     int rectH = static_cast<int>(localRect.h);
-    QRect screen = QApplication::primaryScreen()->availableGeometry();
+    QScreen* scr = QApplication::screenAt(topLeftGlobal);
+    if (!scr) scr = anchor->screen();
+    if (!scr) scr = QApplication::primaryScreen();
+    QRect screen = scr->availableGeometry();
 
     int x = topLeftGlobal.x() + rectW / 2 - width() / 2;   // centered over button
     int y = topLeftGlobal.y() - height() - 4;               // above button

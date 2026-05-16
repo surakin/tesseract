@@ -133,7 +133,10 @@ void EmojiPicker::popupAt(QWidget* anchor) {
     // Anchor the picker so its bottom edge sits just above the button,
     // then nudge so it stays inside the screen.
     QPoint anchorGlobal = anchor->mapToGlobal(QPoint(0, 0));
-    QRect screen        = QApplication::primaryScreen()->availableGeometry();
+    QScreen* scr = QApplication::screenAt(anchorGlobal);
+    if (!scr) scr = anchor->screen();
+    if (!scr) scr = QApplication::primaryScreen();
+    QRect screen = scr->availableGeometry();
     int x = anchorGlobal.x() + anchor->width() - width();
     int y = anchorGlobal.y() - height() - 4;
     if (x < screen.left())            x = screen.left() + 4;
@@ -159,7 +162,10 @@ void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect) {
     int rectW = static_cast<int>(localRect.w);
     int rectH = static_cast<int>(localRect.h);
 
-    QRect screen = QApplication::primaryScreen()->availableGeometry();
+    QScreen* scr = QApplication::screenAt(topLeftGlobal);
+    if (!scr) scr = anchor->screen();
+    if (!scr) scr = QApplication::primaryScreen();
+    QRect screen = scr->availableGeometry();
 
     // Prefer popping above the rect, centered on it. Fall back to
     // below if there isn't room above. Clamp to the screen on x.

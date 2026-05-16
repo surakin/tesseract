@@ -3212,7 +3212,8 @@ void MainWindow::popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
     // monitor doesn't have room. Clamp to the work area horizontally.
     int x = pt.x + rectW / 2 - kEmojiPickW / 2;
     int y = pt.y - kEmojiPickH - 4;
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    POINT ptCenter{ pt.x + rectW / 2, pt.y + rectH / 2 };
+    HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{}; mi.cbSize = sizeof(mi);
     if (GetMonitorInfo(mon, &mi)) {
         if (y < mi.rcWork.top) y = pt.y + rectH + 4;
@@ -3250,7 +3251,8 @@ void MainWindow::popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect) {
     // monitor doesn't have room. Clamp to the work area horizontally.
     int x = pt.x + rectW / 2 - kStickerPickW / 2;
     int y = pt.y - kStickerPickH - 4;
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    POINT ptCenter{ pt.x + rectW / 2, pt.y + rectH / 2 };
+    HMONITOR mon = MonitorFromPoint(ptCenter, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi{}; mi.cbSize = sizeof(mi);
     if (GetMonitorInfo(mon, &mi)) {
         if (y < mi.rcWork.top) y = pt.y + rectH + 4;
