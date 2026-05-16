@@ -20,6 +20,8 @@
 #include "tk/theme.h"
 #include "util.h"
 #include "views/MainAppWidget.h"
+#include "views/ShortcodeEngine.h"
+#include "views/ShortcodePopup.h"
 
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
@@ -192,6 +194,12 @@ public:
     // ObjC ivar boundary (which is private to @implementation).
     tesseract::views::RoomView* room_view_ = nullptr;
 
+    // Shortcode engine + transient state (owned here, accessed via _shell->).
+    tesseract::views::ShortcodeEngine       shortcode_engine_;
+    tesseract::views::ShortcodeMatch        shortcode_active_match_{};
+    std::vector<tesseract::ImagePackImage>  cached_emoticons_;
+    std::vector<tesseract::views::ShortcodeSuggestion> shortcode_current_suggestions_;
+
     std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 
 private:
@@ -245,6 +253,11 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onRecoveryVerify;
 - (void)_onRecoveryDismiss;
 - (void)_maybeShowRecoveryBanner;
+- (void)showShortcodePopupWithSuggestions:
+    (const std::vector<tesseract::views::ShortcodeSuggestion>&)suggestions
+    cursorRect:(tk::Rect)cursor;
+- (void)hideShortcodePopup;
+- (BOOL)shortcodePopupVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
                        mime:(std::string)mime
@@ -335,6 +348,8 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (kind == MediaKind::MediaImage) {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
+        if ([c shortcodePopupVisible] && c->_shortcodePopupSurface)
+            c->_shortcodePopupSurface->relayout();
         return;
     }
     if (bytes.empty() || tk_avatars_.count(key)) return;
@@ -634,6 +649,11 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     tesseract::views::VerificationBanner*           _verifShared;    // via _mainApp
     tesseract::views::ImageViewerOverlay*           _imgViewer;      // via _mainApp
     tesseract::views::VideoViewerOverlay*           _vidViewer;      // via _mainApp
+
+    // Shortcode suggestion popup — NSPanel hosting a tk::macos::Surface.
+    NSPanel*                                          _shortcodePanel;
+    std::unique_ptr<tk::macos::Surface>               _shortcodePopupSurface;
+    tesseract::views::ShortcodePopup*                 _shortcodePopupWidget; // borrowed from root
 
     // AppKit chrome.
     LoginView*     _loginView;
@@ -1196,13 +1216,87 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
         _roomTextArea->set_placeholder("Message…");
         _roomTextArea->set_on_changed([weakSelf](const std::string& s) {
             MainWindowController* c = weakSelf;
-            if (c) c->_shell->handle_compose_text_changed_(s);
-            if (c && c->_roomView) c->_roomView->set_current_text(s);
+            if (!c) return;
+            c->_shell->handle_compose_text_changed_(s);
+            if (c->_roomView) c->_roomView->set_current_text(s);
+
+            // ── Shortcode detection ─────────────────────────────────────────
+            int cursor = (int)s.size();
+
+            auto complete = c->_shell->shortcode_engine_.find_complete(s, cursor);
+            if (complete) {
+                auto hits = c->_shell->shortcode_engine_.lookup(
+                    complete->prefix, c->_shell->cached_emoticons_, 1);
+                std::string r = (!hits.empty() && !hits.front().glyph.empty())
+                    ? hits.front().glyph
+                    : ":" + complete->prefix + ":";
+                c->_roomTextArea->replace_range(complete->start, complete->end, r);
+                [c hideShortcodePopup];
+                return;
+            }
+
+            auto prefix_match = c->_shell->shortcode_engine_.find_prefix(s, cursor);
+            if (prefix_match && prefix_match->prefix.size() >= 2) {
+                c->_shell->shortcode_current_suggestions_ =
+                    c->_shell->shortcode_engine_.lookup(
+                        prefix_match->prefix, c->_shell->cached_emoticons_);
+                if (!c->_shell->shortcode_current_suggestions_.empty()) {
+                    c->_shell->shortcode_active_match_ = *prefix_match;
+                    for (const auto& sugg : c->_shell->shortcode_current_suggestions_)
+                        if (!sugg.emoticon.url.empty())
+                            c->_shell->ensure_media_image_(sugg.emoticon.url, 28, 28);
+                    bool was_visible = [c shortcodePopupVisible];
+                    [c showShortcodePopupWithSuggestions:
+                            c->_shell->shortcode_current_suggestions_
+                        cursorRect:c->_roomTextArea->cursor_rect()];
+                    if (!was_visible)
+                        c->_roomTextArea->set_on_popup_nav(
+                            [weakSelf](tk::NativeTextArea::NavKey nk) -> bool {
+                                MainWindowController* c2 = weakSelf;
+                                if (!c2 || ![c2 shortcodePopupVisible]) return false;
+                                int cur = c2->_shortcodePopupWidget->selected_index();
+                                int n   = c2->_shortcodePopupWidget->visible_rows();
+                                if (nk == tk::NativeTextArea::NavKey::Up) {
+                                    c2->_shortcodePopupWidget->set_selected_index(
+                                        std::max(0, cur - 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Down) {
+                                    c2->_shortcodePopupWidget->set_selected_index(
+                                        std::min(n - 1, cur + 1));
+                                    return true;
+                                }
+                                if (nk == tk::NativeTextArea::NavKey::Escape) {
+                                    [c2 hideShortcodePopup];
+                                    return true;
+                                }
+                                return false;
+                            });
+                    return;
+                }
+            }
+            [c hideShortcodePopup];
+            // ── End shortcode detection ─────────────────────────────────────
         });
         _roomTextArea->set_on_submit([weakSelf] {
             MainWindowController* c = weakSelf;
-            if (c) [c _onComposeSend];
-        });
+            if (!c) return;
+            if ([c shortcodePopupVisible]) {
+                int sel = c->_shortcodePopupWidget->selected_index();
+                if (sel >= 0 && sel < (int)c->_shell->shortcode_current_suggestions_.size()) {
+                    auto& sugg = c->_shell->shortcode_current_suggestions_[sel];
+                    std::string r = sugg.glyph.empty()
+                        ? ":" + sugg.shortcode + ":"
+                        : sugg.glyph;
+                    c->_roomTextArea->replace_range(
+                        c->_shell->shortcode_active_match_.start,
+                        c->_shell->shortcode_active_match_.end, r);
+                    [c hideShortcodePopup];
+                    return;
+                }
+                [c hideShortcodePopup];
+            }
+            [c _onComposeSend];
         _roomTextArea->set_on_height_changed([weakSelf](float h) {
             MainWindowController* c = weakSelf;
             if (!c || !c->_roomView) return;
@@ -1404,6 +1498,98 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
     [panel popupAboveView:anchor];
 }
+
+// ---------------------------------------------------------------------------
+// Shortcode suggestion popup
+// ---------------------------------------------------------------------------
+
+- (BOOL)shortcodePopupVisible {
+    return _shortcodePanel && _shortcodePanel.isVisible;
+}
+
+- (void)showShortcodePopupWithSuggestions:
+        (const std::vector<tesseract::views::ShortcodeSuggestion>&)suggestions
+        cursorRect:(tk::Rect)cursor
+{
+    int rows = std::min((int)suggestions.size(),
+                        int(tesseract::views::ShortcodePopup::kMaxRows));
+    NSSize size = NSMakeSize(tesseract::views::ShortcodePopup::kWidth,
+                             rows * tesseract::views::ShortcodePopup::kRowHeight);
+
+    if (!_shortcodePanel) {
+        NSRect frame = NSMakeRect(0, 0, size.width, size.height);
+        _shortcodePanel = [[NSPanel alloc]
+            initWithContentRect:frame
+            styleMask:NSWindowStyleMaskNonactivatingPanel
+                       | NSWindowStyleMaskBorderless
+            backing:NSBackingStoreBuffered
+            defer:NO];
+        _shortcodePanel.floatingPanel = YES;
+        _shortcodePanel.hidesOnDeactivate = NO;
+        _shortcodePanel.becomesKeyOnlyIfNeeded = YES;
+
+        _shortcodePopupSurface =
+            std::make_unique<tk::macos::Surface>(_mainAppSurface->theme());
+        auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
+        _shortcodePopupWidget = pw.get();
+        _shortcodePopupSurface->set_root(std::move(pw));
+
+        __weak MainWindowController* weakSelf = self;
+        _shortcodePopupWidget->on_accepted =
+            [weakSelf](tesseract::views::ShortcodeSuggestion s) {
+                MainWindowController* c = weakSelf;
+                if (!c || !c->_roomTextArea) return;
+                std::string r = s.glyph.empty()
+                    ? ":" + s.shortcode + ":"
+                    : s.glyph;
+                c->_roomTextArea->replace_range(
+                    c->_shell->shortcode_active_match_.start,
+                    c->_shell->shortcode_active_match_.end,
+                    std::move(r));
+                [c hideShortcodePopup];
+            };
+        _shortcodePopupWidget->on_dismissed = [weakSelf] {
+            if (MainWindowController* c = weakSelf) [c hideShortcodePopup];
+        };
+
+        NSView* popupView =
+            (__bridge NSView*)_shortcodePopupSurface->view_handle();
+        [_shortcodePanel setContentView:popupView];
+    }
+
+    _shortcodePopupWidget->set_suggestions(suggestions);
+    [_shortcodePanel setContentSize:size];
+    _shortcodePopupSurface->relayout();
+
+    // Map cursor_local → screen coords.
+    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
+    NSPoint localPt  = NSMakePoint(cursor.x, cursor.y);
+    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
+    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
+    // Position above cursor (y increases upward on macOS).
+    screenPt.y += int(cursor.h) + 4;
+
+    NSRect screenFrame = _shortcodePanel.screen
+        ? _shortcodePanel.screen.visibleFrame
+        : [NSScreen mainScreen].visibleFrame;
+
+    CGFloat x = screenPt.x;
+    CGFloat y = screenPt.y;
+    x = std::clamp(x, screenFrame.origin.x,
+                   screenFrame.origin.x + screenFrame.size.width  - size.width);
+    y = std::clamp(y, screenFrame.origin.y,
+                   screenFrame.origin.y + screenFrame.size.height - size.height);
+
+    [_shortcodePanel setFrameOrigin:NSMakePoint(x, y)];
+    [_shortcodePanel orderFront:nil];
+}
+
+- (void)hideShortcodePopup {
+    [_shortcodePanel orderOut:nil];
+    if (_roomTextArea) _roomTextArea->set_on_popup_nav(nullptr);
+}
+
+// ---------------------------------------------------------------------------
 
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor {
     if (!_mainAppSurface) return;
@@ -2366,6 +2552,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             return;
         }
     }
+    [self hideShortcodePopup];
     _shell->handle_compose_room_leaving_(_shell->current_room_id_);
     if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId
             && _shell->room_subscription_refs_.count(_shell->current_room_id_) == 0) {
@@ -2658,6 +2845,15 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
     [panel refreshPacks];
+    _shell->cached_emoticons_.clear();
+    if (_shell->client_) {
+        for (auto& pack : _shell->client_->list_image_packs()) {
+            for (auto& img : _shell->client_->list_pack_images(
+                     pack.id, tesseract::PackUsageFilter::Emoticon)) {
+                _shell->cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
 }
 
 - (void)handleAccountPrefsUpdated:(NSString*)json {
