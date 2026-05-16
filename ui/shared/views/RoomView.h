@@ -18,6 +18,7 @@
 // Internal wiring (reply → compose, edit → compose, compose sends) is done
 // inside the constructor so the shell only wires SDK-touching callbacks.
 
+#include "BrandView.h"
 #include "ComposeBar.h"
 #include "MessageListView.h"
 #include "RoomHeader.h"
@@ -57,6 +58,10 @@ public:
     // Update room header and enable the compose bar. Must be called when the
     // user navigates to a room; RoomView is deliberately inert before this.
     void set_room(const tesseract::RoomInfo& info);
+
+    // Reset to the brand-view state (no active room). Call when switching
+    // accounts or logging out so the splash reappears.
+    void clear_room();
 
     void set_messages  (std::vector<MessageRowData> msgs);
     void insert_message(std::size_t index, MessageRowData msg);
@@ -170,7 +175,10 @@ public:
 private:
     void wire_internal_callbacks();
 
+    bool has_room_ = false;   // true after the first set_room() call
+
     // Child widgets — owned via add_child, raw pointers borrowed back.
+    BrandView*       brand_view_   = nullptr;
     RoomHeader*      header_       = nullptr;
     MessageListView* message_list_ = nullptr;
     ComposeBar*      compose_bar_  = nullptr;
