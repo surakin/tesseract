@@ -2768,9 +2768,12 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
 
 std::string MessageListView::newest_visible_real_event_id() const {
     auto [first, last] = visible_range();
-    if (last < 0) return {};
+    // Clamp: the adapter count includes the virtual typing row at index
+    // messages_.size(), so visible_range() can return last == messages_.size().
+    int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
+    if (actual_last < 0) return {};
     using Kind = MessageRowData::Kind;
-    for (int i = last; i >= first; --i) {
+    for (int i = actual_last; i >= first; --i) {
         const auto& row = messages_[static_cast<std::size_t>(i)];
         if (row.kind != Kind::DaySeparator &&
             row.kind != Kind::ReadMarker   &&
