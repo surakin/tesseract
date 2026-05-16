@@ -358,13 +358,12 @@ public:
     // sits at index == messages_.size() when active, so it scrolls with
     // the tail and is naturally outside the viewport when the user scrolls
     // up — exactly the requested behaviour.
-    bool has_typing_row() const { return !owner_.typing_text_.empty(); }
     bool is_typing_index(std::size_t i) const {
-        return has_typing_row() && i == owner_.messages_.size();
+        return i == owner_.messages_.size();
     }
 
     std::size_t count() const override {
-        return owner_.messages_.size() + (has_typing_row() ? 1 : 0);
+        return owner_.messages_.size() + 1;  // +1 for always-present typing row
     }
 
     // True when `index` is a continuation of the previous row: same
@@ -2022,14 +2021,7 @@ void MessageListView::append_message(MessageRowData msg) {
 
 void MessageListView::set_typing_text(std::string text) {
     if (text == typing_text_) return;
-    // Adding/removing the synthetic trailing row changes content height
-    // exactly like an append/remove at the tail. Keep the user pinned to
-    // the bottom if they already were, so the row is actually visible.
-    const bool at_bottom =
-        scroll_y() + bounds().h + 1.0f >= content_height();
     typing_text_ = std::move(text);
-    invalidate_data();
-    if (at_bottom) scroll_to_bottom();
     if (request_repaint_) request_repaint_();
 }
 

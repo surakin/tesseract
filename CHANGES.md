@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-16
 
+- fix: typing row is always present at fixed height so the layout never shifts when typing starts/stops
 - fix: no grouping flicker on new messages — is_cont skips suppressed read marker; suppress_read_marker_ collapses the row until SDK moves it
 - fix: crash in newest_visible_real_event_id when typing row is visible — clamp visible_range() last index to messages_.size()-1
 - fix(qt6): inline hyperlinks now clickable — change Qt::ExactHit → Qt::FuzzyHit in link_at; add on_link_hovered callback + pointing-hand cursor on Qt6 and GTK4
