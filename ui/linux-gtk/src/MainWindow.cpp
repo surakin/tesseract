@@ -31,6 +31,13 @@
 
 namespace gtk4 {
 
+// Single GNotification id used for the "window visible but unfocused"
+// attention request (GTK4 has no urgency-hint API). Reusing one id means a
+// newer message replaces the previous attention banner, and the window
+// becoming active withdraws it — mirroring the one-shot urgency-hint
+// semantics other backends get.
+namespace { constexpr char kAttentionNotifId[] = "tesseract-attention"; }
+
 // ---------------------------------------------------------------------------
 // Image helpers
 // ---------------------------------------------------------------------------
@@ -1020,12 +1027,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     g_signal_connect(window_, "close-request",
                      G_CALLBACK(&MainWindow::on_window_close_request_), this);
 
-    // NOTE: GTK4 removed gtk_window_set_urgency_hint entirely (it was not
-    // merely deprecated — the symbol does not exist), so a programmatic
-    // "demand attention" request is not available on the GTK4 backend. The
-    // notification path below degrades gracefully: the popup is still
-    // suppressed when the window is visible; there is simply no taskbar
-    // flash. Nothing to clear on focus, so no notify::is-active handler.
+    // GTK4 has no gtk_window_set_urgency_hint (removed, not deprecated), so
+    // the "visible but unfocused" attention request is delivered as a
+    // GNotification instead (see handle_notification). Withdraw it when the
+    // user brings the window to the front, mirroring the urgency-hint clear
+    // other backends do.
+    g_signal_connect(window_, "notify::is-active", G_CALLBACK(
+        +[](GtkWindow* w, GParamSpec*, gpointer data) {
+            auto* self = static_cast<MainWindow*>(data);
+            if (gtk_window_is_active(w) && self->app_) {
+                g_application_withdraw_notification(
+                    G_APPLICATION(self->app_), kAttentionNotifId);
+            }
+        }), this);
 
     g_idle_add([](gpointer data) -> gboolean {
         static_cast<MainWindow*>(data)->do_login();
@@ -2270,12 +2284,33 @@ void MainWindow::handle_notification(
                 && accounts_[active_account_index_]->user_id == user_id
                 && current_room_id_ == room_id)
             return;
-        // Window on screen: suppress the popup. GTK4 has no
-        // programmatic attention/urgency API (gtk_window_set_urgency_hint
-        // was removed, not just deprecated), so there is no taskbar flash
-        // on this backend — the sidebar unread badge is the only signal.
+        // Window on screen, not focused: GTK4 has no urgency-hint API, so
+        // request attention with a GNotification instead (the GTK4-native
+        // mechanism; on most shells it also flags the app in the dock /
+        // taskbar). One reusable id so a newer message replaces the
+        // previous banner; it is withdrawn when the window regains focus
+        // (notify::is-active handler in the constructor).
         if (win_visible) {
-            (void)win_focused;
+            if (!win_focused && app_) {
+                GNotification* notif = g_notification_new(sender.c_str());
+                g_notification_set_body(notif, body.c_str());
+                g_notification_set_priority(
+                    notif, is_mention ? G_NOTIFICATION_PRIORITY_HIGH
+                                      : G_NOTIFICATION_PRIORITY_NORMAL);
+                if (!avatar_bytes.empty()) {
+                    GBytes* gb = g_bytes_new(avatar_bytes.data(),
+                                             avatar_bytes.size());
+                    GIcon*  ic = g_bytes_icon_new(gb);
+                    g_notification_set_icon(notif, ic);
+                    g_object_unref(ic);
+                    g_bytes_unref(gb);
+                }
+                g_application_send_notification(
+                    G_APPLICATION(app_), kAttentionNotifId, notif);
+                g_object_unref(notif);
+            }
+            // Focused (different room) or no app: the sidebar unread badge
+            // is signal enough — no popup.
             return;
         }
         // Window minimised / hidden: send system notification.
