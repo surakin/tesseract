@@ -42,6 +42,7 @@ private:
 
     HINSTANCE             hInst_      = nullptr;
     HWND                  hwnd_       = nullptr;
+    HICON                 hIcon_      = nullptr;
     std::function<void()> on_show_;
     std::function<void()> on_toggle_;
     std::function<void()> on_quit_;

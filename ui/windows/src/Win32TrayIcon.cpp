@@ -89,12 +89,13 @@ Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst,
     nid.uID              = kIconId;
     nid.uFlags           = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     nid.uCallbackMessage = WM_TESSERACT_TRAY;
-    nid.hIcon = static_cast<HICON>(LoadImageW(
+    hIcon_ = static_cast<HICON>(LoadImageW(
         hInst_, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
         GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
         LR_DEFAULTCOLOR));
-    if (!nid.hIcon)
-        nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    if (!hIcon_)
+        hIcon_ = LoadIconW(nullptr, IDI_APPLICATION);
+    nid.hIcon = hIcon_;
     // szTip is a fixed wchar_t[128]. Manual bounded copy keeps us portable
     // across MSVC and MinGW (the wcsncpy_s array overload is MSVC-only).
     {
@@ -121,6 +122,10 @@ Win32TrayIcon::~Win32TrayIcon() {
     if (hwnd_) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
+    }
+    if (hIcon_) {
+        DestroyIcon(hIcon_);
+        hIcon_ = nullptr;
     }
 }
 

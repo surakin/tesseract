@@ -218,10 +218,6 @@ LRESULT CALLBACK user_strip_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 // using either message continue to work.
 // ---------------------------------------------------------------------------
 
-namespace {
-constexpr UINT_PTR kStatusTextProp = 0xDEADBEEFu;
-}
-
 LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCCREATE:
@@ -234,14 +230,25 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
     case WM_SETTEXT:
-    case SB_SETTEXTW:
-    case SB_SETTEXTA: {
-        // Accept both SetWindowText and the comctl SB_SETTEXT messages so
-        // existing callers ported from STATUSCLASSNAMEW continue to work.
+    case SB_SETTEXTW: {
         const wchar_t* txt = reinterpret_cast<const wchar_t*>(lParam);
         auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (!p) { p = new std::wstring; SetPropW(hwnd, L"TesseractStatusText", p); }
         p->assign(txt ? txt : L"");
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return TRUE;
+    }
+    case SB_SETTEXTA: {
+        const char* txt = reinterpret_cast<const char*>(lParam);
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        if (!p) { p = new std::wstring; SetPropW(hwnd, L"TesseractStatusText", p); }
+        if (txt && *txt) {
+            int n = MultiByteToWideChar(CP_ACP, 0, txt, -1, nullptr, 0);
+            p->resize(n > 0 ? static_cast<std::size_t>(n - 1) : 0u, L'\0');
+            if (n > 0) MultiByteToWideChar(CP_ACP, 0, txt, -1, p->data(), n);
+        } else {
+            p->clear();
+        }
         InvalidateRect(hwnd, nullptr, FALSE);
         return TRUE;
     }
@@ -357,7 +364,7 @@ void MainWindow::handle_sync_error_ui_(
     } else if (context == "sync_auth_error") {
         on_auth_error(user_id, soft_logout);
     } else {
-        MessageBoxA(hwnd_, description.c_str(), "Sync error", MB_ICONWARNING);
+        MessageBoxW(hwnd_, utf8_to_wstr(description).c_str(), L"Sync error", MB_ICONWARNING);
     }
 }
 
@@ -387,13 +394,15 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
                 ShowWindow(recovery_surface_->hwnd(), SW_HIDE);
                 recovery_banner_visible_ = false;
             }
-            on_size(0, 0);  // re-trigger layout
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
         }
     } else {
         if (verif_banner_visible_) {
             ShowWindow(verif_surface_->hwnd(), SW_HIDE);
             verif_banner_visible_ = false;
-            on_size(0, 0);
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
         }
     }
 }
@@ -425,7 +434,8 @@ void MainWindow::handle_sas_ready_ui_(
                      0, 0, 0, 124,
                      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         verif_surface_->relayout();
-        on_size(0, 0);
+        RECT rc; GetClientRect(hwnd_, &rc);
+        on_size(rc.right, rc.bottom);
     }
 }
 
@@ -613,7 +623,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_SIZE:
-        self->on_size(LOWORD(lParam), HIWORD(lParam));
+        if (wParam != SIZE_MINIMIZED)
+            self->on_size(LOWORD(lParam), HIWORD(lParam));
         return 0;
 
     case WM_COMMAND:
@@ -685,9 +696,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         return 0;
     }
 
-    case WM_DPICHANGED:
+    case WM_DPICHANGED: {
         win32::text::on_dpi_changed(LOWORD(wParam));
+        theme::on_dpi_changed();
+        // Move+resize to the rect Windows calculated for the new DPI.
+        const RECT* rc = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr,
+                     rc->left, rc->top,
+                     rc->right - rc->left, rc->bottom - rc->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
         return 0;
+    }
 
     case WM_TESSERACT_PAGINATE_DONE: {
         auto* p = reinterpret_cast<std::string*>(lParam);
@@ -1350,12 +1369,14 @@ void MainWindow::on_create(HWND hwnd) {
             verification_banner_dismissed_ = true;
             ShowWindow(verif_surface_->hwnd(), SW_HIDE);
             verif_banner_visible_ = false;
-            on_size(0, 0);
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
         };
         verif_shared_->on_done = [this] {
             ShowWindow(verif_surface_->hwnd(), SW_HIDE);
             verif_banner_visible_ = false;
-            on_size(0, 0);
+            RECT rc; GetClientRect(hwnd_, &rc);
+            on_size(rc.right, rc.bottom);
         };
         verif_shared_->on_use_recovery_key = [this] {
             ShowWindow(verif_surface_->hwnd(), SW_HIDE);
@@ -2224,15 +2245,21 @@ void MainWindow::openJumpToDateDialog() {
     ShowWindow(hPicker, SW_SHOW);
 
     // Run a nested modal message loop.
+    // RAII guard: re-enable the parent on all exit paths.
+    struct EnableGuard {
+        HWND hwnd;
+        ~EnableGuard() { EnableWindow(hwnd, TRUE); }
+    } guard{ hwnd_ };
     EnableWindow(hwnd_, FALSE);
     MSG m{};
-    while (!ctx.done && GetMessageW(&m, nullptr, 0, 0) > 0) {
+    BOOL ret;
+    while (!ctx.done && (ret = GetMessageW(&m, nullptr, 0, 0)) != 0) {
+        if (ret == -1) break;   // GetMessage error — abort loop
         if (!IsDialogMessageW(hPicker, &m)) {
             TranslateMessage(&m);
             DispatchMessageW(&m);
         }
     }
-    EnableWindow(hwnd_, TRUE);
     SetForegroundWindow(hwnd_);
 
     if (!ctx.accepted) return;
@@ -2521,18 +2548,6 @@ std::wstring widen_utf8(const std::string& s) {
     return out;
 }
 
-std::string narrow_edit_utf8(HWND hEdit) {
-    int len = GetWindowTextLengthW(hEdit);
-    if (len <= 0) return {};
-    std::wstring buf(static_cast<size_t>(len), L'\0');
-    GetWindowTextW(hEdit, buf.data(), len + 1);
-    int n = WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
-                                nullptr, 0, nullptr, nullptr);
-    std::string out(static_cast<size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, buf.data(), len,
-                        out.data(), n, nullptr, nullptr);
-    return out;
-}
 } // namespace
 
 void MainWindow::maybe_show_recovery_banner() {

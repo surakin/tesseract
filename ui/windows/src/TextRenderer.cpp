@@ -181,9 +181,7 @@ ComPtr<IDWriteTextLayout> make_layout(const wchar_t* text, UINT32 len,
                                       const Style& s,
                                       float max_w_dip, float max_h_dip) {
     if (len == 0xFFFFFFFFu) {
-        size_t n = 0;
-        while (text[n] != L'\0') ++n;
-        len = static_cast<UINT32>(n);
+        len = static_cast<UINT32>(wcslen(text));
     }
     IDWriteTextFormat* fmt = get_or_make_format(s);
     if (!fmt) return nullptr;

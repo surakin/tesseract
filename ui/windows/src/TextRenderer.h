@@ -16,6 +16,9 @@
 //
 // All call sites pass HDC, RECT, COLORREF and wstring; D2D/DWrite stay
 // fully encapsulated inside the .cpp.
+//
+// THREADING: all functions must be called on the UI thread. The D2D factory
+// is created with D2D1_FACTORY_TYPE_SINGLE_THREADED.
 struct IDWriteFontFallback;
 
 namespace win32::text {

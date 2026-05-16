@@ -48,9 +48,14 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
                                              const std::string& room_name,
                                              const std::string& body)
 {
-    const std::string preview_u8 = body.size() > 120
-        ? body.substr(0, 120) + "\xe2\x80\xa6"
-        : body;
+    std::string preview_u8 = body;
+    if (body.size() > 120) {
+        // Walk back from byte 120 to the start of the current UTF-8 sequence
+        // so we never split a multi-byte character.
+        std::size_t cut = 120;
+        while (cut > 0 && (body[cut] & 0xC0) == 0x80) --cut;
+        preview_u8 = body.substr(0, cut) + "\xe2\x80\xa6";
+    }
 
     const std::wstring wsender    = xml_escape(to_wide(sender));
     const std::wstring wroom      = xml_escape(to_wide(room_name));
@@ -88,9 +93,10 @@ void Win32Notifier::notify(const tesseract::Notification& n)
                 winrt::Windows::Foundation::IInspectable>{
                 [hwnd, room_id, user_id](const WUN::ToastNotification&,
                                           const winrt::Windows::Foundation::IInspectable&) {
-                    PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                                reinterpret_cast<LPARAM>(
-                                    new NotifyClickPayload{room_id, user_id}));
+                    if (IsWindow(hwnd))
+                        PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
+                                    reinterpret_cast<LPARAM>(
+                                        new NotifyClickPayload{room_id, user_id}));
                 }});
 
         notifier.Show(toast);

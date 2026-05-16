@@ -50,8 +50,9 @@ void EventHandlerBase::on_message_removed(const std::string& room_id, std::size_
 
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
+    auto rs = rooms;   // one copy; moved into the lambda below
     shell_->post_to_ui_(
-        [shell = shell_, uid = user_id_, rs = rooms]() mutable {
+        [shell = shell_, uid = user_id_, rs = std::move(rs)]() mutable {
             shell->push_rooms_(std::move(uid), std::move(rs));
         });
 }

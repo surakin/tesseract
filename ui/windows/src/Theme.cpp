@@ -252,6 +252,12 @@ HBRUSH brush(COLORREF c) {
     return b;
 }
 
+void on_dpi_changed() {
+    for (HFONT& f : g_fonts) {
+        if (f) { DeleteObject(f); f = nullptr; }
+    }
+}
+
 void shutdown() {
     clear_brush_cache();
     for (HFONT& f : g_fonts) {
@@ -319,8 +325,8 @@ LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         break;
     case WM_NCDESTROY:
-        reg.erase(hwnd);
         RemoveWindowSubclass(hwnd, button_subclass_proc, 0);
+        reg.erase(hwnd);
         break;
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);

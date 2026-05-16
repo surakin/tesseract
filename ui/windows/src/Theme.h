@@ -83,6 +83,10 @@ HFONT font(FontRole);
 // Lifetime managed by the theme module.
 HBRUSH brush(COLORREF);
 
+// Drop all cached HFONTs so they are rebuilt at the new DPI on next use.
+// Call from WM_DPICHANGED before any repaint.
+void on_dpi_changed();
+
 // Release all cached HFONT/HBRUSH; called from MainWindow::~MainWindow.
 void shutdown();
 

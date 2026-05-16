@@ -21,6 +21,8 @@ void ShellBase::run_async_(std::function<void()> fn) {
 }
 
 void ShellBase::ensure_room_avatar_(const RoomInfo& r) {
+    // Must be called on the UI thread — accesses tk_avatars_ and
+    // media_fetches_in_flight_ without synchronization.
     if (r.avatar_url.empty() || tk_avatars_.count(r.avatar_url)) return;
     if (!media_fetches_in_flight_.insert(r.avatar_url).second) return;
     const std::string room_id = r.id;
