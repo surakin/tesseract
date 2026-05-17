@@ -12,6 +12,8 @@ Tagged releases summarize all changes since the previous tag.
 - feat(messaging): optimistic send via SDK local echo — `send_message` switches to `timeline.send()` so sent messages appear immediately with a ◷ (sending) indicator; transitions to ✓ (accent) for 2 s once the server confirms delivery; on recoverable failure shows ⚠ + "Retry" (tappable, re-enables the SDK send queue); on unrecoverable failure shows ⚠ + ✕ (calls `timeline.redact` to abort); `retry_send` / `abort_send` FFI + C++ client API added
 - feat(pickers): emoji + sticker picker polish — `GridView::on_pointer_move` / `on_pointer_leave` now update `hovered_index_` (was silently broken: cells never highlighted on hover); both `EmojiPicker` and `StickerPicker` draw an inline `:shortcode:` tooltip centred above the hovered cell, immediately on hover, clipped to the picker bounds and flipped below when close to the top edge
 - fix(qt6): dark theme detection on GNOME — Qt6 shell now queries `org.freedesktop.portal.Settings` at startup and subscribes to `SettingChanged`; `os_color_scheme_()` falls back to the portal value when `QStyleHints::colorScheme()` returns `Unknown` (common on GNOME without QGnomePlatform or Qt < 6.6)
+- fix(gtk4): `NativeTextArea` placeholder text — `GtkTextView` has no native placeholder API; a `dim-label` `GtkLabel` overlay child tracks the compose area position and is shown/hidden with buffer state; compose bar now shows "Message…" hint when empty
+- fix(gtk4): async image fetch for `EmojiPicker` custom emoticon tabs — `set_image_provider` now wired with the same worker→decode→post-to-UI→repaint path used by the sticker picker; custom emoticons no longer show grey placeholders indefinitely
 
 ### 2026-05-16
 
