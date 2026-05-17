@@ -2951,7 +2951,7 @@ void MainWindow::handle_notification_ui_(
         {
             continue;
         }
-        // Already watching this exact room — suppress silently.
+        // Suppress only when the user is actively focused on this exact room.
         if (win_focused
                 && active_account_index_ >= 0
                 && accounts_[active_account_index_]->user_id == user_id
@@ -2959,16 +2959,11 @@ void MainWindow::handle_notification_ui_(
         {
             return;
         }
-        // Window on screen: no popup. Alert if not focused.
-        if (win_visible)
-        {
-            if (!win_focused)
-            {
-                QApplication::alert(this, 0);
-            }
-            return;
-        }
-        // Window minimised / hidden: send system notification.
+        // Flash the taskbar when the window is visible but not the active app.
+        if (win_visible && !win_focused)
+            QApplication::alert(this, 0);
+        // Send a system notification regardless of window state unless already
+        // watching the exact room above.
         if (sess->notifier)
         {
             tesseract::Notification n;

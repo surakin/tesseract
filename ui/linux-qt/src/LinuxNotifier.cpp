@@ -125,7 +125,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         "Notify",
         QString("Tesseract"),
         replaces,
-        QString("tesseract"),
+        QString(""),  // app_icon: image-data hint carries the avatar
         escape_markup(n.sender),
         escape_markup(n.body),
         QStringList{ "default", "Open" },
@@ -152,9 +152,14 @@ void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
 void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
 {
     auto it = id_to_room_.find(id);
-    if (it != id_to_room_.end())
-    {
-        room_to_id_.erase(it->second);
-        id_to_room_.erase(it);
-    }
+    if (it == id_to_room_.end()) return;
+
+    // Only remove the room from room_to_id_ if it still maps back to this id.
+    // When a notification is replaced the daemon closes the old id AFTER we've
+    // already stored the new one, so we must not clobber the newer entry.
+    auto room_it = room_to_id_.find(it->second);
+    if (room_it != room_to_id_.end() && room_it->second == id)
+        room_to_id_.erase(room_it);
+
+    id_to_room_.erase(it);
 }
