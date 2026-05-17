@@ -62,14 +62,11 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     // ── RoomView providers (share caches with the main shell) ────────────
     room_view_->set_avatar_provider(
         [this](const std::string& mxc) -> const tk::Image* {
-            auto it = shell_->tk_avatars_.find(mxc);
-            return it == shell_->tk_avatars_.end() ? nullptr : it->second.get();
+            return shell_avatar_(mxc);
         });
     room_view_->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image* {
-            if (auto* f = shell_->anim_cache_.current_frame(mxc)) return f;
-            auto it = shell_->tk_images_.find(mxc);
-            return it == shell_->tk_images_.end() ? nullptr : it->second.get();
+            return shell_image_(mxc);
         });
     room_view_->set_preview_provider(
         [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
@@ -82,7 +79,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         room_view_->set_audio_player(std::move(player));
     room_view_->set_voice_bytes_provider(
         [this](const std::string& source_json) -> std::vector<std::uint8_t> {
-            return shell_->client_->fetch_source_bytes(source_json);
+            return fetch_source_bytes_(source_json);
         });
 
     // ── Repaint / layout ─────────────────────────────────────────────────
@@ -153,8 +150,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         bool typing = !s.empty();
         if (typing != compose_typing_active_) {
             compose_typing_active_ = typing;
-            if (shell_->client_)
-                shell_->client_->send_typing_notice(room_id_, typing);
+            send_typing_notice_(typing);
         }
         room_view_->set_current_text(s);
     });

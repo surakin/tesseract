@@ -10,6 +10,7 @@
 #include "tk/canvas.h"
 #include "tk/media_disk_cache.h"
 #include "tk/theme.h"
+#include "app/RoomWindowBase.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -23,8 +24,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-namespace tesseract { class RoomWindowBase; }
 
 namespace tesseract {
 

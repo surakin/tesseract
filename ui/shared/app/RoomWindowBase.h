@@ -58,7 +58,14 @@ protected:
     void delete_event_     (const std::string& event_id);
     void toggle_reaction_  (const std::string& event_id,       const std::string& key);
     void send_receipt_     (const std::string& event_id);
+    void send_typing_notice_(bool typing);
     void request_pagination_back_();
+
+    // Image cache accessors — friend access to ShellBase protected members
+    // so platform subclasses don't need their own friend declarations.
+    const tk::Image* shell_avatar_(const std::string& mxc) const;
+    const tk::Image* shell_image_ (const std::string& mxc) const;
+    std::vector<std::uint8_t> fetch_source_bytes_(const std::string& source_json);
 
     ShellBase*       shell_;
     std::string      room_id_;
