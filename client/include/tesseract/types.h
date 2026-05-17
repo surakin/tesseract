@@ -62,6 +62,12 @@ struct Event {
     /// True when the body has been superseded by an m.replace edit.
     /// Only set for TextEvent; always false for other types.
     bool is_edited = false;
+    /// Local-echo send state. "" = server event; "sending" = in-flight;
+    /// "failed" = delivery failed.
+    std::string pending_state;
+    std::string pending_error;
+    bool        pending_recoverable = false;
+    std::string pending_txn_id;
     virtual ~Event() = default;
 };
 

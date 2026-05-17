@@ -124,6 +124,10 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e) {
     ev.in_reply_to_sender_name = std::string(e.in_reply_to_sender_name);
     ev.in_reply_to_body        = std::string(e.in_reply_to_body);
     ev.is_edited               = e.is_edited;
+    ev.pending_state       = std::string(e.pending_state);
+    ev.pending_error       = std::string(e.pending_error);
+    ev.pending_recoverable = e.pending_recoverable;
+    ev.pending_txn_id      = std::string(e.pending_txn_id);
 }
 
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) {
