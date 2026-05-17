@@ -13,6 +13,7 @@
 #include "tk/canvas.h"
 #include "tk/list_view.h"
 #include "tk/video.h"
+#include "views/map_tiles.h"
 
 #include <tesseract/types.h>
 
@@ -31,6 +32,7 @@ struct MessageRowData {
     enum class Kind {
         Text, Image, Sticker, File, Voice, Video, Redacted, Notice, Emote, Unhandled,
         DaySeparator, ReadMarker, TimelineStart,
+        Location,
     };
 
     Kind        kind          = Kind::Text;
@@ -114,6 +116,12 @@ struct MessageRowData {
     bool         pending_recoverable = false;
     // Set for ~2 s after a Sending → None transition to show ✓.
     bool         just_sent           = false;
+
+    // Location (m.location / MSC3488)
+    double      location_lat         = 0.0;
+    double      location_lon         = 0.0;
+    std::string location_description;
+    tesseract::views::MapViewport map_viewport;  // mutable: updated by pan/zoom
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -237,6 +245,10 @@ public:
         std::function<void(std::vector<std::uint8_t>)> on_ready)>;
     void set_video_player_factory(VideoPlayerFactory f);
     void set_video_fetch_provider(VideoFetchProvider f);
+
+    // Called during paint when a tile is missing from the image cache.
+    // Wire to ShellBase::ensure_tile_async() in RoomWindowBase::finish_init_().
+    std::function<void(int z, int x, int y)> on_tile_needed;
 
     // Click hooks. on_message_clicked fires on row click.
     std::function<void(const std::string& event_id)> on_message_clicked;

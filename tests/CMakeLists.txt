@@ -42,6 +42,7 @@ add_executable(tesseract_tests
     cpp/test_settings.cpp
     cpp/test_pending_send.cpp
     cpp/test_map_tiles.cpp
+    cpp/test_location_events.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

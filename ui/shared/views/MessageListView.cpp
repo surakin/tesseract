@@ -1,5 +1,6 @@
 #include "MessageListView.h"
 #include "html_spans.h"
+#include "map_tiles.h"
 #include "media_utils.h"
 
 #include "tk/theme.h"
@@ -107,6 +108,15 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
             row.video_hide_controls  = vid.hide_controls;
             row.video_gif            = vid.gif;
             row.blurhash             = vid.blurhash;
+            break;
+        }
+        case tesseract::EventType::Location: {
+            const auto& loc = static_cast<const tesseract::LocationEvent&>(ev);
+            row.kind                 = Kind::Location;
+            row.location_lat         = loc.lat;
+            row.location_lon         = loc.lon;
+            row.location_description = loc.description;
+            row.map_viewport         = { loc.lat, loc.lon, 15 };
             break;
         }
         case tesseract::EventType::Redacted:      row.kind = Kind::Redacted;      break;
