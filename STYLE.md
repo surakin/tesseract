@@ -6,11 +6,11 @@ Applies to all Rust, C++, and Objective-C source in this project. Claude should 
 
 ## Universal Rules
 
-### 1. Braces on their own line (Allman style)
+### 1. Braces on their own line (Allman style) — C++ and Objective-C only
 
-Opening braces always go on a new line, aligned with the keyword above.
+In C++ and Objective-C, opening braces always go on a new line, aligned with the keyword above. **Rust uses standard idiomatic style** (opening brace on the same line) — see the Rust section.
 
-Do:
+Do (C++/ObjC):
 
 ```cpp
 if (condition)
@@ -19,7 +19,7 @@ if (condition)
 }
 ```
 
-Don't:
+Don't (C++/ObjC):
 
 ```cpp
 if (condition) {
@@ -27,9 +27,9 @@ if (condition) {
 }
 ```
 
-### 2. Always brace control flow bodies
+### 2. Always brace control flow bodies (all languages)
 
-Single-statement bodies after `if`, `else`, `while`, `for`, `do`, and `switch`/`match` arms must be wrapped in braces.
+Single-statement bodies after `if`, `else`, `while`, `for`, `do`, and `switch`/`match` arms must be wrapped in braces. This applies to Rust, C++, and Objective-C.
 
 Do:
 
