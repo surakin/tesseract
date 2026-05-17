@@ -302,7 +302,10 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     const float compose_h =
         compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
 
-    const float header_bottom = bounds.y + RoomHeader::kHeight;
+    const float header_h      = header_
+        ? header_->measure(ctx, { bounds.w, bounds.h }).h
+        : RoomHeader::kHeight;
+    const float header_bottom = bounds.y + header_h;
     const float compose_top   = bounds.y + bounds.h - compose_h;
     // The message list spans header → composer; the typing indicator is a
     // synthetic trailing row inside it, so no strip space is reserved here.
@@ -310,7 +313,7 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 
     if (header_) {
         header_->arrange(ctx,
-            { bounds.x, bounds.y, bounds.w, RoomHeader::kHeight });
+            { bounds.x, bounds.y, bounds.w, header_h });
     }
 
     if (message_list_) {
