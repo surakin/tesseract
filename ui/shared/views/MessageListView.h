@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -623,6 +624,13 @@ private:
     VideoPlayerFactory  video_player_factory_;
     VideoFetchProvider  video_fetch_provider_;
     void start_inline_video(const MessageRowData& m);
+
+    // Pan state for Kind::Location rows.
+    static constexpr std::size_t kNoMapRow =
+        std::numeric_limits<std::size_t>::max();
+    std::size_t map_active_row_       = kNoMapRow;
+    tk::Point   map_drag_start_pt_    {};
+    tk::Point   map_drag_start_vp_px_ {};  // world-pixel viewport at drag start
 };
 
 } // namespace tesseract::views

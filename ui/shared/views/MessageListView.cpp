@@ -2659,6 +2659,25 @@ void MessageListView::start_inline_video(const MessageRowData& m) {
 
 bool MessageListView::on_wheel(tk::Point local, float dx, float dy) {
     if (gate_blocks_input_()) return false;  // list not painted yet
+
+    // Map zoom: intercept wheel over a Kind::Location map tile area.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        std::size_t ri = hovered_row_geom_.row_index;
+        if (ri < messages_.size() &&
+            messages_[ri].kind == MessageRowData::Kind::Location) {
+            constexpr float kMapRowH = 240.0f;
+            const tk::Rect& rb = hovered_row_geom_.row_bounds;
+            tk::Rect map_rect{ rb.x, rb.y, rb.w, kMapRowH };
+            if (rect_contains(map_rect, world)) {
+                auto& vp = messages_[ri].map_viewport;
+                vp.zoom = std::max(1, std::min(19, vp.zoom + (dy > 0.0f ? 1 : -1)));
+                invalidate_data();
+                return true;
+            }
+        }
+    }
+
     return tk::ListView::on_wheel(local, dx, dy);
 }
 
@@ -2832,6 +2851,21 @@ static MessageListView::HoverTarget chip_hit_at(
 void MessageListView::on_pointer_move(tk::Point local) {
     if (gate_blocks_input_()) return;
     tk::ListView::on_pointer_move(local);
+
+    // Map pan: apply drag delta while a pan is active.
+    if (map_active_row_ != kNoMapRow && map_active_row_ < messages_.size()) {
+        float dx = local.x - map_drag_start_pt_.x;
+        float dy = local.y - map_drag_start_pt_.y;
+        float new_wp_x = map_drag_start_vp_px_.x - dx;
+        float new_wp_y = map_drag_start_vp_px_.y - dy;
+        int zoom = messages_[map_active_row_].map_viewport.zoom;
+        auto [lat, lon] = world_px_to_lat_lon(new_wp_x, new_wp_y, zoom);
+        messages_[map_active_row_].map_viewport.lat = lat;
+        messages_[map_active_row_].map_viewport.lon = lon;
+        invalidate_data();
+        return;
+    }
+
     // Row hover may have changed; if the new hovered row is different
     // from the one we have geometry for, invalidate so paint_row will
     // rebuild it. (Paint will populate hovered_row_geom_ on its next
@@ -2856,17 +2890,30 @@ void MessageListView::on_pointer_move(tk::Point local) {
 
     // Inline hyperlink hover — detect URL under pointer and fire
     // on_link_hovered when it changes so the shell can set the cursor.
+    // Also fires a synthetic token when hovering a map tile area so the
+    // shell switches to the pointing-hand cursor there too.
     std::string new_link_url;
     {
         tk::Point world{ local.x + bounds().x, local.y + bounds().y };
         std::size_t hrow = hovered_row_geom_.row_index;
         if (hrow < messages_.size()) {
             const auto& m = messages_[hrow];
+            // Map hover: report as a non-empty token so the shell shows a
+            // grab cursor. Use a sentinel that is never a real URL.
+            if (m.kind == MessageRowData::Kind::Location) {
+                constexpr float kMapRowH = 240.0f;
+                const tk::Rect& rb = hovered_row_geom_.row_bounds;
+                tk::Rect map_rect{ rb.x, rb.y, rb.w, kMapRowH };
+                if (rect_contains(map_rect, world))
+                    new_link_url = "map://";
+            }
+            // Inline hyperlink (overrides map sentinel when a link is found).
             auto it = link_layout_cache_.find(m.event_id);
             if (it != link_layout_cache_.end() && it->second.layout) {
                 tk::Point ll{ world.x - it->second.origin.x,
                               world.y - it->second.origin.y };
-                new_link_url = it->second.layout->link_at(ll);
+                std::string lurl = it->second.layout->link_at(ll);
+                if (!lurl.empty()) new_link_url = std::move(lurl);
             }
         }
     }
@@ -2919,6 +2966,27 @@ bool MessageListView::on_pointer_down(tk::Point local) {
         if (rect_contains(pill_rect_, world)) {
             press_pill_ = true;
             return true;
+        }
+    }
+
+    // Map pan: start drag on Kind::Location rows.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        std::size_t ri = hovered_row_geom_.row_index;
+        if (ri < messages_.size() &&
+            messages_[ri].kind == MessageRowData::Kind::Location) {
+            constexpr float kMapRowH = 240.0f;
+            const tk::Rect& rb = hovered_row_geom_.row_bounds;
+            tk::Rect map_rect{ rb.x, rb.y, rb.w, kMapRowH };
+            if (rect_contains(map_rect, world)) {
+                map_active_row_       = ri;
+                map_drag_start_pt_    = local;
+                map_drag_start_vp_px_ = lat_lon_to_world_px(
+                    messages_[ri].map_viewport.lat,
+                    messages_[ri].map_viewport.lon,
+                    messages_[ri].map_viewport.zoom);
+                return true;
+            }
         }
     }
 
@@ -3117,6 +3185,13 @@ bool MessageListView::on_pointer_down(tk::Point local) {
 
 void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
     if (gate_blocks_input_()) return;
+
+    // Map pan: end drag.
+    if (map_active_row_ != kNoMapRow) {
+        map_active_row_ = kNoMapRow;
+        return;
+    }
+
     if (press_spoiler_) {
         bool fire = inside_self && !press_spoiler_eid_.empty();
         std::string eid = std::move(press_spoiler_eid_);
