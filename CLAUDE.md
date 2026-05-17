@@ -164,7 +164,6 @@ Done: inline images, stickers, reply-to, message editing, voice messages, Compos
 ### Step 9 — MSC2545 phase B: send (remaining)
 
 - **`send_emoticon_message(room_id, plain_body, html_body)` FFI** + composer integration to emit `<img data-mx-emoticon ...>` HTML body when a custom emoticon is picked (instead of `:shortcode:` plain-text fallback).
-- **`:shortcode:` autocomplete** — popup suggestion list as the user types `:abc`, sourced from the image-pack cache.
 
 ### Step 10 — MSC2545 phase C: pack management (remaining)
 

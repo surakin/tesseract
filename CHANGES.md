@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-17
 
+- feat(compose): emoji shortcode expansion — typing `:abc` shows a suggestion popup above the cursor with matching Unicode emoji and MSC2545 custom emoticons; Up/Down navigate rows, Enter/click accepts, Escape dismisses; completing a full `:shortcode:` token auto-expands inline; all four platforms (Qt6, GTK4, Win32, macOS)
 - feat(app): secondary room windows — `open_room_in_new_window(room_id)` opens any room in its own native window (Win32, Qt6, GTK4, macOS); raise-existing policy prevents duplicates; `RoomWindowBase` shared C++ base handles lifecycle, SDK subscription ref-counting, and event dispatch; all four shells dispatch timeline/message/typing/rooms-updated/url-preview events to open secondary windows
 
 ### 2026-05-16

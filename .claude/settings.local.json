@@ -111,7 +111,18 @@
       "Bash(xargs grep -l \"enum.*EventType\\\\|DaySeparator\")",
       "Bash(xargs grep -l \"insert.*message\\\\|push_back.*message\\\\|set_messages\")",
       "Bash(git restore *)",
-      "Bash(git rebase *)"
+      "Bash(git rebase *)",
+      "Bash(git -C /home/rayden/src/tesseract diff --stat)",
+      "Bash(mkdir -p /home/rayden/src/tesseract/docs/superpowers/specs /home/rayden/src/tesseract/docs/superpowers/plans && echo \"OK\")",
+      "Bash(git -C /home/rayden/src/tesseract worktree list)",
+      "Bash(git -C /home/rayden/src/tesseract branch --show-current)",
+      "Bash(git -C /home/rayden/src/tesseract stash)",
+      "Bash(git -C /home/rayden/src/tesseract stash pop)",
+      "Bash(git -C /home/rayden/src/tesseract diff --stat HEAD)",
+      "Bash(git -C /home/rayden/src/tesseract add client/include/tesseract/emoji.h client/src/emoji.cpp client/src/emoji_data.gen.py client/src/emoji_data.inc client/src/emoji_aliases.inc tests/cpp/test_emoji.cpp)",
+      "Bash(git -C /home/rayden/src/tesseract log --oneline -3)",
+      "Bash(git -C /home/rayden/src/tesseract status --short)",
+      "Bash(git -C /home/rayden/src/tesseract add ui/shared/views/ShortcodeEngine.cpp tests/cpp/test_shortcode_engine.cpp)"
     ]
   }
 }
