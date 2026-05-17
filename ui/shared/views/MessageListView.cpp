@@ -2681,12 +2681,18 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy) {
             auto it = map_rect_geom_.find(messages_[ri].event_id);
             if (it != map_rect_geom_.end() && rect_contains(it->second, world)) {
                 map_zoom_accum_ += dy;
-                constexpr float kZoomThreshold = 5.0f;
-                if (std::abs(map_zoom_accum_) >= kZoomThreshold) {
-                    int steps = static_cast<int>(map_zoom_accum_ / kZoomThreshold);
-                    map_zoom_accum_ -= steps * kZoomThreshold;
+                // Fire at most one zoom step per wheel event so a physical
+                // mouse wheel (dy ≈ 90) doesn't jump many levels at once.
+                constexpr float kZoomThreshold = 60.0f;
+                if (map_zoom_accum_ >= kZoomThreshold) {
+                    map_zoom_accum_ = 0.0f;
                     auto& vp = messages_[ri].map_viewport;
-                    vp.zoom = std::max(1, std::min(19, vp.zoom + steps));
+                    vp.zoom = std::min(19, vp.zoom + 1);
+                    invalidate_data();
+                } else if (map_zoom_accum_ <= -kZoomThreshold) {
+                    map_zoom_accum_ = 0.0f;
+                    auto& vp = messages_[ri].map_viewport;
+                    vp.zoom = std::max(1, vp.zoom - 1);
                     invalidate_data();
                 }
                 return true;
