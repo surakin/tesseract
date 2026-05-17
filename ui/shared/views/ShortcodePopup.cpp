@@ -27,14 +27,19 @@ void ShortcodePopup::arrange(tk::LayoutCtx&, tk::Rect bounds) {
 void ShortcodePopup::paint(tk::PaintCtx& ctx) {
     const auto& pal = ctx.theme.palette;
     int n = visible_rows();
+
+    // Opaque background base — prevents transparent bleed-through on hover rows
+    ctx.canvas.fill_rect(bounds_, pal.bg);
+
     for (int i = 0; i < n; ++i) {
         tk::Rect row{ bounds_.x, bounds_.y + float(i) * kRowHeight, bounds_.w, kRowHeight };
 
-        // Background: selected > hovered > normal
-        tk::Color bg = (i == selected_index_) ? pal.sidebar_selected
-                     : (i == hovered_index_)  ? pal.subtle_hover
-                     :                          pal.bg;
-        ctx.canvas.fill_rect(row, bg);
+        // Background: selected > hovered > normal (normal == pal.bg already filled)
+        if (i == selected_index_) {
+            ctx.canvas.fill_rect(row, pal.sidebar_selected);
+        } else if (i == hovered_index_) {
+            ctx.canvas.fill_rect(row, pal.subtle_hover);
+        }
 
         // 28×28 glyph cell left-aligned with 4px margin
         tk::Rect cell{
@@ -45,7 +50,7 @@ void ShortcodePopup::paint(tk::PaintCtx& ctx) {
         const auto& s = suggestions_[std::size_t(i)];
         if (!s.glyph.empty()) {
             tk::TextStyle st{};
-            st.role       = tk::FontRole::BigEmoji;
+            st.role       = tk::FontRole::Title;  // 15pt — same as EmojiPicker, fits 28px cell
             st.halign     = tk::TextHAlign::Center;
             st.valign     = tk::TextVAlign::Center;
             st.max_width  = cell.w;
@@ -63,12 +68,13 @@ void ShortcodePopup::paint(tk::PaintCtx& ctx) {
             ctx.canvas.fill_rect(cell, pal.chrome_bg);
         }
 
-        // Shortcode label
+        // Shortcode label — use Top alignment; ly already computes the
+        // vertical centre.  Center+unbounded-height would render at ly+4096.
         std::string label = ":" + s.shortcode + ":";
         tk::TextStyle tst{};
         tst.role   = tk::FontRole::Body;
         tst.halign = tk::TextHAlign::Leading;
-        tst.valign = tk::TextVAlign::Center;
+        tst.valign = tk::TextVAlign::Top;
         auto tl = ctx.factory.build_text(label, tst);
         if (tl) {
             tk::Size tsz = tl->measure();
@@ -83,6 +89,12 @@ void ShortcodePopup::paint(tk::PaintCtx& ctx) {
             ctx.canvas.fill_rect(sep, pal.separator);
         }
     }
+
+    // 1px border around the entire popup
+    ctx.canvas.fill_rect({ bounds_.x, bounds_.y, bounds_.w, 1.0f }, pal.separator);
+    ctx.canvas.fill_rect({ bounds_.x, bounds_.y + bounds_.h - 1.0f, bounds_.w, 1.0f }, pal.separator);
+    ctx.canvas.fill_rect({ bounds_.x, bounds_.y, 1.0f, bounds_.h }, pal.separator);
+    ctx.canvas.fill_rect({ bounds_.x + bounds_.w - 1.0f, bounds_.y, 1.0f, bounds_.h }, pal.separator);
 }
 
 bool ShortcodePopup::on_pointer_down(tk::Point local) {

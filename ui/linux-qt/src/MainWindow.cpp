@@ -535,10 +535,12 @@ MainWindow::MainWindow(QWidget* parent)
                     int n   = shortcode_popup_widget_->visible_rows();
                     if (nk == tk::NativeTextArea::NavKey::Up) {
                         shortcode_popup_widget_->set_selected_index(std::max(0, cur - 1));
+                        shortcode_popup_surface_->update();
                         return true;
                     }
                     if (nk == tk::NativeTextArea::NavKey::Down) {
                         shortcode_popup_widget_->set_selected_index(std::min(n - 1, cur + 1));
+                        shortcode_popup_surface_->update();
                         return true;
                     }
                     if (nk == tk::NativeTextArea::NavKey::Escape) {
@@ -1782,6 +1784,14 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos) {
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event) {
+    if (shortcode_popup_visible_() && event->type() == QEvent::MouseButtonPress) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        QPoint global = me->globalPosition().toPoint();
+        if (!shortcode_popup_frame_->geometry().contains(
+                shortcode_popup_frame_->mapFromGlobal(global))) {
+            hide_shortcode_popup_();
+        }
+    }
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -2370,14 +2380,16 @@ void MainWindow::show_shortcode_popup_(
     tk::Rect cursor_local)
 {
     if (!shortcode_popup_frame_) {
-        shortcode_popup_frame_ = new QWidget(nullptr,
-            Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-        shortcode_popup_frame_->setAttribute(Qt::WA_TranslucentBackground);
+        // Regular child widget — no separate window, so focus never leaves
+        // the compose text area regardless of window manager behaviour.
+        shortcode_popup_frame_ = new QWidget(this);
+        shortcode_popup_frame_->setFocusPolicy(Qt::NoFocus);
 
         shortcode_popup_surface_ = std::make_unique<tk::qt6::Surface>(
             mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
             shortcode_popup_frame_,
-            /*transparent=*/true);
+            /*transparent=*/false);
+        shortcode_popup_surface_->setFocusPolicy(Qt::NoFocus);
 
         auto widget = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = widget.get();
@@ -2405,29 +2417,31 @@ void MainWindow::show_shortcode_popup_(
                         (int)tesseract::views::ShortcodePopup::kMaxRows);
     int h = int(rows * tesseract::views::ShortcodePopup::kRowHeight);
     int w = int(tesseract::views::ShortcodePopup::kWidth);
-    shortcode_popup_frame_->resize(w, h);
-    shortcode_popup_surface_->resize(w, h);
 
-    // Map cursor rect from surface-local to screen coords.
-    QPoint screen_cursor = mainAppSurface_->mapToGlobal(
+    // Map cursor rect from surface-local into main-window coordinates.
+    // The popup is a child of the main window, so we use mapTo(this, ...).
+    QPoint parent_cursor = mainAppSurface_->mapTo(this,
         QPoint(int(cursor_local.x), int(cursor_local.y)));
 
-    QScreen* scr = screen();
-    QRect work   = scr ? scr->availableGeometry() : QRect(0, 0, 1920, 1080);
-    int x        = screen_cursor.x();
-    int y_above  = screen_cursor.y() - h - 4;
-    int y_below  = screen_cursor.y() + int(cursor_local.h) + 4;
-    int y        = (y_above >= work.top()) ? y_above : y_below;
+    QRect work  = rect();  // main window bounds — popup is clipped to this
+    int x       = parent_cursor.x();
+    int y_above = parent_cursor.y() - h - 4;
+    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
+    int y       = (y_above >= work.top()) ? y_above : y_below;
     x = std::clamp(x, work.left(), work.right()  - w);
     y = std::clamp(y, work.top(),  work.bottom() - h);
 
-    shortcode_popup_frame_->move(x, y);
+    shortcode_popup_frame_->setGeometry(x, y, w, h);
+    shortcode_popup_surface_->resize(w, h);
     shortcode_popup_frame_->show();
+    shortcode_popup_frame_->raise();
     shortcode_popup_surface_->relayout();
+    qApp->installEventFilter(this);
 }
 
 void MainWindow::hide_shortcode_popup_()
 {
+    qApp->removeEventFilter(this);
     if (shortcode_popup_frame_) shortcode_popup_frame_->hide();
     if (roomTextArea_) roomTextArea_->set_on_popup_nav(nullptr);
 }
