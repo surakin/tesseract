@@ -622,10 +622,22 @@ private:
         // the popup nav hook is live (popup open), swallow the tab WM_CHAR.
         if (msg == WM_CHAR && self->popup_nav_ && wParam == VK_TAB)
             return 0;
+        if (msg == WM_CHAR && wParam == '\r') {
+            // TranslateMessage queues WM_CHAR('\r') before WM_KEYDOWN reaches
+            // us, so when plain Enter fires on_submit_ we consume the keydown
+            // but the WM_CHAR is already in the queue. Swallow it here to
+            // prevent it from inserting a newline into the now-cleared field
+            // and expanding the compose bar back to two-line height.
+            if (self->swallow_next_cr_char_) {
+                self->swallow_next_cr_char_ = false;
+                return 0;
+            }
+        }
         if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (!shift) {
                 if (self->on_submit_) self->on_submit_();
+                self->swallow_next_cr_char_ = true;
                 return 0;
             }
         }
@@ -658,8 +670,9 @@ private:
     HWND parent_     = nullptr;
     HWND hwnd_       = nullptr;
     int  id_         = 0;
-    bool  suppress_changed_ = false;
-    float last_height_      = 0.f;
+    bool  suppress_changed_      = false;
+    bool  swallow_next_cr_char_  = false;  // set when Enter is consumed as submit
+    float last_height_           = 0.f;
     Rect  last_rect_        = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
     std::function<void(const std::string&)>      on_changed_;
