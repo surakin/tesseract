@@ -1959,14 +1959,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
 
 - (void)_openSettings {
     if (!_settingsView || !_settingsSurface) return;
-    const auto& accounts = _shell->accounts_;
-    std::string display_name = accounts.empty() ? std::string{} : accounts.front()->display_name;
-    std::string user_id      = accounts.empty() ? std::string{} : accounts.front()->user_id;
-    std::string avatar_mxc   = accounts.empty() ? std::string{} : accounts.front()->avatar_url;
     __weak MainWindowController* ws = self;
-    _settingsView->set_account_info(std::move(display_name),
-                                    std::move(user_id),
-                                    std::move(avatar_mxc));
+    _settingsView->set_account_info(_shell->my_display_name_,
+                                    _shell->my_user_id_,
+                                    _shell->my_avatar_url_);
     _settingsView->set_image_provider([ws](const std::string& mxc) -> const tk::Image* {
         MainWindowController* s = ws;
         if (!s) return nullptr;
