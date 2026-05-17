@@ -658,21 +658,36 @@ impl ClientFfi {
                             let room_name = room.display_name().await
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| room_id.clone());
-                            // Resolve the sender's display name for the
-                            // notification (push-rule eval above still uses
-                            // the raw MXID). Same cached-member pattern as
-                            // the typing handler; falls back to localpart.
-                            let sender_name = match
-                                room.get_member_no_sync(&ev.sender).await
-                            {
-                                Ok(Some(m)) => m.display_name()
-                                    .map(str::to_owned)
-                                    .unwrap_or_else(
-                                        || ev.sender.localpart().to_string()),
-                                _ => ev.sender.localpart().to_string(),
-                            };
-                            let avatar = room.avatar(matrix_sdk::media::MediaFormat::File)
+                            // Resolve the sender's display name and keep the
+                            // member for the avatar fallback below.
+                            let sender_member = room
+                                .get_member_no_sync(&ev.sender).await
+                                .ok().flatten();
+                            let sender_name = sender_member.as_ref()
+                                .and_then(|m| m.display_name().map(str::to_owned))
+                                .unwrap_or_else(|| ev.sender.localpart().to_string());
+                            // Room avatar, falling back to the sender's avatar
+                            // (covers DMs and rooms that have no room icon).
+                            let room_avatar = room
+                                .avatar(matrix_sdk::media::MediaFormat::File)
                                 .await.ok().flatten().unwrap_or_default();
+                            let avatar = if !room_avatar.is_empty() {
+                                room_avatar
+                            } else if let Some(url) = sender_member
+                                .as_ref().and_then(|m| m.avatar_url())
+                            {
+                                use matrix_sdk::media::MediaRequestParameters;
+                                use matrix_sdk::ruma::events::room::MediaSource;
+                                let req = MediaRequestParameters {
+                                    source: MediaSource::Plain(url.to_owned()),
+                                    format: matrix_sdk::media::MediaFormat::File,
+                                };
+                                client_clone.media()
+                                    .get_media_content(&req, true)
+                                    .await.unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
                             // Image messages carry a preview picture; other
                             // msgtypes get an empty slice (text + avatar only).
                             let preview = match &ev.content.msgtype {
@@ -727,17 +742,31 @@ impl ClientFfi {
                             let room_name = room.display_name().await
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| room_id.clone());
-                            let sender_name = match
-                                room.get_member_no_sync(&ev.sender).await
-                            {
-                                Ok(Some(m)) => m.display_name()
-                                    .map(str::to_owned)
-                                    .unwrap_or_else(
-                                        || ev.sender.localpart().to_string()),
-                                _ => ev.sender.localpart().to_string(),
-                            };
-                            let avatar = room.avatar(matrix_sdk::media::MediaFormat::File)
+                            let sender_member = room
+                                .get_member_no_sync(&ev.sender).await
+                                .ok().flatten();
+                            let sender_name = sender_member.as_ref()
+                                .and_then(|m| m.display_name().map(str::to_owned))
+                                .unwrap_or_else(|| ev.sender.localpart().to_string());
+                            let room_avatar = room
+                                .avatar(matrix_sdk::media::MediaFormat::File)
                                 .await.ok().flatten().unwrap_or_default();
+                            let avatar = if !room_avatar.is_empty() {
+                                room_avatar
+                            } else if let Some(url) = sender_member
+                                .as_ref().and_then(|m| m.avatar_url())
+                            {
+                                use matrix_sdk::media::MediaRequestParameters;
+                                let req = MediaRequestParameters {
+                                    source: MediaSource::Plain(url.to_owned()),
+                                    format: matrix_sdk::media::MediaFormat::File,
+                                };
+                                client_clone.media()
+                                    .get_media_content(&req, true)
+                                    .await.unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
                             let preview = match &ev.content.source {
                                 StickerMediaSource::Plain(uri) =>
                                     fetch_notification_image(
