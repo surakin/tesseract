@@ -58,6 +58,13 @@ struct FixedHeightAdapter : ListAdapter {
     }
 };
 
+// Minimal adapter for GridView mechanics testing.
+struct FixedGridAdapter : tk::GridAdapter {
+    std::size_t n = 20;
+    std::size_t count() const override { return n; }
+    void paint_cell(std::size_t, tk::PaintCtx&, tk::Rect, bool, bool) override {}
+};
+
 } // namespace
 
 TEST_CASE("ListView lays out variable + fixed rows + reports content height",
@@ -1464,4 +1471,95 @@ TEST_CASE("MessageListView room-switch gate swallows pointer input",
     view.notify_image_ready("mxc://example.org/pic");
     st.run(view, { 0, 0, 400, 600 });
     CHECK(any_image_painted(view));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  GridView — hover tracking and rect_at geometry
+//
+//  Setup: cell_size(32,32), spacing(2,2), arranged at {0,0,400,300}.
+//  cols = floor((400 + 2) / (32 + 2)) = floor(402/34) = 11
+//  Cell 0: x=0..31, y=0..31.  Cell 1: x=34..65, y=0..31.
+//  Gap between cell 0 and 1: x=32..33 (width 2).
+// ─────────────────────────────────────────────────────────────────────────
+
+TEST_CASE("GridView::on_pointer_move updates hovered_index",
+          "[tk][gridview]") {
+    Stage st;
+    GridView grid;
+    FixedGridAdapter ad; ad.n = 20;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, { 0, 0, 400, 300 });
+
+    CHECK(grid.hovered_index() == -1);
+
+    // Centre of cell 0 (x=16, y=16).
+    grid.on_pointer_move({ 16, 16 });
+    CHECK(grid.hovered_index() == 0);
+
+    // Centre of cell 1: x = 32+2+16 = 50.
+    grid.on_pointer_move({ 50, 16 });
+    CHECK(grid.hovered_index() == 1);
+}
+
+TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
+          "[tk][gridview]") {
+    Stage st;
+    GridView grid;
+    FixedGridAdapter ad; ad.n = 20;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, { 0, 0, 400, 300 });
+
+    grid.on_pointer_move({ 16, 16 });
+    REQUIRE(grid.hovered_index() == 0);
+
+    grid.on_pointer_leave();
+    CHECK(grid.hovered_index() == -1);
+}
+
+TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
+          "[tk][gridview]") {
+    Stage st;
+    GridView grid;
+    FixedGridAdapter ad; ad.n = 20;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, { 0, 0, 400, 300 });
+
+    // x=33: cell_local_x = 33 - 0*(32+2) = 33 >= 32 → gap → -1.
+    grid.on_pointer_move({ 33, 16 });
+    CHECK(grid.hovered_index() == -1);
+}
+
+TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
+          "[tk][gridview]") {
+    Stage st;
+    GridView grid;
+    FixedGridAdapter ad; ad.n = 4;
+    grid.set_adapter(&ad);
+    grid.set_cell_size(32, 32);
+    grid.set_spacing(2, 2);
+
+    auto lc = st.layout_ctx();
+    grid.arrange(lc, { 0, 0, 400, 300 });
+
+    tk::Rect r0 = grid.rect_at(0);
+    CHECK(r0.x == 0.0f);
+    CHECK(r0.y == 0.0f);
+    CHECK(r0.w == 32.0f);
+    CHECK(r0.h == 32.0f);
+
+    // Cell 1: x = bounds_.x + padding_.left + 1*(cell_w_+h_spacing_) = 0+0+34 = 34.
+    tk::Rect r1 = grid.rect_at(1);
+    CHECK(r1.x == 34.0f);
 }
