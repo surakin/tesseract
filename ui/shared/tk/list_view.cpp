@@ -399,6 +399,18 @@ void ListView::clamp_scroll() {
     if (scroll_y_ > max_scroll) scroll_y_ = max_scroll;
 }
 
+float ListView::scroll_fraction() const {
+    float max_s = std::max(0.f, content_height() - bounds_.h);
+    return (max_s > 0.f) ? scroll_y_ / max_s : 0.f;
+}
+
+void ListView::scroll_to_offset(float t) {
+    float max_s = std::max(0.f, content_height() - bounds_.h);
+    scroll_y_ = t * max_s;
+    clamp_scroll();
+    stick_to_bottom_ = false;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  GridView
 // ─────────────────────────────────────────────────────────────────────────

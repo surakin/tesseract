@@ -31,6 +31,7 @@
 #include "VideoViewerOverlay.h"
 
 #include "tk/controls.h"
+#include "tk/tab_bar.h"
 #include "tk/widget.h"
 
 #include <tesseract/visual.h>
@@ -71,6 +72,12 @@ public:
     ImageViewerOverlay* image_viewer()    const { return img_viewer_; }
     VideoViewerOverlay* video_viewer()    const { return vid_viewer_; }
     UserInfo*           user_info()       const { return user_info_; }
+    tk::TabBar*         tab_bar()         const { return tab_bar_; }
+
+    // Show/hide the tab bar and toggle the RoomHeader into condensed mode.
+    // Call from on_tab_state_changed_ui_() whenever tabs_.size() changes
+    // between 1 and 2 (or vice-versa).
+    void set_tab_bar_visible(bool visible);
 
     // ── Native overlay rects (call from the surface's set_on_layout) ──────
 
@@ -109,6 +116,8 @@ private:
     // Chat panel children
     RecoveryBanner*     recovery_banner_ = nullptr;
     VerificationBanner* verif_banner_    = nullptr;
+    tk::TabBar*         tab_bar_         = nullptr;
+    bool                tab_bar_visible_ = false;
     RoomView*           room_view_       = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)

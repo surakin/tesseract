@@ -113,7 +113,12 @@ MainWindow::MainWindow(QWidget* parent)
                 return it == tk_avatars_.end() ? nullptr : it->second.get();
             });
         mainApp_->room_list_view()->on_room_selected =
-            [this](const std::string& room_id) { onRoomSelected(room_id); };
+            [this](const std::string& room_id) {
+                if (QGuiApplication::keyboardModifiers() & Qt::ControlModifier)
+                    tab_open_room(room_id);
+                else
+                    tab_select_room(room_id);
+            };
         {
             auto* scrollDebounce = new QTimer(this);
             scrollDebounce->setSingleShot(true);
@@ -148,6 +153,12 @@ MainWindow::MainWindow(QWidget* parent)
                 joinRoomDialog_->openDialog();
             }
         };
+
+        // ---- Tab bar ----
+        mainApp_->tab_bar()->on_tab_selected =
+            [this](const std::string& room_id) { tab_select_room(room_id); };
+        mainApp_->tab_bar()->on_tab_closed =
+            [this](const std::string& room_id) { tab_close(room_id); };
 
         // ---- User info strip ----
         mainApp_->user_info()->set_image_provider(
@@ -1512,7 +1523,7 @@ void MainWindow::navigate_to_room(const std::string& room_id)
     {
         mainApp_->room_list_view()->set_selected_room(room_id);
     }
-    onRoomSelected(room_id);
+    tab_navigate_room(room_id);
     show();
     raise();
     activateWindow();
@@ -2630,6 +2641,17 @@ void MainWindow::handle_timeline_reset_ui_(
             {
                 mainApp_->room_view()->message_list()->scroll_to_event_id(pstate.focus_event_id);
             }
+
+            // Restore saved scroll offset when returning to a tab that had
+            // been scrolled up from the bottom.
+            if (room_switch && !pstate.is_focused
+                && active_tab_idx_ < tabs_.size()
+                && tabs_[active_tab_idx_].room_id == room_id
+                && tabs_[active_tab_idx_].scroll_offset > 0.f)
+            {
+                mainApp_->room_view()->message_list()->scroll_to_offset(
+                    tabs_[active_tab_idx_].scroll_offset);
+            }
         }
     }
 
@@ -2953,6 +2975,104 @@ void MainWindow::handle_notification_ui_(
         return;
     }
 }
+
+// ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
+
+void MainWindow::on_tab_state_changed_ui_()
+{
+    if (!mainApp_) return;
+
+    auto* tb = mainApp_->tab_bar();
+    const bool show_bar = tabs_.size() > 1;
+    mainApp_->set_tab_bar_visible(show_bar);
+
+    if (tb)
+    {
+        // Remove stale entries from the tab bar.
+        for (int i = tb->item_count() - 1; i >= 0; --i)
+        {
+            const std::string& rid = tb->room_id_at(i);
+            bool found = false;
+            for (const auto& t : tabs_)
+                if (t.room_id == rid) { found = true; break; }
+            if (!found) tb->remove_tab(rid);
+        }
+
+        // Add / update entries.
+        for (const auto& t : tabs_)
+        {
+            const tk::Image* avatar = nullptr;
+            std::string      name;
+            for (const auto& r : rooms_)
+            {
+                if (r.id != t.room_id) continue;
+                name = r.name;
+                if (!r.avatar_url.empty())
+                {
+                    auto it = tk_avatars_.find(r.avatar_url);
+                    if (it != tk_avatars_.end()) avatar = it->second.get();
+                }
+                break;
+            }
+
+            bool already = false;
+            for (int i = 0; i < tb->item_count(); ++i)
+                if (tb->room_id_at(i) == t.room_id) { already = true; break; }
+
+            if (already)
+                tb->update_tab(t.room_id, name, avatar);
+            else
+                tb->add_tab(t.room_id, name, avatar);
+        }
+
+        if (active_tab_idx_ < tabs_.size())
+            tb->set_active(tabs_[active_tab_idx_].room_id);
+    }
+
+    // Navigate to the active tab's room.
+    if (active_tab_idx_ < tabs_.size())
+    {
+        const auto& active = tabs_[active_tab_idx_];
+        onRoomSelected(active.room_id);
+
+        // Restore compose draft (onRoomSelected clears it via set_text("")).
+        if (!active.compose_draft.empty())
+        {
+            if (roomTextArea_) roomTextArea_->set_text(active.compose_draft);
+            if (mainApp_)
+                mainApp_->room_view()->set_current_text(active.compose_draft);
+        }
+    }
+
+    if (mainAppSurface_) mainAppSurface_->relayout();
+}
+
+float MainWindow::get_message_scroll_fraction_()
+{
+    if (!mainApp_ || !mainApp_->room_view()->message_list()) return 0.f;
+    return mainApp_->room_view()->message_list()->scroll_fraction();
+}
+
+void MainWindow::set_message_scroll_fraction_(float t)
+{
+    if (!mainApp_ || !mainApp_->room_view()->message_list()) return;
+    mainApp_->room_view()->message_list()->scroll_to_offset(t);
+}
+
+std::string MainWindow::get_compose_draft_()
+{
+    if (!mainApp_ || !mainApp_->room_view()->compose_bar()) return {};
+    return mainApp_->room_view()->compose_bar()->current_text();
+}
+
+void MainWindow::set_compose_draft_(const std::string& draft)
+{
+    if (roomTextArea_) roomTextArea_->set_text(draft);
+    if (mainApp_)
+        mainApp_->room_view()->set_current_text(draft);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 void MainWindow::on_room_list_state_ui_()
 {

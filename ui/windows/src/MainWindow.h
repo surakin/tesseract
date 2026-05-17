@@ -426,6 +426,13 @@ private:
     tk::ThemeMode os_color_scheme_() const override;
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
+
+    // Tab management hooks.
+    void        on_tab_state_changed_ui_()             override;
+    float       get_message_scroll_fraction_()         override;
+    void        set_message_scroll_fraction_(float t)  override;
+    std::string get_compose_draft_()                   override;
+    void        set_compose_draft_(const std::string&) override;
     tesseract::RoomWindowBase* create_secondary_room_window_(
         const std::string& room_id) override;
     void on_media_bytes_ready_(const std::string& cache_key,

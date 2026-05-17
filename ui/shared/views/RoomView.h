@@ -108,6 +108,7 @@ public:
     // Needed by the shell for: emoji/sticker picker anchor (popupAt),
     // pending attachment (set_pending_image / set_pending_file),
     // and cursor insert after emoji selection.
+    RoomHeader*      header()       const { return header_;       }
     ComposeBar*      compose_bar()  const { return compose_bar_;  }
     MessageListView* message_list() const { return message_list_; }
 

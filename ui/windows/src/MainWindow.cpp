@@ -852,6 +852,12 @@ void MainWindow::on_create(HWND hwnd) {
         // Space nav callback.
         main_app_->on_space_back = [this] { on_space_back(); };
 
+        // TabBar callbacks.
+        main_app_->tab_bar()->on_tab_selected =
+            [this](const std::string& room_id) { tab_select_room(room_id); };
+        main_app_->tab_bar()->on_tab_closed =
+            [this](const std::string& room_id) { tab_close(room_id); };
+
         // UserInfo callbacks.
         main_app_->user_info()->set_image_provider(
             [this](const std::string& mxc) -> const tk::Image* {
@@ -875,7 +881,7 @@ void MainWindow::on_create(HWND hwnd) {
                 return it == tk_avatars_.end() ? nullptr : it->second.get();
             });
         room_list_view_->on_room_selected =
-            [this](const std::string& room_id) { on_room_selected(room_id); };
+            [this](const std::string& room_id) { tab_select_room(room_id); };
         room_list_view_->on_scroll = [this] {
             KillTimer(hwnd_, kScrollDebounceTimerId);
             SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
@@ -1883,10 +1889,8 @@ void MainWindow::request_attention_() {
 void MainWindow::navigate_to_room(const std::string& room_id)
 {
     if (room_id.empty()) return;
-    // Select the room in the list view so the sidebar highlights it, then
-    // route through on_room_selected which handles subscription + prefs save.
     if (room_list_view_) room_list_view_->set_selected_room(room_id);
-    on_room_selected(room_id);
+    tab_navigate_room(room_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -3633,5 +3637,94 @@ void MainWindow::refresh_emoji_picker() {
     }
     if (emoji_picker_surface_) emoji_picker_surface_->relayout();
 }
+
+// ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
+
+void MainWindow::on_tab_state_changed_ui_()
+{
+    if (!main_app_) return;
+
+    auto* tb = main_app_->tab_bar();
+    const bool show_bar = tabs_.size() > 1;
+    main_app_->set_tab_bar_visible(show_bar);
+
+    if (tb)
+    {
+        for (int i = tb->item_count() - 1; i >= 0; --i)
+        {
+            const std::string& rid = tb->room_id_at(i);
+            bool found = false;
+            for (const auto& t : tabs_)
+                if (t.room_id == rid) { found = true; break; }
+            if (!found) tb->remove_tab(rid);
+        }
+
+        for (const auto& t : tabs_)
+        {
+            const tk::Image* avatar = nullptr;
+            std::string      name;
+            for (const auto& r : rooms_)
+            {
+                if (r.id != t.room_id) continue;
+                name = r.name;
+                if (!r.avatar_url.empty())
+                {
+                    auto it = tk_avatars_.find(r.avatar_url);
+                    if (it != tk_avatars_.end()) avatar = it->second.get();
+                }
+                break;
+            }
+
+            bool already = false;
+            for (int i = 0; i < tb->item_count(); ++i)
+                if (tb->room_id_at(i) == t.room_id) { already = true; break; }
+
+            if (already) tb->update_tab(t.room_id, name, avatar);
+            else         tb->add_tab   (t.room_id, name, avatar);
+        }
+
+        if (active_tab_idx_ < tabs_.size())
+            tb->set_active(tabs_[active_tab_idx_].room_id);
+    }
+
+    if (active_tab_idx_ < tabs_.size())
+    {
+        const auto& active = tabs_[active_tab_idx_];
+        on_room_selected(active.room_id);
+        if (!active.compose_draft.empty())
+        {
+            if (room_text_area_) room_text_area_->set_text(active.compose_draft);
+            if (room_view_) room_view_->set_current_text(active.compose_draft);
+        }
+    }
+
+    if (main_app_surface_) main_app_surface_->relayout();
+}
+
+float MainWindow::get_message_scroll_fraction_()
+{
+    if (!room_view_ || !room_view_->message_list()) return 0.f;
+    return room_view_->message_list()->scroll_fraction();
+}
+
+void MainWindow::set_message_scroll_fraction_(float t)
+{
+    if (!room_view_ || !room_view_->message_list()) return;
+    room_view_->message_list()->scroll_to_offset(t);
+}
+
+std::string MainWindow::get_compose_draft_()
+{
+    if (!room_view_ || !room_view_->compose_bar()) return {};
+    return room_view_->compose_bar()->current_text();
+}
+
+void MainWindow::set_compose_draft_(const std::string& draft)
+{
+    if (room_text_area_) room_text_area_->set_text(draft);
+    if (room_view_)      room_view_->set_current_text(draft);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 } // namespace win32

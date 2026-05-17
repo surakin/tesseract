@@ -453,4 +453,111 @@ void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref)
     apply_current_theme_();
 }
 
+// ── Tab management ─────────────────────────────────────────────────────────
+
+namespace {
+
+// Works with any vector whose element has a .room_id field.
+template <typename Tab>
+size_t find_tab_(const std::vector<Tab>& tabs, const std::string& room_id)
+{
+    for (size_t i = 0; i < tabs.size(); ++i)
+        if (tabs[i].room_id == room_id) return i;
+    return SIZE_MAX;
+}
+
+} // anon namespace
+
+void ShellBase::tab_open_room(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    size_t existing = find_tab_(tabs_, room_id);
+    if (existing != SIZE_MAX) {
+        if (active_tab_idx_ < tabs_.size()) {
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+        }
+        active_tab_idx_  = existing;
+        current_room_id_ = tabs_[active_tab_idx_].room_id;
+        on_tab_state_changed_ui_();
+        return;
+    }
+    if (!tabs_.empty()) {
+        tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
+        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+    }
+    // Bootstrap: wrap current_room_id_ as first tab if tabs_ is empty.
+    if (tabs_.empty() && !current_room_id_.empty())
+        tabs_.push_back({ current_room_id_, 0.f, {} });
+    tabs_.push_back({ room_id, 0.f, {} });
+    active_tab_idx_  = tabs_.size() - 1;
+    current_room_id_ = room_id;
+    on_tab_state_changed_ui_();
+}
+
+void ShellBase::tab_select_room(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    size_t existing = find_tab_(tabs_, room_id);
+    if (existing != SIZE_MAX) {
+        if (active_tab_idx_ < tabs_.size()) {
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+        }
+        active_tab_idx_  = existing;
+        current_room_id_ = tabs_[active_tab_idx_].room_id;
+        on_tab_state_changed_ui_();
+        return;
+    }
+    if (tabs_.empty())
+        tabs_.push_back({ room_id, 0.f, {} });
+    else
+        tabs_[active_tab_idx_] = { room_id, 0.f, {} };
+    current_room_id_ = room_id;
+    on_tab_state_changed_ui_();
+}
+
+void ShellBase::tab_navigate_room(const std::string& room_id)
+{
+    if (room_id.empty()) return;
+    size_t existing = find_tab_(tabs_, room_id);
+    if (existing != SIZE_MAX) {
+        if (active_tab_idx_ < tabs_.size()) {
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+        }
+        active_tab_idx_  = existing;
+        current_room_id_ = tabs_[active_tab_idx_].room_id;
+        on_tab_state_changed_ui_();
+        return;
+    }
+    if (tabs_.size() <= 1)
+        tab_select_room(room_id);
+    else
+        tab_open_room(room_id);
+}
+
+void ShellBase::tab_close(const std::string& room_id)
+{
+    if (tabs_.size() <= 1) return;
+    size_t idx = find_tab_(tabs_, room_id);
+    if (idx == SIZE_MAX) return;
+
+    const bool closing_active = (idx == active_tab_idx_);
+    if (!closing_active) {
+        tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
+        tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+    }
+    size_t new_active = active_tab_idx_;
+    if (closing_active)
+        new_active = (idx > 0) ? idx - 1 : 0;
+    else if (idx < active_tab_idx_)
+        --new_active;
+
+    tabs_.erase(tabs_.begin() + static_cast<std::ptrdiff_t>(idx));
+    active_tab_idx_  = new_active;
+    current_room_id_ = tabs_[active_tab_idx_].room_id;
+    on_tab_state_changed_ui_();
+}
+
 } // namespace tesseract

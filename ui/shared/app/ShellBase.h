@@ -55,6 +55,24 @@ public:
     // must override create_secondary_room_window_() for this to have effect.
     void open_room_in_new_window(const std::string& room_id);
 
+    // ── Tab management (call from the UI thread only) ─────────────────────────
+
+    // Ctrl+click: open room_id in a new tab, or switch to it if already open.
+    // Bootstraps a first tab from current_room_id_ if tabs_ is empty.
+    void tab_open_room(const std::string& room_id);
+
+    // Normal click: replace the current tab's room if not already open,
+    // or switch to the existing tab if it is.
+    void tab_select_room(const std::string& room_id);
+
+    // Notification click: replace current tab if only one open;
+    // open a new tab if multiple tabs are open.
+    // Switches to the existing tab if the room is already open.
+    void tab_navigate_room(const std::string& room_id);
+
+    // Close the tab for room_id. No-op when tabs_.size() <= 1.
+    void tab_close(const std::string& room_id);
+
 protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
@@ -73,6 +91,15 @@ protected:
     std::string my_user_id_;
     std::string my_display_name_;
     std::string my_avatar_url_;
+
+    // ── Tab state ─────────────────────────────────────────────────────────────
+    struct TabState {
+        std::string room_id;
+        float       scroll_offset = 0.f;  // fractional [0,1]: 0=top, 1=bottom
+        std::string compose_draft;
+    };
+    std::vector<TabState> tabs_;
+    size_t                active_tab_idx_ = 0;
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
@@ -235,6 +262,23 @@ protected:
     // Default is a no-op; each platform shell overrides with native image creation.
     virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/, int /*h*/,
                                    std::vector<uint8_t> /*rgba*/) {}
+
+    // ── Tab state hooks ───────────────────────────────────────────────────────
+    // Called after tabs_ and current_room_id_ have been updated. The shell must:
+    //   1. Sync the TabBar widget (add/remove/set_active).
+    //   2. Show/hide TabBar; set RoomHeader condensed mode.
+    //   3. Call its room-switch method when current_room_id_ != view_displayed_room_id_.
+    //   4. Restore compose_draft for the newly active tab.
+    virtual void on_tab_state_changed_ui_() = 0;
+
+    // Read the current fractional scroll position [0,1] of the message list.
+    virtual float       get_message_scroll_fraction_()               { return 0.f; }
+    // Seek the message list to fractional position t.
+    virtual void        set_message_scroll_fraction_(float /*t*/)    {}
+    // Read the current compose-bar draft text.
+    virtual std::string get_compose_draft_()                         { return {}; }
+    // Write text into the compose bar (called after a tab switch restores draft).
+    virtual void        set_compose_draft_(const std::string& /*s*/) {}
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default

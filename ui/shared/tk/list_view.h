@@ -189,6 +189,11 @@ public:
     void scroll_to_index(int idx, bool align_top = false);
     float scroll_y() const { return scroll_y_; }
 
+    // Fractional scroll position [0,1] (0=top, 1=bottom).
+    // Used by the tab system to save/restore position across tab switches.
+    float scroll_fraction() const;
+    void  scroll_to_offset(float t);
+
     // Total content height (sum of all row heights). 0 if no adapter or
     // measure hasn't run yet.
     float content_height() const;

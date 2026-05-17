@@ -203,6 +203,13 @@ private:
     void on_media_bytes_ready_(const std::string& cache_key,
                                 MediaKind kind,
                                 std::vector<uint8_t> bytes) override;
+
+    // Tab management hooks.
+    void        on_tab_state_changed_ui_()             override;
+    float       get_message_scroll_fraction_()         override;
+    void        set_message_scroll_fraction_(float t)  override;
+    std::string get_compose_draft_()                   override;
+    void        set_compose_draft_(const std::string&) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
     void on_url_preview_ready_(const std::string& url,

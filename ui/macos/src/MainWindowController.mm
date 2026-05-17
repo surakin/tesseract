@@ -128,6 +128,13 @@ protected:
     tesseract::RoomWindowBase* create_secondary_room_window_(
         const std::string& room_id) override;
 
+    // Tab management hooks.
+    void        on_tab_state_changed_ui_()             override;
+    float       get_message_scroll_fraction_()         override;
+    void        set_message_scroll_fraction_(float t)  override;
+    std::string get_compose_draft_()                   override;
+    void        set_compose_draft_(const std::string&) override;
+
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
 public:
@@ -191,16 +198,24 @@ public:
     using ShellBase::apply_current_theme_;
     using ShellBase::set_theme_preference_;
     using ShellBase::set_screen_lock_;
+    using ShellBase::tabs_;
+    using ShellBase::active_tab_idx_;
+    using ShellBase::tab_open_room;
+    using ShellBase::tab_select_room;
+    using ShellBase::tab_navigate_room;
+    using ShellBase::tab_close;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible) {
         update_typing_bar_(text, visible);
     }
 
-    // Borrowed pointer set by ObjC side after building the chat surface.
-    // Exposed here so MacShell C++ methods can call it without crossing the
-    // ObjC ivar boundary (which is private to @implementation).
-    tesseract::views::RoomView* room_view_ = nullptr;
+    // Borrowed pointers set by ObjC side after building the chat surface.
+    // Exposed here so MacShell C++ methods can call them without crossing
+    // the ObjC ivar boundary (which is private to @implementation).
+    tesseract::views::RoomView*      room_view_    = nullptr;
+    tesseract::views::MainAppWidget* main_app_     = nullptr;
+    tk::macos::Surface*              app_surface_  = nullptr;
 
     // Shortcode engine + transient state (owned here, accessed via _shell->).
     tesseract::views::ShortcodeEngine       shortcode_engine_;
@@ -259,6 +274,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
+- (void)_setComposeDraft:(const std::string&)draft;
 - (void)_onRecoveryVerify;
 - (void)_onRecoveryDismiss;
 - (void)_maybeShowRecoveryBanner;
@@ -667,6 +683,91 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     apply_theme_to_secondary_windows_(t);
 }
 
+// ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
+
+void MacShell::on_tab_state_changed_ui_()
+{
+    if (!main_app_) return;
+
+    auto* tb = main_app_->tab_bar();
+    const bool show_bar = tabs_.size() > 1;
+    main_app_->set_tab_bar_visible(show_bar);
+
+    if (tb)
+    {
+        for (int i = tb->item_count() - 1; i >= 0; --i)
+        {
+            const std::string& rid = tb->room_id_at(i);
+            bool found = false;
+            for (const auto& t : tabs_)
+                if (t.room_id == rid) { found = true; break; }
+            if (!found) tb->remove_tab(rid);
+        }
+
+        for (const auto& t : tabs_)
+        {
+            const tk::Image* avatar = nullptr;
+            std::string      name;
+            for (const auto& r : rooms_)
+            {
+                if (r.id != t.room_id) continue;
+                name = r.name;
+                if (!r.avatar_url.empty())
+                {
+                    auto it = tk_avatars_.find(r.avatar_url);
+                    if (it != tk_avatars_.end()) avatar = it->second.get();
+                }
+                break;
+            }
+
+            bool already = false;
+            for (int i = 0; i < tb->item_count(); ++i)
+                if (tb->room_id_at(i) == t.room_id) { already = true; break; }
+
+            if (already) tb->update_tab(t.room_id, name, avatar);
+            else         tb->add_tab   (t.room_id, name, avatar);
+        }
+
+        if (active_tab_idx_ < tabs_.size())
+            tb->set_active(tabs_[active_tab_idx_].room_id);
+    }
+
+    if (ctrl_ && active_tab_idx_ < tabs_.size())
+    {
+        const auto& active = tabs_[active_tab_idx_];
+        [ctrl_ onRoomSelected:active.room_id];
+        if (!active.compose_draft.empty())
+            [ctrl_ _setComposeDraft:active.compose_draft];
+    }
+
+    if (app_surface_) app_surface_->relayout();
+}
+
+float MacShell::get_message_scroll_fraction_()
+{
+    if (!room_view_ || !room_view_->message_list()) return 0.f;
+    return room_view_->message_list()->scroll_fraction();
+}
+
+void MacShell::set_message_scroll_fraction_(float t)
+{
+    if (!room_view_ || !room_view_->message_list()) return;
+    room_view_->message_list()->scroll_to_offset(t);
+}
+
+std::string MacShell::get_compose_draft_()
+{
+    if (!room_view_ || !room_view_->compose_bar()) return {};
+    return room_view_->compose_bar()->current_text();
+}
+
+void MacShell::set_compose_draft_(const std::string& draft)
+{
+    if (ctrl_) [ctrl_ _setComposeDraft:draft];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -804,7 +905,9 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
         _verifShared    = _mainApp->verif_banner();
         _imgViewer      = _mainApp->image_viewer();
         _vidViewer      = _mainApp->video_viewer();
-        _shell->room_view_ = _roomView;
+        _shell->room_view_   = _roomView;
+        _shell->main_app_    = _mainApp;
+        _shell->app_surface_ = _mainAppSurface.get();
 
         // Space nav callback.
         _mainApp->on_space_back = [self] { [self _onSpaceBack]; };
@@ -850,6 +953,18 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             [menu popUpMenuPositioningItem:nil atLocation:screen inView:nil];
         };
 
+        // TabBar callbacks.
+        _mainApp->tab_bar()->on_tab_selected =
+            [weakSelf](const std::string& room_id) {
+                MainWindowController* s = weakSelf;
+                if (s) s->_shell->tab_select_room(room_id);
+            };
+        _mainApp->tab_bar()->on_tab_closed =
+            [weakSelf](const std::string& room_id) {
+                MainWindowController* s = weakSelf;
+                if (s) s->_shell->tab_close(room_id);
+            };
+
         // RoomListView callbacks.
         _mainApp->room_list_view()->set_avatar_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image* {
@@ -861,7 +976,12 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
         _mainApp->room_list_view()->on_room_selected =
             [weakSelf](const std::string& room_id) {
                 MainWindowController* s = weakSelf;
-                if (s) [s onRoomSelected:room_id];
+                if (!s) return;
+                NSEventModifierFlags mods = [NSEvent modifierFlags];
+                if (mods & NSEventModifierFlagCommand)
+                    s->_shell->tab_open_room(room_id);
+                else
+                    s->_shell->tab_select_room(room_id);
             };
         _mainApp->room_list_view()->on_scroll = [weakSelf] {
             MainWindowController* s = weakSelf;
@@ -2410,7 +2530,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 - (void)_navigateToRoom:(std::string)roomId {
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
-    [self onRoomSelected:roomId];
+    _shell->tab_navigate_room(roomId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2794,6 +2914,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 // ─────────────────────────────────────────────────────────────────────────
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
+
+- (void)_setComposeDraft:(const std::string&)draft {
+    if (_roomTextArea) _roomTextArea->set_text(draft);
+    if (_roomView)     _roomView->set_current_text(draft);
+}
 
 - (void)onRoomSelected:(std::string)roomId {
     if (roomId.empty()) return;

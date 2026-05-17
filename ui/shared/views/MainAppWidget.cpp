@@ -39,6 +39,11 @@ MainAppWidget::MainAppWidget() {
     verif_banner_ = add_child(std::move(ver));
     verif_banner_->set_visible(false);
 
+    // Chat panel: tab bar (hidden until 2+ tabs open).
+    auto tb = std::make_unique<tk::TabBar>();
+    tab_bar_ = add_child(std::move(tb));
+    tab_bar_->set_visible(false);
+
     // Chat panel: main room view (header + messages + compose bar).
     auto rv = std::make_unique<RoomView>();
     room_view_ = add_child(std::move(rv));
@@ -73,6 +78,13 @@ void MainAppWidget::show_recovery_banner(bool show) {
 void MainAppWidget::show_verif_banner(bool show) {
     verif_visible_ = show;
     if (verif_banner_) verif_banner_->set_visible(show);
+}
+
+void MainAppWidget::set_tab_bar_visible(bool visible) {
+    tab_bar_visible_ = visible;
+    if (tab_bar_) tab_bar_->set_visible(visible);
+    if (room_view_ && room_view_->header())
+        room_view_->header()->set_condensed(visible);
 }
 
 void MainAppWidget::show_image_viewer(bool show) {
@@ -167,6 +179,12 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
         chat_y += verif_h;
     }
 
+    if (tab_bar_visible_ && tab_bar_) {
+        tab_bar_->arrange(ctx,
+            { chat_x, chat_y, chat_w, tk::TabBar::kHeight });
+        chat_y += tk::TabBar::kHeight;
+    }
+
     const float room_h = std::max(0.0f, y + h - chat_y);
     room_view_->arrange(ctx, { chat_x, chat_y, chat_w, room_h });
 
@@ -214,6 +232,7 @@ void MainAppWidget::paint(tk::PaintCtx& ctx) {
     // Chat panel.
     if (recovery_visible_ && recovery_banner_) recovery_banner_->paint(ctx);
     if (verif_visible_    && verif_banner_)    verif_banner_->paint(ctx);
+    if (tab_bar_visible_  && tab_bar_)         tab_bar_->paint(ctx);
     if (room_view_)                            room_view_->paint(ctx);
 
     // Lightbox overlays (painted last — on top of everything).

@@ -89,12 +89,68 @@ void RoomHeader::set_avatar_provider(
     avatar_provider_ = std::move(provider);
 }
 
+void RoomHeader::set_condensed(bool condensed) {
+    condensed_ = condensed;
+}
+
 tk::Size RoomHeader::measure(tk::LayoutCtx&, tk::Size constraints) {
-    return { constraints.w, kHeight };
+    return { constraints.w, condensed_ ? kCondensedHeight : kHeight };
 }
 
 void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
+
+    if (condensed_) {
+        // Condensed: topic centred vertically across the full width,
+        // no avatar, no name label, no calendar button.
+        if (name_label_) name_label_->set_visible(false);
+
+        const float topic_y = bounds.y + (bounds.h - kTopicH) * 0.5f;
+        topic_rect_ = { bounds.x + kPadX, topic_y,
+                        std::max(0.0f, bounds.w - 2.0f * kPadX), kTopicH };
+
+        const bool has_topic  = !topic_.empty() || !topic_html_.empty();
+        const bool show_label = has_topic && topic_html_.empty();
+        if (topic_label_) {
+            topic_label_->set_visible(show_label);
+            if (show_label) topic_label_->arrange(ctx, topic_rect_);
+        }
+
+        const bool needs_rebuild =
+            topic_dirty_ || (topic_rect_.w != last_topic_w_);
+        if (needs_rebuild) {
+            topic_dirty_     = false;
+            last_topic_w_    = topic_rect_.w;
+            topic_truncated_ = false;
+            topic_layout_.reset();
+
+            if (!topic_display_spans_.empty()) {
+                tk::TextStyle ts{};
+                ts.role      = tk::FontRole::SidebarPreview;
+                ts.trim      = tk::TextTrim::Ellipsis;
+                ts.max_width = topic_rect_.w;
+                topic_layout_ = ctx.factory.build_rich_text(topic_display_spans_, ts);
+                if (topic_multiline_) {
+                    topic_truncated_ = true;
+                } else {
+                    tk::TextStyle ts_nat{};
+                    ts_nat.role = tk::FontRole::SidebarPreview;
+                    auto nat = ctx.factory.build_rich_text(topic_display_spans_, ts_nat);
+                    topic_truncated_ = nat && nat->measure().w > topic_rect_.w;
+                }
+            } else if (!topic_.empty()) {
+                if (topic_multiline_) {
+                    topic_truncated_ = true;
+                } else {
+                    tk::TextStyle ts_nat{};
+                    ts_nat.role = tk::FontRole::SidebarPreview;
+                    auto nat = ctx.factory.build_text(topic_, ts_nat);
+                    topic_truncated_ = nat && nat->measure().w > topic_rect_.w;
+                }
+            }
+        }
+        return;
+    }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
     // Reserve space on the right for the calendar button.
@@ -170,6 +226,20 @@ void RoomHeader::paint(tk::PaintCtx& ctx) {
         bounds_.x, bounds_.y + bounds_.h - 1.0f, bounds_.w, 1.0f
     };
     ctx.canvas.fill_rect(sep, ctx.theme.palette.separator);
+
+    if (condensed_) {
+        // Condensed: only topic, no avatar / name / calendar.
+        if (!topic_spans_.empty()) {
+            if (topic_layout_) {
+                ctx.canvas.draw_text(*topic_layout_,
+                    { topic_rect_.x, topic_rect_.y },
+                    ctx.theme.palette.text_primary);
+            }
+        } else if (topic_label_ && topic_label_->visible()) {
+            topic_label_->paint(ctx);
+        }
+        return;
+    }
 
     // Avatar — circle-cropped image or initials disc.
     const tk::Point avatar_centre{

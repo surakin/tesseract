@@ -24,7 +24,8 @@ namespace tesseract::views {
 
 class RoomHeader : public tk::Widget {
 public:
-    static constexpr float kHeight = 60.0f;
+    static constexpr float kHeight          = 60.0f;
+    static constexpr float kCondensedHeight = 30.0f;  // topic-only strip
 
     RoomHeader();
     ~RoomHeader() override = default;
@@ -32,6 +33,11 @@ public:
     void set_room(const tesseract::RoomInfo& info);
     void set_avatar_provider(
         std::function<const tk::Image*(const std::string& mxc_url)> provider);
+
+    // When condensed, the header shows only the room topic at a reduced height.
+    // Used by the multi-tab layout when a TabBar is visible above the header.
+    void set_condensed(bool condensed);
+    bool is_condensed() const { return condensed_; }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
@@ -60,6 +66,7 @@ private:
     void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
                             tk::Color tint);
 
+    bool     condensed_      = false;
     bool     hover_calendar_ = false;
     bool     press_calendar_ = false;
     tk::Rect calendar_btn_rect_{};  // updated each paint pass
