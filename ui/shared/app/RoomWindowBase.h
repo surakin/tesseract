@@ -59,6 +59,8 @@ protected:
     void toggle_reaction_  (const std::string& event_id,       const std::string& key);
     void send_receipt_     (const std::string& event_id);
     void send_typing_notice_(bool typing);
+    void retry_send_(const std::string& txn_id);
+    void abort_send_(const std::string& txn_id);
     void request_pagination_back_();
 
     // Image cache accessors — friend access to ShellBase protected members

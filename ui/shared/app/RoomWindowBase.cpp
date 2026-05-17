@@ -24,6 +24,14 @@ void RoomWindowBase::finish_init_() {
             break;
         }
     }
+    if (room_view_ && room_view_->message_list()) {
+        room_view_->message_list()->on_retry_send = [this](const std::string& txn_id) {
+            retry_send_(txn_id);
+        };
+        room_view_->message_list()->on_abort_send = [this](const std::string& txn_id) {
+            abort_send_(txn_id);
+        };
+    }
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r) {
@@ -102,6 +110,16 @@ void RoomWindowBase::send_receipt_(const std::string& event_id) {
 void RoomWindowBase::send_typing_notice_(bool typing) {
     if (room_id_.empty() || !shell_->client_) return;
     shell_->client_->send_typing_notice(room_id_, typing);
+}
+
+void RoomWindowBase::retry_send_(const std::string& /*txn_id*/) {
+    if (room_id_.empty() || !shell_->client_) return;
+    shell_->client_->retry_send(room_id_);
+}
+
+void RoomWindowBase::abort_send_(const std::string& txn_id) {
+    if (txn_id.empty() || room_id_.empty() || !shell_->client_) return;
+    shell_->client_->abort_send(room_id_, txn_id);
 }
 
 const tk::Image* RoomWindowBase::shell_avatar_(const std::string& mxc) const {
