@@ -490,6 +490,8 @@ public:
             owner_.hovered_row_geom_.reply_button   = tk::Rect{};
             owner_.hovered_row_geom_.edit_button    = tk::Rect{};
             owner_.hovered_row_geom_.delete_button  = tk::Rect{};
+            owner_.hovered_row_geom_.retry_button   = tk::Rect{};
+            owner_.hovered_row_geom_.abort_button   = tk::Rect{};
         }
 
         // Avatar column centre — used both for painting and for the
@@ -842,6 +844,103 @@ public:
                         { pill.x + (pill_w - sz.w) * 0.5f,
                           pill.y + (pill_h - sz.h) * 0.5f },
                         ctx.theme.palette.text_secondary);
+                }
+            }
+        }
+
+        // ── Pending send indicator (own messages only) ──────────────────────
+        // Painted at the bottom-right of the message body, below it, in the
+        // same zone as read receipts. Never expands the row — stays inside
+        // the existing bounds. Text uses FontRole::Small.
+        //   None / just_sent  → "✓"  (accent colour)
+        //   Sending           → "◷"  (text_muted)
+        //   Failed recoverable → "⚠" + "Retry" (red + accent, Retry rect stored)
+        //   Failed unrecoverable → "⚠" + "✕"   (red + red, abort rect stored)
+        if (m.is_own) {
+            using PS = MessageRowData::PendingState;
+            const bool show_check = m.just_sent;
+            const bool show_clock  = (m.pending_state == PS::Sending && !m.just_sent);
+            const bool show_failed = (m.pending_state == PS::Failed);
+            if (show_check || show_clock || show_failed) {
+                constexpr float kPendingInsetX = 4.0f;
+                constexpr float kPendingGap    = 4.0f;  // gap between ⚠ and button
+
+                float right_edge = bounds.x + bounds.w - kPadX;
+                // Reserve space for receipts if they are present (same
+                // logic as the hover-button path above).
+                if (!m.read_receipts.empty()) {
+                    const std::size_t n = std::min(m.read_receipts.size(), kReceiptCap);
+                    float cluster_w = kReceiptSize
+                                      + static_cast<float>(n - 1) * kReceiptStride;
+                    right_edge -= cluster_w + chip_gap();
+                }
+                right_edge -= kPendingInsetX;
+
+                tk::TextStyle small_st{};
+                small_st.role = tk::FontRole::Small;
+                small_st.wrap = false;
+
+                if (show_check) {
+                    // ✓
+                    auto lo = ctx.factory.build_text("\xE2\x9C\x93", small_st);
+                    if (lo) {
+                        tk::Size sz = lo->measure();
+                        float tx = right_edge - sz.w;
+                        float ty = cursor - sz.h;
+                        ctx.canvas.draw_text(*lo, { tx, ty },
+                                              ctx.theme.palette.accent);
+                    }
+                } else if (show_clock) {
+                    // ◷
+                    auto lo = ctx.factory.build_text("\xE2\x97\xB7", small_st);
+                    if (lo) {
+                        tk::Size sz = lo->measure();
+                        float tx = right_edge - sz.w;
+                        float ty = cursor - sz.h;
+                        ctx.canvas.draw_text(*lo, { tx, ty },
+                                              ctx.theme.palette.text_muted);
+                    }
+                } else if (show_failed) {
+                    // ⚠
+                    auto warn_lo = ctx.factory.build_text("\xE2\x9A\xA0", small_st);
+                    const tk::Color kRed = tk::Color::rgb(0xE53935);
+                    float cur_right = right_edge;
+
+                    if (m.pending_recoverable) {
+                        // "Retry" button
+                        auto btn_lo = ctx.factory.build_text("Retry", small_st);
+                        if (btn_lo) {
+                            tk::Size bsz = btn_lo->measure();
+                            float bx = cur_right - bsz.w;
+                            float by = cursor - bsz.h;
+                            tk::Rect btn_rect{ bx, by, bsz.w, bsz.h };
+                            ctx.canvas.draw_text(*btn_lo, { bx, by },
+                                                  ctx.theme.palette.accent);
+                            if (hovered)
+                                owner_.hovered_row_geom_.retry_button = btn_rect;
+                            cur_right = bx;
+                        }
+                    } else {
+                        // ✕ abort button
+                        auto btn_lo = ctx.factory.build_text("\xE2\x9C\x95", small_st);
+                        if (btn_lo) {
+                            tk::Size bsz = btn_lo->measure();
+                            float bx = cur_right - bsz.w;
+                            float by = cursor - bsz.h;
+                            tk::Rect btn_rect{ bx, by, bsz.w, bsz.h };
+                            ctx.canvas.draw_text(*btn_lo, { bx, by }, kRed);
+                            if (hovered)
+                                owner_.hovered_row_geom_.abort_button = btn_rect;
+                            cur_right = bx;
+                        }
+                    }
+
+                    if (warn_lo) {
+                        tk::Size wsz = warn_lo->measure();
+                        float wx = cur_right - kPendingGap - wsz.w;
+                        float wy = cursor - wsz.h;
+                        ctx.canvas.draw_text(*warn_lo, { wx, wy }, kRed);
+                    }
                 }
             }
         }
@@ -2605,6 +2704,12 @@ static MessageListView::HoverTarget chip_hit_at(
     if (g.add_visible && rect_contains(g.add_button, world)) {
         return MessageListView::HoverTarget::AddButton;
     }
+    if (g.retry_button.w > 0 && rect_contains(g.retry_button, world)) {
+        return MessageListView::HoverTarget::RetryButton;
+    }
+    if (g.abort_button.w > 0 && rect_contains(g.abort_button, world)) {
+        return MessageListView::HoverTarget::AbortButton;
+    }
     for (std::size_t i = 0; i < g.receipt_discs.size(); ++i) {
         if (rect_contains(g.receipt_discs[i], world)) {
             out_chip_idx = static_cast<int>(i);
@@ -2628,6 +2733,8 @@ void MessageListView::on_pointer_move(tk::Point local) {
         hovered_row_geom_.chips.clear();
         hovered_row_geom_.receipt_discs.clear();
         hovered_row_geom_.add_visible = false;
+        hovered_row_geom_.retry_button = {};
+        hovered_row_geom_.abort_button = {};
     }
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(),
@@ -2666,6 +2773,8 @@ void MessageListView::on_pointer_leave() {
     hovered_row_geom_.chips.clear();
     hovered_row_geom_.receipt_discs.clear();
     hovered_row_geom_.add_visible = false;
+    hovered_row_geom_.retry_button = tk::Rect{};
+    hovered_row_geom_.abort_button = tk::Rect{};
     hover_target_   = HoverTarget::None;
     hover_chip_idx_ = -1;
     press_pill_     = false;
@@ -2775,6 +2884,29 @@ bool MessageListView::on_pointer_down(tk::Point local) {
                 press_delete_event_id_ = messages_[row].event_id;
                 return true;
             }
+        }
+    }
+
+    // Retry/abort pending send buttons.
+    {
+        tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+        if (hovered_row_geom_.retry_button.w > 0 &&
+            rect_contains(hovered_row_geom_.retry_button, world)) {
+            std::size_t ri = hovered_row_geom_.row_index;
+            if (ri < messages_.size()) {
+                press_retry_btn_      = true;
+                press_pending_txn_id_ = messages_[ri].pending_txn_id;
+            }
+            return true;
+        }
+        if (hovered_row_geom_.abort_button.w > 0 &&
+            rect_contains(hovered_row_geom_.abort_button, world)) {
+            std::size_t ri = hovered_row_geom_.row_index;
+            if (ri < messages_.size()) {
+                press_abort_btn_      = true;
+                press_pending_txn_id_ = messages_[ri].pending_txn_id;
+            }
+            return true;
         }
     }
 
@@ -2983,6 +3115,34 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
             const tk::Rect& db = hovered_row_geom_.delete_button;
             if (db.w > 0 && rect_contains(db, world)) {
                 if (on_delete_requested) on_delete_requested(ev);
+            }
+        }
+        return;
+    }
+    if (press_retry_btn_) {
+        bool  fire = inside_self && !press_pending_txn_id_.empty();
+        std::string txn = std::move(press_pending_txn_id_);
+        press_retry_btn_      = false;
+        press_pending_txn_id_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            const tk::Rect& rb = hovered_row_geom_.retry_button;
+            if (rb.w > 0 && rect_contains(rb, world)) {
+                if (on_retry_send) on_retry_send(txn);
+            }
+        }
+        return;
+    }
+    if (press_abort_btn_) {
+        bool  fire = inside_self && !press_pending_txn_id_.empty();
+        std::string txn = std::move(press_pending_txn_id_);
+        press_abort_btn_      = false;
+        press_pending_txn_id_.clear();
+        if (fire) {
+            tk::Point world{ local.x + bounds().x, local.y + bounds().y };
+            const tk::Rect& ab = hovered_row_geom_.abort_button;
+            if (ab.w > 0 && rect_contains(ab, world)) {
+                if (on_abort_send) on_abort_send(txn);
             }
         }
         return;

@@ -493,6 +493,11 @@ private:
     bool                           press_delete_btn_     = false;
     std::string                    press_delete_event_id_;
 
+    // Retry / abort pending-send button press state (own failed messages).
+    bool                           press_retry_btn_      = false;
+    bool                           press_abort_btn_      = false;
+    std::string                    press_pending_txn_id_;
+
     // Image / sticker click-to-view press state.
     mutable std::unordered_map<std::string, ImageHit> image_geom_;
     bool                           press_image_          = false;
