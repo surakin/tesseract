@@ -21,7 +21,8 @@
 
 namespace tk {
 
-class SideTabView : public Widget {
+class SideTabView : public Widget
+{
 public:
     SideTabView();
     ~SideTabView() override = default;
@@ -54,7 +55,8 @@ private:
     static constexpr float kTabRadius     = 6.0f;
     static constexpr float kTabInset      = 6.0f;  // horizontal inset inside column
 
-    struct Tab {
+    struct Tab
+    {
         std::string              label;
         std::unique_ptr<TextLayout> layout;   // built lazily in measure/paint
         float                    layout_max_w = -2.0f;
@@ -74,10 +76,10 @@ private:
 
     // Ensure the TextLayout for tab `i` is built for the given max width.
     // Called from both arrange (LayoutCtx) and paint (PaintCtx) paths;
-    // both expose the factory under the same name so the implementation
-    // is shared via a template.
-    void ensure_layout(LayoutCtx& ctx, int i, float max_w);
-    void ensure_layout_paint(PaintCtx& ctx, int i, float max_w);
+    // both expose `factory` under the same name so the implementation is
+    // shared via this template.
+    template <typename Ctx>
+    void ensure_layout_(Ctx& ctx, int i, float max_w);
 
     std::vector<Tab> tabs_;
     int              selected_idx_ = -1;
