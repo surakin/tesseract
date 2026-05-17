@@ -2945,11 +2945,23 @@ impl ClientFfi {
             return err("image_url is empty");
         }
         // Encrypted sticker events serialise the full MediaSource as JSON into
-        // the url field (starts with '{').  The encrypted blob cannot be stored
-        // as a plain pack entry — other clients need the key to display it.
-        if image_url.starts_with('{') {
-            return err("Sticker is from an encrypted message and cannot be saved to your pack");
-        }
+        // the url field (starts with '{').  Extract the inner mxc:// URI so
+        // the pack entry uses the same key format as non-encrypted stickers.
+        let image_url_owned;
+        let image_url = if image_url.starts_with('{') {
+            let v: serde_json::Value = match serde_json::from_str(image_url) {
+                Ok(v) => v,
+                Err(_) => return err("image_url is not a valid mxc:// uri"),
+            };
+            let url_str = match v.get("url").and_then(|u| u.as_str()) {
+                Some(s) => s.to_owned(),
+                None    => return err("image_url is not a valid mxc:// uri"),
+            };
+            image_url_owned = url_str;
+            image_url_owned.as_str()
+        } else {
+            image_url
+        };
         let uri = matrix_sdk::ruma::OwnedMxcUri::from(image_url);
         if !uri.is_valid() {
             return err("image_url is not a valid mxc:// uri");
