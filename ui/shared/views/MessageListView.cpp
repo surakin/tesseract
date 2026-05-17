@@ -460,7 +460,8 @@ public:
         bool  cont    = is_cont(index);
         float body_w  = std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m));
         float body_h  = measure_body_block_height(m, ctx, body_w);
-        float chips_h  = !m.reactions.empty() ? chip_h() : 0.0f;
+        float eff_chip_h = cont ? std::min(chip_h(), body_h) : chip_h();
+        float chips_h  = !m.reactions.empty() ? eff_chip_h : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
         return top_pad + header_h + body_h + chips_h + kPadY;
@@ -552,9 +553,14 @@ public:
         }
 
         // Body block: below avatar for full rows, tight to top for continuations.
-        float cursor = cont ? (bounds.y + kContPadY)
-                            : (bounds.y + kPadY + kAvatarSize);
+        float body_top = cont ? (bounds.y + kContPadY)
+                              : (bounds.y + kPadY + kAvatarSize);
+        float cursor = body_top;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
+        // For continuation rows (no avatar), cap reaction chips to body height
+        // so a single-line message's chip strip never exceeds the text area.
+        float eff_chip_h = cont ? std::min(chip_h(), cursor - body_top) : chip_h();
+        float eff_chip_r = eff_chip_h * 0.5f;
 
         // ── Hover-button overlay (no reactions / no receipts) ───────────────
         // When there is nothing to permanently show below the body, the row
@@ -629,7 +635,7 @@ public:
         if (!m.reactions.empty()) {
             float chip_y = cursor;
             float chip_x = col_x;
-            receipt_disc_cy = chip_y + chip_h() * 0.5f;
+            receipt_disc_cy = chip_y + eff_chip_h * 0.5f;
             for (std::size_t ri = 0; ri < m.reactions.size(); ++ri) {
                 const auto& r = m.reactions[ri];
                 constexpr float kChipInnerGap = 4.0f;
@@ -663,7 +669,7 @@ public:
                 tk::Size esz{};
                 float content_w;
                 if (is_img) {
-                    float img_side = chip_h() - kImgPad * 2;
+                    float img_side = eff_chip_h - kImgPad * 2;
                     content_w = img_side + kChipInnerGap + csz.w;
                 } else {
                     emoji_layout = rxc.glyph_layout.get();
@@ -675,8 +681,8 @@ public:
                     content_w = esz.w + kChipInnerGap + csz.w;
                 }
                 float w = std::max(content_w + kChipPadX * 2,
-                                    chip_h() + 8.0f);
-                tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                                    eff_chip_h + 8.0f);
+                tk::Rect pill{ chip_x, chip_y, w, eff_chip_h };
                 bool chip_hovered = hovered
                     && owner_.hover_target_ == HoverTarget::Chip
                     && owner_.hover_chip_idx_ == static_cast<int>(ri);
@@ -689,14 +695,14 @@ public:
                 if (chip_hovered) {
                     border = ctx.theme.palette.accent;
                 }
-                ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
-                ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
+                ctx.canvas.fill_rounded_rect(pill, eff_chip_r, bg);
+                ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
                                                 chip_hovered ? 1.5f : 1.0f);
 
                 float left_x  = pill.x + kChipPadX;
                 float count_y = pill.y + (pill.h - csz.h) * 0.5f;
                 if (is_img) {
-                    float img_side = chip_h() - kImgPad * 2;
+                    float img_side = eff_chip_h - kImgPad * 2;
                     tk::Rect img_dst{ left_x, pill.y + kImgPad, img_side, img_side };
                     const tk::Image* img =
                         owner_.image_provider_ ? owner_.image_provider_(r.source_json) : nullptr;
@@ -733,8 +739,8 @@ public:
                 static_cache_.ensure(ctx.factory);
                 if (const auto* layout = static_cache_.plus.get()) {
                     tk::Size sz = layout->measure();
-                    float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
-                    tk::Rect pill{ chip_x, chip_y, w, chip_h() };
+                    float w = std::max(sz.w + kChipPadX * 2, eff_chip_h + 8.0f);
+                    tk::Rect pill{ chip_x, chip_y, w, eff_chip_h };
                     bool add_hovered =
                         owner_.hover_target_ == HoverTarget::AddButton;
                     tk::Color bg = add_hovered
@@ -743,8 +749,8 @@ public:
                     tk::Color border = add_hovered
                         ? ctx.theme.palette.accent
                         : ctx.theme.palette.border;
-                    ctx.canvas.fill_rounded_rect(pill, chip_radius(), bg);
-                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(), border,
+                    ctx.canvas.fill_rounded_rect(pill, eff_chip_r, bg);
+                    ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
                                                     add_hovered ? 1.5f : 1.0f);
                     ctx.canvas.draw_text(
                         *layout,
@@ -760,11 +766,11 @@ public:
                                            tk::Rect& geom_out, bool last) {
                     if (!l) return;
                     tk::Size sz = l->measure();
-                    float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
-                    tk::Rect pill{ chip_x, chip_y, w, chip_h() };
-                    ctx.canvas.fill_rounded_rect(pill, chip_radius(),
+                    float w = std::max(sz.w + kReplyBtnPadX * 2, eff_chip_h + 4.0f);
+                    tk::Rect pill{ chip_x, chip_y, w, eff_chip_h };
+                    ctx.canvas.fill_rounded_rect(pill, eff_chip_r,
                                                   ctx.theme.palette.subtle_hover);
-                    ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
+                    ctx.canvas.stroke_rounded_rect(pill, eff_chip_r,
                                                     ctx.theme.palette.border, 1.0f);
                     ctx.canvas.draw_text(*l,
                         { pill.x + kReplyBtnPadX, pill.y + (pill.h - sz.h) * 0.5f },
