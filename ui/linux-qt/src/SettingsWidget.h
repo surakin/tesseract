@@ -20,11 +20,11 @@ class SettingsWidget final : public QWidget
 public:
     explicit SettingsWidget(QWidget* parent = nullptr);
 
-    /// Push current account info and settings into the shared view before
-    /// making this widget the visible content-stack page.
     /// Apply a new theme to the surface (called from MainWindow::apply_theme_ui_).
     void set_theme(const tk::Theme& t);
 
+    /// Push current account info and settings into the shared view before
+    /// making this widget the visible content-stack page.
     void populate(std::string display_name,
                   std::string user_id,
                   std::string avatar_mxc,
