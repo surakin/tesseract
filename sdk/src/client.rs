@@ -29,7 +29,7 @@ use matrix_sdk::SessionChange;
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
-    timeline::{MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
+    timeline::{EventSendState, MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
 };
 #[cfg(not(test))]
 use futures_util::StreamExt;
@@ -1800,17 +1800,63 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
         let content = if formatted_body.is_empty() {
             RoomMessageEventContent::text_plain(body)
         } else {
             RoomMessageEventContent::text_html(body, formatted_body)
         };
+        // Use the live timeline if subscribed — local echo fires immediately.
+        #[cfg(not(test))]
+        if let Some(handle) = self.timelines.get(&room_id) {
+            let timeline = handle.timeline.clone();
+            return match self.rt.block_on(async move { timeline.send(content.into()).await }) {
+                Ok(_)  => ok(""),
+                Err(e) => err(e.to_string()),
+            };
+        }
+        // Fallback: no timeline subscribed for this room.
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_)  => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
+
+    #[cfg(not(test))]
+    pub fn retry_send(&mut self, room_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        room.send_queue().set_enabled(true);
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn retry_send(&mut self, _room_id: &str) -> OpResult { ok("") }
+
+    #[cfg(not(test))]
+    pub fn abort_send(&mut self, room_id: &str, txn_id: &str) -> OpResult {
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
+        let Some(handle) = self.timelines.get(&room_id) else {
+            return err("no timeline for room");
+        };
+        let timeline = handle.timeline.clone();
+        let item_id = TimelineEventItemId::TransactionId(txn_id);
+        match self.rt.block_on(async move { timeline.redact(&item_id, None).await }) {
+            Ok(_)  => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn abort_send(&mut self, _room_id: &str, _txn_id: &str) -> OpResult { ok("") }
 
     /// Send a typing notice to `room_id`. Fire-and-forget; errors are swallowed.
     #[cfg(not(test))]
@@ -4127,9 +4173,30 @@ async fn timeline_item_to_ffi(
                 blurhash:                String::new(),
                 sticker_info_json:       String::new(),
                 image_animated:          false,
+                pending_state:        String::new(),
+                pending_error:        String::new(),
+                pending_recoverable:  false,
+                pending_txn_id:       String::new(),
             });
         }
     };
+
+    // Compute pending fields once for all non-virtual event paths.
+    let (pending_state, pending_error, pending_recoverable, pending_txn_id) =
+        if event_item.is_local_echo() {
+            let txn = event_item.transaction_id()
+                .map(|t| t.to_string())
+                .unwrap_or_default();
+            match event_item.send_state() {
+                Some(EventSendState::NotSentYet { .. }) =>
+                    ("sending".to_owned(), String::new(), false, txn),
+                Some(EventSendState::SendingFailed { error, is_recoverable }) =>
+                    ("failed".to_owned(), error.to_string(), *is_recoverable, txn),
+                _ => (String::new(), String::new(), false, txn),
+            }
+        } else {
+            (String::new(), String::new(), false, String::new())
+        };
 
     // Redactions: matrix-sdk-ui replaces the original item with
     // MsgLikeKind::Redacted in place. Surface it as a tombstone (msg_type
@@ -4188,6 +4255,10 @@ async fn timeline_item_to_ffi(
             blurhash:                String::new(),
             sticker_info_json:       String::new(),
             image_animated:          false,
+            pending_state:           String::new(),
+            pending_error:           String::new(),
+            pending_recoverable:     false,
+            pending_txn_id:          String::new(),
         });
     }
 
@@ -4261,6 +4332,10 @@ async fn timeline_item_to_ffi(
             sticker_info_json:       serde_json::to_string(&c.info)
                                          .unwrap_or_else(|_| "{}".to_owned()),
             image_animated:          c.info.is_animated.unwrap_or(false),
+            pending_state:        pending_state.clone(),
+            pending_error:        pending_error.clone(),
+            pending_recoverable,
+            pending_txn_id:       pending_txn_id.clone(),
         });
     }
 
@@ -4573,6 +4648,10 @@ async fn timeline_item_to_ffi(
         blurhash,
         sticker_info_json: String::new(),
         image_animated,
+        pending_state,
+        pending_error,
+        pending_recoverable,
+        pending_txn_id,
     })
 }
 

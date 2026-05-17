@@ -72,6 +72,11 @@ pub mod ffi {
         pub video_thumbnail_json: String,
         pub video_duration_ms:    u64,
         pub video_mime:           String,
+        pub video_autoplay:       bool,
+        pub video_loop:           bool,
+        pub video_no_audio:       bool,
+        pub video_hide_controls:  bool,
+        pub video_gif:            bool,
         pub reactions:         Vec<ReactionGroup>,
         pub read_receipts:     Vec<ReadReceipt>,
         pub in_reply_to_id:          String,
@@ -80,6 +85,12 @@ pub mod ffi {
         pub is_edited:               bool,
         pub formatted_body:          String,
         pub blurhash:                String,
+        pub sticker_info_json:       String,
+        pub image_animated:          bool,
+        pub pending_state:           String,
+        pub pending_error:           String,
+        pub pending_recoverable:     bool,
+        pub pending_txn_id:          String,
     }
 
     #[derive(Debug, PartialEq, Default)]
