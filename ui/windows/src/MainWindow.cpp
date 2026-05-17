@@ -1092,11 +1092,8 @@ void MainWindow::on_create(HWND hwnd) {
             int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                       sp.x, sp.y, 0, hwnd_, nullptr);
             DestroyMenu(menu);
-            if (cmd == 1) {
-                auto res = client_->save_sticker_to_user_pack(body, body, mxc, info);
-                if (!res && hStatus_)
-                    SetWindowTextW(hStatus_, utf8_to_wstr("Save sticker failed: " + res.message).c_str());
-            }
+            if (cmd == 1)
+                client_->save_sticker_to_user_pack(body, body, mxc, info);
         });
 
         // ── File drop ───────────────────────────────────────────────────────

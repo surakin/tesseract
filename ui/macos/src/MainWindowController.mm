@@ -2979,7 +2979,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_onStickerSave:(id)sender {
     if (_ctxStickerMxcUrl.empty()) return;
-    auto res = _shell->client_->save_sticker_to_user_pack(
+    _shell->client_->save_sticker_to_user_pack(
         _ctxStickerBody,
         _ctxStickerBody,
         _ctxStickerMxcUrl,
@@ -2988,14 +2988,6 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     _ctxStickerMxcUrl.clear();
     _ctxStickerBody.clear();
     _ctxStickerInfoJson.clear();
-    if (!res) {
-        NSString* msg = [NSString stringWithUTF8String:res.message.c_str()] ?: @"Unknown error";
-        NSAlert* alert = [[NSAlert alloc] init];
-        alert.alertStyle      = NSAlertStyleWarning;
-        alert.messageText     = @"Save Sticker Failed";
-        alert.informativeText = msg;
-        [alert beginSheetModalForWindow:self.window completionHandler:nil];
-    }
 }
 
 @end
