@@ -238,6 +238,16 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
         return ev;
     }
 
+    if (msg_type == "m.location") {
+        auto ev = std::make_unique<LocationEvent>();
+        assign_base(*ev, e);
+        ev->type        = EventType::Location;
+        ev->lat         = e.location_lat;
+        ev->lon         = e.location_lon;
+        ev->description = std::string(e.location_description);
+        return ev;
+    }
+
     // Fallback for unhandled message types
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);

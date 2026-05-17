@@ -8,6 +8,7 @@ namespace tesseract {
 enum class EventType {
     Text, Image, File, Sticker, Voice, Video, Redacted, Notice, Emote, Unhandled,
     DaySeparator, ReadMarker, TimelineStart,
+    Location,
 };
 
 /// One aggregated reaction key attached to a timeline event.
@@ -160,6 +161,14 @@ struct VideoEvent : public Event {
     bool gif           = false;  // composite: implies all four above
 
     VideoEvent() { type = EventType::Video; }
+};
+
+struct LocationEvent : public Event {
+    double      lat  = 0.0;
+    double      lon  = 0.0;
+    std::string description;
+
+    LocationEvent() { type = EventType::Location; }
 };
 
 /// Fallback for message types we don't handle yet (reactions, polls, etc.)
