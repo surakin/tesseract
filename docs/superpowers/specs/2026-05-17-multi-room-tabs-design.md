@@ -124,7 +124,7 @@ All existing callers of `current_room_id_` are updated to `active_room_id()`. `v
 | Normal click room (already open) | Set `active_tab_idx_` to existing entry; trigger room switch |
 | Click tab in TabBar | Save current scroll/draft; set `active_tab_idx_`; trigger room switch with cached offset |
 | Close tab (× button) | Save draft; remove entry from `tabs_`; activate the tab to the left, or the new leftmost if the closed tab was leftmost; if `tabs_.size() == 1` after removal, `TabBar` hides itself |
-| Click desktop notification | If the room is already open in a tab, switch to that tab. Otherwise replace `tabs_[active_tab_idx_]` with the notification's room (same as normal-click on a room not already open) |
+| Click desktop notification | If the room is already open in a tab, switch to that tab. Otherwise: if only one tab is open, replace it; if multiple tabs are open, open a new tab and switch to it |
 
 "Trigger room switch" means the existing `on_room_selected` path: subscribe room, paginate if needed, `set_room`, `set_messages`, then `MessageListView::scroll_to_offset(tab.scroll_offset)`.
 
