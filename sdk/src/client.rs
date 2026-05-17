@@ -223,6 +223,14 @@ pub struct ClientFfi {
     /// relevant event; read by the FFI list/* accessors without blocking.
     #[cfg(not(test))]
     image_packs: Arc<Mutex<Vec<crate::image_packs::ImagePack>>>,
+    /// Set to `true` immediately after a successful `set_account_data_raw` for
+    /// the user pack. Cleared by the sync watcher the first time `rebuild_image_packs`
+    /// returns a user pack (confirming the server echo arrived in the state store).
+    /// Guards the preserve logic: only hold the cached user pack across a stale
+    /// rebuild while our own write is still in flight — not after an external
+    /// deletion of the pack.
+    #[cfg(not(test))]
+    user_pack_write_pending: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -358,6 +366,8 @@ impl ClientFfi {
             media_upload_limit: AtomicU64::new(0),
             #[cfg(not(test))]
             image_packs: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(not(test))]
+            user_pack_write_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir:   default_data_dir(),
@@ -699,6 +709,7 @@ impl ClientFfi {
             let mut notable_rx    = client.room_info_notable_update_receiver();
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache       = Arc::clone(&self.image_packs);
+            let write_pending     = Arc::clone(&self.user_pack_write_pending);
 
             self.spawn_tracked(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
@@ -758,29 +769,48 @@ impl ClientFfi {
                             // handler machinery.
                             let pks = rebuild_image_packs(&client_clone).await;
                             if let Ok(mut g) = packs_cache.lock() {
-                                // Rebuild reads the SDK state store, which doesn't
-                                // reflect set_account_data_raw until the server echo
-                                // arrives in a sync response. If we just saved a
-                                // sticker, the cache has the new user pack but the
-                                // state store is still stale. room_info_notable_update
-                                // doesn't fire for account_data events, so this may
-                                // be the only rebuild before the echo — preserve the
-                                // cached user pack so it doesn't vanish from the picker.
-                                let has_user = pks.iter().any(|p| {
-                                    p.source == crate::image_packs::PackSource::User
-                                });
-                                if !has_user {
-                                    if let Some(cached) = g.iter()
-                                        .find(|p| p.source == crate::image_packs::PackSource::User)
-                                        .cloned()
-                                    {
-                                        let mut merged = pks;
-                                        merged.insert(0, cached);
-                                        *g = merged;
-                                    } else {
-                                        *g = pks;
+                                use std::sync::atomic::Ordering;
+                                use crate::image_packs::PackSource;
+
+                                let has_user = pks.iter().any(|p| p.source == PackSource::User);
+                                let pending  = write_pending.load(Ordering::Acquire);
+
+                                // Determine whether to preserve the cached user pack
+                                // over the rebuild result. We only preserve when our
+                                // own write is still in flight (pending = true) AND the
+                                // rebuild result appears stale (fewer images than cache,
+                                // or no user pack at all). Once rebuild finds the user
+                                // pack the echo has arrived; clear the flag so a later
+                                // external deletion is not incorrectly preserved.
+                                let cached_user = g.iter()
+                                    .find(|p| p.source == PackSource::User)
+                                    .cloned();
+                                let rebuilt_images = pks.iter()
+                                    .find(|p| p.source == PackSource::User)
+                                    .map(|p| p.images.len())
+                                    .unwrap_or(0);
+                                let cached_images = cached_user.as_ref()
+                                    .map(|p| p.images.len())
+                                    .unwrap_or(0);
+
+                                let should_preserve = pending && match (cached_user.is_some(), has_user) {
+                                    (true, false) => true,
+                                    (true, true)  => cached_images > rebuilt_images,
+                                    _             => false,
+                                };
+
+                                if should_preserve {
+                                    let mut merged: Vec<_> = pks.into_iter()
+                                        .filter(|p| p.source != PackSource::User)
+                                        .collect();
+                                    if let Some(cu) = cached_user {
+                                        merged.insert(0, cu);
                                     }
+                                    *g = merged;
                                 } else {
+                                    if has_user {
+                                        write_pending.store(false, Ordering::Release);
+                                    }
                                     *g = pks;
                                 }
                             }
@@ -2986,6 +3016,11 @@ impl ClientFfi {
                 // the next sync cycle, so rebuild_image_packs would read stale
                 // data if we called refresh_image_packs_blocking here.
                 self.update_user_pack_in_cache(&new_content);
+                // Signal the sync watcher that a write is in flight so it
+                // preserves the just-updated cache across any room-update-triggered
+                // rebuilds that happen before the server echo arrives.
+                self.user_pack_write_pending
+                    .store(true, std::sync::atomic::Ordering::Release);
                 ok("")
             }
             Err(e) => err(e.to_string()),
@@ -3062,6 +3097,8 @@ impl ClientFfi {
         match write_result {
             Ok(_) => {
                 self.update_user_pack_in_cache(&new_content);
+                self.user_pack_write_pending
+                    .store(true, std::sync::atomic::Ordering::Release);
                 ok("")
             }
             Err(e) => err(e.to_string()),
