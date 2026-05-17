@@ -40,6 +40,7 @@ add_executable(tesseract_tests
     cpp/test_html_spans.cpp
     cpp/test_prefs.cpp
     cpp/test_settings.cpp
+    cpp/test_pending_send.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching
