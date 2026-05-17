@@ -23,6 +23,23 @@ static std::string extract_string(const std::string& json, const std::string& ke
     return json.substr(pos, end - pos);
 }
 
+// Extractor for a bare JSON boolean (true / false) by key.
+// Returns the default value when the key is absent or the token is unrecognized.
+static bool extract_bool(const std::string& json, const std::string& key,
+                          bool default_value = true) {
+    std::string needle = "\"" + key + "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string::npos) return default_value;
+    pos += needle.size();
+    // Skip whitespace and the colon separator.
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
+        ++pos;
+    if (pos >= json.size()) return default_value;
+    if (json.compare(pos, 4, "true") == 0)  return true;
+    if (json.compare(pos, 5, "false") == 0) return false;
+    return default_value;
+}
+
 void Settings::load_from_disk(const std::filesystem::path& config_dir) {
     auto path = config_dir / "app_settings.json";
     std::ifstream f(path);
@@ -36,10 +53,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir) {
     else if (theme == "dark")   theme_pref = ThemePreference::Dark;
     else                        theme_pref = ThemePreference::System;
 
-    auto notif = extract_string(json, "notifications_enabled");
-    if (!notif.empty())
-        notifications_enabled = (notif == "true");
-    // missing key → keep default (true)
+    notifications_enabled = extract_bool(json, "notifications_enabled", true);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
@@ -55,8 +69,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open()) return;
     f << "{\"theme\":\"" << theme_str << "\""
-      << ",\"notifications_enabled\":\""
-      << (notifications_enabled ? "true" : "false") << "\""
+      << ",\"notifications_enabled\":"
+      << (notifications_enabled ? "true" : "false")
       << "}";
 }
 

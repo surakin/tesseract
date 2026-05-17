@@ -19,6 +19,7 @@ static void write_file(const fs::path& p, const std::string& content) {
 static void reset_settings() {
     tesseract::Settings::instance().theme_pref =
         tesseract::Settings::ThemePreference::System;
+    tesseract::Settings::instance().notifications_enabled = true;
 }
 
 // Each test uses a unique subdirectory under the OS temp path.
@@ -139,4 +140,48 @@ TEST_CASE("Settings save creates config directory if needed") {
     CHECK(s.theme_pref == tesseract::Settings::ThemePreference::Light);
 
     fs::remove_all(make_tmp_dir("mkdir"));  // clean up root
+}
+
+TEST_CASE("Settings notifications_enabled round-trip: false") {
+    reset_settings();
+    auto dir = make_tmp_dir("notif_false");
+
+    auto& s = tesseract::Settings::instance();
+    s.notifications_enabled = false;
+    s.save_to_disk(dir);
+
+    reset_settings();  // resets notifications_enabled back to true
+    s.load_from_disk(dir);
+    REQUIRE(s.notifications_enabled == false);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings notifications_enabled round-trip: true") {
+    reset_settings();
+    auto dir = make_tmp_dir("notif_true");
+
+    auto& s = tesseract::Settings::instance();
+    s.notifications_enabled = true;
+    s.save_to_disk(dir);
+
+    // Dirty the field first so we prove load actually sets it.
+    s.notifications_enabled = false;
+    s.load_from_disk(dir);
+    REQUIRE(s.notifications_enabled == true);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings notifications_enabled missing key keeps default true") {
+    reset_settings();
+    auto dir = make_tmp_dir("notif_missing_key");
+    // Write a file with no notifications_enabled key at all.
+    write_file(dir / "app_settings.json", "{\"theme\":\"dark\"}");
+
+    auto& s = tesseract::Settings::instance();
+    s.load_from_disk(dir);
+    REQUIRE(s.notifications_enabled == true);
+
+    fs::remove_all(dir);
 }
