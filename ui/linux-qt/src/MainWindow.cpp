@@ -738,11 +738,20 @@ MainWindow::MainWindow(QWidget* parent)
                             next = std::min(n - 1, cur + 1);
                             break;
                         case tk::NativeTextArea::NavKey::Tab:
-                            next = (cur + 1) % n;
-                            break;
+                        {
+                            int sel = shortcode_popup_widget_->selected_index();
+                            if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size())
+                            {
+                                auto& s = shortcode_current_suggestions_[sel];
+                                std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                roomTextArea_->replace_range(
+                                    shortcode_active_match_.start, shortcode_active_match_.end, r);
+                            }
+                            hide_shortcode_popup_();
+                            return true;
+                        }
                         case tk::NativeTextArea::NavKey::ShiftTab:
-                            next = (cur <= 0) ? n - 1 : cur - 1;
-                            break;
+                            return false;
                         case tk::NativeTextArea::NavKey::Escape:
                             hide_shortcode_popup_();
                             return true;
