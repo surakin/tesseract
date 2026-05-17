@@ -1248,7 +1248,8 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
 
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id)
+    if (!current_room_id_.empty() && current_room_id_ != room_id
+            && room_subscription_refs_.count(current_room_id_) == 0)
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
@@ -2791,7 +2792,8 @@ void MainWindow::emoji_selected(const std::string& glyph) {
 void MainWindow::switch_active_account(int new_idx) {
     // Unsubscribe the previous account's open room and drop per-account,
     // room-id-keyed state so it can't bleed into the next account.
-    if (client_ && !current_room_id_.empty())
+    if (client_ && !current_room_id_.empty()
+            && room_subscription_refs_.count(current_room_id_) == 0)
         client_->unsubscribe_room(current_room_id_);
     current_room_id_.clear();
     space_stack_.clear();
@@ -2862,7 +2864,8 @@ void MainWindow::logout_active_account() {
     const std::string logged_out_uid = sess.user_id;
 
     if (!current_room_id_.empty()) {
-        client_->unsubscribe_room(current_room_id_);
+        if (room_subscription_refs_.count(current_room_id_) == 0)
+            client_->unsubscribe_room(current_room_id_);
         current_room_id_.clear();
     }
 

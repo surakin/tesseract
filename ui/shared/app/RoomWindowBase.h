@@ -37,6 +37,7 @@ public:
     virtual void bring_to_front()   = 0;
     virtual void close_window()     = 0;
     virtual void request_relayout() = 0;
+    virtual void update_window_title_(const std::string& /*name*/) {}
 
 protected:
     // Call at the end of the subclass constructor, after surface + room_view_

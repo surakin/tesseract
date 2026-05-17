@@ -76,6 +76,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         room_view_->set_current_text({});
     };
     room_view_->on_edit_cancelled = [this] { room_view_->set_current_text({}); };
+    room_view_->on_edit_prefill = [this](const std::string& body) {
+        room_view_->set_current_text(body);
+    };
+    room_view_->on_reply_focus = [] { /* no NativeTextArea on GTK4 secondary */ };
     room_view_->on_delete_requested = [this](const std::string& event_id) {
         delete_event_(event_id);
     };
@@ -125,6 +129,10 @@ void RoomWindow::close_window() {
 
 void RoomWindow::request_relayout() {
     if (surface_) surface_->relayout();
+}
+
+void RoomWindow::update_window_title_(const std::string& name) {
+    if (window_) gtk_window_set_title(window_, name.c_str());
 }
 
 // ---------------------------------------------------------------------------

@@ -30,9 +30,10 @@ public:
         const std::unordered_map<std::string, tesseract::views::UrlPreviewData>* preview_data);
     ~MacRoomWindow() override;
 
-    void bring_to_front()   override;
-    void close_window()     override;
-    void request_relayout() override;
+    void bring_to_front()                              override;
+    void close_window()                                override;
+    void request_relayout()                            override;
+    void update_window_title_(const std::string& name) override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close() {
@@ -105,6 +106,9 @@ MacRoomWindow::MacRoomWindow(
         });
 
     // ── Repaint / layout ─────────────────────────────────────────────────────
+    room_view_->set_repaint_requester([this] {
+        if (surface_) surface_->relayout();
+    });
     room_view_->on_layout_changed = [this] {
         if (surface_) surface_->relayout();
     };
@@ -208,6 +212,13 @@ void MacRoomWindow::close_window() {
 
 void MacRoomWindow::request_relayout() {
     if (surface_) surface_->relayout();
+}
+
+void MacRoomWindow::update_window_title_(const std::string& name) {
+    if (!window_closed_ && controller_) {
+        NSString* title = [NSString stringWithUTF8String:name.c_str()] ?: @"";
+        [controller_.window setTitle:title];
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

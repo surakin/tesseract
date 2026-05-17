@@ -28,6 +28,7 @@ void RoomWindowBase::finish_init_() {
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r) {
     if (room_view_) room_view_->set_room(r);
+    update_window_title_(r.name);
     request_relayout();
 }
 

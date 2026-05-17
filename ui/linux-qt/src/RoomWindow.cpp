@@ -83,6 +83,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         room_view_->set_current_text({});
     };
     room_view_->on_edit_cancelled = [this] { room_view_->set_current_text({}); };
+    room_view_->on_edit_prefill = [this](const std::string& body) {
+        room_view_->set_current_text(body);
+    };
+    room_view_->on_reply_focus = [] { /* no NativeTextArea on Qt6 secondary */ };
     room_view_->on_delete_requested = [this](const std::string& event_id) {
         delete_event_(event_id);
     };
@@ -120,6 +124,10 @@ void RoomWindow::close_window() {
 
 void RoomWindow::request_relayout() {
     if (surface_) { surface_->relayout(); surface_->update(); }
+}
+
+void RoomWindow::update_window_title_(const std::string& name) {
+    setWindowTitle(QString::fromStdString(name));
 }
 
 void RoomWindow::resizeEvent(QResizeEvent* ev) {

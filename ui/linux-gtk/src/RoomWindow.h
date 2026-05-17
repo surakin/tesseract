@@ -14,9 +14,10 @@ public:
     RoomWindow(MainWindow* parent_shell, const std::string& room_id);
     ~RoomWindow() override;
 
-    void bring_to_front()   override;
-    void close_window()     override;
-    void request_relayout() override;
+    void bring_to_front()                              override;
+    void close_window()                                override;
+    void request_relayout()                            override;
+    void update_window_title_(const std::string& name) override;
 
 private:
     static void on_destroy_(GtkWidget* widget, gpointer self);

@@ -1096,7 +1096,8 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
     }
 
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id)
+    if (!current_room_id_.empty() && current_room_id_ != room_id
+            && room_subscription_refs_.count(current_room_id_) == 0)
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
@@ -1971,7 +1972,8 @@ void MainWindow::switchActiveAccount(int new_idx) {
 
     // Unsubscribe the previous account's open room so its timeline stops
     // streaming updates to the message list when we swap surfaces.
-    if (client_ && !current_room_id_.empty()) {
+    if (client_ && !current_room_id_.empty()
+            && room_subscription_refs_.count(current_room_id_) == 0) {
         client_->unsubscribe_room(current_room_id_);
     }
     current_room_id_.clear();

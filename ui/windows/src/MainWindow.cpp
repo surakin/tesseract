@@ -1679,7 +1679,8 @@ void MainWindow::on_room_selected(const std::string& room_id) {
     }
 
     handle_compose_room_leaving_(current_room_id_);
-    if (!current_room_id_.empty() && current_room_id_ != room_id)
+    if (!current_room_id_.empty() && current_room_id_ != room_id
+            && room_subscription_refs_.count(current_room_id_) == 0)
         client_->unsubscribe_room(current_room_id_);
 
     current_room_id_ = room_id;
@@ -2292,12 +2293,6 @@ void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
 tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(
     const std::string& room_id)
 {
-    // Find the RoomInfo for this room so the title bar can be set immediately.
-    for (const auto& r : rooms_) {
-        if (r.id == room_id)
-            return new RoomWindow(this, room_id);
-    }
-    // Room not found in current list — open anyway; set_room() will arrive shortly.
     return new RoomWindow(this, room_id);
 }
 

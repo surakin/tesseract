@@ -204,6 +204,10 @@ void RoomWindow::request_relayout() {
     if (surface_) surface_->relayout();
 }
 
+void RoomWindow::update_window_title_(const std::string& name) {
+    if (hwnd_) SetWindowTextW(hwnd_, utf8_to_wstr(name).c_str());
+}
+
 // ---------------------------------------------------------------------------
 
 LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg,

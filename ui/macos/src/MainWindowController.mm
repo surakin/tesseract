@@ -144,6 +144,7 @@ public:
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::active_verification_flow_id_;
     using ShellBase::pagination_;
+    using ShellBase::room_subscription_refs_;
     using ShellBase::last_room_list_state_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
@@ -422,6 +423,7 @@ void MacShell::handle_timeline_reset_ui_(
         for (auto& p : snapshot) {
             if (!p) continue;
             ensure_row_media_(*p);
+            if (!p->in_reply_to_id.empty()) ensure_reply_details_(p->event_id);
             rows.push_back(tesseract::views::make_row_data(*p, my_user_id_));
         }
         w->on_timeline_reset(std::move(rows));
@@ -443,6 +445,7 @@ void MacShell::handle_message_inserted_ui_(
     if (ev && ev->type != tesseract::EventType::Unhandled) {
         dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
             ensure_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
             w->on_message_inserted(index, tesseract::views::make_row_data(*ev, my_user_id_));
         });
     }
@@ -459,6 +462,7 @@ void MacShell::handle_message_updated_ui_(
     if (ev && ev->type != tesseract::EventType::Unhandled) {
         dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
             ensure_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
             w->on_message_updated(index, tesseract::views::make_row_data(*ev, my_user_id_));
         });
     }
@@ -1803,7 +1807,8 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     std::string uid = session->user_id;
 
     if (!_shell->current_room_id_.empty()) {
-        _shell->client_->unsubscribe_room(_shell->current_room_id_);
+        if (_shell->room_subscription_refs_.count(_shell->current_room_id_) == 0)
+            _shell->client_->unsubscribe_room(_shell->current_room_id_);
         _shell->current_room_id_.clear();
     }
     session->client->logout();
@@ -2362,7 +2367,8 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         }
     }
     _shell->handle_compose_room_leaving_(_shell->current_room_id_);
-    if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId) {
+    if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId
+            && _shell->room_subscription_refs_.count(_shell->current_room_id_) == 0) {
         _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
     _shell->current_room_id_ = roomId;
