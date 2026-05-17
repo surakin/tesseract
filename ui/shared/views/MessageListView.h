@@ -105,6 +105,15 @@ struct MessageRowData {
 
     // MSC2448: xyz.amorgan.blurhash placeholder string; empty when absent.
     std::string blurhash;
+
+    // Optimistic send state (own messages only).
+    enum class PendingState { None, Sending, Failed };
+    PendingState pending_state      = PendingState::None;
+    std::string  pending_txn_id;
+    std::string  pending_error;
+    bool         pending_recoverable = false;
+    // Set for ~2 s after a Sending → None transition to show ✓.
+    bool         just_sent           = false;
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -276,6 +285,18 @@ public:
     // The host should call `Client::redact_event(room_id, event_id, "")`.
     std::function<void(const std::string& event_id)> on_delete_requested;
 
+    // Fired when a local echo transitions Sending → None (message confirmed).
+    std::function<void(const std::string& event_id)> on_just_sent;
+
+    // Fired when the user clicks the Retry button on a failed own message.
+    std::function<void(const std::string& txn_id)> on_retry_send;
+
+    // Fired when the user clicks the ✕ (abort) button on a failed own message.
+    std::function<void(const std::string& txn_id)> on_abort_send;
+
+    // Clear the just_sent flag on the row matching `event_id` and repaint.
+    void clear_just_sent(const std::string& event_id);
+
     // Sticker right-click hit. Native shells call this with the world-coord
     // pointer position from their secondary-click handler. Returns the
     // sticker event metadata when the click lands on a Kind::Sticker rect,
@@ -358,10 +379,12 @@ public:
         tk::Rect          reply_button{};   // 0-area when not painted
         tk::Rect          edit_button{};   // 0-area when not painted
         tk::Rect          delete_button{}; // 0-area when not painted
+        tk::Rect          retry_button{};  // 0-area when not painted
+        tk::Rect          abort_button{};  // 0-area when not painted
         tk::Rect          row_bounds{};
     };
 
-    enum class HoverTarget { None, Chip, AddButton, Receipt };
+    enum class HoverTarget { None, Chip, AddButton, Receipt, RetryButton, AbortButton };
 
     // Test introspection: the chip geometry recorded by the most
     // recent paint of the hovered row, and the resolved hover target.
