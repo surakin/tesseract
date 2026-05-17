@@ -66,9 +66,13 @@ public:
     enum class ThemePreference { Light, Dark, System };
     ThemePreference theme_pref = ThemePreference::System;
 
-    // Persist / restore {"theme":"light"|"dark"|"system"} in
-    // <config_dir>/app_settings.json.  load_from_disk is a no-op when the
-    // file is missing.  save_to_disk creates the directory if needed.
+    // ── Notifications ─────────────────────────────────────────────────
+    // Whether to show desktop notifications for new messages (default: on).
+    bool notifications_enabled = true;
+
+    // Persist / restore settings in <config_dir>/app_settings.json.
+    // load_from_disk is a no-op when the file is missing.
+    // save_to_disk creates the directory if needed.
     void load_from_disk(const std::filesystem::path& config_dir);
     void save_to_disk(const std::filesystem::path& config_dir) const;
 

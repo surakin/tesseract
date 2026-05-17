@@ -35,6 +35,11 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir) {
     if (theme == "light")       theme_pref = ThemePreference::Light;
     else if (theme == "dark")   theme_pref = ThemePreference::Dark;
     else                        theme_pref = ThemePreference::System;
+
+    auto notif = extract_string(json, "notifications_enabled");
+    if (!notif.empty())
+        notifications_enabled = (notif == "true");
+    // missing key → keep default (true)
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
@@ -49,7 +54,10 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
     auto path = config_dir / "app_settings.json";
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open()) return;
-    f << "{\"theme\":\"" << theme_str << "\"}";
+    f << "{\"theme\":\"" << theme_str << "\""
+      << ",\"notifications_enabled\":\""
+      << (notifications_enabled ? "true" : "false") << "\""
+      << "}";
 }
 
 } // namespace tesseract
