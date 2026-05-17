@@ -2592,9 +2592,9 @@ void MainWindow::on_settings_activate_(GSimpleAction* /*action*/,
 void MainWindow::open_settings_()
 {
     settings_widget_->populate(
-        accounts_.empty() ? std::string{} : accounts_.front().display_name,
-        accounts_.empty() ? std::string{} : accounts_.front().user_id,
-        accounts_.empty() ? std::string{} : accounts_.front().avatar_mxc,
+        my_display_name_,
+        my_user_id_,
+        my_avatar_url_,
         [this](const std::string& mxc) -> const tk::Image*
         {
             auto it = tk_avatars_.find(mxc);
