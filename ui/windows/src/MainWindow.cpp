@@ -189,6 +189,7 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t) {
     if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
     if (join_room_surface_)      join_room_surface_->set_theme(t);
     if (account_picker_surface_) account_picker_surface_->set_theme(t);
+    if (settings_surface_)       settings_surface_->set_theme(t);
 }
 
 void MainWindow::on_system_theme_changed() {
@@ -468,6 +469,8 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // emoji-picker search field is a NativeTextField overlay handled
         // by its set_on_changed lambda. Only the logout / add-account
         // items posted by show_user_context_menu_ remain.
+        if (LOWORD(wParam) == IDM_SETTINGS)
+            self->open_settings_();
         if (LOWORD(wParam) == IDM_LOGOUT)
             self->logout_active_account();
         if (LOWORD(wParam) == IDM_ADD_ACCOUNT)
@@ -1382,6 +1385,30 @@ void MainWindow::on_create(HWND hwnd) {
     login_view_->set_on_cancel([this]() { on_login_cancelled(); });
     ShowWindow(login_view_->hwnd(), SW_HIDE);
 
+    // Settings surface — same-sized child HWND, initially hidden.
+    {
+        settings_surface_ = std::make_unique<tk::win32::Surface>(
+            hInst_, hwnd_, tk::Theme::light());
+        auto view = std::make_unique<tesseract::views::SettingsView>();
+        settings_view_ = view.get();
+        settings_view_->on_close = [this]
+        {
+            close_settings_();
+        };
+        settings_view_->on_theme_changed = [this](tesseract::Settings::ThemePreference pref)
+        {
+            set_theme_preference_(pref);
+        };
+        settings_view_->on_notifications_changed = [this](bool enabled)
+        {
+            tesseract::Settings::instance().notifications_enabled = enabled;
+            tesseract::Settings::instance().save_to_disk(config_dir());
+        };
+        settings_surface_->set_root(std::move(view));
+        if (settings_surface_->hwnd())
+            ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+    }
+
     // Load saved theme preference and apply it.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
     apply_current_theme_();
@@ -1424,6 +1451,14 @@ void MainWindow::on_size(int w, int h) {
     if (login_visible_ && login_view_ && login_view_->hwnd()) {
         SetWindowPos(login_view_->hwnd(), nullptr, 0, 0, w, content_h, SWP_NOZORDER);
         login_view_->layout(w, content_h);
+        return;
+    }
+
+    if (settings_visible_ && settings_surface_ && settings_surface_->hwnd()) {
+        SetWindowPos(settings_surface_->hwnd(), nullptr,
+                     0, 0, w, content_h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        settings_surface_->relayout();
         return;
     }
 
@@ -1592,12 +1627,54 @@ void MainWindow::on_login_succeeded() {
     switch_active_account(new_idx);
 }
 
+void MainWindow::open_settings_()
+{
+    if (!settings_view_ || !settings_surface_) return;
+    settings_view_->set_account_info(my_display_name_, my_user_id_, my_avatar_url_);
+    settings_view_->set_image_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            auto it = tk_avatars_.find(mxc);
+            return it == tk_avatars_.end() ? nullptr : it->second.get();
+        });
+    settings_view_->set_theme_pref(tesseract::Settings::instance().theme_pref);
+    settings_view_->set_notifications_enabled(
+        tesseract::Settings::instance().notifications_enabled);
+    settings_surface_->relayout();
+
+    settings_visible_ = true;
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
+    if (settings_surface_ && settings_surface_->hwnd())
+        ShowWindow(settings_surface_->hwnd(), SW_SHOW);
+
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
+void MainWindow::close_settings_()
+{
+    settings_visible_ = false;
+    if (settings_surface_ && settings_surface_->hwnd())
+        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+    if (main_app_surface_ && main_app_surface_->hwnd())
+        ShowWindow(main_app_surface_->hwnd(), SW_SHOW);
+
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    on_size(rc.right, rc.bottom);
+}
+
 void MainWindow::show_login_view() {
     login_visible_ = true;
     if (login_view_ && login_view_->hwnd())
         ShowWindow(login_view_->hwnd(), SW_SHOW);
     if (main_app_surface_ && main_app_surface_->hwnd())
         ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
+    if (settings_surface_ && settings_surface_->hwnd())
+        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+    settings_visible_ = false;
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
@@ -1606,8 +1683,11 @@ void MainWindow::show_login_view() {
 
 void MainWindow::show_main_content() {
     login_visible_ = false;
+    settings_visible_ = false;
     if (login_view_ && login_view_->hwnd())
         ShowWindow(login_view_->hwnd(), SW_HIDE);
+    if (settings_surface_ && settings_surface_->hwnd())
+        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
     if (main_app_surface_ && main_app_surface_->hwnd())
         ShowWindow(main_app_surface_->hwnd(), SW_SHOW);
 
@@ -2877,6 +2957,7 @@ void MainWindow::open_account_picker() {
 
 void MainWindow::show_user_context_menu_(int screen_x, int screen_y) {
     HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, IDM_SETTINGS, L"Settings…");
     AppendMenuW(menu, MF_STRING, IDM_ADD_ACCOUNT, L"Add Account…");
     std::wstring logout_label = L"Log Out";
     if (!my_display_name_.empty()) {

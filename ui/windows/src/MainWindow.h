@@ -37,6 +37,7 @@ using std::min;
 #include "views/ShortcodePopup.h"
 
 #include "views/AccountPicker.h"
+#include "views/SettingsView.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -150,6 +151,8 @@ private:
     void on_login_succeeded();
     void show_login_view();
     void show_main_content();
+    void open_settings_();
+    void close_settings_();
     void on_send_clicked();
     void on_room_selected(const std::string& room_id);
     // Posted-message payloads — see WM_TESSERACT_* constants above. The
@@ -295,6 +298,11 @@ private:
     // Single surface hosting the full MainAppWidget tree.
     std::unique_ptr<tk::win32::Surface>   main_app_surface_;
     tesseract::views::MainAppWidget*      main_app_ = nullptr;  // borrowed
+
+    // Settings surface — full-window sibling of main_app_surface_ and login_view_.
+    std::unique_ptr<tk::win32::Surface> settings_surface_;
+    tesseract::views::SettingsView*     settings_view_  = nullptr;  // borrowed
+    bool                                settings_visible_ = false;
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView*       room_list_view_  = nullptr;
