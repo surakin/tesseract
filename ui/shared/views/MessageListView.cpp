@@ -1421,15 +1421,7 @@ private:
                 constexpr float kMapRowH = 240.0f;
                 tk::Rect map_rect{ x, y, std::min(col_w, kImageMaxW), kMapRowH };
                 paint_location_map(m, ctx, map_rect);
-                float cursor = y + kMapRowH;
-                if (!m.location_description.empty()) {
-                    cursor += kPadY;
-                    float dh = paint_wrapped_text(m.location_description, ctx,
-                                                   x, cursor, col_w,
-                                                   ctx.theme.palette.text_muted);
-                    cursor += dh;
-                }
-                return cursor;
+                return y + kMapRowH;
             }
             // Virtual items are handled before this function is called.
             case MessageRowData::Kind::DaySeparator:
@@ -1811,6 +1803,8 @@ private:
     // `map_rect` is the bounding box for the map canvas area (pre-clipped).
     void paint_location_map(const MessageRowData& m, tk::PaintCtx& ctx,
                              tk::Rect map_rect) const {
+        owner_.map_rect_geom_[m.event_id] = map_rect;
+
         // Round corners on the map card.
         ctx.canvas.push_clip_rounded_rect(map_rect, 8.0f);
 
@@ -2684,13 +2678,17 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy) {
         std::size_t ri = hovered_row_geom_.row_index;
         if (ri < messages_.size() &&
             messages_[ri].kind == MessageRowData::Kind::Location) {
-            constexpr float kMapRowH = 240.0f;
-            const tk::Rect& rb = hovered_row_geom_.row_bounds;
-            tk::Rect map_rect{ rb.x, rb.y, rb.w, kMapRowH };
-            if (rect_contains(map_rect, world)) {
-                auto& vp = messages_[ri].map_viewport;
-                vp.zoom = std::max(1, std::min(19, vp.zoom + (dy > 0.0f ? 1 : -1)));
-                invalidate_data();
+            auto it = map_rect_geom_.find(messages_[ri].event_id);
+            if (it != map_rect_geom_.end() && rect_contains(it->second, world)) {
+                map_zoom_accum_ += dy;
+                constexpr float kZoomThreshold = 5.0f;
+                if (std::abs(map_zoom_accum_) >= kZoomThreshold) {
+                    int steps = static_cast<int>(map_zoom_accum_ / kZoomThreshold);
+                    map_zoom_accum_ -= steps * kZoomThreshold;
+                    auto& vp = messages_[ri].map_viewport;
+                    vp.zoom = std::max(1, std::min(19, vp.zoom + steps));
+                    invalidate_data();
+                }
                 return true;
             }
         }
@@ -2943,6 +2941,36 @@ void MessageListView::on_pointer_move(tk::Point local) {
         hover_link_url_ = new_link_url;
         if (on_link_hovered) on_link_hovered(hover_link_url_);
     }
+
+    // Location description tooltip: show when hovering over the map area.
+    {
+        bool want_tooltip = false;
+        tk::Rect anchor{};
+        int row = hovered_row_index();
+        if (row >= 0) {
+            const auto& m = messages_[static_cast<std::size_t>(row)];
+            if (m.kind == MessageRowData::Kind::Location &&
+                !m.location_description.empty()) {
+                auto it = map_rect_geom_.find(m.event_id);
+                if (it != map_rect_geom_.end()) {
+                    tk::Point world{ local.x + bounds().x,
+                                     local.y + bounds().y };
+                    if (rect_contains(it->second, world)) {
+                        want_tooltip = true;
+                        anchor = it->second;
+                    }
+                }
+            }
+        }
+        if (want_tooltip && !map_tooltip_showing_) {
+            map_tooltip_showing_ = true;
+            const auto& m = messages_[static_cast<std::size_t>(row)];
+            if (on_show_tooltip) on_show_tooltip(m.location_description, anchor);
+        } else if (!want_tooltip && map_tooltip_showing_) {
+            map_tooltip_showing_ = false;
+            if (on_hide_tooltip) on_hide_tooltip();
+        }
+    }
 }
 
 void MessageListView::on_pointer_leave() {
@@ -2957,6 +2985,10 @@ void MessageListView::on_pointer_leave() {
     hover_target_   = HoverTarget::None;
     hover_chip_idx_ = -1;
     press_pill_     = false;
+    if (map_tooltip_showing_) {
+        map_tooltip_showing_ = false;
+        if (on_hide_tooltip) on_hide_tooltip();
+    }
 }
 
 bool MessageListView::should_show_pill() const {

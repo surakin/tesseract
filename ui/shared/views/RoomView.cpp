@@ -104,6 +104,14 @@ void RoomView::wire_internal_callbacks() {
         [this](const std::string& url) {
             if (on_link_hovered) on_link_hovered(url);
         };
+    message_list_->on_show_tooltip =
+        [this](std::string text, tk::Rect anchor) {
+            if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
+        };
+    message_list_->on_hide_tooltip =
+        [this]() {
+            if (on_hide_tooltip) on_hide_tooltip();
+        };
     header_->on_link_clicked =
         [this](const std::string& url) {
             if (on_link_clicked) on_link_clicked(url);

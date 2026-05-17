@@ -281,6 +281,10 @@ public:
     // shell to switch the cursor to/from a pointing-hand cursor.
     std::function<void(const std::string& url)> on_link_hovered;
 
+    // Fires to show/hide a native tooltip. `anchor` is in world coordinates.
+    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
+    std::function<void()>                                   on_hide_tooltip;
+
     // Fires when the user clicks the quote block of a reply to scroll to
     // the original message. If the event is currently loaded the view scrolls
     // to it internally; this callback fires only when the original is not found
@@ -529,6 +533,7 @@ private:
     // Per-frame quote-block rects in world coordinates, keyed by event_id.
     // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
     mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
+    mutable std::unordered_map<std::string, tk::Rect> map_rect_geom_;
 
     // URL preview card provider + press state.
     PreviewProvider                preview_provider_;
@@ -631,6 +636,8 @@ private:
     std::size_t map_active_row_       = kNoMapRow;
     tk::Point   map_drag_start_pt_    {};
     tk::Point   map_drag_start_vp_px_ {};  // world-pixel viewport at drag start
+    float       map_zoom_accum_       = 0.0f; // fractional wheel accumulator
+    bool        map_tooltip_showing_  = false;
 };
 
 } // namespace tesseract::views
