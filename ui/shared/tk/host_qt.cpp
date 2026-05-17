@@ -284,6 +284,26 @@ public:
         }
         edit_->setFont(f);
     }
+    void set_text_color(Color c) override
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        QPalette pal = edit_->palette();
+        QColor qc(c.r, c.g, c.b, c.a);
+        pal.setColor(QPalette::Text, qc);
+        pal.setColor(QPalette::WindowText, qc);
+        QColor ph = qc;
+        ph.setAlpha(128);
+        pal.setColor(QPalette::PlaceholderText, ph);
+        edit_->setPalette(pal);
+        if (auto* vp = edit_->viewport())
+        {
+            vp->setPalette(pal);
+        }
+    }
+
     float natural_height() const override {
         if (!edit_) return 0.f;
         QSizeF docSize = edit_->document()->size();

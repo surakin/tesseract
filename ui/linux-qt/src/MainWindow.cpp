@@ -656,6 +656,7 @@ MainWindow::MainWindow(QWidget* parent)
     // ---- Native overlays ----
     roomTextArea_ = mainAppSurface_->host().make_text_area();
     roomTextArea_->set_font_role(tk::FontRole::Body);
+    roomTextArea_->set_text_color(mainAppSurface_->theme().palette.text_primary);
     roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     roomTextArea_->set_on_changed([this](const std::string& s) {
         if (mainApp_)
@@ -3339,6 +3340,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+    }
+    if (roomTextArea_)
+    {
+        roomTextArea_->set_text_color(t.palette.text_primary);
     }
     if (mainAppSurface_)
     {

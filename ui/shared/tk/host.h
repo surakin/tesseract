@@ -77,6 +77,12 @@ public:
     // that haven't implemented it yet compile without changes.
     virtual void set_font_role(FontRole) {}
 
+    // Set the foreground text color to match the active tk::Theme instead of
+    // inheriting the system application palette. Call once after creation and
+    // again whenever the theme changes. Default no-op for backends that rely
+    // solely on the system palette.
+    virtual void set_text_color(Color) {}
+
     // Push the natural content height up to the host on every change so
     // the parent layout can resize the compose envelope inside its
     // [min, max] clamp.
