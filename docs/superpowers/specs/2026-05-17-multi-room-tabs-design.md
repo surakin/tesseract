@@ -124,6 +124,7 @@ All existing callers of `current_room_id_` are updated to `active_room_id()`. `v
 | Normal click room (already open) | Set `active_tab_idx_` to existing entry; trigger room switch |
 | Click tab in TabBar | Save current scroll/draft; set `active_tab_idx_`; trigger room switch with cached offset |
 | Close tab (× button) | Save draft; remove entry from `tabs_`; activate the tab to the left, or the new leftmost if the closed tab was leftmost; if `tabs_.size() == 1` after removal, `TabBar` hides itself |
+| Click desktop notification | If the room is already open in a tab, switch to that tab. Otherwise replace `tabs_[active_tab_idx_]` with the notification's room (same as normal-click on a room not already open) |
 
 "Trigger room switch" means the existing `on_room_selected` path: subscribe room, paginate if needed, `set_room`, `set_messages`, then `MessageListView::scroll_to_offset(tab.scroll_offset)`.
 
@@ -158,6 +159,16 @@ This fires when the primary button is released with the Ctrl modifier held. On m
 ### Native overlay positions
 
 The `NativeTextArea` for the compose bar is repositioned in each shell's `set_on_layout` callback. When `TabBar` is visible and `RoomHeader` is condensed, the compose area shifts up. The existing layout callback handles this automatically because it measures widget positions at layout time rather than using cached fixed offsets.
+
+### Desktop notification click
+
+Each shell already handles notification activation (the OS callback that fires when the user clicks a notification). That handler must call a new `ShellBase` method:
+
+```cpp
+void ShellBase::navigate_to_room(const std::string& room_id);
+```
+
+`navigate_to_room` implements the lifecycle rule above: switch to the existing tab if the room is already open, otherwise replace the active tab. Shells pass the `room_id` carried by the notification payload to this method — no per-shell tab logic is needed.
 
 ### All four shells
 
