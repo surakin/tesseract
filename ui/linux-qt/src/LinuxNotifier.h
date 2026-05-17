@@ -26,5 +26,4 @@ private:
     QDBusInterface                            portal_;
     std::function<void(std::string)>          on_activate_;
     std::unordered_map<uint32_t, std::string> id_to_room_;
-    std::unordered_map<std::string, uint32_t> room_to_id_;
 };

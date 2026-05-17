@@ -1,11 +1,12 @@
 #include "LinuxNotifier.h"
-#include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusReply>
+#include <QDir>
 #include <QImage>
 #include <cctype>
 
 namespace {
+
 // XDG portal notification ids must match [a-zA-Z0-9_-]+. Matrix room ids
 // contain '!', ':' and '.', so map anything outside the allowed set to '_'.
 QString sanitize_portal_id(const std::string& s)
@@ -27,10 +28,28 @@ QString escape_markup(const std::string& s)
 {
     return QString::fromStdString(s).toHtmlEscaped();
 }
+
+// Write pic bytes (PNG/JPEG/WebP) to a fixed temp path and return a
+// file:// URI. Returns an empty string on failure.
+// A fixed path is safe because daemons read image-path synchronously when
+// they handle the Notify call, so there is no race between notifications.
+QString write_image_path(const std::vector<uint8_t>& pic)
+{
+    if (pic.empty()) return {};
+    QImage img;
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(pic.data()),
+                          static_cast<int>(pic.size())))
+        return {};
+    img = img.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    const QString path = QDir::tempPath() + QStringLiteral("/tesseract-notif.png");
+    if (!img.save(path, "PNG")) return {};
+    return QStringLiteral("file://") + path;
+}
+
 } // namespace
 
 LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
-                                   QObject* parent)
+                                 QObject* parent)
     : QObject(parent)
     , iface_("org.freedesktop.Notifications",
              "/org/freedesktop/Notifications",
@@ -64,40 +83,9 @@ bool LinuxNotifierQt::use_portal() const
 
 void LinuxNotifierQt::notify(const tesseract::Notification& n)
 {
-    // freedesktop notifications have a single image slot: prefer the
-    // message image / sticker (already privacy-gated upstream), fall back
-    // to the room avatar.
+    // Prefer the message image / sticker, fall back to the room avatar.
     const std::vector<uint8_t>& pic =
         !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
-
-    // Build image-data hint: decode pic, convert to RGBA8888, marshal as
-    // the (iiibiiay) D-Bus struct the freedesktop Notify spec defines.
-    QVariantMap hints;
-    if (!pic.empty())
-    {
-        QImage img;
-        if (img.loadFromData(
-                reinterpret_cast<const uchar*>(pic.data()),
-                static_cast<int>(pic.size())))
-        {
-            img = img.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-                     .convertToFormat(QImage::Format_RGBA8888);
-            QDBusArgument arg;
-            arg.beginStructure();
-            arg << img.width() << img.height() << img.bytesPerLine()
-                << true << 8 << 4;
-            arg.beginArray(qMetaTypeId<uchar>());
-            const uchar*  bits = img.constBits();
-            const qsizetype sz = img.sizeInBytes();
-            for (qsizetype i = 0; i < sz; ++i)
-            {
-                arg << bits[i];
-            }
-            arg.endArray();
-            arg.endStructure();
-            hints[QStringLiteral("image-data")] = QVariant::fromValue(arg);
-        }
-    }
 
     if (use_portal())
     {
@@ -105,27 +93,32 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
             { "title", escape_markup(n.sender) },
             { "body",  escape_markup(n.body) }
         };
-        if (!pic.empty())
-        {
-            // bytes-icon: pass the raw encoded bytes directly.
-            portalMap["icon"] = QVariantList{
-                QStringLiteral("bytes-icon"),
-                QByteArray(reinterpret_cast<const char*>(pic.data()),
-                           static_cast<int>(pic.size()))
-            };
-        }
+        // Portal "icon" uses (sv); themed icons are simplest to marshal.
+        // Avatar bytes require GIcon serialisation which is not straightforward
+        // over Qt D-Bus, so skip for now — the app icon fallback is fine.
         portal_.call("AddNotification",
                      sanitize_portal_id(n.room_id), portalMap);
         return;
     }
 
-    const uint32_t replaces = room_to_id_.count(n.room_id)
-                              ? room_to_id_.at(n.room_id) : 0u;
+    // Write the avatar / image to a temp file and pass it as image-path.
+    // This is simpler and more universally supported than the image-data
+    // (iiibiiay) raw-pixel hint, which many daemons mishandle when the
+    // value arrives as a bare QDBusArgument variant.
+    QVariantMap hints;
+    const QString img_path = write_image_path(pic);
+    if (!img_path.isEmpty())
+        hints[QStringLiteral("image-path")] = img_path;
+
+    // Always pass replaces_id=0 so every notification generates a fresh popup.
+    // Using replaces causes the daemon to update the existing toast in place
+    // without re-triggering the animation or sound, making subsequent messages
+    // from the same room invisible to the user.
     QDBusReply<uint> reply = iface_.call(
         "Notify",
         QString("Tesseract"),
-        replaces,
-        QString(""),  // app_icon: image-data hint carries the avatar
+        0u,
+        QString(""),
         escape_markup(n.sender),
         escape_markup(n.body),
         QStringList{ "default", "Open" },
@@ -133,33 +126,17 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         5000);
 
     if (reply.isValid())
-    {
-        const uint32_t id = reply.value();
-        id_to_room_[id]        = n.room_id;
-        room_to_id_[n.room_id] = id;
-    }
+        id_to_room_[reply.value()] = n.room_id;
 }
 
 void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
 {
     auto it = id_to_room_.find(id);
     if (it != id_to_room_.end())
-    {
         on_activate_(it->second);
-    }
 }
 
 void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
 {
-    auto it = id_to_room_.find(id);
-    if (it == id_to_room_.end()) return;
-
-    // Only remove the room from room_to_id_ if it still maps back to this id.
-    // When a notification is replaced the daemon closes the old id AFTER we've
-    // already stored the new one, so we must not clobber the newer entry.
-    auto room_it = room_to_id_.find(it->second);
-    if (room_it != room_to_id_.end() && room_it->second == id)
-        room_to_id_.erase(room_it);
-
-    id_to_room_.erase(it);
+    id_to_room_.erase(id);
 }
