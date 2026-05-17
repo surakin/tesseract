@@ -1,16 +1,12 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-16**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-17**.
 
-> **Homeserver discovery + whole-app code-review hardening pass.**
-> Login now does `.well-known` homeserver discovery with inline status and
-> accepts a full `@user:server` MXID. A comprehensive multi-agent code
-> review of the entire stack (Rust SDK, C++ client, `tesseract_tk` toolkit,
-> and the Qt6/GTK4 shells) landed its fixes: poison-safe FFI mutex handling,
-> sync-loop recovery, account-data write serialisation, a media-size cap,
-> session-store `0600` + fsync + atomic-rename, FFI exception safety, parser
-> DoS caps, and several use-after-free / null-deref / data-race fixes in the
-> shells plus UnifiedPush endpoint validation. 233/233 C++ tests pass.
+> **Optimistic send + picker polish.**
+> Sent messages now appear immediately in the timeline via `timeline.send()` local echo
+> with a ◷ sending indicator, ✓ confirmation (2 s), and ⚠ Retry / ✕ abort on failure.
+> `GridView` hover tracking (silently broken) is fixed; both `EmojiPicker` and
+> `StickerPicker` show an inline `:shortcode:` tooltip on hover. 298/298 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -18,8 +14,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 73 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 233 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 82 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 298 |
 
 ## Platforms
 
@@ -71,7 +67,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## Messaging
 
-- **Send text / image / file / sticker** — `send_message`, `send_image`, `send_file`, `send_sticker` FFI; matrix-sdk handles E2EE transparently.
+- **Send text / image / file / sticker** — `send_message`, `send_image`, `send_file`, `send_sticker` FFI; matrix-sdk handles E2EE transparently. Text sends use `timeline.send()` local echo so the message appears immediately with a ◷ indicator; transitions to ✓ on delivery, ⚠ + Retry on recoverable failure, ⚠ + ✕ on unrecoverable failure. `retry_send` (re-enables SDK send queue) and `abort_send` (`timeline.redact` for local echoes) exposed through FFI and C++ client API.
 - **MSC2530 captions** — `image_filename` distinct from `body` round-tripped; UI shows the body beneath the image only when the sender supplied an explicit `filename`.
 - **Redactions** — `redact_event(room_id, event_id, reason)`; `MsgLikeKind::Redacted` surfaces as `msg_type: "m.redacted"` tombstone placeholder in the timeline.
 - **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips under each message with sender-name tooltips and a hover-only "+" add button.
@@ -104,8 +100,9 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## Pickers
 
-- **Emoji picker** — Unicode-category tabs + per-pack custom tabs; search; virtualised grid via `tk::GridView`.
-- **Sticker picker** — Favorites tab + per-pack tabs; search; virtualised grid. Floating panel on every platform (Qt6 `QFrame`, GTK4 `GtkPopover`, macOS `NSPanel`, Win32 `WS_POPUP` HWND).
+- **Emoji picker** — Unicode-category tabs + per-pack custom tabs; search; virtualised grid via `tk::GridView`. Hovering a cell shows an inline `:shortcode:` tooltip (centred above the cell, flipped below near the top edge).
+- **Sticker picker** — Favorites tab + per-pack tabs; search; virtualised grid. Floating panel on every platform (Qt6 `QFrame`, GTK4 `GtkPopover`, macOS `NSPanel`, Win32 `WS_POPUP` HWND). Same `:shortcode:` hover tooltip as emoji picker.
+- **GridView hover tracking** — `GridView::on_pointer_move` / `on_pointer_leave` update `hovered_index_` and expose `hovered_index()` + `rect_at()` accessors; cell highlight on hover now works correctly (was silently broken).
 - **Recent emoji (MSC4356)** — `m.recent_emoji` + `io.github.johennes.msc4356.recent_emoji` account-data, dual-written on every bump; reads stable → unstable → legacy `io.element.recent_emoji` so existing Element users keep their picker rank. 100-entry cap, move-to-front-and-increment semantics, count-desc top-N for the Frequents tab.
 - **Add to Saved Stickers** — right-click on an inline sticker offers `save_sticker_to_user_pack` (all four platforms: Qt6 / GTK4 / macOS / Win32 via `WM_RBUTTONUP` + `TrackPopupMenu`). All platforms now pass the real `ImageInfo` JSON instead of `"{}"`, so width/height/mimetype/size are preserved in the saved pack entry.
 - **Toggle favourite** — `toggle_favorite_sticker` flips the `im.tesseract.favorite` flag on user-pack entries.
