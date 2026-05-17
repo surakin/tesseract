@@ -20,7 +20,8 @@ namespace qt6 {
 /// mounted inside a `tk::qt6::Surface` child. The homeserver text input
 /// is a native QLineEdit overlaid on the surface via NativeTextField —
 /// IME / selection stay native until tk::TextField lands.
-class LoginView final : public QWidget {
+class LoginView final : public QWidget
+{
     Q_OBJECT
 public:
     explicit LoginView(QWidget* parent = nullptr);

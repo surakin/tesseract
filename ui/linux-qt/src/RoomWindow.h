@@ -8,7 +8,8 @@ namespace qt6 { class MainWindow; }
 namespace qt6 {
 
 // A secondary (pop-out) room window for the Qt6 shell.
-class RoomWindow : public QWidget, public tesseract::RoomWindowBase {
+class RoomWindow : public QWidget, public tesseract::RoomWindowBase
+{
     Q_OBJECT
 public:
     RoomWindow(MainWindow* parent_shell, const std::string& room_id);

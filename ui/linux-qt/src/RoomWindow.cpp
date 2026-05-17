@@ -42,7 +42,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             return it == parent_shell_->url_preview_data_.end() ? nullptr : &it->second;
         });
     if (auto player = surface_->host().make_audio_player())
+    {
         room_view_->set_audio_player(std::move(player));
+    }
     room_view_->set_voice_bytes_provider(
         [this](const std::string& source_json) -> std::vector<std::uint8_t> {
             return fetch_source_bytes_(source_json);
@@ -50,10 +52,16 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Repaint / layout ─────────────────────────────────────────────────
     room_view_->set_repaint_requester([this] {
-        if (surface_) surface_->update();
+        if (surface_)
+        {
+            surface_->update();
+        }
     });
     room_view_->on_layout_changed = [this] {
-        if (surface_) surface_->relayout();
+        if (surface_)
+        {
+            surface_->relayout();
+        }
     };
 
     // ── Compose callbacks ────────────────────────────────────────────────
@@ -61,21 +69,33 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         std::string trimmed = body;
         auto l = trimmed.find_first_not_of(" \t\n\r");
         auto r = trimmed.find_last_not_of (" \t\n\r");
-        if (l == std::string::npos) return;
+        if (l == std::string::npos)
+        {
+            return;
+        }
         trimmed = trimmed.substr(l, r - l + 1);
-        if (trimmed.empty()) return;
+        if (trimmed.empty())
+        {
+            return;
+        }
         send_message_(trimmed);
         room_view_->set_current_text({});
     };
     room_view_->on_send_reply = [this](const std::string& reply_id,
                                         const std::string& body) {
-        if (body.empty()) return;
+        if (body.empty())
+        {
+            return;
+        }
         send_reply_(reply_id, body);
         room_view_->set_current_text({});
     };
     room_view_->on_send_edit = [this](const std::string& event_id,
                                        const std::string& new_body) {
-        if (new_body.empty()) return;
+        if (new_body.empty())
+        {
+            return;
+        }
         send_edit_(event_id, new_body);
         room_view_->set_current_text({});
     };
@@ -110,29 +130,43 @@ RoomWindow::~RoomWindow() = default;
 
 // ---------------------------------------------------------------------------
 
-void RoomWindow::bring_to_front() {
+void RoomWindow::bring_to_front()
+{
     raise();
     activateWindow();
 }
 
-void RoomWindow::close_window() {
+void RoomWindow::close_window()
+{
     close();
 }
 
-void RoomWindow::request_relayout() {
-    if (surface_) { surface_->relayout(); surface_->update(); }
+void RoomWindow::request_relayout()
+{
+    if (surface_)
+    {
+        surface_->relayout();
+        surface_->update();
+    }
 }
 
-void RoomWindow::update_window_title_(const std::string& name) {
+void RoomWindow::update_window_title_(const std::string& name)
+{
     setWindowTitle(QString::fromStdString(name));
 }
 
-void RoomWindow::resizeEvent(QResizeEvent* ev) {
+void RoomWindow::resizeEvent(QResizeEvent* ev)
+{
     QWidget::resizeEvent(ev);
-    if (surface_) { surface_->relayout(); surface_->update(); }
+    if (surface_)
+    {
+        surface_->relayout();
+        surface_->update();
+    }
 }
 
-void RoomWindow::closeEvent(QCloseEvent* ev) {
+void RoomWindow::closeEvent(QCloseEvent* ev)
+{
     schedule_self_close_();
     ev->accept();
 }

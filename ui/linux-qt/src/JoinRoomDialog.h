@@ -13,7 +13,8 @@ namespace tesseract { class Client; }
 /// Centred dialog for looking up and joining a room (MSC3266).
 /// Hosts the shared tesseract::views::JoinRoomView inside a tk::qt6::Surface
 /// with a native QLineEdit overlaid on the alias-field rect.
-class JoinRoomDialog : public QDialog {
+class JoinRoomDialog : public QDialog
+{
     Q_OBJECT
 public:
     explicit JoinRoomDialog(QWidget* parent = nullptr);

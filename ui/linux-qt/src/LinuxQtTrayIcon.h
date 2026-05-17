@@ -8,7 +8,8 @@
 #include <memory>
 #include <string>
 
-class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon {
+class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon
+{
     Q_OBJECT
 public:
     LinuxQtTrayIcon(std::function<void()> on_show,

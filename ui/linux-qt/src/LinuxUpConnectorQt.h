@@ -6,7 +6,8 @@
 // Forward-declared; defined in .cpp to hide Qt/D-Bus headers from users.
 class UpSharedBusQt;
 
-class LinuxUpConnectorQt final : public tesseract::IUpConnector {
+class LinuxUpConnectorQt final : public tesseract::IUpConnector
+{
 public:
     LinuxUpConnectorQt();
     ~LinuxUpConnectorQt() override;

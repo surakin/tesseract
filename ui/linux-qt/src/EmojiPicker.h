@@ -22,7 +22,8 @@ namespace tesseract { class Client; }
 ///
 /// Public API preserved verbatim from the legacy native picker so
 /// MainWindow.cpp doesn't need to change.
-class EmojiPicker : public QFrame {
+class EmojiPicker : public QFrame
+{
     Q_OBJECT
 public:
     explicit EmojiPicker(QWidget* parent = nullptr);

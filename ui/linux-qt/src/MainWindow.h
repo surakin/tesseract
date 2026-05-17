@@ -51,7 +51,8 @@ class LoginView;
 /// child and the SDK can pass it as an IEventHandler*. All marshalling
 /// is handled by EventHandlerBase::post_to_ui_ (QMetaObject::invokeMethod
 /// queued) — no signals needed here.
-class EventBridge final : public QObject, public tesseract::EventHandlerBase {
+class EventBridge final : public QObject, public tesseract::EventHandlerBase
+{
     Q_OBJECT
 public:
     explicit EventBridge(tesseract::ShellBase* shell, QObject* parent = nullptr)
@@ -60,7 +61,8 @@ public:
 
 // ---------------------------------------------------------------------------
 
-class MainWindow final : public QMainWindow, public tesseract::ShellBase {
+class MainWindow final : public QMainWindow, public tesseract::ShellBase
+{
     friend class RoomWindow;  // accesses url_preview_data_ for preview provider
     Q_OBJECT
 public:
@@ -317,7 +319,8 @@ private:
         const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
         tk::Rect cursor_rect);
     void hide_shortcode_popup_();
-    bool shortcode_popup_visible_() const {
+    bool shortcode_popup_visible_() const
+    {
         return shortcode_popup_frame_ && shortcode_popup_frame_->isVisible();
     }
 };

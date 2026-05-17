@@ -8,10 +8,12 @@
 namespace {
 // XDG portal notification ids must match [a-zA-Z0-9_-]+. Matrix room ids
 // contain '!', ':' and '.', so map anything outside the allowed set to '_'.
-QString sanitize_portal_id(const std::string& s) {
+QString sanitize_portal_id(const std::string& s)
+{
     QString out;
     out.reserve(static_cast<int>(s.size()));
-    for (unsigned char c : s) {
+    for (unsigned char c : s)
+    {
         out += (std::isalnum(c) || c == '_' || c == '-')
                    ? QChar(c) : QChar('_');
     }
@@ -21,7 +23,8 @@ QString sanitize_portal_id(const std::string& s) {
 // Several notification daemons (dunst, mako, GNOME Shell) render a subset
 // of Pango markup in the body. Server-supplied message text must be escaped
 // so it can't inject markup / garble the notification.
-QString escape_markup(const std::string& s) {
+QString escape_markup(const std::string& s)
+{
     return QString::fromStdString(s).toHtmlEscaped();
 }
 } // namespace
@@ -54,19 +57,23 @@ LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
         this, SLOT(onNotificationClosed(uint, uint)));
 }
 
-bool LinuxNotifierQt::use_portal() const {
+bool LinuxNotifierQt::use_portal() const
+{
     return qEnvironmentVariableIsSet("FLATPAK_ID");
 }
 
-void LinuxNotifierQt::notify(const tesseract::Notification& n) {
+void LinuxNotifierQt::notify(const tesseract::Notification& n)
+{
     // Build image-data hint: decode avatar, convert to RGBA8888, marshal as
     // the (iiibiiay) D-Bus struct the freedesktop Notify spec defines.
     QVariantMap hints;
-    if (!n.avatar_bytes.empty()) {
+    if (!n.avatar_bytes.empty())
+    {
         QImage img;
         if (img.loadFromData(
                 reinterpret_cast<const uchar*>(n.avatar_bytes.data()),
-                static_cast<int>(n.avatar_bytes.size()))) {
+                static_cast<int>(n.avatar_bytes.size())))
+        {
             img = img.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation)
                      .convertToFormat(QImage::Format_RGBA8888);
             QDBusArgument arg;
@@ -77,19 +84,23 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n) {
             const uchar*  bits = img.constBits();
             const qsizetype sz = img.sizeInBytes();
             for (qsizetype i = 0; i < sz; ++i)
+            {
                 arg << bits[i];
+            }
             arg.endArray();
             arg.endStructure();
             hints[QStringLiteral("image-data")] = QVariant::fromValue(arg);
         }
     }
 
-    if (use_portal()) {
+    if (use_portal())
+    {
         QVariantMap portalMap{
             { "title", escape_markup(n.sender) },
             { "body",  escape_markup(n.body) }
         };
-        if (!n.avatar_bytes.empty()) {
+        if (!n.avatar_bytes.empty())
+        {
             // bytes-icon: pass the raw encoded avatar bytes directly.
             portalMap["icon"] = QVariantList{
                 QStringLiteral("bytes-icon"),
@@ -115,22 +126,28 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n) {
         hints,
         5000);
 
-    if (reply.isValid()) {
+    if (reply.isValid())
+    {
         const uint32_t id = reply.value();
         id_to_room_[id]        = n.room_id;
         room_to_id_[n.room_id] = id;
     }
 }
 
-void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/) {
+void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
+{
     auto it = id_to_room_.find(id);
     if (it != id_to_room_.end())
+    {
         on_activate_(it->second);
+    }
 }
 
-void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/) {
+void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
+{
     auto it = id_to_room_.find(id);
-    if (it != id_to_room_.end()) {
+    if (it != id_to_room_.end())
+    {
         room_to_id_.erase(it->second);
         id_to_room_.erase(it);
     }

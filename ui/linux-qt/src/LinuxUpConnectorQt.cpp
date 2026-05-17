@@ -22,7 +22,8 @@ class UpSharedBusQt;
 // Defined before UpSharedBusQt so acquire() can instantiate it.
 // ---------------------------------------------------------------------------
 
-class UpConnector1Adaptor : public QDBusAbstractAdaptor {
+class UpConnector1Adaptor : public QDBusAbstractAdaptor
+{
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.unifiedpush.Connector1")
 public:
@@ -31,7 +32,8 @@ public:
 
 public slots:
     void Message(const QString& /*token*/, const QByteArray& /*message*/,
-                 const QString& /*id*/) {
+                 const QString& /*id*/)
+    {
         // Sync is running; the push is a wake-up signal only.
     }
     void NewEndpoint(const QString& token, const QString& endpoint);
@@ -49,20 +51,25 @@ private:
 // the correct per-account LinuxUpConnectorQt by token.
 // ---------------------------------------------------------------------------
 
-class UpSharedBusQt : public QObject {
+class UpSharedBusQt : public QObject
+{
     Q_OBJECT
 public:
-    static UpSharedBusQt& get() {
+    static UpSharedBusQt& get()
+    {
         static UpSharedBusQt inst;
         return inst;
     }
 
     bool acquire();
 
-    void release() {
-        if (--ref_ <= 0) {
+    void release()
+    {
+        if (--ref_ <= 0)
+        {
             ref_ = 0;
-            if (active_) {
+            if (active_)
+            {
                 QDBusConnection::sessionBus().unregisterObject(
                     QStringLiteral("/org/unifiedpush/Connector"));
                 QDBusConnection::sessionBus().interface()->unregisterService(
@@ -74,19 +81,28 @@ public:
         }
     }
 
-    void add_route(const std::string& token, LinuxUpConnectorQt* conn) {
+    void add_route(const std::string& token, LinuxUpConnectorQt* conn)
+    {
         routes_[token] = conn;
     }
     void remove_route(const std::string& token) { routes_.erase(token); }
 
     // Scan the session bus for the first service exposing Distributor1.
     // Safe to call from a worker thread — uses the thread's own D-Bus connection.
-    QString find_distributor() {
+    QString find_distributor()
+    {
         QDBusReply<QStringList> names =
             QDBusConnection::sessionBus().interface()->registeredServiceNames();
-        if (!names.isValid()) return {};
-        for (const QString& svc : names.value()) {
-            if (svc.startsWith(QChar(':'))) continue; // skip unique names
+        if (!names.isValid())
+        {
+            return {};
+        }
+        for (const QString& svc : names.value())
+        {
+            if (svc.startsWith(QChar(':')))
+            {
+                continue; // skip unique names
+            }
             QDBusInterface iface(svc,
                 QStringLiteral("/org/unifiedpush/Distributor"),
                 QStringLiteral("org.freedesktop.DBus.Introspectable"),
@@ -95,23 +111,32 @@ public:
             if (xml.isValid() &&
                 xml.value().contains(
                     QStringLiteral("org.unifiedpush.Distributor1")))
+            {
                 return svc;
+            }
         }
         return {};
     }
 
     // Non-blocking: runs find_distributor() on a thread pool worker and delivers
     // the result via QFutureWatcher::finished back on the main thread.
-    void find_distributor_async(const std::string& token) {
+    void find_distributor_async(const std::string& token)
+    {
         auto* watcher = new QFutureWatcher<QString>(this);
         std::string tok = token;
         QObject::connect(watcher, &QFutureWatcher<QString>::finished,
                          this, [this, watcher, tok]() {
             QString dist = watcher->result();
             watcher->deleteLater();
-            if (dist.isEmpty()) return;
+            if (dist.isEmpty())
+            {
+                return;
+            }
             auto it = routes_.find(tok);
-            if (it == routes_.end()) return; // connector stopped before scan finished
+            if (it == routes_.end())
+            {
+                return; // connector stopped before scan finished
+            }
             it->second->set_distributor(dist.toStdString());
             distributor_register(dist, tok);
         });
@@ -120,7 +145,8 @@ public:
         }));
     }
 
-    void distributor_register(const QString& svc, const std::string& token) {
+    void distributor_register(const QString& svc, const std::string& token)
+    {
         QDBusInterface dist(svc,
             QStringLiteral("/org/unifiedpush/Distributor"),
             QStringLiteral("org.unifiedpush.Distributor1"),
@@ -131,7 +157,8 @@ public:
                        QStringLiteral("Tesseract"));
     }
 
-    void distributor_unregister(const QString& svc, const std::string& token) {
+    void distributor_unregister(const QString& svc, const std::string& token)
+    {
         QDBusInterface dist(svc,
             QStringLiteral("/org/unifiedpush/Distributor"),
             QStringLiteral("org.unifiedpush.Distributor1"),
@@ -140,15 +167,21 @@ public:
                        QString::fromStdString(token));
     }
 
-    void dispatch_new_endpoint(const QString& token, const QString& endpoint) {
+    void dispatch_new_endpoint(const QString& token, const QString& endpoint)
+    {
         auto it = routes_.find(token.toStdString());
         if (it != routes_.end())
+        {
             it->second->on_new_endpoint(endpoint.toStdString());
+        }
     }
-    void dispatch_unregistered(const QString& token) {
+    void dispatch_unregistered(const QString& token)
+    {
         auto it = routes_.find(token.toStdString());
         if (it != routes_.end())
+        {
             it->second->on_unregistered();
+        }
     }
 
 private:
@@ -164,15 +197,20 @@ private:
 // Out-of-line definitions that require both class bodies to be complete.
 // ---------------------------------------------------------------------------
 
-bool UpSharedBusQt::acquire() {
-    if (ref_++ > 0) return active_;
+bool UpSharedBusQt::acquire()
+{
+    if (ref_++ > 0)
+    {
+        return active_;
+    }
     auto reg = QDBusConnection::sessionBus().interface()->registerService(
         QStringLiteral("im.gnomos.Tesseract"),
         QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::DontAllowReplacement);
     active_ = reg.isValid() &&
               reg.value() == QDBusConnectionInterface::ServiceRegistered;
-    if (active_) {
+    if (active_)
+    {
         host_ = new QObject(this);
         new UpConnector1Adaptor(host_, this);
         QDBusConnection::sessionBus().registerObject(
@@ -183,11 +221,13 @@ bool UpSharedBusQt::acquire() {
 }
 
 void UpConnector1Adaptor::NewEndpoint(const QString& token,
-                                       const QString& endpoint) {
+                                       const QString& endpoint)
+{
     bus_->dispatch_new_endpoint(token, endpoint);
 }
 
-void UpConnector1Adaptor::Unregistered(const QString& token) {
+void UpConnector1Adaptor::Unregistered(const QString& token)
+{
     bus_->dispatch_unregistered(token);
 }
 
@@ -195,39 +235,55 @@ void UpConnector1Adaptor::Unregistered(const QString& token) {
 // LinuxUpConnectorQt
 // ---------------------------------------------------------------------------
 
-static std::string sanitize_token(const std::string& user_id) {
+static std::string sanitize_token(const std::string& user_id)
+{
     std::string t;
     t.reserve(user_id.size());
     for (char c : user_id)
+    {
         t += (std::isalnum(static_cast<unsigned char>(c)) ? c : '_');
+    }
     return t;
 }
 
 LinuxUpConnectorQt::LinuxUpConnectorQt() = default;
 
-void LinuxUpConnectorQt::set_distributor(const std::string& service) {
+void LinuxUpConnectorQt::set_distributor(const std::string& service)
+{
     distributor_service_ = service;
 }
 
-LinuxUpConnectorQt::~LinuxUpConnectorQt() {
+LinuxUpConnectorQt::~LinuxUpConnectorQt()
+{
     stop();
 }
 
 void LinuxUpConnectorQt::start(tesseract::Client* client,
-                                const std::string& user_id) {
-    if (client_) return; // already started
+                                const std::string& user_id)
+{
+    if (client_)
+    {
+        return; // already started
+    }
     client_ = client;
     token_  = sanitize_token(user_id);
 
     UpSharedBusQt& bus = UpSharedBusQt::get();
-    if (!bus.acquire()) return; // another process owns the bus name
+    if (!bus.acquire())
+    {
+        return; // another process owns the bus name
+    }
 
     bus.add_route(token_, this);
     bus.find_distributor_async(token_); // non-blocking; callback sets distributor
 }
 
-void LinuxUpConnectorQt::stop() {
-    if (!client_) return;
+void LinuxUpConnectorQt::stop()
+{
+    if (!client_)
+    {
+        return;
+    }
     UpSharedBusQt& bus = UpSharedBusQt::get();
     bus.remove_route(token_);
     bus.release();
@@ -235,10 +291,15 @@ void LinuxUpConnectorQt::stop() {
     client_ = nullptr;
 }
 
-void LinuxUpConnectorQt::logout() {
-    if (!client_) return;
+void LinuxUpConnectorQt::logout()
+{
+    if (!client_)
+    {
+        return;
+    }
     UpSharedBusQt& bus = UpSharedBusQt::get();
-    if (!distributor_service_.empty()) {
+    if (!distributor_service_.empty())
+    {
         bus.distributor_unregister(
             QString::fromStdString(distributor_service_), token_);
     }
@@ -246,15 +307,20 @@ void LinuxUpConnectorQt::logout() {
     stop();
 }
 
-void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint) {
-    if (!client_) return;
+void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint)
+{
+    if (!client_)
+    {
+        return;
+    }
     // The endpoint string is supplied by the UnifiedPush distributor over
     // D-Bus — untrusted. Reject anything that isn't a valid https URL before
     // registering it as this account's Matrix push gateway, otherwise a
     // malicious/buggy distributor could redirect push traffic anywhere.
     QUrl url(QString::fromStdString(endpoint), QUrl::StrictMode);
     if (!url.isValid() || url.scheme() != QLatin1String("https") ||
-        url.host().isEmpty()) {
+        url.host().isEmpty())
+    {
         return;
     }
     // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
@@ -271,11 +337,16 @@ void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint) {
         "en");
 }
 
-void LinuxUpConnectorQt::on_unregistered() {
-    if (!client_) return;
+void LinuxUpConnectorQt::on_unregistered()
+{
+    if (!client_)
+    {
+        return;
+    }
     client_->remove_pusher(token_, "im.gnomos.tesseract");
     // Re-register so the distributor issues a fresh endpoint.
-    if (!distributor_service_.empty()) {
+    if (!distributor_service_.empty())
+    {
         UpSharedBusQt::get().distributor_register(
             QString::fromStdString(distributor_service_), token_);
     }

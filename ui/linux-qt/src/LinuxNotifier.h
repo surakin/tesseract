@@ -6,7 +6,8 @@
 #include <string>
 #include <unordered_map>
 
-class LinuxNotifierQt final : public QObject, public tesseract::INotifier {
+class LinuxNotifierQt final : public QObject, public tesseract::INotifier
+{
     Q_OBJECT
 public:
     explicit LinuxNotifierQt(std::function<void(std::string)> on_activate,

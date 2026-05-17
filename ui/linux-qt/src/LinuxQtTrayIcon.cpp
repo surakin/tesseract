@@ -14,7 +14,8 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
       on_toggle_(std::move(on_toggle)),
       on_quit_(std::move(on_quit))
 {
-    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+    {
         // No StatusNotifierItem host / XEmbed tray on this session.
         // Leave available_ = false; the shell falls back to a real quit
         // on window close.
@@ -29,12 +30,26 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
     QAction* quit_action = menu_->addAction(QObject::tr("Quit"));
     tray_->setContextMenu(menu_.get());
 
-    QObject::connect(show_action, &QAction::triggered, this, [this]{ if (on_show_) on_show_(); });
-    QObject::connect(quit_action, &QAction::triggered, this, [this]{ if (on_quit_) on_quit_(); });
+    QObject::connect(show_action, &QAction::triggered, this, [this] {
+        if (on_show_)
+        {
+            on_show_();
+        }
+    });
+    QObject::connect(quit_action, &QAction::triggered, this, [this] {
+        if (on_quit_)
+        {
+            on_quit_();
+        }
+    });
     QObject::connect(tray_.get(), &QSystemTrayIcon::activated,
                      this, [this](QSystemTrayIcon::ActivationReason r) {
-        if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick) {
-            if (on_toggle_) on_toggle_();
+        if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick)
+        {
+            if (on_toggle_)
+            {
+                on_toggle_();
+            }
         }
     });
 
@@ -42,10 +57,18 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
     available_ = tray_->isVisible();
 }
 
-LinuxQtTrayIcon::~LinuxQtTrayIcon() {
-    if (tray_) tray_->hide();
+LinuxQtTrayIcon::~LinuxQtTrayIcon()
+{
+    if (tray_)
+    {
+        tray_->hide();
+    }
 }
 
-void LinuxQtTrayIcon::set_tooltip(const std::string& text) {
-    if (tray_) tray_->setToolTip(QString::fromStdString(text));
+void LinuxQtTrayIcon::set_tooltip(const std::string& text)
+{
+    if (tray_)
+    {
+        tray_->setToolTip(QString::fromStdString(text));
+    }
 }

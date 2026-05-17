@@ -24,7 +24,8 @@ namespace tesseract { class Client; }
 /// the shared `tesseract::views::StickerPicker` inside a `tk::qt6::Surface`
 /// with a native QLineEdit search overlay. The popup is non-modal
 /// (Qt::Popup auto-closes on outside clicks).
-class StickerPicker : public QFrame {
+class StickerPicker : public QFrame
+{
     Q_OBJECT
 public:
     explicit StickerPicker(QWidget* parent = nullptr);
@@ -97,7 +98,8 @@ private:
     /// typically have ≤ 30 frames, so eager decode is fine; the
     /// alternative — decode-on-demand from `QImageReader` per frame —
     /// would stall the UI thread on each frame change.
-    struct AnimatedEntry {
+    struct AnimatedEntry
+    {
         std::vector<std::unique_ptr<tk::Image>> frames;
         std::vector<int>                         delays_ms;
         std::size_t                              current        = 0;
