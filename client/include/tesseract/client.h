@@ -180,6 +180,12 @@ public:
     Result send_message(const std::string& room_id, const std::string& body,
                         const std::string& formatted_body = "");
 
+    /// Re-enable the send queue for `room_id` after a recoverable failure.
+    Result retry_send(const std::string& room_id);
+
+    /// Abort the pending local echo with `txn_id` in `room_id`.
+    Result abort_send(const std::string& room_id, const std::string& txn_id);
+
     /// Send a typing notice to `room_id`. Fire-and-forget — returns immediately;
     /// errors are silently swallowed. Pass `typing=true` when the compose field
     /// transitions to non-empty, `typing=false` when it clears or on room leave.

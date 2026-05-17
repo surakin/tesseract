@@ -185,6 +185,14 @@ Result Client::send_message(const std::string& room_id, const std::string& body,
     return from_ffi(impl_->ffi->send_message(room_id, body, formatted_body));
 }
 
+Result Client::retry_send(const std::string& room_id) {
+    return from_ffi(impl_->ffi->retry_send(room_id));
+}
+
+Result Client::abort_send(const std::string& room_id, const std::string& txn_id) {
+    return from_ffi(impl_->ffi->abort_send(room_id, txn_id));
+}
+
 void Client::send_typing_notice(const std::string& room_id, bool typing) {
     impl_->ffi->send_typing_notice(room_id, typing);
 }
