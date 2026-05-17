@@ -3438,6 +3438,16 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         roomTextArea_->set_text_color(t.palette.text_primary);
     }
+    {
+        const auto& p = t.palette;
+        QPalette pal = statusBar()->palette();
+        pal.setColor(QPalette::Window,
+                     QColor(p.chrome_bg.r, p.chrome_bg.g, p.chrome_bg.b, p.chrome_bg.a));
+        pal.setColor(QPalette::WindowText,
+                     QColor(p.text_secondary.r, p.text_secondary.g, p.text_secondary.b, p.text_secondary.a));
+        statusBar()->setPalette(pal);
+        statusBar()->setAutoFillBackground(true);
+    }
     if (mainAppSurface_)
     {
         mainAppSurface_->relayout();
