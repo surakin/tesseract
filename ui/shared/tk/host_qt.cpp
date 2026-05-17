@@ -128,6 +128,7 @@ public:
     std::function<void()> on_return_;
     NativeTextArea::ImagePasteHandler on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<bool()> on_edit_last_;
 
     bool canInsertFromMimeData(const QMimeData* source) const override {
         if (on_image_paste_ && source && source->hasImage()) return true;
@@ -146,6 +147,10 @@ protected:
             else if (e->key() == Qt::Key_Backtab) nk = NativeTextArea::NavKey::ShiftTab;
             else is_nav = false;
             if (is_nav && popup_nav_(nk)) { e->accept(); return; }
+        }
+        if (e->key() == Qt::Key_Up && on_edit_last_
+            && toPlainText().isEmpty()) {
+            if (on_edit_last_()) { e->accept(); return; }
         }
         if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
             && !(e->modifiers() & Qt::ShiftModifier)) {
@@ -354,6 +359,10 @@ public:
 
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
         if (edit_) edit_->popup_nav_ = std::move(fn);
+    }
+
+    void set_on_edit_last(std::function<bool()> fn) override {
+        if (edit_) edit_->on_edit_last_ = std::move(fn);
     }
 
 private:

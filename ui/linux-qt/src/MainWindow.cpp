@@ -8,7 +8,6 @@
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
-#include "views/markdown.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -443,8 +442,7 @@ MainWindow::MainWindow(QWidget* parent)
             {
                 return;
             }
-            auto md = tesseract::views::markdown_to_html(trimmed);
-            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            auto res = client_->send_message(current_room_id_, trimmed);
             if (res)
             {
                 if (roomTextArea_)
@@ -464,8 +462,7 @@ MainWindow::MainWindow(QWidget* parent)
                 {
                     return;
                 }
-                auto md = tesseract::views::markdown_to_html(body);
-                auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+                auto res = client_->send_reply(current_room_id_, reply_event_id, body);
                 if (!res)
                 {
                     statusBar()->showMessage(
@@ -483,8 +480,7 @@ MainWindow::MainWindow(QWidget* parent)
                 {
                     return;
                 }
-                auto md = tesseract::views::markdown_to_html(new_body);
-                auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+                auto res = client_->send_edit(current_room_id_, event_id, new_body);
                 if (!res)
                 {
                     statusBar()->showMessage(
@@ -749,11 +745,20 @@ MainWindow::MainWindow(QWidget* parent)
                             next = std::min(n - 1, cur + 1);
                             break;
                         case tk::NativeTextArea::NavKey::Tab:
-                            next = (cur + 1) % n;
-                            break;
+                        {
+                            int sel = shortcode_popup_widget_->selected_index();
+                            if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size())
+                            {
+                                auto& s = shortcode_current_suggestions_[sel];
+                                std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                roomTextArea_->replace_range(
+                                    shortcode_active_match_.start, shortcode_active_match_.end, r);
+                            }
+                            hide_shortcode_popup_();
+                            return true;
+                        }
                         case tk::NativeTextArea::NavKey::ShiftTab:
-                            next = (cur <= 0) ? n - 1 : cur - 1;
-                            break;
+                            return false;
                         case tk::NativeTextArea::NavKey::Escape:
                             hide_shortcode_popup_();
                             return true;
@@ -785,6 +790,10 @@ MainWindow::MainWindow(QWidget* parent)
             hide_shortcode_popup_();
         }
         onSendClicked();
+    });
+    roomTextArea_->set_on_edit_last([this] {
+        return mainApp_ && mainApp_->room_view()
+            && mainApp_->room_view()->edit_last_own();
     });
     roomTextArea_->set_on_height_changed([this](float h) {
         if (!mainApp_ || !mainAppSurface_)

@@ -1223,10 +1223,19 @@ void MainWindow::on_create(HWND hwnd) {
                                         next = std::max(0, cur - 1); break;
                                     case tk::NativeTextArea::NavKey::Down:
                                         next = std::min(n - 1, cur + 1); break;
-                                    case tk::NativeTextArea::NavKey::Tab:
-                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::Tab: {
+                                        int sel = shortcode_popup_widget_->selected_index();
+                                        if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size()) {
+                                            auto& s = shortcode_current_suggestions_[sel];
+                                            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                            room_text_area_->replace_range(
+                                                shortcode_active_match_.start, shortcode_active_match_.end, r);
+                                        }
+                                        hide_shortcode_popup_();
+                                        return true;
+                                    }
                                     case tk::NativeTextArea::NavKey::ShiftTab:
-                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                        return false;
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_shortcode_popup_();
                                         return true;
@@ -1255,6 +1264,9 @@ void MainWindow::on_create(HWND hwnd) {
                 hide_shortcode_popup_();
             }
             on_send_clicked();
+        });
+        room_text_area_->set_on_edit_last([this] {
+            return room_view_ && room_view_->edit_last_own();
         });
         room_text_area_->set_on_height_changed([this](float h) {
             if (room_view_) room_view_->set_text_area_natural_height(h);

@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.25)
 # ---------------------------------------------------------------------------
 add_library(tesseract_client STATIC
     src/client.cpp
+    src/markdown.cpp
     src/event_handler_bridge.cpp
     src/session_store.cpp
     src/paths.cpp

@@ -167,6 +167,13 @@ public:
     void begin_focused_gate(const std::string& focus_event_id);
     const std::vector<MessageRowData>& messages() const { return messages_; }
 
+    // Find the most recent own, editable (Kind::Text, fully sent) message
+    // and fire `on_edit_requested` for it. Drives the "press Up in an empty
+    // composer to edit your last message" shortcut. Returns true when a
+    // message was found and the callback fired; false otherwise (caller
+    // lets Up fall through to default caret handling).
+    bool edit_last_own();
+
     // Insert `msg` at visible index `index` (0 = front, == size() = append).
     // The single entry point that mirrors `VectorDiff::Insert` /
     // `PushBack` / `PushFront`. Preserves the user's visual scroll

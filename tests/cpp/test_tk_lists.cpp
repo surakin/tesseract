@@ -496,6 +496,58 @@ TEST_CASE("MessageListView lays out text rows with avatar + body + timestamp",
     CHECK(view.messages().size() == 3);
 }
 
+TEST_CASE("MessageListView::edit_last_own picks the newest own editable text",
+          "[tk][view][messagelist]") {
+    using K = MessageRowData::Kind;
+    using P = MessageRowData::PendingState;
+    auto mk = [](const char* id, const char* body, bool own,
+                 K k = MessageRowData::Kind::Text,
+                 P p = MessageRowData::PendingState::None) {
+        MessageRowData m{};
+        m.kind = k; m.event_id = id; m.body = body;
+        m.is_own = own; m.pending_state = p;
+        return m;
+    };
+
+    SECTION("skips non-own, non-text, and still-sending rows") {
+        MessageListView view;
+        view.set_messages({
+            mk("$a", "my first",      true),                 // editable, older
+            mk("$b", "theirs",        false),                // not own
+            mk("$c", "my image",      true,  K::Image),      // not text
+            mk("$d", "my latest",     true),                 // editable, newest
+            mk("$e", "sending…", true,  K::Text, P::Sending), // not sent
+        });
+        std::string got_id, got_body;
+        view.on_edit_requested = [&](const std::string& id,
+                                     const std::string& b) {
+            got_id = id; got_body = b;
+        };
+        CHECK(view.edit_last_own());
+        CHECK(got_id   == "$d");
+        CHECK(got_body == "my latest");
+    }
+
+    SECTION("returns false when there is no editable own message") {
+        MessageListView view;
+        view.set_messages({
+            mk("$x", "theirs",   false),
+            mk("$y", "my image", true, K::Image),
+        });
+        bool fired = false;
+        view.on_edit_requested = [&](const std::string&,
+                                     const std::string&) { fired = true; };
+        CHECK_FALSE(view.edit_last_own());
+        CHECK_FALSE(fired);
+    }
+
+    SECTION("returns false with no callback wired") {
+        MessageListView view;
+        view.set_messages({ mk("$z", "mine", true) });
+        CHECK_FALSE(view.edit_last_own());   // on_edit_requested unset
+    }
+}
+
 TEST_CASE("MessageListView measures Image rows taller than text rows",
           "[tk][view][messagelist]") {
     Stage st;

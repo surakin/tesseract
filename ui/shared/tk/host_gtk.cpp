@@ -310,6 +310,10 @@ public:
         popup_nav_ = std::move(fn);
     }
 
+    void set_on_edit_last(std::function<bool()> fn) override {
+        on_edit_last_ = std::move(fn);
+    }
+
 private:
     static int utf8_byte_to_char_offset(const gchar* utf8_str, int byte_offset) {
         const gchar* p = utf8_str;
@@ -350,6 +354,12 @@ private:
             else if (keyval == GDK_KEY_ISO_Left_Tab)  nk = NativeTextArea::NavKey::ShiftTab;
             else is_nav = false;
             if (is_nav && self->popup_nav_(nk)) return TRUE;
+        }
+        // Up in an empty composer (popup didn't consume it) → edit the
+        // last own message (Element/Slack convention).
+        if (keyval == GDK_KEY_Up && self->on_edit_last_ && self->buffer_
+            && gtk_text_buffer_get_char_count(self->buffer_) == 0) {
+            if (self->on_edit_last_()) return TRUE;
         }
         bool is_return = (keyval == GDK_KEY_Return ||
                           keyval == GDK_KEY_KP_Enter ||
@@ -441,6 +451,7 @@ private:
     std::function<void(float)>                   on_height_changed_;
     ImagePasteHandler                            on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)>  popup_nav_;
+    std::function<bool()>                        on_edit_last_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

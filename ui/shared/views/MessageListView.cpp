@@ -464,7 +464,12 @@ public:
         float chips_h  = !m.reactions.empty() ? eff_chip_h : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
-        return top_pad + header_h + body_h + chips_h + kPadY;
+        float raw_h    = top_pad + header_h + body_h + chips_h + kPadY;
+        // Continuation rows without reactions must be at least chip_h() tall so
+        // the hover action buttons (same height as chip_h) fit without overflow.
+        if (cont && chips_h == 0.0f)
+            raw_h = std::max(raw_h, chip_h());
+        return raw_h;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -571,7 +576,7 @@ public:
         if (hovered && m.reactions.empty()) {
             static_cache_.ensure(ctx.factory);
             float btn_y = cont
-                ? (bounds.y + kContPadY)
+                ? (bounds.y + (bounds.h - chip_h()) * 0.5f)
                 : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
             float btn_right = bounds.x + bounds.w - kPadX;
             if (!m.read_receipts.empty()) {
@@ -2372,6 +2377,23 @@ void MessageListView::begin_focused_gate(const std::string& focus_event_id) {
     if (!room_switch_gate_ || room_switch_gate_->evaluated) return;
     room_switch_gate_->focused        = true;
     room_switch_gate_->focus_event_id = focus_event_id;
+}
+
+bool MessageListView::edit_last_own() {
+    if (!on_edit_requested) return false;
+    // Newest first. Same editability rule as the hover ✏ button: own,
+    // Kind::Text, fully sent (not a Sending/Failed local echo), real id.
+    for (auto it = messages_.rbegin(); it != messages_.rend(); ++it) {
+        const MessageRowData& m = *it;
+        if (m.is_own
+            && m.kind == MessageRowData::Kind::Text
+            && m.pending_state == MessageRowData::PendingState::None
+            && !m.event_id.empty()) {
+            on_edit_requested(m.event_id, m.body);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const {

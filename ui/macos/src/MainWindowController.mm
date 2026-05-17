@@ -1455,10 +1455,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                         next = std::max(0, cur - 1); break;
                                     case tk::NativeTextArea::NavKey::Down:
                                         next = std::min(n - 1, cur + 1); break;
-                                    case tk::NativeTextArea::NavKey::Tab:
-                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::Tab: {
+                                        int sel = c2->_shortcodePopupWidget->selected_index();
+                                        auto& suggs = c2->_shell->shortcode_current_suggestions_;
+                                        if (sel >= 0 && sel < (int)suggs.size()) {
+                                            auto& s = suggs[sel];
+                                            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                            c2->_roomTextArea->replace_range(
+                                                c2->_shell->shortcode_active_match_.start,
+                                                c2->_shell->shortcode_active_match_.end, r);
+                                        }
+                                        [c2 hideShortcodePopup];
+                                        return true;
+                                    }
                                     case tk::NativeTextArea::NavKey::ShiftTab:
-                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                        return false;
                                     case tk::NativeTextArea::NavKey::Escape:
                                         [c2 hideShortcodePopup];
                                         return true;
@@ -1492,6 +1503,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 [c hideShortcodePopup];
             }
             [c _onComposeSend];
+        });
+        _roomTextArea->set_on_edit_last([weakSelf]() -> bool {
+            MainWindowController* c = weakSelf;
+            return c && c->_roomView && c->_roomView->edit_last_own();
         });
         _roomTextArea->set_on_height_changed([weakSelf](float h) {
             MainWindowController* c = weakSelf;

@@ -5,7 +5,6 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
-#include "views/markdown.h"
 
 #include <cairo.h>
 #include <thread>
@@ -503,10 +502,19 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                         next = std::max(0, cur - 1); break;
                                     case tk::NativeTextArea::NavKey::Down:
                                         next = std::min(n - 1, cur + 1); break;
-                                    case tk::NativeTextArea::NavKey::Tab:
-                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::Tab: {
+                                        int sel = shortcode_popup_widget_->selected_index();
+                                        if (sel >= 0 && sel < (int)shortcode_current_suggestions_.size()) {
+                                            auto& s = shortcode_current_suggestions_[sel];
+                                            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                            room_text_area_->replace_range(
+                                                shortcode_active_match_.start, shortcode_active_match_.end, r);
+                                        }
+                                        hide_shortcode_popup_();
+                                        return true;
+                                    }
                                     case tk::NativeTextArea::NavKey::ShiftTab:
-                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                        return false;
                                     case tk::NativeTextArea::NavKey::Escape:
                                         hide_shortcode_popup_();
                                         return true;
@@ -535,6 +543,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                 hide_shortcode_popup_();
             }
             on_send_clicked();
+        });
+        room_text_area_->set_on_edit_last([this] {
+            return room_view_ && room_view_->edit_last_own();
         });
         room_text_area_->set_on_height_changed([this](float h) {
             room_view_->set_text_area_natural_height(h);
@@ -579,8 +590,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (l == std::string::npos) return;
             std::string trimmed = body.substr(l, r - l + 1);
             if (trimmed.empty()) return;
-            auto md = tesseract::views::markdown_to_html(trimmed);
-            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            auto res = client_->send_message(current_room_id_, trimmed);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();
@@ -589,8 +599,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_view_->on_send_reply = [this](const std::string& reply_event_id,
                                             const std::string& body) {
             if (body.empty() || current_room_id_.empty()) return;
-            auto md = tesseract::views::markdown_to_html(body);
-            auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+            auto res = client_->send_reply(current_room_id_, reply_event_id, body);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();
@@ -602,8 +611,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_view_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
             if (new_body.empty() || current_room_id_.empty()) return;
-            auto md = tesseract::views::markdown_to_html(new_body);
-            auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+            auto res = client_->send_edit(current_room_id_, event_id, new_body);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();

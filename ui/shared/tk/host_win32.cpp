@@ -571,6 +571,10 @@ public:
         popup_nav_ = std::move(fn);
     }
 
+    void set_on_edit_last(std::function<bool()> fn) override {
+        on_edit_last_ = std::move(fn);
+    }
+
     void notify_changed() {
         if (suppress_changed_) return;
         std::string t = text();
@@ -604,6 +608,12 @@ private:
                          : NativeTextArea::NavKey::Tab;
             else is_nav = false;
             if (is_nav && self->popup_nav_(nk)) return 0;
+        }
+        // Up in an empty composer (popup didn't consume it above) → edit
+        // the last own message (Element/Slack convention).
+        if (msg == WM_KEYDOWN && wParam == VK_UP && self->on_edit_last_
+            && GetWindowTextLengthW(self->hwnd_) == 0) {
+            if (self->on_edit_last_()) return 0;
         }
         // TranslateMessage queues the WM_CHAR for VK_TAB *before* the
         // WM_KEYDOWN above is dispatched, so consuming the keydown alone
@@ -657,6 +667,7 @@ private:
     std::function<void(float)>                   on_height_changed_;
     ImagePasteHandler                            on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)>  popup_nav_;
+    std::function<bool()>                        on_edit_last_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can

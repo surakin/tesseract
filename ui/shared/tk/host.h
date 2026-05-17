@@ -113,6 +113,13 @@ public:
     /// Return true from the callback to suppress default key handling.
     virtual void set_on_popup_nav(std::function<bool(NavKey)> fn) = 0;
 
+    /// Fired when the Up arrow is pressed while the composer is empty and
+    /// the shortcode popup is not open — used to edit the last own message
+    /// (Element/Slack convention). Return true to consume the key (an
+    /// editable message was loaded into the composer); false lets Up fall
+    /// through to default caret handling.
+    virtual void set_on_edit_last(std::function<bool()> fn) = 0;
+
     // Hook for clipboard image pastes. When set, and the user pastes a
     // payload that includes image MIME types, the host invokes the handler
     // with the raw image bytes + mime ("image/png", "image/jpeg", …) and
