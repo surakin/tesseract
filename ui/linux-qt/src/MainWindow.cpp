@@ -53,6 +53,10 @@
 #include <QTimeZone>
 #include <QTimer>
 #include <QStandardItem>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusReply>
+#include <QDBusVariant>
 #include <algorithm>
 #include <thread>
 #include <unordered_set>
@@ -958,6 +962,14 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Load saved theme preference and apply it.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    read_portal_color_scheme_();
+    QDBusConnection::sessionBus().connect(
+        QStringLiteral("org.freedesktop.portal.Desktop"),
+        QStringLiteral("/org/freedesktop/portal/desktop"),
+        QStringLiteral("org.freedesktop.portal.Settings"),
+        QStringLiteral("SettingChanged"),
+        this,
+        SLOT(on_portal_setting_changed_(QString, QString, QDBusVariant)));
     apply_current_theme_();
 
     // Re-apply when the OS switches light/dark (only relevant in System mode).
@@ -3333,8 +3345,45 @@ void MainWindow::handle_verification_cancelled_ui_(
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
-    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
-        ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+    const auto qt_scheme = QGuiApplication::styleHints()->colorScheme();
+    if (qt_scheme != Qt::ColorScheme::Unknown)
+        return qt_scheme == Qt::ColorScheme::Dark ? tk::ThemeMode::Dark
+                                                  : tk::ThemeMode::Light;
+    // Qt could not determine the OS color scheme (common on GNOME without
+    // QGnomePlatform / Qt < 6.6). Fall back to the XDG portal value.
+    return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+}
+
+void MainWindow::read_portal_color_scheme_()
+{
+    QDBusInterface iface(
+        QStringLiteral("org.freedesktop.portal.Desktop"),
+        QStringLiteral("/org/freedesktop/portal/desktop"),
+        QStringLiteral("org.freedesktop.portal.Settings"),
+        QDBusConnection::sessionBus());
+    if (!iface.isValid()) return;
+
+    QDBusReply<QDBusVariant> reply = iface.call(
+        QStringLiteral("Read"),
+        QStringLiteral("org.freedesktop.appearance"),
+        QStringLiteral("color-scheme"));
+    if (reply.isValid())
+        portal_color_scheme_ = reply.value().variant().toInt();
+}
+
+void MainWindow::on_portal_setting_changed_(const QString& ns,
+                                             const QString& key,
+                                             const QDBusVariant& value)
+{
+    if (ns != QLatin1String("org.freedesktop.appearance") ||
+        key != QLatin1String("color-scheme"))
+        return;
+    portal_color_scheme_ = value.variant().toInt();
+    if (tesseract::Settings::instance().theme_pref ==
+        tesseract::Settings::ThemePreference::System)
+    {
+        apply_current_theme_();
+    }
 }
 
 // ---------------------------------------------------------------------------

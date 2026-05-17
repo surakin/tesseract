@@ -5,6 +5,7 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTimer>
+#include <QDBusVariant>
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
@@ -91,6 +92,10 @@ private slots:
     /// Advances frames in `anim_cache_` and repaints `msgSurface_`
     /// when at least one frame changes.
     void onMessageAnimTick_();
+
+    void on_portal_setting_changed_(const QString& ns,
+                                    const QString& key,
+                                    const QDBusVariant& value);
 
 signals:
     void recoverFinished(bool ok, QString error);
@@ -327,6 +332,12 @@ private:
     {
         return shortcode_popup_frame_ && shortcode_popup_frame_->isVisible();
     }
+
+    void read_portal_color_scheme_();
+
+    // Cached org.freedesktop.appearance color-scheme portal value.
+    // -1 = not yet read, 0 = no preference, 1 = dark, 2 = light.
+    int portal_color_scheme_ = -1;
 };
 
 } // namespace qt6
