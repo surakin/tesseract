@@ -1551,6 +1551,14 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
         _shortcodePopupWidget->on_dismissed = [weakSelf] {
             if (MainWindowController* c = weakSelf) [c hideShortcodePopup];
         };
+        __weak MainWindowController* weakSelf2 = self;
+        _shortcodePopupWidget->set_image_provider(
+            [weakSelf2](const std::string& url) -> const tk::Image* {
+                MainWindowController* c = weakSelf2;
+                if (!c || !c->_shell) return nullptr;
+                auto it = c->_shell->tk_images_.find(url);
+                return it == c->_shell->tk_images_.end() ? nullptr : it->second.get();
+            });
 
         NSView* popupView =
             (__bridge NSView*)_shortcodePopupSurface->view_handle();

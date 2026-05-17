@@ -64,6 +64,21 @@ void ShortcodePopup::paint(tk::PaintCtx& ctx) {
                 };
                 ctx.canvas.draw_text(*layout, origin, pal.text_primary);
             }
+        } else if (image_provider_) {
+            const tk::Image* img = image_provider_(s.emoticon.url);
+            if (img) {
+                float iw = static_cast<float>(img->width());
+                float ih = static_cast<float>(img->height());
+                float sc = std::min(cell.w / iw, cell.h / ih);
+                float dw = iw * sc, dh = ih * sc;
+                ctx.canvas.draw_image(*img, {
+                    cell.x + (cell.w - dw) * 0.5f,
+                    cell.y + (cell.h - dh) * 0.5f,
+                    dw, dh
+                });
+            } else {
+                ctx.canvas.fill_rect(cell, pal.chrome_bg);
+            }
         } else {
             ctx.canvas.fill_rect(cell, pal.chrome_bg);
         }

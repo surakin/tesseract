@@ -2,6 +2,7 @@
 #include "tk/widget.h"
 #include "views/ShortcodeEngine.h"
 #include <functional>
+#include <string>
 #include <vector>
 #include <algorithm>
 
@@ -13,7 +14,10 @@ public:
     static constexpr float kWidth     = 280.0f;
     static constexpr int   kMaxRows   = 8;
 
+    using ImageProvider = std::function<const tk::Image*(const std::string& url)>;
+
     void set_suggestions(std::vector<ShortcodeSuggestion> suggestions);
+    void set_image_provider(ImageProvider p) { image_provider_ = std::move(p); }
     void set_selected_index(int index);
     int  selected_index() const { return selected_index_; }
 
@@ -34,6 +38,7 @@ public:
     void     on_pointer_leave() override;
 
 private:
+    ImageProvider                    image_provider_;
     std::vector<ShortcodeSuggestion> suggestions_;
     int selected_index_ = -1;
     int hovered_index_  = -1;

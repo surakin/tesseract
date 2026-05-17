@@ -2404,6 +2404,11 @@ void MainWindow::show_shortcode_popup_(
             hide_shortcode_popup_();
         };
         shortcode_popup_widget_->on_dismissed = [this] { hide_shortcode_popup_(); };
+        shortcode_popup_widget_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image* {
+                auto it = tk_images_.find(url);
+                return it == tk_images_.end() ? nullptr : it->second.get();
+            });
 
         auto* lay = new QVBoxLayout(shortcode_popup_frame_);
         lay->setContentsMargins(0, 0, 0, 0);
