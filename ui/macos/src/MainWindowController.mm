@@ -3049,7 +3049,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_onStickerSave:(id)sender {
     if (_ctxStickerMxcUrl.empty()) return;
-    _shell->client_->save_sticker_to_user_pack(
+    auto res = _shell->client_->save_sticker_to_user_pack(
         _ctxStickerBody,
         _ctxStickerBody,
         _ctxStickerMxcUrl,
@@ -3058,6 +3058,13 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     _ctxStickerMxcUrl.clear();
     _ctxStickerBody.clear();
     _ctxStickerInfoJson.clear();
+    if (!res.ok) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.alertStyle  = NSAlertStyleWarning;
+        alert.messageText = @"Could Not Save Sticker";
+        alert.informativeText = [NSString stringWithUTF8String:res.error.c_str()] ?: @"";
+        [alert beginSheetModalForWindow:self.window completionHandler:nil];
+    }
 }
 
 @end

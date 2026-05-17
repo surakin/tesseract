@@ -793,9 +793,14 @@ impl ClientFfi {
                                     .map(|p| p.images.len())
                                     .unwrap_or(0);
 
+                                // Preserve when rebuild is stale: no user pack (echo not
+                                // yet in state store) or fewer images than cached (state
+                                // store reflects an older write). Use >= so a
+                                // toggle_favorite_sticker write (which doesn't change image
+                                // count) is also preserved across rebuilds before its echo.
                                 let should_preserve = pending && match (cached_user.is_some(), has_user) {
                                     (true, false) => true,
-                                    (true, true)  => cached_images > rebuilt_images,
+                                    (true, true)  => cached_images >= rebuilt_images,
                                     _             => false,
                                 };
 
@@ -2939,6 +2944,12 @@ impl ClientFfi {
         if image_url.is_empty() {
             return err("image_url is empty");
         }
+        // Encrypted sticker events serialise the full MediaSource as JSON into
+        // the url field (starts with '{').  The encrypted blob cannot be stored
+        // as a plain pack entry — other clients need the key to display it.
+        if image_url.starts_with('{') {
+            return err("Sticker is from an encrypted message and cannot be saved to your pack");
+        }
         let uri = matrix_sdk::ruma::OwnedMxcUri::from(image_url);
         if !uri.is_valid() {
             return err("image_url is not a valid mxc:// uri");
@@ -3011,16 +3022,15 @@ impl ClientFfi {
 
         match write_result {
             Ok(_) => {
+                // Set the pending flag BEFORE updating the cache so the sync
+                // watcher cannot observe updated-cache + pending=false in between.
+                self.user_pack_write_pending
+                    .store(true, std::sync::atomic::Ordering::Release);
                 // Directly update the in-memory cache from the new_content we
                 // already have — the state store won't reflect the write until
                 // the next sync cycle, so rebuild_image_packs would read stale
                 // data if we called refresh_image_packs_blocking here.
                 self.update_user_pack_in_cache(&new_content);
-                // Signal the sync watcher that a write is in flight so it
-                // preserves the just-updated cache across any room-update-triggered
-                // rebuilds that happen before the server echo arrives.
-                self.user_pack_write_pending
-                    .store(true, std::sync::atomic::Ordering::Release);
                 ok("")
             }
             Err(e) => err(e.to_string()),
@@ -3096,9 +3106,9 @@ impl ClientFfi {
 
         match write_result {
             Ok(_) => {
-                self.update_user_pack_in_cache(&new_content);
                 self.user_pack_write_pending
                     .store(true, std::sync::atomic::Ordering::Release);
+                self.update_user_pack_in_cache(&new_content);
                 ok("")
             }
             Err(e) => err(e.to_string()),

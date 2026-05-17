@@ -712,6 +712,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             }
             return 0;
         }
+        if (wParam == kStatusClearTimerId) {
+            KillTimer(hwnd, kStatusClearTimerId);
+            if (self->hStatus_) SetWindowTextW(self->hStatus_, L"");
+            return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     default:
@@ -1098,8 +1103,13 @@ void MainWindow::on_create(HWND hwnd) {
             int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                       sp.x, sp.y, 0, hwnd_, nullptr);
             DestroyMenu(menu);
-            if (cmd == 1)
-                client_->save_sticker_to_user_pack(body, body, mxc, info);
+            if (cmd == 1) {
+                auto res = client_->save_sticker_to_user_pack(body, body, mxc, info);
+                if (!res.ok && hStatus_) {
+                    SetWindowTextW(hStatus_, utf8_to_wstr(res.error).c_str());
+                    SetTimer(hwnd_, kStatusClearTimerId, 6000, nullptr);
+                }
+            }
         });
 
         // ── File drop ───────────────────────────────────────────────────────

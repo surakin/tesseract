@@ -855,7 +855,10 @@ MainWindow::MainWindow(QWidget* parent)
         if (!already_saved)
         {
             connect(add, &QAction::triggered, this, [this, mxc_url, body, info_json]{
-                client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
+                auto res = client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
+                if (!res.ok)
+                    statusBar()->showMessage(
+                        QString::fromStdString(res.error), 6000);
             });
         }
         menu->popup(mainAppSurface_->mapToGlobal(pos));
