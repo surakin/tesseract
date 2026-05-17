@@ -2844,11 +2844,15 @@ void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
                                             gpointer user_data) {
     auto* self = static_cast<MainWindow*>(user_data);
     if (self->ctx_sticker_mxc_url_.empty()) return;
-    self->client_->save_sticker_to_user_pack(
+    auto res = self->client_->save_sticker_to_user_pack(
         self->ctx_sticker_body_,
         self->ctx_sticker_body_,
         self->ctx_sticker_mxc_url_,
         self->ctx_sticker_info_json_);
+    if (!res && self->status_bar_) {
+        std::string msg = "Save sticker failed: " + res.message;
+        gtk_label_set_text(GTK_LABEL(self->status_bar_), msg.c_str());
+    }
     self->ctx_sticker_event_id_.clear();
     self->ctx_sticker_mxc_url_.clear();
     self->ctx_sticker_body_.clear();
