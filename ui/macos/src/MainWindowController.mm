@@ -1578,20 +1578,26 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     [_shortcodePanel setContentSize:size];
     _shortcodePopupSurface->relayout();
 
-    // Map cursor_local → screen coords.
+    // Map cursor_local (TKSurfaceView y-down) → screen coords (y-up).
+    // cursor.y is the cursor's top edge in TKSurfaceView local coordinates.
     NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
     NSPoint localPt  = NSMakePoint(cursor.x, cursor.y);
     NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
     NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
-    // Position above cursor (y increases upward on macOS).
-    screenPt.y += int(cursor.h) + 4;
+    // After the conversion screenPt.y is the cursor's top edge in screen y-up.
 
     NSRect screenFrame = _shortcodePanel.screen
         ? _shortcodePanel.screen.visibleFrame
         : [NSScreen mainScreen].visibleFrame;
 
-    CGFloat x = screenPt.x;
-    CGFloat y = screenPt.y;
+    // Prefer above the cursor; fall back to below when the panel would be
+    // clipped at the top of the screen (mirrors Qt6 / Win32 behaviour).
+    CGFloat panelH  = size.height;
+    CGFloat y_above = screenPt.y + 4;
+    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
+    CGFloat x       = screenPt.x;
+    CGFloat y       = (y_above + panelH <= screenFrame.origin.y + screenFrame.size.height)
+                    ? y_above : y_below;
     x = std::clamp(x, screenFrame.origin.x,
                    screenFrame.origin.x + screenFrame.size.width  - size.width);
     y = std::clamp(y, screenFrame.origin.y,

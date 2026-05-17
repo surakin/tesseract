@@ -664,7 +664,11 @@ tk::Rect NSTextViewNative::cursor_rect() const {
                                         inTextContainer:view_.textContainer];
     cr.origin.x += view_.textContainerInset.width;
     cr.origin.y += view_.textContainerInset.height;
-    NSRect inSuper = [view_ convertRect:cr toView:view_.superview];
+    // Convert to the TKSurfaceView (superview_) so the result is in the same
+    // y-down coordinate space as the rest of the tk widget tree — not to
+    // view_.superview (NSClipView), which is buried inside the NSScrollView
+    // and has a different origin.
+    NSRect inSuper = [view_ convertRect:cr toView:superview_];
     return { float(inSuper.origin.x), float(inSuper.origin.y),
              float(inSuper.size.width), float(inSuper.size.height) };
 }
