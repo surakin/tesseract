@@ -1175,6 +1175,15 @@ private:
                 }
                 return quote_h + th + badge_h + preview_h;
             }
+            case MessageRowData::Kind::Location: {
+                constexpr float kMapRowH = 240.0f;
+                float desc_h = 0.0f;
+                if (!m.location_description.empty()) {
+                    desc_h = measure_text_height(m.location_description, ctx, col_w)
+                             + kPadY;
+                }
+                return quote_h + kMapRowH + desc_h;
+            }
             // Virtual items are handled before this function is called.
             case MessageRowData::Kind::DaySeparator:
             case MessageRowData::Kind::ReadMarker:
@@ -1405,6 +1414,20 @@ private:
                                                     col_w,
                                                     ctx.theme.palette.text_primary);
                     cursor += ch;
+                }
+                return cursor;
+            }
+            case MessageRowData::Kind::Location: {
+                constexpr float kMapRowH = 240.0f;
+                tk::Rect map_rect{ x, y, std::min(col_w, kImageMaxW), kMapRowH };
+                paint_location_map(m, ctx, map_rect);
+                float cursor = y + kMapRowH;
+                if (!m.location_description.empty()) {
+                    cursor += kPadY;
+                    float dh = paint_wrapped_text(m.location_description, ctx,
+                                                   x, cursor, col_w,
+                                                   ctx.theme.palette.text_muted);
+                    cursor += dh;
                 }
                 return cursor;
             }
@@ -1782,6 +1805,83 @@ private:
                                                 ctx.theme.palette.border, 1.0f);
             }
         }
+    }
+
+    // Paint a slippy-map tile composite for a Kind::Location row.
+    // `map_rect` is the bounding box for the map canvas area (pre-clipped).
+    void paint_location_map(const MessageRowData& m, tk::PaintCtx& ctx,
+                             tk::Rect map_rect) const {
+        // Round corners on the map card.
+        ctx.canvas.push_clip_rounded_rect(map_rect, 8.0f);
+
+        const auto& vp      = m.map_viewport;
+        tk::Point   vp_px   = lat_lon_to_world_px(vp.lat, vp.lon, vp.zoom);
+        auto        tiles   = tiles_in_view(vp, map_rect);
+
+        // Draw tiles (or a placeholder if not yet loaded).
+        for (const auto& t : tiles) {
+            tk::Point origin = tile_pixel_origin(t, vp_px, map_rect);
+            tk::Rect  tdst{ origin.x, origin.y, 256.0f, 256.0f };
+            const std::string key = tile_cache_key(t);
+            const tk::Image* img = owner_.image_provider_
+                                   ? owner_.image_provider_(key) : nullptr;
+            if (img) {
+                ctx.canvas.draw_image(*img, tdst);
+            } else {
+                // Placeholder: fill with the surface background colour and
+                // request the tile from the host.
+                ctx.canvas.fill_rect(tdst, ctx.theme.palette.chrome_bg);
+                if (owner_.on_tile_needed)
+                    owner_.on_tile_needed(t.z, t.x, t.y);
+            }
+        }
+
+        // Location pin — white outer disc + red inner disc, centred on the
+        // pin coordinate. Use fill_rounded_rect with radius = diameter/2.
+        {
+            tk::Point pin_px = lat_lon_to_world_px(m.location_lat,
+                                                    m.location_lon, vp.zoom);
+            float map_cx = map_rect.x + map_rect.w * 0.5f;
+            float map_cy = map_rect.y + map_rect.h * 0.5f;
+            float pin_sx = map_cx + (pin_px.x - vp_px.x);
+            float pin_sy = map_cy + (pin_px.y - vp_px.y);
+
+            constexpr float kPinOuter = 18.0f;
+            constexpr float kPinInner = 12.0f;
+            tk::Rect outer{ pin_sx - kPinOuter * 0.5f, pin_sy - kPinOuter * 0.5f,
+                            kPinOuter, kPinOuter };
+            tk::Rect inner{ pin_sx - kPinInner * 0.5f, pin_sy - kPinInner * 0.5f,
+                            kPinInner, kPinInner };
+            ctx.canvas.fill_rounded_rect(outer, kPinOuter * 0.5f,
+                                          tk::Color{ 255, 255, 255, 230 });
+            ctx.canvas.fill_rounded_rect(inner, kPinInner * 0.5f,
+                                          tk::Color::rgb(0xE53935));
+        }
+
+        // Attribution badge — "© OpenStreetMap contributors" at bottom-right.
+        {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            st.wrap = false;
+            auto lo = ctx.factory.build_text(
+                "\xC2\xA9 OpenStreetMap contributors", st);
+            if (lo) {
+                tk::Size sz = lo->measure();
+                constexpr float kBadgePadX = 5.0f;
+                constexpr float kBadgePadY = 3.0f;
+                float bx = map_rect.x + map_rect.w - sz.w - kBadgePadX * 2 - 4.0f;
+                float by = map_rect.y + map_rect.h - sz.h - kBadgePadY * 2 - 4.0f;
+                tk::Rect badge{ bx, by,
+                                sz.w + kBadgePadX * 2,
+                                sz.h + kBadgePadY * 2 };
+                ctx.canvas.fill_rounded_rect(badge, 3.0f,
+                                              tk::Color{ 255, 255, 255, 180 });
+                ctx.canvas.draw_text(*lo, { bx + kBadgePadX, by + kBadgePadY },
+                                      tk::Color{ 0, 0, 0, 200 });
+            }
+        }
+
+        ctx.canvas.pop_clip();
     }
 
     void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx,
