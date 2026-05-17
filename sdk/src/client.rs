@@ -3194,7 +3194,7 @@ impl ClientFfi {
         }
 
         let ev_type =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
 
         // Hold the account-data lock across the whole read→modify→write so a
         // concurrent toggle_favorite / save cannot clobber this change.
@@ -3277,7 +3277,7 @@ impl ClientFfi {
 
         let client_for_write = client.clone();
         let ev_type_for_write =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
         let write_result = self.rt.block_on(async move {
             client_for_write
                 .account()
@@ -3334,7 +3334,7 @@ impl ClientFfi {
         if image_url.is_empty() { return err("image_url is empty"); }
 
         let ev_type =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
 
         // Hold the account-data lock across the whole read→modify→write so a
         // concurrent save / favorite toggle cannot clobber this change.
@@ -3364,7 +3364,7 @@ impl ClientFfi {
         };
         let client_for_write = client.clone();
         let ev_type_for_write =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK_UNSTABLE);
+            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
         let write_result = self.rt.block_on(async move {
             client_for_write.account().set_account_data_raw(ev_type_for_write, raw).await
         });
@@ -3827,7 +3827,38 @@ async fn read_prefs_json(client: &Client) -> String {
         .unwrap_or_else(|| "{}".to_owned())
 }
 
-/// to the stable names. Returns an empty Vec when not logged in.
+/// MSC2545 migration dual-write: write the same account-data `content`
+/// under every name in `types` (stable + unstable, see
+/// `image_packs::EMOTE_ROOMS_TYPES`), so edits stay visible to clients
+/// still on the unstable names until the ecosystem has migrated. No
+/// callers yet — the pending pack-management write paths (ROADMAP Step 10:
+/// emote-rooms subscribe) will use it. Room-pack state-event edits should
+/// mirror this pattern with `send_state_event` over `ROOM_PACK_TYPES`.
+#[cfg(not(test))]
+#[allow(dead_code)]
+async fn set_account_data_both(
+    client: &Client,
+    types: &[&str],
+    content: &serde_json::Value,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+    use matrix_sdk::ruma::serde::Raw;
+    let raw = Raw::new(content)
+        .map_err(|e| format!("serialize account data: {e}"))?
+        .cast_unchecked();
+    for t in types {
+        client
+            .account()
+            .set_account_data_raw(GlobalAccountDataEventType::from(*t), raw.clone())
+            .await
+            .map_err(|e| format!("set {t}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Rebuild the aggregated image-pack cache. Reads prefer the merged MSC2545
+/// stable names, falling back to the unstable names. Returns an empty Vec
+/// when not logged in.
 #[cfg(not(test))]
 async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePack> {
     use matrix_sdk::ruma::events::{GlobalAccountDataEventType, StateEventType};
@@ -3836,31 +3867,30 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     let mut packs: Vec<crate::image_packs::ImagePack> = Vec::new();
 
     // -- User pack (account_data) --
-    for ev_type_str in [
-        crate::image_packs::TYPE_USER_PACK_UNSTABLE,
-        crate::image_packs::TYPE_USER_PACK_STABLE,
-    ] {
-        let et = GlobalAccountDataEventType::from(ev_type_str);
-        let Ok(Some(raw)) = client.account().account_data_raw(et).await else { continue };
-        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else { continue };
-        let Some(mut pack) = crate::image_packs::parse_pack_content(
-            "user".to_owned(),
-            crate::image_packs::PackSource::User,
-            &content,
-        ) else { continue };
-        if pack.display_name.is_empty() {
-            pack.display_name = "Saved Stickers".to_owned();
+    // MSC2545 defines no personal pack, so there is only the de-facto
+    // `im.ponies.user_emotes` — no stable name to prefer.
+    {
+        let et = GlobalAccountDataEventType::from(
+            crate::image_packs::TYPE_USER_PACK);
+        if let Ok(Some(raw)) = client.account().account_data_raw(et).await {
+            if let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) {
+                if let Some(mut pack) = crate::image_packs::parse_pack_content(
+                    "user".to_owned(),
+                    crate::image_packs::PackSource::User,
+                    &content,
+                ) {
+                    if pack.display_name.is_empty() {
+                        pack.display_name = "Saved Stickers".to_owned();
+                    }
+                    packs.push(pack);
+                }
+            }
         }
-        packs.push(pack);
-        break;
     }
 
     // -- Globally enabled room packs (account_data) --
     let mut room_refs: Vec<(String, String)> = Vec::new();
-    for ev_type_str in [
-        crate::image_packs::TYPE_EMOTE_ROOMS_UNSTABLE,
-        crate::image_packs::TYPE_EMOTE_ROOMS_STABLE,
-    ] {
+    for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
         let et = GlobalAccountDataEventType::from(ev_type_str);
         let Ok(Some(raw)) = client.account().account_data_raw(et).await else { continue };
         let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else { continue };
@@ -3884,10 +3914,7 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
 
         // Fast path: local SSS cache.
         if let Some(room) = client.get_room(&room_id) {
-            for ev_type_str in [
-                crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
-                crate::image_packs::TYPE_ROOM_PACK_STABLE,
-            ] {
+            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                 let et = StateEventType::from(ev_type_str);
                 // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
                 // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
@@ -3913,10 +3940,7 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         // so one HTTP round-trip per missing room is acceptable.
         if !found {
             use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
-            for ev_type_str in [
-                crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
-                crate::image_packs::TYPE_ROOM_PACK_STABLE,
-            ] {
+            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                 let et = StateEventType::from(ev_type_str);
                 let req = get_state_event_for_key::v3::Request::new(
                     room_id.clone(),
@@ -3948,10 +3972,7 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
 
     for room in client.joined_rooms() {
         let room_id_str = room.room_id().to_string();
-        for ev_type_str in [
-            crate::image_packs::TYPE_ROOM_PACK_UNSTABLE,
-            crate::image_packs::TYPE_ROOM_PACK_STABLE,
-        ] {
+        for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
             let et = StateEventType::from(ev_type_str);
             let Ok(events) = room.get_state_events(et).await else { continue };
             for raw_state in &events {

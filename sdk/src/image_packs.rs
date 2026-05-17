@@ -80,12 +80,27 @@ pub const USAGE_STICKER:  u8 = 1 << 0;
 pub const USAGE_EMOTICON: u8 = 1 << 1;
 pub const USAGE_ANY:      u8 = USAGE_STICKER | USAGE_EMOTICON;
 
-pub const TYPE_USER_PACK_UNSTABLE:   &str = "im.ponies.user_emotes";
-pub const TYPE_USER_PACK_STABLE:     &str = "m.image_pack";
-pub const TYPE_EMOTE_ROOMS_UNSTABLE: &str = "im.ponies.emote_rooms";
+// MSC2545 (merged) defines stable types for the per-room pack and the
+// enabled-rooms list, each with an `im.ponies.*` unstable equivalent. It
+// does NOT define a personal account-data pack at all — `im.ponies.user_emotes`
+// is a de-facto Element/Cinny extension with no stable name, so it has a
+// single identifier.
+pub const TYPE_USER_PACK:            &str = "im.ponies.user_emotes";
+
 pub const TYPE_EMOTE_ROOMS_STABLE:   &str = "m.image_pack.rooms";
-pub const TYPE_ROOM_PACK_UNSTABLE:   &str = "im.ponies.room_emotes";
+pub const TYPE_EMOTE_ROOMS_UNSTABLE: &str = "im.ponies.emote_rooms";
 pub const TYPE_ROOM_PACK_STABLE:     &str = "m.room.image_pack";
+pub const TYPE_ROOM_PACK_UNSTABLE:   &str = "im.ponies.room_emotes";
+
+/// Identifier precedence for the two MSC2545 types that have a stable form:
+/// **stable first** (preferred now the MSC is merged), unstable as the
+/// compat fallback. Reads iterate these and take the first hit; future
+/// writers must dual-write every entry (see `set_account_data_both`) until
+/// the ecosystem has fully migrated off the unstable names.
+pub const EMOTE_ROOMS_TYPES: [&str; 2] =
+    [TYPE_EMOTE_ROOMS_STABLE, TYPE_EMOTE_ROOMS_UNSTABLE];
+pub const ROOM_PACK_TYPES: [&str; 2] =
+    [TYPE_ROOM_PACK_STABLE, TYPE_ROOM_PACK_UNSTABLE];
 
 /// Tesseract-private flag stored alongside image entries to mark favorites.
 /// Spec is open about unknown keys; other clients ignore it.
@@ -376,6 +391,22 @@ pub fn suggest_shortcode(body: &str, existing: &serde_json::Map<String, Value>) 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn type_slices_prefer_stable_then_unstable() {
+        // Merged MSC2545: stable first, im.ponies.* unstable fallback.
+        assert_eq!(
+            EMOTE_ROOMS_TYPES,
+            ["m.image_pack.rooms", "im.ponies.emote_rooms"]
+        );
+        assert_eq!(
+            ROOM_PACK_TYPES,
+            ["m.room.image_pack", "im.ponies.room_emotes"]
+        );
+        // MSC2545 defines no personal pack → single de-facto identifier,
+        // no stable name to prefer.
+        assert_eq!(TYPE_USER_PACK, "im.ponies.user_emotes");
+    }
 
     #[test]
     fn missing_usage_is_any() {
