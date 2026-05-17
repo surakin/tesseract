@@ -177,6 +177,14 @@ pub mod ffi {
         /// in the event `info` block. Valid for `m.image` and `m.sticker`; always
         /// false for all other message types.
         image_animated:          bool,
+        /// Local-echo send state: "sending" | "failed" | "" (server event).
+        pending_state:           String,
+        /// Human-readable error message when `pending_state == "failed"`.
+        pending_error:           String,
+        /// True when the failure is recoverable (retry re-enables the queue).
+        pending_recoverable:     bool,
+        /// Transaction ID of the pending local echo (for abort_send).
+        pending_txn_id:          String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -503,6 +511,13 @@ pub mod ffi {
         // ----- Messaging -----
 
         fn send_message(self: &mut ClientFfi, room_id: &str, body: &str, formatted_body: &str) -> OpResult;
+
+        /// Re-enable the send queue for `room_id` after a recoverable failure.
+        /// The SDK automatically retries all pending sends.
+        fn retry_send(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Abort a pending local echo identified by `txn_id` in `room_id`.
+        fn abort_send(self: &mut ClientFfi, room_id: &str, txn_id: &str) -> OpResult;
 
         /// Send a typing notice to `room_id`. Fire-and-forget — errors are
         /// silently swallowed. Does not require `subscribe_room`.
