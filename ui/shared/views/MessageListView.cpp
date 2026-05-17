@@ -1819,6 +1819,7 @@ private:
         auto        tiles   = tiles_in_view(vp, map_rect);
 
         // Draw tiles (or a placeholder if not yet loaded).
+        bool any_tile_drawn = false;
         for (const auto& t : tiles) {
             tk::Point origin = tile_pixel_origin(t, vp_px, map_rect);
             tk::Rect  tdst{ origin.x, origin.y, 256.0f, 256.0f };
@@ -1827,12 +1828,29 @@ private:
                                    ? owner_.image_provider_(key) : nullptr;
             if (img) {
                 ctx.canvas.draw_image(*img, tdst);
+                any_tile_drawn = true;
             } else {
                 // Placeholder: fill with the surface background colour and
                 // request the tile from the host.
                 ctx.canvas.fill_rect(tdst, ctx.theme.palette.chrome_bg);
                 if (owner_.on_tile_needed)
                     owner_.on_tile_needed(t.z, t.x, t.y);
+            }
+        }
+
+        // Show a hint text when no tiles have loaded yet so the map area
+        // doesn't look like a rendering gap.
+        if (!any_tile_drawn && !tiles.empty()) {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            st.max_width = map_rect.w;
+            auto lo = ctx.factory.build_text("Loading map\xe2\x80\xa6", st);
+            if (lo) {
+                tk::Size sz = lo->measure();
+                ctx.canvas.draw_text(*lo,
+                    { map_rect.x + (map_rect.w - sz.w) * 0.5f,
+                      map_rect.y + (map_rect.h - lo->ascent()) * 0.5f },
+                    ctx.theme.palette.text_muted);
             }
         }
 

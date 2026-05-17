@@ -242,6 +242,10 @@ pub struct ClientFfi {
     /// `set_data_dir` before `oauth_begin` / `restore_session`. Defaults to
     /// `default_data_dir()` for legacy single-account callers.
     data_dir:   PathBuf,
+    /// Shared HTTP client for generic URL fetches (OSM tile images, etc.).
+    /// Created once so TLS root certificates are loaded only on startup and
+    /// connection pools are reused across calls.
+    http_client: reqwest::Client,
     /// Maps verification `flow_id` → `user_id` for in-flight verification
     /// requests (both incoming and outgoing). Allows `accept_verification`,
     /// `start_sas`, etc. to look up the right VerificationRequest via the
@@ -371,6 +375,11 @@ impl ClientFfi {
             #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
             data_dir:   default_data_dir(),
+            http_client: reqwest::Client::builder()
+                .user_agent("Tesseract/0.1 (Matrix client)")
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
@@ -2610,15 +2619,8 @@ impl ClientFfi {
         if url.is_empty() { return Vec::new(); }
         let url = url.to_owned();
         let stop_rx = self.stop_rx.clone();
+        let client = self.http_client.clone();
         self.rt.block_on(async move {
-            let client = match reqwest::Client::builder()
-                .user_agent("Tesseract/0.1 (Matrix client)")
-                .timeout(std::time::Duration::from_secs(10))
-                .build()
-            {
-                Ok(c)  => c,
-                Err(_) => return Vec::new(),
-            };
             tokio::select! {
                 result = async {
                     match client.get(&url).send().await {
