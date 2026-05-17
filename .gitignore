@@ -18,6 +18,7 @@ compile_commands.json
 *.so
 *.dll
 *.exe
+*.kate-swp
 
 # Downloaded at configure time by ui/windows/CMakeLists.txt
 ui/windows/fonts/
