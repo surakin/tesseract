@@ -1195,21 +1195,24 @@ void MainWindow::on_create(HWND hwnd) {
                                 if (!shortcode_popup_visible_()) return false;
                                 int cur = shortcode_popup_widget_->selected_index();
                                 int n   = shortcode_popup_widget_->visible_rows();
-                                if (nk == tk::NativeTextArea::NavKey::Up) {
-                                    shortcode_popup_widget_->set_selected_index(
-                                        std::max(0, cur - 1));
-                                    return true;
+                                if (n <= 0) return true;
+                                int next = cur;
+                                switch (nk) {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1); break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1); break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        hide_shortcode_popup_();
+                                        return true;
                                 }
-                                if (nk == tk::NativeTextArea::NavKey::Down) {
-                                    shortcode_popup_widget_->set_selected_index(
-                                        std::min(n - 1, cur + 1));
-                                    return true;
-                                }
-                                if (nk == tk::NativeTextArea::NavKey::Escape) {
-                                    hide_shortcode_popup_();
-                                    return true;
-                                }
-                                return false;
+                                shortcode_popup_widget_->set_selected_index(next);
+                                shortcode_popup_surface_->host().request_repaint();
+                                return true;
                             });
                     return;
                 }
@@ -3188,6 +3191,12 @@ void MainWindow::show_shortcode_popup_(
     shortcode_popup_widget_->set_suggestions(suggestions);
     SetWindowPos(shortcode_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
                  SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    // The Surface is a WS_CHILD created at a placeholder size; the STATIC
+    // popup parent never forwards WM_SIZE, so stretch the child to fill the
+    // popup every show (row count changes the height). Without this the
+    // surface stays tiny and clicks on suggestion rows never reach it.
+    if (HWND s = shortcode_popup_surface_->hwnd())
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     shortcode_popup_surface_->relayout();
 }
 

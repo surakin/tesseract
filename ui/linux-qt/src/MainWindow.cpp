@@ -715,24 +715,32 @@ MainWindow::MainWindow(QWidget* parent)
                         }
                         int cur = shortcode_popup_widget_->selected_index();
                         int n   = shortcode_popup_widget_->visible_rows();
-                        if (nk == tk::NativeTextArea::NavKey::Up)
+                        if (n <= 0)
                         {
-                            shortcode_popup_widget_->set_selected_index(std::max(0, cur - 1));
-                            shortcode_popup_surface_->update();
                             return true;
                         }
-                        if (nk == tk::NativeTextArea::NavKey::Down)
+                        int next = cur;
+                        switch (nk)
                         {
-                            shortcode_popup_widget_->set_selected_index(std::min(n - 1, cur + 1));
-                            shortcode_popup_surface_->update();
-                            return true;
-                        }
-                        if (nk == tk::NativeTextArea::NavKey::Escape)
-                        {
+                        case tk::NativeTextArea::NavKey::Up:
+                            next = std::max(0, cur - 1);
+                            break;
+                        case tk::NativeTextArea::NavKey::Down:
+                            next = std::min(n - 1, cur + 1);
+                            break;
+                        case tk::NativeTextArea::NavKey::Tab:
+                            next = (cur + 1) % n;
+                            break;
+                        case tk::NativeTextArea::NavKey::ShiftTab:
+                            next = (cur <= 0) ? n - 1 : cur - 1;
+                            break;
+                        case tk::NativeTextArea::NavKey::Escape:
                             hide_shortcode_popup_();
                             return true;
                         }
-                        return false;
+                        shortcode_popup_widget_->set_selected_index(next);
+                        shortcode_popup_surface_->update();
+                        return true;
                     });
                 }
                 return;
@@ -2515,7 +2523,13 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     {
         auto* me = static_cast<QMouseEvent*>(event);
         QPoint global = me->globalPosition().toPoint();
-        if (!shortcode_popup_frame_->geometry().contains(
+        // mapFromGlobal() yields a point in the frame's own coordinate space
+        // (origin at its top-left), so it must be tested against rect()
+        // (0,0,w,h) — not geometry(), which is parent-relative. Using
+        // geometry() here made every press (including ones inside the popup)
+        // look "outside", dismissing the popup before the click could reach
+        // the suggestion row.
+        if (!shortcode_popup_frame_->rect().contains(
                 shortcode_popup_frame_->mapFromGlobal(global)))
         {
             hide_shortcode_popup_();

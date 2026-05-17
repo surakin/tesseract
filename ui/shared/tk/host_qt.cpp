@@ -139,9 +139,11 @@ protected:
         if (popup_nav_) {
             NativeTextArea::NavKey nk{};
             bool is_nav = true;
-            if      (e->key() == Qt::Key_Up)     nk = NativeTextArea::NavKey::Up;
-            else if (e->key() == Qt::Key_Down)   nk = NativeTextArea::NavKey::Down;
-            else if (e->key() == Qt::Key_Escape) nk = NativeTextArea::NavKey::Escape;
+            if      (e->key() == Qt::Key_Up)      nk = NativeTextArea::NavKey::Up;
+            else if (e->key() == Qt::Key_Down)    nk = NativeTextArea::NavKey::Down;
+            else if (e->key() == Qt::Key_Escape)  nk = NativeTextArea::NavKey::Escape;
+            else if (e->key() == Qt::Key_Tab)     nk = NativeTextArea::NavKey::Tab;
+            else if (e->key() == Qt::Key_Backtab) nk = NativeTextArea::NavKey::ShiftTab;
             else is_nav = false;
             if (is_nav && popup_nav_(nk)) { e->accept(); return; }
         }
