@@ -464,7 +464,12 @@ public:
         float chips_h  = !m.reactions.empty() ? eff_chip_h : 0.0f;
         float top_pad  = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f      : kAvatarSize;
-        return top_pad + header_h + body_h + chips_h + kPadY;
+        float raw_h    = top_pad + header_h + body_h + chips_h + kPadY;
+        // Continuation rows without reactions must be at least chip_h() tall so
+        // the hover action buttons (same height as chip_h) fit without overflow.
+        if (cont && chips_h == 0.0f)
+            raw_h = std::max(raw_h, chip_h());
+        return raw_h;
     }
 
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
@@ -571,7 +576,7 @@ public:
         if (hovered && m.reactions.empty()) {
             static_cache_.ensure(ctx.factory);
             float btn_y = cont
-                ? (bounds.y + kContPadY)
+                ? (bounds.y + (bounds.h - chip_h()) * 0.5f)
                 : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
             float btn_right = bounds.x + bounds.w - kPadX;
             if (!m.read_receipts.empty()) {
