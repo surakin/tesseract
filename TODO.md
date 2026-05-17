@@ -53,6 +53,8 @@
 
 - [ ] macOS: `set_password` no-op on `NSTextField` — recovery-key field shows secret in plaintext (fix: swap for `NSSecureTextField`)
 - [x] Win32: `NativeTextArea::natural_height()` counts wrapped lines (DrawText `DT_CALCRECT | DT_EDITCONTROL` at the `EM_GETRECT` width — no keystroke lag)
+- [ ] Notification previews: fetch a `MediaFormat::Thumbnail` instead of the full file, and skip the fetch when the notification won't be shown (the SDK can't see focus/lock state)
+- [ ] On-device smoke test: macOS + Linux (Qt6/GTK4) `IScreenLock` impls and notifier image render (built only on Win32 so far)
 - [ ] macOS: initial-sync progress not shown (`on_room_list_state` not wired — add status label or window-title update)
 - [ ] `TestSurface` Catch2 backend tests don't cover CoreGraphics (macOS canvas untested)
 - [ ] Multi-account: `tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)` — cosmetic ghosting if two accounts share an mxc URL that resolves differently
