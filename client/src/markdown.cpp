@@ -1,10 +1,10 @@
-#include "markdown.h"
+#include "tesseract/markdown.h"
 #include <cctype>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace tesseract::views {
+namespace tesseract {
 
 // ---------------------------------------------------------------------------
 // HTML escaping
@@ -344,4 +344,4 @@ MarkdownResult markdown_to_html(std::string_view text) {
     return {body, html};
 }
 
-} // namespace tesseract::views
+} // namespace tesseract

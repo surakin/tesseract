@@ -1,5 +1,6 @@
 #include "tesseract/client.h"
 #include "tesseract/event_handler_bridge.h"
+#include "tesseract/markdown.h"
 
 // cxx-generated header (produced by corrosion_add_cxxbridge)
 #include "ffi_convert.h"
@@ -180,9 +181,22 @@ void Client::stop_background_backfill() {
     impl_->ffi->stop_background_backfill();
 }
 
+// Single markdown chokepoint for every outgoing text send (all four shells'
+// main windows + RoomWindowBase pop-outs). When the caller did not supply an
+// explicit `formatted_body`, derive it from `body` via markdown_to_html
+// (returns "" when there are no markdown markers — plain text stays plain).
+// An explicitly supplied non-empty formatted_body is passed through
+// verbatim, preserving the future custom-HTML send paths (e.g. emoticons).
+static std::string derive_formatted(const std::string& body,
+                                    const std::string& formatted_body) {
+    if (!formatted_body.empty()) return formatted_body;
+    return markdown_to_html(body).formatted_body;
+}
+
 Result Client::send_message(const std::string& room_id, const std::string& body,
                              const std::string& formatted_body) {
-    return from_ffi(impl_->ffi->send_message(room_id, body, formatted_body));
+    return from_ffi(impl_->ffi->send_message(
+        room_id, body, derive_formatted(body, formatted_body)));
 }
 
 Result Client::retry_send(const std::string& room_id) {
@@ -257,7 +271,8 @@ Result Client::send_reply(const std::string& room_id,
                           const std::string& event_id,
                           const std::string& body,
                           const std::string& formatted_body) {
-    return from_ffi(impl_->ffi->send_reply(room_id, event_id, body, formatted_body));
+    return from_ffi(impl_->ffi->send_reply(
+        room_id, event_id, body, derive_formatted(body, formatted_body)));
 }
 
 Result Client::fetch_reply_details(const std::string& room_id,
@@ -269,7 +284,8 @@ Result Client::send_edit(const std::string& room_id,
                          const std::string& event_id,
                          const std::string& new_body,
                          const std::string& formatted_body) {
-    return from_ffi(impl_->ffi->send_edit(room_id, event_id, new_body, formatted_body));
+    return from_ffi(impl_->ffi->send_edit(
+        room_id, event_id, new_body, derive_formatted(new_body, formatted_body)));
 }
 
 std::string Client::load_prefs_json() {

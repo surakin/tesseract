@@ -8,7 +8,6 @@
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
-#include "views/markdown.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -432,8 +431,7 @@ MainWindow::MainWindow(QWidget* parent)
             {
                 return;
             }
-            auto md = tesseract::views::markdown_to_html(trimmed);
-            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            auto res = client_->send_message(current_room_id_, trimmed);
             if (res)
             {
                 if (roomTextArea_)
@@ -453,8 +451,7 @@ MainWindow::MainWindow(QWidget* parent)
                 {
                     return;
                 }
-                auto md = tesseract::views::markdown_to_html(body);
-                auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+                auto res = client_->send_reply(current_room_id_, reply_event_id, body);
                 if (!res)
                 {
                     statusBar()->showMessage(
@@ -472,8 +469,7 @@ MainWindow::MainWindow(QWidget* parent)
                 {
                     return;
                 }
-                auto md = tesseract::views::markdown_to_html(new_body);
-                auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+                auto res = client_->send_edit(current_room_id_, event_id, new_body);
                 if (!res)
                 {
                     statusBar()->showMessage(

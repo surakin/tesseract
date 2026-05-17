@@ -5,7 +5,6 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
-#include "views/markdown.h"
 
 #include <cairo.h>
 #include <thread>
@@ -582,8 +581,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             if (l == std::string::npos) return;
             std::string trimmed = body.substr(l, r - l + 1);
             if (trimmed.empty()) return;
-            auto md = tesseract::views::markdown_to_html(trimmed);
-            auto res = client_->send_message(current_room_id_, trimmed, md.formatted_body);
+            auto res = client_->send_message(current_room_id_, trimmed);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();
@@ -592,8 +590,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_view_->on_send_reply = [this](const std::string& reply_event_id,
                                             const std::string& body) {
             if (body.empty() || current_room_id_.empty()) return;
-            auto md = tesseract::views::markdown_to_html(body);
-            auto res = client_->send_reply(current_room_id_, reply_event_id, body, md.formatted_body);
+            auto res = client_->send_reply(current_room_id_, reply_event_id, body);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();
@@ -605,8 +602,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_view_->on_send_edit = [this](const std::string& event_id,
                                            const std::string& new_body) {
             if (new_body.empty() || current_room_id_.empty()) return;
-            auto md = tesseract::views::markdown_to_html(new_body);
-            auto res = client_->send_edit(current_room_id_, event_id, new_body, md.formatted_body);
+            auto res = client_->send_edit(current_room_id_, event_id, new_body);
             if (res) {
                 if (room_text_area_) room_text_area_->set_text("");
                 room_view_->clear_compose_text();
