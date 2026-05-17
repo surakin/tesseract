@@ -80,6 +80,14 @@ set(_tk_sources
     views/JoinRoomView.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
+    views/SettingsView.h
+    views/SettingsView.cpp
+    views/settings/AccountSection.h
+    views/settings/AccountSection.cpp
+    views/settings/AppearanceSection.h
+    views/settings/AppearanceSection.cpp
+    views/settings/NotificationsSection.h
+    views/settings/NotificationsSection.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")
