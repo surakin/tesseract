@@ -52,7 +52,7 @@
 ## Known bugs / gaps
 
 - [ ] macOS: `set_password` no-op on `NSTextField` — recovery-key field shows secret in plaintext (fix: swap for `NSSecureTextField`)
-- [ ] Win32: `NativeTextArea::natural_height()` undercounts wrapped lines (`EM_GETLINECOUNT × tmHeight` ignores soft-wrap)
+- [x] Win32: `NativeTextArea::natural_height()` counts wrapped lines (DrawText `DT_CALCRECT | DT_EDITCONTROL` at the `EM_GETRECT` width — no keystroke lag)
 - [ ] macOS: initial-sync progress not shown (`on_room_list_state` not wired — add status label or window-title update)
 - [ ] `TestSurface` Catch2 backend tests don't cover CoreGraphics (macOS canvas untested)
 - [ ] Multi-account: `tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)` — cosmetic ghosting if two accounts share an mxc URL that resolves differently

@@ -45,7 +45,6 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 
 - **`NativeTextArea` placeholder is a no-op on macOS** — `NSTextView` lacks a built-in placeholder. Fix: paint a `current_text().empty()`-gated label in the shared widget. (GTK4 is fixed: `dim-label` overlay label.)
 - **`set_password` is a no-op on macOS** — toggling password mode on `NSTextField` requires swapping for `NSSecureTextField`; recovery-key field still shows plaintext.
-- **Win32 `NativeTextArea::natural_height()` undercounts wrapped lines** — `EM_GETLINECOUNT × tmHeight` ignores soft-wrap; auto-grow lags by one keystroke when wrapping.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
 - **Picker image cache consolidation** — GTK4 now has per-picker async fetch for both `StickerPicker` and `EmojiPicker`; a shared `tk::AsyncImageCache` to unify the four platform paths is still pending.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
