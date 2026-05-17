@@ -296,6 +296,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
+- (void)_onSpaceBack;
+- (void)_onComposeSend;
+- (void)_relayoutShortcodePopupIfVisible;
 @end
 
 namespace {
@@ -348,8 +351,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     if (kind == MediaKind::MediaImage) {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
-        if ([c shortcodePopupVisible] && c->_shortcodePopupSurface)
-            c->_shortcodePopupSurface->relayout();
+        [c _relayoutShortcodePopupIfVisible];
         return;
     }
     if (bytes.empty() || tk_avatars_.count(key)) return;
@@ -1297,6 +1299,7 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                 [c hideShortcodePopup];
             }
             [c _onComposeSend];
+        });
         _roomTextArea->set_on_height_changed([weakSelf](float h) {
             MainWindowController* c = weakSelf;
             if (!c || !c->_roomView) return;
@@ -1505,6 +1508,11 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
 
 - (BOOL)shortcodePopupVisible {
     return _shortcodePanel && _shortcodePanel.isVisible;
+}
+
+- (void)_relayoutShortcodePopupIfVisible {
+    if ([self shortcodePopupVisible] && _shortcodePopupSurface)
+        _shortcodePopupSurface->relayout();
 }
 
 - (void)showShortcodePopupWithSuggestions:
