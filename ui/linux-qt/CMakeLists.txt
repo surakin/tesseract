@@ -11,6 +11,8 @@ qt_add_executable(tesseract_qt
     src/RoomWindow.h          # MOC input
     src/LoginView.cpp
     src/LoginView.h           # MOC input
+    src/SettingsWidget.cpp
+    src/SettingsWidget.h      # MOC input
     src/EmojiPicker.cpp
     src/EmojiPicker.h         # MOC input
     src/StickerPicker.cpp

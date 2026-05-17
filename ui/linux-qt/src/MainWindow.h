@@ -46,6 +46,7 @@ class QTimer;
 namespace qt6 {
 
 class LoginView;
+class SettingsWidget;
 
 /// Thin QObject wrapper around EventHandlerBase so Qt can own it as a
 /// child and the SDK can pass it as an IEventHandler*. All marshalling
@@ -97,6 +98,7 @@ signals:
 private:
     void     doLogin();
     void     doLogout();
+    void     openSettings();
 
     // ── EventHandlerBase UI-thread hook overrides (Qt6) ──────────────────────
     void handle_timeline_reset_ui_(
@@ -268,6 +270,7 @@ private:
 
     QStackedWidget*      contentStack_    = nullptr;
     LoginView*           loginView_       = nullptr;
+    SettingsWidget*      settingsWidget_  = nullptr;
 
     // Account-switcher popover anchored under the user strip. Opened by
     // left-click on the avatar when `accounts_.size() >= 2`; a single

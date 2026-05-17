@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "SettingsWidget.h"
 #include "EmojiPicker.h"
 #include "StickerPicker.h"
 #include "JoinRoomDialog.h"
@@ -2418,16 +2419,21 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
 {
     auto* menu = new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
-    QAction* addAct    = menu->addAction(tr("Add Account…"));
+    QAction* addAct      = menu->addAction(tr("Add Account…"));
+    QAction* settingsAct = menu->addAction(tr("Settings…"));
     QString logout_label = tr("Log Out %1").arg(
         my_display_name_.empty()
             ? QString::fromStdString(my_user_id_)
             : QString::fromStdString(my_display_name_));
     QAction* logoutAct = menu->addAction(logout_label);
-    QObject::connect(menu, &QMenu::triggered, this, [this, addAct, logoutAct](QAction* a) {
+    QObject::connect(menu, &QMenu::triggered, this, [this, addAct, settingsAct, logoutAct](QAction* a) {
         if (a == addAct)
         {
             beginAddAccount();
+        }
+        else if (a == settingsAct)
+        {
+            openSettings();
         }
         else if (a == logoutAct)
         {
@@ -2435,6 +2441,45 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
         }
     });
     menu->popup(global_pos);
+}
+
+void MainWindow::openSettings()
+{
+    if (!settingsWidget_)
+    {
+        settingsWidget_ = new SettingsWidget(this);
+        contentStack_->addWidget(settingsWidget_);
+
+        connect(settingsWidget_, &SettingsWidget::settingsClosed, this, [this]
+        {
+            contentStack_->setCurrentWidget(mainAppSurface_);
+        });
+        connect(settingsWidget_, &SettingsWidget::themeChanged, this,
+            [this](tesseract::Settings::ThemePreference pref)
+        {
+            set_theme_preference_(pref);
+        });
+        connect(settingsWidget_, &SettingsWidget::notificationsChanged, this,
+            [this](bool enabled)
+        {
+            tesseract::Settings::instance().notifications_enabled = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        });
+    }
+
+    settingsWidget_->populate(
+        my_display_name_,
+        my_user_id_,
+        my_avatar_url_,
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            auto it = tk_avatars_.find(mxc);
+            return it != tk_avatars_.end() ? it->second.get() : nullptr;
+        },
+        tesseract::Settings::instance().theme_pref,
+        tesseract::Settings::instance().notifications_enabled);
+
+    contentStack_->setCurrentWidget(settingsWidget_);
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
