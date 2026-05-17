@@ -2,11 +2,12 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-17**.
 
-> **Optimistic send + picker polish.**
-> Sent messages now appear immediately in the timeline via `timeline.send()` local echo
-> with a ◷ sending indicator, ✓ confirmation (2 s), and ⚠ Retry / ✕ abort on failure.
-> `GridView` hover tracking (silently broken) is fixed; both `EmojiPicker` and
-> `StickerPicker` show an inline `:shortcode:` tooltip on hover. 298/298 C++ tests pass.
+> **GNOME dark-mode fix.**
+> The Qt6 shell now queries `org.freedesktop.portal.Settings` at startup and subscribes
+> to `SettingChanged` for live updates; `os_color_scheme_()` falls back to the portal
+> value when `QStyleHints::colorScheme()` returns `Unknown` (common on GNOME without
+> QGnomePlatform or Qt < 6.6). On KDE, Qt returns a real value and the portal path is
+> never taken. 298/298 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -131,6 +132,16 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **GTK4** — all shell strings wrapped with `_(s)` = `gettext(s)`; `bindtextdomain("tesseract", share/locale)` + `textdomain` called in `main()`. `i18n_extract_gtk` CMake target runs `xgettext` to produce `i18n/gtk/tesseract.pot`.
 - Shared views (`ui/shared/views/`) stay in English — translated via each platform's mechanism when strings are passed in by the host.
 - macOS (`NSLocalizedString`) and Win32 (`LoadString`) not yet wired.
+
+## Theme
+
+- **`ThemePreference`** — persisted user preference (`Light` / `Dark` / `System`); `set_theme()` added to every platform `Surface`; `apply_current_theme_()` in `ShellBase` applies the selected palette.
+- **OS appearance detection** — each shell overrides `os_color_scheme_()` to return `ThemeMode::Dark` or `ThemeMode::Light`:
+  - **Win32** — `WM_SETTINGCHANGE` with `"ImmersiveColorSet"` parameter.
+  - **macOS** — `effectiveAppearance` checked on theme-change notification.
+  - **GTK4** — `GtkSettings::gtk-application-prefer-dark-theme` property.
+  - **Qt6** — `QStyleHints::colorSchemeChanged` signal; falls back to the XDG Desktop Portal (`org.freedesktop.portal.Settings`, namespace `org.freedesktop.appearance`, key `color-scheme`) when `QStyleHints::colorScheme()` returns `Unknown` (GNOME without QGnomePlatform or Qt < 6.6). The portal value is read at startup and kept current via the `SettingChanged` D-Bus signal.
+- **Live updates** — all four shells re-apply the theme whenever the OS switches, provided `ThemePreference::System` is active. User-pinned Light or Dark is never overridden by OS changes.
 
 ## System tray
 
