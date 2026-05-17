@@ -147,6 +147,9 @@ private:
                                             GVariant* parameter, gpointer user_data);
     static void    on_settings_activate_(GSimpleAction* action,
                                          GVariant* parameter, gpointer user_data);
+    static void    on_quit_user_activate_(GSimpleAction* action,
+                                          GVariant*      parameter,
+                                          gpointer       user_data);
     void           open_settings_();
     static gboolean on_window_key_pressed_(GtkEventControllerKey*,
                                             guint keyval, guint,

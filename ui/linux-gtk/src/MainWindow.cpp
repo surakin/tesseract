@@ -928,14 +928,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     // so it can float anywhere in the window. Position is set via pointing_to in
     // UserInfo::on_secondary.
     {
-        GMenu* menu = g_menu_new();
-        g_menu_prepend(menu, _("Settings\xe2\x80\xa6"), "user.settings");
-        g_menu_append(menu, _("Add Account\xe2\x80\xa6"), "user.add_account");
-        g_menu_append(menu, _("Log Out"), "user.logout");
-        user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+        GMenu* top = g_menu_new();
+
+        GMenu* main_section = g_menu_new();
+        g_menu_append(main_section, _("Settings\xe2\x80\xa6"), "user.settings");
+        g_menu_append(main_section, _("Add Account\xe2\x80\xa6"), "user.add_account");
+        g_menu_append(main_section, _("Log Out"), "user.logout");
+        g_menu_append_section(top, nullptr, G_MENU_MODEL(main_section));
+        g_object_unref(main_section);
+
+        GMenu* quit_section = g_menu_new();
+        g_menu_append(quit_section, _("Quit"), "user.quit");
+        g_menu_append_section(top, nullptr, G_MENU_MODEL(quit_section));
+        g_object_unref(quit_section);
+
+        user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(top));
         gtk_widget_set_parent(user_popover_, main_app_surface_->widget());
         gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
-        g_object_unref(menu);
+        g_object_unref(top);
 
         GSimpleActionGroup* group = g_simple_action_group_new();
         {
@@ -953,6 +963,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         {
             GSimpleAction* act = g_simple_action_new("logout", nullptr);
             g_signal_connect(act, "activate", G_CALLBACK(on_logout_activate_), this);
+            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            g_object_unref(act);
+        }
+        {
+            GSimpleAction* act = g_simple_action_new("quit", nullptr);
+            g_signal_connect(act, "activate", G_CALLBACK(on_quit_user_activate_), this);
             g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
             g_object_unref(act);
         }
@@ -2611,6 +2627,15 @@ void MainWindow::on_settings_activate_(GSimpleAction* /*action*/,
                                        gpointer        self)
 {
     static_cast<MainWindow*>(self)->open_settings_();
+}
+
+void MainWindow::on_quit_user_activate_(GSimpleAction* /*action*/,
+                                        GVariant*      /*parameter*/,
+                                        gpointer        user_data) {
+    auto* self = static_cast<MainWindow*>(user_data);
+    gtk_popover_popdown(GTK_POPOVER(self->user_popover_));
+    self->tray_.reset();
+    g_application_quit(G_APPLICATION(self->app_));
 }
 
 void MainWindow::open_settings_()
