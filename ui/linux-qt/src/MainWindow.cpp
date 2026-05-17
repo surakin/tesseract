@@ -2447,7 +2447,9 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
             ? QString::fromStdString(my_user_id_)
             : QString::fromStdString(my_display_name_));
     QAction* logoutAct = menu->addAction(logout_label);
-    QObject::connect(menu, &QMenu::triggered, this, [this, addAct, settingsAct, logoutAct](QAction* a) {
+    menu->addSeparator();
+    QAction* quitAct = menu->addAction(tr("Quit"));
+    QObject::connect(menu, &QMenu::triggered, this, [this, addAct, settingsAct, logoutAct, quitAct](QAction* a) {
         if (a == addAct)
         {
             beginAddAccount();
@@ -2459,6 +2461,10 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
         else if (a == logoutAct)
         {
             logoutActiveAccount();
+        }
+        else if (a == quitAct)
+        {
+            qApp->quit();
         }
     });
     menu->popup(global_pos);
