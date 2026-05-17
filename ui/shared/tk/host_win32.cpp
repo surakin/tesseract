@@ -437,20 +437,51 @@ public:
     }
     float natural_height() const override {
         if (!hwnd_) return 0.f;
-        int line_count = static_cast<int>(SendMessageW(hwnd_,
-                                            EM_GETLINECOUNT, 0, 0));
-        if (line_count < 1) line_count = 1;
-        // Measure one line through the EDIT control's own font.
+
         HDC hdc = GetDC(hwnd_);
         HFONT font = reinterpret_cast<HFONT>(
             SendMessageW(hwnd_, WM_GETFONT, 0, 0));
         HGDIOBJ old = font ? SelectObject(hdc, font) : nullptr;
         TEXTMETRICW tm{};
         GetTextMetricsW(hdc, &tm);
+        int per_line = tm.tmHeight + tm.tmExternalLeading;
+
+        // EM_GETLINECOUNT only reflects the control's internal layout,
+        // which updates a keystroke *after* the text changes — so a wrap
+        // (or unwrap) made the compose box auto-grow one keystroke late.
+        // Instead measure the wrapped text directly with DrawText: it
+        // depends only on the text + wrap width, so it's exact and never
+        // lags. The wrap width is the EDIT's formatting rectangle, which
+        // is the same limiting rect the control itself wraps within
+        // (already inset by the EC_LEFTMARGIN/EC_RIGHTMARGIN margins).
+        RECT fr{};
+        SendMessageW(hwnd_, EM_GETRECT, 0, reinterpret_cast<LPARAM>(&fr));
+        int wrap_w = fr.right - fr.left;
+
+        int len = GetWindowTextLengthW(hwnd_);
+        int total_h;
+        if (len <= 0 || wrap_w <= 0) {
+            total_h = per_line;                 // one empty line
+        } else {
+            std::wstring buf(len, L'\0');
+            GetWindowTextW(hwnd_, buf.data(), len + 1);
+            RECT calc{ 0, 0, wrap_w, 0 };
+            // DT_EDITCONTROL: wrap exactly like a multi-line EDIT.
+            // DT_EXTERNALLEADING: count external leading per line, as
+            // the EDIT does. DT_NOPREFIX: keep '&' literal.
+            DrawTextW(hdc, buf.c_str(), len, &calc,
+                      DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL |
+                      DT_EXTERNALLEADING | DT_NOPREFIX);
+            total_h = calc.bottom - calc.top;
+            // DT_CALCRECT ignores a trailing newline, but the EDIT shows
+            // a blank line there for the caret — mirror that.
+            if (buf[len - 1] == L'\n') total_h += per_line;
+            if (total_h < per_line)   total_h = per_line;
+        }
+
         if (old) SelectObject(hdc, old);
         ReleaseDC(hwnd_, hdc);
-        int per_line = tm.tmHeight + tm.tmExternalLeading;
-        return static_cast<float>(per_line * line_count + 8);
+        return static_cast<float>(total_h + 8);  // 4px top + bottom pad
     }
     void set_on_changed(std::function<void(const std::string&)> cb) override {
         on_changed_ = std::move(cb);
