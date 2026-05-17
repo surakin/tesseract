@@ -436,6 +436,7 @@ private:
     static constexpr const wchar_t* CLASS_NAME    = L"TesseractMainWnd";
     static constexpr int            IDM_LOGOUT    = 120;
     static constexpr int            IDM_ADD_ACCOUNT = 121;
+    static constexpr int            IDM_QUIT      = 122;
 };
 
 } // namespace win32

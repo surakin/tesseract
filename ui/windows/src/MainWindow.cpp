@@ -486,6 +486,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->logout_active_account();
         if (LOWORD(wParam) == IDM_ADD_ACCOUNT)
             self->begin_add_account();
+        if (LOWORD(wParam) == IDM_QUIT) {
+            self->quitting_ = true;
+            DestroyWindow(hwnd);
+        }
         return 0;
 
     case WM_ERASEBKGND: {
@@ -3001,6 +3005,8 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y) {
         logout_label += utf8_to_wstr(my_display_name_);
     }
     AppendMenuW(menu, MF_STRING, IDM_LOGOUT, logout_label.c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, IDM_QUIT, L"Quit");
     UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
                                screen_x, screen_y, 0, hwnd_, nullptr);
     DestroyMenu(menu);
