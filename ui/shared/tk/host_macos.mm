@@ -299,9 +299,10 @@ public:
     void notify_focus_lost  ();
 
 private:
-    TKSurfaceView*                          superview_ = nil;
-    NSTextField*                            field_     = nil;
-    TKTextFieldBridge*                      bridge_    = nil;
+    TKSurfaceView*                          superview_   = nil;
+    NSTextField*                            field_       = nil;
+    TKTextFieldBridge*                      bridge_      = nil;
+    bool                                    is_password_ = false;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()>                   on_submit_;
     std::function<void(bool)>               on_focus_changed_;
@@ -399,11 +400,56 @@ void NSTextFieldNative::set_focused(bool focused) {
 void NSTextFieldNative::set_visible(bool visible) { field_.hidden = !visible; }
 void NSTextFieldNative::set_enabled(bool enabled) { field_.enabled = enabled;  }
 
-// Password mode is a no-op on AppKit for now: NSSecureTextField is a
-// different class from NSTextField, so toggling the mode requires
-// swapping the view. The recovery-banner key field on macOS will show
-// plaintext until the SecureTextField path lands.
-void NSTextFieldNative::set_password(bool /*password*/) {}
+void NSTextFieldNative::set_password(bool password) {
+    if (password == is_password_) return;
+    is_password_ = password;
+
+    // NSSecureTextField is a distinct class from NSTextField; there is no
+    // in-place echo-mode toggle like Qt's setEchoMode. Swap the subview.
+    NSString* val         = field_.stringValue ?: @"";
+    NSRect    frame       = field_.frame;
+    NSString* placeholder = field_.placeholderString ?: @"";
+    BOOL      hidden      = field_.hidden;
+    BOOL      enabled     = field_.enabled;
+    NSWindow* win         = field_.window;
+
+    // Detect whether the field currently owns the key focus (the window's
+    // field editor is active and its delegate points back to this field).
+    BOOL wasFocused = NO;
+    if (win) {
+        NSResponder* fr = win.firstResponder;
+        wasFocused = (fr == field_) ||
+                     ([fr isKindOfClass:[NSText class]] &&
+                      [(NSText*)fr delegate] == (id<NSTextDelegate>)field_);
+    }
+
+    field_.delegate = nil;
+    bridge_.owner   = nullptr;
+    [field_ removeFromSuperview];
+
+    NSTextField* newField = password
+        ? [[NSSecureTextField alloc] initWithFrame:frame]
+        : [[NSTextField       alloc] initWithFrame:frame];
+    newField.bezeled            = NO;
+    newField.bordered           = NO;
+    newField.drawsBackground    = NO;
+    newField.focusRingType      = NSFocusRingTypeNone;
+    newField.editable           = YES;
+    newField.selectable         = YES;
+    newField.usesSingleLineMode = YES;
+    newField.translatesAutoresizingMaskIntoConstraints = YES;
+    newField.stringValue        = val;
+    newField.placeholderString  = placeholder;
+    newField.hidden             = hidden;
+    newField.enabled            = enabled;
+    [superview_ addSubview:newField];
+
+    newField.delegate = bridge_;
+    bridge_.owner     = this;
+    field_            = newField;
+
+    if (wasFocused && win) [win makeFirstResponder:field_];
+}
 
 void NSTextFieldNative::notify_changed() {
     if (on_changed_) on_changed_(text());
