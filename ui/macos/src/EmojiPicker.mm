@@ -89,6 +89,16 @@ constexpr CGFloat kPanelHeight = 360;
     if (_shared) _shared->set_client(client);
 }
 
+- (void)setImageProvider:(std::function<const tk::Image*(const std::string&,
+                                                          const std::string&)>)provider {
+    if (_shared) _shared->set_image_provider(std::move(provider));
+}
+
+- (void)invalidateImageCache {
+    if (_shared) _shared->invalidate_image_cache();
+    if (_surface) _surface->relayout();
+}
+
 - (void)_onSearchChanged:(const std::string&)q {
     if (_shared) _shared->set_search_query(q);
     if (_surface) _surface->relayout();

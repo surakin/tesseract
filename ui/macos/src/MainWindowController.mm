@@ -145,6 +145,7 @@ public:
     using ShellBase::reply_details_requested_;
     using ShellBase::media_fetches_in_flight_;
     using ShellBase::sticker_fetches_in_flight_;
+    using ShellBase::emoji_fetches_in_flight_;
     using ShellBase::recovery_banner_dismissed_;
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::active_verification_flow_id_;
@@ -298,6 +299,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_startAnimTickIfNeeded;
 - (void)_animTick:(NSTimer*)timer;
 - (void)_ensureStickerImageAsync:(std::string)url;
+- (void)_ensureEmojiImageAsync:(std::string)url;
 - (void)_applyTheme:(const tk::Theme&)t;
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key;
@@ -1552,6 +1554,17 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
+    [panel setImageProvider:
+        [weakSelf](const std::string& cache_key,
+                   const std::string& /*source_token*/) -> const tk::Image* {
+            MainWindowController* s = weakSelf;
+            if (!s) return nullptr;
+            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
+            auto it = s->_shell->tk_images_.find(cache_key);
+            if (it != s->_shell->tk_images_.end()) return it->second.get();
+            [s _ensureEmojiImageAsync:cache_key];
+            return nullptr;
+        }];
     __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
@@ -1692,6 +1705,17 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
+    [panel setImageProvider:
+        [weakSelf](const std::string& cache_key,
+                   const std::string& /*source_token*/) -> const tk::Image* {
+            MainWindowController* s = weakSelf;
+            if (!s) return nullptr;
+            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
+            auto it = s->_shell->tk_images_.find(cache_key);
+            if (it != s->_shell->tk_images_.end()) return it->second.get();
+            [s _ensureEmojiImageAsync:cache_key];
+            return nullptr;
+        }];
     __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
@@ -2967,6 +2991,30 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
                 || s->_shell->anim_cache_.has(url)) return;
             [s _decodeMediaBytes:*bytes_holder forKey:url];
             StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+            if (panel.isVisible) [panel invalidateImageCache];
+        });
+    });
+}
+
+- (void)_ensureEmojiImageAsync:(std::string)url {
+    if (url.empty() || _shell->tk_images_.count(url) || _shell->anim_cache_.has(url)) return;
+    if (!_shell->emoji_fetches_in_flight_.insert(url).second) return;
+
+    __weak MainWindowController* weakSelf = self;
+    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+
+    _shell->run_async_([weakSelf, url, bytes_holder,
+                         clientPtr = _shell->client_]() {
+        *bytes_holder = clientPtr->fetch_source_bytes(url);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (!s) return;
+            s->_shell->emoji_fetches_in_flight_.erase(url);
+            if (bytes_holder->empty()
+                || s->_shell->tk_images_.count(url)
+                || s->_shell->anim_cache_.has(url)) return;
+            [s _decodeMediaBytes:*bytes_holder forKey:url];
+            EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
             if (panel.isVisible) [panel invalidateImageCache];
         });
     });

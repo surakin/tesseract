@@ -3,6 +3,9 @@
 
 #include "tk/canvas.h"
 
+#include <functional>
+#include <string>
+
 namespace tesseract { class Client; }
 
 /// Floating emoji picker presented as a utility panel. The panel hosts a
@@ -21,6 +24,13 @@ namespace tesseract { class Client; }
 @property (nonatomic, assign) tesseract::Client* client;
 
 + (instancetype)sharedPanel;
+
+/// Wire async image loading for custom emoticon tabs.
+- (void)setImageProvider:(std::function<const tk::Image*(const std::string&,
+                                                          const std::string&)>)provider;
+
+/// Invalidate the image cache and relayout after new bitmaps land.
+- (void)invalidateImageCache;
 
 /// Position the panel so its bottom edge sits just above `anchorView`,
 /// then show it. The anchor's window becomes the panel's parent so the
