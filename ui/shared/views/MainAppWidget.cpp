@@ -184,11 +184,11 @@ void MainAppWidget::paint(tk::PaintCtx& ctx) {
         { bounds_.x, bounds_.y, kSidebarW, bounds_.h },
         pal.sidebar_bg);
 
-    // User strip footer: slightly different background + 1px top border.
+    // User strip footer: same background as sidebar + 1px top border.
     const float strip_y = bounds_.y + bounds_.h - kUserStripH;
     ctx.canvas.fill_rect(
         { bounds_.x, strip_y, kSidebarW, kUserStripH },
-        pal.chrome_bg);
+        pal.sidebar_bg);
     ctx.canvas.fill_rect(
         { bounds_.x, strip_y, kSidebarW, 1.0f },
         pal.separator);
