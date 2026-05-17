@@ -2606,6 +2606,26 @@ impl ClientFfi {
         })
     }
 
+    pub fn fetch_url_bytes(&mut self, url: &str) -> Vec<u8> {
+        if url.is_empty() { return Vec::new(); }
+        let url = url.to_owned();
+        self.rt.block_on(async move {
+            let client = match reqwest::Client::builder()
+                .user_agent("Tesseract/0.1 (Matrix client)")
+                .build()
+            {
+                Ok(c)  => c,
+                Err(_) => return Vec::new(),
+            };
+            match client.get(&url).send().await {
+                Ok(resp) => resp.bytes().await
+                    .map(|b| b.to_vec())
+                    .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            }
+        })
+    }
+
     // -----------------------------------------------------------------------
     // URL preview (homeserver og:* metadata fetch)
     // -----------------------------------------------------------------------

@@ -365,6 +365,10 @@ public:
     /// the leading `mxc://` prefix. Returns an empty vector on any failure.
     std::vector<uint8_t> fetch_source_bytes(const std::string& source);
 
+    /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
+    /// Returns an empty vector on any error. Blocks the calling thread.
+    std::vector<uint8_t> fetch_url_bytes(const std::string& url);
+
     // ------------------------------------------------------------------
     // URL preview
     // ------------------------------------------------------------------

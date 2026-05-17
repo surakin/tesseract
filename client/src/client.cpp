@@ -321,6 +321,11 @@ std::vector<uint8_t> Client::fetch_source_bytes(const std::string& source) {
     return std::vector<uint8_t>(v.begin(), v.end());
 }
 
+std::vector<uint8_t> Client::fetch_url_bytes(const std::string& url) {
+    auto v = impl_->ffi->fetch_url_bytes(url);
+    return std::vector<uint8_t>(v.begin(), v.end());
+}
+
 // ---------------------------------------------------------------------------
 // URL preview
 // ---------------------------------------------------------------------------

@@ -763,6 +763,11 @@ pub mod ffi {
         /// empty Vec on failure (invalid JSON, decrypt error, network, etc.).
         fn fetch_source_bytes(self: &mut ClientFfi, source_json: &str) -> Vec<u8>;
 
+        /// Fetch raw bytes from an arbitrary HTTP/HTTPS URL.
+        /// Returns the response body on success, or an empty Vec on any error.
+        /// Sets User-Agent to "Tesseract/0.1 (Matrix client)" per OSM tile policy.
+        fn fetch_url_bytes(self: &mut ClientFfi, url: &str) -> Vec<u8>;
+
         /// Fetch OpenGraph preview metadata for an http(s) URL from the
         /// homeserver's `/_matrix/media/v3/preview_url` endpoint.
         /// Returns the raw JSON response body on success, or an empty String
