@@ -712,6 +712,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         room_view_->on_receipt_needed = [this](const std::string& eid) {
             maybe_send_read_receipt_(current_room_id_, eid);
         };
+        room_view_->message_list()->on_tile_needed =
+            [this](int z, int x, int y) { ensure_tile_async(z, x, y); };
         room_view_->on_near_top = [this] {
             if (current_room_id_.empty()) return;
             request_more_history(current_room_id_);

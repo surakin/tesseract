@@ -363,6 +363,8 @@ MainWindow::MainWindow(QWidget* parent)
         mainApp_->room_view()->on_receipt_needed = [this](const std::string& eid) {
             maybe_send_read_receipt_(current_room_id_, eid);
         };
+        mainApp_->room_view()->message_list()->on_tile_needed =
+            [this](int z, int x, int y) { ensure_tile_async(z, x, y); };
         mainApp_->room_view()->on_near_top = [this] {
             if (current_room_id_.empty())
             {

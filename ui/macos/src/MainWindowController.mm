@@ -1108,6 +1108,11 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             if (!s) return;
             s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_, eid);
         };
+        _mainApp->room_view()->message_list()->on_tile_needed =
+            [weakSelf](int z, int x, int y) {
+                MainWindowController* s = weakSelf;
+                if (s) s->_shell->ensure_tile_async(z, x, y);
+            };
         _mainApp->room_view()->on_image_clicked =
             [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {
                 MainWindowController* s = weakSelf;

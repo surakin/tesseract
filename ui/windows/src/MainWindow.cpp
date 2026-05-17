@@ -1019,6 +1019,8 @@ void MainWindow::on_create(HWND hwnd) {
         room_view_->on_receipt_needed = [this](const std::string& eid) {
             maybe_send_read_receipt_(current_room_id_, eid);
         };
+        room_view_->message_list()->on_tile_needed =
+            [this](int z, int x, int y) { ensure_tile_async(z, x, y); };
         room_view_->on_link_clicked = [](const std::string& url) {
             tesseract::Client::open_in_browser(url);
         };
