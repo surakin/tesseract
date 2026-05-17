@@ -185,6 +185,10 @@ pub mod ffi {
         pending_recoverable:     bool,
         /// Transaction ID of the pending local echo (for abort_send).
         pending_txn_id:          String,
+        // m.location / MSC3488 (valid when msg_type == "m.location")
+        location_lat:         f64,
+        location_lon:         f64,
+        location_description: String,
     }
 
     /// Outcome of an asynchronous SDK operation.

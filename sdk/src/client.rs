@@ -4147,6 +4147,18 @@ async fn collect_read_receipts(
     out
 }
 
+/// Parse a `geo:lat,lon` or `geo:lat,lon,alt` URI.
+/// Returns `(lat, lon)` or `None` on parse failure.
+fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
+    let coords = uri.strip_prefix("geo:")?;
+    // Strip uncertainty params (after ';')
+    let coords = coords.split(';').next()?;
+    let mut parts = coords.split(',');
+    let lat: f64 = parts.next()?.parse().ok()?;
+    let lon: f64 = parts.next()?.parse().ok()?;
+    Some((lat, lon))
+}
+
 #[cfg(not(test))]
 async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
@@ -4209,6 +4221,9 @@ async fn timeline_item_to_ffi(
                 pending_error:        String::new(),
                 pending_recoverable:  false,
                 pending_txn_id:       String::new(),
+                location_lat:         0.0,
+                location_lon:         0.0,
+                location_description: String::new(),
             });
         }
     };
@@ -4291,6 +4306,9 @@ async fn timeline_item_to_ffi(
             pending_error:           String::new(),
             pending_recoverable:     false,
             pending_txn_id:          String::new(),
+            location_lat:            0.0,
+            location_lon:            0.0,
+            location_description:    String::new(),
         });
     }
 
@@ -4368,6 +4386,9 @@ async fn timeline_item_to_ffi(
             pending_error:        pending_error.clone(),
             pending_recoverable,
             pending_txn_id:       pending_txn_id.clone(),
+            location_lat:         0.0,
+            location_lon:         0.0,
+            location_description: String::new(),
         });
     }
 
@@ -4380,7 +4401,8 @@ async fn timeline_item_to_ffi(
          file_json, file_name, file_size, image_filename,
          audio_source_json, audio_duration_ms, audio_waveform, audio_mime,
          video_thumbnail_json, video_duration_ms, video_mime,
-         video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif) =
+         video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif,
+         location_lat, location_lon, location_description) =
         match msg_content.msgtype() {
             MessageType::Text(t) => {
                 let fmt = t.formatted.as_ref()
@@ -4397,6 +4419,7 @@ async fn timeline_item_to_ffi(
                     String::new(), 0u64, Vec::<u16>::new(), String::new(),
                     String::new(), 0u64, String::new(),
                     false, false, false, false, false,
+                    0.0f64, 0.0f64, String::new(),
                 )
             }
             MessageType::Image(i) => {
@@ -4422,7 +4445,8 @@ async fn timeline_item_to_ffi(
                  String::new(), String::new(), 0u64, img_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
                  String::new(), 0u64, String::new(),
-                 false, false, false, false, false)
+                 false, false, false, false, false,
+                 0.0f64, 0.0f64, String::new())
             }
             MessageType::File(f) => {
                 let file_str = match &f.source {
@@ -4441,7 +4465,8 @@ async fn timeline_item_to_ffi(
                  file_str, name, size, String::new(),
                  String::new(), 0u64, Vec::new(), String::new(),
                  String::new(), 0u64, String::new(),
-                 false, false, false, false, false)
+                 false, false, false, false, false,
+                 0.0f64, 0.0f64, String::new())
             }
             // MSC3245: voice messages are `m.audio` events tagged with
             // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
@@ -4469,7 +4494,8 @@ async fn timeline_item_to_ffi(
                      String::new(), String::new(), 0u64, String::new(),
                      source_str, duration_ms, waveform, info_mime,
                      String::new(), 0u64, String::new(),
-                     false, false, false, false, false)
+                     false, false, false, false, false,
+                     0.0f64, 0.0f64, String::new())
                 } else {
                     let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
                     let size = a.info.as_deref()
@@ -4480,7 +4506,8 @@ async fn timeline_item_to_ffi(
                      source_str, name, size, String::new(),
                      String::new(), 0u64, Vec::new(), String::new(),
                      String::new(), 0u64, String::new(),
-                     false, false, false, false, false)
+                     false, false, false, false, false,
+                     0.0f64, 0.0f64, String::new())
                 }
             }
             MessageType::Video(v) => {
@@ -4524,7 +4551,8 @@ async fn timeline_item_to_ffi(
                  String::new(), String::new(), 0u64, vid_filename,
                  String::new(), 0u64, Vec::new(), String::new(),
                  thumb_json, dur_ms, mime,
-                 video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif)
+                 video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif,
+                 0.0f64, 0.0f64, String::new())
             }
             MessageType::Emote(e) => {
                 let fmt = e.formatted.as_ref()
@@ -4541,6 +4569,7 @@ async fn timeline_item_to_ffi(
                     String::new(), 0u64, Vec::<u16>::new(), String::new(),
                     String::new(), 0u64, String::new(),
                     false, false, false, false, false,
+                    0.0f64, 0.0f64, String::new(),
                 )
             }
             MessageType::Notice(n) => {
@@ -4558,6 +4587,19 @@ async fn timeline_item_to_ffi(
                     String::new(), 0u64, Vec::<u16>::new(), String::new(),
                     String::new(), 0u64, String::new(),
                     false, false, false, false, false,
+                    0.0f64, 0.0f64, String::new(),
+                )
+            }
+            MessageType::Location(l) => {
+                let (lat, lon) = parse_geo_uri(&l.geo_uri).unwrap_or((0.0, 0.0));
+                (
+                    l.body.clone(), String::new(), "m.location".to_owned(),
+                    String::new(), 0u64, 0u64,
+                    String::new(), String::new(), 0u64, String::new(),
+                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
+                    String::new(), 0u64, String::new(),
+                    false, false, false, false, false,
+                    lat, lon, String::new(),
                 )
             }
             _ => return None,
@@ -4684,6 +4726,9 @@ async fn timeline_item_to_ffi(
         pending_error,
         pending_recoverable,
         pending_txn_id,
+        location_lat,
+        location_lon,
+        location_description,
     })
 }
 
@@ -5610,5 +5655,35 @@ mod tests_latest_event_body {
             },
         };
         assert_eq!(latest_event_body(&value), Some("sent!".to_owned()));
+    }
+}
+
+#[cfg(test)]
+mod location_tests {
+    use super::parse_geo_uri;
+
+    #[test]
+    fn parse_geo_uri_standard() {
+        let r = parse_geo_uri("geo:51.5,-0.1");
+        assert_eq!(r, Some((51.5, -0.1)));
+    }
+
+    #[test]
+    fn parse_geo_uri_with_altitude() {
+        let r = parse_geo_uri("geo:51.5,-0.1,0");
+        assert_eq!(r, Some((51.5, -0.1)));
+    }
+
+    #[test]
+    fn parse_geo_uri_with_uncertainty() {
+        let r = parse_geo_uri("geo:51.5,-0.1;u=35");
+        assert_eq!(r, Some((51.5, -0.1)));
+    }
+
+    #[test]
+    fn parse_geo_uri_malformed() {
+        assert_eq!(parse_geo_uri("not-a-geo-uri"), None);
+        assert_eq!(parse_geo_uri("geo:"), None);
+        assert_eq!(parse_geo_uri("geo:abc,def"), None);
     }
 }
