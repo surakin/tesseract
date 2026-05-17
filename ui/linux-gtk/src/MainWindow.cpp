@@ -966,7 +966,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_vexpand(main_widget, TRUE);
     gtk_stack_add_named(GTK_STACK(content_stack_), main_widget, "main");
 
-    // Settings page — lazily populated on first open.
+    // Settings page — populated on each open via open_settings_().
     {
         settings_widget_ = std::make_unique<gtk4::SettingsWidget>();
         GtkWidget* w = settings_widget_->widget();
