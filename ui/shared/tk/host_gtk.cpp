@@ -151,10 +151,18 @@ public:
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), scroll_);
 
         buffer_ = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view_));
-        if (placeholder_label_ == nullptr) {
-            // Placeholder painted as a sibling overlay child if needed.
-            // For now we mirror GtkEntry: empty text uses a CSS pseudo.
-        }
+
+        // GtkTextView has no native placeholder. We overlay a GtkLabel that
+        // tracks the text area's position and is hidden once the buffer has
+        // content.
+        placeholder_label_ = gtk_label_new("");
+        gtk_label_set_xalign(GTK_LABEL(placeholder_label_), 0.0f);
+        gtk_widget_set_halign(placeholder_label_, GTK_ALIGN_START);
+        gtk_widget_set_valign(placeholder_label_, GTK_ALIGN_START);
+        gtk_widget_add_css_class(placeholder_label_, "dim-label");
+        gtk_widget_set_can_target(placeholder_label_, FALSE);
+        gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), placeholder_label_);
+
         changed_id_ = g_signal_connect(buffer_, "changed",
                                         G_CALLBACK(&GtkNativeTextArea::on_changed_cb),
                                         this);
@@ -178,6 +186,8 @@ public:
         if (changed_id_ && buffer_) g_signal_handler_disconnect(buffer_, changed_id_);
         if (paste_id_ && view_)     g_signal_handler_disconnect(view_, paste_id_);
         if (scroll_) gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), scroll_);
+        if (placeholder_label_)
+            gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), placeholder_label_);
     }
 
     void set_rect(Rect r) override {
@@ -194,6 +204,13 @@ public:
         gtk_widget_set_margin_top  (scroll_, y);
         gtk_widget_set_size_request(scroll_,
             static_cast<int>(std::round(r.w)), h);
+        // Align placeholder label with the text content area (matching the
+        // text view's 8 px left-margin and 6 px top-margin).
+        if (placeholder_label_) {
+            gtk_widget_set_margin_start(placeholder_label_,
+                static_cast<int>(std::floor(r.x)) + 8);
+            gtk_widget_set_margin_top(placeholder_label_, y + 6);
+        }
     }
     void set_text(std::string text) override {
         if (!buffer_) return;
@@ -201,6 +218,9 @@ public:
         gtk_text_buffer_set_text(buffer_, text.c_str(),
                                   static_cast<int>(text.size()));
         g_signal_handler_unblock(buffer_, changed_id_);
+        // changed signal was blocked; sync placeholder visibility manually.
+        if (placeholder_label_)
+            gtk_widget_set_visible(placeholder_label_, text.empty());
         float h = natural_height();
         if (h != last_height_ && on_height_changed_) {
             last_height_ = h;
@@ -216,10 +236,9 @@ public:
         g_free(raw);
         return out;
     }
-    void set_placeholder(std::string /*text*/) override {
-        // GtkTextView doesn't ship a placeholder; left as a follow-up so the
-        // shared ComposeBar can paint its own placeholder underneath when
-        // text() is empty.
+    void set_placeholder(std::string text) override {
+        if (placeholder_label_)
+            gtk_label_set_text(GTK_LABEL(placeholder_label_), text.c_str());
     }
     void set_focused(bool focused) override {
         if (focused && view_) gtk_widget_grab_focus(view_);
@@ -308,6 +327,8 @@ private:
     static void on_changed_cb(GtkTextBuffer*, gpointer p) {
         auto* self = static_cast<GtkNativeTextArea*>(p);
         std::string t = self->text();
+        if (self->placeholder_label_)
+            gtk_widget_set_visible(self->placeholder_label_, t.empty());
         if (self->on_changed_) self->on_changed_(t);
         float h = self->natural_height();
         if (h != self->last_height_ && self->on_height_changed_) {
