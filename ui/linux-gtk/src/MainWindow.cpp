@@ -2182,6 +2182,15 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             tk_avatars_.emplace(cache_key, std::move(img));
             if (main_app_surface_) main_app_surface_->relayout();
         }
+    } else if (kind == MediaKind::Tile) {
+        if (tk_images_.count(cache_key)) return;
+        if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes)) {
+            auto img = tk::cairo_pango::make_image(surface);
+            cairo_surface_destroy(surface);
+            tk_images_.emplace(cache_key, std::move(img));
+            if (room_view_) room_view_->message_list()->invalidate_data();
+            if (main_app_surface_) main_app_surface_->relayout();
+        }
     } else { // MediaImage
         if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
         if (auto anim = decode_animation(bytes)) {

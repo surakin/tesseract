@@ -362,6 +362,24 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         [c _relayoutShortcodePopupIfVisible];
         return;
     }
+    if (kind == MediaKind::Tile) {
+        if (bytes.empty() || tk_images_.count(key)) return;
+        CFDataRef data = CFDataCreate(kCFAllocatorDefault,
+                                       bytes.data(),
+                                       static_cast<CFIndex>(bytes.size()));
+        if (!data) return;
+        CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
+        CFRelease(data);
+        if (!src) return;
+        CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+        CFRelease(src);
+        if (!img) return;
+        tk_images_.emplace(key, tk::cg::make_image(img));
+        CGImageRelease(img);
+        if (room_view_) room_view_->message_list()->invalidate_data();
+        [c _relayoutChatSurface];
+        return;
+    }
     if (bytes.empty() || tk_avatars_.count(key)) return;
     CFDataRef data = CFDataCreate(kCFAllocatorDefault,
                                    bytes.data(),

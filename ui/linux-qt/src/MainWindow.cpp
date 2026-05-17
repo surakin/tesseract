@@ -1836,6 +1836,26 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
+    if (kind == MediaKind::Tile)
+    {
+        if (tk_images_.count(cache_key)) return;
+        QImage img;
+        if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
+                              static_cast<int>(bytes.size())))
+        {
+            return;
+        }
+        tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(img)));
+        if (mainApp_)
+            mainApp_->room_view()->message_list()->invalidate_data();
+        if (mainAppSurface_)
+        {
+            mainAppSurface_->relayout();
+            mainAppSurface_->update();
+        }
+        return;
+    }
+
     // MediaImage — animated probe first, then static fallback.
     if (tk_images_.count(cache_key) || anim_cache_.has(cache_key))
     {

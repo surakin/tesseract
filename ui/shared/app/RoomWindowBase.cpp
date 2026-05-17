@@ -31,6 +31,9 @@ void RoomWindowBase::finish_init_() {
         room_view_->message_list()->on_abort_send = [this](const std::string& txn_id) {
             abort_send_(txn_id);
         };
+        room_view_->message_list()->on_tile_needed = [this](int z, int x, int y) {
+            shell_->ensure_tile_async(z, x, y);
+        };
     }
 }
 

@@ -2483,6 +2483,14 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (shortcode_popup_visible_() && shortcode_popup_surface_)
             shortcode_popup_surface_->relayout();
         break;
+    case MediaKind::Tile:
+        if (!tk_images_.count(cache_key)) {
+            if (auto img = main_app_surface_->factory().decode_image(bytes))
+                tk_images_.emplace(cache_key, std::move(img));
+        }
+        if (room_view_) room_view_->message_list()->invalidate_data();
+        main_app_surface_->relayout();
+        break;
     }
     if (invalidate_hwnd)
         InvalidateRect(invalidate_hwnd, nullptr, FALSE);
