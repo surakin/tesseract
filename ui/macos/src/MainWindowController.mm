@@ -20,6 +20,7 @@
 #include "tk/theme.h"
 #include "util.h"
 #include "views/MainAppWidget.h"
+#include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
 
@@ -240,6 +241,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_switchActiveAccount:(int)idx;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
+- (void)_openSettings;
 - (void)loginViewDidCancel:(LoginView*)view;
 - (void)_openAccountPicker;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
@@ -639,6 +641,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     tesseract::views::MainAppWidget*                _mainApp;          // borrowed from root
     std::string                                     _pendingSearchText;
 
+    // Settings surface — full-window sibling of mainAppView and _loginView.
+    std::unique_ptr<tk::macos::Surface>  _settingsSurface;
+    tesseract::views::SettingsView*      _settingsView;  // borrowed from _settingsSurface root
+
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField>            _roomSearchField;
     std::unique_ptr<tk::NativeTextArea>             _roomTextArea;
@@ -779,6 +785,9 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                     ? [NSString stringWithUTF8String:s->_shell->my_user_id_.c_str()]
                     : [NSString stringWithUTF8String:s->_shell->my_display_name_.c_str()]];
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+            [menu addItemWithTitle:@"Settings…"
+                           action:@selector(_openSettings)
+                    keyEquivalent:@""];
             [menu addItemWithTitle:@"Add Account…"
                            action:@selector(_beginAddAccount)
                     keyEquivalent:@""];
@@ -1413,8 +1422,41 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     _loginView.translatesAutoresizingMaskIntoConstraints = NO;
     _loginView.hidden = YES;
 
+    // ── Settings overlay ──────────────────────────────────────────────
+    {
+        _settingsSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        auto view = std::make_unique<tesseract::views::SettingsView>();
+        _settingsView = view.get();
+        __weak MainWindowController* ws = self;
+        _settingsView->on_close = [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            NSView* mainAppView = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            mainAppView.hidden = NO;
+            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+        };
+        _settingsView->on_theme_changed = [ws](tesseract::Settings::ThemePreference pref)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->set_theme_preference_(pref);
+        };
+        _settingsView->on_notifications_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            tesseract::Settings::instance().notifications_enabled = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        };
+        _settingsSurface->set_root(std::move(view));
+    }
+    NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
+    settingsView.translatesAutoresizingMaskIntoConstraints = NO;
+    settingsView.hidden = YES;
+
     [content addSubview:mainAppView];
     [content addSubview:_loginView];
+    [content addSubview:settingsView];
     [NSLayoutConstraint activateConstraints:@[
         [mainAppView.topAnchor      constraintEqualToAnchor:content.topAnchor],
         [mainAppView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
@@ -1424,6 +1466,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
         [_loginView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
         [_loginView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
         [_loginView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
+        [settingsView.topAnchor      constraintEqualToAnchor:content.topAnchor],
+        [settingsView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
+        [settingsView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [settingsView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
     ]];
 }
 
@@ -1452,6 +1498,7 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
 - (void)_applyTheme:(const tk::Theme&)t {
     if (_mainAppSurface)       _mainAppSurface->set_theme(t);
     if (_accountPickerSurface) _accountPickerSurface->set_theme(t);
+    if (_settingsSurface)      _settingsSurface->set_theme(t);
 
     NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
         ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
@@ -1908,6 +1955,31 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     [_loginView reset];
     ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = YES;
     _loginView.hidden = NO;
+}
+
+- (void)_openSettings {
+    if (!_settingsView || !_settingsSurface) return;
+    const auto& accounts = _shell->accounts_;
+    std::string display_name = accounts.empty() ? std::string{} : accounts.front()->display_name;
+    std::string user_id      = accounts.empty() ? std::string{} : accounts.front()->user_id;
+    std::string avatar_mxc   = accounts.empty() ? std::string{} : accounts.front()->avatar_url;
+    __weak MainWindowController* ws = self;
+    _settingsView->set_account_info(std::move(display_name),
+                                    std::move(user_id),
+                                    std::move(avatar_mxc));
+    _settingsView->set_image_provider([ws](const std::string& mxc) -> const tk::Image* {
+        MainWindowController* s = ws;
+        if (!s) return nullptr;
+        auto it = s->_shell->tk_avatars_.find(mxc);
+        return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+    });
+    _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
+    _settingsView->set_notifications_enabled(tesseract::Settings::instance().notifications_enabled);
+    _settingsSurface->relayout();
+
+    NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
+    mainAppView.hidden = YES;
+    ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
 }
 
 - (void)_populateUserStrip {
