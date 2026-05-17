@@ -2959,7 +2959,7 @@ void MessageListView::on_pointer_move(tk::Point local) {
         bool want_tooltip = false;
         tk::Rect anchor{};
         int row = hovered_row_index();
-        if (row >= 0) {
+        if (row >= 0 && static_cast<std::size_t>(row) < messages_.size()) {
             const auto& m = messages_[static_cast<std::size_t>(row)];
             if (m.kind == MessageRowData::Kind::Location &&
                 !m.location_description.empty()) {
