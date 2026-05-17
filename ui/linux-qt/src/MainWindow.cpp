@@ -2520,6 +2520,7 @@ void MainWindow::openSettings()
     if (!settingsWidget_)
     {
         settingsWidget_ = new SettingsWidget(this);
+        settingsWidget_->set_theme(current_theme_);
         contentStack_->addWidget(settingsWidget_);
 
         connect(settingsWidget_, &SettingsWidget::settingsClosed, this, [this]

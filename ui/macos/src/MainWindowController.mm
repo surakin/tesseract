@@ -1519,6 +1519,7 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
         };
         _settingsSurface->set_root(std::move(view));
+        _settingsSurface->set_theme(_mainAppSurface->theme());
     }
     NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
     settingsView.translatesAutoresizingMaskIntoConstraints = NO;

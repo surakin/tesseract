@@ -1458,6 +1458,7 @@ void MainWindow::on_create(HWND hwnd) {
             tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
         };
         settings_surface_->set_root(std::move(view));
+        settings_surface_->set_theme(current_theme_);
         if (settings_surface_->hwnd())
             ShowWindow(settings_surface_->hwnd(), SW_HIDE);
     }
