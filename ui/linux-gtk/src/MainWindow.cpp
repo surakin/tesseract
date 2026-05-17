@@ -2956,7 +2956,7 @@ void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
         self->ctx_sticker_body_,
         self->ctx_sticker_mxc_url_,
         self->ctx_sticker_info_json_);
-    if (!res.ok) self->push_error(res.error);
+    if (!res.ok) self->push_error(res.message);
     self->ctx_sticker_event_id_.clear();
     self->ctx_sticker_mxc_url_.clear();
     self->ctx_sticker_body_.clear();

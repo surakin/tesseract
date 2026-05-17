@@ -1123,7 +1123,7 @@ void MainWindow::on_create(HWND hwnd) {
             if (cmd == 1) {
                 auto res = client_->save_sticker_to_user_pack(body, body, mxc, info);
                 if (!res.ok && hStatus_) {
-                    SetWindowTextW(hStatus_, utf8_to_wstr(res.error).c_str());
+                    SetWindowTextW(hStatus_, utf8_to_wstr(res.message).c_str());
                     SetTimer(hwnd_, kStatusClearTimerId, 6000, nullptr);
                 }
             }
@@ -1432,7 +1432,7 @@ void MainWindow::on_create(HWND hwnd) {
         settings_view_->on_notifications_changed = [this](bool enabled)
         {
             tesseract::Settings::instance().notifications_enabled = enabled;
-            tesseract::Settings::instance().save_to_disk(config_dir());
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
         };
         settings_surface_->set_root(std::move(view));
         if (settings_surface_->hwnd())

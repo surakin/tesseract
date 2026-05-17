@@ -3092,7 +3092,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
         NSAlert* alert = [[NSAlert alloc] init];
         alert.alertStyle  = NSAlertStyleWarning;
         alert.messageText = @"Could Not Save Sticker";
-        alert.informativeText = [NSString stringWithUTF8String:res.error.c_str()] ?: @"";
+        alert.informativeText = [NSString stringWithUTF8String:res.message.c_str()] ?: @"";
         [alert beginSheetModalForWindow:self.window completionHandler:nil];
     }
 }
