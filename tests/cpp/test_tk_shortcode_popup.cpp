@@ -35,7 +35,7 @@ ShortcodeSuggestion make_unicode(const char* sc, const char* glyph) {
 
 } // namespace
 
-TEST_CASE("ShortcodePopup — empty suggestions measures zero height") {
+TEST_CASE("ShortcodePopup:empty suggestions measures zero height") {
     Stage st;
     ShortcodePopup popup;
     auto lc = st.lc();
@@ -43,7 +43,7 @@ TEST_CASE("ShortcodePopup — empty suggestions measures zero height") {
     CHECK(sz.h == 0.0f);
 }
 
-TEST_CASE("ShortcodePopup — 3 suggestions measures 3 row heights") {
+TEST_CASE("ShortcodePopup:3 suggestions measures 3 row heights") {
     Stage st;
     ShortcodePopup popup;
     popup.set_suggestions({
@@ -57,7 +57,7 @@ TEST_CASE("ShortcodePopup — 3 suggestions measures 3 row heights") {
     CHECK(sz.h == Approx(3.0f * ShortcodePopup::kRowHeight));
 }
 
-TEST_CASE("ShortcodePopup — capped at 8 rows even with 10 suggestions") {
+TEST_CASE("ShortcodePopup:capped at 8 rows even with 10 suggestions") {
     Stage st;
     ShortcodePopup popup;
     std::vector<ShortcodeSuggestion> many;
@@ -73,7 +73,7 @@ TEST_CASE("ShortcodePopup — capped at 8 rows even with 10 suggestions") {
     CHECK(sz.h == Approx(8.0f * ShortcodePopup::kRowHeight));
 }
 
-TEST_CASE("ShortcodePopup — on_accepted fires with correct suggestion") {
+TEST_CASE("ShortcodePopup:on_accepted fires with correct suggestion") {
     Stage st;
     ShortcodePopup popup;
     popup.set_suggestions({
@@ -96,7 +96,7 @@ TEST_CASE("ShortcodePopup — on_accepted fires with correct suggestion") {
     CHECK(accepted->shortcode == "smile");
 }
 
-TEST_CASE("ShortcodePopup — set_selected_index highlights selected row") {
+TEST_CASE("ShortcodePopup:set_selected_index highlights selected row") {
     Stage st;
     ShortcodePopup popup;
     popup.set_suggestions({

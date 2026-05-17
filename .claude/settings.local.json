@@ -122,7 +122,11 @@
       "Bash(git -C /home/rayden/src/tesseract add client/include/tesseract/emoji.h client/src/emoji.cpp client/src/emoji_data.gen.py client/src/emoji_data.inc client/src/emoji_aliases.inc tests/cpp/test_emoji.cpp)",
       "Bash(git -C /home/rayden/src/tesseract log --oneline -3)",
       "Bash(git -C /home/rayden/src/tesseract status --short)",
-      "Bash(git -C /home/rayden/src/tesseract add ui/shared/views/ShortcodeEngine.cpp tests/cpp/test_shortcode_engine.cpp)"
+      "Bash(git -C /home/rayden/src/tesseract add ui/shared/views/ShortcodeEngine.cpp tests/cpp/test_shortcode_engine.cpp)",
+      "Bash(git -C \"E:/Git/Matrix\" show 6bbfae5 -- ui/macos/src/MainWindowController.mm)",
+      "Bash(git -C \"E:/Git/Matrix\" show 6bbfae5 -- ui/windows/src/MainWindow.cpp)",
+      "Bash(git -C \"E:/Git/Matrix\" show 6bbfae5 -- ui/linux-gtk/src/MainWindow.cpp)",
+      "Bash(build/windows-debug/tests/tesseract_tests.exe --list-test-names-only)"
     ]
   }
 }

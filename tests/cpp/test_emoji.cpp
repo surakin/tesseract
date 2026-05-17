@@ -9,7 +9,7 @@ TEST_CASE("emoji::all() has a sensible number of entries", "[emoji]") {
     const auto& all = tesseract::emoji::all();
     // Curated catalog from Unicode 17 fully-qualified entries (skin tones
     // dropped). Anywhere from ~1500 to ~2500 is plausible across Unicode
-    // version bumps — assert a broad-but-defensive range.
+    // version bumps:assert a broad-but-defensive range.
     CHECK(all.size() >= 1500);
     CHECK(all.size() <= 3000);
 }
@@ -86,7 +86,7 @@ TEST_CASE("known emoji can be located by exact name", "[emoji]") {
     CHECK(found_grinning);
 }
 
-TEST_CASE("by_shortcode_prefix — canonical match") {
+TEST_CASE("by_shortcode_prefix:canonical match") {
     // "grinning_face" should surface 😀 which has CLDR name "grinning face"
     auto results = tesseract::emoji::by_shortcode_prefix("grinning_face");
     REQUIRE(!results.empty());
@@ -96,8 +96,8 @@ TEST_CASE("by_shortcode_prefix — canonical match") {
     REQUIRE(found);
 }
 
-TEST_CASE("by_shortcode_prefix — alias match") {
-    // "grinning" is a gemoji alias for 😀 — must surface via alias table
+TEST_CASE("by_shortcode_prefix:alias match") {
+    // "grinning" is a gemoji alias for 😀:must surface via alias table
     auto results = tesseract::emoji::by_shortcode_prefix("grinning");
     REQUIRE(!results.empty());
     bool found = false;
@@ -106,18 +106,18 @@ TEST_CASE("by_shortcode_prefix — alias match") {
     REQUIRE(found);
 }
 
-TEST_CASE("by_shortcode_prefix — no partial match below 1 char") {
+TEST_CASE("by_shortcode_prefix:no partial match below 1 char") {
     // empty prefix returns everything; just verify it doesn't crash
     auto all = tesseract::emoji::by_shortcode_prefix("");
     REQUIRE(all.size() > 100);
 }
 
-TEST_CASE("by_shortcode_prefix — returns empty for unknown prefix") {
+TEST_CASE("by_shortcode_prefix:returns empty for unknown prefix") {
     auto none = tesseract::emoji::by_shortcode_prefix("xyzzy_not_an_emoji");
     REQUIRE(none.empty());
 }
 
-TEST_CASE("by_shortcode_prefix — Entry shortcodes field is non-empty") {
+TEST_CASE("by_shortcode_prefix:Entry shortcodes field is non-empty") {
     const auto& table = tesseract::emoji::all();
     REQUIRE(!table.empty());
     for (const auto& e : table) {

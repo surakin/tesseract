@@ -1193,6 +1193,7 @@ void MainWindow::on_create(HWND hwnd) {
                 hide_shortcode_popup_();
             }
             on_send_clicked();
+        });
         room_text_area_->set_on_height_changed([this](float h) {
             if (room_view_) room_view_->set_text_area_natural_height(h);
             if (main_app_surface_) main_app_surface_->relayout();
@@ -3021,8 +3022,8 @@ void MainWindow::show_shortcode_popup_(
     int y_above = pt.y - h - 4;
     int y_below = pt.y + int(cursor_local.h) + 4;
     int y       = (y_above >= mi.rcWork.top) ? y_above : y_below;
-    x = std::clamp(x, mi.rcWork.left, mi.rcWork.right  - w);
-    y = std::clamp(y, mi.rcWork.top,  mi.rcWork.bottom - h);
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right  - w);
+    y = std::clamp(y, (int)mi.rcWork.top,  (int)mi.rcWork.bottom - h);
 
     if (!shortcode_popup_hwnd_) {
         shortcode_popup_hwnd_ = CreateWindowExW(
@@ -3030,7 +3031,7 @@ void MainWindow::show_shortcode_popup_(
             L"STATIC", L"", WS_POPUP,
             x, y, w, h, nullptr, nullptr, hInst_, nullptr);
         shortcode_popup_surface_ = std::make_unique<tk::win32::Surface>(
-            shortcode_popup_hwnd_, main_app_surface_->theme());
+            hInst_, shortcode_popup_hwnd_, main_app_surface_->theme());
         auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
         shortcode_popup_widget_ = pw.get();
         shortcode_popup_surface_->set_root(std::move(pw));
