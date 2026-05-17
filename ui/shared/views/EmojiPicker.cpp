@@ -115,12 +115,7 @@ public:
         st.max_height = bounds.h;
         auto layout = ctx.factory.build_text(glyph, st);
         if (!layout) return;
-        tk::Size sz = layout->measure();
-        tk::Point origin{
-            bounds.x + (bounds.w - sz.w) * 0.5f,
-            bounds.y + (bounds.h - layout->ascent()) * 0.5f
-        };
-        ctx.canvas.draw_text(*layout, origin, ctx.theme.palette.text_primary);
+        ctx.canvas.draw_text(*layout, { bounds.x, bounds.y }, ctx.theme.palette.text_primary);
     }
 
 private:
