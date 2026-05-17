@@ -28,6 +28,11 @@ constexpr float kGlyphH = 16.0f;
 
 AppearanceSection::AppearanceSection() = default;
 
+void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
+{
+    selected_ = pref;
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------

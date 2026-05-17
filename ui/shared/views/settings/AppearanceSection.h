@@ -19,6 +19,9 @@ public:
     AppearanceSection();
     ~AppearanceSection() override = default;
 
+    // Silently update the displayed selection without firing on_theme_changed.
+    void set_selected(tesseract::Settings::ThemePreference pref);
+
     // Fires with the newly selected preference when the user picks a button.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
 

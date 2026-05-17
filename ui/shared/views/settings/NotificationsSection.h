@@ -19,6 +19,9 @@ public:
     NotificationsSection();
     ~NotificationsSection() override = default;
 
+    // Silently update the checkbox state without firing on_notifications_changed.
+    void set_checked(bool enabled);
+
     // Fires with the new boolean state when the checkbox is toggled.
     std::function<void(bool)> on_notifications_changed;
 

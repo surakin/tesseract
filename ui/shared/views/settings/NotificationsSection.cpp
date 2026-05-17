@@ -34,6 +34,11 @@ NotificationsSection::NotificationsSection()
     : checked_(tesseract::Settings::instance().notifications_enabled)
 {}
 
+void NotificationsSection::set_checked(bool enabled)
+{
+    checked_ = enabled;
+}
+
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
