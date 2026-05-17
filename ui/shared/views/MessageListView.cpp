@@ -36,6 +36,16 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.in_reply_to_body        = ev.in_reply_to_body;
     row.is_edited               = ev.is_edited;
 
+    if (ev.pending_state == "sending")
+        row.pending_state = MessageRowData::PendingState::Sending;
+    else if (ev.pending_state == "failed")
+        row.pending_state = MessageRowData::PendingState::Failed;
+    else
+        row.pending_state = MessageRowData::PendingState::None;
+    row.pending_txn_id      = ev.pending_txn_id;
+    row.pending_error       = ev.pending_error;
+    row.pending_recoverable = ev.pending_recoverable;
+
     switch (ev.type) {
         case tesseract::EventType::Text:    row.kind = Kind::Text;    break;
         case tesseract::EventType::Notice:  row.kind = Kind::Notice;  break;
@@ -197,6 +207,9 @@ constexpr float kTypingRowH     = 20.0f;
 // the visible rows' height-affecting media / preview cards resolve, before
 // revealing anyway. Bounds the worst case on a slow / offline network.
 constexpr int   kRoomSwitchGateTimeoutMs = 400;
+
+// Duration to display "just sent" highlight on own messages before auto-clearing.
+constexpr int   kJustSentHighlightMs     = 2000;
 
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
@@ -2273,8 +2286,37 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg) {
     if (now_animated && !inline_players_.count(msg.event_id))
         start_inline_video(msg);
     adapter_->invalidate_layout_cache_at(index);
+
+    // Detect Sending → None transition for own messages: set just_sent and
+    // schedule a 2-second timer to clear it.
+    using PS = MessageRowData::PendingState;
+    const bool was_sending = messages_[index].pending_state == PS::Sending;
+    const bool now_none    = msg.pending_state == PS::None;
+    if (was_sending && now_none && messages_[index].is_own) {
+        msg.just_sent = true;
+        if (on_just_sent) on_just_sent(msg.event_id);
+        if (post_delayed_) {
+            std::weak_ptr<bool> walive = alive_;
+            const std::string   eid    = msg.event_id;
+            post_delayed_(kJustSentHighlightMs, [this, walive, eid]{
+                if (walive.expired()) return;
+                clear_just_sent(eid);
+            });
+        }
+    }
+
     messages_[index] = std::move(msg);
     invalidate_data();
+}
+
+void MessageListView::clear_just_sent(const std::string& event_id) {
+    for (auto& row : messages_) {
+        if (row.event_id == event_id && row.just_sent) {
+            row.just_sent = false;
+            invalidate_data();
+            return;
+        }
+    }
 }
 
 void MessageListView::remove_message(std::size_t index) {
