@@ -16,7 +16,7 @@ SettingsView::SettingsView()
 {
     // Back button — placed left-aligned inside the bar by arrange().
     auto back = std::make_unique<tk::Button>(
-        "\xe2\x80\xb9 Back",
+        "← Back",
         std::function<void()>{},
         tk::Button::Variant::Subtle);
     back->set_on_click([this] { if (on_close) { on_close(); } });
@@ -113,9 +113,9 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             { bar_rect.x + kBtnHInset, btn_y, btn_w, btn_h });
     }
 
-    // SideTabView: remaining height below the bar.
-    const float tabs_y = bounds.y + kBarHeight;
-    const float tabs_h = std::max(0.0f, bounds.h - kBarHeight);
+    // SideTabView: remaining height below the bar + 1 px separator.
+    const float tabs_y = bounds.y + kBarHeight + 1.0f;
+    const float tabs_h = std::max(0.0f, bounds.h - kBarHeight - 1.0f);
     if (tabs_)
     {
         tabs_->arrange(ctx, { bounds.x, tabs_y, bounds.w, tabs_h });
@@ -136,7 +136,7 @@ void SettingsView::paint(tk::PaintCtx& ctx)
     // 1 px separator between the back bar and the tab view.
     const tk::Rect sep_rect = {
         bounds_.x,
-        bounds_.y + kBarHeight - 1.0f,
+        bounds_.y + kBarHeight,
         bounds_.w,
         1.0f
     };

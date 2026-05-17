@@ -12,9 +12,9 @@
 // showing, call set_account_info(), set_notifications_enabled(), and
 // set_theme_pref() to sync state with persisted settings.
 
-#include "settings/AccountSection.h"
-#include "settings/AppearanceSection.h"
-#include "settings/NotificationsSection.h"
+#include "views/settings/AccountSection.h"
+#include "views/settings/AppearanceSection.h"
+#include "views/settings/NotificationsSection.h"
 
 #include "tk/controls.h"
 #include "tk/side_tab_view.h"
