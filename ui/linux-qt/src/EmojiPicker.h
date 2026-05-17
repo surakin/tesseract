@@ -38,6 +38,9 @@ public:
     /// Trigger a redraw after new emoticon bitmaps land in the cache.
     void invalidateImages();
 
+    /// Re-skin the picker surface when the theme preference changes.
+    void set_theme(const tk::Theme& t);
+
     /// Position the picker so its bottom-right corner lines up just above
     /// the given anchor widget, then show it.
     void popupAt(QWidget* anchor);

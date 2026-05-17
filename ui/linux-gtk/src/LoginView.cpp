@@ -39,6 +39,10 @@ GtkWidget* LoginView::widget() const {
     return surface_ ? surface_->widget() : nullptr;
 }
 
+void LoginView::set_theme(const tk::Theme& t) {
+    if (surface_) surface_->set_theme(t);
+}
+
 void LoginView::set_mode(tesseract::views::LoginView::Mode m) {
     if (shared_) shared_->set_mode(m);
 }

@@ -135,6 +135,10 @@ void RoomWindow::update_window_title_(const std::string& name) {
     if (window_) gtk_window_set_title(window_, name.c_str());
 }
 
+void RoomWindow::apply_theme(const tk::Theme& t) {
+    if (surface_) surface_->set_theme(t);
+}
+
 // ---------------------------------------------------------------------------
 
 tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(

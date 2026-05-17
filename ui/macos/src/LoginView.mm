@@ -124,6 +124,10 @@ using tesseract::macos::trim;
     _client = client;
 }
 
+- (void)setTheme:(const tk::Theme&)t {
+    if (_surface) _surface->set_theme(t);
+}
+
 - (void)setMode:(tesseract::views::LoginView::Mode)mode {
     if (_shared) _shared->set_mode(mode);
     if (_surface) _surface->relayout();

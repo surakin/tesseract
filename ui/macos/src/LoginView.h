@@ -3,6 +3,7 @@
 
 #include <tesseract/client.h>
 #include "views/LoginView.h"
+#include "tk/theme.h"
 
 @class LoginView;
 
@@ -28,6 +29,9 @@
 
 /// Initial = no cancel button; AddAccount = cancel visible in Form + Waiting.
 - (void)setMode:(tesseract::views::LoginView::Mode)mode;
+
+/// Re-skin the login surface when the theme preference changes.
+- (void)setTheme:(const tk::Theme&)t;
 
 @property (nonatomic, weak) id<LoginViewDelegate> delegate;
 

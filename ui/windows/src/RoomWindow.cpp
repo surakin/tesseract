@@ -1,6 +1,7 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
 #include "TextRenderer.h"
+#include "Theme.h"
 
 #include "views/RoomView.h"
 #include <tesseract/client.h>
@@ -205,6 +206,19 @@ void RoomWindow::request_relayout() {
 
 void RoomWindow::update_window_title_(const std::string& name) {
     if (hwnd_) SetWindowTextW(hwnd_, utf8_to_wstr(name).c_str());
+}
+
+void RoomWindow::apply_theme(const tk::Theme& t) {
+    // The global win32 native palette/mode is already set by the main
+    // shell's apply_theme_ui_() (which calls this). Here we just re-skin
+    // this pop-out's own chrome: dark caption + control theme + repaint,
+    // then push the tk theme into the surface.
+    if (hwnd_) {
+        win32::theme::apply_window_attributes(hwnd_);
+        win32::theme::apply_control_theme(hwnd_);
+        InvalidateRect(hwnd_, nullptr, TRUE);
+    }
+    if (surface_) surface_->set_theme(t);
 }
 
 // ---------------------------------------------------------------------------

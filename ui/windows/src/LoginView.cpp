@@ -46,6 +46,10 @@ void LoginView::layout(int w, int h) {
     // repositioned via the on_layout callback set in the constructor.
 }
 
+void LoginView::set_theme(const tk::Theme& t) {
+    if (surface_) surface_->set_theme(t);
+}
+
 void LoginView::position_overlay() {
     if (!shared_ || !hs_field_) return;
     hs_field_->set_rect(shared_->homeserver_field_rect());

@@ -171,6 +171,15 @@ protected:
     // Each platform shell overrides to call set_theme() on each of its surfaces.
     virtual void apply_theme_ui_(const tk::Theme&) {}
 
+    // Re-theme every open pop-out room window. Each shell's apply_theme_ui_()
+    // calls this so secondary windows follow the theme setting.
+    void apply_theme_to_secondary_windows_(const tk::Theme& t);
+
+    // The theme last resolved by apply_current_theme_(). Lets surfaces
+    // created lazily (e.g. a pop-out room window opened while in dark mode,
+    // with no subsequent theme change) start out correctly themed.
+    tk::Theme current_theme_ = tk::Theme::light();
+
     // Resolve the current ThemePreference to a concrete ThemeMode (calling
     // os_color_scheme_() for System), then call apply_theme_ui_.
     void apply_current_theme_();

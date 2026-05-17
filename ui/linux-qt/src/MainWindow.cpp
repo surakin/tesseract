@@ -3161,6 +3161,17 @@ void MainWindow::rebuildAccountPicker()
     accountPicker_->set_entries(std::move(entries));
 }
 
+static QString accountPopoverQss(const tk::Theme& t)
+{
+    const auto& p = t.palette;
+    auto hex = [](const tk::Color& c) {
+        return QString::asprintf("#%02X%02X%02X", c.r, c.g, c.b);
+    };
+    return QStringLiteral(
+               "QFrame { background-color: %1; border:1px solid %2; }")
+        .arg(hex(p.chrome_bg), hex(p.popup_border));
+}
+
 void MainWindow::openAccountPicker(const QPoint& global_anchor)
 {
     if (!accountPickerPopover_)
@@ -3169,8 +3180,7 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
         accountPickerPopover_->setWindowFlags(Qt::Popup
                                               | Qt::FramelessWindowHint);
         accountPickerPopover_->setFrameShape(QFrame::Box);
-        accountPickerPopover_->setStyleSheet(
-            "QFrame { background-color: #FFFFFF; border:1px solid #C9CDD2; }");
+        accountPickerPopover_->setStyleSheet(accountPopoverQss(current_theme_));
         auto* lay = new QVBoxLayout(accountPickerPopover_);
         lay->setContentsMargins(0, 0, 0, 0);
         lay->setSpacing(0);
@@ -3497,6 +3507,27 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         settingsWidget_->set_theme(t);
     }
+    if (loginView_)
+    {
+        loginView_->set_theme(t);
+    }
+    if (emojiPicker_)
+    {
+        emojiPicker_->set_theme(t);
+    }
+    if (stickerPicker_)
+    {
+        stickerPicker_->set_theme(t);
+    }
+    if (joinRoomDialog_)
+    {
+        joinRoomDialog_->set_theme(t);
+    }
+    if (accountPickerPopover_)
+    {
+        accountPickerPopover_->setStyleSheet(accountPopoverQss(t));
+    }
+    apply_theme_to_secondary_windows_(t);
     if (roomTextArea_)
     {
         roomTextArea_->set_text_color(t.palette.text_primary);

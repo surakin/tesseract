@@ -49,6 +49,11 @@ void LoginView::set_client(tesseract::Client* client)
     client_ = client;
 }
 
+void LoginView::set_theme(const tk::Theme& t)
+{
+    if (surface_) surface_->set_theme(t);
+}
+
 void LoginView::set_mode(tesseract::views::LoginView::Mode m)
 {
     if (shared_)

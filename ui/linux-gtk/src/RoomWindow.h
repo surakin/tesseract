@@ -18,6 +18,7 @@ public:
     void close_window()                                override;
     void request_relayout()                            override;
     void update_window_title_(const std::string& name) override;
+    void apply_theme(const tk::Theme& t)               override;
 
 private:
     static void on_destroy_(GtkWidget* widget, gpointer self);

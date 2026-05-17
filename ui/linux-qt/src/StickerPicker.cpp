@@ -113,6 +113,11 @@ void StickerPicker::setClient(tesseract::Client* c)
     }
 }
 
+void StickerPicker::set_theme(const tk::Theme& t)
+{
+    if (surface_) surface_->set_theme(t);
+}
+
 void StickerPicker::request_image_(const std::string& cache_key)
 {
     if (!client_ || cache_key.empty())

@@ -15,14 +15,23 @@ constexpr CGFloat kPanelHeight = 360;
 
 } // namespace
 
+// File scope (not a +sharedPanel local) so +existingPanel can hand the
+// shell the already-created panel for re-theming without force-creating one.
+static EmojiPickerPanel* g_emojiPanel = nil;
+
 @implementation EmojiPickerPanel {
     std::unique_ptr<tk::macos::Surface>             _surface;
     tesseract::views::EmojiPicker*                  _shared;        // borrowed
     std::unique_ptr<tk::NativeTextField>            _searchField;
 }
 
++ (instancetype)existingPanel { return g_emojiPanel; }
+
+- (void)setTheme:(const tk::Theme&)t {
+    if (_surface) _surface->set_theme(t);
+}
+
 + (instancetype)sharedPanel {
-    static EmojiPickerPanel* panel;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSWindowStyleMask mask = NSWindowStyleMaskTitled
@@ -31,19 +40,19 @@ constexpr CGFloat kPanelHeight = 360;
                                   | NSWindowStyleMaskHUDWindow
                                   | NSWindowStyleMaskNonactivatingPanel;
         NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
-        panel = [[EmojiPickerPanel alloc]
+        g_emojiPanel = [[EmojiPickerPanel alloc]
                    initWithContentRect:frame
                               styleMask:mask
                                 backing:NSBackingStoreBuffered
                                   defer:NO];
-        panel.title                  = @"Emoji";
-        panel.floatingPanel          = YES;
-        panel.becomesKeyOnlyIfNeeded = NO;
-        panel.hidesOnDeactivate      = YES;
-        panel.releasedWhenClosed     = NO;
-        [panel _setUpContent];
+        g_emojiPanel.title                  = @"Emoji";
+        g_emojiPanel.floatingPanel          = YES;
+        g_emojiPanel.becomesKeyOnlyIfNeeded = NO;
+        g_emojiPanel.hidesOnDeactivate      = YES;
+        g_emojiPanel.releasedWhenClosed     = NO;
+        [g_emojiPanel _setUpContent];
     });
-    return panel;
+    return g_emojiPanel;
 }
 
 - (void)_setUpContent {

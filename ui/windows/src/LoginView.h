@@ -46,6 +46,9 @@ public:
     /// Lay the surface out at (0, 0, w, h) inside the parent client area.
     void layout(int w, int h);
 
+    /// Re-skin the login surface when the theme preference changes.
+    void set_theme(const tk::Theme& t);
+
     /// Return the view to its initial "form" state.
     void reset();
 

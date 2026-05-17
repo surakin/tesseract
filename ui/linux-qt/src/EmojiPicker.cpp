@@ -116,6 +116,11 @@ void EmojiPicker::invalidateImages()
     }
 }
 
+void EmojiPicker::set_theme(const tk::Theme& t)
+{
+    if (surface_) surface_->set_theme(t);
+}
+
 void EmojiPicker::request_image_(const std::string& cache_key)
 {
     if (!client_ || cache_key.empty())

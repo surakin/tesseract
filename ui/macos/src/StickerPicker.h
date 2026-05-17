@@ -2,6 +2,7 @@
 #import <AppKit/AppKit.h>
 
 #include "tk/canvas.h"
+#include "tk/theme.h"
 
 #include <functional>
 #include <string>
@@ -20,6 +21,13 @@ namespace tesseract { class Client; }
 @property (nonatomic, assign) tesseract::Client* client;
 
 + (instancetype)sharedPanel;
+
+/// The already-created shared panel, or nil if it was never shown. Lets
+/// the shell re-theme it without force-creating it.
++ (instancetype)existingPanel;
+
+/// Re-skin the picker surface when the theme preference changes.
+- (void)setTheme:(const tk::Theme&)t;
 
 /// Update the image provider. Call whenever the host's image cache changes.
 - (void)setImageProvider:(std::function<const tk::Image*(const std::string&,

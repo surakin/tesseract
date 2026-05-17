@@ -34,6 +34,7 @@ public:
     void close_window()                                override;
     void request_relayout()                            override;
     void update_window_title_(const std::string& name) override;
+    void apply_theme(const tk::Theme& t)               override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close() {
@@ -217,6 +218,18 @@ void MacRoomWindow::update_window_title_(const std::string& name) {
     if (!window_closed_ && controller_) {
         NSString* title = [NSString stringWithUTF8String:name.c_str()] ?: @"";
         [controller_.window setTitle:title];
+    }
+}
+
+void MacRoomWindow::apply_theme(const tk::Theme& t) {
+    if (surface_) surface_->set_theme(t);
+    // Window chrome follows the app-wide NSApp.appearance set by the main
+    // controller's -_applyTheme:, but pin it on this window too so a
+    // pop-out opened before the next app-appearance change is consistent.
+    if (!window_closed_ && controller_) {
+        NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
+            ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+        controller_.window.appearance = [NSAppearance appearanceNamed:name];
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "views/MessageListView.h"
 #include "views/RoomView.h"
+#include "tk/theme.h"
 #include <tesseract/types.h>
 
 #include <string>
@@ -38,6 +39,10 @@ public:
     virtual void close_window()     = 0;
     virtual void request_relayout() = 0;
     virtual void update_window_title_(const std::string& /*name*/) {}
+    // Re-theme this pop-out window's surface (and any native chrome).
+    // Called by the shell's apply_theme_ui_() so secondary windows track
+    // the theme setting just like the main window.
+    virtual void apply_theme(const tk::Theme& t) = 0;
 
 protected:
     // Call at the end of the subclass constructor, after surface + room_view_

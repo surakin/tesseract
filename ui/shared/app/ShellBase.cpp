@@ -307,7 +307,12 @@ void ShellBase::open_room_in_new_window(const std::string& room_id) {
         return;
     }
     RoomWindowBase* w = create_secondary_room_window_(room_id);
-    if (w) owned_secondary_windows_.emplace_back(w);
+    if (w) {
+        // A pop-out opened while in dark mode (with no later theme change)
+        // would otherwise be stuck on its constructor's default theme.
+        w->apply_theme(current_theme_);
+        owned_secondary_windows_.emplace_back(w);
+    }
 }
 
 void ShellBase::release_owned_window_(RoomWindowBase* w) {
@@ -388,7 +393,14 @@ void ShellBase::apply_current_theme_() {
         s.theme_pref == tesseract::Settings::ThemePreference::Dark   ? tk::ThemeMode::Dark  :
         s.theme_pref == tesseract::Settings::ThemePreference::Light  ? tk::ThemeMode::Light :
         os_color_scheme_();   // System → ask the OS
-    apply_theme_ui_(mode == tk::ThemeMode::Dark ? tk::Theme::dark() : tk::Theme::light());
+    current_theme_ = (mode == tk::ThemeMode::Dark) ? tk::Theme::dark()
+                                                   : tk::Theme::light();
+    apply_theme_ui_(current_theme_);
+}
+
+void ShellBase::apply_theme_to_secondary_windows_(const tk::Theme& t) {
+    for (auto& w : owned_secondary_windows_)
+        if (w) w->apply_theme(t);
 }
 
 void ShellBase::set_theme_preference_(tesseract::Settings::ThemePreference pref) {

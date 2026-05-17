@@ -39,6 +39,9 @@ public:
     /// (Cancel visible in both Form and Waiting states) presentation.
     void set_mode(tesseract::views::LoginView::Mode m);
 
+    /// Re-skin the login surface when the theme preference changes.
+    void set_theme(const tk::Theme& t);
+
     /// Called on the UI thread just before the OAuth worker thread starts.
     /// Used by MainWindow to lazily create the pending account directory and
     /// call set_data_dir() only when the user actually initiates login.

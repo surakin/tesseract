@@ -43,6 +43,9 @@ public:
     /// land in the local image cache.
     void invalidateImages();
 
+    /// Re-skin the picker surface when the theme preference changes.
+    void set_theme(const tk::Theme& t);
+
     /// Anchor and show against the compose-bar sticker button.
     void popupAt(QWidget* anchor);
     /// Anchor above a specific rect (surface-local coords), centered on it.

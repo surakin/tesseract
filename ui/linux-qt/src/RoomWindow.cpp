@@ -161,6 +161,11 @@ void RoomWindow::update_window_title_(const std::string& name)
     setWindowTitle(QString::fromStdString(name));
 }
 
+void RoomWindow::apply_theme(const tk::Theme& t)
+{
+    if (surface_) surface_->set_theme(t);
+}
+
 void RoomWindow::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);

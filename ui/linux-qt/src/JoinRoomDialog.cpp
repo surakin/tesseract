@@ -141,6 +141,11 @@ void JoinRoomDialog::setClient(tesseract::Client* c)
     client_ = c;
 }
 
+void JoinRoomDialog::set_theme(const tk::Theme& t)
+{
+    if (surface_) surface_->set_theme(t);
+}
+
 void JoinRoomDialog::setAvatarProvider(
     std::function<const tk::Image*(const std::string& mxc_url)> fn)
 {

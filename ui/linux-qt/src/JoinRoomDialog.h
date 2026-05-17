@@ -26,6 +26,9 @@ public:
     /// Open (or bring to front) the dialog, resetting to Idle state.
     void openDialog();
 
+    /// Re-skin the dialog surface when the theme preference changes.
+    void set_theme(const tk::Theme& t);
+
     /// Fired when join succeeds; shell should navigate to this room ID.
     std::function<void(const std::string& room_id)> onJoined;
 

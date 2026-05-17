@@ -636,6 +636,7 @@ tk::ThemeMode MacShell::os_color_scheme_() const {
 
 void MacShell::apply_theme_ui_(const tk::Theme& t) {
     if (ctrl_) [ctrl_ _applyTheme:t];
+    apply_theme_to_secondary_windows_(t);
 }
 
 } // namespace
@@ -1524,9 +1525,17 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
 }
 
 - (void)_applyTheme:(const tk::Theme&)t {
-    if (_mainAppSurface)       _mainAppSurface->set_theme(t);
-    if (_accountPickerSurface) _accountPickerSurface->set_theme(t);
-    if (_settingsSurface)      _settingsSurface->set_theme(t);
+    if (_mainAppSurface)         _mainAppSurface->set_theme(t);
+    if (_accountPickerSurface)   _accountPickerSurface->set_theme(t);
+    if (_settingsSurface)        _settingsSurface->set_theme(t);
+    if (_shortcodePopupSurface)  _shortcodePopupSurface->set_theme(t);
+    if (_loginView)              [_loginView setTheme:t];
+
+    // Re-theme the singleton pickers only if they were ever shown
+    // (existingPanel returns nil otherwise; messaging nil is a no-op so
+    // we don't force-create a panel just to theme it).
+    [[EmojiPickerPanel   existingPanel] setTheme:t];
+    [[StickerPickerPanel existingPanel] setTheme:t];
 
     NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
         ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;

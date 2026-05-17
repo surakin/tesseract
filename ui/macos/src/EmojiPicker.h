@@ -2,6 +2,7 @@
 #import <AppKit/AppKit.h>
 
 #include "tk/canvas.h"
+#include "tk/theme.h"
 
 #include <functional>
 #include <string>
@@ -31,6 +32,13 @@ namespace tesseract { class Client; }
 
 /// Invalidate the image cache and relayout after new bitmaps land.
 - (void)invalidateImageCache;
+
+/// The already-created shared panel, or nil if it was never shown. Lets
+/// the shell re-theme it without force-creating it.
++ (instancetype)existingPanel;
+
+/// Re-skin the picker surface when the theme preference changes.
+- (void)setTheme:(const tk::Theme&)t;
 
 /// Position the panel so its bottom edge sits just above `anchorView`,
 /// then show it. The anchor's window becomes the panel's parent so the

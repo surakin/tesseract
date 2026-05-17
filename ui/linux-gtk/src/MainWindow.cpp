@@ -1128,6 +1128,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t) {
     if (join_room_surface_)      join_room_surface_->set_theme(t);
     if (account_picker_surface_) account_picker_surface_->set_theme(t);
     if (settings_widget_)        settings_widget_->set_theme(t);
+    if (shortcode_popup_surface_) shortcode_popup_surface_->set_theme(t);
+    if (login_view_)             login_view_->set_theme(t);
+
+    // Pop-out room windows track the theme too.
+    apply_theme_to_secondary_windows_(t);
 
     // Tell GTK itself about the dark preference so native chrome follows.
     bool dark = (t.mode == tk::ThemeMode::Dark);
