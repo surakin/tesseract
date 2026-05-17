@@ -34,14 +34,13 @@ MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
         return;
     }
 
-    // Prefer a template icon so the menu-bar tints it for light / dark mode.
-    NSImage* appImage = [NSImage imageNamed:@"Tesseract"];
-    if (!appImage) appImage = [NSApp applicationIconImage];
+    // The app icon has a solid opaque background, so template mode (which
+    // uses alpha as the mask) would render a solid white square. Display it
+    // as-is instead; it stays visible on both light and dark menu bars.
+    NSImage* appImage = [NSApp applicationIconImage];
     if (appImage) {
         NSImage* trayImg = [appImage copy];
         [trayImg setSize:NSMakeSize(18, 18)];
-        // `template` is a C++ keyword; use the setter to avoid the clash.
-        [trayImg setTemplate:YES];
         item.button.image = trayImg;
     } else {
         item.button.title = @"T";
