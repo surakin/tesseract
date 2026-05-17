@@ -210,6 +210,7 @@ int StickerPicker::tab_count() const {
 
 void StickerPicker::rebuild_current_items() {
     current_items_.clear();
+    hovered_grid_cell_ = -1;
     switch (page_) {
         case Page::Favorites:
             current_items_ = favorites_;
@@ -299,6 +300,41 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
                                      ctx.theme.palette.border, 1.0f);
 
     if (grid_) grid_->paint(ctx);
+
+    // Shortcode tooltip: shown when a grid cell is hovered.
+    if (hovered_grid_cell_ >= 0 &&
+        static_cast<std::size_t>(hovered_grid_cell_) < current_items_.size()) {
+        const std::string& shortcode = current_items_[hovered_grid_cell_].shortcode;
+        if (!shortcode.empty()) {
+            std::string sc = ":" + shortcode + ":";
+            tk::TextStyle small{};
+            small.role = tk::FontRole::Small;
+            auto layout = ctx.factory.build_text(sc, small);
+            if (layout) {
+                tk::Size tsz = layout->measure();
+                constexpr float kPad    = 4.0f;
+                constexpr float kRadius = 4.0f;
+                tk::Rect cell_r = grid_->rect_at(hovered_grid_cell_);
+                float tx = cell_r.x + (cell_r.w - tsz.w) / 2.0f - kPad;
+                float ty = cell_r.y - tsz.h - kPad * 2 - 2.0f;
+                if (ty < bounds_.y) ty = cell_r.y + cell_r.h + 2.0f;
+                // Clamp horizontally so the tooltip stays within picker bounds.
+                tx = std::max(bounds_.x + kPad,
+                              std::min(tx, bounds_.x + bounds_.w
+                                             - tsz.w - kPad * 2 - kPad));
+                tk::Rect bg{ tx, ty, tsz.w + kPad * 2, tsz.h + kPad * 2 };
+                ctx.canvas.push_clip_rect(bounds_);
+                ctx.canvas.fill_rounded_rect(bg, kRadius,
+                                              ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(bg, kRadius,
+                                                ctx.theme.palette.popup_border,
+                                                1.0f);
+                ctx.canvas.draw_text(*layout, { bg.x + kPad, bg.y + kPad },
+                                     ctx.theme.palette.text_primary);
+                ctx.canvas.pop_clip();
+            }
+        }
+    }
 
     // ─── Tab strip ──────────────────────────────────────────────────────
     ctx.canvas.fill_rect(tab_rect_, ctx.theme.palette.chrome_bg);
@@ -414,6 +450,26 @@ void StickerPicker::on_pointer_up(tk::Point local, bool inside_self) {
     } else {
         switch_to_pack(hit - favorites_tab_offset());
     }
+}
+
+void StickerPicker::on_pointer_move(tk::Point local) {
+    int cell = -1;
+    if (grid_) {
+        float lx = local.x - grid_rect_.x;
+        float ly = local.y - grid_rect_.y;
+        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h) {
+            cell = grid_->index_at({ lx, ly });
+        }
+    }
+    if (cell == hovered_grid_cell_) return;
+    hovered_grid_cell_ = cell;
+    if (grid_) grid_->invalidate_data();
+}
+
+void StickerPicker::on_pointer_leave() {
+    if (hovered_grid_cell_ == -1) return;
+    hovered_grid_cell_ = -1;
+    if (grid_) grid_->invalidate_data();
 }
 
 bool StickerPicker::on_wheel(tk::Point local, float dx, float dy) {

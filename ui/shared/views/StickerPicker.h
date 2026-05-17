@@ -74,9 +74,11 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
-    bool     on_pointer_down(tk::Point local)                      override;
-    void     on_pointer_up  (tk::Point local, bool inside_self)    override;
-    bool     on_wheel       (tk::Point local, float dx, float dy)  override;
+    bool     on_pointer_down (tk::Point local)                      override;
+    void     on_pointer_up   (tk::Point local, bool inside_self)    override;
+    bool     on_wheel        (tk::Point local, float dx, float dy)  override;
+    void     on_pointer_move (tk::Point local)                      override;
+    void     on_pointer_leave()                                      override;
 
     // Test introspection.
     const std::vector<tesseract::ImagePack>&        packs()     const { return packs_; }
@@ -116,6 +118,7 @@ private:
     tk::Rect                                      search_rect_{};
     tk::Rect                                      grid_rect_{};
     tk::Rect                                      tab_rect_{};
+    int                                           hovered_grid_cell_ = -1;
     int                                           pressed_tab_idx_  = -1;
     int                                           hovered_tab_idx_  = -1;
     float                                         tab_scroll_offset_ = 0.0f;
