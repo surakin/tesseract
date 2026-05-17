@@ -356,6 +356,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
                                       std::vector<uint8_t> bytes) {
     MainWindowController* c = ctrl_;
     if (!c) return;
+    if (bytes.empty()) return;
     if (kind == MediaKind::MediaImage) {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
@@ -363,7 +364,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
         return;
     }
     if (kind == MediaKind::Tile) {
-        if (bytes.empty() || tk_images_.count(key)) return;
+        if (tk_images_.count(key)) return;
         CFDataRef data = CFDataCreate(kCFAllocatorDefault,
                                        bytes.data(),
                                        static_cast<CFIndex>(bytes.size()));
