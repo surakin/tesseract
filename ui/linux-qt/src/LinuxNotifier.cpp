@@ -2,6 +2,7 @@
 #include <QDBusConnection>
 #include <QDBusReply>
 #include <QDir>
+#include <QGuiApplication>
 #include <QImage>
 #include <cctype>
 
@@ -48,8 +49,9 @@ QString write_image_path(const std::vector<uint8_t>& pic)
 
 } // namespace
 
-LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
-                                 QObject* parent)
+LinuxNotifierQt::LinuxNotifierQt(
+    std::function<void(std::string, std::string)> on_activate,
+    QObject* parent)
     : QObject(parent)
     , iface_("org.freedesktop.Notifications",
              "/org/freedesktop/Notifications",
@@ -61,6 +63,7 @@ LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
               QDBusConnection::sessionBus())
     , on_activate_(std::move(on_activate))
 {
+    // Freedesktop notification signals (no activation token available here).
     QDBusConnection::sessionBus().connect(
         "org.freedesktop.Notifications",
         "/org/freedesktop/Notifications",
@@ -74,11 +77,24 @@ LinuxNotifierQt::LinuxNotifierQt(std::function<void(std::string)> on_activate,
         "org.freedesktop.Notifications",
         "NotificationClosed",
         this, SLOT(onNotificationClosed(uint, uint)));
+
+    // XDG Desktop Portal notification signal — includes an xdg_activation_v1
+    // token on Wayland, enabling reliable window focus after notification click.
+    QDBusConnection::sessionBus().connect(
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Notification",
+        "ActionInvoked",
+        this,
+        SLOT(onPortalActionInvoked(QString, QString, QVariantMap)));
 }
 
 bool LinuxNotifierQt::use_portal() const
 {
-    return qEnvironmentVariableIsSet("FLATPAK_ID");
+    // Use the portal on Wayland for activation-token support, or inside Flatpak
+    // where direct D-Bus calls to the notification daemon are blocked.
+    return qEnvironmentVariableIsSet("FLATPAK_ID") ||
+           QGuiApplication::platformName() == QLatin1String("wayland");
 }
 
 void LinuxNotifierQt::notify(const tesseract::Notification& n)
@@ -89,6 +105,9 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
 
     if (use_portal())
     {
+        const QString pid = sanitize_portal_id(n.room_id);
+        // Record mapping so onPortalActionInvoked can look up the room.
+        portal_id_to_room_[pid.toStdString()] = n.room_id;
         QVariantMap portalMap{
             { "title", escape_markup(n.sender) },
             { "body",  escape_markup(n.body) }
@@ -96,8 +115,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         // Portal "icon" uses (sv); themed icons are simplest to marshal.
         // Avatar bytes require GIcon serialisation which is not straightforward
         // over Qt D-Bus, so skip for now — the app icon fallback is fine.
-        portal_.call("AddNotification",
-                     sanitize_portal_id(n.room_id), portalMap);
+        portal_.call("AddNotification", pid, portalMap);
         return;
     }
 
@@ -133,10 +151,29 @@ void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
 {
     auto it = id_to_room_.find(id);
     if (it != id_to_room_.end())
-        on_activate_(it->second);
+        on_activate_(it->second, "");  // no activation token via legacy D-Bus
 }
 
 void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
 {
     id_to_room_.erase(id);
+}
+
+void LinuxNotifierQt::onPortalActionInvoked(
+    const QString& notification_id,
+    const QString& /*action*/,
+    const QVariantMap& platform_data)
+{
+    auto it = portal_id_to_room_.find(notification_id.toStdString());
+    if (it == portal_id_to_room_.end()) return;
+
+    // xdg-desktop-portal 1.16+ includes an xdg_activation_v1 token in
+    // platform_data["activation-token"] on Wayland. Use it to let the
+    // compositor grant window focus without requiring a user-input serial.
+    std::string token;
+    const auto key = QStringLiteral("activation-token");
+    if (platform_data.contains(key))
+        token = platform_data.value(key).toString().toStdString();
+
+    on_activate_(it->second, std::move(token));
 }

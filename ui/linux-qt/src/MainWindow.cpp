@@ -57,6 +57,7 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusVariant>
+#include <QWindow>
 #include <algorithm>
 #include <thread>
 #include <unordered_set>
@@ -1215,7 +1216,7 @@ void MainWindow::doLogin()
 
         // Per-account notifier: click switches to this account then navigates.
         session->notifier = std::make_unique<LinuxNotifierQt>(
-            [this, uid](std::string room_id) {
+            [this, uid](std::string room_id, std::string token) {
                 for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
                 {
                     if (accounts_[i]->user_id == uid)
@@ -1223,6 +1224,14 @@ void MainWindow::doLogin()
                         switchActiveAccount(i);
                         break;
                     }
+                }
+                // Pass xdg_activation_v1 token (non-empty on modern Wayland)
+                // so the compositor grants window focus on navigate_to_room.
+                if (!token.empty() && windowHandle())
+                {
+                    windowHandle()->setProperty(
+                        "_q_waylandActivationToken",
+                        QString::fromStdString(token));
                 }
                 navigate_to_room(std::move(room_id));
             });
@@ -1426,7 +1435,7 @@ void MainWindow::onLoginSucceeded()
 
     // Per-account notifier: click switches to this account then navigates.
     session->notifier = std::make_unique<LinuxNotifierQt>(
-        [this, uid = user_id](std::string room_id) {
+        [this, uid = user_id](std::string room_id, std::string token) {
             for (int i = 0; i < static_cast<int>(accounts_.size()); ++i)
             {
                 if (accounts_[i]->user_id == uid)
@@ -1434,6 +1443,12 @@ void MainWindow::onLoginSucceeded()
                     switchActiveAccount(i);
                     break;
                 }
+            }
+            if (!token.empty() && windowHandle())
+            {
+                windowHandle()->setProperty(
+                    "_q_waylandActivationToken",
+                    QString::fromStdString(token));
             }
             navigate_to_room(std::move(room_id));
         });

@@ -1260,12 +1260,16 @@ void MainWindow::do_login() {
             // Per-account notifier: click switches to this account then navigates.
             const std::string notif_uid = sess->user_id;
             sess->notifier = std::make_unique<LinuxNotifierGtk>(
-                [this, notif_uid](std::string room_id) {
+                [this, notif_uid](std::string room_id, std::string token) {
                     for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
                         if (accounts_[i]->user_id == notif_uid) {
                             switch_active_account(i); break;
                         }
                     }
+                    // Set xdg_activation_v1 token (non-empty on modern Wayland)
+                    // before gtk_window_present so the compositor grants focus.
+                    if (!token.empty())
+                        gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
                     navigate_to_room(std::move(room_id));
                 });
 
@@ -1378,12 +1382,14 @@ void MainWindow::on_login_succeeded() {
     // Per-account notifier: click switches to this account then navigates.
     const std::string notif_uid = sess->user_id;
     sess->notifier = std::make_unique<LinuxNotifierGtk>(
-        [this, notif_uid](std::string room_id) {
+        [this, notif_uid](std::string room_id, std::string token) {
             for (int i = 0; i < static_cast<int>(accounts_.size()); ++i) {
                 if (accounts_[i]->user_id == notif_uid) {
                     switch_active_account(i); break;
                 }
             }
+            if (!token.empty())
+                gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
             navigate_to_room(std::move(room_id));
         });
 

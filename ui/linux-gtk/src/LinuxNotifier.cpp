@@ -17,12 +17,14 @@ std::string sanitize_portal_id(const std::string& s) {
 }
 } // namespace
 
-LinuxNotifierGtk::LinuxNotifierGtk(std::function<void(std::string)> on_activate)
+LinuxNotifierGtk::LinuxNotifierGtk(
+    std::function<void(std::string, std::string)> on_activate)
     : on_activate_(std::move(on_activate))
 {
     bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
     if (!bus_) return;
 
+    // Freedesktop notification signals (no activation token available here).
     action_sub_ = g_dbus_connection_signal_subscribe(
         bus_,
         "org.freedesktop.Notifications",
@@ -42,17 +44,33 @@ LinuxNotifierGtk::LinuxNotifierGtk(std::function<void(std::string)> on_activate)
         nullptr,
         G_DBUS_SIGNAL_FLAGS_NONE,
         on_notification_closed_cb, this, nullptr);
+
+    // XDG Desktop Portal notification signal — provides an xdg_activation_v1
+    // token on Wayland, enabling reliable window focus after notification click.
+    portal_action_sub_ = g_dbus_connection_signal_subscribe(
+        bus_,
+        "org.freedesktop.portal.Desktop",
+        "org.freedesktop.portal.Notification",
+        "ActionInvoked",
+        "/org/freedesktop/portal/desktop",
+        nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_portal_action_invoked_cb, this, nullptr);
 }
 
 LinuxNotifierGtk::~LinuxNotifierGtk() {
     if (!bus_) return;
-    if (action_sub_) g_dbus_connection_signal_unsubscribe(bus_, action_sub_);
-    if (closed_sub_) g_dbus_connection_signal_unsubscribe(bus_, closed_sub_);
+    if (action_sub_)        g_dbus_connection_signal_unsubscribe(bus_, action_sub_);
+    if (closed_sub_)        g_dbus_connection_signal_unsubscribe(bus_, closed_sub_);
+    if (portal_action_sub_) g_dbus_connection_signal_unsubscribe(bus_, portal_action_sub_);
     g_object_unref(bus_);
 }
 
 bool LinuxNotifierGtk::use_portal() const {
-    return g_getenv("FLATPAK_ID") != nullptr;
+    // Use the portal on Wayland for activation-token support, or inside Flatpak
+    // where direct D-Bus calls to the notification daemon are blocked.
+    return g_getenv("FLATPAK_ID") != nullptr ||
+           g_getenv("WAYLAND_DISPLAY") != nullptr;
 }
 
 void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
@@ -91,6 +109,9 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
     }
 
     if (use_portal()) {
+        const std::string pid = sanitize_portal_id(n.room_id);
+        // Record mapping so on_portal_action_invoked_cb can look up the room.
+        portal_id_to_room_[pid] = n.room_id;
         GVariantBuilder notif_b;
         g_variant_builder_init(&notif_b, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&notif_b, "{sv}", "title",
@@ -112,8 +133,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             "/org/freedesktop/portal/desktop",
             "org.freedesktop.portal.Notification",
             "AddNotification",
-            g_variant_new("(sa{sv})",
-                          sanitize_portal_id(n.room_id).c_str(), &notif_b),
+            g_variant_new("(sa{sv})", pid.c_str(), &notif_b),
             nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
         if (rgba)   g_object_unref(rgba);
         if (loader) g_object_unref(loader);
@@ -197,7 +217,7 @@ void LinuxNotifierGtk::on_action_invoked_cb(
     g_variant_get(parameters, "(u&s)", &id, &action);
     auto it = self->id_to_room_.find(id);
     if (it != self->id_to_room_.end())
-        self->on_activate_(it->second);
+        self->on_activate_(it->second, "");  // no activation token via legacy D-Bus
 }
 
 void LinuxNotifierGtk::on_notification_closed_cb(
@@ -212,4 +232,42 @@ void LinuxNotifierGtk::on_notification_closed_cb(
         self->room_to_id_.erase(it->second);
         self->id_to_room_.erase(it);
     }
+}
+
+void LinuxNotifierGtk::on_portal_action_invoked_cb(
+    GDBusConnection*, const char*, const char*,
+    const char*, const char*, GVariant* parameters, gpointer user_data)
+{
+    auto* self = static_cast<LinuxNotifierGtk*>(user_data);
+    const char* notif_id = nullptr;
+    const char* action   = nullptr;
+    GVariant*   platform = nullptr;
+    // Portal ActionInvoked format: (ssa{sv})
+    g_variant_get(parameters, "(&s&s@a{sv})", &notif_id, &action, &platform);
+
+    if (!notif_id) {
+        if (platform) g_variant_unref(platform);
+        return;
+    }
+    auto it = self->portal_id_to_room_.find(notif_id);
+    if (it == self->portal_id_to_room_.end()) {
+        if (platform) g_variant_unref(platform);
+        return;
+    }
+
+    // xdg-desktop-portal 1.16+ includes an xdg_activation_v1 token in
+    // platform_data["activation-token"] on Wayland. Pass it so the shell can
+    // call gtk_window_set_startup_id() before gtk_window_present().
+    std::string token;
+    if (platform) {
+        GVariant* tv = g_variant_lookup_value(
+            platform, "activation-token", G_VARIANT_TYPE_STRING);
+        if (tv) {
+            token = g_variant_get_string(tv, nullptr);
+            g_variant_unref(tv);
+        }
+        g_variant_unref(platform);
+    }
+
+    self->on_activate_(it->second, std::move(token));
 }
