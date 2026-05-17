@@ -4591,7 +4591,7 @@ async fn timeline_item_to_ffi(
                 )
             }
             MessageType::Location(l) => {
-                let (lat, lon) = parse_geo_uri(&l.geo_uri).unwrap_or((0.0, 0.0));
+                let (lat, lon) = parse_geo_uri(l.geo_uri()).unwrap_or((0.0, 0.0));
                 (
                     l.body.clone(), String::new(), "m.location".to_owned(),
                     String::new(), 0u64, 0u64,
@@ -4599,7 +4599,7 @@ async fn timeline_item_to_ffi(
                     String::new(), 0u64, Vec::<u16>::new(), String::new(),
                     String::new(), 0u64, String::new(),
                     false, false, false, false, false,
-                    lat, lon, String::new(),
+                    lat, lon, l.body.clone(),
                 )
             }
             _ => return None,
