@@ -2436,12 +2436,13 @@ void MainWindow::show_shortcode_popup_(
     x = std::clamp(x, work.left(), work.right()  - w);
     y = std::clamp(y, work.top(),  work.bottom() - h);
 
+    const bool was_hidden = !shortcode_popup_frame_->isVisible();
     shortcode_popup_frame_->setGeometry(x, y, w, h);
     shortcode_popup_surface_->resize(w, h);
     shortcode_popup_frame_->show();
     shortcode_popup_frame_->raise();
     shortcode_popup_surface_->relayout();
-    qApp->installEventFilter(this);
+    if (was_hidden) qApp->installEventFilter(this);
 }
 
 void MainWindow::hide_shortcode_popup_()
