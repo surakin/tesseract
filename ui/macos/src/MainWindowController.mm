@@ -2026,8 +2026,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)loginViewDidSucceed:(LoginView*)view {
     if (!_shell->pending_login_client_) return;
 
-    std::string sessionJson = _shell->pending_login_client_->export_session();
     std::string newUserId   = _shell->pending_login_client_->get_user_id();
+
+    // Reject if this account is already signed in.
+    for (const auto& a : _shell->accounts_) {
+        if (a->user_id == newUserId) {
+            _shell->pending_login_client_.reset();
+            std::error_code ec;
+            std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
+            _shell->pending_login_temp_dir_ = {};
+            _shell->pending_login_is_add_account_ = false;
+            int returnIdx = _shell->add_account_return_idx_;
+            _shell->add_account_return_idx_ = -1;
+            if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
+                [self _switchActiveAccount:returnIdx];
+            return;
+        }
+    }
+
+    std::string sessionJson = _shell->pending_login_client_->export_session();
 
     auto finalDir = tesseract::SessionStore::account_dir(newUserId);
     std::error_code ec;

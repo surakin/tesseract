@@ -1632,6 +1632,30 @@ void MainWindow::on_login_succeeded() {
     if (!pending_login_client_) return;
 
     std::string user_id   = pending_login_client_->get_user_id();
+
+    // Reject if this account is already signed in.
+    for (const auto& a : accounts_) {
+        if (a->user_id == user_id) {
+            pending_login_client_.reset();
+            if (login_view_) login_view_->set_client(nullptr);
+            std::error_code ec;
+            std::filesystem::remove_all(pending_login_temp_dir_, ec);
+            pending_login_temp_dir_.clear();
+            if (login_view_)
+                login_view_->set_status_message(
+                    L"Already signed in as " +
+                    std::wstring(user_id.begin(), user_id.end()));
+            pending_login_is_add_account_ = false;
+            if (add_account_return_idx_ >= 0 &&
+                add_account_return_idx_ < static_cast<int>(accounts_.size()))
+            {
+                switch_active_account(add_account_return_idx_);
+            }
+            add_account_return_idx_ = -1;
+            return;
+        }
+    }
+
     std::string json      = pending_login_client_->export_session();
     pending_login_client_.reset();   // closes SQLite in the temp dir
     // Null out the dangling pointer before any reset() calls below.

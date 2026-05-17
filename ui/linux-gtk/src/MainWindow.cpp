@@ -1315,6 +1315,25 @@ void MainWindow::do_login() {
 void MainWindow::on_login_succeeded() {
     // Export session before dropping the in-flight client.
     std::string uid      = pending_login_client_->get_user_id();
+
+    // Reject if this account is already signed in.
+    for (const auto& a : accounts_) {
+        if (a->user_id == uid) {
+            pending_login_client_.reset();
+            std::filesystem::remove_all(pending_login_temp_dir_);
+            pending_login_temp_dir_.clear();
+            gtk_label_set_text(GTK_LABEL(status_bar_),
+                ("Already signed in as " + uid).c_str());
+            if (pending_login_is_add_account_ && add_account_return_idx_ >= 0) {
+                switch_active_account(add_account_return_idx_);
+                gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            }
+            pending_login_is_add_account_ = false;
+            add_account_return_idx_ = -1;
+            return;
+        }
+    }
+
     std::string exported = pending_login_client_->export_session();
 
     // Drop the in-flight client to release SQLite handles before rename.
