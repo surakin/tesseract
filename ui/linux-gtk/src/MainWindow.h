@@ -41,6 +41,7 @@
 namespace gtk4 {
 
 class LoginView;
+class SettingsWidget;
 
 // ---------------------------------------------------------------------------
 
@@ -144,6 +145,9 @@ private:
                                        GVariant* parameter, gpointer user_data);
     static void    on_add_account_activate_(GSimpleAction* action,
                                             GVariant* parameter, gpointer user_data);
+    static void    on_settings_activate_(GSimpleAction* action,
+                                         GVariant* parameter, gpointer user_data);
+    void           open_settings_();
     static gboolean on_window_key_pressed_(GtkEventControllerKey*,
                                             guint keyval, guint,
                                             GdkModifierType,
@@ -213,7 +217,8 @@ private:
     GtkApplication* app_              = nullptr;
     GtkWidget*      window_             = nullptr;
     GtkWidget*      content_stack_      = nullptr;
-    std::unique_ptr<LoginView> login_view_;
+    std::unique_ptr<LoginView>        login_view_;
+    std::unique_ptr<SettingsWidget>   settings_widget_;
 
     // Single surface hosting the full main-app widget tree.
     std::unique_ptr<tk::gtk4::Surface>            main_app_surface_;

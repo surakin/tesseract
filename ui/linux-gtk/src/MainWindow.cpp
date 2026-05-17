@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "SettingsWidget.h"
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
@@ -921,6 +922,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     // UserInfo::on_secondary.
     {
         GMenu* menu = g_menu_new();
+        g_menu_prepend(menu, _("Settings\xe2\x80\xa6"), "user.settings");
         g_menu_append(menu, _("Add Account\xe2\x80\xa6"), "user.add_account");
         g_menu_append(menu, _("Log Out"), "user.logout");
         user_popover_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
@@ -929,6 +931,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
         g_object_unref(menu);
 
         GSimpleActionGroup* group = g_simple_action_group_new();
+        {
+            GSimpleAction* act = g_simple_action_new("settings", nullptr);
+            g_signal_connect(act, "activate", G_CALLBACK(on_settings_activate_), this);
+            g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(act));
+            g_object_unref(act);
+        }
         {
             GSimpleAction* act = g_simple_action_new("add_account", nullptr);
             g_signal_connect(act, "activate", G_CALLBACK(on_add_account_activate_), this);
@@ -957,6 +965,29 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
     gtk_widget_set_hexpand(main_widget, TRUE);
     gtk_widget_set_vexpand(main_widget, TRUE);
     gtk_stack_add_named(GTK_STACK(content_stack_), main_widget, "main");
+
+    // Settings page — lazily populated on first open.
+    {
+        settings_widget_ = std::make_unique<gtk4::SettingsWidget>();
+        GtkWidget* w = settings_widget_->widget();
+        gtk_widget_set_hexpand(w, TRUE);
+        gtk_widget_set_vexpand(w, TRUE);
+        gtk_stack_add_named(GTK_STACK(content_stack_), w, "settings");
+
+        settings_widget_->on_close = [this]
+        {
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+        };
+        settings_widget_->on_theme_changed = [this](tesseract::Settings::ThemePreference pref)
+        {
+            set_theme_preference_(pref);
+        };
+        settings_widget_->on_notifications_changed = [this](bool enabled)
+        {
+            tesseract::Settings::instance().notifications_enabled = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        };
+    }
 
     // Escape key: close viewer overlays. Attached to the window so it fires
     // regardless of which widget holds focus.
@@ -1070,6 +1101,7 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t) {
     if (sticker_picker_surface_) sticker_picker_surface_->set_theme(t);
     if (join_room_surface_)      join_room_surface_->set_theme(t);
     if (account_picker_surface_) account_picker_surface_->set_theme(t);
+    if (settings_widget_)        settings_widget_->set_theme(t);
 
     // Tell GTK itself about the dark preference so native chrome follows.
     bool dark = (t.mode == tk::ThemeMode::Dark);
@@ -2545,6 +2577,29 @@ void MainWindow::on_logout_activate_(GSimpleAction* /*action*/,
     gtk_popover_popdown(GTK_POPOVER(
         static_cast<MainWindow*>(user_data)->user_popover_));
     static_cast<MainWindow*>(user_data)->logout_active_account();
+}
+
+void MainWindow::on_settings_activate_(GSimpleAction* /*action*/,
+                                       GVariant*      /*param*/,
+                                       gpointer        self)
+{
+    static_cast<MainWindow*>(self)->open_settings_();
+}
+
+void MainWindow::open_settings_()
+{
+    settings_widget_->populate(
+        accounts_.empty() ? std::string{} : accounts_.front().display_name,
+        accounts_.empty() ? std::string{} : accounts_.front().user_id,
+        accounts_.empty() ? std::string{} : accounts_.front().avatar_mxc,
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            auto it = tk_avatars_.find(mxc);
+            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
+        },
+        tesseract::Settings::instance().theme_pref,
+        tesseract::Settings::instance().notifications_enabled);
+    gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
 }
 
 void MainWindow::do_logout() {

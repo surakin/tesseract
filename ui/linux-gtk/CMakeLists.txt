@@ -29,6 +29,7 @@ add_executable(tesseract_gtk
     src/MainWindow.cpp
     src/RoomWindow.cpp
     src/LoginView.cpp
+    src/SettingsWidget.cpp
     src/LinuxNotifier.cpp
     src/LinuxUpConnectorGtk.cpp
 )
