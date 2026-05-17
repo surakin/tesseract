@@ -33,7 +33,9 @@ void RoomWindowBase::on_room_info_updated(const RoomInfo& r) {
 }
 
 void RoomWindowBase::on_timeline_reset(std::vector<views::MessageRowData> rows) {
-    if (room_view_) room_view_->set_messages(std::move(rows));
+    const bool room_switch = !displayed_once_;
+    displayed_once_ = true;
+    if (room_view_) room_view_->set_messages(std::move(rows), room_switch);
     request_relayout();
 }
 

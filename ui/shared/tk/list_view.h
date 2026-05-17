@@ -194,6 +194,12 @@ public:
     // inclusive. Returns {0, -1} when the list is empty or not yet laid out.
     std::pair<int, int> visible_range() const;
 
+    // Force a height rebuild if dirty (and re-snap to bottom when sticking)
+    // without painting any rows. Lets a subclass get a valid visible_range()
+    // before it decides whether to paint. Safe to call from paint(); the
+    // base paint() already calls this internally.
+    void ensure_measured(PaintCtx& ctx);
+
     // Widget overrides
     Size measure(LayoutCtx&, Size constraints) override;
     void arrange(LayoutCtx&, Rect bounds)      override;

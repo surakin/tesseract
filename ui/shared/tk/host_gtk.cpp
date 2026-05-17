@@ -454,6 +454,23 @@ public:
             bundle);
     }
 
+    void post_delayed(int ms, std::function<void()> fn) override {
+        // Same heap-bundle pattern as post_to_ui, but on a one-shot
+        // g_timeout source so the callback fires after `ms` on the GTK
+        // main loop. g_timeout_add predates GTK4 — safe baseline.
+        struct Bundle { std::function<void()> fn; };
+        auto* bundle = new Bundle{ std::move(fn) };
+        g_timeout_add(
+            ms < 0 ? 0 : static_cast<guint>(ms),
+            [](gpointer p) -> gboolean {
+                auto* b = static_cast<Bundle*>(p);
+                if (b->fn) b->fn();
+                delete b;
+                return G_SOURCE_REMOVE;
+            },
+            bundle);
+    }
+
     std::unique_ptr<NativeTextField> make_text_field() override {
         return std::make_unique<GtkNativeTextField>(overlay_);
     }

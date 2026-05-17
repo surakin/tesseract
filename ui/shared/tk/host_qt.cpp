@@ -392,6 +392,13 @@ public:
                                    Qt::QueuedConnection);
     }
 
+    void post_delayed(int ms, std::function<void()> fn) override {
+        // surface_ is the context object: if it's destroyed before the
+        // timer fires, Qt cancels the callback automatically.
+        if (!surface_) return;
+        QTimer::singleShot(ms, surface_, std::move(fn));
+    }
+
     std::unique_ptr<NativeTextField> make_text_field() override {
         if (!surface_) return nullptr;
         return std::make_unique<QtNativeTextField>(surface_);

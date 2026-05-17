@@ -169,6 +169,12 @@ public:
     // need to mutate widgets. Safe to call from any thread.
     virtual void post_to_ui(std::function<void()> task) = 0;
 
+    // Run `fn` on the UI thread after at least `ms` milliseconds. One-shot;
+    // coalescing not required. Used by the message-list room-switch gate to
+    // bound how long the list is held invisible waiting for media to load.
+    // Must be called on the UI thread.
+    virtual void post_delayed(int ms, std::function<void()> fn) = 0;
+
     // Allocate a native text input control parented to the host's
     // surface. The returned NativeTextField is owned by the caller; let
     // the unique_ptr destruct to remove the overlay.

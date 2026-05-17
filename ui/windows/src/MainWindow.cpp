@@ -420,6 +420,14 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     }
 }
 
+void MainWindow::on_url_preview_failed_(const std::string& url) {
+    // No card to show (height unchanged) — just release the room-switch
+    // gate so it doesn't wait the full timeout on a dead link.
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    for (const auto& [rid, w] : secondary_windows_)
+        if (w->room_view()) w->room_view()->notify_url_preview_ready(url);
+}
+
 // ---------------------------------------------------------------------------
 // wnd_proc
 // ---------------------------------------------------------------------------
@@ -1080,6 +1088,11 @@ void MainWindow::on_create(HWND hwnd) {
             if (main_app_surface_)
                 InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
         });
+        room_view_->set_post_delayed(
+            [this](int ms, std::function<void()> fn) {
+                if (main_app_surface_)
+                    main_app_surface_->host().post_delayed(ms, std::move(fn));
+            });
         room_view_->on_layout_changed = [this] {
             if (main_app_surface_) main_app_surface_->relayout();
         };
@@ -1949,9 +1962,19 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload) {
             if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
-        room_view_->set_messages(std::move(rows));
+        // A genuine switch, OR a re-population of an emptied view (e.g.
+        // logout → login → same room): both warrant the display gate.
+        const auto* ml = room_view_->message_list();
+        const bool room_switch =
+            view_displayed_room_id_ != payload->room_id ||
+            (ml && ml->messages().empty());
+        view_displayed_room_id_ = payload->room_id;
+        room_view_->set_messages(std::move(rows), room_switch);
         if (main_app_surface_) main_app_surface_->relayout();
         const auto& pstate = pagination_[payload->room_id];
+        if (room_switch && pstate.is_focused && room_view_->message_list())
+            room_view_->message_list()->begin_focused_gate(
+                pstate.focus_event_id);
         room_view_->set_historical_mode(pstate.is_focused);
         if (pstate.is_focused)
             room_view_->scroll_to_event_id(pstate.focus_event_id);

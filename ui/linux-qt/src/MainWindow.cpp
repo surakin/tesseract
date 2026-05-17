@@ -298,6 +298,13 @@ MainWindow::MainWindow(QWidget* parent)
                     sfp->update();
                 }
             });
+            mainApp_->room_view()->set_post_delayed(
+                [sfp](int ms, std::function<void()> fn) {
+                    if (sfp)
+                    {
+                        sfp->host().post_delayed(ms, std::move(fn));
+                    }
+                });
         }
         mainApp_->room_view()->set_video_player_factory(
             [this]() { return mainAppSurface_->host().make_video_player(); });
@@ -2019,6 +2026,17 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
     }
 }
 
+void MainWindow::on_url_preview_failed_(const std::string& url)
+{
+    // No card to show (height unchanged) — just release the room-switch
+    // gate so it doesn't wait the full timeout on a dead link.
+    if (mainApp_)
+        mainApp_->room_view()->notify_url_preview_ready(url);
+    for (const auto& [rid, w] : secondary_windows_)
+        if (w->room_view())
+            w->room_view()->notify_url_preview_ready(url);
+}
+
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,
                                     std::vector<uint8_t> rgba)
 {
@@ -2525,9 +2543,17 @@ void MainWindow::handle_timeline_reset_ui_(
             }
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
+        // A genuine switch, OR a re-population of an emptied view (e.g.
+        // logout → login → same room): both warrant the display gate.
+        const auto* ml =
+            mainApp_ ? mainApp_->room_view()->message_list() : nullptr;
+        const bool room_switch =
+            view_displayed_room_id_ != room_id ||
+            (ml && ml->messages().empty());
+        view_displayed_room_id_ = room_id;
         if (mainApp_)
         {
-            mainApp_->room_view()->set_messages(std::move(rows));
+            mainApp_->room_view()->set_messages(std::move(rows), room_switch);
         }
         if (mainAppSurface_)
         {
@@ -2535,10 +2561,16 @@ void MainWindow::handle_timeline_reset_ui_(
         }
         if (mainApp_ && mainApp_->room_view()->message_list())
         {
-            mainApp_->room_view()->message_list()->set_historical_mode(pagination_[room_id].is_focused);
-            if (pagination_[room_id].is_focused)
+            const auto& pstate = pagination_[room_id];
+            if (room_switch && pstate.is_focused)
             {
-                mainApp_->room_view()->message_list()->scroll_to_event_id(pagination_[room_id].focus_event_id);
+                mainApp_->room_view()->message_list()->begin_focused_gate(
+                    pstate.focus_event_id);
+            }
+            mainApp_->room_view()->message_list()->set_historical_mode(pstate.is_focused);
+            if (pstate.is_focused)
+            {
+                mainApp_->room_view()->message_list()->scroll_to_event_id(pstate.focus_event_id);
             }
         }
     }

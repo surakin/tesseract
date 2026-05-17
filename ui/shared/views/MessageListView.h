@@ -131,8 +131,22 @@ public:
     MessageListView();
     ~MessageListView() override;   // out-of-line — Adapter is opaque here
 
-    // Bulk-replace the messages. Re-measures + repaints.
-    void set_messages(std::vector<MessageRowData> msgs);
+    // Bulk-replace the messages. Re-measures + repaints. When
+    // `room_switch` is true the list is held invisible (background only)
+    // until the rows that will be visible have their height-affecting
+    // content (images / stickers / video thumbnails / URL-preview cards)
+    // loaded and final heights measured, or a short timeout elapses — so
+    // a freshly-entered room appears once, already correct, instead of
+    // flashing and reflowing as async media arrives.
+    void set_messages(std::vector<MessageRowData> msgs,
+                      bool room_switch = false);
+
+    // Tell a live room-switch gate that the timeline opened in
+    // jump-to-event (focused) mode so the gate evaluates around the
+    // focused row and the post-gate reveal re-pins to it instead of the
+    // bottom. No-op when no gate is active. Call right after
+    // set_messages(.., true) + relayout, before set_historical_mode.
+    void begin_focused_gate(const std::string& focus_event_id);
     const std::vector<MessageRowData>& messages() const { return messages_; }
 
     // Insert `msg` at visible index `index` (0 = front, == size() = append).
@@ -197,6 +211,13 @@ public:
     void set_audio_player        (std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(VoiceBytesProvider provider);
     void set_repaint_requester   (std::function<void()> request_repaint);
+
+    // Host-backed delayed-callback hook. Wired by every shell (and
+    // RoomWindow) to Host::post_delayed. Drives the room-switch gate's
+    // timeout fallback so the list never stays invisible forever on a
+    // slow / offline network. May be left unset (tests / shells without
+    // a timer) — the gate then relies solely on the notify_* re-eval.
+    void set_post_delayed(std::function<void(int, std::function<void()>)> f);
 
     // Inline video playback for fi.mau.autoplay / fi.mau.gif rows.
     // Both must be set for inline playback to activate; if either is missing
@@ -320,6 +341,7 @@ public:
     void on_pointer_move(tk::Point local) override;
     void on_pointer_drag(tk::Point local) override;
     void on_pointer_leave()                override;
+    bool on_wheel       (tk::Point local, float dx, float dy) override;
     void paint          (tk::PaintCtx&)    override;
 
     // Per-chip geometry for the currently hovered row. Populated by
@@ -376,6 +398,38 @@ private:
     // painting the ReadMarker row; cleared when update_message receives a
     // ReadMarker row (SDK confirmed the new position).
     bool                           suppress_read_marker_ = false;
+
+    // Room-switch display gate. Armed by set_messages(.., room_switch=true);
+    // evaluated on the first paint (heights are guaranteed measured there);
+    // while `pending` is non-empty the message rows are not painted (only
+    // the list background) so the room appears once, already correct.
+    // `epoch` supersedes a stale gate on a rapid A→B→C re-switch.
+    struct RoomSwitchGate {
+        std::uint64_t                   epoch     = 0;
+        bool                            evaluated = false;  // visible band scanned
+        std::unordered_set<std::string> pending;            // unmet media/url keys
+        bool                            focused   = false;  // jump-to-event mode
+        std::string                     focus_event_id;
+    };
+    std::optional<RoomSwitchGate>  room_switch_gate_;
+    std::uint64_t                  room_switch_epoch_ = 0;
+    std::function<void(int, std::function<void()>)> post_delayed_;
+
+    // Has every height-affecting dependency of row `m` already resolved?
+    bool gate_dep_satisfied_(const MessageRowData& m) const;
+    // First-paint scan: fill the gate's `pending` set from the visible band.
+    void collect_gate_deps_();
+    // Clear the gate + re-pin scroll (bottom, or focus row) so the first
+    // visible frame is already correct.
+    void reveal_room_switch_gate_();
+    // Hook called from notify_image_ready / notify_url_preview_ready: drop
+    // a resolved key and repaint to reveal once the pending set empties.
+    void on_gate_notify_(const std::string& key);
+    // True while a room-switch gate still holds the list invisible. Pointer
+    // and wheel input is swallowed in that window so the user can't click /
+    // scroll rows that aren't painted yet.
+    bool gate_blocks_input_() const { return room_switch_gate_.has_value(); }
+
     // Non-empty → render a synthetic trailing typing row (see Adapter).
     std::string                    typing_text_;
     ImageProvider                  avatar_provider_;

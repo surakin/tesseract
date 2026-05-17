@@ -106,6 +106,9 @@ MacRoomWindow::MacRoomWindow(
     room_view_->set_repaint_requester([this] {
         if (surface_) surface_->relayout();
     });
+    room_view_->set_post_delayed([this](int ms, std::function<void()> fn) {
+        if (surface_) surface_->host().post_delayed(ms, std::move(fn));
+    });
     room_view_->on_layout_changed = [this] {
         if (surface_) surface_->relayout();
     };

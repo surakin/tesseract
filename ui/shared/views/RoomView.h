@@ -50,6 +50,8 @@ public:
     void set_audio_player   (std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(MessageListView::VoiceBytesProvider p);
     void set_repaint_requester   (std::function<void()> f);
+    void set_post_delayed        (std::function<void(int,
+                                                     std::function<void()>)> f);
     void set_video_player_factory(MessageListView::VideoPlayerFactory f);
     void set_video_fetch_provider(MessageListView::VideoFetchProvider f);
 
@@ -63,7 +65,8 @@ public:
     // accounts or logging out so the splash reappears.
     void clear_room();
 
-    void set_messages  (std::vector<MessageRowData> msgs);
+    void set_messages  (std::vector<MessageRowData> msgs,
+                        bool room_switch = false);
     void insert_message(std::size_t index, MessageRowData msg);
     void update_message(std::size_t index, MessageRowData msg);
     void remove_message(std::size_t index);

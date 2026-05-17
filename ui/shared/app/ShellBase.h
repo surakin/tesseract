@@ -76,6 +76,13 @@ protected:
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
     std::string           current_room_id_;
+    // The room whose timeline the message view currently displays. Differs
+    // from current_room_id_ between a room switch and the timeline-reset
+    // that fills it. Used to tell a genuine switch (gate the display) from
+    // an in-place reconnect / gappy-sync reset of the room already shown
+    // (refresh in place, no blank). Updated by each shell's
+    // handle_timeline_reset_ui_.
+    std::string           view_displayed_room_id_;
     std::string           pending_restore_room_;
     std::vector<std::string> space_stack_;
     bool                  compose_typing_active_   = false;
@@ -197,6 +204,12 @@ protected:
     // request a repaint.
     virtual void on_url_preview_ready_(const std::string& /*url*/,
                                         const Client::UrlPreview& /*preview*/) {}
+
+    // Called on the UI thread when a URL preview fetch finished but produced
+    // no usable card (failed / no metadata). Default no-op; shells override
+    // to ping the message list so its room-switch gate stops waiting on this
+    // URL (the row's height is unaffected — it never gained a preview card).
+    virtual void on_url_preview_failed_(const std::string& /*url*/) {}
 
     // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.

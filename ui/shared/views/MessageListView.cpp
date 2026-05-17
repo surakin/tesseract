@@ -193,6 +193,11 @@ constexpr float kReadMarkerH    = 20.0f;
 constexpr float kTimelineStartH = 20.0f;
 constexpr float kTypingRowH     = 20.0f;
 
+// Max time the message list is held invisible after a room switch while
+// the visible rows' height-affecting media / preview cards resolve, before
+// revealing anyway. Bounds the worst case on a slow / offline network.
+constexpr int   kRoomSwitchGateTimeoutMs = 400;
+
 std::string format_mmss(std::uint64_t ms) {
     if (ms == 0) return "0:00";
     std::uint64_t total_s = ms / 1000;
@@ -2075,7 +2080,8 @@ MessageListView::video_hit_at(tk::Point world) const {
     return std::nullopt;
 }
 
-void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
+void MessageListView::set_messages(std::vector<MessageRowData> msgs,
+                                   bool room_switch) {
     inline_players_.clear();
     revealed_spoilers_.clear();
     link_layout_cache_.clear();
@@ -2092,6 +2098,121 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs) {
             (it->video_autoplay || it->video_gif))
             start_inline_video(*it);
     }
+
+    // Supersede any prior gate (rapid re-switch / same-room reset). The
+    // bumped epoch also neutralises an outstanding timeout closure.
+    ++room_switch_epoch_;
+    room_switch_gate_.reset();
+    if (!room_switch || messages_.empty()) return;  // nothing to gate
+
+    RoomSwitchGate g;
+    g.epoch = room_switch_epoch_;
+    room_switch_gate_ = std::move(g);
+    // Dependencies are collected on the first paint (the visible band
+    // needs a measure pass). Arm the timeout fallback now so a slow /
+    // offline network can never hold the list invisible forever.
+    if (post_delayed_) {
+        std::weak_ptr<bool> walive = alive_;
+        std::uint64_t       ep     = room_switch_epoch_;
+        post_delayed_(kRoomSwitchGateTimeoutMs, [this, walive, ep]() {
+            if (walive.expired()) return;
+            if (!room_switch_gate_ || room_switch_gate_->epoch != ep) return;
+            // Mark evaluated so a first paint that hasn't run yet (window
+            // occluded / paint delayed past the deadline) won't re-derive
+            // and re-arm `pending` in collect_gate_deps_ — the one-shot
+            // timeout would otherwise be lost and the list stay hidden.
+            room_switch_gate_->evaluated = true;
+            room_switch_gate_->pending.clear();   // force reveal next paint
+            if (request_repaint_) request_repaint_();
+        });
+    }
+}
+
+void MessageListView::begin_focused_gate(const std::string& focus_event_id) {
+    if (!room_switch_gate_ || room_switch_gate_->evaluated) return;
+    room_switch_gate_->focused        = true;
+    room_switch_gate_->focus_event_id = focus_event_id;
+}
+
+bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const {
+    using K = MessageRowData::Kind;
+    switch (m.kind) {
+    case K::Image:
+    case K::Sticker:
+        if (m.media_url.empty() || !image_provider_) return true;
+        if (const tk::Image* im = image_provider_(m.media_url))
+            return im->width() > 0 && im->height() > 0;
+        return false;
+    case K::Video:
+        // Only a server-provided thumbnail is worth waiting for. When the
+        // server omits one the row falls back to a client-generated frame
+        // (no generator on every platform) — don't stall the whole list
+        // on it; the metadata/placeholder height is already stable.
+        if (m.video_thumb_url.empty() || !image_provider_) return true;
+        if (const tk::Image* im = image_provider_(m.video_thumb_url))
+            return im->width() > 0 && im->height() > 0;
+        return false;
+    case K::Text:
+    case K::Notice:
+    case K::Unhandled:
+    case K::Emote:
+        // A pending preview returns nullptr; a failed one is released via
+        // on_url_preview_failed_ → notify_url_preview_ready (height stays
+        // 0, so no jump) so we don't wait the full timeout on dead links.
+        if (m.first_url.empty() || !preview_provider_) return true;
+        return preview_provider_(m.first_url) != nullptr;
+    default:
+        return true;  // file / voice / redacted / separators: height final
+    }
+}
+
+void MessageListView::collect_gate_deps_() {
+    if (!room_switch_gate_) return;
+    auto& g = *room_switch_gate_;
+    g.pending.clear();
+
+    auto [first, last] = visible_range();
+    if (first < 0 || last < first) return;  // nothing visible → reveal
+
+    for (int i = first; i <= last && i < static_cast<int>(messages_.size());
+         ++i) {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        if (gate_dep_satisfied_(m)) continue;
+        using K = MessageRowData::Kind;
+        if (m.kind == K::Image || m.kind == K::Sticker)
+            g.pending.insert(m.media_url);
+        else if (m.kind == K::Video)
+            g.pending.insert(m.video_thumb_url);
+        else if (!m.first_url.empty())
+            g.pending.insert(m.first_url);
+    }
+}
+
+void MessageListView::reveal_room_switch_gate_() {
+    if (!room_switch_gate_) return;
+    const bool        focused = room_switch_gate_->focused;
+    const std::string fid     = room_switch_gate_->focus_event_id;
+    room_switch_gate_.reset();
+    // Heights are already final for this frame (ensure_measured ran before
+    // we got here and every gated dependency is resolved). Just re-pin the
+    // scroll so the very first visible frame is correct: the bottom case is
+    // already handled by stick_to_bottom_ inside ensure_measured; focused
+    // mode must recompute against the now-final offsets.
+    if (focused && !fid.empty()) scroll_to_event_id(fid);
+    else                          scroll_to_bottom();
+}
+
+void MessageListView::on_gate_notify_(const std::string& key) {
+    if (!room_switch_gate_) return;
+    auto& g = *room_switch_gate_;
+    g.pending.erase(key);
+    if (g.evaluated && g.pending.empty() && request_repaint_)
+        request_repaint_();  // next paint reveals via reveal_room_switch_gate_
+}
+
+void MessageListView::set_post_delayed(
+    std::function<void(int, std::function<void()>)> f) {
+    post_delayed_ = std::move(f);
 }
 
 void MessageListView::insert_message(std::size_t index, MessageRowData msg) {
@@ -2197,6 +2318,7 @@ void MessageListView::set_preview_provider(PreviewProvider p) {
 }
 
 void MessageListView::notify_url_preview_ready(const std::string& url) {
+    on_gate_notify_(url);
     auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i) {
         if (messages_[i].first_url == url) {
@@ -2212,6 +2334,7 @@ void MessageListView::notify_url_preview_ready(const std::string& url) {
 }
 
 void MessageListView::notify_image_ready(const std::string& url) {
+    on_gate_notify_(url);
     auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i) {
         if (messages_[i].media_url == url) {
@@ -2283,7 +2406,13 @@ void MessageListView::start_inline_video(const MessageRowData& m) {
         });
 }
 
+bool MessageListView::on_wheel(tk::Point local, float dx, float dy) {
+    if (gate_blocks_input_()) return false;  // list not painted yet
+    return tk::ListView::on_wheel(local, dx, dy);
+}
+
 void MessageListView::on_pointer_drag(tk::Point local) {
+    if (gate_blocks_input_()) return;
     if (press_voice_kind_ != VoicePressKind::Waveform) {
         tk::ListView::on_pointer_drag(local);
         return;
@@ -2444,6 +2573,7 @@ static MessageListView::HoverTarget chip_hit_at(
 }
 
 void MessageListView::on_pointer_move(tk::Point local) {
+    if (gate_blocks_input_()) return;
     tk::ListView::on_pointer_move(local);
     // Row hover may have changed; if the new hovered row is different
     // from the one we have geometry for, invalidate so paint_row will
@@ -2488,6 +2618,7 @@ void MessageListView::on_pointer_move(tk::Point local) {
 }
 
 void MessageListView::on_pointer_leave() {
+    if (gate_blocks_input_()) return;
     tk::ListView::on_pointer_leave();
     hovered_row_geom_.row_index   = static_cast<std::size_t>(-1);
     hovered_row_geom_.chips.clear();
@@ -2521,6 +2652,7 @@ void MessageListView::set_historical_mode(bool historical) {
 }
 
 bool MessageListView::on_pointer_down(tk::Point local) {
+    if (gate_blocks_input_()) return false;  // list not painted yet
     if (pill_visible_) {
         tk::Point world{ local.x + bounds().x, local.y + bounds().y };
         if (rect_contains(pill_rect_, world)) {
@@ -2700,6 +2832,7 @@ bool MessageListView::on_pointer_down(tk::Point local) {
 }
 
 void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
+    if (gate_blocks_input_()) return;
     if (press_spoiler_) {
         bool fire = inside_self && !press_spoiler_eid_.empty();
         std::string eid = std::move(press_spoiler_eid_);
@@ -2975,6 +3108,28 @@ void MessageListView::paint(tk::PaintCtx& ctx) {
     voice_card_geom_.clear();
     quote_block_geom_.clear();
     preview_card_geom_.clear();
+
+    // Room-switch gate: hold the list invisible until the rows that will
+    // be visible have their height-affecting content loaded + measured, so
+    // the room appears once, already correct, instead of reflowing as
+    // async media / preview cards arrive.
+    if (room_switch_gate_) {
+        // Heights must be measured to know the visible band; this also
+        // re-snaps to the bottom as async content grows it.
+        tk::ListView::ensure_measured(ctx);
+        if (!room_switch_gate_->evaluated) {
+            collect_gate_deps_();
+            room_switch_gate_->evaluated = true;
+        }
+        if (!room_switch_gate_->pending.empty()) {
+            // Paint only the background tk::ListView::paint would draw,
+            // then skip the rows + every overlay below.
+            ctx.canvas.fill_rect(bounds(), ctx.theme.palette.sidebar_bg);
+            return;
+        }
+        reveal_room_switch_gate_();  // deps resolved (or timed out)
+    }
+
     tk::ListView::paint(ctx);
     maybe_notify_receipt_();
 

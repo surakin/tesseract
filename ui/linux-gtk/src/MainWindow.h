@@ -200,6 +200,7 @@ private:
                                     const std::string& video_url) override;
     void on_url_preview_ready_(const std::string& url,
                                 const tesseract::Client::UrlPreview& preview) override;
+    void on_url_preview_failed_(const std::string& url) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase* create_secondary_room_window_(

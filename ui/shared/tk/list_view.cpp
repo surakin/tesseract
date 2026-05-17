@@ -251,12 +251,8 @@ bool ListView::thumb_hit(Point local) const {
     return world_y >= g.thumb_top && world_y < g.thumb_top + g.thumb_h;
 }
 
-void ListView::paint(PaintCtx& ctx) {
-    // Background.
-    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
-
-    if (!adapter_ || adapter_->count() == 0) return;
-
+void ListView::ensure_measured(PaintCtx& ctx) {
+    if (!adapter_) return;
     // Heights may be dirty when data changed since the last arrange — e.g. a
     // collapse toggle calls invalidate_data() then triggers a repaint without
     // an intervening layout pass. Rebuild now so paint_row receives correct
@@ -269,6 +265,15 @@ void ListView::paint(PaintCtx& ctx) {
             clamp_scroll();
         }
     }
+}
+
+void ListView::paint(PaintCtx& ctx) {
+    // Background.
+    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
+
+    if (!adapter_ || adapter_->count() == 0) return;
+
+    ensure_measured(ctx);
 
     ctx.canvas.push_clip_rect(bounds_);
 

@@ -174,6 +174,11 @@ void RoomView::set_repaint_requester(std::function<void()> f) {
     if (message_list_) message_list_->set_repaint_requester(std::move(f));
 }
 
+void RoomView::set_post_delayed(
+    std::function<void(int, std::function<void()>)> f) {
+    if (message_list_) message_list_->set_post_delayed(std::move(f));
+}
+
 void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f) {
     if (message_list_) message_list_->set_video_player_factory(std::move(f));
 }
@@ -205,8 +210,10 @@ void RoomView::clear_room() {
     if (compose_bar_) compose_bar_->set_enabled(false);
 }
 
-void RoomView::set_messages(std::vector<MessageRowData> msgs) {
-    if (message_list_) message_list_->set_messages(std::move(msgs));
+void RoomView::set_messages(std::vector<MessageRowData> msgs,
+                            bool room_switch) {
+    if (message_list_)
+        message_list_->set_messages(std::move(msgs), room_switch);
 }
 
 void RoomView::insert_message(std::size_t index, MessageRowData msg) {

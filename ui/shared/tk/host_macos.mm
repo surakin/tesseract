@@ -38,6 +38,7 @@ public:
 
     void request_repaint() override;
     void post_to_ui(std::function<void()> task) override;
+    void post_delayed(int ms, std::function<void()> fn) override;
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea>  make_text_area () override;
     std::unique_ptr<AudioPlayer>     make_audio_player() override;
@@ -792,6 +793,16 @@ void Host::post_to_ui(std::function<void()> task) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (captured) captured();
     });
+}
+
+void Host::post_delayed(int ms, std::function<void()> fn) {
+    __block std::function<void()> captured = std::move(fn);
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW,
+                      static_cast<int64_t>(ms < 0 ? 0 : ms) * NSEC_PER_MSEC),
+        dispatch_get_main_queue(), ^{
+            if (captured) captured();
+        });
 }
 
 std::unique_ptr<NativeTextField> Host::make_text_field() {

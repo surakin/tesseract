@@ -439,6 +439,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             room_view_->set_repaint_requester([sfp]() {
                 if (sfp) gtk_widget_queue_draw(sfp->widget());
             });
+            room_view_->set_post_delayed(
+                [sfp](int ms, std::function<void()> fn) {
+                    if (sfp) sfp->host().post_delayed(ms, std::move(fn));
+                });
         }
 
         // Compose text area overlay.
@@ -1728,12 +1732,24 @@ void MainWindow::push_timeline_reset(
             if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
         }
-        if (room_view_) room_view_->set_messages(std::move(rows));
+        // A genuine switch, OR a re-population of an emptied view (e.g.
+        // logout → login → same room): both warrant the display gate.
+        const auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+        const bool room_switch =
+            view_displayed_room_id_ != room_id ||
+            (ml && ml->messages().empty());
+        view_displayed_room_id_ = room_id;
+        if (room_view_) room_view_->set_messages(std::move(rows), room_switch);
         main_app_surface_->relayout();
         if (room_view_ && room_view_->message_list()) {
-            room_view_->message_list()->set_historical_mode(pagination_[room_id].is_focused);
-            if (pagination_[room_id].is_focused)
-                room_view_->message_list()->scroll_to_event_id(pagination_[room_id].focus_event_id);
+            const auto& pstate = pagination_[room_id];
+            if (room_switch && pstate.is_focused)
+                room_view_->message_list()->begin_focused_gate(
+                    pstate.focus_event_id);
+            room_view_->message_list()->set_historical_mode(pstate.is_focused);
+            if (pstate.is_focused)
+                room_view_->message_list()->scroll_to_event_id(
+                    pstate.focus_event_id);
         }
     }
 
@@ -2246,6 +2262,14 @@ void MainWindow::on_url_preview_ready_(const std::string& url,
             w->request_relayout();
         }
     }
+}
+
+void MainWindow::on_url_preview_failed_(const std::string& url) {
+    // No card to show (height unchanged) — just release the room-switch
+    // gate so it doesn't wait the full timeout on a dead link.
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    for (const auto& [rid, w] : secondary_windows_)
+        if (w->room_view()) w->room_view()->notify_url_preview_ready(url);
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,

@@ -9,6 +9,7 @@
 
 #include <tesseract/types.h>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -1309,4 +1310,158 @@ TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
     view.on_pointer_up(local, /*inside_self=*/true);
     st.run(view, { 0, 0, 320, 200 });
     CHECK_FALSE(view.pill_visible());
+}
+
+// ── Room-switch display gate ───────────────────────────────────────────────
+//
+// On a room switch the message list is held invisible (background only)
+// until the rows that will be visible have their height-affecting content
+// loaded + measured. `image_hit_at` only returns a value once the row was
+// actually painted (paint_row records its geometry), so it doubles as a
+// "rows are visible yet?" probe here.
+
+namespace {
+
+MessageRowData gate_image_row() {
+    MessageRowData img{};
+    img.kind        = MessageRowData::Kind::Image;
+    img.event_id    = "$img";
+    img.sender_name = "A";
+    img.media_url   = "mxc://example.org/pic";
+    img.media_w     = 800;
+    img.media_h     = 500;
+    return img;
+}
+
+bool any_image_painted(MessageListView& view) {
+    for (float x = 40; x < 400; x += 40)
+        for (float y = 30; y < 300; y += 30)
+            if (view.image_hit_at({ x, y })) return true;
+    return false;
+}
+
+} // namespace
+
+TEST_CASE("MessageListView room-switch gate holds rows until media resolves",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    // Image never decodes in this test — only the explicit notify releases.
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    view.set_messages({ gate_image_row() }, /*room_switch=*/true);
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK_FALSE(any_image_painted(view));     // gated: row not painted yet
+
+    // The shell signals the media arrived → gate releases on next paint.
+    view.notify_image_ready("mxc://example.org/pic");
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK(any_image_painted(view));           // revealed
+}
+
+TEST_CASE("MessageListView non-switch set_messages is never gated",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    view.set_messages({ gate_image_row() });  // default room_switch=false
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK(any_image_painted(view));           // painted immediately
+}
+
+TEST_CASE("MessageListView room-switch gate reveals on timeout",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    std::function<void()> timeout_fn;
+    view.set_post_delayed(
+        [&](int, std::function<void()> fn) { timeout_fn = std::move(fn); });
+
+    view.set_messages({ gate_image_row() }, /*room_switch=*/true);
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK_FALSE(any_image_painted(view));     // still gated
+    REQUIRE(timeout_fn);                      // gate armed the timeout
+
+    timeout_fn();                             // fire the deadline
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK(any_image_painted(view));           // revealed despite null provider
+}
+
+TEST_CASE("MessageListView room-switch gate timeout wins even before first paint",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    std::function<void()> timeout_fn;
+    view.set_post_delayed(
+        [&](int, std::function<void()> fn) { timeout_fn = std::move(fn); });
+
+    view.set_messages({ gate_image_row() }, /*room_switch=*/true);
+    REQUIRE(timeout_fn);
+    // Deadline fires while the window was occluded — BEFORE the gate has
+    // ever been evaluated by a paint. The first paint must still reveal
+    // (not re-derive `pending` in collect_gate_deps_ and re-arm the now
+    // spent one-shot timeout).
+    timeout_fn();
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK(any_image_painted(view));
+}
+
+TEST_CASE("MessageListView room-switch gate supersedes on rapid re-switch",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    // Switch A (image, would gate) immediately superseded by switch B (a
+    // plain text row — no height-affecting deps, so nothing to wait for).
+    view.set_messages({ gate_image_row() }, /*room_switch=*/true);
+    MessageRowData txt{};
+    txt.kind = MessageRowData::Kind::Text;
+    txt.event_id = "$t"; txt.sender_name = "A"; txt.body = "hello";
+    view.set_messages({ txt }, /*room_switch=*/true);
+
+    st.run(view, { 0, 0, 400, 600 });
+    // B's gate finds no unmet deps → reveals on the first paint; the stale
+    // A gate must not keep the list invisible.
+    REQUIRE(view.messages().size() == 1);
+    CHECK(view.messages()[0].event_id == "$t");
+    CHECK(view.content_height() > 0.0f);
+}
+
+TEST_CASE("MessageListView room-switch gate swallows pointer input",
+          "[tk][view][messagelist][gate]") {
+    Stage st;
+    MessageListView view;
+    view.set_image_provider(
+        [](const std::string&) -> const tk::Image* { return nullptr; });
+
+    bool clicked = false;
+    view.on_message_clicked = [&](const std::string&) { clicked = true; };
+
+    view.set_messages({ gate_image_row() }, /*room_switch=*/true);
+    st.run(view, { 0, 0, 400, 600 });
+    REQUIRE_FALSE(any_image_painted(view));   // gated: nothing painted
+
+    // Presses anywhere on the blank list are swallowed (no invisible rows
+    // can be hit) and no click fires.
+    for (float x = 40; x < 360; x += 60)
+        for (float y = 30; y < 270; y += 60)
+            CHECK_FALSE(view.on_pointer_down({ x, y }));
+    view.on_pointer_up({ 120, 90 }, /*inside_self=*/true);
+    CHECK_FALSE(clicked);
+
+    // Gate releases → the list paints and input is live again.
+    view.notify_image_ready("mxc://example.org/pic");
+    st.run(view, { 0, 0, 400, 600 });
+    CHECK(any_image_painted(view));
 }

@@ -72,6 +72,10 @@ protected:
     views::RoomView* room_view_             = nullptr; // borrowed; owned by surface widget tree
     bool             compose_typing_active_ = false;
     bool             typing_bar_visible_    = false;
+    // First timeline reset = initial fill of this pop-out (gate the display
+    // like a room switch); later resets are reconnect/gappy refreshes of the
+    // room already shown (refresh in place, no blank).
+    bool             displayed_once_        = false;
 };
 
 } // namespace tesseract

@@ -57,6 +57,12 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             surface_->update();
         }
     });
+    room_view_->set_post_delayed([this](int ms, std::function<void()> fn) {
+        if (surface_)
+        {
+            surface_->host().post_delayed(ms, std::move(fn));
+        }
+    });
     room_view_->on_layout_changed = [this] {
         if (surface_)
         {

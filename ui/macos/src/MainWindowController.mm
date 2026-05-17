@@ -119,6 +119,7 @@ protected:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
                                 const tesseract::Client::UrlPreview& preview) override;
+    void on_url_preview_failed_(const std::string& url) override;
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
@@ -134,6 +135,7 @@ public:
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::event_handler_;
     using ShellBase::current_room_id_;
+    using ShellBase::view_displayed_room_id_;
     using ShellBase::space_stack_;
     using ShellBase::tk_avatars_;
     using ShellBase::tk_images_;
@@ -608,6 +610,14 @@ void MacShell::on_url_preview_ready_(const std::string& url,
             w->request_relayout();
         }
     }
+}
+
+void MacShell::on_url_preview_failed_(const std::string& url) {
+    // No card to show (height unchanged) — just release the room-switch
+    // gate so it doesn't wait the full timeout on a dead link.
+    if (room_view_) room_view_->notify_url_preview_ready(url);
+    for (const auto& [rid, w] : secondary_windows_)
+        if (w->room_view()) w->room_view()->notify_url_preview_ready(url);
 }
 
 tesseract::RoomWindowBase* MacShell::create_secondary_room_window_(
@@ -1202,6 +1212,12 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             MainWindowController* s = weakSelf;
             if (s && s->_mainAppSurface) s->_mainAppSurface->relayout();
         });
+        _mainApp->room_view()->set_post_delayed(
+            [weakSelf](int ms, std::function<void()> fn) {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                    s->_mainAppSurface->host().post_delayed(ms, std::move(fn));
+            });
         _mainApp->room_view()->on_layout_changed = [weakSelf] {
             MainWindowController* s = weakSelf;
             if (s) [s _relayoutChatSurface];
@@ -2340,15 +2356,25 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
             if (!ev->in_reply_to_id.empty()) _shell->ensure_reply_details_(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, _shell->my_user_id_));
         }
-        if (_roomView) _roomView->set_messages(std::move(rows));
+        const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
+        // A genuine switch, OR a re-population of an emptied view (e.g.
+        // logout → login → same room): both warrant the display gate.
+        const auto* ml = _roomView ? _roomView->message_list() : nullptr;
+        const bool room_switch =
+            _shell->view_displayed_room_id_ != rid ||
+            (ml && ml->messages().empty());
+        _shell->view_displayed_room_id_ = rid;
+        if (_roomView) _roomView->set_messages(std::move(rows), room_switch);
         [self _relayoutChatSurface];
         if (_roomView && _roomView->message_list()) {
-            const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
-            _roomView->message_list()->set_historical_mode(
-                _shell->pagination_[rid].is_focused);
-            if (_shell->pagination_[rid].is_focused)
+            const auto& pstate = _shell->pagination_[rid];
+            if (room_switch && pstate.is_focused)
+                _roomView->message_list()->begin_focused_gate(
+                    pstate.focus_event_id);
+            _roomView->message_list()->set_historical_mode(pstate.is_focused);
+            if (pstate.is_focused)
                 _roomView->message_list()->scroll_to_event_id(
-                    _shell->pagination_[rid].focus_event_id);
+                    pstate.focus_event_id);
         }
     }
     for (auto* ev : snapshot) delete ev;

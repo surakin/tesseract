@@ -142,6 +142,7 @@ public:
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
                                const tesseract::Client::UrlPreview& preview) override;
+    void on_url_preview_failed_(const std::string& url) override;
 
 private:
     void on_create(HWND hwnd);

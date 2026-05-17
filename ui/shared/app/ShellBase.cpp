@@ -94,6 +94,8 @@ void ShellBase::ensure_url_preview_(const std::string& url) {
             url_previews_.emplace(url, std::move(preview));
             if (!url_previews_.at(url).failed)
                 on_url_preview_ready_(url, url_previews_.at(url));
+            else
+                on_url_preview_failed_(url);
         });
     });
 }

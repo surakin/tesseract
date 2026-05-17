@@ -15,6 +15,8 @@
 #include <wrl/client.h>
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 #include <algorithm>
 #include <cmath>
@@ -615,6 +617,24 @@ public:
             // PostMessage failed; reclaim the heap copy so we don't leak.
             delete heap;
         }
+    }
+
+    void post_delayed(int ms, std::function<void()> fn) override {
+        if (!hwnd_) return;
+        // Sleep on a detached one-shot thread, then marshal back through
+        // the existing post_to_ui channel. We capture hwnd_ + the message
+        // id by value (never `this`) so a Host destroyed within `ms` is
+        // safe: PostMessageW to a dead HWND just fails and we free the
+        // heap copy. Room switches are infrequent and superseded, so the
+        // per-call thread cost is negligible.
+        HWND hwnd = hwnd_;
+        UINT msg  = post_to_ui_message();
+        std::thread([ms, hwnd, msg, fn = std::move(fn)]() mutable {
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            auto* heap = new std::function<void()>(std::move(fn));
+            if (!PostMessageW(hwnd, msg, 0, reinterpret_cast<LPARAM>(heap)))
+                delete heap;
+        }).detach();
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override {
