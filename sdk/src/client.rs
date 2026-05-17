@@ -2948,6 +2948,9 @@ impl ClientFfi {
         // Decrypt and re-upload as unencrypted media so the saved pack entry
         // is viewable by any client without the original encryption key.
         let image_url_owned;
+        // First 8 chars of the original encrypted media ID, used as a
+        // collision-resistant shortcode base when body is empty.
+        let mut encrypted_media_id: Option<String> = None;
         let image_url = if image_url.starts_with('{') {
             use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
             use matrix_sdk::ruma::events::room::MediaSource;
@@ -2959,7 +2962,17 @@ impl ClientFfi {
                 MediaSource::Plain(uri) => {
                     image_url_owned = uri.to_string();
                 }
-                MediaSource::Encrypted(_) => {
+                MediaSource::Encrypted(file) => {
+                    encrypted_media_id = Some(
+                        file.url.as_str()
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or("")
+                            .chars()
+                            .take(8)
+                            .collect(),
+                    );
+
                     let mime: mime::Mime = serde_json::from_str::<serde_json::Value>(info_json)
                         .ok()
                         .and_then(|v| v.get("mimetype")?.as_str()?.parse().ok())
@@ -3031,12 +3044,39 @@ impl ClientFfi {
             .cloned()
             .unwrap_or_default();
 
-        if crate::image_packs::pack_contains_url(&current_content, image_url) {
+        // For encrypted stickers, derive a deterministic shortcode base from
+        // the network name (fi.mau.bridged_sticker.network in info_json) and
+        // the first 8 chars of the original encrypted media ID, e.g.
+        // "whatsapp_fa96dd5e".  The same sticker always produces the same
+        // base, so we can use it as a duplicate key alongside the mxc URL.
+        let derived_base: Option<String> = encrypted_media_id.as_deref().map(|media_id| {
+            let network = serde_json::from_str::<Value>(info_json)
+                .ok()
+                .and_then(|v| {
+                    v.get("fi.mau.bridged_sticker")?
+                        .get("network")?
+                        .as_str()
+                        .map(str::to_owned)
+                });
+            match network {
+                Some(n) => format!("{n}_{media_id}"),
+                None    => media_id.to_owned(),
+            }
+        });
+
+        // Already saved? Check by shortcode base (encrypted re-upload gives a
+        // new mxc URI each time) and by mxc URL as fallback.
+        let already_saved = derived_base.as_deref()
+            .map(|b| existing_images.contains_key(b))
+            .unwrap_or(false)
+            || crate::image_packs::pack_contains_url(&current_content, image_url);
+        if already_saved {
             self.update_user_pack_in_cache(&current_content);
             return ok("");
         }
 
-        let base = if shortcode.is_empty() { body } else { shortcode };
+        let base = derived_base.as_deref()
+            .unwrap_or(if shortcode.is_empty() { body } else { shortcode });
         let final_shortcode =
             crate::image_packs::suggest_shortcode(base, &existing_images);
 
