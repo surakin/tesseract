@@ -118,7 +118,7 @@ public:
         tk::Size sz = layout->measure();
         tk::Point origin{
             bounds.x + (bounds.w - sz.w) * 0.5f,
-            bounds.y + (bounds.h - sz.h) * 0.5f
+            bounds.y + (bounds.h - layout->ascent()) * 0.5f
         };
         ctx.canvas.draw_text(*layout, origin, ctx.theme.palette.text_primary);
     }
