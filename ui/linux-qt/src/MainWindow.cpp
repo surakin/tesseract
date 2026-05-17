@@ -639,8 +639,9 @@ MainWindow::MainWindow(QWidget* parent)
         const auto mxc_url   = hit->mxc_url;
         const auto body      = hit->body;
         const auto info_json = hit->info_json;
-        QMenu menu(this);
-        QAction* add = menu.addAction(already_saved
+        auto* menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        QAction* add = menu->addAction(already_saved
             ? tr("Already in Saved Stickers")
             : tr("Add to Saved Stickers"));
         add->setEnabled(!already_saved);
@@ -649,8 +650,7 @@ MainWindow::MainWindow(QWidget* parent)
                 client_->save_sticker_to_user_pack(body, body, mxc_url, info_json);
             });
         }
-        menu.setAttribute(Qt::WA_DeleteOnClose);
-        menu.popup(mainAppSurface_->mapToGlobal(pos));
+        menu->popup(mainAppSurface_->mapToGlobal(pos));
     });
 
     // Emoji picker: build the floating panel, wire selection → cursor
