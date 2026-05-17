@@ -76,9 +76,11 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
     void     paint  (tk::PaintCtx&)                        override;
-    bool     on_pointer_down(tk::Point local)                      override;
-    void     on_pointer_up  (tk::Point local, bool inside_self)    override;
-    bool     on_wheel       (tk::Point local, float dx, float dy)  override;
+    bool     on_pointer_down (tk::Point local)                      override;
+    void     on_pointer_up   (tk::Point local, bool inside_self)    override;
+    bool     on_wheel        (tk::Point local, float dx, float dy)  override;
+    void     on_pointer_move (tk::Point local)                      override;
+    void     on_pointer_leave()                                      override;
 
 private:
     class GridAdapter;
@@ -114,6 +116,8 @@ private:
     std::vector<std::string>             current_glyphs_;     // unicode page items
     std::vector<tesseract::ImagePack>    custom_packs_;       // emoticon-capable
     std::vector<tesseract::ImagePackImage> current_emoticons_; // image-cell items
+    std::vector<std::string>             current_shortcodes_; // parallel to current_glyphs_ / current_emoticons_
+    int                                  hovered_grid_cell_ = -1;
 
     tk::GridView*                        grid_         = nullptr;   // borrowed
     std::unique_ptr<GridAdapter>         grid_adapter_;
