@@ -278,7 +278,7 @@ void VerificationBanner::paint(tk::PaintCtx& ctx) {
     if (state_ == State::ShowEmojis) {
         // Paint 7 emoji tiles.
         tk::TextStyle glyph_style;
-        glyph_style.role   = tk::FontRole::Title;
+        glyph_style.role   = tk::FontRole::BigEmoji;
         glyph_style.halign = tk::TextHAlign::Center;
         glyph_style.valign = tk::TextVAlign::Center;
 
