@@ -2862,6 +2862,10 @@ void MessageListView::on_pointer_move(tk::Point local) {
         auto [lat, lon] = world_px_to_lat_lon(new_wp_x, new_wp_y, zoom);
         messages_[map_active_row_].map_viewport.lat = lat;
         messages_[map_active_row_].map_viewport.lon = lon;
+        if (!hover_link_url_.empty()) {
+            hover_link_url_.clear();
+            if (on_link_hovered) on_link_hovered("");
+        }
         invalidate_data();
         return;
     }
@@ -3189,6 +3193,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self) {
     // Map pan: end drag.
     if (map_active_row_ != kNoMapRow) {
         map_active_row_ = kNoMapRow;
+        tk::ListView::on_pointer_up(local, inside_self);
         return;
     }
 
