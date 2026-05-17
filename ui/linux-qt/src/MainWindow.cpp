@@ -2812,6 +2812,9 @@ void MainWindow::handle_notification_ui_(
     std::string body, bool is_mention,
     std::vector<uint8_t> avatar_bytes)
 {
+    if (!tesseract::Settings::instance().notifications_enabled)
+        return;
+
     bool win_visible = isVisible() && !isMinimized();
     bool win_focused = isActiveWindow();
 

@@ -371,6 +371,9 @@ void MainWindow::handle_notification_ui_(
     std::string body, bool is_mention,
     std::vector<uint8_t> /*avatar_bytes*/)
 {
+    if (!tesseract::Settings::instance().notifications_enabled)
+        return;
+
     NotificationPayload p{ std::move(room_id), std::move(room_name),
                            std::move(sender), std::move(body),
                            std::move(user_id), is_mention };

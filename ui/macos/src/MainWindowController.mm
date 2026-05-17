@@ -566,6 +566,8 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                                         std::string room_name, std::string sender,
                                         std::string body, bool is_mention,
                                         std::vector<uint8_t> /*avatar_bytes*/) {
+    if (!tesseract::Settings::instance().notifications_enabled)
+        return;
     MainWindowController* c = ctrl_;
     if (c) [c handleNotification:room_id roomName:room_name sender:sender
                             body:body userId:user_id isMention:is_mention];
