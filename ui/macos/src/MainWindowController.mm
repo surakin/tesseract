@@ -1290,21 +1290,24 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                                 if (!c2 || ![c2 shortcodePopupVisible]) return false;
                                 int cur = c2->_shortcodePopupWidget->selected_index();
                                 int n   = c2->_shortcodePopupWidget->visible_rows();
-                                if (nk == tk::NativeTextArea::NavKey::Up) {
-                                    c2->_shortcodePopupWidget->set_selected_index(
-                                        std::max(0, cur - 1));
-                                    return true;
+                                if (n <= 0) return true;
+                                int next = cur;
+                                switch (nk) {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1); break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1); break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        [c2 hideShortcodePopup];
+                                        return true;
                                 }
-                                if (nk == tk::NativeTextArea::NavKey::Down) {
-                                    c2->_shortcodePopupWidget->set_selected_index(
-                                        std::min(n - 1, cur + 1));
-                                    return true;
-                                }
-                                if (nk == tk::NativeTextArea::NavKey::Escape) {
-                                    [c2 hideShortcodePopup];
-                                    return true;
-                                }
-                                return false;
+                                c2->_shortcodePopupWidget->set_selected_index(next);
+                                c2->_shortcodePopupSurface->host().request_repaint();
+                                return true;
                             });
                     return;
                 }

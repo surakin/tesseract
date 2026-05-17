@@ -322,9 +322,11 @@ private:
         if (self->popup_nav_) {
             NativeTextArea::NavKey nk{};
             bool is_nav = true;
-            if      (keyval == GDK_KEY_Up)     nk = NativeTextArea::NavKey::Up;
-            else if (keyval == GDK_KEY_Down)   nk = NativeTextArea::NavKey::Down;
-            else if (keyval == GDK_KEY_Escape) nk = NativeTextArea::NavKey::Escape;
+            if      (keyval == GDK_KEY_Up)            nk = NativeTextArea::NavKey::Up;
+            else if (keyval == GDK_KEY_Down)          nk = NativeTextArea::NavKey::Down;
+            else if (keyval == GDK_KEY_Escape)        nk = NativeTextArea::NavKey::Escape;
+            else if (keyval == GDK_KEY_Tab)           nk = NativeTextArea::NavKey::Tab;
+            else if (keyval == GDK_KEY_ISO_Left_Tab)  nk = NativeTextArea::NavKey::ShiftTab;
             else is_nav = false;
             if (is_nav && self->popup_nav_(nk)) return TRUE;
         }

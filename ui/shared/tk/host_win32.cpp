@@ -474,14 +474,49 @@ public:
     tk::Rect cursor_rect() const override {
         if (!hwnd_) return {};
         DWORD sel_start = 0;
-        SendMessageW(hwnd_, EM_GETSEL, (WPARAM)&sel_start, 0);
-        LRESULT pos = SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start, 0);
-        int cx = LOWORD(pos), cy = HIWORD(pos);
-        TEXTMETRICW tm;
+        SendMessageW(hwnd_, EM_GETSEL,
+                     reinterpret_cast<WPARAM>(&sel_start), 0);
+
+        TEXTMETRICW tm{};
         HDC hdc = GetDC(hwnd_);
         GetTextMetricsW(hdc, &tm);
         ReleaseDC(hwnd_, hdc);
-        POINT pt{cx, cy};
+
+        // EM_POSFROMCHAR returns -1 when the index is one past the last
+        // character — exactly where the caret sits while typing ":gri".
+        // Untreated, LOWORD/HIWORD(-1) = 65535, which flings the popup to
+        // the screen corner instead of anchoring it to the compose bar.
+        // Coordinates may also be negative when the control is scrolled,
+        // so the words must be read as signed.
+        int cx = 0, cy = 0;
+        LRESULT pos = SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start, 0);
+        if (pos != -1) {
+            cx = static_cast<short>(LOWORD(pos));
+            cy = static_cast<short>(HIWORD(pos));
+        } else if (sel_start > 0) {
+            // Anchor to the previous glyph and step right by its advance.
+            LRESULT prev =
+                SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start - 1, 0);
+            if (prev != -1) {
+                cx = static_cast<short>(LOWORD(prev)) + tm.tmAveCharWidth;
+                cy = static_cast<short>(HIWORD(prev));
+            } else {
+                RECT fr{};
+                SendMessageW(hwnd_, EM_GETRECT, 0,
+                             reinterpret_cast<LPARAM>(&fr));
+                cx = fr.left;
+                cy = fr.top;
+            }
+        } else {
+            // Empty control, or caret at the very start.
+            RECT fr{};
+            SendMessageW(hwnd_, EM_GETRECT, 0,
+                         reinterpret_cast<LPARAM>(&fr));
+            cx = fr.left;
+            cy = fr.top;
+        }
+
+        POINT pt{ cx, cy };
         MapWindowPoints(hwnd_, GetParent(hwnd_), &pt, 1);
         return { float(pt.x), float(pt.y), 1.0f, float(tm.tmHeight) };
     }
@@ -532,9 +567,20 @@ private:
             if      (wParam == VK_UP)     nk = NativeTextArea::NavKey::Up;
             else if (wParam == VK_DOWN)   nk = NativeTextArea::NavKey::Down;
             else if (wParam == VK_ESCAPE) nk = NativeTextArea::NavKey::Escape;
+            else if (wParam == VK_TAB)
+                nk = (GetKeyState(VK_SHIFT) & 0x8000)
+                         ? NativeTextArea::NavKey::ShiftTab
+                         : NativeTextArea::NavKey::Tab;
             else is_nav = false;
             if (is_nav && self->popup_nav_(nk)) return 0;
         }
+        // TranslateMessage queues the WM_CHAR for VK_TAB *before* the
+        // WM_KEYDOWN above is dispatched, so consuming the keydown alone
+        // doesn't stop the multiline EDIT from inserting a literal tab —
+        // which would mutate the compose text and dismiss the popup. While
+        // the popup nav hook is live (popup open), swallow the tab WM_CHAR.
+        if (msg == WM_CHAR && self->popup_nav_ && wParam == VK_TAB)
+            return 0;
         if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (!shift) {

@@ -98,7 +98,9 @@ public:
     // autocomplete injection since it preserves cursor position and undo.
     virtual void insert_at_cursor(std::string text) = 0;
 
-    enum class NavKey { Up, Down, Escape };
+    // Tab / ShiftTab cycle forward / backward through the shortcode popup
+    // (wrapping at the ends); Up / Down clamp at the ends.
+    enum class NavKey { Up, Down, Escape, Tab, ShiftTab };
 
     /// Bounding rect of the insertion cursor in surface-local coordinates.
     virtual tk::Rect cursor_rect() const = 0;

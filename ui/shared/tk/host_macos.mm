@@ -551,6 +551,10 @@ private:
         if      (kc == 126) nk = tk::NativeTextArea::NavKey::Up;
         else if (kc == 125) nk = tk::NativeTextArea::NavKey::Down;
         else if (kc ==  53) nk = tk::NativeTextArea::NavKey::Escape;
+        else if (kc ==  48)
+            nk = (event.modifierFlags & NSEventModifierFlagShift)
+                     ? tk::NativeTextArea::NavKey::ShiftTab
+                     : tk::NativeTextArea::NavKey::Tab;
         else is_nav = false;
         if (is_nav && self.owner->popup_nav_(nk)) return;
     }

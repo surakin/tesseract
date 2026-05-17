@@ -484,21 +484,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
                                 if (!shortcode_popup_visible_()) return false;
                                 int cur = shortcode_popup_widget_->selected_index();
                                 int n   = shortcode_popup_widget_->visible_rows();
-                                if (nk == tk::NativeTextArea::NavKey::Up) {
-                                    shortcode_popup_widget_->set_selected_index(
-                                        std::max(0, cur - 1));
-                                    return true;
+                                if (n <= 0) return true;
+                                int next = cur;
+                                switch (nk) {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1); break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1); break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                        next = (cur + 1) % n; break;
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        next = (cur <= 0) ? n - 1 : cur - 1; break;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        hide_shortcode_popup_();
+                                        return true;
                                 }
-                                if (nk == tk::NativeTextArea::NavKey::Down) {
-                                    shortcode_popup_widget_->set_selected_index(
-                                        std::min(n - 1, cur + 1));
-                                    return true;
-                                }
-                                if (nk == tk::NativeTextArea::NavKey::Escape) {
-                                    hide_shortcode_popup_();
-                                    return true;
-                                }
-                                return false;
+                                shortcode_popup_widget_->set_selected_index(next);
+                                shortcode_popup_surface_->host().request_repaint();
+                                return true;
                             });
                     return;
                 }
