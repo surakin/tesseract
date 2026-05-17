@@ -3386,6 +3386,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     {
         shortcode_popup_surface_->set_theme(t);
     }
+    if (settingsWidget_)
+    {
+        settingsWidget_->set_theme(t);
+    }
     if (roomTextArea_)
     {
         roomTextArea_->set_text_color(t.palette.text_primary);

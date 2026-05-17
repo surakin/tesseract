@@ -45,6 +45,15 @@ void SettingsWidget::populate(std::string display_name,
     surface_->relayout();
 }
 
+void SettingsWidget::set_theme(const tk::Theme& t)
+{
+    if (surface_)
+    {
+        surface_->set_theme(t);
+        surface_->relayout();
+    }
+}
+
 void SettingsWidget::resizeEvent(QResizeEvent* e)
 {
     QWidget::resizeEvent(e);
