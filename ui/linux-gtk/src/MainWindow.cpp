@@ -1332,7 +1332,18 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     clear_focused_state_(room_id);
-    mark_room_read_(current_room_id_);
+    if (mark_read_timer_id_) {
+        g_source_remove(mark_read_timer_id_);
+        mark_read_timer_id_ = 0;
+    }
+    mark_read_timer_id_ = g_timeout_add(
+        static_cast<guint>(tesseract::Settings::instance().mark_as_read_delay_ms),
+        [](gpointer user_data) -> gboolean {
+            auto* self = static_cast<MainWindow*>(user_data);
+            self->mark_read_timer_id_ = 0;
+            self->mark_room_read_(self->current_room_id_);
+            return G_SOURCE_REMOVE;
+        }, this);
     update_typing_bar_({}, false);
     reply_details_requested_.clear();
     {

@@ -275,6 +275,7 @@ private:
     GtkWidget*      status_bar_         = nullptr;
 
     guint                    sync_status_debounce_id_ = 0;
+    guint                    mark_read_timer_id_      = 0;
     void                     refresh_sync_status();
     static gboolean          on_sync_status_debounce_(gpointer user_data);
 

@@ -1171,7 +1171,14 @@ void MainWindow::onRoomSelected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     clear_focused_state_(room_id);
-    mark_room_read_(current_room_id_);
+    if (!markReadTimer_) {
+        markReadTimer_ = new QTimer(this);
+        markReadTimer_->setSingleShot(true);
+        connect(markReadTimer_, &QTimer::timeout, this, [this] {
+            mark_room_read_(current_room_id_);
+        });
+    }
+    markReadTimer_->start(tesseract::Settings::instance().mark_as_read_delay_ms);
     update_typing_bar_({}, false);
     reply_details_requested_.clear();
     {

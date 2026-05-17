@@ -661,6 +661,7 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     LoginView*     _loginView;
 
     NSTimer*                                         _animTimer;
+    NSTimer*                                         _markReadTimer;
 
     // System-tray icon (menu-bar status item). Created after login; nil
     // until then. When non-nil and `is_available()`, closing the window
@@ -2576,7 +2577,15 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     }
     _shell->current_room_id_ = roomId;
     _shell->clear_focused_state_(roomId);
-    _shell->mark_room_read_(roomId);
+    [_markReadTimer invalidate];
+    double delayS = tesseract::Settings::instance().mark_as_read_delay_ms / 1000.0;
+    __weak MainWindowController* weakSelf = self;
+    _markReadTimer = [NSTimer scheduledTimerWithTimeInterval:delayS
+                                                     repeats:NO
+                                                       block:^(NSTimer*) {
+        MainWindowController* c = weakSelf;
+        if (c) c->_shell->mark_room_read_(c->_shell->current_room_id_);
+    }];
     _shell->reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(_shell->client_->load_prefs_json());

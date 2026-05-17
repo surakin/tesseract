@@ -46,6 +46,11 @@ public:
     // Set to 0 to disable grouping entirely.
     int message_group_interval_s = 60;
 
+    // ── Read state ───────────────────────────────────────────────────
+    // Delay (ms) after selecting a room before it is marked as read.
+    // Prevents spurious receipts when flipping through rooms quickly.
+    int mark_as_read_delay_ms = 2000;
+
     // ── Image send ───────────────────────────────────────────────────
     // Image-sending quality. Read by the per-platform shell on each
     // image send to decide whether to re-encode before upload.

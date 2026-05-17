@@ -688,6 +688,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                 self->verif_shared_->on_done();
             return 0;
         }
+        if (wParam == kMarkReadTimerId) {
+            KillTimer(hwnd, kMarkReadTimerId);
+            self->mark_room_read_(self->current_room_id_);
+            return 0;
+        }
         if (wParam == kSyncStatusDebounceTimerId) {
             KillTimer(hwnd, kSyncStatusDebounceTimerId);
             self->sync_status_debounce_timer_id_ = 0;
@@ -1763,7 +1768,10 @@ void MainWindow::on_room_selected(const std::string& room_id) {
 
     current_room_id_ = room_id;
     clear_focused_state_(room_id);
-    mark_room_read_(current_room_id_);
+    KillTimer(hwnd_, kMarkReadTimerId);
+    SetTimer(hwnd_, kMarkReadTimerId,
+             static_cast<UINT>(tesseract::Settings::instance().mark_as_read_delay_ms),
+             nullptr);
     reply_details_requested_.clear();
     {
         auto prefs = tesseract::Prefs::parse(client_->load_prefs_json());

@@ -249,6 +249,7 @@ private:
     // by 300 ms so quiet restored sessions (Init→Running in <500 ms) don't
     // flash the status bar.
     QTimer*                  syncStatusDebounce_ = nullptr;
+    QTimer*                  markReadTimer_      = nullptr;
     void refreshSyncStatus();
 
     EmojiPicker*                            emojiPicker_     = nullptr;
