@@ -102,6 +102,8 @@ protected:
     std::unordered_set<std::string> media_fetches_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
     std::unordered_set<std::string> emoji_fetches_in_flight_;
+    std::unordered_set<std::string> tile_fetches_in_flight_;
+    std::unordered_set<std::string> tile_fetch_failed_;
 
     // ── URL preview cache ─────────────────────────────────────────────────────
     std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
@@ -159,6 +161,7 @@ protected:
         RoomAvatar, // → tk_avatars_, triggers room-list repaint
         UserAvatar, // → tk_avatars_, triggers message-list repaint
         MediaImage, // → anim_cache_ or tk_images_, triggers message-list repaint
+        Tile,       // → tk_images_["tile:z/x/y"], triggers full message-list repaint
     };
 
     // ── Theme ─────────────────────────────────────────────────────────────────
@@ -322,6 +325,12 @@ protected:
     void ensure_room_avatar_(const RoomInfo& r);
     void ensure_user_avatar_(const std::string& mxc);
     void ensure_media_image_(const std::string& url, int max_w, int max_h);
+
+    /// Fetch an OSM tile (z/x/y) asynchronously. Idempotent — no-op if already
+    /// in tk_images_, in-flight, or previously failed. On success: stores bytes
+    /// via on_media_bytes_ready_(key, MediaKind::Tile, bytes). On failure:
+    /// inserts key into tile_fetch_failed_ to suppress retries this session.
+    void ensure_tile_async(int z, int x, int y);
 
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);

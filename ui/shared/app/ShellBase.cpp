@@ -3,10 +3,12 @@
 #include "tk/blurhash.h"
 #include "tk/theme.h"
 #include "views/html_spans.h"
+#include "views/map_tiles.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
+#include <fstream>
 #include <thread>
 
 namespace tesseract {
@@ -74,6 +76,48 @@ void ShellBase::ensure_media_image_(const std::string& url,
         post_to_ui_([this, url, bytes = std::move(bytes)]() mutable {
             media_fetches_in_flight_.erase(url);
             on_media_bytes_ready_(url, MediaKind::MediaImage, std::move(bytes));
+        });
+    });
+}
+
+void ShellBase::ensure_tile_async(int z, int x, int y) {
+    const std::string key = tesseract::views::tile_cache_key({z, x, y});
+    if (tk_images_.count(key) || tile_fetch_failed_.count(key)) return;
+    if (!tile_fetches_in_flight_.insert(key).second) return;
+
+    const std::string url = tesseract::views::tile_url({z, x, y});
+    const std::filesystem::path disk_path =
+        tesseract::cache_dir() / "tiles" /
+        std::to_string(z) / std::to_string(x) /
+        (std::to_string(y) + ".png");
+
+    run_async_([this, key, url, disk_path]() {
+        std::vector<uint8_t> bytes;
+        // Check disk cache first.
+        if (std::filesystem::exists(disk_path)) {
+            std::ifstream f(disk_path, std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(f), {});
+        }
+        // Fetch from network if not on disk.
+        if (bytes.empty()) {
+            bytes = client_->fetch_url_bytes(url);
+            if (!bytes.empty()) {
+                std::error_code ec;
+                std::filesystem::create_directories(disk_path.parent_path(), ec);
+                if (!ec) {
+                    std::ofstream f(disk_path, std::ios::binary);
+                    f.write(reinterpret_cast<const char*>(bytes.data()),
+                            static_cast<std::streamsize>(bytes.size()));
+                }
+            }
+        }
+        post_to_ui_([this, key, bytes = std::move(bytes)]() mutable {
+            tile_fetches_in_flight_.erase(key);
+            if (bytes.empty()) {
+                tile_fetch_failed_.insert(key);
+                return;
+            }
+            on_media_bytes_ready_(key, MediaKind::Tile, std::move(bytes));
         });
     });
 }
