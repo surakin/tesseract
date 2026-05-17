@@ -2944,21 +2944,53 @@ impl ClientFfi {
         if image_url.is_empty() {
             return err("image_url is empty");
         }
-        // Encrypted sticker events serialise the full MediaSource as JSON into
-        // the url field (starts with '{').  Deserialise as the typed
-        // MediaSource and extract the inner mxc:// URI so the pack entry uses
-        // the same key format as non-encrypted stickers.
+        // Encrypted sticker events serialise the full MediaSource as JSON.
+        // Decrypt and re-upload as unencrypted media so the saved pack entry
+        // is viewable by any client without the original encryption key.
         let image_url_owned;
         let image_url = if image_url.starts_with('{') {
+            use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
             use matrix_sdk::ruma::events::room::MediaSource;
             let ms: MediaSource = match serde_json::from_str(image_url) {
                 Ok(v)  => v,
                 Err(_) => return err("image_url is not a valid mxc:// uri"),
             };
-            image_url_owned = match ms {
-                MediaSource::Plain(uri)      => uri.to_string(),
-                MediaSource::Encrypted(file) => file.url.to_string(),
-            };
+            match ms {
+                MediaSource::Plain(uri) => {
+                    image_url_owned = uri.to_string();
+                }
+                MediaSource::Encrypted(_) => {
+                    let mime: mime::Mime = serde_json::from_str::<serde_json::Value>(info_json)
+                        .ok()
+                        .and_then(|v| v.get("mimetype")?.as_str()?.parse().ok())
+                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                    let client_dl = client.clone();
+                    let bytes = self.rt.block_on(async move {
+                        client_dl.media().get_media_content(
+                            &MediaRequestParameters {
+                                source: serde_json::from_str(image_url).unwrap(),
+                                format: MediaFormat::File,
+                            },
+                            true,
+                        ).await
+                    });
+                    let bytes = match bytes {
+                        Ok(b)  => b,
+                        Err(e) => return err(format!("download encrypted sticker: {e}")),
+                    };
+
+                    let client_ul = client.clone();
+                    let upload = self.rt.block_on(async move {
+                        client_ul.media().upload(&mime, bytes, None).await
+                    });
+                    let response = match upload {
+                        Ok(r)  => r,
+                        Err(e) => return err(format!("re-upload sticker: {e}")),
+                    };
+                    image_url_owned = response.content_uri.to_string();
+                }
+            }
             image_url_owned.as_str()
         } else {
             image_url
