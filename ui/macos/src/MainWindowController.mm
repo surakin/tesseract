@@ -2271,6 +2271,12 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                    avatarBytes[1] == 'I' && avatarBytes[2] == 'F' &&
                    avatarBytes[3] == '8') {
             ext = @"gif";
+        } else if (avatarBytes.size() >= 12 && avatarBytes[0] == 'R' &&
+                   avatarBytes[1] == 'I' && avatarBytes[2] == 'F' &&
+                   avatarBytes[3] == 'F' && avatarBytes[8] == 'W' &&
+                   avatarBytes[9] == 'E' && avatarBytes[10] == 'B' &&
+                   avatarBytes[11] == 'P') {
+            ext = @"webp";
         }
         NSData* data = [NSData dataWithBytes:avatarBytes.data()
                                       length:avatarBytes.size()];

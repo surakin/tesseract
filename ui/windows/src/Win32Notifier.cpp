@@ -111,6 +111,10 @@ static std::filesystem::path write_avatar_temp(
     } else if (bytes.size() >= 4 && bytes[0] == 'G' && bytes[1] == 'I' &&
                bytes[2] == 'F' && bytes[3] == '8') {
         ext = ".gif";
+    } else if (bytes.size() >= 12 && bytes[0] == 'R' && bytes[1] == 'I' &&
+               bytes[2] == 'F' && bytes[3] == 'F' && bytes[8] == 'W' &&
+               bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P') {
+        ext = ".webp";
     }
 
     std::error_code ec;
