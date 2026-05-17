@@ -52,6 +52,7 @@ public:
     ~MainWindow();
 
     GtkWidget* widget() const { return window_; }
+    void present() { gtk_window_present(GTK_WINDOW(window_)); }
 
     // These are called from internal async callbacks (paginate/subscribe workers).
     void push_paginate_result(std::string room_id, bool reached_start);

@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
     g_signal_connect(app, "activate", G_CALLBACK(+[](GtkApplication* app, gpointer data) {
         auto& win = *static_cast<std::unique_ptr<gtk4::MainWindow>*>(data);
         if (!win) win = std::make_unique<gtk4::MainWindow>(app);
+        else win->present();  // second-instance launch raises the existing window
     }), &window);
 
     int status = g_application_run(G_APPLICATION(app), argc, argv);

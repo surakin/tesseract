@@ -5,6 +5,23 @@
     MainWindowController* _windowController;
 }
 
+- (void)applicationWillFinishLaunching:(NSNotification*)note {
+    // Raise the existing instance and abort if we are a duplicate.
+    // LSMultipleInstancesProhibited in Info.plist covers Finder/Dock launches;
+    // this handles command-line and IDE launches where LaunchServices is bypassed.
+    NSString* bundleId = NSBundle.mainBundle.bundleIdentifier;
+    NSRunningApplication* myself = NSRunningApplication.currentApplication;
+    if (bundleId) {
+        for (NSRunningApplication* other in
+                [NSRunningApplication runningApplicationsWithBundleIdentifier:bundleId]) {
+            if ([other isEqual:myself]) continue;
+            [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+            [NSApp terminate:nil];
+            return;
+        }
+    }
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     _windowController = [[MainWindowController alloc] init];
     [_windowController showWindow:self];

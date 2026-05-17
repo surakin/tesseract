@@ -11,6 +11,19 @@ int WINAPI wWinMain(
     LPWSTR    /*lpCmdLine*/,
     int       nCmdShow)
 {
+    // Single-instance guard: if another process already holds this mutex,
+    // find its main window, bring it to the foreground, and exit.
+    HANDLE single_inst_mutex =
+        CreateMutexW(nullptr, TRUE, L"io.gnomos.Tesseract.SingleInstanceMutex");
+    if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr)) {
+            if (IsIconic(existing)) ShowWindow(existing, SW_RESTORE);
+            SetForegroundWindow(existing);
+        }
+        if (single_inst_mutex) CloseHandle(single_inst_mutex);
+        return 0;
+    }
+
     // OLE init on the UI thread — required for OLE drag-and-drop (the
     // Surface registers an IDropTarget per HWND). OleInitialize is a
     // superset of CoInitializeEx(COINIT_APARTMENTTHREADED) and matches
@@ -75,5 +88,7 @@ int WINAPI wWinMain(
     }
 
     OleUninitialize();
+    ReleaseMutex(single_inst_mutex);
+    CloseHandle(single_inst_mutex);
     return exit_code;
 }
