@@ -282,7 +282,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                     sender:(std::string)sender
                       body:(std::string)body
                     userId:(std::string)userId
-                 isMention:(BOOL)isMention;
+                 isMention:(BOOL)isMention
+               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
 - (void)_relayoutRoomSurface;
@@ -570,12 +571,13 @@ void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                                         std::string room_name, std::string sender,
                                         std::string body, bool is_mention,
-                                        std::vector<uint8_t> /*avatar_bytes*/) {
+                                        std::vector<uint8_t> avatar_bytes) {
     if (!tesseract::Settings::instance().notifications_enabled)
         return;
     MainWindowController* c = ctrl_;
     if (c) [c handleNotification:room_id roomName:room_name sender:sender
-                            body:body userId:user_id isMention:is_mention];
+                            body:body userId:user_id isMention:is_mention
+                     avatarBytes:avatar_bytes];
 }
 
 void MacShell::on_room_list_state_ui_() {
@@ -2222,7 +2224,8 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                     sender:(std::string)sender
                       body:(std::string)body
                     userId:(std::string)userId
-                 isMention:(BOOL)isMention {
+                 isMention:(BOOL)isMention
+               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes {
     (void)isMention;
     BOOL winVisible = self.window.isVisible && !self.window.isMiniaturized;
     BOOL winFocused = self.window.isKeyWindow;
@@ -2255,6 +2258,42 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     NSString* nsRoomId = content.threadIdentifier;
     NSString* nsUserId = [NSString stringWithUTF8String:userId.c_str()] ?: @"";
     content.userInfo = @{ @"room_id": nsRoomId, @"user_id": nsUserId };
+
+    // Attach the room avatar as the notification image. UNNotification has
+    // no app-icon override, so it shows as the banner thumbnail. Written to
+    // a stable per-room temp file (bounded; macOS purges the temp dir).
+    if (!avatarBytes.empty()) {
+        NSString* ext = @"png";
+        if (avatarBytes.size() >= 3 && avatarBytes[0] == 0xFF &&
+            avatarBytes[1] == 0xD8 && avatarBytes[2] == 0xFF) {
+            ext = @"jpg";
+        } else if (avatarBytes.size() >= 4 && avatarBytes[0] == 'G' &&
+                   avatarBytes[1] == 'I' && avatarBytes[2] == 'F' &&
+                   avatarBytes[3] == '8') {
+            ext = @"gif";
+        }
+        NSData* data = [NSData dataWithBytes:avatarBytes.data()
+                                      length:avatarBytes.size()];
+        NSString* dir = [NSTemporaryDirectory()
+            stringByAppendingPathComponent:@"Tesseract/notif"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:nil];
+        NSString* file = [NSString stringWithFormat:@"%zu.%@",
+            std::hash<std::string>{}(roomId), ext];
+        NSURL* url = [NSURL fileURLWithPath:
+            [dir stringByAppendingPathComponent:file]];
+        if ([data writeToURL:url atomically:YES]) {
+            NSError* attErr = nil;
+            UNNotificationAttachment* att =
+                [UNNotificationAttachment attachmentWithIdentifier:@"avatar"
+                                                               URL:url
+                                                           options:nil
+                                                             error:&attErr];
+            if (att) content.attachments = @[ att ];
+        }
+    }
 
     UNNotificationRequest* req =
         [UNNotificationRequest requestWithIdentifier:
