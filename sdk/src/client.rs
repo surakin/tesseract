@@ -2609,19 +2609,31 @@ impl ClientFfi {
     pub fn fetch_url_bytes(&mut self, url: &str) -> Vec<u8> {
         if url.is_empty() { return Vec::new(); }
         let url = url.to_owned();
+        let stop_rx = self.stop_rx.clone();
         self.rt.block_on(async move {
             let client = match reqwest::Client::builder()
                 .user_agent("Tesseract/0.1 (Matrix client)")
+                .timeout(std::time::Duration::from_secs(10))
                 .build()
             {
                 Ok(c)  => c,
                 Err(_) => return Vec::new(),
             };
-            match client.get(&url).send().await {
-                Ok(resp) => resp.bytes().await
-                    .map(|b| b.to_vec())
-                    .unwrap_or_default(),
-                Err(_) => Vec::new(),
+            tokio::select! {
+                result = async {
+                    match client.get(&url).send().await {
+                        Ok(resp) => {
+                            match resp.error_for_status() {
+                                Ok(resp) => resp.bytes().await
+                                    .map(|b| b.to_vec())
+                                    .unwrap_or_default(),
+                                Err(_) => Vec::new(),
+                            }
+                        }
+                        Err(_) => Vec::new(),
+                    }
+                } => result,
+                _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
     }
