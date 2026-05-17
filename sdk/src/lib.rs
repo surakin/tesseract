@@ -91,6 +91,9 @@ pub mod ffi {
         pub pending_error:           String,
         pub pending_recoverable:     bool,
         pub pending_txn_id:          String,
+        pub location_lat:            f64,
+        pub location_lon:            f64,
+        pub location_description:    String,
     }
 
     #[derive(Debug, PartialEq, Default)]

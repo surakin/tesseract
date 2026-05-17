@@ -241,7 +241,6 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e) 
     if (msg_type == "m.location") {
         auto ev = std::make_unique<LocationEvent>();
         assign_base(*ev, e);
-        ev->type        = EventType::Location;
         ev->lat         = e.location_lat;
         ev->lon         = e.location_lon;
         ev->description = std::string(e.location_description);
