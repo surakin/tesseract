@@ -190,6 +190,7 @@ private:
     void maybe_show_recovery_banner();
 
     void ensure_sticker_image_async(std::string url);
+    void ensure_emoji_image_async  (std::string url);
 
     // ShellBase virtual hooks (GTK4 implementations).
     void apply_theme_ui_(const tk::Theme& t) override;

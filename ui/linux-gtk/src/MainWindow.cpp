@@ -2032,6 +2032,60 @@ void MainWindow::ensure_sticker_image_async(std::string url) {
     });
 }
 
+void MainWindow::ensure_emoji_image_async(std::string url) {
+    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
+        return;
+    if (!emoji_fetches_in_flight_.insert(url).second) return;
+
+    struct IdleData {
+        MainWindow*           self;
+        std::string           url;
+        std::vector<uint8_t>  bytes;
+    };
+
+    run_async_([this, url]() mutable {
+        auto bytes = client_->fetch_source_bytes(url);
+        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
+        g_idle_add([](gpointer p) -> gboolean {
+            auto* d = static_cast<IdleData*>(p);
+            d->self->emoji_fetches_in_flight_.erase(d->url);
+            if (!d->bytes.empty()
+                && !d->self->tk_images_.count(d->url)
+                && !d->self->anim_cache_.has(d->url))
+            {
+                if (auto anim = decode_animation(d->bytes)) {
+                    std::vector<std::unique_ptr<tk::Image>> frames;
+                    frames.reserve(anim->frames.size());
+                    for (cairo_surface_t* s : anim->frames) {
+                        frames.push_back(tk::cairo_pango::make_image(s));
+                        cairo_surface_destroy(s);
+                    }
+                    if (!frames.empty()) {
+                        const gint64 now_ms = g_get_monotonic_time() / 1000;
+                        d->self->anim_cache_.store(d->url, std::move(frames),
+                                                   std::move(anim->delays_ms),
+                                                   now_ms);
+                        d->self->start_anim_tick_if_needed_();
+                        d->self->invalidate_anim_consumers_();
+                    }
+                } else if (cairo_surface_t* surface =
+                              decode_image_to_cairo_surface(d->bytes))
+                {
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    d->self->tk_images_.emplace(d->url, std::move(img));
+                    if (d->self->emoji_picker_shared_)
+                        d->self->emoji_picker_shared_->invalidate_image_cache();
+                    if (d->self->emoji_picker_surface_)
+                        d->self->emoji_picker_surface_->relayout();
+                }
+            }
+            delete d;
+            return G_SOURCE_REMOVE;
+        }, data);
+    });
+}
+
 // ---------------------------------------------------------------------------
 
 void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
@@ -2751,6 +2805,16 @@ void MainWindow::build_emoji_popover() {
     emoji_picker_shared_->set_client(client_);
     emoji_picker_shared_->on_selected =
         [this](const std::string& glyph) { emoji_selected(glyph); };
+    // Async fetch for custom emoticon images — mirrors the sticker picker.
+    emoji_picker_shared_->set_image_provider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
+            auto it = tk_images_.find(cache_key);
+            if (it != tk_images_.end()) return it->second.get();
+            ensure_emoji_image_async(cache_key);
+            return nullptr;
+        });
     emoji_picker_surface_->set_root(std::move(shared));
 
     // Native GtkEntry overlay for the search row. The shared widget paints

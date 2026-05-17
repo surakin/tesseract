@@ -101,6 +101,7 @@ protected:
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
     std::unordered_set<std::string> sticker_fetches_in_flight_;
+    std::unordered_set<std::string> emoji_fetches_in_flight_;
 
     // ── URL preview cache ─────────────────────────────────────────────────────
     std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
