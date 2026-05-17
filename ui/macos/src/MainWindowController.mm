@@ -695,15 +695,8 @@ void MacShell::on_tab_state_changed_ui_()
 
     if (tb)
     {
-        for (int i = tb->item_count() - 1; i >= 0; --i)
-        {
-            const std::string& rid = tb->room_id_at(i);
-            bool found = false;
-            for (const auto& t : tabs_)
-                if (t.room_id == rid) { found = true; break; }
-            if (!found) tb->remove_tab(rid);
-        }
-
+        // Rebuild in tabs_ order so visual order is always stable.
+        tb->clear();
         for (const auto& t : tabs_)
         {
             const tk::Image* avatar = nullptr;
@@ -719,13 +712,7 @@ void MacShell::on_tab_state_changed_ui_()
                 }
                 break;
             }
-
-            bool already = false;
-            for (int i = 0; i < tb->item_count(); ++i)
-                if (tb->room_id_at(i) == t.room_id) { already = true; break; }
-
-            if (already) tb->update_tab(t.room_id, name, avatar);
-            else         tb->add_tab   (t.room_id, name, avatar);
+            tb->add_tab(t.room_id, name, avatar);
         }
 
         if (active_tab_idx_ < tabs_.size())

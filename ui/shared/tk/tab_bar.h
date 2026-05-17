@@ -44,6 +44,9 @@ public:
     void update_tab(const std::string& room_id,
                     std::string display_name, const Image* avatar);
 
+    // Remove all tabs and reset scroll. Use before a full rebuild.
+    void clear();
+
     // How many tabs are currently held.
     int item_count() const { return static_cast<int>(items_.size()); }
 

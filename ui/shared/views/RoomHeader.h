@@ -24,8 +24,7 @@ namespace tesseract::views {
 
 class RoomHeader : public tk::Widget {
 public:
-    static constexpr float kHeight          = 60.0f;
-    static constexpr float kCondensedHeight = 30.0f;  // topic-only strip
+    static constexpr float kHeight = 60.0f;
 
     RoomHeader();
     ~RoomHeader() override = default;

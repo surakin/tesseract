@@ -94,11 +94,21 @@ void RoomHeader::set_condensed(bool condensed) {
 }
 
 tk::Size RoomHeader::measure(tk::LayoutCtx&, tk::Size constraints) {
-    return { constraints.w, condensed_ ? kCondensedHeight : kHeight };
+    if (!condensed_) return { constraints.w, kHeight };
+    const bool has_topic = !topic_.empty() || !topic_html_.empty();
+    if (!has_topic) return { constraints.w, 0.0f };
+    // Fit the text plus minimal vertical padding.
+    return { constraints.w, kTopicH + 8.0f };
 }
 
 void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
     bounds_ = bounds;
+
+    if (condensed_ && bounds.h <= 0.0f) {
+        if (name_label_)  name_label_->set_visible(false);
+        if (topic_label_) topic_label_->set_visible(false);
+        return;
+    }
 
     if (condensed_) {
         // Condensed: topic centred vertically across the full width,
@@ -219,6 +229,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 }
 
 void RoomHeader::paint(tk::PaintCtx& ctx) {
+    if (bounds_.h <= 0.0f) return;
+
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.chrome_bg);
 
     // 1 px bottom hairline separator.

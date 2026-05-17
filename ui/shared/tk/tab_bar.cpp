@@ -68,6 +68,15 @@ void TabBar::update_tab(const std::string& room_id,
     }
 }
 
+void TabBar::clear()
+{
+    items_.clear();
+    active_idx_  = -1;
+    scroll_x_    = 0.f;
+    total_width_ = 0.f;
+    set_visible(false);
+}
+
 // ── Geometry helpers ───────────────────────────────────────────────────────
 
 Rect TabBar::close_scroll_rect_(int i) const
@@ -127,41 +136,18 @@ void TabBar::arrange(LayoutCtx& ctx, Rect bounds)
     }
 
     const int n = static_cast<int>(items_.size());
-    const float name_min = kTabMin - kChrome;
-    const float name_max = kTabMax - kChrome;
 
-    // Measure each tab's preferred name width.
-    std::vector<float> name_widths(n);
-    for (int i = 0; i < n; ++i) {
-        TextStyle style;
-        style.role = FontRole::SidebarName;
-        auto lay = ctx.factory.build_text(items_[i].display_name, style);
-        name_widths[i] = std::clamp(lay->measure().w, name_min, name_max);
-    }
-
-    // Natural tab widths.
-    std::vector<float> tab_widths(n);
-    float natural_total = 0.f;
-    for (int i = 0; i < n; ++i) {
-        tab_widths[i] = kChrome + name_widths[i];
-        natural_total += tab_widths[i];
-    }
-
-    // If content fits, expand tabs proportionally to fill the panel.
-    if (natural_total > 0.f && natural_total < bounds.w) {
-        float ratio = bounds.w / natural_total;
-        for (int i = 0; i < n; ++i)
-            tab_widths[i] *= ratio;
-    }
+    // All tabs the same width: divide bar evenly, clamp to [kTabMin, kTabMax].
+    const float tab_w = std::clamp(bounds.w / static_cast<float>(n),
+                                   kTabMin, kTabMax);
 
     // Position tabs and build name layouts.
     float x = 0.f;
     for (int i = 0; i < n; ++i) {
         items_[i].x     = x;
-        items_[i].width = tab_widths[i];
-        float name_w    = tab_widths[i] - kChrome;
-        ensure_layout_(ctx, items_[i], name_w);
-        x += tab_widths[i];
+        items_[i].width = tab_w;
+        ensure_layout_(ctx, items_[i], tab_w - kChrome);
+        x += tab_w;
     }
     total_width_ = x;
     clamp_scroll_();
