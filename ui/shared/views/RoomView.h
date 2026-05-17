@@ -111,6 +111,13 @@ public:
     ComposeBar*      compose_bar()  const { return compose_bar_;  }
     MessageListView* message_list() const { return message_list_; }
 
+    // "Press Up in an empty composer to edit your last message." Wired by
+    // the shell to the NativeTextArea's set_on_edit_last hook. No-op (and
+    // returns false so Up keeps default caret behaviour) while already
+    // editing or composing a reply, or when there is no editable own
+    // message. Returns true when an edit was started (consume the key).
+    bool edit_last_own();
+
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
     // Plain text send.

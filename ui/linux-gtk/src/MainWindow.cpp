@@ -538,6 +538,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app) {
             }
             on_send_clicked();
         });
+        room_text_area_->set_on_edit_last([this] {
+            return room_view_ && room_view_->edit_last_own();
+        });
         room_text_area_->set_on_height_changed([this](float h) {
             room_view_->set_text_area_natural_height(h);
             main_app_surface_->relayout();

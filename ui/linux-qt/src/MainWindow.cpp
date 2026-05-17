@@ -780,6 +780,10 @@ MainWindow::MainWindow(QWidget* parent)
         }
         onSendClicked();
     });
+    roomTextArea_->set_on_edit_last([this] {
+        return mainApp_ && mainApp_->room_view()
+            && mainApp_->room_view()->edit_last_own();
+    });
     roomTextArea_->set_on_height_changed([this](float h) {
         if (!mainApp_ || !mainAppSurface_)
         {

@@ -1384,6 +1384,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             }
             [c _onComposeSend];
         });
+        _roomTextArea->set_on_edit_last([weakSelf]() -> bool {
+            MainWindowController* c = weakSelf;
+            return c && c->_roomView && c->_roomView->edit_last_own();
+        });
         _roomTextArea->set_on_height_changed([weakSelf](float h) {
             MainWindowController* c = weakSelf;
             if (!c || !c->_roomView) return;

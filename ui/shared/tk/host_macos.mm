@@ -509,7 +509,12 @@ public:
         popup_nav_ = std::move(fn);
     }
 
+    void set_on_edit_last(std::function<bool()> fn) override {
+        on_edit_last_ = std::move(fn);
+    }
+
     std::function<bool(NavKey)> popup_nav_;
+    std::function<bool()>       on_edit_last_;
 
 private:
     TKSurfaceView*      superview_ = nil;
@@ -557,6 +562,12 @@ private:
                      : tk::NativeTextArea::NavKey::Tab;
         else is_nav = false;
         if (is_nav && self.owner->popup_nav_(nk)) return;
+    }
+    // Up in an empty composer (popup didn't consume it) → edit the last
+    // own message (Element/Slack convention).
+    if (self.owner && self.owner->on_edit_last_
+        && event.keyCode == 126 && self.string.length == 0) {
+        if (self.owner->on_edit_last_()) return;
     }
     [super keyDown:event];
 }

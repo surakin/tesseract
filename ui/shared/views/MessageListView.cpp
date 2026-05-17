@@ -2379,6 +2379,23 @@ void MessageListView::begin_focused_gate(const std::string& focus_event_id) {
     room_switch_gate_->focus_event_id = focus_event_id;
 }
 
+bool MessageListView::edit_last_own() {
+    if (!on_edit_requested) return false;
+    // Newest first. Same editability rule as the hover ✏ button: own,
+    // Kind::Text, fully sent (not a Sending/Failed local echo), real id.
+    for (auto it = messages_.rbegin(); it != messages_.rend(); ++it) {
+        const MessageRowData& m = *it;
+        if (m.is_own
+            && m.kind == MessageRowData::Kind::Text
+            && m.pending_state == MessageRowData::PendingState::None
+            && !m.event_id.empty()) {
+            on_edit_requested(m.event_id, m.body);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const {
     using K = MessageRowData::Kind;
     switch (m.kind) {

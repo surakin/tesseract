@@ -269,6 +269,15 @@ void RoomView::clear_compose_text() {
     if (compose_bar_) compose_bar_->set_current_text({});
 }
 
+bool RoomView::edit_last_own() {
+    if (!compose_bar_ || !message_list_) return false;
+    // Don't hijack Up while the user is already mid-edit or composing a
+    // reply — that would silently discard their in-progress context.
+    if (compose_bar_->has_editing() || compose_bar_->has_reply())
+        return false;
+    return message_list_->edit_last_own();
+}
+
 tk::Rect RoomView::compose_text_area_rect() const {
     // text_area_rect() inside ComposeBar is computed from bounds_ (world
     // coords) so the rect is already in surface space — no offset needed.
