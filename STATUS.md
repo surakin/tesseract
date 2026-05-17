@@ -7,7 +7,7 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-17
 > to `SettingChanged` for live updates; `os_color_scheme_()` falls back to the portal
 > value when `QStyleHints::colorScheme()` returns `Unknown` (common on GNOME without
 > QGnomePlatform or Qt < 6.6). On KDE, Qt returns a real value and the portal path is
-> never taken. 298/298 C++ tests pass.
+> never taken. 308/308 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -15,8 +15,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 82 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 298 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 86 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 308 |
 
 ## Platforms
 
@@ -74,6 +74,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Reactions** — `send_reaction` (toggle) FFI; aggregated reaction chips under each message with sender-name tooltips and a hover-only "+" add button.
 - **Replies (`m.in_reply_to`)** — `in_reply_to_id` / `in_reply_to_sender_name` / `in_reply_to_body` extracted in `timeline_item_to_ffi`; quote block rendered above the message body in `MessageListView`; hover "↩ Reply" button fires `on_reply_requested`; `ComposeBar` grows a reply-preview banner (`kReplyBandH = 44 px`) above the text input with a "×" cancel; `send_reply` FFI sends an `m.text` with `Relation::Reply`; reply relation threaded through image/file sends via `AttachmentConfig::reply`; click on a quote block scrolls to the original message in-list or fires `on_scroll_to_original` when not loaded; all 4 shells wired.
 - **Message editing** — `send_edit` FFI wraps `room.make_edit_event()` + `send_queue().send()`; `is_edited` field in `TimelineEvent` set from `msg_content.is_edited()`; `(edited)` badge appended after the body in `MessageListView`; hover "✏" button on own text messages fires `on_edit_requested`; `ComposeBar` grows an edit-mode banner (`kEditBandH = 44 px`) above the text input with a "×" cancel and `on_send_edit` callback; edit mode and reply mode are mutually exclusive (`set_editing` clears reply state); all 4 shells wired.
+- **Location messages (`m.location` / MSC3488) receive** — location events render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` and composited with a disk cache; pan by drag, zoom by scroll wheel; attribution overlay; red-circle pin at event coordinates. All four platforms (Qt6, GTK4, Win32, macOS). Send is not yet implemented.
 - **Read receipts** — `EventTimelineItem::read_receipts()` aggregated via a `collect_read_receipts` helper; `MessageListView` paints up to 5 mini-avatar discs (16 px) with a `+N` overflow pill at the row's bottom-right.
 - **Hover-only `HH:MM` timestamp** — paints under the sender avatar when the row is hovered; no always-visible time column.
 - **MSC2545 sticker decryption** — encrypted-sticker support via direct `ruma = { features = ["compat-encrypted-stickers"] }`; sticker timeline events emit JSON-encoded `MediaSource` for the encrypted variant.

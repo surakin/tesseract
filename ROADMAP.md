@@ -43,6 +43,7 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 
 ## Known gaps
 
+- **`m.location` send not yet implemented** — receive + display is done (see CHANGES.md 2026-05-17); composing and sending location messages is out of scope for this iteration.
 - **`NativeTextArea` placeholder is a no-op on macOS** — `NSTextView` lacks a built-in placeholder. Fix: paint a `current_text().empty()`-gated label in the shared widget. (GTK4 is fixed: `dim-label` overlay label.)
 - **`set_password` is a no-op on macOS** — toggling password mode on `NSTextField` requires swapping for `NSSecureTextField`; recovery-key field still shows plaintext.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
