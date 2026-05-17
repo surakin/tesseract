@@ -806,6 +806,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             [menu addItemWithTitle:logoutTitle
                            action:@selector(_logoutActiveAccount)
                     keyEquivalent:@""];
+            [menu addItem:[NSMenuItem separatorItem]];
+            [menu addItemWithTitle:@"Quit"
+                           action:@selector(terminate:)
+                    keyEquivalent:@""];
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
             NSPoint screen = [view.window convertPointToScreen:
