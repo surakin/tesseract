@@ -92,6 +92,14 @@ public:
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
     void on_pointer_drag(Point local)                      override;
+    void on_pointer_move(Point local)                      override;
+    void on_pointer_leave()                                override;
+
+    // Index of the currently hovered cell (-1 when none).
+    int  hovered_index()  const { return hovered_index_; }
+
+    // Widget-local rect of cell `idx`, or a zero-area rect when out of bounds.
+    tk::Rect rect_at(int idx) const;
 
 private:
     int  cols(float available_w) const;

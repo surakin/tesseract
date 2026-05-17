@@ -457,6 +457,31 @@ int GridView::index_at(Point local) const {
     return idx;
 }
 
+void GridView::on_pointer_move(Point local) {
+    int idx = index_at(local);
+    if (idx == hovered_index_) return;
+    hovered_index_ = idx;
+    invalidate_data();
+}
+
+void GridView::on_pointer_leave() {
+    if (hovered_index_ == -1) return;
+    hovered_index_ = -1;
+    invalidate_data();
+}
+
+tk::Rect GridView::rect_at(int idx) const {
+    if (!adapter_ || idx < 0 ||
+        static_cast<std::size_t>(idx) >= adapter_->count()) return {};
+    int c = cols(bounds_.w);
+    if (c <= 0) return {};
+    int row = idx / c;
+    int col = idx % c;
+    float x = bounds_.x + padding_.left + col * (cell_w_ + h_spacing_);
+    float y = bounds_.y + padding_.top  + row * (cell_h_ + v_spacing_) - scroll_y_;
+    return { x, y, cell_w_, cell_h_ };
+}
+
 Size GridView::measure(LayoutCtx&, Size constraints) { return constraints; }
 
 void GridView::arrange(LayoutCtx&, Rect bounds) {
