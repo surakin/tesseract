@@ -23,6 +23,9 @@ pub mod ffi {
         avatar_url:        String,
         /// Body text of the most recent message (best-effort, may be empty).
         last_message_body: String,
+        /// Display name of the last-message sender; empty when the sender is
+        /// the current user (render as "You"), or when there is no last message.
+        last_message_sender_name: String,
         /// Unix timestamp in milliseconds of the most recent activity, or 0.
         last_activity_ts:  u64,
         /// True when this room's type is "m.space".

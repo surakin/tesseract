@@ -235,8 +235,13 @@ private:
             prev_style.role      = tk::FontRole::SidebarPreview;
             prev_style.trim      = tk::TextTrim::Ellipsis;
             prev_style.max_width = text_w;
-            auto prev_layout = ctx.factory.build_text(
-                room.last_message_body, prev_style);
+            std::string preview = room.last_message_body;
+            if (!room.is_direct) {
+                const std::string& prefix = room.last_message_sender_name.empty()
+                    ? "You" : room.last_message_sender_name;
+                preview = prefix + ": " + preview;
+            }
+            auto prev_layout = ctx.factory.build_text(preview, prev_style);
             if (prev_layout) {
                 float prev_y = bounds.y + bounds.h - kPadY
                                 - prev_layout->measure().h;

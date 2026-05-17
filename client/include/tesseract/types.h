@@ -180,6 +180,9 @@ struct RoomInfo {
     bool        is_direct          = false;
     std::string avatar_url;
     std::string last_message_body;
+    /// Display name of the last-message sender; empty when the sender is the
+    /// current user (render as "You"), or when there is no last message.
+    std::string last_message_sender_name;
     uint64_t    last_activity_ts   = 0;
     bool        is_space           = false;
     bool        is_favorite        = false;

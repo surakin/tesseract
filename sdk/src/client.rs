@@ -3777,6 +3777,26 @@ fn latest_event_body(value: &matrix_sdk::latest_events::LatestEventValue) -> Opt
     }
 }
 
+fn latest_event_sender(
+    value: &matrix_sdk::latest_events::LatestEventValue,
+) -> Option<matrix_sdk::ruma::OwnedUserId> {
+    use matrix_sdk::latest_events::LatestEventValue;
+    use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
+
+    match value {
+        LatestEventValue::Remote(timeline_event) => {
+            let event = timeline_event.raw().deserialize().ok()?;
+            match event {
+                AnySyncTimelineEvent::MessageLike(
+                    AnySyncMessageLikeEvent::RoomMessage(ev)
+                ) => ev.as_original().map(|e| e.sender.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn extract_local_body(
     content: &matrix_sdk::store::SerializableEventContent,
 ) -> Option<String> {
@@ -3842,22 +3862,37 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
                 .unwrap_or_default()
         };
 
+        // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
+        // with an async version (same trick as mark_room_as_read, line 2148).
+        let lev = std::ops::Deref::deref(&room).latest_event();
+        let last_message_body = latest_event_body(&lev).unwrap_or_default();
+        let last_message_sender_name = if last_message_body.is_empty() {
+            String::new()
+        } else {
+            match latest_event_sender(&lev) {
+                Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
+                    match room.get_member_no_sync(&sender).await {
+                        Ok(Some(m)) => m.display_name()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| sender.localpart().to_string()),
+                        _ => sender.localpart().to_string(),
+                    }
+                }
+                _ => String::new(),
+            }
+        };
         result.push(crate::ffi::RoomInfo {
-            id:                room.room_id().to_string(),
+            id:                       room.room_id().to_string(),
             name,
-            topic:             room.topic().unwrap_or_default(),
+            topic:                    room.topic().unwrap_or_default(),
             topic_html,
             unread_count,
-            is_direct:         room.is_direct().await.unwrap_or(false),
-            avatar_url:        room.avatar_url()
-                                   .map(|u| u.to_string())
-                                   .unwrap_or_default(),
-            last_message_body: {
-                // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
-                // with an async version (same trick as mark_room_as_read, line 2148).
-                let lev = std::ops::Deref::deref(&room).latest_event();
-                latest_event_body(&lev).unwrap_or_default()
-            },
+            is_direct:                room.is_direct().await.unwrap_or(false),
+            avatar_url:               room.avatar_url()
+                                          .map(|u| u.to_string())
+                                          .unwrap_or_default(),
+            last_message_body,
+            last_message_sender_name,
             last_activity_ts,
             is_space,
             is_favorite,

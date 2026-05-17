@@ -25,8 +25,9 @@ pub mod ffi {
         pub unread_count:      u64,
         pub is_direct:         bool,
         pub avatar_url:        String,
-        pub last_message_body: String,
-        pub last_activity_ts:  u64,
+        pub last_message_body:        String,
+        pub last_message_sender_name: String,
+        pub last_activity_ts:         u64,
         pub is_space:          bool,
         pub is_favorite:       bool,
     }
