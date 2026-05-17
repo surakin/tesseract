@@ -50,6 +50,8 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
 - **URL preview + hyperlink rendering on macOS** — `get_url_preview` FFI and `MessageListView` preview card are wired on Qt6, GTK4, and Win32; macOS `MainWindowController` still needs `on_url_preview_ready_` and `on_link_clicked` wiring.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
+- **GTK4 message-list CSS not theme-aware** — every `tk` surface and pop-out window now follows the theme setting, but `apply_theme_ui_()` only rebuilds the `.sidebar` / `.sidebar-separator` CSS rules. `.sender-name` / `.timestamp` / `.room-header` / `.room-header-topic` and the `status_bar_` / `topic_tooltip_label_` `GtkLabel`s keep hardcoded light colours. Fix: rebuild all theme CSS rules from `t.palette` and give the status / tooltip labels palette-driven CSS classes.
+- **Native context menus / dialogs unthemed on Win32 + Qt6** — Win32 `TrackPopupMenu` / `MessageBoxW` and Qt6 `QMenu` use the OS / default palette, so right-click menus and message boxes don't follow the in-app dark/light theme. (macOS follows via `NSApp.appearance`; GTK4 via `gtk-application-prefer-dark-theme`.) Fix: owner-draw the Win32 menus and apply the theme palette to the Qt `QMenu`s.
 
 ## Decisions still open
 
