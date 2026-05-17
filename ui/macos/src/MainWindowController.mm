@@ -3,6 +3,7 @@
 #import "EmojiPicker.h"
 #import "StickerPicker.h"
 #import "MacOSTrayIcon.h"
+#import "MacScreenLock.h"
 #import "RoomWindowController.h"
 
 #include <tesseract/client.h>
@@ -114,7 +115,8 @@ protected:
         std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
         std::string room_name, std::string sender, std::string body,
-        bool is_mention, std::vector<uint8_t> avatar_bytes) override;
+        bool is_mention, std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
@@ -188,6 +190,7 @@ public:
     using ShellBase::return_to_live_;
     using ShellBase::apply_current_theme_;
     using ShellBase::set_theme_preference_;
+    using ShellBase::set_screen_lock_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible) {
@@ -283,7 +286,8 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       body:(std::string)body
                     userId:(std::string)userId
                  isMention:(BOOL)isMention
-               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes;
+               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes
+                imageBytes:(const std::vector<std::uint8_t>&)imageBytes;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
 - (void)_relayoutRoomSurface;
@@ -590,13 +594,16 @@ void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                                         std::string room_name, std::string sender,
                                         std::string body, bool is_mention,
-                                        std::vector<uint8_t> avatar_bytes) {
+                                        std::vector<uint8_t> avatar_bytes,
+                                        std::vector<uint8_t> image_bytes) {
     if (!tesseract::Settings::instance().notifications_enabled)
         return;
+    if (!notification_image_allowed_())
+        image_bytes.clear();
     MainWindowController* c = ctrl_;
     if (c) [c handleNotification:room_id roomName:room_name sender:sender
                             body:body userId:user_id isMention:is_mention
-                     avatarBytes:avatar_bytes];
+                     avatarBytes:avatar_bytes imageBytes:image_bytes];
 }
 
 void MacShell::on_room_list_state_ui_() {
@@ -751,6 +758,7 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     if (!self) return nil;
 
     _shell = std::make_unique<MacShell>(self);
+    _shell->set_screen_lock_(std::make_unique<mac::MacScreenLock>());
     _accountPickerShared = nullptr;
     window.delegate = self;
     [self _buildChrome];
@@ -1498,6 +1506,13 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
             tesseract::Settings::instance().notifications_enabled = enabled;
             tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
         };
+        _settingsView->on_image_previews_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            tesseract::Settings::instance().notification_image_previews = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        };
         _settingsSurface->set_root(std::move(view));
     }
     NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
@@ -2051,6 +2066,8 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     });
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
     _settingsView->set_notifications_enabled(tesseract::Settings::instance().notifications_enabled);
+    _settingsView->set_image_previews_enabled(
+        tesseract::Settings::instance().notification_image_previews);
     _settingsSurface->relayout();
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -2244,7 +2261,8 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
                       body:(std::string)body
                     userId:(std::string)userId
                  isMention:(BOOL)isMention
-               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes {
+               avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes
+                imageBytes:(const std::vector<std::uint8_t>&)imageBytes {
     (void)isMention;
     BOOL winVisible = self.window.isVisible && !self.window.isMiniaturized;
     BOOL winFocused = self.window.isKeyWindow;
@@ -2278,27 +2296,31 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
     NSString* nsUserId = [NSString stringWithUTF8String:userId.c_str()] ?: @"";
     content.userInfo = @{ @"room_id": nsRoomId, @"user_id": nsUserId };
 
-    // Attach the room avatar as the notification image. UNNotification has
-    // no app-icon override, so it shows as the banner thumbnail. Written to
-    // a stable per-room temp file (bounded; macOS purges the temp dir).
-    if (!avatarBytes.empty()) {
+    // Notification picture: prefer the message image/sticker (already
+    // privacy-gated upstream), fall back to the room avatar. UNNotification
+    // has no app-icon override, so it shows as the banner thumbnail.
+    // Written to a stable per-room temp file (bounded; macOS purges the
+    // temp dir, and UN moves the file into its own store on success).
+    const std::vector<std::uint8_t>& pic =
+        !imageBytes.empty() ? imageBytes : avatarBytes;
+    if (!pic.empty()) {
         NSString* ext = @"png";
-        if (avatarBytes.size() >= 3 && avatarBytes[0] == 0xFF &&
-            avatarBytes[1] == 0xD8 && avatarBytes[2] == 0xFF) {
+        if (pic.size() >= 3 && pic[0] == 0xFF &&
+            pic[1] == 0xD8 && pic[2] == 0xFF) {
             ext = @"jpg";
-        } else if (avatarBytes.size() >= 4 && avatarBytes[0] == 'G' &&
-                   avatarBytes[1] == 'I' && avatarBytes[2] == 'F' &&
-                   avatarBytes[3] == '8') {
+        } else if (pic.size() >= 4 && pic[0] == 'G' &&
+                   pic[1] == 'I' && pic[2] == 'F' &&
+                   pic[3] == '8') {
             ext = @"gif";
-        } else if (avatarBytes.size() >= 12 && avatarBytes[0] == 'R' &&
-                   avatarBytes[1] == 'I' && avatarBytes[2] == 'F' &&
-                   avatarBytes[3] == 'F' && avatarBytes[8] == 'W' &&
-                   avatarBytes[9] == 'E' && avatarBytes[10] == 'B' &&
-                   avatarBytes[11] == 'P') {
+        } else if (pic.size() >= 12 && pic[0] == 'R' &&
+                   pic[1] == 'I' && pic[2] == 'F' &&
+                   pic[3] == 'F' && pic[8] == 'W' &&
+                   pic[9] == 'E' && pic[10] == 'B' &&
+                   pic[11] == 'P') {
             ext = @"webp";
         }
-        NSData* data = [NSData dataWithBytes:avatarBytes.data()
-                                      length:avatarBytes.size()];
+        NSData* data = [NSData dataWithBytes:pic.data()
+                                      length:pic.size()];
         NSString* dir = [NSTemporaryDirectory()
             stringByAppendingPathComponent:@"Tesseract/notif"];
         [[NSFileManager defaultManager] createDirectoryAtPath:dir

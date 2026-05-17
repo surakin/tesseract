@@ -98,9 +98,13 @@ static std::wstring to_file_uri(const std::filesystem::path& p)
 // its path. Reused (overwritten) per room so the temp dir doesn't grow
 // without bound; the avatar for a given room rarely changes. Returns an
 // empty path when there are no bytes or the write fails (→ no <image>,
-// the toast falls back to the app icon).
-static std::filesystem::path write_avatar_temp(
-    const std::vector<std::uint8_t>& bytes, const std::string& room_id)
+// the toast falls back to the app icon). `kind` ("avatar" / "image")
+// keeps the avatar and message-picture temp files from colliding for the
+// same room. Reused (overwritten) per (room, kind) so the temp dir stays
+// bounded.
+static std::filesystem::path write_notif_image_temp(
+    const std::vector<std::uint8_t>& bytes, const std::string& room_id,
+    const char* kind)
 {
     if (bytes.empty()) return {};
 
@@ -125,7 +129,8 @@ static std::filesystem::path write_avatar_temp(
     if (ec) return {};
 
     std::filesystem::path file =
-        dir / (std::to_string(std::hash<std::string>{}(room_id)) + ext);
+        dir / (std::to_string(std::hash<std::string>{}(room_id)) +
+               "-" + kind + ext);
 
     std::ofstream out(file, std::ios::binary | std::ios::trunc);
     if (!out) return {};
@@ -138,7 +143,8 @@ static std::filesystem::path write_avatar_temp(
 std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
                                              const std::string& room_name,
                                              const std::string& body,
-                                             const std::wstring& avatar_uri)
+                                             const std::wstring& avatar_uri,
+                                             const std::wstring& image_uri)
 {
     std::string preview_u8 = body;
     if (body.size() > 120) {
@@ -163,6 +169,9 @@ std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
     if (!avatar_uri.empty())
         xml << L"<image placement=\"appLogoOverride\" hint-crop=\"circle\" "
                L"src=\"" << xml_escape(avatar_uri) << L"\"/>";
+    // Message image / sticker: a large inline picture below the text.
+    if (!image_uri.empty())
+        xml << L"<image src=\"" << xml_escape(image_uri) << L"\"/>";
     xml << L"</binding></visual>"
            L"</toast>";
     return xml.str();
@@ -172,13 +181,21 @@ void Win32Notifier::notify(const tesseract::Notification& n)
 {
     try {
         std::wstring avatar_uri;
-        if (std::filesystem::path p = write_avatar_temp(n.avatar_bytes, n.room_id);
+        if (std::filesystem::path p =
+                write_notif_image_temp(n.avatar_bytes, n.room_id, "avatar");
             !p.empty()) {
             avatar_uri = to_file_uri(p);
         }
+        std::wstring image_uri;
+        if (std::filesystem::path p =
+                write_notif_image_temp(n.image_bytes, n.room_id, "image");
+            !p.empty()) {
+            image_uri = to_file_uri(p);
+        }
 
         WDX::XmlDocument doc;
-        doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body, avatar_uri));
+        doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body,
+                                    avatar_uri, image_uri));
 
         auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
             L"io.gnomos.Tesseract");

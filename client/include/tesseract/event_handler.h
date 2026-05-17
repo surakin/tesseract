@@ -102,7 +102,8 @@ public:
                                   const std::string&          /*sender*/,
                                   const std::string&          /*body*/,
                                   bool                        /*is_mention*/,
-                                  const std::vector<uint8_t>& /*avatar_bytes*/) {}
+                                  const std::vector<uint8_t>& /*avatar_bytes*/,
+                                  const std::vector<uint8_t>& /*image_bytes*/) {}
 
     // ------------------------------------------------------------------
     // Cross-signing / SAS device verification (Step: device verification)

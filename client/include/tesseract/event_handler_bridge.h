@@ -53,7 +53,8 @@ public:
     void on_account_prefs_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,
                          rust::Str sender, rust::Str body, bool is_mention,
-                         rust::Slice<const uint8_t> avatar_bytes) const;
+                         rust::Slice<const uint8_t> avatar_bytes,
+                         rust::Slice<const uint8_t> image_bytes) const;
 
     void on_verification_request(rust::Str flow_id, rust::Str user_id,
                                   rust::Str device_id, bool incoming) const;

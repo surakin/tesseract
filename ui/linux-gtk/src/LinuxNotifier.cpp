@@ -58,15 +58,21 @@ bool LinuxNotifierGtk::use_portal() const {
 void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
     if (!bus_) return;
 
-    // Decode avatar bytes to a GdkPixbuf (kept alive through the D-Bus call so
+    // freedesktop notifications have a single image slot: prefer the
+    // message image / sticker (already privacy-gated upstream), fall back
+    // to the room avatar.
+    const std::vector<uint8_t>& pic =
+        !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
+
+    // Decode pic bytes to a GdkPixbuf (kept alive through the D-Bus call so
     // that the pixel pointer in the image-data variant stays valid).
     GdkPixbufLoader* loader = nullptr;
     GdkPixbuf*       rgba   = nullptr;
-    if (!n.avatar_bytes.empty()) {
+    if (!pic.empty()) {
         loader = gdk_pixbuf_loader_new();
         gdk_pixbuf_loader_write(loader,
-            reinterpret_cast<const guchar*>(n.avatar_bytes.data()),
-            static_cast<gsize>(n.avatar_bytes.size()), nullptr);
+            reinterpret_cast<const guchar*>(pic.data()),
+            static_cast<gsize>(pic.size()), nullptr);
         gdk_pixbuf_loader_close(loader, nullptr);
         GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
         if (pb) {
@@ -91,10 +97,10 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
             g_variant_new_string(n.sender.c_str()));
         g_variant_builder_add(&notif_b, "{sv}", "body",
             g_variant_new_string(n.body.c_str()));
-        if (!n.avatar_bytes.empty()) {
+        if (!pic.empty()) {
             // Pass raw encoded bytes as a bytes-icon GIcon — the portal daemon
             // handles decode. g_bytes_new copies so the GVariant owns the data.
-            GBytes*   gb  = g_bytes_new(n.avatar_bytes.data(), n.avatar_bytes.size());
+            GBytes*   gb  = g_bytes_new(pic.data(), pic.size());
             GVariant* icv = g_variant_new_from_bytes(G_VARIANT_TYPE("ay"), gb, TRUE);
             g_bytes_unref(gb);
             g_variant_builder_add(&notif_b, "{sv}", "icon",

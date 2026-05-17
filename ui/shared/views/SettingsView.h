@@ -54,6 +54,9 @@ public:
     // Silently initialise the notifications checkbox from persisted settings.
     void set_notifications_enabled(bool enabled);
 
+    // Silently initialise the image-preview checkbox from persisted settings.
+    void set_image_previews_enabled(bool enabled);
+
     // ----- Callbacks wired by the shell -------------------------------------
 
     // Fired when the user clicks "← Back".
@@ -64,6 +67,9 @@ public:
 
     // Fired when the user toggles notifications.
     std::function<void(bool)>                                on_notifications_changed;
+
+    // Fired when the user toggles image/sticker notification previews.
+    std::function<void(bool)>                                on_image_previews_changed;
 
     // ----- tk::Widget overrides ---------------------------------------------
 

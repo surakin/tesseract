@@ -4,6 +4,7 @@
 #include "EmojiPicker.h"
 #include "StickerPicker.h"
 #include "JoinRoomDialog.h"
+#include "LinuxScreenLockQt.h"
 
 #include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
@@ -79,6 +80,8 @@ MainWindow::MainWindow(QWidget* parent)
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
     qRegisterMetaType<tesseract::BackupProgress>();
+
+    set_screen_lock_(std::make_unique<LinuxScreenLockQt>());
 
     setWindowTitle("Tesseract");
     resize(1100, 768);
@@ -2897,10 +2900,13 @@ void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id,
     std::string room_name, std::string sender,
     std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes)
+    std::vector<uint8_t> avatar_bytes,
+    std::vector<uint8_t> image_bytes)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
         return;
+    if (!notification_image_allowed_())
+        image_bytes.clear();
 
     bool win_visible = isVisible() && !isMinimized();
     bool win_focused = isActiveWindow();
@@ -2938,6 +2944,7 @@ void MainWindow::handle_notification_ui_(
             n.body         = body;
             n.is_mention   = is_mention;
             n.avatar_bytes = std::move(avatar_bytes);
+            n.image_bytes  = std::move(image_bytes);
             sess->notifier->notify(n);
         }
         return;

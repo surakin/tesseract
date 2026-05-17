@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "LoginView.h"
 #include "SettingsWidget.h"
+#include "LinuxScreenLockGtk.h"
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
@@ -150,13 +151,16 @@ void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id,
     std::string room_name, std::string sender,
     std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes)
+    std::vector<uint8_t> avatar_bytes,
+    std::vector<uint8_t> image_bytes)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
         return;
 
+    if (!notification_image_allowed_())
+        image_bytes.clear();
     push_notification(user_id, room_id, room_name, sender, body, is_mention,
-                      std::move(avatar_bytes));
+                      std::move(avatar_bytes), std::move(image_bytes));
 }
 
 void MainWindow::on_room_list_state_ui_()
@@ -256,6 +260,8 @@ void MainWindow::handle_verification_cancelled_ui_(
 // ---------------------------------------------------------------------------
 
 MainWindow::MainWindow(GtkApplication* app) : app_(app) {
+    set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
+
     window_ = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
@@ -2481,17 +2487,20 @@ void MainWindow::push_notification(
         const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
         const std::string& sender, const std::string& body, bool is_mention,
-        std::vector<uint8_t> avatar_bytes)
+        std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes)
 {
     handle_notification(user_id, room_id, room_name, sender, body,
-                        is_mention, std::move(avatar_bytes));
+                        is_mention, std::move(avatar_bytes),
+                        std::move(image_bytes));
 }
 
 void MainWindow::handle_notification(
         const std::string& user_id,
         const std::string& room_id, const std::string& room_name,
         const std::string& sender,  const std::string& body, bool is_mention,
-        std::vector<uint8_t> avatar_bytes)
+        std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes)
 {
     bool win_focused = gtk_window_is_active(GTK_WINDOW(window_));
     auto* surface = gtk_native_get_surface(GTK_NATIVE(window_));
@@ -2545,6 +2554,7 @@ void MainWindow::handle_notification(
             n.body         = body;
             n.is_mention   = is_mention;
             n.avatar_bytes = std::move(avatar_bytes);
+            n.image_bytes  = std::move(image_bytes);
             sess->notifier->notify(n);
         }
         return;

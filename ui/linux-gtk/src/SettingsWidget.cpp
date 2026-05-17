@@ -1,6 +1,9 @@
 #include "SettingsWidget.h"
 #include "tk/theme.h"
 
+#include <tesseract/paths.h>
+#include <tesseract/settings.h>
+
 namespace gtk4 {
 
 SettingsWidget::SettingsWidget()
@@ -20,6 +23,14 @@ SettingsWidget::SettingsWidget()
     settings_view_->on_notifications_changed = [this](bool e)
     {
         if (on_notifications_changed) on_notifications_changed(e);
+    };
+    // Persisted directly here (self-contained — no extra wrapper/MainWindow
+    // plumbing); the lock-screen privacy gate is always on regardless.
+    settings_view_->on_image_previews_changed = [](bool e)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.notification_image_previews = e;
+        s.save_to_disk(tesseract::config_dir());
     };
 
     surface_->set_root(std::move(view));
@@ -49,6 +60,8 @@ void SettingsWidget::populate(std::string display_name,
     settings_view_->set_image_provider(std::move(provider));
     settings_view_->set_theme_pref(theme_pref);
     settings_view_->set_notifications_enabled(notifications_enabled);
+    settings_view_->set_image_previews_enabled(
+        tesseract::Settings::instance().notification_image_previews);
     surface_->relayout();
 }
 

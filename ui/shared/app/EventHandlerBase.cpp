@@ -110,15 +110,18 @@ void EventHandlerBase::on_account_prefs_updated(const std::string& json)
 void EventHandlerBase::on_notification(
     const std::string& room_id, const std::string& room_name,
     const std::string& sender, const std::string& body,
-    bool is_mention, const std::vector<uint8_t>& avatar_bytes)
+    bool is_mention, const std::vector<uint8_t>& avatar_bytes,
+    const std::vector<uint8_t>& image_bytes)
 {
     shell_->post_to_ui_(
         [shell = shell_, uid = user_id_,
          rid = room_id, rn = room_name,
-         s = sender, b = body, im = is_mention, av = avatar_bytes]() mutable {
+         s = sender, b = body, im = is_mention,
+         av = avatar_bytes, img = image_bytes]() mutable {
             shell->handle_notification_ui_(std::move(uid), std::move(rid),
                                            std::move(rn), std::move(s),
-                                           std::move(b), im, std::move(av));
+                                           std::move(b), im, std::move(av),
+                                           std::move(img));
         });
 }
 

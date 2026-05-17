@@ -43,7 +43,8 @@ public:
     void on_notification(const std::string& room_id, const std::string& room_name,
                          const std::string& sender, const std::string& body,
                          bool is_mention,
-                         const std::vector<uint8_t>& avatar_bytes) override;
+                         const std::vector<uint8_t>& avatar_bytes,
+                         const std::vector<uint8_t>& image_bytes) override;
     void on_verification_request(const std::string& flow_id,
                                   const std::string& user_id,
                                   const std::string& device_id,

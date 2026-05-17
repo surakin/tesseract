@@ -137,7 +137,8 @@ public:
         std::string user_id, std::string room_id,
         std::string room_name, std::string sender,
         std::string body, bool is_mention,
-        std::vector<uint8_t> avatar_bytes) override;
+        std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(const std::string& url,
@@ -175,12 +176,14 @@ private:
         std::string error_msg;  // valid when ok == false
     };
     struct NotificationPayload {
-        std::string room_id;
-        std::string room_name;
-        std::string sender;
-        std::string body;
-        std::string user_id;   // which AccountSession fired this
-        bool        is_mention;
+        std::string          room_id;
+        std::string          room_name;
+        std::string          sender;
+        std::string          body;
+        std::string          user_id;   // which AccountSession fired this
+        bool                 is_mention;
+        std::vector<uint8_t> avatar_bytes;
+        std::vector<uint8_t> image_bytes;  // already privacy-gated
     };
     struct RoomsPayload {
         std::string                     user_id;

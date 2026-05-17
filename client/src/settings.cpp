@@ -54,6 +54,8 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir) {
     else                        theme_pref = ThemePreference::System;
 
     notifications_enabled = extract_bool(json, "notifications_enabled", true);
+    notification_image_previews =
+        extract_bool(json, "notification_image_previews", true);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
@@ -71,6 +73,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const {
     f << "{\"theme\":\"" << theme_str << "\""
       << ",\"notifications_enabled\":"
       << (notifications_enabled ? "true" : "false")
+      << ",\"notification_image_previews\":"
+      << (notification_image_previews ? "true" : "false")
       << "}";
 }
 

@@ -1,9 +1,11 @@
 #pragma once
 
-// Settings panel section: notification toggle.
-// Renders a single labelled checkbox row: "Enable notifications on this
-// device". Reads the initial state from Settings::instance() and fires
-// on_notifications_changed when the user toggles it.
+// Settings panel section: two labelled checkbox rows —
+//   1. "Enable notifications on this device"
+//   2. "Show image & sticker previews in notifications"
+// Reads initial state from Settings::instance() and fires the matching
+// callback when a row is toggled. (The lock-screen privacy gate is always
+// on regardless of row 2 — see ShellBase::notification_image_allowed_.)
 
 #include "tk/widget.h"
 
@@ -19,11 +21,13 @@ public:
     NotificationsSection();
     ~NotificationsSection() override = default;
 
-    // Silently update the checkbox state without firing on_notifications_changed.
-    void set_checked(bool enabled);
+    // Silently update checkbox state without firing callbacks.
+    void set_checked(bool enabled);                 // row 1
+    void set_image_previews_checked(bool enabled);  // row 2
 
-    // Fires with the new boolean state when the checkbox is toggled.
+    // Fire with the new boolean state when the matching row is toggled.
     std::function<void(bool)> on_notifications_changed;
+    std::function<void(bool)> on_image_previews_changed;
 
     // ----- tk::Widget overrides ---------------------------------------------
 
@@ -37,18 +41,21 @@ public:
     void on_pointer_leave()               override;
 
 private:
-    // Tick/check mark drawn inside the checked box: a simple two-segment
-    // polyline — "L"-shaped, rotated: bottom-left → mid-bottom → top-right.
     void draw_checkmark(tk::Canvas& canvas, tk::Rect box, tk::Color ink) const;
 
-    // Returns true when `local` falls inside the hit target (box + label row).
-    bool hit_row(tk::Point local) const;
+    // 0 = notifications row, 1 = image-previews row, -1 = none.
+    int  row_at(tk::Point local) const;
+    void paint_row(tk::PaintCtx& ctx, int row, float y,
+                   bool checked, const char* label,
+                   std::unique_ptr<tk::TextLayout>& cache);
 
-    bool checked_;   // tracks live toggle state
-    bool hovered_ = false;
-    bool pressed_ = false;
+    bool checked_;          // row 1 — notifications_enabled
+    bool previews_checked_; // row 2 — notification_image_previews
+    int  hovered_row_ = -1;
+    int  pressed_row_ = -1;
 
-    std::unique_ptr<tk::TextLayout> label_layout_;
+    std::unique_ptr<tk::TextLayout> label_layout_;          // row 1
+    std::unique_ptr<tk::TextLayout> previews_label_layout_; // row 2
 };
 
 } // namespace tesseract::views

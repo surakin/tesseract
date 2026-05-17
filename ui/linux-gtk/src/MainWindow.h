@@ -91,7 +91,8 @@ private:
         std::string user_id, std::string room_id,
         std::string room_name, std::string sender,
         std::string body, bool is_mention,
-        std::vector<uint8_t> avatar_bytes) override;
+        std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
@@ -117,7 +118,8 @@ private:
     void push_notification(const std::string& user_id,
                            const std::string& room_id, const std::string& room_name,
                            const std::string& sender, const std::string& body,
-                           bool is_mention, std::vector<uint8_t> avatar_bytes);
+                           bool is_mention, std::vector<uint8_t> avatar_bytes,
+                           std::vector<uint8_t> image_bytes);
     static void    on_login_clicked(GtkButton*, gpointer user_data);
     static void    on_recovery_verify_clicked_(GtkButton*, gpointer user_data);
     static void    on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data);
@@ -185,7 +187,8 @@ private:
     void handle_notification(const std::string& user_id,
                               const std::string& room_id, const std::string& room_name,
                               const std::string& sender, const std::string& body,
-                              bool is_mention, std::vector<uint8_t> avatar_bytes);
+                              bool is_mention, std::vector<uint8_t> avatar_bytes,
+                              std::vector<uint8_t> image_bytes);
     void populate_user_strip();
     void maybe_show_recovery_banner();
 

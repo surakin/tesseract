@@ -337,6 +337,29 @@ fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
+/// Upper bound on a notification preview image. Notification transports are
+/// tight — D-Bus image-data, WinRT toast (~3 MB) and UNNotificationAttachment
+/// all dislike large payloads — so anything bigger is dropped (the
+/// notification still shows, just without the picture).
+const NOTIF_IMAGE_CAP: usize = 2 * 1024 * 1024;
+
+/// Best-effort fetch of a message/sticker image for a notification preview.
+/// matrix-sdk decrypts encrypted `MediaSource`s transparently. Any failure
+/// or an over-cap payload yields an empty Vec — the notification then falls
+/// back to text + room avatar.
+#[cfg(not(test))]
+async fn fetch_notification_image(
+    client: &Client,
+    source: matrix_sdk::ruma::events::room::MediaSource,
+) -> Vec<u8> {
+    use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+    let request = MediaRequestParameters { source, format: MediaFormat::File };
+    match client.media().get_media_content(&request, true).await {
+        Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b,
+        _ => Vec::new(),
+    }
+}
+
 impl ClientFfi {
     pub fn new() -> Self {
         let _ = tracing_subscriber::fmt()
@@ -650,9 +673,86 @@ impl ClientFfi {
                             };
                             let avatar = room.avatar(matrix_sdk::media::MediaFormat::File)
                                 .await.ok().flatten().unwrap_or_default();
+                            // Image messages carry a preview picture; other
+                            // msgtypes get an empty slice (text + avatar only).
+                            let preview = match &ev.content.msgtype {
+                                MessageType::Image(i) =>
+                                    fetch_notification_image(
+                                        &client_clone, i.source.clone()).await,
+                                _ => Vec::new(),
+                            };
                             if let Ok(g) = h.lock() {
                                 g.on_notification(&room_id, &room_name,
-                                                  &sender_name, &body, is_mention, &avatar);
+                                                  &sender_name, &body, is_mention,
+                                                  &avatar, &preview);
+                            }
+                        }
+                    }
+                },
+            ));
+        }
+
+        // Sticker notification handler. `m.sticker` is a distinct event type
+        // (StickerEventContent, not RoomMessageEventContent) so it is invisible
+        // to the message handler above — without this, sticker messages never
+        // notify at all. Mirrors the message handler: self-filter, push-rule
+        // eval (synthetic "m.sticker" m.room.message), display name, avatar,
+        // and the sticker image as the preview.
+        {
+            use matrix_sdk::ruma::events::sticker::{
+                StickerEventContent, StickerMediaSource};
+            use matrix_sdk::ruma::events::room::MediaSource;
+            use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
+            let h            = Arc::clone(&handler);
+            let client_clone = client.clone();
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: OriginalSyncMessageLikeEvent<StickerEventContent>,
+                      room: Room| {
+                    let h            = Arc::clone(&h);
+                    let client_clone = client_clone.clone();
+                    async move {
+                        let body = ev.content.body.trim().to_owned();
+                        if body.is_empty() { return; }
+                        let me = client_clone.user_id().map(|u| u.to_owned());
+                        let sender = ev.sender.as_str().to_owned();
+                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) { return; }
+                        let room_id  = room.room_id().as_str().to_owned();
+                        let event_id = ev.event_id.as_str();
+                        let ts: u64  = ev.origin_server_ts.get().into();
+                        let synthetic = build_push_rule_json(
+                            &room_id, event_id, &sender, &body, "m.sticker", ts);
+                        let (should_notify, is_mention) =
+                            evaluate_push_rules(&client_clone, &room, &synthetic).await;
+                        if should_notify {
+                            let room_name = room.display_name().await
+                                .map(|n| n.to_string())
+                                .unwrap_or_else(|_| room_id.clone());
+                            let sender_name = match
+                                room.get_member_no_sync(&ev.sender).await
+                            {
+                                Ok(Some(m)) => m.display_name()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(
+                                        || ev.sender.localpart().to_string()),
+                                _ => ev.sender.localpart().to_string(),
+                            };
+                            let avatar = room.avatar(matrix_sdk::media::MediaFormat::File)
+                                .await.ok().flatten().unwrap_or_default();
+                            let preview = match &ev.content.source {
+                                StickerMediaSource::Plain(uri) =>
+                                    fetch_notification_image(
+                                        &client_clone,
+                                        MediaSource::Plain(uri.clone())).await,
+                                StickerMediaSource::Encrypted(f) =>
+                                    fetch_notification_image(
+                                        &client_clone,
+                                        MediaSource::Encrypted(f.clone())).await,
+                                _ => Vec::new(),
+                            };
+                            if let Ok(g) = h.lock() {
+                                g.on_notification(&room_id, &room_name,
+                                                  &sender_name, &body, is_mention,
+                                                  &avatar, &preview);
                             }
                         }
                     }

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "RoomWindow.h"
 #include "Win32Notifier.h"
+#include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
 #include "LoginView.h"
 #include "TextRenderer.h"
@@ -374,14 +375,19 @@ void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id,
     std::string room_name, std::string sender,
     std::string body, bool is_mention,
-    std::vector<uint8_t> /*avatar_bytes*/)
+    std::vector<uint8_t> avatar_bytes,
+    std::vector<uint8_t> image_bytes)
 {
     if (!tesseract::Settings::instance().notifications_enabled)
         return;
 
     NotificationPayload p{ std::move(room_id), std::move(room_name),
                            std::move(sender), std::move(body),
-                           std::move(user_id), is_mention };
+                           std::move(user_id), is_mention,
+                           std::move(avatar_bytes),
+                           notification_image_allowed_()
+                               ? std::move(image_bytes)
+                               : std::vector<uint8_t>{} };
     on_tesseract_notify(&p);
 }
 
@@ -776,7 +782,9 @@ bool MainWindow::register_class(HINSTANCE hInst) {
     return RegisterClassExW(&wc) != 0;
 }
 
-MainWindow::MainWindow(HINSTANCE hInst) : hInst_(hInst) {}
+MainWindow::MainWindow(HINSTANCE hInst) : hInst_(hInst) {
+    set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
+}
 
 MainWindow::~MainWindow() {
     for (auto& s : accounts_) if (s && s->client) s->client->stop_sync();
@@ -1442,6 +1450,11 @@ void MainWindow::on_create(HWND hwnd) {
             tesseract::Settings::instance().notifications_enabled = enabled;
             tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
         };
+        settings_view_->on_image_previews_changed = [this](bool enabled)
+        {
+            tesseract::Settings::instance().notification_image_previews = enabled;
+            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+        };
         settings_surface_->set_root(std::move(view));
         if (settings_surface_->hwnd())
             ShowWindow(settings_surface_->hwnd(), SW_HIDE);
@@ -1678,6 +1691,8 @@ void MainWindow::open_settings_()
     settings_view_->set_theme_pref(tesseract::Settings::instance().theme_pref);
     settings_view_->set_notifications_enabled(
         tesseract::Settings::instance().notifications_enabled);
+    settings_view_->set_image_previews_enabled(
+        tesseract::Settings::instance().notification_image_previews);
     settings_surface_->relayout();
 
     settings_visible_ = true;
@@ -1838,9 +1853,17 @@ void MainWindow::on_tesseract_notify(const NotificationPayload* p)
             return;
         }
         // Window minimised / hidden: send system notification.
-        if (sess->notifier)
-            sess->notifier->notify({ p->room_id, p->room_name,
-                                     p->sender, p->body, p->is_mention });
+        if (sess->notifier) {
+            tesseract::Notification n;
+            n.room_id      = p->room_id;
+            n.room_name    = p->room_name;
+            n.sender       = p->sender;
+            n.body         = p->body;
+            n.is_mention   = p->is_mention;
+            n.avatar_bytes = p->avatar_bytes;
+            n.image_bytes  = p->image_bytes;
+            sess->notifier->notify(n);
+        }
         return;
     }
 }

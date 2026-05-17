@@ -138,7 +138,8 @@ private:
         std::string user_id, std::string room_id,
         std::string room_name, std::string sender,
         std::string body, bool is_mention,
-        std::vector<uint8_t> avatar_bytes) override;
+        std::vector<uint8_t> avatar_bytes,
+        std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 

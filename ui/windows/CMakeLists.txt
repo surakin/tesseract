@@ -58,6 +58,7 @@ add_executable(tesseract_win32 WIN32
     src/TextRenderer.cpp
     src/Theme.cpp
     src/Win32Notifier.cpp
+    src/Win32ScreenLock.cpp
     src/Win32TrayIcon.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.rc"
 )
@@ -115,6 +116,7 @@ target_link_libraries(tesseract_win32 PRIVATE
     dxgi
     dwrite
     windowsapp
+    wtsapi32
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE

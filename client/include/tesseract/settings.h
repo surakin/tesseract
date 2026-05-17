@@ -70,6 +70,12 @@ public:
     // Whether to show desktop notifications for new messages (default: on).
     bool notifications_enabled = true;
 
+    // Whether image/sticker messages embed a picture preview in the
+    // notification (default: on). Independent of the lock-screen privacy
+    // gate, which always suppresses the picture while the screen is locked
+    // regardless of this setting.
+    bool notification_image_previews = true;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

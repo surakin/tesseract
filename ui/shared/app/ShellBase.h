@@ -3,6 +3,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/paths.h>
+#include <tesseract/screen_lock.h>
 #include <tesseract/settings.h>
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
@@ -183,6 +184,12 @@ protected:
     // with no subsequent theme change) start out correctly themed.
     tk::Theme current_theme_ = tk::Theme::light();
 
+    // Platform screen-lock probe for the notification-image privacy gate.
+    // Defaults to the fail-safe Null impl until the concrete shell installs
+    // a real one via set_screen_lock_().
+    std::unique_ptr<IScreenLock> screen_lock_ =
+        std::make_unique<NullScreenLock>();
+
     // Resolve the current ThemePreference to a concrete ThemeMode (calling
     // os_color_scheme_() for System), then call apply_theme_ui_.
     void apply_current_theme_();
@@ -255,7 +262,23 @@ protected:
         std::string /*user_id*/, std::string /*room_id*/,
         std::string /*room_name*/, std::string /*sender*/,
         std::string /*body*/, bool /*is_mention*/,
-        std::vector<uint8_t> /*avatar_bytes*/) {}
+        std::vector<uint8_t> /*avatar_bytes*/,
+        std::vector<uint8_t> /*image_bytes*/) {}
+
+    // Install the platform screen-lock probe (called once by the concrete
+    // shell at startup, mirroring the per-account INotifier injection).
+    void set_screen_lock_(std::unique_ptr<IScreenLock> sl) {
+        if (sl) screen_lock_ = std::move(sl);
+    }
+    // Centralised notification-image privacy gate. Each shell calls this
+    // when building the Notification: the message picture is shown only
+    // when previews are enabled in settings AND the screen is unlocked.
+    // Room avatars are intentionally NOT gated (low-sensitivity room
+    // metadata). Returns true → keep image_bytes; false → clear it.
+    bool notification_image_allowed_() const {
+        return tesseract::Settings::instance().notification_image_previews
+            && !(screen_lock_ && screen_lock_->is_locked());
+    }
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_() {}
 

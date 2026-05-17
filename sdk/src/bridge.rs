@@ -360,7 +360,8 @@ pub mod ffi {
                            sender:       &str,
                            body:         &str,
                            is_mention:   bool,
-                           avatar_bytes: &[u8]);
+                           avatar_bytes: &[u8],
+                           image_bytes:  &[u8]);
 
         /// Fired when an incoming SAS verification request arrives from another
         /// device (`incoming = true`), or when an outgoing request we sent has

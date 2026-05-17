@@ -42,6 +42,11 @@ SettingsView::SettingsView()
         {
             if (on_notifications_changed) { on_notifications_changed(enabled); }
         };
+    notifications->on_image_previews_changed =
+        [this](bool enabled)
+        {
+            if (on_image_previews_changed) { on_image_previews_changed(enabled); }
+        };
     notifications_ = notifications.get();
 
     // SideTabView — owns the three section widgets.
@@ -80,6 +85,11 @@ void SettingsView::set_theme_pref(tesseract::Settings::ThemePreference pref)
 void SettingsView::set_notifications_enabled(bool enabled)
 {
     if (notifications_) { notifications_->set_checked(enabled); }
+}
+
+void SettingsView::set_image_previews_enabled(bool enabled)
+{
+    if (notifications_) { notifications_->set_image_previews_checked(enabled); }
 }
 
 // ---------------------------------------------------------------------------

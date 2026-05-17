@@ -27,7 +27,8 @@ private:
     static std::wstring build_toast_xml(const std::string& sender,
                                          const std::string& room_name,
                                          const std::string& body,
-                                         const std::wstring& avatar_uri);
+                                         const std::wstring& avatar_uri,
+                                         const std::wstring& image_uri);
 };
 
 } // namespace win32
