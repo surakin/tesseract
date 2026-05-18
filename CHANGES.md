@@ -7,6 +7,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-18
 
+- fix(ui/win32): image/video viewer now closes on Esc immediately — `SetFocus` to the top-level window on viewer open so its `WM_KEYDOWN` handler receives Esc (previously Esc did nothing until an app deactivate/reactivate restored top-level focus)
+- style: standardise formatting across the whole codebase — reconciled STYLE.md's Rust section to idiomatic same-line braces and narrowed Universal Rule §2 (trivial Rust `match` arms stay unbraced); added a repo-root `.clang-format` (Cpp + ObjC sections) encoding the C++/Objective-C rules; reformatted `sdk/` via `cargo fmt` and all C++/ObjC (`client/`, `ui/shared/`, the four shells, `tests/`) via `clang-format` — behaviour-preserving (323/323 ctest, 92/92 cargo)
 - feat(pickers): unified async image cache — EmojiPicker/StickerPicker now share the message-list `tk_images_`/`anim_cache_` on all four shells (Qt6 dropped its private per-picker caches), images route through `media_disk_cache_` so custom emoticons/stickers survive an app restart, and decode runs off the UI thread (Qt6 QImageReader / GTK4 GdkPixbuf+cairo / macOS CGImageSource / Win32 WIC) so first paint of a large pack no longer stalls
 - feat(ui): room-list last-message preview now uses `formatted_body`'s first plain line for text/notice/emote; renders "<user> sent an image/video/file/voice message" for those media kinds; and draws a small inline ~28 px thumbnail for sticker last-messages (SDK exposes `last_message_kind` + `last_message_sticker_url`; `RoomListView` gains a `sticker_provider_` backed by the shells' shared image cache, wired in all four shells)
 

@@ -154,7 +154,47 @@ CTFontRef create_font(FontRole role)
     FontDesc d = desc_for(role);
     CTFontUIFontType ui =
         d.bold ? kCTFontUIFontEmphasizedSystem : kCTFontUIFontSystem;
-    return CTFontCreateUIFontForLanguage(ui, d.size_pt, nullptr);
+    CFRetained<CTFontRef> base{
+        CTFontCreateUIFontForLanguage(ui, d.size_pt, nullptr)};
+    if (!base.get())
+        return nullptr;
+
+    // CTFontCreateUIFontForLanguage does not guarantee Apple Color Emoji in
+    // its cascade on all macOS versions/configurations.  Prepend it so emoji
+    // characters always fall through to the system colour-emoji font instead
+    // of reaching .LastResort and rendering as hex-codepoint boxes.
+    CFRetained<CTFontDescriptorRef> emoji_fd{
+        CTFontDescriptorCreateWithNameAndSize(CFSTR("Apple Color Emoji"),
+                                             d.size_pt)};
+    if (!emoji_fd.get())
+        return base.release();
+
+    CFRetained<CFArrayRef> existing{static_cast<CFArrayRef>(
+        CTFontCopyAttribute(base.get(), kCTFontCascadeListAttribute))};
+
+    CFRetained<CFMutableArrayRef> cascade{
+        CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks)};
+    CFArrayAppendValue(cascade.get(), emoji_fd.get());
+    if (existing.get())
+    {
+        CFArrayAppendArray(cascade.get(), existing.get(),
+                          CFRangeMake(0, CFArrayGetCount(existing.get())));
+    }
+
+    CFTypeRef k = kCTFontCascadeListAttribute;
+    CFTypeRef v = cascade.get();
+    CFRetained<CFDictionaryRef> attrs{
+        CFDictionaryCreate(kCFAllocatorDefault, &k, &v, 1,
+                          &kCFTypeDictionaryKeyCallBacks,
+                          &kCFTypeDictionaryValueCallBacks)};
+    CFRetained<CTFontDescriptorRef> desc{
+        CTFontDescriptorCreateWithAttributes(attrs.get())};
+    if (!desc.get())
+        return base.release();
+
+    CTFontRef result =
+        CTFontCreateCopyWithAttributes(base.get(), d.size_pt, nullptr, desc.get());
+    return result ? result : base.release();
 }
 
 CFStringRef cfstr_from_utf8(std::string_view s)
