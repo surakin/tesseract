@@ -1543,6 +1543,10 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
 
         UINT w = 0, h = 0;
         cached->GetSize(&w, &h);
+        if (w == 0 || h == 0)
+        {
+            continue;
+        }
 
         AnimatedFrame af;
         af.image = std::make_unique<D2DImage>(

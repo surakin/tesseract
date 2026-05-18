@@ -1183,6 +1183,7 @@ public:
                 static_cast<float>(dx), static_cast<float>(dy)))
         {
             request_repaint();
+            on_pointer_move(x, y);
         }
     }
 

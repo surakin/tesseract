@@ -1502,6 +1502,7 @@ public:
                 {static_cast<float>(pt.x), static_cast<float>(pt.y)}, 0, dy))
         {
             request_repaint();
+            on_pointer_move(pt.x, pt.y);
         }
     }
 

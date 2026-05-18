@@ -47,9 +47,15 @@ bool AnimImageCache::advance(std::int64_t now_ms)
         }
         while (now_ms >= entry.next_advance_ms)
         {
+            const bool was_last =
+                (entry.current == entry.frames.size() - 1);
             entry.current = (entry.current + 1) % entry.frames.size();
             entry.next_advance_ms += entry.delays_ms[entry.current];
             any = true;
+            if (was_last)
+            {
+                break; // loop-point frame gets one rendered pass before catch-up continues
+            }
         }
     }
     return any;
