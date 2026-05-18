@@ -1,12 +1,9 @@
 #pragma once
-#include <QByteArray>
 #include <QFrame>
 #include <QString>
 
 #include <functional>
 #include <memory>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "tk/host.h"
 #include "tk/host_qt.h"
@@ -38,6 +35,10 @@ public:
     /// Trigger a redraw after new emoticon bitmaps land in the cache.
     void invalidateImages();
 
+    /// Install the image provider on the wrapped shared picker. Called by
+    /// MainWindow so the provider can capture the ShellBase shared caches.
+    void setImageProvider(tesseract::views::EmojiPicker::ImageProvider p);
+
     /// Re-skin the picker surface when the theme preference changes.
     void set_theme(const tk::Theme& t);
 
@@ -58,25 +59,15 @@ public:
     /// Fired when the user picks a custom MSC2545 emoticon.
     std::function<void(const tesseract::ImagePackImage&)> onEmoticonSelected;
 
-signals:
-    void imageLoadedSignal_(QString cache_key, QByteArray bytes);
-
 protected:
     void showEvent(QShowEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
-private slots:
-    void onImageLoaded_(QString cache_key, QByteArray bytes);
-
 private:
     void layout_overlay();
-    void request_image_(const std::string& cache_key);
 
     tesseract::Client*                      client_       = nullptr;
     tk::qt6::Surface*                       surface_      = nullptr;
     tesseract::views::EmojiPicker*          shared_       = nullptr;  // borrowed
     std::unique_ptr<tk::NativeTextField>    search_field_;
-
-    std::unordered_map<std::string, std::unique_ptr<tk::Image>> image_cache_;
-    std::unordered_set<std::string>                              fetches_in_flight_;
 };

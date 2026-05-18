@@ -1,19 +1,14 @@
 #include "EmojiPicker.h"
 
-#include "tk/canvas_qpainter.h"
 #include "tk/theme.h"
 
 #include <tesseract/client.h>
 
 #include <QApplication>
 #include <QHBoxLayout>
-#include <QImage>
-#include <QImageReader>
 #include <QResizeEvent>
-#include <QRunnable>
 #include <QScreen>
 #include <QShowEvent>
-#include <QThreadPool>
 
 #include <memory>
 #include <utility>
@@ -56,18 +51,6 @@ EmojiPicker::EmojiPicker(QWidget* parent)
         hide();
     };
 
-    shared_->set_image_provider(
-        [this](const std::string& cache_key,
-                const std::string& /*source_token*/) -> const tk::Image* {
-            auto it = image_cache_.find(cache_key);
-            if (it != image_cache_.end())
-            {
-                return it->second.get();
-            }
-            const_cast<EmojiPicker*>(this)->request_image_(cache_key);
-            return nullptr;
-        });
-
     surface_->set_root(std::move(shared_owner));
 
     search_field_ = surface_->host().make_text_field();
@@ -77,10 +60,6 @@ EmojiPicker::EmojiPicker(QWidget* parent)
             shared_->set_search_query(q);
             surface_->relayout();
         });
-
-    connect(this, &EmojiPicker::imageLoadedSignal_,
-            this, &EmojiPicker::onImageLoaded_,
-            Qt::QueuedConnection);
 }
 
 void EmojiPicker::setClient(tesseract::Client* c)
@@ -121,61 +100,9 @@ void EmojiPicker::set_theme(const tk::Theme& t)
     if (surface_) surface_->set_theme(t);
 }
 
-void EmojiPicker::request_image_(const std::string& cache_key)
-{
-    if (!client_ || cache_key.empty())
-    {
-        return;
-    }
-    if (image_cache_.count(cache_key))
-    {
-        return;
-    }
-    if (!fetches_in_flight_.insert(cache_key).second)
-    {
-        return;
-    }
-
-    QString qkey = QString::fromStdString(cache_key);
-    // Snapshot client_ on the GUI thread; setClient() can rebind it on an
-    // account switch while this worker runs (data race + wrong account).
-    auto* c = client_;
-    auto* runner = QRunnable::create([c, key = cache_key, qkey, this]() {
-        auto bytes = c->fetch_source_bytes(key);
-        QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                       static_cast<int>(bytes.size()));
-        emit imageLoadedSignal_(qkey, qb);
-    });
-    QThreadPool::globalInstance()->start(runner);
-}
-
-void EmojiPicker::onImageLoaded_(QString cache_key, QByteArray bytes)
-{
-    std::string key = cache_key.toStdString();
-    fetches_in_flight_.erase(key);
-    if (bytes.isEmpty() || image_cache_.count(key))
-    {
-        return;
-    }
-
-    QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.constData()),
-                           bytes.size()))
-    {
-        return;
-    }
-    QImage scaled = img.scaled(64, 64,
-                                Qt::KeepAspectRatio,
-                                Qt::SmoothTransformation);
-    image_cache_.emplace(key, tk::qt6::make_image(std::move(scaled)));
-    if (shared_)
-    {
-        shared_->invalidate_image_cache();
-    }
-    if (surface_)
-    {
-        surface_->update();
-    }
+void EmojiPicker::setImageProvider(
+        tesseract::views::EmojiPicker::ImageProvider p) {
+    if (shared_) shared_->set_image_provider(std::move(p));
 }
 
 void EmojiPicker::popupAt(QWidget* anchor)
