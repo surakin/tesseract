@@ -234,6 +234,44 @@ struct Backend::Impl
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+//  Emoji Unicode ranges covered by Twemoji Mozilla
+// ─────────────────────────────────────────────────────────────────────────
+
+// Must live at file scope so both TwemojiFirstFallback and
+// build_twemoji_fallback can reference it.
+static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
+    {0x00A9, 0x00A9},   {0x00AE, 0x00AE}, // © ®
+    {0x203C, 0x203C},   {0x2049, 0x2049}, // ‼ ⁉
+    {0x2122, 0x2122},   {0x2139, 0x2139}, // ™ ℹ
+    {0x2194, 0x2199},   {0x21A9, 0x21AA}, // arrows
+    {0x231A, 0x231B},   {0x2328, 0x2328}, // watch, keyboard
+    {0x23CF, 0x23CF},   {0x23E9, 0x23FA}, // eject, media controls
+    {0x24C2, 0x24C2},                     // Ⓜ
+    {0x25AA, 0x25FE},                     // geometric shapes
+    {0x2600, 0x27BF},                     // misc symbols + dingbats (incl. ♀ ♂)
+    {0x2934, 0x2935},   {0x2B05, 0x2B55}, // arrows, squares, star
+    {0x3030, 0x3030},   {0x303D, 0x303D},   {0x3297, 0x3297},
+    {0x3299, 0x3299},   {0x1F004, 0x1F004}, {0x1F0CF, 0x1F0CF},
+    {0x1F170, 0x1F171}, {0x1F17E, 0x1F17F}, {0x1F18E, 0x1F18E},
+    {0x1F191, 0x1F19A}, {0x1F1E0, 0x1F1FF}, // Regional Indicator (country flags)
+    {0x1F201, 0x1F251},                     // enclosed ideographic
+    {0x1F300, 0x1F9FF},                     // main emoji block
+    {0x1FA00, 0x1FAFF}, // extended (chess, medical, misc)
+    {0xFE00, 0xFE0F},   // variation selectors
+};
+
+// Returns true if `cp` falls inside any of kEmojiRanges.
+static bool is_emoji_cp(UINT32 cp)
+{
+    for (const auto& r : kEmojiRanges)
+    {
+        if (cp >= r.first && cp <= r.last)
+            return true;
+    }
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 //  Twemoji emoji-first font fallback
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -260,6 +298,64 @@ struct TwemojiFirstFallback : IDWriteFontFallback
                               bst, mapped_len, mapped_font, scale);
         if (*mapped_font)
         {
+            // Extend mapped_len through any ZWJ + emoji continuations so
+            // the full grapheme cluster lands in one font run.  DirectWrite
+            // only runs GSUB ligature substitution within a single run, so
+            // keeping the whole sequence together is what allows Twemoji to
+            // substitute the combined glyph (e.g. 🚴 + ZWJ + ♀️ → 🚴‍♀️).
+            UINT32 end = pos + *mapped_len;
+            const UINT32 text_end = pos + len;
+            while (end < text_end)
+            {
+                const wchar_t* chunk = nullptr;
+                UINT32 chunk_len = 0;
+                if (FAILED(src->GetTextAtPosition(end, &chunk, &chunk_len)) ||
+                    !chunk || chunk_len == 0)
+                    break;
+                if (chunk[0] != 0x200D) // not ZWJ
+                    break;
+
+                const UINT32 after_zwj = end + 1;
+                if (after_zwj >= text_end)
+                    break;
+
+                const wchar_t* next = nullptr;
+                UINT32 next_len = 0;
+                if (FAILED(src->GetTextAtPosition(after_zwj, &next, &next_len)) ||
+                    !next || next_len == 0)
+                    break;
+
+                // Decode the codepoint after ZWJ (handle surrogate pairs).
+                UINT32 cp, cp_len;
+                if (next[0] >= 0xD800 && next[0] <= 0xDBFF && next_len >= 2 &&
+                    next[1] >= 0xDC00 && next[1] <= 0xDFFF)
+                {
+                    cp = 0x10000u + ((UINT32(next[0]) - 0xD800u) << 10) +
+                         (UINT32(next[1]) - 0xDC00u);
+                    cp_len = 2;
+                }
+                else
+                {
+                    cp = UINT32(next[0]);
+                    cp_len = 1;
+                }
+
+                if (!is_emoji_cp(cp))
+                    break;
+
+                end = after_zwj + cp_len;
+
+                // Consume an optional trailing variation selector U+FE0F.
+                if (end < text_end)
+                {
+                    const wchar_t* vs = nullptr;
+                    UINT32 vs_len = 0;
+                    if (SUCCEEDED(src->GetTextAtPosition(end, &vs, &vs_len)) &&
+                        vs && vs_len > 0 && vs[0] == 0xFE0Fu)
+                        end += 1;
+                }
+            }
+            *mapped_len = end - pos;
             return S_OK;
         }
         return system_->MapCharacters(src, pos, len, base_coll, base_family, bw,
@@ -381,31 +477,7 @@ build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     }
 
     // 5. Build a fallback that maps emoji Unicode ranges → Twemoji Mozilla.
-    static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
-        {0x00A9, 0x00A9},   {0x00AE, 0x00AE}, // © ®
-        // ZWJ must be in the same font run as the surrounding emoji so
-        // DirectWrite's shaper can form gender/family/profession sequences
-        // (e.g. 👩‍💻 = U+1F469 + U+200D + U+1F4BB).  Without this entry
-        // the joiner lands in the system font, splitting the run.
-        {0x200D, 0x200D},                     // ZWJ
-        {0x203C, 0x203C},   {0x2049, 0x2049}, // ‼ ⁉
-        {0x2122, 0x2122},   {0x2139, 0x2139}, // ™ ℹ
-        {0x2194, 0x2199},   {0x21A9, 0x21AA}, // arrows
-        {0x231A, 0x231B},   {0x2328, 0x2328}, // watch, keyboard
-        {0x23CF, 0x23CF},   {0x23E9, 0x23FA}, // eject, media controls
-        {0x24C2, 0x24C2},                     // Ⓜ
-        {0x25AA, 0x25FE},                     // geometric shapes
-        {0x2600, 0x27BF},                     // misc symbols + dingbats
-        {0x2934, 0x2935},   {0x2B05, 0x2B55}, // arrows, squares, star
-        {0x3030, 0x3030},   {0x303D, 0x303D},   {0x3297, 0x3297},
-        {0x3299, 0x3299},   {0x1F004, 0x1F004}, {0x1F0CF, 0x1F0CF},
-        {0x1F170, 0x1F171}, {0x1F17E, 0x1F17F}, {0x1F18E, 0x1F18E},
-        {0x1F191, 0x1F19A}, {0x1F1E0, 0x1F1FF}, // Regional Indicator (country flags)
-        {0x1F201, 0x1F251},                     // enclosed ideographic
-        {0x1F300, 0x1F9FF},                     // main emoji block
-        {0x1FA00, 0x1FAFF}, // extended (chess, medical, misc)
-        {0xFE00, 0xFE0F},   // variation selectors
-    };
+    //    kEmojiRanges is defined at file scope above TwemojiFirstFallback.
     const wchar_t* family[] = {L"Twemoji Mozilla"};
 
     ComPtr<IDWriteFontFallbackBuilder> fb_builder;
