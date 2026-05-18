@@ -3,157 +3,53 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.1.2 — 2026-05-18
 
-### 2026-05-18
+Changes since v0.1.1:
 
-- feat(linux): Wayland foreground activation via XDG portal — both Qt6 and GTK4 notifiers now use `org.freedesktop.portal.Notification` whenever `WAYLAND_DISPLAY` is set (not only in Flatpak); the portal's `ActionInvoked` signal (xdg-desktop-portal 1.16+) carries an `xdg_activation_v1` token that the compositor already validated against the user's click; the Qt6 shell sets `_q_waylandActivationToken` on `QWindow` before `activateWindow()`; the GTK4 shell calls `gtk_window_set_startup_id()` before `gtk_window_present()` — on GNOME Shell Wayland the window is now reliably brought to the foreground when a notification action is invoked
-- feat(app): single-instance enforcement — each shell registers a per-user OS lock at startup (`QLockFile` on Qt6, `G_APPLICATION_IS_NON_UNIQUE` + `g_application_run` on GTK4, a named mutex on Win32, `NSRunningApplication.runningApplicationsWithBundleIdentifier` on macOS) and exits with a notice if a lock is already held, preventing concurrent writes to the matrix-sdk store
-- fix(auth): reject duplicate account sign-in on all four shells — after OAuth completes, the shell checks `accounts_` for a matching `user_id`; if already signed in it discards the temp store and returns to the previous active account; GTK4, Win32, and macOS now match the guard that Qt6 already had
-- fix(notify/qt6): multiple Qt6 notification fixes — every call to `notify()` now generates a fresh popup (replaces-id was being set to a stale old id, silently collapsing all messages into one invisible toast); `image-path` hint now correctly populated from the room avatar bytes; stale `id_to_room_` entries cleaned up in `NotificationClosed`; icon field left blank to avoid unintended Qt fallback icon
-- fix(win32): swallow stale `WM_CHAR('\r')` queued after Enter submits the compose bar — pressing Enter to send a message left a carriage-return in the Win32 message queue that was consumed on the next key-handling cycle, inserting a phantom newline at the cursor in subsequent reply/edit compose sessions
-- fix(map): `on_tile_needed` wired in all four primary shell `MainWindow` files (Qt6, GTK4, Win32, macOS) — it was only connected in `RoomWindowBase::finish_init_()` for secondary pop-out windows; maps in the main window were permanently stuck on "Loading map…"
-- fix(map): zoom rate capped at one step per mouse-wheel notch (threshold = 60 delta units) — previously a single 90-unit physical-mouse event produced up to 18 zoom steps, making the map impossible to control; accumulator resets to zero after each step so fast consecutive scrolls don't queue future levels
-- fix(map): wheel events are now intercepted only inside the painted map bounding rect (recorded per-event in `map_rect_geom_`) rather than the full message row width and height
-- fix(map): location description text shown as a native tooltip on pointer-hover over the map area instead of static text rendered below the map; clears immediately on pointer-leave or row change
-- fix(settings): settings surface/widget receives the current theme immediately after creation — all four shells previously defaulted to `Theme::light()` in the surface constructor and then skipped the propagation in `apply_current_theme_()` because the guard checked for a null surface; now `set_theme(current_theme_)` is called right after creation so the Settings view follows the app theme from first open on every platform
-- fix(ui): emoji glyphs centred within their picker grid cells — the draw call was using a top-left origin instead of offsetting by `(cell_w - glyph_w) / 2, (cell_h - glyph_h) / 2`
-
-### 2026-05-17
-
-- fix(compose): markdown→HTML on send for **all** shells + secondary windows — `markdown.{h,cpp}` moved down to the client layer (it has no UI deps) and folded into the single send chokepoint `Client::send_message/send_reply/send_edit`: when the caller passes no explicit `formatted_body` it is derived via `markdown_to_html` (empty when there are no markers — plain stays plain), and an explicit non-empty `formatted_body` is passed through verbatim (preserves future custom-HTML paths). Previously only Qt6 + GTK4 main windows converted markdown; Win32, macOS, and `RoomWindowBase` pop-out windows sent raw text on every platform. Removed the duplicated per-shell `markdown_to_html` calls in Qt6 + GTK4 (6 sites). First-ever test coverage for the parser (`test_markdown.cpp`: emphasis, links http-only, XSS escaping, quotes/lists, fenced code, recursion bound)
-- fix(msc2545): prefer the merged stable image-pack names, unstable fallback — `rebuild_image_packs` now reads `m.room.image_pack` / `m.image_pack.rooms` first and falls back to `im.ponies.room_emotes` / `im.ponies.emote_rooms` (was unstable-first); precedence centralised in `image_packs::ROOM_PACK_TYPES` / `EMOTE_ROOMS_TYPES` (stable-first) so reads and future writers can't drift. MSC2545 defines no personal pack, so the fabricated `m.image_pack` user-pack "stable" type was removed — the personal pack is `im.ponies.user_emotes` only (no spec name); existing user-pack writers unchanged (renamed constant). Added `set_account_data_both` dual-write helper for the pending pack-management write paths (ROADMAP Step 10) so edits stay visible to clients still on the unstable names during the ecosystem migration
-- feat(notify): image & sticker notification previews with a lock-screen privacy gate — notifications now embed the message's image (`m.image`) or sticker picture; a new `m.sticker` push handler means stickers notify at all (previously a distinct event type the message handler never saw); SDK fetches the bytes (2 MiB cap, decrypts E2EE transparently, fail-safe to text+avatar). New cross-platform `tesseract::IScreenLock` (Win32 WTS session notifications, macOS `com.apple.screenIsLocked`, Linux logind `LockedHint` on Qt6 + GTK4); `ShellBase::notification_image_allowed_()` shows the picture only when the new `notification_image_previews` setting is on AND the screen is unlocked (avatars stay, as low-sensitivity room metadata). Render: Win32 large inline `<image>` + circular avatar `appLogoOverride`; macOS `UNNotificationAttachment` prefers the message image; Linux single image slot prefers the message image. Second checkbox added to the Notifications settings section, wired + persisted on all four shells. Also fixes a latent Win32 bug where `avatar_bytes` was discarded so the prior avatar-in-toast code was dead
-- feat(messaging): `m.location` / MSC3488 receive — location messages render as interactive 240 px inline maps; OSM tiles composited from `tile.openstreetmap.org` with disk cache; pan by drag, zoom by scroll wheel; attribution overlay; red-circle pin at event coordinates; all four platforms (Qt6, GTK4, Win32, macOS)
-- fix(win32): `NativeTextArea::natural_height()` now counts soft-wrapped lines — `EM_GETLINECOUNT × tmHeight` only saw hard newlines and lagged a keystroke behind the control's internal relayout, so the compose box auto-grew late on wrap/unwrap; now measured directly with `DrawTextW(DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL | DT_EXTERNALLEADING | DT_NOPREFIX)` at the `EM_GETRECT` formatting width (exact, no lag; trailing-newline caret line + empty-text cases handled)
-- feat(compose): emoji shortcode expansion — typing `:abc` shows a suggestion popup above the cursor with matching Unicode emoji and MSC2545 custom emoticons; Up/Down navigate rows, Enter/click accepts, Escape dismisses; completing a full `:shortcode:` token auto-expands inline; all four platforms (Qt6, GTK4, Win32, macOS)
-- feat(app): secondary room windows — `open_room_in_new_window(room_id)` opens any room in its own native window (Win32, Qt6, GTK4, macOS); raise-existing policy prevents duplicates; `RoomWindowBase` shared C++ base handles lifecycle, SDK subscription ref-counting, and event dispatch; all four shells dispatch timeline/message/typing/rooms-updated/url-preview events to open secondary windows
-- feat(messaging): optimistic send via SDK local echo — `send_message` switches to `timeline.send()` so sent messages appear immediately with a ◷ (sending) indicator; transitions to ✓ (accent) for 2 s once the server confirms delivery; on recoverable failure shows ⚠ + "Retry" (tappable, re-enables the SDK send queue); on unrecoverable failure shows ⚠ + ✕ (calls `timeline.redact` to abort); `retry_send` / `abort_send` FFI + C++ client API added
-- feat(pickers): emoji + sticker picker polish — `GridView::on_pointer_move` / `on_pointer_leave` now update `hovered_index_` (was silently broken: cells never highlighted on hover); both `EmojiPicker` and `StickerPicker` draw an inline `:shortcode:` tooltip centred above the hovered cell, immediately on hover, clipped to the picker bounds and flipped below when close to the top edge
-- fix(qt6): dark theme detection on GNOME — Qt6 shell now queries `org.freedesktop.portal.Settings` at startup and subscribes to `SettingChanged`; `os_color_scheme_()` falls back to the portal value when `QStyleHints::colorScheme()` returns `Unknown` (common on GNOME without QGnomePlatform or Qt < 6.6)
-- fix(gtk4): `NativeTextArea` placeholder text — `GtkTextView` has no native placeholder API; a `dim-label` `GtkLabel` overlay child tracks the compose area position and is shown/hidden with buffer state; compose bar now shows "Message…" hint when empty
-- fix(gtk4): async image fetch for `EmojiPicker` custom emoticon tabs — `set_image_provider` now wired with the same worker→decode→post-to-UI→repaint path used by the sticker picker; custom emoticons no longer show grey placeholders indefinitely
-
-### 2026-05-16
-
-- feat(matrix): `m.notice` renders with muted colour to distinguish bot/automated messages; `m.emote` renders as "* SenderName body" with italic spans — both support `formatted_body`, spoilers, URL cards, links, and reactions
-- feat(ui): BrandView shows the application icon (160×160 PNG generated from `tesseract.svg` at CMake configure time, embedded as a C byte array) instead of initials; falls back to the initials circle if decoding fails
-- fix(room-header): multiline topics show only the first line with "…" appended; tooltip activates even when first-line text fits the available width
-- feat: light/dark/system theme preference — all four shells detect OS appearance and honour a persisted `ThemePreference`; `set_theme()` added to every platform `Surface`; Win32 picks up `WM_SETTINGCHANGE`, macOS `effectiveAppearance`, Qt6 `QPalette::ColorScheme`, GTK4 `GtkSettings::gtk-application-prefer-dark-theme`
-- fix(settings): `create_directories` uses `std::error_code` overload to avoid exceptions; unit tests cover `ThemePreference` round-trip persistence
-- fix(sdk): build room timeline on a worker thread to avoid stack-overflow crash on macOS
-- fix(reply): pass `event_id` (not `in_reply_to_id`) to `ensure_reply_details_` so reply headers resolve correctly
-- fix(viewer): image/video overlay backdrop turned black on first mouse move — fixed on all four platforms by propagating `transparent` mode through the Surface/Host stack (Win32: `DXGI_ALPHA_MODE_PREMULTIPLIED` + `WS_EX_NOREDIRECTIONBITMAP`; Qt6: `WA_TranslucentBackground`; GTK4: Cairo `OPERATOR_SOURCE` clear; macOS: CG `kCGBlendModeCopy` clear + `isOpaque=NO`)
-- fix(message-list): bare URLs in plain-text bodies (no `formatted_body`) are now clickable
-- feat(image-viewer): oversized images open zoomed to fit rather than 1:1
-- fix(room-header): topic text extends to full available width with ellipsis on overflow; tooltip shows full topic only when the text is actually truncated
-- fix(ui): darken room list section header backgrounds for better visual separation
-- fix(ui): read marker is briefly suppressed when a new message arrives so it does not overlap the incoming row
-- fix(win32): compile cleanly under `/std:c++20` on SDK 19041 — cppwinrt + GDI+ compatibility
-- fix: typing row is always present at fixed height so the layout never shifts when typing starts/stops
-- fix: no grouping flicker on new messages — is_cont skips suppressed read marker; suppress_read_marker_ collapses the row until SDK moves it
-- fix: crash in newest_visible_real_event_id when typing row is visible — clamp visible_range() last index to messages_.size()-1
-- fix(qt6): inline hyperlinks now clickable — change Qt::ExactHit → Qt::FuzzyHit in link_at; add on_link_hovered callback + pointing-hand cursor on Qt6 and GTK4
-- feat(ui): room list redesign — last-message preview per row, regular-weight room name, 1px inter-room separators, halved row padding (kPadX 12→6, kPadY 8→4, kRowH 62→48)
-- feat(sdk): populate last_message_body from latest cached room event via LatestEventValue
-- feat(sdk): add latest_event_body helper (text/image/file/audio/video; local send variants) with 9 unit tests
-- fix(win32): snapshot client_ + guard null hCal in openJumpToDateDialog
-- fix(views): scroll_to_event_id guards empty id; document set_historical_mode repaint contract
-- fix(tk): address toolkit code-review findings
-- fix(sdk): remove event cache clear workaround from subscribe_room
-- fix(sdk,client): address full-app code-review findings (SDK + client)
-- fix(sdk): add topic_html to cfg(test) RoomInfo stub
-- fix(room-view): match typing strip background to chat area
-- fix(qt6): wire image/sticker/video viewer click callbacks
-- fix(qt6): use QTextCursor to query charFormat in link_at
-- fix(qt6): image viewer shows full resolution instead of downscaled thumbnail
-- fix(qt6): guard QCalendarWidget against pre-epoch dates
-- fix(linux-shells): address Qt/GTK shell code-review findings
-- fix(linux-gtk): drop GTK3-only gtk_window_set_urgency_hint (GTK4 build)
-- fix(join-room): address all code-review findings
-- fix: invisible unread badge numbers; style search box like compose input
-- fix: crash in draw_elided_line on empty attributed string
-- fix(compose): vertically center text in the composer input
-- fix(app): relayout before scroll_to_event_id so row_offsets_ are populated
-- fix(app): clear stale focused-timeline state on live room selection
-- feat(win32): MSC3030 jump-to-date — MonthCal picker + focused timeline callbacks
-- feat(views): RoomHeader calendar button + RoomView near-bottom/return-to-live/jump-to-date callbacks
-- feat(views): MessageListView scroll_to_event_id + historical pill mode
-- feat(room-header): vector-drawn calendar icon
-- feat(qt6): wire near-bottom/return-to-live + openJumpToDateDialog with QCalendarWidget
-- feat(macos): wire near-bottom/return-to-live + openJumpToDateDialog with NSDatePicker sheet
-- feat(login): homeserver discovery with .well-known + inline status
-- feat(linux-gtk): GTK4 attention request via GNotification
-- feat(gtk4): wire near-bottom/return-to-live + open_jump_to_date_dialog with GtkCalendar
-- feat(app): ShellBase focused-timeline state (begin_focused_subscription_, request_forward_history_, return_to_live_)
-- feat: clickable inline hyperlinks across all backends
+- feat(messaging): `m.location` / MSC3488 receive — location messages render as interactive 240 px inline maps; OSM tiles fetched from `tile.openstreetmap.org` with disk cache; pan by drag, zoom by scroll wheel; attribution overlay; red-circle pin at event coordinates; all four platforms (Qt6, GTK4, Win32, macOS)
+- feat(messaging): optimistic send via SDK local echo — `send_message` switches to `timeline.send()` so sent messages appear immediately with a ◷ (sending) indicator; transitions to ✓ for 2 s once the server confirms delivery; recoverable failure shows ⚠ + "Retry" (re-enables the SDK send queue); unrecoverable failure shows ⚠ + ✕ (aborts via `timeline.redact`); `retry_send` / `abort_send` FFI + C++ client API added
+- feat(compose): emoji shortcode expansion — typing `:abc` shows a suggestion popup above the cursor with matching Unicode emoji and MSC2545 custom emoticons; Up/Down navigate rows, Enter/click accepts, Escape dismisses; completing a full `:shortcode:` token auto-expands inline; all four platforms
+- feat(app): secondary room windows — `open_room_in_new_window(room_id)` opens any room in its own native window; raise-existing policy prevents duplicates; `RoomWindowBase` shared C++ base handles lifecycle, SDK subscription ref-counting, and event dispatch; all four shells dispatch events to open secondary windows
+- feat: light/dark/system theme preference — all four shells detect OS appearance and honour a persisted `ThemePreference`; Win32 picks up `WM_SETTINGCHANGE`, macOS `effectiveAppearance`, Qt6 `QPalette::ColorScheme`, GTK4 `GtkSettings::gtk-application-prefer-dark-theme`
+- feat(notify): image & sticker notification previews with a lock-screen privacy gate — notifications now embed the message's image or sticker picture (2 MiB cap, decrypts E2EE, fail-safe to avatar); cross-platform `tesseract::IScreenLock` suppresses previews when the screen is locked; stickers now notify at all (`m.sticker` push handler added); second settings checkbox added and persisted on all four shells
+- feat(pickers): emoji + sticker picker shortcode tooltips — `GridView` hover tracking fixed (cells now highlight on mouse-over); `EmojiPicker` and `StickerPicker` draw an inline `:shortcode:` tooltip centred above the hovered cell, clipped to picker bounds
+- feat(ui): room list redesign — last-message preview per row, regular-weight room name, 1 px inter-room separators, halved row padding
+- feat(matrix): `m.notice` renders with muted colour; `m.emote` renders as "* SenderName body" with italic spans — both support `formatted_body`, spoilers, URL cards, links, and reactions
+- feat: MSC3030 jump-to-date — all four shells wire MonthCal/QCalendarWidget/GtkCalendar/NSDatePicker with focused timeline; RoomHeader calendar button
 - feat: MSC3266 room summary lookup + join-room dialog
-- feat: attention requests when notifications arrive with window visible
-- docs: record homeserver discovery, attention requests, hardening pass
-- docs: implementation plan + design for vector-drawn room-header calendar icon
-
-### 2026-05-15
-
-- feat(sdk): MSC3030 FFI — timestamp_to_event, subscribe_room_at, paginate_forward
-- feat(client): MSC3030 C++ client API — timestamp_to_event, subscribe_room_at, paginate_forward
-- feat(tk): add on_near_bottom to ListView (symmetric to on_near_top)
-- feat: MSC4230 animated image flag with GIF badge
 - feat: MSC3765 rich room topics in the room header
-- feat: MSC2010 spoiler rendering and reveal interaction
-- feat: MSC2010-compatible message deletion via hover trash button
+- feat: MSC4230 animated image flag with GIF badge
+- feat: MSC2010 spoiler rendering and reveal interaction; message deletion via hover trash button
+- feat: homeserver discovery with `.well-known` + inline status on the login screen
+- feat: attention requests when notifications arrive with window visible
+- feat(image-viewer): oversized images open zoomed to fit rather than 1:1
+- feat(ui): BrandView shows the application icon (embedded PNG from `tesseract.svg`)
+- feat(app): single-instance enforcement on all four shells
+- feat(sdk): `latest_event_body` helper with 9 unit tests; `last_message_body` populated via `LatestEventValue`
+- fix(linux): Wayland foreground activation via XDG portal — Qt6 and GTK4 notifiers switch to `org.freedesktop.portal.Notification` on Wayland; the portal's `ActionInvoked` signal (xdg-desktop-portal 1.16+) carries a compositor-validated `xdg_activation_v1` token; Qt6 sets `_q_waylandActivationToken` on `QWindow`; GTK4 calls `gtk_window_set_startup_id()` — window is now reliably raised when a notification action is invoked
+- fix(qt6): dark theme detection on GNOME — Qt6 shell queries `org.freedesktop.portal.Settings` at startup and subscribes to `SettingChanged`; falls back to portal value when `QStyleHints::colorScheme()` returns `Unknown` (common on GNOME without QGnomePlatform / Qt < 6.6)
+- fix(compose): markdown→HTML on send centralised in `Client::send_message/send_reply/send_edit` for all shells + secondary windows — Win32, macOS, and pop-out windows now convert markdown; duplicated per-shell calls removed; added `test_markdown.cpp` test coverage
+- fix(msc2545): prefer merged stable image-pack event types (`m.room.image_pack`, `m.image_pack.rooms`) with unstable fallback; personal pack is `im.ponies.user_emotes` only (no fabricated stable type); `set_account_data_both` dual-write helper added for future pack management
+- fix(auth): reject duplicate account sign-in on all four shells
+- fix(notify/qt6): fresh popup per notification (stale replaces-id was collapsing all toasts); `image-path` hint correctly populated; stale `id_to_room_` entries cleaned up on `NotificationClosed`
+- fix(win32): swallow stale `WM_CHAR('\r')` after Enter submits the compose bar to prevent phantom newline in next reply/edit session
+- fix(win32): `NativeTextArea::natural_height()` measures soft-wrapped lines via `DrawTextW(DT_CALCRECT | DT_WORDBREAK …)` — compose box now auto-grows without a keystroke lag
+- fix(viewer): image/video overlay backdrop black-on-first-move fixed on all four platforms via transparent Surface/Host propagation
+- fix(gtk4): `NativeTextArea` placeholder text via `dim-label` `GtkLabel` overlay
+- fix(gtk4): async image fetch for `EmojiPicker` custom emoticon tabs
+- fix(map): `on_tile_needed` wired in all four primary shell main-window files (was only wired for secondary pop-out windows); zoom rate capped at one step per wheel notch; wheel events intercepted only inside the painted map rect; location description shown as tooltip on hover
+- fix(settings): settings surface receives the current theme immediately on creation
+- fix(ui): emoji glyphs centred within their picker grid cells
+- fix(message-list): bare URLs in plain-text bodies are now clickable
+- fix(reply): pass `event_id` (not `in_reply_to_id`) to reply detail resolver
+- fix(sdk): build room timeline on a worker thread to avoid stack-overflow crash on macOS
+- fix(win32): compile cleanly under `/std:c++20` on SDK 19041
 - feat: overlay scrollbar on GridView (EmojiPicker + StickerPicker)
-- feat: insert_at_cursor on NativeTextArea; fix emoji cursor staying put
-- refactor: consolidate chat area into shared RoomView widget across all shells
-- perf: clip Qt paintEvent to dirty rect; cache dur_lo measure() in voice card
-- perf: cache QFont by FontRole in QtFactory; cache avatar clip path by diameter
-- perf: cache measure() result in RoomListView chevron/badge callsites
-- perf: cache measure() result at hover-button callsites in MessageListView
-- perf: optimize AppKit/CoreGraphics rendering
-- Win32 D2D flip-model swap chain; dedupe NativeField set_rect; show unread rooms in collapsed sections
-- Share Twemoji-first font fallback with Win32 TextRenderer for flag-emoji consistency
-- Embed Twemoji Mozilla font on Windows to fix missing emoji flags
-- Send fully_read marker alongside public+private read receipts
-- Reserve receipt-cluster width during text wrap to prevent overlap
-- Render emoji-only messages at 2x body size (BigEmoji font role)
-- Rename device after OAuth login; fix Win32 typing-bar visibility
-- Four UI fixes: search placeholder, reaction emoji centering, sticker aspect ratio
-- fix: Win32 toast notifications not appearing
-- fix: verification banner and crash on login
-- fix: undeclared kRoomHeaderH in Win32 MainWindow
-- fix(tk): guard on_near_bottom re-arm against resize; add nearBottom test
-- fix: StickerPicker pack index when favorites tab is hidden
-- fix: startup freeze — run UnifiedPush distributor scan off the UI thread
-- fix: show 'Already in Saved Stickers' instead of suppressing context menu
-- fix(sdk): MSC3030 code review — dedupe streaming tasks, fix from_ffi reached_end
-- fix: save_sticker_to_user_pack info_json; Win32 right-click; notify_url_preview_ready
-- fix: macOS compilation errors
-- fix: Kind::Image rows not resizing when the image loads
-- fix: double-text on login view homeserver field
-- fix: build warnings and EXC_BAD_ACCESS crash on timeline init
-- fix: build — spoiler access error and missing D3D11 test link
-- fix: build after upstream RoomView refactor
-- fix: avatar clip radius was diameter not diameter/2 in cached QPainterPath
-- docs: update CHANGES/STATUS for RoomView refactor, scrollbar, CG opts, Win32 toast, perf
-- Add list of MSCs to implement; HTML UI mockup with live style tweaker
-
-### 2026-05-14 (after v0.1.1)
-
+- feat: MSC4027 custom images in reactions; MSC2448 BlurHash placeholders for media
+- feat: clickable inline hyperlinks across all backends
 - feat: markdown-to-HTML formatting for sent messages
-- feat: MSC4027 custom images in reactions
-- feat: MSC2448 BlurHash placeholders for media
-- feat: Win32 URL preview — on_url_preview_ready_ + set_preview_provider
-- refactor: Qt6 sidebar user strip uses shared UserInfo widget
-- Restore last room when switching accounts
-- Match compose-bar font to message body text (FontRole::Body)
-- Hide sub-spaces from the root room list
-- Always show the room search field
 - Relicense under GPL v3
-- fix: typing indicator hides the bar when no one is typing (Qt6)
-- fix: typing indicator hides the bar when no one is typing (GTK4/macOS/Win32)
-- fix: RoomListView tests for always-visible search bar
-- fix: RoomListView search bar — show only when content overflows
-- fix: MSVC build (M_PI); update docs for new features
-- fix: image viewer drag — override on_pointer_drag instead of on_pointer_move
 
 ## v0.1.1 — 2026-05-14
 
