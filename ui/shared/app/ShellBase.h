@@ -566,6 +566,21 @@ protected:
     std::vector<views::MessageRowData>
     build_rows_(const std::vector<Event*>& snapshot);
 
+    // Secondary-window fan-out (primary-window mutation stays per-shell).
+    void dispatch_timeline_reset_secondary_(
+        const std::string& room_id,
+        const std::vector<std::unique_ptr<Event>>& snapshot);
+    void dispatch_message_inserted_secondary_(const std::string& room_id,
+                                              std::size_t index,
+                                              const Event& ev);
+    void dispatch_message_updated_secondary_(const std::string& room_id,
+                                             std::size_t index,
+                                             const Event& ev);
+    void dispatch_message_removed_secondary_(const std::string& room_id,
+                                             std::size_t index);
+    // Refresh open pop-out windows' room metadata from rooms_.
+    void update_secondary_room_infos_();
+
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);
 

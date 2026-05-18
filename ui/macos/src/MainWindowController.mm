@@ -404,17 +404,7 @@ void MacShell::on_rooms_updated_()
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_)
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == room_id)
-            {
-                w->on_room_info_updated(r);
-                break;
-            }
-        }
-    }
+    update_secondary_room_infos_();
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
@@ -747,12 +737,7 @@ void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    dispatch_to_secondary_windows_(room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_timeline_reset(
-                                           build_rows_(snapshot));
-                                   });
+    dispatch_timeline_reset_secondary_(room_id, snapshot);
 
     MainWindowController* c = ctrl_;
     if (!c)
@@ -775,18 +760,7 @@ void MacShell::handle_message_inserted_ui_(std::string room_id,
 {
     if (ev && ev->type != tesseract::EventType::Unhandled)
     {
-        dispatch_to_secondary_windows_(
-            room_id,
-            [&](tesseract::RoomWindowBase* w)
-            {
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                w->on_message_inserted(
-                    index, tesseract::views::make_row_data(*ev, my_user_id_));
-            });
+        dispatch_message_inserted_secondary_(room_id, index, *ev);
     }
     MainWindowController* c = ctrl_;
     if (!c || !ev)
@@ -803,18 +777,7 @@ void MacShell::handle_message_updated_ui_(std::string room_id,
 {
     if (ev && ev->type != tesseract::EventType::Unhandled)
     {
-        dispatch_to_secondary_windows_(
-            room_id,
-            [&](tesseract::RoomWindowBase* w)
-            {
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                w->on_message_updated(
-                    index, tesseract::views::make_row_data(*ev, my_user_id_));
-            });
+        dispatch_message_updated_secondary_(room_id, index, *ev);
     }
     MainWindowController* c = ctrl_;
     if (!c || !ev)
@@ -828,11 +791,7 @@ void MacShell::handle_message_updated_ui_(std::string room_id,
 void MacShell::handle_message_removed_ui_(std::string room_id,
                                           std::size_t index)
 {
-    dispatch_to_secondary_windows_(room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_message_removed(index);
-                                   });
+    dispatch_message_removed_secondary_(room_id, index);
     MainWindowController* c = ctrl_;
     if (!c)
     {

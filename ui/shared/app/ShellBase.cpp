@@ -508,6 +508,78 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot)
     return rows;
 }
 
+void ShellBase::dispatch_timeline_reset_secondary_(
+    const std::string& room_id,
+    const std::vector<std::unique_ptr<Event>>& snapshot)
+{
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(snapshot));
+                                   });
+}
+
+void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
+                                                     std::size_t index,
+                                                     const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_inserted(index,
+                                   views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
+                                                    std::size_t index,
+                                                    const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_updated(index, views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_removed_secondary_(const std::string& room_id,
+                                                    std::size_t index)
+{
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](RoomWindowBase* w)
+                                   {
+                                       w->on_message_removed(index);
+                                   });
+}
+
+void ShellBase::update_secondary_room_infos_()
+{
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == rid)
+            {
+                w->on_room_info_updated(r);
+                break;
+            }
+        }
+    }
+}
+
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
 {
     per_account_rooms_[user_id] = rooms;

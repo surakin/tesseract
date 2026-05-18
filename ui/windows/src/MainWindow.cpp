@@ -2946,12 +2946,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(payload->room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_timeline_reset(
-                                           build_rows_(payload->snapshot));
-                                   });
+    dispatch_timeline_reset_secondary_(payload->room_id, payload->snapshot);
 }
 
 void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload)
@@ -2981,19 +2976,8 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media(*payload->event);
-            if (!payload->event->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(payload->event->event_id);
-            }
-            w->on_message_inserted(
-                payload->index,
-                tesseract::views::make_row_data(*payload->event, my_user_id_));
-        });
+    dispatch_message_inserted_secondary_(payload->room_id, payload->index,
+                                         *payload->event);
 }
 
 void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload)
@@ -3023,19 +3007,8 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media(*payload->event);
-            if (!payload->event->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(payload->event->event_id);
-            }
-            w->on_message_updated(
-                payload->index,
-                tesseract::views::make_row_data(*payload->event, my_user_id_));
-        });
+    dispatch_message_updated_secondary_(payload->room_id, payload->index,
+                                        *payload->event);
 }
 
 void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload)
@@ -3054,11 +3027,7 @@ void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(payload->room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_message_removed(payload->index);
-                                   });
+    dispatch_message_removed_secondary_(payload->room_id, payload->index);
 }
 
 void MainWindow::on_tesseract_rooms(RoomsPayload* payload)
@@ -3098,17 +3067,7 @@ void MainWindow::on_rooms_updated_()
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_)
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == room_id)
-            {
-                w->on_room_info_updated(r);
-                break;
-            }
-        }
-    }
+    update_secondary_room_infos_();
 }
 
 void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
