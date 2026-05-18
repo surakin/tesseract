@@ -2,6 +2,7 @@
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/image_pack.h>
 #include <tesseract/paths.h>
 #include <tesseract/screen_lock.h>
 #include <tesseract/settings.h>
@@ -12,10 +13,12 @@
 #include "tk/media_disk_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
+#include "views/MessageListView.h"
 
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -104,6 +107,15 @@ protected:
     std::vector<TabState> tabs_;
     size_t active_tab_idx_ = 0;
 
+    // ── Per-room message row cache ────────────────────────────────────────────
+    // Stores the last-seen MessageRowData snapshot for the N most recently
+    // visited rooms so that switching back to a room shows content instantly
+    // (before the SDK's on_timeline_reset callback arrives). Keyed by room_id;
+    // message_cache_lru_ tracks recency for eviction (front = most recent).
+    static constexpr int kMsgCacheCapacity = 10;
+    std::deque<std::string>                                              message_cache_lru_;
+    std::unordered_map<std::string, std::vector<views::MessageRowData>> message_cache_;
+
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
     std::string current_room_id_;
@@ -125,6 +137,10 @@ protected:
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
+
+    // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
+    // handle_image_packs_updated_ui_.
+    std::vector<tesseract::ImagePackImage> cached_emoticons_;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
@@ -347,6 +363,20 @@ protected:
     {
     }
 
+    // Return a pointer to the message list currently displayed, or nullptr.
+    // Each shell overrides to return &room_view_->message_list()->messages().
+    virtual const std::vector<views::MessageRowData>* get_current_messages_()
+    {
+        return nullptr;
+    }
+    // Apply msgs to the view without arming a room-switch gate, then relayout.
+    // Each shell overrides to call room_view_->set_messages(msgs, false) and
+    // trigger a surface relayout. Called on the UI thread only.
+    virtual void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& /*msgs*/)
+    {
+    }
+
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
     // implementations are no-ops; each shell overrides what it needs.
@@ -379,13 +409,23 @@ protected:
     virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
     {
     }
-    virtual void handle_image_packs_updated_ui_()
+    // Per-shell native sticker/emoji picker refresh prologue. Default no-op.
+    virtual void refresh_pickers_packs_()
     {
     }
-    virtual void handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string /*json*/)
+    // Concrete: runs the per-shell picker-refresh prologue, then rebuilds the
+    // MSC2545 emoticon flat list (cached_emoticons_).
+    virtual void handle_image_packs_updated_ui_();
+
+    // Per-shell media-prefetch for one row. Default = ensure_row_media_.
+    // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
+    virtual void prep_row_media_(const Event& ev)
     {
+        ensure_row_media_(ev);
     }
+    // Concrete: only the active account's prefs set the pending restore room.
+    virtual void handle_account_prefs_updated_ui_(std::string user_id,
+                                                  std::string json);
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,
@@ -524,6 +564,16 @@ protected:
     /// inserts key into tile_fetch_failed_ to suppress retries this session.
     void ensure_tile_async(int z, int x, int y);
 
+    // Snapshot the current room's message rows into message_cache_ (LRU).
+    // Called at every point where the active tab is about to change rooms.
+    void save_tab_message_cache_();
+
+    // If message_cache_ has a non-empty entry for room_id, apply it via
+    // apply_cached_messages_() and pre-populate view_displayed_room_id_ so
+    // the subsequent on_timeline_reset lands as a quiet in-place update
+    // (no room-switch gate). Returns true when a cache hit was found.
+    bool try_restore_message_cache_(const std::string& room_id);
+
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);
 
@@ -539,6 +589,31 @@ protected:
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
+
+    // Build MessageRowData rows from an event snapshot: prep media, request
+    // reply details, make_row_data. Used by every shell's timeline-reset and
+    // message handlers (primary + secondary-window paths).
+    std::vector<views::MessageRowData>
+    build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot);
+    // macOS hands primary-path events across the ObjC boundary as raw
+    // pointers; this overload serves that path.
+    std::vector<views::MessageRowData>
+    build_rows_(const std::vector<Event*>& snapshot);
+
+    // Secondary-window fan-out (primary-window mutation stays per-shell).
+    void dispatch_timeline_reset_secondary_(
+        const std::string& room_id,
+        const std::vector<std::unique_ptr<Event>>& snapshot);
+    void dispatch_message_inserted_secondary_(const std::string& room_id,
+                                              std::size_t index,
+                                              const Event& ev);
+    void dispatch_message_updated_secondary_(const std::string& room_id,
+                                             std::size_t index,
+                                             const Event& ev);
+    void dispatch_message_removed_secondary_(const std::string& room_id,
+                                             std::size_t index);
+    // Refresh open pop-out windows' room metadata from rooms_.
+    void update_secondary_room_infos_();
 
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);

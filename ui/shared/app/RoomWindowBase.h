@@ -1,6 +1,7 @@
 #pragma once
 #include "views/MessageListView.h"
 #include "views/RoomView.h"
+#include "tk/host.h"
 #include "tk/theme.h"
 #include <tesseract/types.h>
 
@@ -59,6 +60,35 @@ protected:
     // are ready. Registers with ShellBase, acquires subscription, and
     // populates the view with the room's current state.
     void finish_init_();
+
+    // Install the shared RoomView providers + compose callbacks on `rv`
+    // (which the subclass has just created and parented to its surface).
+    // Call after creating room_view_ and before finish_init_(). Uses the
+    // shared SDK helpers + shell_ caches, routing the three per-shell
+    // primitives through surface_repaint_(), compose_text_area_(), and
+    // preview_lookup_(). Surface-bound providers that need the subclass's
+    // own surface_ (set_audio_player / set_post_delayed / on_layout_changed)
+    // stay in the subclass ctor.
+    void wire_room_view_(views::RoomView* rv);
+
+    // The single per-shell repaint primitive (surface->update() /
+    // gtk_widget_queue_draw / InvalidateRect / surface->relayout()).
+    virtual void surface_repaint_() = 0;
+
+    // Compose text widget to clear after a successful send / prefill on edit
+    // / focus on reply, or nullptr if the shell has no native text area and
+    // drives compose state through room_view_ instead (Qt6/GTK4 return
+    // nullptr; Win32/macOS return their native text area).
+    virtual tk::NativeTextArea* compose_text_area_()
+    {
+        return nullptr;
+    }
+
+    // Look up a cached URL-preview card for `url`, or nullptr. The cache
+    // (url_preview_data_) lives on the concrete shell, not ShellBase, so
+    // each shell forwards this one-liner to its own map.
+    virtual const views::UrlPreviewData*
+    preview_lookup_(const std::string& url) = 0;
 
     // Post a deferred call to ShellBase::release_owned_window_(this) on the UI
     // thread. Call from WM_DESTROY (Win32) or the platform destroy callback

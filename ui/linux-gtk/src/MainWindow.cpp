@@ -5,6 +5,7 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
+#include "views/text_util.h"
 
 #include <cairo.h>
 #include <thread>
@@ -139,29 +140,6 @@ void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
 void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
 {
     push_backup_progress(std::move(progress));
-}
-
-void MainWindow::handle_image_packs_updated_ui_()
-{
-    push_image_packs_updated();
-    cached_emoticons_.clear();
-    if (client_)
-    {
-        for (auto& pack : client_->list_image_packs())
-        {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
-}
-
-void MainWindow::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string json)
-{
-    push_account_prefs_updated(json);
 }
 
 void MainWindow::handle_notification_ui_(
@@ -812,13 +790,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 return;
             }
-            auto l = body.find_first_not_of(" \t\n\r");
-            auto r = body.find_last_not_of(" \t\n\r");
-            if (l == std::string::npos)
-            {
-                return;
-            }
-            std::string trimmed = body.substr(l, r - l + 1);
+            std::string trimmed = tesseract::text::trim(body);
             if (trimmed.empty())
             {
                 return;
@@ -2330,18 +2302,7 @@ void MainWindow::push_message_inserted(std::string room_id, std::size_t index,
         main_app_surface_->relayout();
     }
 
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            w->on_message_inserted(
-                index, tesseract::views::make_row_data(*ev, my_user_id_));
-        });
+    dispatch_message_inserted_secondary_(room_id, index, *ev);
 }
 
 void MainWindow::push_message_updated(std::string room_id, std::size_t index,
@@ -2364,18 +2325,7 @@ void MainWindow::push_message_updated(std::string room_id, std::size_t index,
         main_app_surface_->relayout();
     }
 
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            w->on_message_updated(
-                index, tesseract::views::make_row_data(*ev, my_user_id_));
-        });
+    dispatch_message_updated_secondary_(room_id, index, *ev);
 }
 
 void MainWindow::push_message_removed(std::string room_id, std::size_t index)
@@ -2385,11 +2335,7 @@ void MainWindow::push_message_removed(std::string room_id, std::size_t index)
         room_view_->remove_message(index);
         main_app_surface_->relayout();
     }
-    dispatch_to_secondary_windows_(room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_message_removed(index);
-                                   });
+    dispatch_message_removed_secondary_(room_id, index);
 }
 
 void MainWindow::push_rooms(std::string user_id,
@@ -2426,17 +2372,7 @@ void MainWindow::on_rooms_updated_()
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_)
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == room_id)
-            {
-                w->on_room_info_updated(r);
-                break;
-            }
-        }
-    }
+    update_secondary_room_infos_();
 }
 
 void MainWindow::handle_reconnect(const std::string& user_id)
@@ -2531,21 +2467,7 @@ void MainWindow::push_timeline_reset(
 {
     if (room_id == current_room_id_)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto& ev : snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
-        }
+        auto rows = build_rows_(snapshot);
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml = room_view_ ? room_view_->message_list() : nullptr;
@@ -2574,28 +2496,7 @@ void MainWindow::push_timeline_reset(
         }
     }
 
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(snapshot.size());
-            for (auto& ev : snapshot)
-            {
-                if (!ev)
-                {
-                    continue;
-                }
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*ev, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_timeline_reset_secondary_(room_id, snapshot);
 }
 
 void MainWindow::clear_messages()
@@ -3571,21 +3472,6 @@ void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data)
     }
 }
 
-void MainWindow::push_image_packs_updated()
-{
-    apply_image_packs_updated();
-}
-
-void MainWindow::push_account_prefs_updated(const std::string& json)
-{
-    auto prefs = tesseract::Prefs::parse(json);
-    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
-        current_room_id_.empty())
-    {
-        pending_restore_room_ = prefs.last_room;
-    }
-}
-
 void MainWindow::push_notification(const std::string& user_id,
                                    const std::string& room_id,
                                    const std::string& room_name,
@@ -3688,7 +3574,7 @@ void MainWindow::navigate_to_room(const std::string& room_id)
     gtk_window_present(GTK_WINDOW(window_));
 }
 
-void MainWindow::apply_image_packs_updated()
+void MainWindow::refresh_pickers_packs_()
 {
     if (sticker_picker_shared_)
     {
@@ -4483,6 +4369,8 @@ void MainWindow::switch_active_account(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     clear_messages();
 
     active_account_index_ = new_idx;
@@ -4594,6 +4482,8 @@ void MainWindow::logout_active_account()
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     refresh_room_list();
     if (main_app_)
     {
@@ -5001,6 +4891,7 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
+        try_restore_message_cache_(active.room_id);
         on_room_selected(active.room_id);
         if (!active.compose_draft.empty())
         {
@@ -5057,6 +4948,25 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     if (room_view_)
     {
         room_view_->set_current_text(draft);
+    }
+}
+
+const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+{
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    return ml ? &ml->messages() : nullptr;
+}
+
+void MainWindow::apply_cached_messages_(
+    const std::vector<views::MessageRowData>& msgs)
+{
+    if (room_view_)
+    {
+        room_view_->set_messages(msgs, /*room_switch=*/false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
     }
 }
 

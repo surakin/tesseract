@@ -5,6 +5,7 @@
 #include "views/html_spans.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
+#include <tesseract/prefs.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
@@ -465,6 +466,120 @@ void ShellBase::ensure_row_media_(const Event& ev)
     }
 }
 
+std::vector<views::MessageRowData>
+ShellBase::build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot)
+{
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (const auto& ev : snapshot)
+    {
+        if (!ev)
+        {
+            continue;
+        }
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        rows.push_back(views::make_row_data(*ev, my_user_id_));
+    }
+    return rows;
+}
+
+std::vector<views::MessageRowData>
+ShellBase::build_rows_(const std::vector<Event*>& snapshot)
+{
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (auto* ev : snapshot)
+    {
+        if (!ev)
+        {
+            continue;
+        }
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        rows.push_back(views::make_row_data(*ev, my_user_id_));
+    }
+    return rows;
+}
+
+void ShellBase::dispatch_timeline_reset_secondary_(
+    const std::string& room_id,
+    const std::vector<std::unique_ptr<Event>>& snapshot)
+{
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(snapshot));
+                                   });
+}
+
+void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
+                                                     std::size_t index,
+                                                     const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_inserted(index,
+                                   views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
+                                                    std::size_t index,
+                                                    const Event& ev)
+{
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](RoomWindowBase* w)
+        {
+            prep_row_media_(ev);
+            if (!ev.in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev.event_id);
+            }
+            w->on_message_updated(index, views::make_row_data(ev, my_user_id_));
+        });
+}
+
+void ShellBase::dispatch_message_removed_secondary_(const std::string& room_id,
+                                                    std::size_t index)
+{
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](RoomWindowBase* w)
+                                   {
+                                       w->on_message_removed(index);
+                                   });
+}
+
+void ShellBase::update_secondary_room_infos_()
+{
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == rid)
+            {
+                w->on_room_info_updated(r);
+                break;
+            }
+        }
+    }
+}
+
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
 {
     per_account_rooms_[user_id] = rooms;
@@ -752,6 +867,40 @@ static std::string format_typing_text(const std::vector<std::string>& names)
            std::to_string(names.size() - 2) + " others are typing\xe2\x80\xa6";
 }
 
+void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
+                                                 std::string json)
+{
+    // Only the active account's prefs set the pending restore room.
+    if (active_account_index_ < 0 ||
+        accounts_[active_account_index_]->user_id != user_id)
+    {
+        return;
+    }
+    auto prefs = tesseract::Prefs::parse(json);
+    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
+        current_room_id_.empty())
+    {
+        pending_restore_room_ = prefs.last_room;
+    }
+}
+
+void ShellBase::handle_image_packs_updated_ui_()
+{
+    refresh_pickers_packs_();
+    cached_emoticons_.clear();
+    if (client_)
+    {
+        for (auto& pack : client_->list_image_packs())
+        {
+            for (auto& img : client_->list_pack_images(
+                     pack.id, tesseract::PackUsageFilter::Emoticon))
+            {
+                cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
+}
+
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                           std::vector<std::string> names)
 {
@@ -846,6 +995,44 @@ size_t find_tab_(const std::vector<Tab>& tabs, const std::string& room_id)
 
 } // namespace
 
+void ShellBase::save_tab_message_cache_()
+{
+    const auto* msgs = get_current_messages_();
+    if (!msgs || msgs->empty() || current_room_id_.empty())
+    {
+        return;
+    }
+    auto map_it = message_cache_.find(current_room_id_);
+    if (map_it != message_cache_.end())
+    {
+        auto lru_it = std::find(message_cache_lru_.begin(),
+                                message_cache_lru_.end(), current_room_id_);
+        if (lru_it != message_cache_lru_.end())
+        {
+            message_cache_lru_.erase(lru_it);
+        }
+    }
+    else if (static_cast<int>(message_cache_.size()) >= kMsgCacheCapacity)
+    {
+        message_cache_.erase(message_cache_lru_.back());
+        message_cache_lru_.pop_back();
+    }
+    message_cache_lru_.push_front(current_room_id_);
+    message_cache_[current_room_id_] = *msgs;
+}
+
+bool ShellBase::try_restore_message_cache_(const std::string& room_id)
+{
+    auto it = message_cache_.find(room_id);
+    if (it == message_cache_.end() || it->second.empty())
+    {
+        return false;
+    }
+    view_displayed_room_id_ = room_id;
+    apply_cached_messages_(it->second);
+    return true;
+}
+
 void ShellBase::tab_open_room(const std::string& room_id)
 {
     if (room_id.empty())
@@ -860,6 +1047,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         current_room_id_ = tabs_[active_tab_idx_].room_id;
@@ -870,6 +1058,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
         tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+        save_tab_message_cache_();
     }
     // Bootstrap: wrap current_room_id_ as first tab if tabs_ is empty.
     if (tabs_.empty() && !current_room_id_.empty())
@@ -896,6 +1085,7 @@ void ShellBase::tab_select_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         current_room_id_ = tabs_[active_tab_idx_].room_id;
@@ -908,6 +1098,7 @@ void ShellBase::tab_select_room(const std::string& room_id)
     }
     else
     {
+        save_tab_message_cache_();
         tabs_[active_tab_idx_] = {room_id, 0.f, {}};
     }
     current_room_id_ = room_id;
@@ -928,6 +1119,7 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
+            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         current_room_id_ = tabs_[active_tab_idx_].room_id;

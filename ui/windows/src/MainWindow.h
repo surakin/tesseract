@@ -124,7 +124,7 @@ public:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -136,8 +136,6 @@ public:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -336,7 +334,6 @@ private:
     // ── Shortcode popup ───────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 
@@ -444,6 +441,9 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
+    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& msgs) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,

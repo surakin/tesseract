@@ -1,18 +1,16 @@
 #pragma once
 #include <string>
 
+#include "views/text_util.h"
+
 namespace tesseract::macos
 {
 
+// Thin alias kept for existing macOS call sites; delegates to the shared
+// tesseract::text::trim (identical " \t\n\r" semantics).
 inline std::string trim(std::string s)
 {
-    auto a = s.find_first_not_of(" \t\n\r");
-    auto b = s.find_last_not_of(" \t\n\r");
-    if (a == std::string::npos)
-    {
-        return {};
-    }
-    return s.substr(a, b - a + 1);
+    return tesseract::text::trim(s);
 }
 
 } // namespace tesseract::macos

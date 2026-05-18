@@ -1,4 +1,5 @@
 #pragma once
+#include "screen_lock_state.h"
 #include <tesseract/screen_lock.h>
 #include <gio/gio.h>
 
@@ -22,7 +23,7 @@ public:
 
     bool is_locked() const override
     {
-        return locked_;
+        return state_.is_locked();
     }
 
 private:
@@ -34,7 +35,7 @@ private:
     GDBusConnection* bus_ = nullptr; // owned (g_object_unref)
     guint sub_lock_ = 0;
     guint sub_unlock_ = 0;
-    bool locked_ = false;
+    tesseract::screenlock::State state_;
 };
 
 } // namespace gtk4

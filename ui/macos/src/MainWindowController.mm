@@ -113,7 +113,7 @@ protected:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -125,8 +125,6 @@ protected:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -150,6 +148,9 @@ protected:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
+    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& msgs) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -162,6 +163,8 @@ public:
     using ShellBase::anim_cache_;
     using ShellBase::apply_current_theme_;
     using ShellBase::begin_focused_subscription_;
+    using ShellBase::build_rows_;
+    using ShellBase::cached_emoticons_;
     using ShellBase::clear_focused_state_;
     using ShellBase::client_;
     using ShellBase::compose_typing_active_;
@@ -185,6 +188,8 @@ public:
     using ShellBase::mark_room_read_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::media_fetches_in_flight_;
+    using ShellBase::message_cache_;
+    using ShellBase::message_cache_lru_;
     using ShellBase::my_avatar_url_;
     using ShellBase::my_display_name_;
     using ShellBase::my_user_id_;
@@ -241,7 +246,6 @@ public:
     // Shortcode engine + transient state (owned here, accessed via _shell->).
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 
@@ -337,7 +341,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
-- (void)handleAccountPrefsUpdated:(NSString*)json;
 - (void)_showStickerPicker;
 - (void)_showStickerPickerAtRect:(tk::Rect)btn;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
@@ -406,17 +409,7 @@ void MacShell::on_rooms_updated_()
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_)
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == room_id)
-            {
-                w->on_room_info_updated(r);
-                break;
-            }
-        }
-    }
+    update_secondary_room_infos_();
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
@@ -749,28 +742,7 @@ void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(snapshot.size());
-            for (auto& p : snapshot)
-            {
-                if (!p)
-                {
-                    continue;
-                }
-                ensure_row_media_(*p);
-                if (!p->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(p->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*p, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_timeline_reset_secondary_(room_id, snapshot);
 
     MainWindowController* c = ctrl_;
     if (!c)
@@ -793,18 +765,7 @@ void MacShell::handle_message_inserted_ui_(std::string room_id,
 {
     if (ev && ev->type != tesseract::EventType::Unhandled)
     {
-        dispatch_to_secondary_windows_(
-            room_id,
-            [&](tesseract::RoomWindowBase* w)
-            {
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                w->on_message_inserted(
-                    index, tesseract::views::make_row_data(*ev, my_user_id_));
-            });
+        dispatch_message_inserted_secondary_(room_id, index, *ev);
     }
     MainWindowController* c = ctrl_;
     if (!c || !ev)
@@ -821,18 +782,7 @@ void MacShell::handle_message_updated_ui_(std::string room_id,
 {
     if (ev && ev->type != tesseract::EventType::Unhandled)
     {
-        dispatch_to_secondary_windows_(
-            room_id,
-            [&](tesseract::RoomWindowBase* w)
-            {
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                w->on_message_updated(
-                    index, tesseract::views::make_row_data(*ev, my_user_id_));
-            });
+        dispatch_message_updated_secondary_(room_id, index, *ev);
     }
     MainWindowController* c = ctrl_;
     if (!c || !ev)
@@ -846,11 +796,7 @@ void MacShell::handle_message_updated_ui_(std::string room_id,
 void MacShell::handle_message_removed_ui_(std::string room_id,
                                           std::size_t index)
 {
-    dispatch_to_secondary_windows_(room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_message_removed(index);
-                                   });
+    dispatch_message_removed_secondary_(room_id, index);
     MainWindowController* c = ctrl_;
     if (!c)
     {
@@ -883,7 +829,7 @@ void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
     }
 }
 
-void MacShell::handle_image_packs_updated_ui_()
+void MacShell::refresh_pickers_packs_()
 {
     MainWindowController* c = ctrl_;
     if (c)
@@ -942,18 +888,6 @@ void MacShell::handle_verification_cancelled_ui_(std::string /*flow_id*/,
     {
         [c handleVerificationCancelled:std::move(reason)];
     }
-}
-
-void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                std::string json)
-{
-    MainWindowController* c = ctrl_;
-    if (!c)
-    {
-        return;
-    }
-    NSString* ns = [NSString stringWithUTF8String:json.c_str()];
-    [c handleAccountPrefsUpdated:ns];
 }
 
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
@@ -1133,6 +1067,7 @@ void MacShell::on_tab_state_changed_ui_()
     if (ctrl_ && active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
+        try_restore_message_cache_(active.room_id);
         [ctrl_ onRoomSelected:active.room_id];
         if (!active.compose_draft.empty())
         {
@@ -1178,6 +1113,25 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (ctrl_)
     {
         [ctrl_ _setComposeDraft:draft];
+    }
+}
+
+const std::vector<views::MessageRowData>* MacShell::get_current_messages_()
+{
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    return ml ? &ml->messages() : nullptr;
+}
+
+void MacShell::apply_cached_messages_(
+    const std::vector<views::MessageRowData>& msgs)
+{
+    if (room_view_)
+    {
+        room_view_->set_messages(msgs, /*room_switch=*/false);
+    }
+    if (app_surface_)
+    {
+        app_surface_->relayout();
     }
 }
 
@@ -3253,6 +3207,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     _shell->current_room_id_.clear();
     _shell->space_stack_.clear();
+    _shell->message_cache_.clear();
+    _shell->message_cache_lru_.clear();
 
     auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
     _shell->rooms_ = (it != _shell->per_account_rooms_.end())
@@ -3570,6 +3526,8 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         _shell->rooms_.clear();
         _shell->space_stack_.clear();
+        _shell->message_cache_.clear();
+        _shell->message_cache_lru_.clear();
         [self _refreshRoomList];
         _shell->handle_compose_room_leaving_(_shell->current_room_id_);
         _shell->current_room_id_.clear();
@@ -3930,22 +3888,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                   _shell->current_room_id_;
     if (current)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto* ev : snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            _shell->ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                _shell->ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(
-                tesseract::views::make_row_data(*ev, _shell->my_user_id_));
-        }
+        auto rows = _shell->build_rows_(snapshot);
         const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
@@ -4756,28 +4699,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
     [panel refreshPacks];
-    _shell->cached_emoticons_.clear();
-    if (_shell->client_)
-    {
-        for (auto& pack : _shell->client_->list_image_packs())
-        {
-            for (auto& img : _shell->client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                _shell->cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
-}
-
-- (void)handleAccountPrefsUpdated:(NSString*)json
-{
-    auto prefs = tesseract::Prefs::parse(json.UTF8String);
-    if (!prefs.last_room.empty() && _shell->pending_restore_room_.empty() &&
-        _shell->current_room_id_.empty())
-    {
-        _shell->pending_restore_room_ = prefs.last_room;
-    }
 }
 
 - (void)_showStickerPicker

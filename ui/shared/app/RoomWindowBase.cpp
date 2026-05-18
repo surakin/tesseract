@@ -1,5 +1,6 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
+#include "views/text_util.h"
 #include <tesseract/client.h>
 
 namespace tesseract
@@ -51,6 +52,130 @@ void RoomWindowBase::finish_init_()
             shell_->ensure_tile_async(z, x, y);
         };
     }
+}
+
+void RoomWindowBase::wire_room_view_(views::RoomView* rv)
+{
+    // ── RoomView providers ────────────────────────────────────────────────
+    rv->set_avatar_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            return shell_avatar_(mxc);
+        });
+    rv->set_image_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            return shell_image_(mxc);
+        });
+    rv->set_preview_provider(
+        [this](
+            const std::string& url) -> const tesseract::views::UrlPreviewData*
+        {
+            return preview_lookup_(url);
+        });
+    rv->set_voice_bytes_provider(
+        [this](const std::string& source_json) -> std::vector<std::uint8_t>
+        {
+            return fetch_source_bytes_(source_json);
+        });
+
+    // ── Repaint ──────────────────────────────────────────────────────────
+    rv->set_repaint_requester(
+        [this]
+        {
+            surface_repaint_();
+        });
+
+    // ── Compose callbacks ────────────────────────────────────────────────
+    rv->on_send = [this](const std::string& body)
+    {
+        std::string trimmed = tesseract::text::trim(body);
+        if (trimmed.empty())
+        {
+            return;
+        }
+        send_message_(trimmed);
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        room_view_->set_current_text({});
+    };
+    rv->on_send_reply =
+        [this](const std::string& reply_id, const std::string& body)
+    {
+        if (body.empty())
+        {
+            return;
+        }
+        send_reply_(reply_id, body);
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        room_view_->set_current_text({});
+    };
+    rv->on_send_edit =
+        [this](const std::string& event_id, const std::string& new_body)
+    {
+        if (new_body.empty())
+        {
+            return;
+        }
+        send_edit_(event_id, new_body);
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        room_view_->set_current_text({});
+    };
+    rv->on_edit_cancelled = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        room_view_->set_current_text({});
+    };
+    rv->on_edit_prefill = [this](const std::string& body)
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text(body);
+        }
+        else
+        {
+            room_view_->set_current_text(body);
+        }
+    };
+    rv->on_reply_focus = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_focused(true);
+        }
+    };
+    rv->on_delete_requested = [this](const std::string& event_id)
+    {
+        delete_event_(event_id);
+    };
+    rv->on_reaction_toggled =
+        [this](const std::string& event_id, const std::string& key)
+    {
+        toggle_reaction_(event_id, key);
+    };
+    rv->on_receipt_needed = [this](const std::string& event_id)
+    {
+        send_receipt_(event_id);
+    };
+    rv->on_link_clicked = [](const std::string& url)
+    {
+        tesseract::Client::open_in_browser(url);
+    };
+    rv->on_near_top = [this]
+    {
+        request_pagination_back_();
+    };
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)

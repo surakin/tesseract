@@ -18,6 +18,7 @@
 #include <tesseract/settings.h>
 
 #include "views/AccountPicker.h"
+#include "views/text_util.h"
 
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -364,22 +365,10 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
     on_backup_progress(&progress);
 }
 
-void MainWindow::handle_image_packs_updated_ui_()
+void MainWindow::refresh_pickers_packs_()
 {
     refresh_sticker_picker();
     refresh_emoji_picker();
-    cached_emoticons_.clear();
-    if (client_)
-    {
-        for (auto& pack : client_->list_image_packs())
-        {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
@@ -511,17 +500,6 @@ void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string json)
-{
-    auto prefs = tesseract::Prefs::parse(json);
-    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
-        current_room_id_.empty())
-    {
-        pending_restore_room_ = prefs.last_room;
     }
 }
 
@@ -1250,14 +1228,7 @@ void MainWindow::on_create(HWND hwnd)
 
         room_view_->on_send = [this](const std::string& body)
         {
-            std::string trimmed = body;
-            auto l = trimmed.find_first_not_of(" \t\n\r");
-            auto r = trimmed.find_last_not_of(" \t\n\r");
-            if (l == std::string::npos)
-            {
-                return;
-            }
-            trimmed = trimmed.substr(l, r - l + 1);
+            std::string trimmed = tesseract::text::trim(body);
             if (trimmed.empty() || current_room_id_.empty())
             {
                 return;
@@ -2944,21 +2915,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
 
     if (payload->room_id == current_room_id_ && room_view_)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(payload->snapshot.size());
-        for (auto& ev : payload->snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            ensure_row_media(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
-        }
+        auto rows = build_rows_(payload->snapshot);
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml = room_view_->message_list();
@@ -2983,28 +2940,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(payload->snapshot.size());
-            for (auto& ev : payload->snapshot)
-            {
-                if (!ev)
-                {
-                    continue;
-                }
-                ensure_row_media(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*ev, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_timeline_reset_secondary_(payload->room_id, payload->snapshot);
 }
 
 void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload)
@@ -3034,19 +2970,8 @@ void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media(*payload->event);
-            if (!payload->event->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(payload->event->event_id);
-            }
-            w->on_message_inserted(
-                payload->index,
-                tesseract::views::make_row_data(*payload->event, my_user_id_));
-        });
+    dispatch_message_inserted_secondary_(payload->room_id, payload->index,
+                                         *payload->event);
 }
 
 void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload)
@@ -3076,19 +3001,8 @@ void MainWindow::on_tesseract_message_updated(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            ensure_row_media(*payload->event);
-            if (!payload->event->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(payload->event->event_id);
-            }
-            w->on_message_updated(
-                payload->index,
-                tesseract::views::make_row_data(*payload->event, my_user_id_));
-        });
+    dispatch_message_updated_secondary_(payload->room_id, payload->index,
+                                        *payload->event);
 }
 
 void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload)
@@ -3107,11 +3021,7 @@ void MainWindow::on_tesseract_message_removed(PostedMessageEvent* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(payload->room_id,
-                                   [&](tesseract::RoomWindowBase* w)
-                                   {
-                                       w->on_message_removed(payload->index);
-                                   });
+    dispatch_message_removed_secondary_(payload->room_id, payload->index);
 }
 
 void MainWindow::on_tesseract_rooms(RoomsPayload* payload)
@@ -3151,17 +3061,7 @@ void MainWindow::on_rooms_updated_()
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_)
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == room_id)
-            {
-                w->on_room_info_updated(r);
-                break;
-            }
-        }
-    }
+    update_secondary_room_infos_();
 }
 
 void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
@@ -4168,6 +4068,8 @@ void MainWindow::switch_active_account(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
 
     // Swap in cached rooms snapshot if available.
     auto it = per_account_rooms_.find(sess->user_id);
@@ -4334,6 +4236,8 @@ void MainWindow::logout_active_account()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     if (room_list_view_)
     {
         room_list_view_->set_rooms({});
@@ -5481,6 +5385,7 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
+        try_restore_message_cache_(active.room_id);
         on_room_selected(active.room_id);
         if (!active.compose_draft.empty())
         {
@@ -5537,6 +5442,25 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     if (room_view_)
     {
         room_view_->set_current_text(draft);
+    }
+}
+
+const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+{
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    return ml ? &ml->messages() : nullptr;
+}
+
+void MainWindow::apply_cached_messages_(
+    const std::vector<views::MessageRowData>& msgs)
+{
+    if (room_view_)
+    {
+        room_view_->set_messages(msgs, /*room_switch=*/false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
     }
 }
 

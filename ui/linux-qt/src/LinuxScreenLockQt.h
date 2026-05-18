@@ -1,4 +1,5 @@
 #pragma once
+#include "screen_lock_state.h"
 #include <tesseract/screen_lock.h>
 #include <QObject>
 #include <QString>
@@ -20,24 +21,24 @@ public:
 
     bool is_locked() const override
     {
-        return locked_;
+        return state_.is_locked();
     }
 
 private slots:
     void onLock()
     {
-        locked_ = true;
+        state_.on_lock();
     }
     void onUnlock()
     {
-        locked_ = false;
+        state_.on_unlock();
     }
 
 private:
     void refresh_locked_hint();
 
     QString session_path_;
-    bool locked_ = false;
+    tesseract::screenlock::State state_;
 };
 
 } // namespace qt6

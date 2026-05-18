@@ -1,11 +1,9 @@
 #import "RoomWindowController.h"
-#include "util.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
 #include "views/RoomView.h"
 #include "views/MessageListView.h"
-#include <tesseract/client.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Forward declaration — lets @interface reference MacRoomWindow before the
@@ -44,10 +42,21 @@ public:
         schedule_self_close_();
     }
 
+protected:
+    void surface_repaint_() override;
+    tk::NativeTextArea* compose_text_area_() override
+    {
+        return text_area_.get();
+    }
+    const tesseract::views::UrlPreviewData*
+    preview_lookup_(const std::string& url) override;
+
 private:
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
+    const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
+        preview_data_ = nullptr;
     bool window_closed_ = false;
 };
 
@@ -59,7 +68,7 @@ MacRoomWindow::MacRoomWindow(
     tesseract::ShellBase* shell, const std::string& room_id,
     const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
         preview_data)
-    : tesseract::RoomWindowBase(shell, room_id)
+    : tesseract::RoomWindowBase(shell, room_id), preview_data_(preview_data)
 {
     NSRect frame = NSMakeRect(0, 0, 800, 600);
     NSWindowStyleMask style =
@@ -81,47 +90,14 @@ MacRoomWindow::MacRoomWindow(
     room_view_ = room_root.get();
     surface_->set_root(std::move(room_root));
 
-    // ── RoomView providers ───────────────────────────────────────────────────
-    room_view_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image*
-        {
-            return shell_avatar_(mxc);
-        });
-    room_view_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image*
-        {
-            return shell_image_(mxc);
-        });
-    room_view_->set_preview_provider(
-        [preview_data](
-            const std::string& url) -> const tesseract::views::UrlPreviewData*
-        {
-            if (!preview_data)
-            {
-                return nullptr;
-            }
-            auto it = preview_data->find(url);
-            return it == preview_data->end() ? nullptr : &it->second;
-        });
+    // ── Shared RoomView wiring (providers + compose callbacks) ───────────────
+    wire_room_view_(room_view_);
+
+    // ── Surface-bound providers (need this shell's own surface_) ─────────────
     if (auto player = surface_->host().make_audio_player())
     {
         room_view_->set_audio_player(std::move(player));
     }
-    room_view_->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t>
-        {
-            return fetch_source_bytes_(source_json);
-        });
-
-    // ── Repaint / layout ─────────────────────────────────────────────────────
-    room_view_->set_repaint_requester(
-        [this]
-        {
-            if (surface_)
-            {
-                surface_->relayout();
-            }
-        });
     room_view_->set_post_delayed(
         [this](int ms, std::function<void()> fn)
         {
@@ -136,105 +112,6 @@ MacRoomWindow::MacRoomWindow(
         {
             surface_->relayout();
         }
-    };
-
-    // ── Compose callbacks ─────────────────────────────────────────────────────
-    room_view_->on_send = [this](const std::string& body)
-    {
-        std::string trimmed = tesseract::macos::trim(body);
-        if (trimmed.empty())
-        {
-            return;
-        }
-        send_message_(trimmed);
-        if (text_area_)
-        {
-            text_area_->set_text("");
-        }
-        if (room_view_)
-        {
-            room_view_->set_current_text({});
-        }
-    };
-    room_view_->on_send_reply =
-        [this](const std::string& reply_id, const std::string& body)
-    {
-        if (body.empty())
-        {
-            return;
-        }
-        send_reply_(reply_id, body);
-        if (text_area_)
-        {
-            text_area_->set_text("");
-        }
-        if (room_view_)
-        {
-            room_view_->set_current_text({});
-        }
-    };
-    room_view_->on_send_edit =
-        [this](const std::string& event_id, const std::string& new_body)
-    {
-        if (new_body.empty())
-        {
-            return;
-        }
-        send_edit_(event_id, new_body);
-        if (text_area_)
-        {
-            text_area_->set_text("");
-        }
-        if (room_view_)
-        {
-            room_view_->set_current_text({});
-        }
-    };
-    room_view_->on_edit_cancelled = [this]
-    {
-        if (text_area_)
-        {
-            text_area_->set_text("");
-        }
-        if (room_view_)
-        {
-            room_view_->set_current_text({});
-        }
-    };
-    room_view_->on_edit_prefill = [this](const std::string& body)
-    {
-        if (text_area_)
-        {
-            text_area_->set_text(body);
-        }
-    };
-    room_view_->on_reply_focus = [this]
-    {
-        if (text_area_)
-        {
-            text_area_->set_focused(true);
-        }
-    };
-    room_view_->on_delete_requested = [this](const std::string& event_id)
-    {
-        delete_event_(event_id);
-    };
-    room_view_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key)
-    {
-        toggle_reaction_(event_id, key);
-    };
-    room_view_->on_receipt_needed = [this](const std::string& event_id)
-    {
-        send_receipt_(event_id);
-    };
-    room_view_->on_link_clicked = [](const std::string& url)
-    {
-        tesseract::Client::open_in_browser(url);
-    };
-    room_view_->on_near_top = [this]
-    {
-        request_pagination_back_();
     };
 
     // ── NativeTextArea overlay ────────────────────────────────────────────────
@@ -348,6 +225,25 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
                                     : NSAppearanceNameAqua;
         controller_.window.appearance = [NSAppearance appearanceNamed:name];
     }
+}
+
+void MacRoomWindow::surface_repaint_()
+{
+    if (surface_)
+    {
+        surface_->relayout();
+    }
+}
+
+const tesseract::views::UrlPreviewData*
+MacRoomWindow::preview_lookup_(const std::string& url)
+{
+    if (!preview_data_)
+    {
+        return nullptr;
+    }
+    auto it = preview_data_->find(url);
+    return it == preview_data_->end() ? nullptr : &it->second;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

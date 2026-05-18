@@ -5,10 +5,9 @@ namespace gtk4
 
 namespace
 {
-constexpr const char* kService = "org.freedesktop.login1";
-constexpr const char* kSessIf = "org.freedesktop.login1.Session";
-// "auto" resolves to the calling process's own session.
-constexpr const char* kSessObj = "/org/freedesktop/login1/session/auto";
+constexpr const char* kService = tesseract::screenlock::kLogindService;
+constexpr const char* kSessIf = tesseract::screenlock::kSessionIface;
+constexpr const char* kSessObj = tesseract::screenlock::kSessionPath;
 } // namespace
 
 void LinuxScreenLockGtk::on_signal(GDBusConnection*, const char* /*sender*/,
@@ -19,11 +18,11 @@ void LinuxScreenLockGtk::on_signal(GDBusConnection*, const char* /*sender*/,
     auto* self = static_cast<LinuxScreenLockGtk*>(user_data);
     if (g_strcmp0(signal, "Lock") == 0)
     {
-        self->locked_ = true;
+        self->state_.on_lock();
     }
     else if (g_strcmp0(signal, "Unlock") == 0)
     {
-        self->locked_ = false;
+        self->state_.on_unlock();
     }
 }
 
@@ -49,7 +48,7 @@ LinuxScreenLockGtk::LinuxScreenLockGtk()
         {
             if (g_variant_is_of_type(boxed, G_VARIANT_TYPE_BOOLEAN))
             {
-                locked_ = g_variant_get_boolean(boxed);
+                state_.set_initial(g_variant_get_boolean(boxed));
             }
             g_variant_unref(boxed);
         }

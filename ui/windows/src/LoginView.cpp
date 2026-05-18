@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "tk/theme.h"
+#include "views/text_util.h"
 
 namespace win32
 {
@@ -346,13 +347,7 @@ void LoginView::join_worker()
 
 std::string LoginView::trim(std::string s)
 {
-    auto a = s.find_first_not_of(" \t\n\r");
-    auto b = s.find_last_not_of(" \t\n\r");
-    if (a == std::string::npos)
-    {
-        return {};
-    }
-    return s.substr(a, b - a + 1);
+    return tesseract::text::trim(s);
 }
 
 std::string LoginView::wstring_to_utf8(const std::wstring& s)

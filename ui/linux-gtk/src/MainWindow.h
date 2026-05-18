@@ -84,7 +84,7 @@ private:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -96,8 +96,6 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -123,8 +121,6 @@ private:
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_room_list_state(tesseract::RoomListState state);
-    void push_image_packs_updated();
-    void push_account_prefs_updated(const std::string& json);
     void push_notification(const std::string& user_id,
                            const std::string& room_id,
                            const std::string& room_name,
@@ -147,7 +143,6 @@ private:
 
 public:
     void emoji_selected(const std::string& glyph);
-    void apply_image_packs_updated();
 
 private:
     static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,
@@ -224,6 +219,9 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
+    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& msgs) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
     void on_url_preview_ready_(
@@ -274,7 +272,6 @@ private:
     // ── Shortcode popup ───────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 

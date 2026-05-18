@@ -41,6 +41,15 @@ public:
     void update_window_title_(const std::string& name) override;
     void apply_theme(const tk::Theme& t) override;
 
+protected:
+    void surface_repaint_() override;
+    tk::NativeTextArea* compose_text_area_() override
+    {
+        return text_area_.get();
+    }
+    const tesseract::views::UrlPreviewData*
+    preview_lookup_(const std::string& url) override;
+
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);

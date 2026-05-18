@@ -124,7 +124,7 @@ private:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -136,8 +136,6 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -183,8 +181,9 @@ private:
     void onRoomSelected(const std::string& room_id);
     // Resolve any media bytes the row references and decode them into
     // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
-    // positional-callback path (insert / update / reset).
-    void ensureRowMedia(const tesseract::Event& ev);
+    // positional-callback path (insert / update / reset). Overrides the
+    // ShellBase hook to also record decode-size hints (mediaImageSizes_).
+    void prep_row_media_(const tesseract::Event& ev) override;
     void clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history
@@ -215,6 +214,9 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
+    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& msgs) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
     void on_url_preview_ready_(
@@ -338,7 +340,6 @@ private:
     // ── Shortcode popup ──────────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 
