@@ -544,6 +544,38 @@ public:
         return std::make_unique<CairoImage>(surface);
     }
 
+    std::unique_ptr<Image>
+    scale_image(const Image& src, int max_w, int max_h) override
+    {
+        const auto& ci = static_cast<const CairoImage&>(src);
+        int sw = src.width();
+        int sh = src.height();
+        if (sw <= 0 || sh <= 0 || (sw <= max_w && sh <= max_h))
+        {
+            return nullptr;
+        }
+        float scale = std::min(static_cast<float>(max_w) / sw,
+                               static_cast<float>(max_h) / sh);
+        int tw = static_cast<int>(std::ceil(sw * scale));
+        int th = static_cast<int>(std::ceil(sh * scale));
+
+        cairo_surface_t* dst =
+            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+        if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS)
+        {
+            cairo_surface_destroy(dst);
+            return nullptr;
+        }
+        cairo_t* cr = cairo_create(dst);
+        cairo_scale(cr, scale, scale);
+        cairo_set_source_surface(cr, ci.surface(), 0.0, 0.0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+        cairo_surface_mark_dirty(dst);
+        return std::make_unique<CairoImage>(dst);
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {

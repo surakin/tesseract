@@ -75,6 +75,10 @@ void StickerPicker::set_theme(const tk::Theme& t)
     {
         surface_->set_theme(t);
     }
+    if (search_field_)
+    {
+        search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void StickerPicker::setImageProvider(

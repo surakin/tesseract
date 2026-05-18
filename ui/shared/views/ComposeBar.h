@@ -221,6 +221,8 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
+    bool contains_world(tk::Point world) const override;
+    tk::Widget* hit_test(tk::Point world) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
@@ -262,6 +264,8 @@ private:
     // chips, so the surfaces look consistent.
     std::unique_ptr<tk::TextLayout> emoji_layout_;
     std::unique_ptr<tk::TextLayout> sticker_layout_;
+    // × glyph for the remove-attachment button (Body size, hover-tinted).
+    std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
     tk::Rect compose_card_rect_{}; // card outline wrapping text + icon buttons
     tk::Rect emoji_rect_{};

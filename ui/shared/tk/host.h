@@ -53,6 +53,11 @@ public:
     virtual void set_on_changed(std::function<void(const std::string&)>) = 0;
     virtual void set_on_submit(std::function<void()>) = 0;
 
+    // Override the text (and placeholder) colour so the field respects
+    // the application's dark/light palette. Default no-op; backends that
+    // rely on the system theme for text colour don't need to implement it.
+    virtual void set_text_color(Color) {}
+
     // Focus-change hook. Called with `true` when the field gains focus,
     // `false` when it loses it. Default no-op so backends can opt in.
     virtual void set_on_focus_changed(std::function<void(bool)>)

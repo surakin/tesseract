@@ -29,6 +29,7 @@ MainAppWidget::MainAppWidget()
 
     auto name = std::make_unique<tk::Label>("", tk::FontRole::Body);
     nav_name_lbl_ = add_child(std::move(name));
+    nav_name_lbl_->set_halign(tk::TextHAlign::Center);
     nav_name_lbl_->set_visible(false);
 
     // Sidebar: room list fills available space above the user strip.
@@ -70,9 +71,12 @@ MainAppWidget::MainAppWidget()
 
 // ── Visibility controls ────────────────────────────────────────────────────
 
-void MainAppWidget::set_space_nav(bool show, std::string_view space_name)
+void MainAppWidget::set_space_nav(bool show, std::string_view space_name,
+                                  std::string_view avatar_url)
 {
     space_nav_visible_ = show;
+    space_name_ = show ? std::string(space_name) : std::string{};
+    avatar_url_ = show ? std::string(avatar_url) : std::string{};
     if (nav_back_btn_)
     {
         nav_back_btn_->set_visible(show);
@@ -82,6 +86,12 @@ void MainAppWidget::set_space_nav(bool show, std::string_view space_name)
         nav_name_lbl_->set_visible(show);
         nav_name_lbl_->set_text(std::string(space_name));
     }
+}
+
+void MainAppWidget::set_avatar_provider(
+    std::function<const tk::Image*(const std::string& mxc_url)> provider)
+{
+    avatar_provider_ = std::move(provider);
 }
 
 void MainAppWidget::show_recovery_banner(bool show)
@@ -189,9 +199,14 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         constexpr float kPad = 4.0f;
         const float btn_y = y + (kSpaceNavH - 24.0f) / 2.0f;
         nav_back_btn_->arrange(ctx, {x + kPad, btn_y, kBtnW, 24.0f});
-        nav_name_lbl_->arrange(ctx,
-                               {x + kPad + kBtnW + kPad, y,
-                                kSidebarW - kBtnW - kPad * 3.0f, kSpaceNavH});
+        // Label spans the full sidebar width with center halign, but
+        // Label::paint draws at bounds_.y so we must vertically centre the
+        // rect ourselves.  kNameH = 18 px matches the body-font line height
+        // used by RoomHeader; centering it in kSpaceNavH gives 9 px margins.
+        constexpr float kNameH = 18.0f;
+        nav_name_lbl_->arrange(
+            ctx,
+            {x, y + (kSpaceNavH - kNameH) * 0.5f, kSidebarW, kNameH});
         sidebar_content_y = y + kSpaceNavH;
     }
 
@@ -259,13 +274,40 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     {
         ctx.canvas.fill_rect({bounds_.x, bounds_.y, kSidebarW, kSpaceNavH},
                              pal.chrome_bg);
-        if (nav_back_btn_)
-        {
-            nav_back_btn_->paint(ctx);
-        }
         if (nav_name_lbl_)
         {
             nav_name_lbl_->paint(ctx);
+        }
+        // Space avatar (circle image or initials disc) just right of the
+        // back button, painted on top of the label.
+        constexpr float kBtnW = 32.0f;
+        constexpr float kPad = 4.0f;
+        const tk::Point avatar_centre{
+            bounds_.x + kPad + kBtnW + kPad + kNavAvatarSize * 0.5f,
+            bounds_.y + kSpaceNavH * 0.5f};
+        if (avatar_provider_ && !avatar_url_.empty())
+        {
+            if (const tk::Image* img = avatar_provider_(avatar_url_))
+            {
+                ctx.canvas.draw_circle_image(*img, avatar_centre, kNavAvatarSize);
+            }
+            else
+            {
+                ctx.canvas.draw_initials_circle(
+                    space_name_, avatar_centre, kNavAvatarSize,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
+            }
+        }
+        else if (!space_name_.empty())
+        {
+            ctx.canvas.draw_initials_circle(
+                space_name_, avatar_centre, kNavAvatarSize,
+                pal.avatar_initials_bg, pal.avatar_initials_text);
+        }
+        // Back button painted last so it renders above the label and avatar.
+        if (nav_back_btn_)
+        {
+            nav_back_btn_->paint(ctx);
         }
     }
 

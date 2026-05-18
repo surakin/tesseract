@@ -185,10 +185,10 @@ public:
     Point world_to_local(Point world) const;
 
     // World-coords containment check used by the dispatch + hit-test
-    // routines above. Exposed as a member so subclasses (notably
-    // clip-respecting containers like ScrollView) can reuse the same
-    // half-open rect test.
-    bool contains_world(Point world) const;
+    // routines above. Virtual so widgets with overflow content (e.g. a
+    // compose bar whose image preview floats above its layout bounds) can
+    // extend the hit region without changing their reported size.
+    virtual bool contains_world(Point world) const;
 
     // Tree.
     Widget* parent() const

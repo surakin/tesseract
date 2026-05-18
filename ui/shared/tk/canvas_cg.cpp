@@ -874,6 +874,32 @@ public:
         return std::make_unique<CGImageWrapper>(img);
     }
 
+    std::unique_ptr<Image>
+    scale_image(const Image& src, int max_w, int max_h) override
+    {
+        int sw = src.width(), sh = src.height();
+        if (sw <= 0 || sh <= 0 || (sw <= max_w && sh <= max_h))
+            return nullptr;
+        float scale = std::min(static_cast<float>(max_w) / sw,
+                               static_cast<float>(max_h) / sh);
+        int tw = static_cast<int>(std::ceil(sw * scale));
+        int th = static_cast<int>(std::ceil(sh * scale));
+        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+        CGContextRef bctx = CGBitmapContextCreate(
+            nullptr, tw, th, 8, 0, cs.get(),
+            kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst);
+        if (!bctx)
+            return nullptr;
+        CGContextSetInterpolationQuality(bctx, kCGInterpolationHigh);
+        const auto& wi = static_cast<const CGImageWrapper&>(src);
+        CGContextDrawImage(bctx, CGRectMake(0, 0, tw, th), wi.image());
+        CGImageRef scaled = CGBitmapContextCreateImage(bctx);
+        CGContextRelease(bctx);
+        if (!scaled)
+            return nullptr;
+        return std::make_unique<CGImageWrapper>(scaled);
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {

@@ -1128,7 +1128,13 @@ void MainWindow::on_create(HWND hwnd)
             show_user_context_menu_(sp.x, sp.y);
         };
 
-        // ── RoomListView wiring ─────────────────────────────────────────────
+        // ── Space nav + RoomListView avatar wiring ─────────────────────────
+        main_app_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
         room_list_view_->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image*
             {
@@ -3374,19 +3380,22 @@ void MainWindow::refresh_room_list()
     }
     else
     {
-        // Show the navigation bar with the current space's name.
+        // Show the navigation bar with the current space's name and avatar.
         std::string space_name;
+        std::string space_avatar;
         for (const auto& r : rooms_)
         {
             if (r.id == space_stack_.back())
             {
                 space_name = r.name;
+                space_avatar = r.avatar_url;
+                ensure_room_avatar_(r);
                 break;
             }
         }
         if (main_app_)
         {
-            main_app_->set_space_nav(true, space_name);
+            main_app_->set_space_nav(true, space_name, space_avatar);
         }
 
         auto child_ids = client_->space_children(space_stack_.back());

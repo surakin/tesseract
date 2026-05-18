@@ -1375,7 +1375,19 @@ void MacShell::apply_cached_messages_(
             }
         };
 
-        // RoomListView callbacks.
+        // Space nav + RoomListView avatar providers.
+        _mainApp->set_avatar_provider(
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return nullptr;
+                }
+                auto it = s->_shell->tk_avatars_.find(mxc);
+                return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                          : it->second.get();
+            });
         _mainApp->room_list_view()->set_avatar_provider(
             [weakSelf](const std::string& mxc) -> const tk::Image*
             {
@@ -4373,17 +4385,20 @@ void MacShell::apply_cached_messages_(
             }
         }
         std::string space_name;
+        std::string space_avatar;
         for (const auto& r : _shell->rooms_)
         {
             if (r.id == _shell->space_stack_.back())
             {
                 space_name = r.name;
+                space_avatar = r.avatar_url;
+                _shell->ensure_room_avatar_(r);
                 break;
             }
         }
         if (_mainApp)
         {
-            _mainApp->set_space_nav(true, space_name);
+            _mainApp->set_space_nav(true, space_name, space_avatar);
         }
     }
     for (const auto& r : filtered)

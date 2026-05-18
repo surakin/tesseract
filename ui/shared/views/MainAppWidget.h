@@ -53,7 +53,13 @@ public:
 
     // Show/hide the space-nav bar at the top of the sidebar.
     // Pass show=false to return to the plain room list.
-    void set_space_nav(bool show, std::string_view space_name = {});
+    void set_space_nav(bool show, std::string_view space_name = {},
+                       std::string_view avatar_url = {});
+
+    // Supply the image cache lookup function used to paint the space avatar.
+    // The signature matches the one used by RoomListView / RoomView.
+    void set_avatar_provider(
+        std::function<const tk::Image*(const std::string& mxc_url)> provider);
 
     // ── Banner visibility ─────────────────────────────────────────────────
 
@@ -133,7 +139,12 @@ private:
         static_cast<float>(tesseract::visual::kUserStripHeight);
     static constexpr float kBannerH = 48.0f;
 
+    static constexpr float kNavAvatarSize = 24.0f;
+
     bool space_nav_visible_ = false;
+    std::string space_name_;
+    std::string avatar_url_;
+    std::function<const tk::Image*(const std::string&)> avatar_provider_;
 
     // Sidebar children — borrowed raw pointers back from add_child()
     tk::Button* nav_back_btn_ = nullptr;

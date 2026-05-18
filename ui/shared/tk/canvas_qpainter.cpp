@@ -488,6 +488,20 @@ public:
         return std::make_unique<QtImage>(std::move(img));
     }
 
+    std::unique_ptr<Image>
+    scale_image(const Image& src, int max_w, int max_h) override
+    {
+        const auto& qi = static_cast<const QtImage&>(src);
+        const QImage& orig = qi.image();
+        if (orig.width() <= max_w && orig.height() <= max_h)
+        {
+            return nullptr; // already fits — caller keeps original
+        }
+        QImage scaled = orig.scaled(max_w, max_h, Qt::KeepAspectRatio,
+                                    Qt::SmoothTransformation);
+        return std::make_unique<QtImage>(std::move(scaled));
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {

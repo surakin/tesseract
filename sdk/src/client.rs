@@ -4510,9 +4510,18 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
         // the local cache. For explicitly subscribed rooms the number is small,
         // so one HTTP round-trip per missing room is acceptable.
+        //
+        // Try unstable first here: most rooms still store packs under the old
+        // im.ponies.room_emotes type, so trying stable first would generate a
+        // spurious 404 (logged at ERROR by matrix-sdk) before the working
+        // fallback. The local-cache path above already prefers stable correctly
+        // because a local lookup is free; HTTP prefers unstable pragmatically.
+        // TODO: revert to forward ROOM_PACK_TYPES order (stable first) once the
+        // matrix-sdk suppresses or downgrades 404 errors from state-event GETs,
+        // or once the ecosystem has broadly migrated to m.room.image_pack.
         if !found {
             use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
-            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES.iter().rev().copied() {
                 let et = StateEventType::from(ev_type_str);
                 let req = get_state_event_for_key::v3::Request::new(
                     room_id.clone(),

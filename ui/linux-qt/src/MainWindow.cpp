@@ -111,6 +111,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         };
 
         // ---- Room list ----
+        mainApp_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
         mainApp_->room_list_view()->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image*
             {
@@ -973,6 +979,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         });
 
     roomSearchField_ = mainAppSurface_->host().make_text_field();
+    roomSearchField_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
     roomSearchField_->set_placeholder(
         tr("Search rooms\xe2\x80\xa6").toStdString());
     roomSearchField_->set_on_changed(
@@ -2378,10 +2386,20 @@ void MainWindow::onMessageAnimTick_()
         }
         return;
     }
-    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()) &&
-        mainAppSurface_)
+    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()))
     {
-        mainAppSurface_->update();
+        if (mainAppSurface_)
+        {
+            mainAppSurface_->update();
+        }
+        if (emojiPicker_ && emojiPicker_->isVisible())
+        {
+            emojiPicker_->invalidateImages();
+        }
+        if (stickerPicker_ && stickerPicker_->isVisible())
+        {
+            stickerPicker_->invalidateImages();
+        }
     }
 }
 
@@ -2501,22 +2519,22 @@ void MainWindow::refreshRoomList()
     // client_ is null; show an empty list rather than crash.
     if (!client_)
     {
-        showRooms({});
         if (mainApp_)
         {
             mainApp_->set_space_nav(false);
         }
+        showRooms({});
         return;
     }
     if (space_stack_.empty())
     {
         if (!roomSearchPendingText_.empty())
         {
-            showRooms(rooms_);
             if (mainApp_)
             {
                 mainApp_->set_space_nav(false);
             }
+            showRooms(rooms_);
             return;
         }
         std::unordered_set<std::string> in_space;
@@ -2546,11 +2564,11 @@ void MainWindow::refreshRoomList()
                 filtered.push_back(r);
             }
         }
-        showRooms(filtered);
         if (mainApp_)
         {
             mainApp_->set_space_nav(false);
         }
+        showRooms(filtered);
     }
     else
     {
@@ -2565,20 +2583,23 @@ void MainWindow::refreshRoomList()
                 filtered.push_back(r);
             }
         }
-        showRooms(filtered);
         if (mainApp_)
         {
             std::string space_name;
+            std::string space_avatar;
             for (const auto& r : rooms_)
             {
                 if (r.id == space_id)
                 {
                     space_name = r.name;
+                    space_avatar = r.avatar_url;
+                    ensure_room_avatar_(r);
                     break;
                 }
             }
-            mainApp_->set_space_nav(true, space_name);
+            mainApp_->set_space_nav(true, space_name, space_avatar);
         }
+        showRooms(filtered);
     }
 }
 

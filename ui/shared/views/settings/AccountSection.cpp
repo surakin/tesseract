@@ -94,7 +94,7 @@ void AccountSection::paint(tk::PaintCtx& ctx)
     // -------- Avatar --------------------------------------------------------
     const tk::Point avatar_centre{
         bounds_.x + kPadX + kAvatarDiameter * 0.5f,
-        bounds_.y + bounds_.h * 0.5f,
+        bounds_.y + kPadY + kAvatarDiameter * 0.5f,
     };
 
     const tk::Image* img = (image_provider_ && !avatar_url_.empty())
@@ -152,12 +152,14 @@ void AccountSection::paint(tk::PaintCtx& ctx)
         uid_layout_ = ctx.factory.build_text(user_id_, st);
     }
 
-    // Vertically centre the two-line text column within the section height.
+    // Vertically centre the two-line text column within the avatar circle height,
+    // both anchored at the top padding.
     const tk::Size name_sz =
         name_layout_ ? name_layout_->measure() : tk::Size{};
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
     const float col_h = name_sz.h + (uid_sz.h > 0 ? kLineGap + uid_sz.h : 0);
-    const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
+    const float col_top =
+        bounds_.y + kPadY + (kAvatarDiameter - col_h) * 0.5f;
 
     if (name_layout_)
     {

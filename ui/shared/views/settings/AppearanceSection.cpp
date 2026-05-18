@@ -19,8 +19,10 @@ constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
 constexpr float kBtnRadius = 6.0f;     // corner radius
 
-// Approximate height of a single UiSemibold glyph (used in measure()).
+// Approximate heights of a single UiSemibold glyph (used in measure()).
 constexpr float kGlyphH = 16.0f;
+constexpr float kHeaderH = 14.0f;     // UiSemibold section label (≈11 pt)
+constexpr float kHeaderGap = 10.0f;   // gap between header label and buttons
 
 } // namespace
 
@@ -41,7 +43,7 @@ tk::Size AppearanceSection::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
     const float btn_h = std::max(kGlyphH + kBtnVPad * 2.0f, kBtnMinHeight);
-    const float h = btn_h + kPadY * 2.0f;
+    const float h = kPadY + kHeaderH + kHeaderGap + btn_h + kPadY;
     return {w, h};
 }
 
@@ -49,12 +51,21 @@ void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
-    // Distribute the three buttons evenly across the available width.
-    const float total_w = bounds.w - kPadX * 2.0f;
-    const float gap_total = kBtnSpacing * (kButtonCount - 1);
-    const float btn_w = std::max(0.0f, (total_w - gap_total) / kButtonCount);
+    // Measure button labels to give all three the same natural width.
+    float max_text_w = 0;
+    for (int i = 0; i < kButtonCount; ++i)
+    {
+        tk::TextStyle st;
+        st.role = tk::FontRole::UiSemibold;
+        st.max_width = -1.0f;
+        if (auto lay = ctx.factory.build_text(buttons_[i].label, st))
+        {
+            max_text_w = std::max(max_text_w, lay->measure().w);
+        }
+    }
+    const float btn_w = max_text_w + kBtnHPad * 2.0f;
     const float btn_h = std::max(kGlyphH + kBtnVPad * 2.0f, kBtnMinHeight);
-    const float btn_y = bounds.y + (bounds.h - btn_h) * 0.5f;
+    const float btn_y = bounds.y + kPadY + kHeaderH + kHeaderGap;
 
     for (int i = 0; i < kButtonCount; ++i)
     {
@@ -64,12 +75,9 @@ void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             btn_w,
             btn_h,
         };
-        // Invalidate text layouts when the available width changes so they
-        // are rebuilt with the correct max_width on the next paint.
         buttons_[i].layout.reset();
     }
-
-    // Delegate to Widget::arrange to store bounds_ (already done above).
+    header_layout_.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +87,22 @@ void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 void AppearanceSection::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
+
+    // -------- "Theme" section header ----------------------------------------
+    if (!header_layout_)
+    {
+        tk::TextStyle st;
+        st.role = tk::FontRole::UiSemibold;
+        st.halign = tk::TextHAlign::Leading;
+        st.max_width = -1.0f;
+        header_layout_ = ctx.factory.build_text("Theme", st);
+    }
+    if (header_layout_)
+    {
+        ctx.canvas.draw_text(*header_layout_,
+                             {bounds_.x + kPadX, bounds_.y + kPadY},
+                             pal.text_secondary);
+    }
 
     for (int i = 0; i < kButtonCount; ++i)
     {

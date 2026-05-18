@@ -60,6 +60,8 @@ private:
     int hovered_idx_ = -1; // index of the button under the pointer, or -1
     int pressed_idx_ = -1; // index of the button being pressed, or -1
 
+    std::unique_ptr<tk::TextLayout> header_layout_;
+
     // Return the index of the button whose bounds contain `local`, or -1.
     int hit_button(tk::Point local) const;
 };

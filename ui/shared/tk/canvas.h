@@ -185,6 +185,16 @@ public:
         return nullptr;
     }
 
+    // Downscale `src` to fit within max_w × max_h, preserving aspect ratio,
+    // using a high-quality multi-pass filter (box/bicubic). Returns nullptr
+    // when the image already fits or the backend doesn't override this
+    // (caller should keep the original in that case).
+    virtual std::unique_ptr<Image>
+    scale_image(const Image& /*src*/, int /*max_w*/, int /*max_h*/)
+    {
+        return nullptr;
+    }
+
     virtual std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                                    const TextStyle&) = 0;
 

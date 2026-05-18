@@ -456,7 +456,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             refresh_room_list();
         };
 
-        // Wire RoomListView callbacks.
+        // Wire space nav and RoomListView avatar providers.
+        main_app_->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                auto it = tk_avatars_.find(mxc);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
         room_list_view_->set_avatar_provider(
             [this](const std::string& mxc) -> const tk::Image*
             {
@@ -2741,6 +2747,14 @@ void MainWindow::invalidate_anim_consumers_()
     {
         main_app_surface_->relayout();
     }
+    if (emoji_picker_shared_)
+    {
+        emoji_picker_shared_->invalidate_image_cache();
+    }
+    if (emoji_picker_surface_)
+    {
+        emoji_picker_surface_->relayout();
+    }
     if (sticker_picker_shared_)
     {
         sticker_picker_shared_->invalidate_image_cache();
@@ -2810,22 +2824,22 @@ void MainWindow::refresh_room_list()
     // after the last account logs out — render an empty list, don't crash.
     if (!client_)
     {
-        show_rooms({});
         if (main_app_)
         {
             main_app_->set_space_nav(false);
         }
+        show_rooms({});
         return;
     }
     if (space_stack_.empty())
     {
         if (!search_pending_text_.empty())
         {
-            show_rooms(rooms_);
             if (main_app_)
             {
                 main_app_->set_space_nav(false);
             }
+            show_rooms(rooms_);
             return;
         }
         std::unordered_set<std::string> in_space;
@@ -2855,11 +2869,11 @@ void MainWindow::refresh_room_list()
                 filtered.push_back(r);
             }
         }
-        show_rooms(filtered);
         if (main_app_)
         {
             main_app_->set_space_nav(false);
         }
+        show_rooms(filtered);
     }
     else
     {
@@ -2874,18 +2888,19 @@ void MainWindow::refresh_room_list()
                 filtered.push_back(r);
             }
         }
-        show_rooms(filtered);
         if (main_app_)
         {
             for (const auto& r : rooms_)
             {
                 if (r.id == space_id)
                 {
-                    main_app_->set_space_nav(true, r.name);
+                    ensure_room_avatar_(r);
+                    main_app_->set_space_nav(true, r.name, r.avatar_url);
                     break;
                 }
             }
         }
+        show_rooms(filtered);
     }
 }
 

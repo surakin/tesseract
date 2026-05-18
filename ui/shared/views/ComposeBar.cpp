@@ -229,12 +229,11 @@ void ComposeBar::recompute_height()
         top_h = kReplyBandH + kReplyBandGap;
     }
     float band_h = 0.0f;
-    if (pending_.has_value())
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::File)
     {
-        band_h = pending_->kind == PendingAttachment::Kind::Image
-                     ? kPreviewBandH
-                     : kFileBandH;
-        band_h += kPreviewBandGap;
+        // Image previews float above the bar — only file chips push it up.
+        band_h = kFileBandH + kPreviewBandGap;
     }
     // arrange() insets the first band kPadY from the bar's top edge; add
     // that offset once when any band is present so natural_height_ matches
@@ -446,7 +445,11 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         {
             pending_->width = static_cast<std::uint32_t>(img->width());
             pending_->height = static_cast<std::uint32_t>(img->height());
-            pending_->preview = std::move(img);
+            constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
+            if (auto scaled = ctx.factory.scale_image(*img, kMaxPx, kMaxPx))
+                pending_->preview = std::move(scaled);
+            else
+                pending_->preview = std::move(img);
         }
     }
 
@@ -511,57 +514,57 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         edit_cancel_rect_ = {};
     }
 
-    // ── Attachment band (below reply band, or at top when no reply) ───
+    // ── Attachment band ───────────────────────────────────────────────
     if (pending_.has_value())
     {
-        float band_h = pending_->kind == PendingAttachment::Kind::Image
-                           ? kPreviewBandH
-                           : kFileBandH;
-        // When a reply band already consumed kPadY, start immediately after it.
-        // Otherwise, inset the first band by kPadY from the widget top.
-        float band_y = has_reply() ? text_top : bounds.y + kPadY;
-        preview_band_rect_ = {bounds.x + kPadX, band_y,
-                              std::max(0.0f, bounds.w - kPadX * 2), band_h};
         if (pending_->kind == PendingAttachment::Kind::Image)
         {
-            // Thumbnail letterboxed inside the band, preserving aspect.
+            // Image preview floats ABOVE the bar (does not push bar up).
+            // Display at 25 % larger than the standard band height, fitted
+            // to the image's own aspect ratio so the band wraps the image.
+            constexpr float kDisplayH = kPreviewBandH * 1.25f;
             float img_w = static_cast<float>(pending_->width);
             float img_h = static_cast<float>(pending_->height);
+            float max_w = std::max(0.0f, bounds.w - kPadX * 2);
+            float dw, dh;
             if (img_w <= 0 || img_h <= 0)
             {
-                preview_image_rect_ = preview_band_rect_;
+                dw = max_w;
+                dh = kDisplayH;
             }
             else
             {
-                float s = std::min(preview_band_rect_.w / img_w,
-                                   preview_band_rect_.h / img_h);
-                float dw = img_w * s;
-                float dh = img_h * s;
-                preview_image_rect_ = {preview_band_rect_.x,
-                                       preview_band_rect_.y +
-                                           (preview_band_rect_.h - dh) * 0.5f,
-                                       dw, dh};
+                float s = std::min(max_w / img_w, kDisplayH / img_h);
+                dw = img_w * s;
+                dh = img_h * s;
             }
-            // Remove button overlaid top-right of the thumbnail.
-            remove_btn_rect_ = {preview_image_rect_.x + preview_image_rect_.w -
-                                    kRemoveBtnSide - kRemoveBtnInset,
-                                preview_image_rect_.y + kRemoveBtnInset,
-                                kRemoveBtnSide, kRemoveBtnSide};
+            preview_band_rect_ = {bounds.x + kPadX,
+                                  bounds.y - dh - kPreviewBandGap, dw, dh};
+            preview_image_rect_ = preview_band_rect_;
+            remove_btn_rect_ = {
+                preview_band_rect_.x + preview_band_rect_.w -
+                    kRemoveBtnSide - kRemoveBtnInset,
+                preview_band_rect_.y + kRemoveBtnInset,
+                kRemoveBtnSide, kRemoveBtnSide};
+            // text_top is NOT advanced — bar height is unchanged.
         }
         else
         {
-            // File chip: remove button anchored to right edge of band,
-            // vertically centred. Image rect unused.
+            // File chip stays inside the bar and pushes it up.
+            float band_y = has_reply() ? text_top : bounds.y + kPadY;
+            preview_band_rect_ = {bounds.x + kPadX, band_y,
+                                  std::max(0.0f, bounds.w - kPadX * 2),
+                                  kFileBandH};
             preview_image_rect_ = {};
-            remove_btn_rect_ = {preview_band_rect_.x + preview_band_rect_.w -
-                                    kRemoveBtnSide - kRemoveBtnInset,
-                                preview_band_rect_.y +
-                                    (preview_band_rect_.h - kRemoveBtnSide) *
-                                        0.5f,
-                                kRemoveBtnSide, kRemoveBtnSide};
+            remove_btn_rect_ = {
+                preview_band_rect_.x + preview_band_rect_.w -
+                    kRemoveBtnSide - kRemoveBtnInset,
+                preview_band_rect_.y +
+                    (preview_band_rect_.h - kRemoveBtnSide) * 0.5f,
+                kRemoveBtnSide, kRemoveBtnSide};
+            text_top =
+                preview_band_rect_.y + preview_band_rect_.h + kPreviewBandGap;
         }
-        text_top =
-            preview_band_rect_.y + preview_band_rect_.h + kPreviewBandGap;
     }
     else
     {
@@ -626,14 +629,23 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
 
     if (pending_.has_value())
     {
-        // Subtle card behind the preview band.
+        // Subtle card behind the preview band, with a thin border.
         ctx.canvas.fill_rounded_rect(preview_band_rect_, 8.0f,
                                      card_bg(ctx.theme));
+        ctx.canvas.stroke_rounded_rect(preview_band_rect_, 8.0f,
+                                       ctx.theme.palette.border, 1.0f);
         if (pending_->kind == PendingAttachment::Kind::Image)
         {
             if (pending_->preview)
             {
-                ctx.canvas.draw_image(*pending_->preview, preview_image_rect_);
+                // Inset the image by 1 px so it sits inside the border.
+                constexpr float kImgInset = 1.0f;
+                tk::Rect img_rect{
+                    preview_image_rect_.x + kImgInset,
+                    preview_image_rect_.y + kImgInset,
+                    std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
+                    std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+                ctx.canvas.draw_image(*pending_->preview, img_rect);
             }
         }
         else
@@ -800,9 +812,41 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     {
         send_btn_->paint(ctx);
     }
-    if (remove_btn_ && pending_.has_value())
+    if (remove_btn_ && pending_.has_value() && !remove_btn_rect_.empty())
     {
-        remove_btn_->paint(ctx);
+        const bool on_image =
+            pending_->kind == PendingAttachment::Kind::Image;
+        if (on_image)
+        {
+            // Dark semi-transparent badge so the × is legible on any image.
+            constexpr float kRadius = kRemoveBtnSide * 0.5f;
+            tk::Color badge = remove_btn_->hovered()
+                                  ? tk::Color::rgba(0, 0, 0, 160)
+                                  : tk::Color::rgba(0, 0, 0, 110);
+            ctx.canvas.fill_rounded_rect(remove_btn_rect_, kRadius, badge);
+        }
+        else
+        {
+            // File chip: use the standard Icon-button hover background.
+            remove_btn_->paint(ctx);
+        }
+        if (!remove_layout_)
+        {
+            tk::TextStyle xs{};
+            xs.role = tk::FontRole::UiSemibold;
+            remove_layout_ = ctx.factory.build_text("\xc3\x97", xs);
+        }
+        if (remove_layout_)
+        {
+            tk::Size sz = remove_layout_->measure();
+            float gx = remove_btn_rect_.x + (remove_btn_rect_.w - sz.w) * 0.5f;
+            float gy = remove_btn_rect_.y + (remove_btn_rect_.h - sz.h) * 0.5f;
+            tk::Color col =
+                on_image ? tk::Color::rgba(255, 255, 255, 220)
+                : remove_btn_->hovered() ? ctx.theme.palette.text_primary
+                                         : ctx.theme.palette.text_secondary;
+            ctx.canvas.draw_text(*remove_layout_, {gx, gy}, col);
+        }
     }
 
     // Paint the icon glyphs over the Icon-variant buttons at the same
@@ -845,6 +889,50 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     }
 }
 
+bool ComposeBar::contains_world(tk::Point world) const
+{
+    if (tk::Widget::contains_world(world))
+        return true;
+    // Also claim the floating image preview panel above the bar.
+    return pending_.has_value() &&
+           pending_->kind == PendingAttachment::Kind::Image &&
+           !preview_band_rect_.empty() &&
+           world.x >= preview_band_rect_.x &&
+           world.x < preview_band_rect_.x + preview_band_rect_.w &&
+           world.y >= preview_band_rect_.y &&
+           world.y < preview_band_rect_.y + preview_band_rect_.h;
+}
+
+tk::Widget* ComposeBar::hit_test(tk::Point world)
+{
+    // Normal hit-test covers the bar's own bounds and all child buttons.
+    if (tk::Widget* w = tk::Widget::hit_test(world))
+        return w;
+
+    // Extend to the floating image preview panel (above bounds_).
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Image &&
+        !preview_band_rect_.empty() &&
+        world.x >= preview_band_rect_.x &&
+        world.x < preview_band_rect_.x + preview_band_rect_.w &&
+        world.y >= preview_band_rect_.y &&
+        world.y < preview_band_rect_.y + preview_band_rect_.h)
+    {
+        // Route remove-button clicks straight to the button widget so its
+        // own hover/press state and on_click handler fire correctly.
+        if (remove_btn_ && !remove_btn_rect_.empty() &&
+            world.x >= remove_btn_rect_.x &&
+            world.x < remove_btn_rect_.x + remove_btn_rect_.w &&
+            world.y >= remove_btn_rect_.y &&
+            world.y < remove_btn_rect_.y + remove_btn_rect_.h)
+        {
+            return remove_btn_;
+        }
+        return this;
+    }
+    return nullptr;
+}
+
 bool ComposeBar::on_pointer_down(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
@@ -871,6 +959,19 @@ bool ComposeBar::on_pointer_down(tk::Point local)
             press_reply_cancel_ = true;
             return true;
         }
+    }
+    // Absorb clicks on the floating image preview so they don't fall through
+    // to the message list beneath it. (The remove button is routed via
+    // hit_test directly to the Button child, so it never reaches here.)
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Image &&
+        !preview_band_rect_.empty() &&
+        world.x >= preview_band_rect_.x &&
+        world.x < preview_band_rect_.x + preview_band_rect_.w &&
+        world.y >= preview_band_rect_.y &&
+        world.y < preview_band_rect_.y + preview_band_rect_.h)
+    {
+        return true;
     }
     return tk::Widget::on_pointer_down(local);
 }
