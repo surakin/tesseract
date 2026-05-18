@@ -390,10 +390,9 @@ protected:
     {
         ensure_row_media_(ev);
     }
-    virtual void handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string /*json*/)
-    {
-    }
+    // Concrete: only the active account's prefs set the pending restore room.
+    virtual void handle_account_prefs_updated_ui_(std::string user_id,
+                                                  std::string json);
     virtual void
     handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
                             std::string /*room_name*/, std::string /*sender*/,

@@ -158,12 +158,6 @@ void MainWindow::handle_image_packs_updated_ui_()
     }
 }
 
-void MainWindow::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string json)
-{
-    push_account_prefs_updated(json);
-}
-
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
@@ -3544,16 +3538,6 @@ void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data)
 void MainWindow::push_image_packs_updated()
 {
     apply_image_packs_updated();
-}
-
-void MainWindow::push_account_prefs_updated(const std::string& json)
-{
-    auto prefs = tesseract::Prefs::parse(json);
-    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
-        current_room_id_.empty())
-    {
-        pending_restore_room_ = prefs.last_room;
-    }
 }
 
 void MainWindow::push_notification(const std::string& user_id,

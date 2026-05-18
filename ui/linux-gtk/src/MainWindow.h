@@ -96,8 +96,6 @@ private:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -124,7 +122,6 @@ private:
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_room_list_state(tesseract::RoomListState state);
     void push_image_packs_updated();
-    void push_account_prefs_updated(const std::string& json);
     void push_notification(const std::string& user_id,
                            const std::string& room_id,
                            const std::string& room_name,

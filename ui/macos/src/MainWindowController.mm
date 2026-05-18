@@ -125,8 +125,6 @@ protected:
     void handle_verification_cancelled_ui_(std::string flow_id,
                                            std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
-    void handle_account_prefs_updated_ui_(std::string user_id,
-                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -338,7 +336,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
-- (void)handleAccountPrefsUpdated:(NSString*)json;
 - (void)_showStickerPicker;
 - (void)_showStickerPickerAtRect:(tk::Rect)btn;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
@@ -927,18 +924,6 @@ void MacShell::handle_verification_cancelled_ui_(std::string /*flow_id*/,
     {
         [c handleVerificationCancelled:std::move(reason)];
     }
-}
-
-void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                std::string json)
-{
-    MainWindowController* c = ctrl_;
-    if (!c)
-    {
-        return;
-    }
-    NSString* ns = [NSString stringWithUTF8String:json.c_str()];
-    [c handleAccountPrefsUpdated:ns];
 }
 
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
@@ -4737,16 +4722,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 _shell->cached_emoticons_.push_back(std::move(img));
             }
         }
-    }
-}
-
-- (void)handleAccountPrefsUpdated:(NSString*)json
-{
-    auto prefs = tesseract::Prefs::parse(json.UTF8String);
-    if (!prefs.last_room.empty() && _shell->pending_restore_room_.empty() &&
-        _shell->current_room_id_.empty())
-    {
-        _shell->pending_restore_room_ = prefs.last_room;
     }
 }
 

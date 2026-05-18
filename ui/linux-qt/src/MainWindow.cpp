@@ -3261,23 +3261,6 @@ void MainWindow::handle_image_packs_updated_ui_()
     }
 }
 
-void MainWindow::handle_account_prefs_updated_ui_(std::string user_id,
-                                                  std::string json)
-{
-    // Only the active account's prefs set the pending restore room.
-    if (active_account_index_ < 0 ||
-        accounts_[active_account_index_]->user_id != user_id)
-    {
-        return;
-    }
-    auto prefs = tesseract::Prefs::parse(json);
-    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
-        current_room_id_.empty())
-    {
-        pending_restore_room_ = prefs.last_room;
-    }
-}
-
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,

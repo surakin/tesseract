@@ -5,6 +5,7 @@
 #include "views/html_spans.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
+#include <tesseract/prefs.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
@@ -792,6 +793,23 @@ static std::string format_typing_text(const std::vector<std::string>& names)
     }
     return names[0] + ", " + names[1] + ", and " +
            std::to_string(names.size() - 2) + " others are typing\xe2\x80\xa6";
+}
+
+void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
+                                                 std::string json)
+{
+    // Only the active account's prefs set the pending restore room.
+    if (active_account_index_ < 0 ||
+        accounts_[active_account_index_]->user_id != user_id)
+    {
+        return;
+    }
+    auto prefs = tesseract::Prefs::parse(json);
+    if (!prefs.last_room.empty() && pending_restore_room_.empty() &&
+        current_room_id_.empty())
+    {
+        pending_restore_room_ = prefs.last_room;
+    }
 }
 
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
