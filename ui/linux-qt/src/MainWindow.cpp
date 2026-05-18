@@ -2603,7 +2603,7 @@ void MainWindow::onSpaceBack()
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::ensureRowMedia(const tesseract::Event& ev)
+void MainWindow::prep_row_media_(const tesseract::Event& ev)
 {
     // Store decode size hints before delegating to the ShellBase helper.
     if (ev.type == tesseract::EventType::Image)
@@ -2963,21 +2963,7 @@ void MainWindow::handle_timeline_reset_ui_(
 {
     if (room_id == current_room_id_)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto& ev : snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            ensureRowMedia(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
-        }
+        auto rows = build_rows_(snapshot);
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml =
@@ -3022,28 +3008,12 @@ void MainWindow::handle_timeline_reset_ui_(
         }
     }
 
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(snapshot.size());
-            for (auto& ev : snapshot)
-            {
-                if (!ev)
-                {
-                    continue;
-                }
-                ensureRowMedia(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*ev, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](tesseract::RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(snapshot));
+                                   });
 }
 
 void MainWindow::handle_message_inserted_ui_(
@@ -3057,7 +3027,7 @@ void MainWindow::handle_message_inserted_ui_(
 
     if (room_id == current_room_id_)
     {
-        ensureRowMedia(*ev);
+        prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
         {
             ensure_reply_details_(ev->event_id);
@@ -3077,7 +3047,7 @@ void MainWindow::handle_message_inserted_ui_(
         room_id,
         [&](tesseract::RoomWindowBase* w)
         {
-            ensureRowMedia(*ev);
+            prep_row_media_(*ev);
             if (!ev->in_reply_to_id.empty())
             {
                 ensure_reply_details_(ev->event_id);
@@ -3098,7 +3068,7 @@ void MainWindow::handle_message_updated_ui_(
 
     if (room_id == current_room_id_)
     {
-        ensureRowMedia(*ev);
+        prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
         {
             ensure_reply_details_(ev->event_id);
@@ -3118,7 +3088,7 @@ void MainWindow::handle_message_updated_ui_(
         room_id,
         [&](tesseract::RoomWindowBase* w)
         {
-            ensureRowMedia(*ev);
+            prep_row_media_(*ev);
             if (!ev->in_reply_to_id.empty())
             {
                 ensure_reply_details_(ev->event_id);

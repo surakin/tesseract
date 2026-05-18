@@ -465,6 +465,48 @@ void ShellBase::ensure_row_media_(const Event& ev)
     }
 }
 
+std::vector<views::MessageRowData>
+ShellBase::build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot)
+{
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (const auto& ev : snapshot)
+    {
+        if (!ev)
+        {
+            continue;
+        }
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        rows.push_back(views::make_row_data(*ev, my_user_id_));
+    }
+    return rows;
+}
+
+std::vector<views::MessageRowData>
+ShellBase::build_rows_(const std::vector<Event*>& snapshot)
+{
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (auto* ev : snapshot)
+    {
+        if (!ev)
+        {
+            continue;
+        }
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        rows.push_back(views::make_row_data(*ev, my_user_id_));
+    }
+    return rows;
+}
+
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
 {
     per_account_rooms_[user_id] = rooms;

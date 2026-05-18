@@ -12,6 +12,7 @@
 #include "tk/media_disk_cache.h"
 #include "tk/theme.h"
 #include "app/RoomWindowBase.h"
+#include "views/MessageListView.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -382,6 +383,13 @@ protected:
     virtual void handle_image_packs_updated_ui_()
     {
     }
+
+    // Per-shell media-prefetch for one row. Default = ensure_row_media_.
+    // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
+    virtual void prep_row_media_(const Event& ev)
+    {
+        ensure_row_media_(ev);
+    }
     virtual void handle_account_prefs_updated_ui_(std::string /*user_id*/,
                                                   std::string /*json*/)
     {
@@ -539,6 +547,16 @@ protected:
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
+
+    // Build MessageRowData rows from an event snapshot: prep media, request
+    // reply details, make_row_data. Used by every shell's timeline-reset and
+    // message handlers (primary + secondary-window paths).
+    std::vector<views::MessageRowData>
+    build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot);
+    // macOS hands primary-path events across the ObjC boundary as raw
+    // pointers; this overload serves that path.
+    std::vector<views::MessageRowData>
+    build_rows_(const std::vector<Event*>& snapshot);
 
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);

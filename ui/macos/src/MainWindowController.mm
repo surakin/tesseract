@@ -162,6 +162,7 @@ public:
     using ShellBase::anim_cache_;
     using ShellBase::apply_current_theme_;
     using ShellBase::begin_focused_subscription_;
+    using ShellBase::build_rows_;
     using ShellBase::clear_focused_state_;
     using ShellBase::client_;
     using ShellBase::compose_typing_active_;
@@ -749,28 +750,12 @@ void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(snapshot.size());
-            for (auto& p : snapshot)
-            {
-                if (!p)
-                {
-                    continue;
-                }
-                ensure_row_media_(*p);
-                if (!p->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(p->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*p, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](tesseract::RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(snapshot));
+                                   });
 
     MainWindowController* c = ctrl_;
     if (!c)
@@ -3930,22 +3915,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                                   _shell->current_room_id_;
     if (current)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto* ev : snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            _shell->ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                _shell->ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(
-                tesseract::views::make_row_data(*ev, _shell->my_user_id_));
-        }
+        auto rows = _shell->build_rows_(snapshot);
         const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.

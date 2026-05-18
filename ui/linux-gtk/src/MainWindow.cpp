@@ -2531,21 +2531,7 @@ void MainWindow::push_timeline_reset(
 {
     if (room_id == current_room_id_)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto& ev : snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
-        }
+        auto rows = build_rows_(snapshot);
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml = room_view_ ? room_view_->message_list() : nullptr;
@@ -2574,28 +2560,12 @@ void MainWindow::push_timeline_reset(
         }
     }
 
-    dispatch_to_secondary_windows_(
-        room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(snapshot.size());
-            for (auto& ev : snapshot)
-            {
-                if (!ev)
-                {
-                    continue;
-                }
-                ensure_row_media_(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*ev, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](tesseract::RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(snapshot));
+                                   });
 }
 
 void MainWindow::clear_messages()

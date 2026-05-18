@@ -183,8 +183,9 @@ private:
     void onRoomSelected(const std::string& room_id);
     // Resolve any media bytes the row references and decode them into
     // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
-    // positional-callback path (insert / update / reset).
-    void ensureRowMedia(const tesseract::Event& ev);
+    // positional-callback path (insert / update / reset). Overrides the
+    // ShellBase hook to also record decode-size hints (mediaImageSizes_).
+    void prep_row_media_(const tesseract::Event& ev) override;
     void clearMessages();
     /// Kick off a back-pagination worker thread for `room_id`. Early-exit
     /// if a pagination is already in flight for this room or its history

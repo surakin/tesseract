@@ -2944,21 +2944,7 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
 
     if (payload->room_id == current_room_id_ && room_view_)
     {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(payload->snapshot.size());
-        for (auto& ev : payload->snapshot)
-        {
-            if (!ev)
-            {
-                continue;
-            }
-            ensure_row_media(*ev);
-            if (!ev->in_reply_to_id.empty())
-            {
-                ensure_reply_details_(ev->event_id);
-            }
-            rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
-        }
+        auto rows = build_rows_(payload->snapshot);
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml = room_view_->message_list();
@@ -2983,28 +2969,12 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
         }
     }
 
-    dispatch_to_secondary_windows_(
-        payload->room_id,
-        [&](tesseract::RoomWindowBase* w)
-        {
-            std::vector<tesseract::views::MessageRowData> rows;
-            rows.reserve(payload->snapshot.size());
-            for (auto& ev : payload->snapshot)
-            {
-                if (!ev)
-                {
-                    continue;
-                }
-                ensure_row_media(*ev);
-                if (!ev->in_reply_to_id.empty())
-                {
-                    ensure_reply_details_(ev->event_id);
-                }
-                rows.push_back(
-                    tesseract::views::make_row_data(*ev, my_user_id_));
-            }
-            w->on_timeline_reset(std::move(rows));
-        });
+    dispatch_to_secondary_windows_(payload->room_id,
+                                   [&](tesseract::RoomWindowBase* w)
+                                   {
+                                       w->on_timeline_reset(
+                                           build_rows_(payload->snapshot));
+                                   });
 }
 
 void MainWindow::on_tesseract_message_inserted(PostedMessageEvent* payload)
