@@ -89,6 +89,12 @@ protected:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
+                               int max_w, int max_h) override;
+    std::int64_t monotonic_ms_() override;
+    void         start_anim_tick_() override;
+    void         repaint_pickers_() override;
+
     void handle_timeline_reset_ui_(std::string room_id,
         std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
     void handle_message_inserted_ui_(std::string room_id, std::size_t index,
@@ -186,6 +192,8 @@ public:
     using ShellBase::ensure_media_image_;
     using ShellBase::ensure_reply_details_;
     using ShellBase::ensure_row_media_;
+    using ShellBase::ensure_picker_image_;
+    using ShellBase::decode_image_;
     using ShellBase::push_rooms_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
@@ -475,6 +483,94 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
     if (c) [c _relayoutChatSurface];
+}
+
+// Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource
+// and tk::cg::make_image are thread-safe. This is the (former) inline
+// _decodeMediaBytes CGImageSource logic, returning a DecodedImage so the
+// shared ensure_picker_image_/finalize_picker_image_ path can route it.
+ShellBase::DecodedImage
+MacShell::decode_image_(const std::vector<uint8_t>& bytes,
+                        int /*max_w*/, int /*max_h*/) {
+    DecodedImage d;
+    if (bytes.empty()) return d;
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                  static_cast<CFIndex>(bytes.size()));
+    if (!data) return d;
+    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
+    CFRelease(data);
+    if (!src) return d;
+
+    std::size_t count = CGImageSourceGetCount(src);
+    if (count > 1) {
+        for (std::size_t i = 0; i < count; ++i) {
+            CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
+            if (!frame) continue;
+            d.frames.push_back(tk::cg::make_image(frame));
+            CGImageRelease(frame);
+            int delay_ms = 100;
+            CFDictionaryRef props =
+                CGImageSourceCopyPropertiesAtIndex(src, i, nullptr);
+            if (props) {
+                auto try_delay = [&](CFStringRef dk, CFStringRef uk,
+                                     CFStringRef ck) {
+                    auto* dd = (CFDictionaryRef)CFDictionaryGetValue(props, dk);
+                    if (!dd) return;
+                    auto* v = (CFNumberRef)CFDictionaryGetValue(dd, uk);
+                    if (!v) v = (CFNumberRef)CFDictionaryGetValue(dd, ck);
+                    if (!v) return;
+                    double secs = 0;
+                    CFNumberGetValue(v, kCFNumberDoubleType, &secs);
+                    if (secs > 0) delay_ms = static_cast<int>(secs * 1000.0);
+                };
+                try_delay(kCGImagePropertyGIFDictionary,
+                          kCGImagePropertyGIFUnclampedDelayTime,
+                          kCGImagePropertyGIFDelayTime);
+                try_delay(kCGImagePropertyPNGDictionary,
+                          kCGImagePropertyAPNGUnclampedDelayTime,
+                          kCGImagePropertyAPNGDelayTime);
+                if (@available(macOS 11.0, *)) {
+                    try_delay(kCGImagePropertyWebPDictionary,
+                              kCGImagePropertyWebPDelayTime,
+                              kCGImagePropertyWebPDelayTime);
+                }
+                CFRelease(props);
+            }
+            d.delays_ms.push_back(std::max(delay_ms, 20));
+        }
+        if (!d.frames.empty()) { CFRelease(src); return d; }
+        d.delays_ms.clear();
+        CFRelease(src);
+        CFDataRef data2 = CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                       static_cast<CFIndex>(bytes.size()));
+        if (!data2) return d;
+        src = CGImageSourceCreateWithData(data2, nullptr);
+        CFRelease(data2);
+        if (!src) return d;
+    }
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return d;
+    d.still = tk::cg::make_image(img);
+    CGImageRelease(img);
+    return d;
+}
+
+std::int64_t MacShell::monotonic_ms_() {
+    return static_cast<std::int64_t>(
+        [[NSDate date] timeIntervalSince1970] * 1000.0);
+}
+
+void MacShell::start_anim_tick_() {
+    if (ctrl_) [ctrl_ _startAnimTickIfNeeded];
+}
+
+void MacShell::repaint_pickers_() {
+    if (ctrl_) [ctrl_ _relayoutChatSurface];
+    EmojiPickerPanel* ep = [EmojiPickerPanel sharedPanel];
+    if (ep.isVisible) [ep invalidateImageCache];
+    StickerPickerPanel* sp = [StickerPickerPanel sharedPanel];
+    if (sp.isVisible) [sp invalidateImageCache];
 }
 
 void MacShell::handle_timeline_reset_ui_(
@@ -3113,81 +3209,18 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
                    forKey:(const std::string&)key {
-    if (bytes.empty() || _shell->tk_images_.count(key) || _shell->anim_cache_.has(key)) return;
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
-                                   bytes.data(),
-                                   static_cast<CFIndex>(bytes.size()));
-    if (!data) return;
-    CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
-    CFRelease(data);
-    if (!src) return;
-
-    std::size_t count = CGImageSourceGetCount(src);
-    if (count > 1) {
-        std::vector<std::unique_ptr<tk::Image>> frames;
-        std::vector<int> delays;
-        frames.reserve(count);
-        delays.reserve(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
-            if (!frame) continue;
-            frames.push_back(tk::cg::make_image(frame));
-            CGImageRelease(frame);
-            int delay_ms = 100;
-            CFDictionaryRef props =
-                CGImageSourceCopyPropertiesAtIndex(src, i, nullptr);
-            if (props) {
-                auto try_delay = [&](CFStringRef dictKey,
-                                     CFStringRef unclampedKey,
-                                     CFStringRef clampedKey) {
-                    auto* d = (CFDictionaryRef)CFDictionaryGetValue(props, dictKey);
-                    if (!d) return;
-                    auto* v = (CFNumberRef)CFDictionaryGetValue(d, unclampedKey);
-                    if (!v) v = (CFNumberRef)CFDictionaryGetValue(d, clampedKey);
-                    if (!v) return;
-                    double secs = 0;
-                    CFNumberGetValue(v, kCFNumberDoubleType, &secs);
-                    if (secs > 0) delay_ms = static_cast<int>(secs * 1000.0);
-                };
-                try_delay(kCGImagePropertyGIFDictionary,
-                          kCGImagePropertyGIFUnclampedDelayTime,
-                          kCGImagePropertyGIFDelayTime);
-                try_delay(kCGImagePropertyPNGDictionary,
-                          kCGImagePropertyAPNGUnclampedDelayTime,
-                          kCGImagePropertyAPNGDelayTime);
-                if (@available(macOS 11.0, *)) {
-                    try_delay(kCGImagePropertyWebPDictionary,
-                              kCGImagePropertyWebPDelayTime,
-                              kCGImagePropertyWebPDelayTime);
-                }
-                CFRelease(props);
-            }
-            delays.push_back(std::max(delay_ms, 20));
-        }
-        if (!frames.empty()) {
-            CFRelease(src);
-            const std::int64_t now_ms = static_cast<std::int64_t>(
-                [[NSDate date] timeIntervalSince1970] * 1000.0);
-            _shell->anim_cache_.store(key, std::move(frames), std::move(delays), now_ms);
-            [self _startAnimTickIfNeeded];
-            return;
-        }
-        // No valid animated frames — fall through to static decode below.
-        CFRelease(src);
-        CFDataRef data2 = CFDataCreate(kCFAllocatorDefault,
-                                        bytes.data(),
-                                        static_cast<CFIndex>(bytes.size()));
-        if (!data2) return;
-        src = CGImageSourceCreateWithData(data2, nullptr);
-        CFRelease(data2);
-        if (!src) return;
+    if (bytes.empty() || _shell->tk_images_.count(key)
+        || _shell->anim_cache_.has(key)) return;
+    auto d = _shell->decode_image_(bytes, 0, 0);
+    if (!d.frames.empty()) {
+        const std::int64_t now = static_cast<std::int64_t>(
+            [[NSDate date] timeIntervalSince1970] * 1000.0);
+        _shell->anim_cache_.store(key, std::move(d.frames),
+                                  std::move(d.delays_ms), now);
+        [self _startAnimTickIfNeeded];
+    } else if (d.still) {
+        _shell->tk_images_.emplace(key, std::move(d.still));
     }
-
-    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
-    CFRelease(src);
-    if (!img) return;
-    _shell->tk_images_.emplace(key, tk::cg::make_image(img));
-    CGImageRelease(img);
 }
 
 - (void)_startAnimTickIfNeeded {
@@ -3218,51 +3251,11 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)_ensureStickerImageAsync:(std::string)url {
-    if (url.empty() || _shell->tk_images_.count(url) || _shell->anim_cache_.has(url)) return;
-    if (!_shell->sticker_fetches_in_flight_.insert(url).second) return;
-
-    __weak MainWindowController* weakSelf = self;
-    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-
-    _shell->run_async_([weakSelf, url, bytes_holder,
-                         clientPtr = _shell->client_]() {
-        *bytes_holder = clientPtr->fetch_source_bytes(url);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_shell->sticker_fetches_in_flight_.erase(url);
-            if (bytes_holder->empty()
-                || s->_shell->tk_images_.count(url)
-                || s->_shell->anim_cache_.has(url)) return;
-            [s _decodeMediaBytes:*bytes_holder forKey:url];
-            StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-            if (panel.isVisible) [panel invalidateImageCache];
-        });
-    });
+    _shell->ensure_picker_image_(url, /*is_sticker=*/true);
 }
 
 - (void)_ensureEmojiImageAsync:(std::string)url {
-    if (url.empty() || _shell->tk_images_.count(url) || _shell->anim_cache_.has(url)) return;
-    if (!_shell->emoji_fetches_in_flight_.insert(url).second) return;
-
-    __weak MainWindowController* weakSelf = self;
-    auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-
-    _shell->run_async_([weakSelf, url, bytes_holder,
-                         clientPtr = _shell->client_]() {
-        *bytes_holder = clientPtr->fetch_source_bytes(url);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_shell->emoji_fetches_in_flight_.erase(url);
-            if (bytes_holder->empty()
-                || s->_shell->tk_images_.count(url)
-                || s->_shell->anim_cache_.has(url)) return;
-            [s _decodeMediaBytes:*bytes_holder forKey:url];
-            EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
-            if (panel.isVisible) [panel invalidateImageCache];
-        });
-    });
+    _shell->ensure_picker_image_(url, /*is_sticker=*/false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
