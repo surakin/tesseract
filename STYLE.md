@@ -55,13 +55,17 @@ This prevents goto-fail style bugs and keeps diffs clean when statements are add
 
 ## Rust
 
-> ⚠️ `rustfmt` does not support Allman braces. Either disable it for this project, use a `rustfmt.skip` attribute on relevant items, or accept that auto-formatting won't apply. Decide before running a style pass.
+> Rust uses standard idiomatic style — opening brace on the **same line**
+> (the Allman rule in Universal Rules §1 is C++/Objective-C only). Run
+> `rustfmt` (`cargo fmt`) with its defaults; it produces the correct
+> layout. The one project-specific deviation is Universal Rules §2
+> (always brace single-expression `match` arms): `rustfmt` preserves
+> braced arms but will not add them, so add those by hand.
 
 Functions:
 
 ```rust
-fn parse_input(input: &str) -> Result<Config, Error>
-{
+fn parse_input(input: &str) -> Result<Config, Error> {
     let trimmed = input.trim();
     Config::from_str(trimmed)
 }
@@ -70,14 +74,11 @@ fn parse_input(input: &str) -> Result<Config, Error>
 Match arms — always braced, even for single expressions:
 
 ```rust
-match value
-{
-    Some(n) =>
-    {
+match value {
+    Some(n) => {
         process(n)
     }
-    None =>
-    {
+    None => {
         default()
     }
 }
