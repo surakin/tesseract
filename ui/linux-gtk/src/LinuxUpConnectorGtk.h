@@ -16,6 +16,7 @@ public:
     // Called by the shared GDBus vtable on the UI thread.
     void on_new_endpoint(const std::string& endpoint);
     void on_unregistered();
+    void on_message(const guint8* data, gsize len);
 
 private:
     tesseract::Client* client_ = nullptr;

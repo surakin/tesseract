@@ -899,6 +899,12 @@ pub mod ffi {
         /// Remove a pusher from the homeserver by `pushkey` / `app_id`.
         fn remove_pusher(self: &mut ClientFfi, pushkey: &str, app_id: &str) -> OpResult;
 
+        /// Hint that a push notification arrived for `room_id`. Requests a
+        /// targeted sliding-sync subscription for that room (union with any
+        /// already-open rooms) so the next sync cycle delivers fresh state
+        /// before the regular sync loop catches up.
+        fn hint_push_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
         // ----- Session teardown -----
 
         fn logout(self: &mut ClientFfi) -> OpResult;

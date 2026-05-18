@@ -872,4 +872,9 @@ Result Client::remove_pusher(const std::string& pushkey,
     return from_ffi(impl_->ffi->remove_pusher(pushkey, app_id));
 }
 
+Result Client::hint_push_room(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->hint_push_room(room_id));
+}
+
 } // namespace tesseract

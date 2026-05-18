@@ -78,6 +78,14 @@ struct UpSharedBusGtk
             it->second->on_unregistered();
         }
     }
+    void dispatch_message(const char* token, const guint8* data, gsize len)
+    {
+        auto it = routes_.find(token);
+        if (it != routes_.end())
+        {
+            it->second->on_message(data, len);
+        }
+    }
 
 private:
     UpSharedBusGtk() = default;
@@ -113,7 +121,21 @@ handle_method_call(GDBusConnection* /*conn*/, const gchar* /*sender*/,
         g_variant_get(params, "(&s)", &token);
         bus.dispatch_unregistered(token);
     }
-    // Message: no-op — sync delivers event content.
+    else if (std::strcmp(method_name, "Message") == 0)
+    {
+        const char* token = nullptr;
+        GVariant* msg_v = nullptr;
+        g_variant_get(params, "(&s@ay&s)", &token, &msg_v, nullptr);
+        if (msg_v)
+        {
+            gsize len = 0;
+            const guint8* data =
+                static_cast<const guint8*>(
+                    g_variant_get_fixed_array(msg_v, &len, 1));
+            bus.dispatch_message(token, data, len);
+            g_variant_unref(msg_v);
+        }
+    }
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
@@ -417,4 +439,27 @@ void LinuxUpConnectorGtk::on_unregistered()
             g_object_unref(bus);
         }
     }
+}
+
+void LinuxUpConnectorGtk::on_message(const guint8* data, gsize len)
+{
+    if (!client_)
+    {
+        return;
+    }
+    // Minimal JSON scan for "room_id":"!…" — avoids adding a JSON dep.
+    std::string_view payload(reinterpret_cast<const char*>(data), len);
+    constexpr std::string_view key = "\"room_id\":\"";
+    auto pos = payload.find(key);
+    if (pos == std::string_view::npos)
+    {
+        return;
+    }
+    pos += key.size();
+    auto end = payload.find('"', pos);
+    if (end == std::string_view::npos)
+    {
+        return;
+    }
+    client_->hint_push_room(std::string(payload.substr(pos, end - pos)));
 }

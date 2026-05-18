@@ -20,6 +20,7 @@ public:
     void set_distributor(const std::string& service);
     void on_new_endpoint(const std::string& endpoint);
     void on_unregistered();
+    void on_message(const QByteArray& message);
 
 private:
     tesseract::Client* client_ = nullptr;

@@ -1,6 +1,8 @@
 #include "LinuxUpConnectorQt.h"
 #include <tesseract/client.h>
 #include <QDBusAbstractAdaptor>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
@@ -33,11 +35,8 @@ public:
     }
 
 public slots:
-    void Message(const QString& /*token*/, const QByteArray& /*message*/,
-                 const QString& /*id*/)
-    {
-        // Sync is running; the push is a wake-up signal only.
-    }
+    void Message(const QString& token, const QByteArray& message,
+                 const QString& /*id*/);  // out-of-line: UpSharedBusQt is incomplete here
     void NewEndpoint(const QString& token, const QString& endpoint);
     void Unregistered(const QString& token);
 
@@ -188,6 +187,14 @@ public:
             it->second->on_unregistered();
         }
     }
+    void dispatch_message(const QString& token, const QByteArray& message)
+    {
+        auto it = routes_.find(token.toStdString());
+        if (it != routes_.end())
+        {
+            it->second->on_message(message);
+        }
+    }
 
 private:
     UpSharedBusQt() = default;
@@ -223,6 +230,13 @@ bool UpSharedBusQt::acquire()
             QDBusConnection::ExportAdaptors);
     }
     return active_;
+}
+
+void UpConnector1Adaptor::Message(const QString& token,
+                                   const QByteArray& message,
+                                   const QString& /*id*/)
+{
+    bus_->dispatch_message(token, message);
 }
 
 void UpConnector1Adaptor::NewEndpoint(const QString& token,
@@ -351,6 +365,20 @@ void LinuxUpConnectorQt::on_unregistered()
     {
         UpSharedBusQt::get().distributor_register(
             QString::fromStdString(distributor_service_), token_);
+    }
+}
+
+void LinuxUpConnectorQt::on_message(const QByteArray& message)
+{
+    if (!client_)
+    {
+        return;
+    }
+    const auto doc = QJsonDocument::fromJson(message);
+    const auto room_id = doc["notification"]["room_id"].toString();
+    if (!room_id.isEmpty())
+    {
+        client_->hint_push_room(room_id.toStdString());
     }
 }
 

@@ -1674,6 +1674,7 @@ impl ClientFfi {
             },
         );
 
+        self.sync_room_subscriptions();
         ok("")
     }
 
@@ -1686,6 +1687,51 @@ impl ClientFfi {
                 }
             }
         }
+        self.sync_room_subscriptions();
+    }
+
+    // Sync the full set of currently open rooms to the server's sliding-sync
+    // subscription. Must be called after every subscribe_room/unsubscribe_room
+    // so the server always sees the union of all open timeline rooms.
+    // RoomListService::subscribe_to_rooms calls clear_and_subscribe internally,
+    // so we always pass the complete set — never just the delta.
+    #[cfg(not(test))]
+    fn sync_room_subscriptions(&self) {
+        let Some(svc) = self.sync_service.clone() else {
+            return;
+        };
+        let ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        self.rt.spawn(async move {
+            let refs: Vec<&matrix_sdk::ruma::RoomId> =
+                ids.iter().map(OwnedRoomId::as_ref).collect();
+            svc.room_list_service().subscribe_to_rooms(&refs).await;
+        });
+    }
+
+    // Hint that a push notification arrived for a room. Subscribes the server
+    // to that room (plus all already-open rooms) so the next sliding-sync
+    // cycle delivers fresh state before the regular sync loop catches up.
+    // The hint is ephemeral: the next subscribe_room/unsubscribe_room call
+    // will re-sync the subscription set from self.timelines.
+    #[cfg(not(test))]
+    pub fn hint_push_room(&mut self, room_id: &str) -> OpResult {
+        let Some(svc) = self.sync_service.clone() else {
+            return err("sync not started");
+        };
+        let push_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let mut ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        if !ids.contains(&push_id) {
+            ids.push(push_id);
+        }
+        self.rt.spawn(async move {
+            let refs: Vec<&matrix_sdk::ruma::RoomId> =
+                ids.iter().map(OwnedRoomId::as_ref).collect();
+            svc.room_list_service().subscribe_to_rooms(&refs).await;
+        });
+        ok("")
     }
 
     #[cfg(not(test))]
@@ -6313,6 +6359,10 @@ impl ClientFfi {
 
     pub fn remove_pusher(&mut self, _pushkey: &str, _app_id: &str) -> OpResult {
         err("not logged in")
+    }
+
+    pub fn hint_push_room(&mut self, _room_id: &str) -> OpResult {
+        err("sync not started")
     }
 }
 

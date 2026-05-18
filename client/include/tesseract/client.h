@@ -556,6 +556,11 @@ public:
     /// Remove a pusher from the homeserver identified by `pushkey` / `app_id`.
     Result remove_pusher(const std::string& pushkey, const std::string& app_id);
 
+    /// Hint that a push notification arrived for `room_id`. Triggers a
+    /// targeted sliding-sync subscription so fresh state arrives in the next
+    /// sync cycle before the regular loop catches up.
+    Result hint_push_room(const std::string& room_id);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
