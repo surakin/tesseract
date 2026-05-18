@@ -124,7 +124,7 @@ private:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -337,7 +337,6 @@ private:
     // ── Shortcode popup ──────────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 

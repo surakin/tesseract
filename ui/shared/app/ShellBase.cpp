@@ -812,6 +812,23 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     }
 }
 
+void ShellBase::handle_image_packs_updated_ui_()
+{
+    refresh_pickers_packs_();
+    cached_emoticons_.clear();
+    if (client_)
+    {
+        for (auto& pack : client_->list_image_packs())
+        {
+            for (auto& img : client_->list_pack_images(
+                     pack.id, tesseract::PackUsageFilter::Emoticon))
+            {
+                cached_emoticons_.push_back(std::move(img));
+            }
+        }
+    }
+}
+
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                           std::vector<std::string> names)
 {

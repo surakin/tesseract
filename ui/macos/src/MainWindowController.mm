@@ -113,7 +113,7 @@ protected:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -161,6 +161,7 @@ public:
     using ShellBase::apply_current_theme_;
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
+    using ShellBase::cached_emoticons_;
     using ShellBase::clear_focused_state_;
     using ShellBase::client_;
     using ShellBase::compose_typing_active_;
@@ -240,7 +241,6 @@ public:
     // Shortcode engine + transient state (owned here, accessed via _shell->).
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 
@@ -865,7 +865,7 @@ void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
     }
 }
 
-void MacShell::handle_image_packs_updated_ui_()
+void MacShell::refresh_pickers_packs_()
 {
     MainWindowController* c = ctrl_;
     if (c)
@@ -4711,18 +4711,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
     [panel refreshPacks];
-    _shell->cached_emoticons_.clear();
-    if (_shell->client_)
-    {
-        for (auto& pack : _shell->client_->list_image_packs())
-        {
-            for (auto& img : _shell->client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                _shell->cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
 }
 
 - (void)_showStickerPicker

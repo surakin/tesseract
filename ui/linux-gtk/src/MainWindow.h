@@ -84,7 +84,7 @@ private:
                                bool soft_logout) override;
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void handle_image_packs_updated_ui_() override;
+    void refresh_pickers_packs_() override;
     void handle_verification_request_ui_(std::string flow_id,
                                          std::string user_id,
                                          std::string device_id,
@@ -121,7 +121,6 @@ private:
     void handle_auth_error(bool soft_logout);
     void push_backup_progress(tesseract::BackupProgress progress);
     void push_room_list_state(tesseract::RoomListState state);
-    void push_image_packs_updated();
     void push_notification(const std::string& user_id,
                            const std::string& room_id,
                            const std::string& room_name,
@@ -144,7 +143,6 @@ private:
 
 public:
     void emoji_selected(const std::string& glyph);
-    void apply_image_packs_updated();
 
 private:
     static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,
@@ -271,7 +269,6 @@ private:
     // ── Shortcode popup ───────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage> cached_emoticons_;
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
 

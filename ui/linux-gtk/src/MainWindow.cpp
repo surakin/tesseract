@@ -141,23 +141,6 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
     push_backup_progress(std::move(progress));
 }
 
-void MainWindow::handle_image_packs_updated_ui_()
-{
-    push_image_packs_updated();
-    cached_emoticons_.clear();
-    if (client_)
-    {
-        for (auto& pack : client_->list_image_packs())
-        {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
-}
-
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
@@ -3535,11 +3518,6 @@ void MainWindow::on_recovery_dismiss_clicked_(GtkButton*, gpointer user_data)
     }
 }
 
-void MainWindow::push_image_packs_updated()
-{
-    apply_image_packs_updated();
-}
-
 void MainWindow::push_notification(const std::string& user_id,
                                    const std::string& room_id,
                                    const std::string& room_name,
@@ -3642,7 +3620,7 @@ void MainWindow::navigate_to_room(const std::string& room_id)
     gtk_window_present(GTK_WINDOW(window_));
 }
 
-void MainWindow::apply_image_packs_updated()
+void MainWindow::refresh_pickers_packs_()
 {
     if (sticker_picker_shared_)
     {

@@ -2,6 +2,7 @@
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/image_pack.h>
 #include <tesseract/paths.h>
 #include <tesseract/screen_lock.h>
 #include <tesseract/settings.h>
@@ -126,6 +127,10 @@ protected:
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
+
+    // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
+    // handle_image_packs_updated_ui_.
+    std::vector<tesseract::ImagePackImage> cached_emoticons_;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
@@ -380,9 +385,13 @@ protected:
     virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
     {
     }
-    virtual void handle_image_packs_updated_ui_()
+    // Per-shell native sticker/emoji picker refresh prologue. Default no-op.
+    virtual void refresh_pickers_packs_()
     {
     }
+    // Concrete: runs the per-shell picker-refresh prologue, then rebuilds the
+    // MSC2545 emoticon flat list (cached_emoticons_).
+    virtual void handle_image_packs_updated_ui_();
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).

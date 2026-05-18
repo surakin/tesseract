@@ -364,22 +364,10 @@ void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
     on_backup_progress(&progress);
 }
 
-void MainWindow::handle_image_packs_updated_ui_()
+void MainWindow::refresh_pickers_packs_()
 {
     refresh_sticker_picker();
     refresh_emoji_picker();
-    cached_emoticons_.clear();
-    if (client_)
-    {
-        for (auto& pack : client_->list_image_packs())
-        {
-            for (auto& img : client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon))
-            {
-                cached_emoticons_.push_back(std::move(img));
-            }
-        }
-    }
 }
 
 void MainWindow::handle_verification_state_ui_(bool is_verified)
