@@ -89,10 +89,7 @@ void EmojiPicker::invalidateImages()
     {
         shared_->invalidate_image_cache();
     }
-    if (surface_)
-    {
-        surface_->update();
-    }
+    if (surface_) surface_->relayout();
 }
 
 void EmojiPicker::set_theme(const tk::Theme& t)

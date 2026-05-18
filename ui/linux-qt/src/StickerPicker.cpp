@@ -94,6 +94,7 @@ void StickerPicker::invalidateImages()
     {
         shared_->invalidate_image_cache();
     }
+    if (surface_) surface_->relayout();
 }
 
 void StickerPicker::popupAt(QWidget* anchor)
