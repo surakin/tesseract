@@ -289,7 +289,7 @@ void TabBar::on_pointer_up(Point local, bool inside_self)
     pressed_close_ = false;
 }
 
-void TabBar::on_pointer_move(Point local)
+bool TabBar::on_pointer_move(Point local)
 {
     float sl = local.x + scroll_x_;
     int hover_idx = tab_at_(sl);
@@ -307,6 +307,7 @@ void TabBar::on_pointer_move(Point local)
               && local.y <  cr.y - bounds_.y + kCloseSz);
         }
     }
+    return true;
 }
 
 void TabBar::on_pointer_leave()

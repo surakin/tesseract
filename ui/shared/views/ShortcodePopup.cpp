@@ -126,8 +126,10 @@ void ShortcodePopup::on_pointer_up(tk::Point local, bool inside_self) {
     pressed_index_ = -1;
 }
 
-void ShortcodePopup::on_pointer_move(tk::Point local) {
+bool ShortcodePopup::on_pointer_move(tk::Point local) {
+    int prev = hovered_index_;
     hovered_index_ = row_at(local.y);
+    return hovered_index_ != prev;
 }
 
 void ShortcodePopup::on_pointer_leave() {

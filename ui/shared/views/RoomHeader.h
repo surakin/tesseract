@@ -44,8 +44,8 @@ public:
 
     bool     on_pointer_down(tk::Point local)                   override;
     void     on_pointer_up  (tk::Point local, bool inside_self) override;
-    tk::Widget* dispatch_pointer_move(tk::Point world)          override;
-    void     on_pointer_move(tk::Point local)                   override;
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override;
+    bool     on_pointer_move(tk::Point local)                   override;
     void     on_pointer_leave()                                 override;
 
     // Fired when a hyperlink in the room topic is clicked.

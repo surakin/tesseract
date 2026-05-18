@@ -384,7 +384,7 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self) {
     if (!url.empty() && on_link_clicked) on_link_clicked(url);
 }
 
-tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world) {
+tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world, bool* dirty) {
     if (!visible_ || !contains_world(world)) return nullptr;
 
     // Children (name_label_, topic_label_) are purely visual — they don't
@@ -394,15 +394,15 @@ tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world) {
     // cursor is over the label text. Fix: delegate first, then always call our
     // own on_pointer_move(), and return `this` so the host tracks RoomHeader
     // as hovered_widget_ and on_pointer_leave() reaches us on exit.
-    Widget* hit = Widget::dispatch_pointer_move(world);
+    Widget* hit = Widget::dispatch_pointer_move(world, dirty);
     if (hit && hit != this) {
         tk::Point local{ world.x - bounds_.x, world.y - bounds_.y };
-        on_pointer_move(local);
+        if (on_pointer_move(local) && dirty) *dirty = true;
     }
     return this;
 }
 
-void RoomHeader::on_pointer_move(tk::Point local) {
+bool RoomHeader::on_pointer_move(tk::Point local) {
     const tk::Point world{ bounds_.x + local.x, bounds_.y + local.y };
 
     hover_calendar_ =
@@ -423,7 +423,7 @@ void RoomHeader::on_pointer_move(tk::Point local) {
         if (on_hide_tooltip) on_hide_tooltip();
     }
     hover_topic_ = new_hover_topic;
-    // Host calls request_repaint() after dispatching pointer-move.
+    return true;
 }
 
 void RoomHeader::on_pointer_leave() {

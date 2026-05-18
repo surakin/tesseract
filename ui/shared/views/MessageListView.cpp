@@ -2898,8 +2898,8 @@ static MessageListView::HoverTarget chip_hit_at(
     return MessageListView::HoverTarget::None;
 }
 
-void MessageListView::on_pointer_move(tk::Point local) {
-    if (gate_blocks_input_()) return;
+bool MessageListView::on_pointer_move(tk::Point local) {
+    if (gate_blocks_input_()) return false;
     tk::ListView::on_pointer_move(local);
 
     // Map pan: apply drag delta while a pan is active.
@@ -2917,7 +2917,7 @@ void MessageListView::on_pointer_move(tk::Point local) {
             if (on_link_hovered) on_link_hovered("");
         }
         invalidate_data();
-        return;
+        return true;
     }
 
     // Row hover may have changed; if the new hovered row is different
@@ -3005,6 +3005,7 @@ void MessageListView::on_pointer_move(tk::Point local) {
             if (on_hide_tooltip) on_hide_tooltip();
         }
     }
+    return true;
 }
 
 void MessageListView::on_pointer_leave() {

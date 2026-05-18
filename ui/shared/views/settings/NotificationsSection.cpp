@@ -212,9 +212,11 @@ void NotificationsSection::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-void NotificationsSection::on_pointer_move(tk::Point local)
+bool NotificationsSection::on_pointer_move(tk::Point local)
 {
+    int prev = hovered_row_;
     hovered_row_ = row_at(local);
+    return hovered_row_ != prev;
 }
 
 void NotificationsSection::on_pointer_leave()

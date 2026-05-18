@@ -245,8 +245,10 @@ void UserInfo::on_pointer_up(tk::Point local, bool inside_self) {
     }
 }
 
-void UserInfo::on_pointer_move(tk::Point) {
+bool UserInfo::on_pointer_move(tk::Point) {
+    bool prev = hovered_;
     hovered_ = true;
+    return !prev;
 }
 
 void UserInfo::on_pointer_leave() {

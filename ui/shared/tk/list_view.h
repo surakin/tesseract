@@ -92,7 +92,7 @@ public:
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
     void on_pointer_drag(Point local)                      override;
-    void on_pointer_move(Point local)                      override;
+    bool on_pointer_move(Point local)                      override;
     void on_pointer_leave()                                override;
 
     // Index of the currently hovered cell (-1 when none).
@@ -221,7 +221,7 @@ public:
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
     void on_pointer_drag(Point local)                      override;
-    void on_pointer_move(Point local)                      override;
+    bool on_pointer_move(Point local)                      override;
     void on_pointer_leave()                                 override;
 
 protected:

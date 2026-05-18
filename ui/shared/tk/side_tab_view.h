@@ -67,7 +67,7 @@ private:
     // Pointer hit-testing for the sidebar column.
     bool on_pointer_down(Point local)                      override;
     void on_pointer_up  (Point local, bool inside_self)    override;
-    void on_pointer_move(Point local)                      override;
+    bool on_pointer_move(Point local)                      override;
     void on_pointer_leave()                                override;
 
     // Return the tab index whose button spans `local_y` (widget-local),

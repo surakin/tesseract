@@ -3432,7 +3432,7 @@ void MainWindow::ensure_sticker_picker_created() {
     hStickerPicker_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kStickerPickerClass, L"",
-        WS_POPUP | WS_BORDER,
+        WS_POPUP,
         0, 0, kStickerPickW, kStickerPickH,
         hwnd_, nullptr, hInst_, nullptr);
     if (!hStickerPicker_) return;

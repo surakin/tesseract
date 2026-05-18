@@ -49,15 +49,15 @@ Widget* Widget::dispatch_pointer_down(Point world) {
     return on_pointer_down(local) ? this : nullptr;
 }
 
-Widget* Widget::dispatch_pointer_move(Point world) {
+Widget* Widget::dispatch_pointer_move(Point world, bool* dirty) {
     if (!visible_ || !contains_world(world)) return nullptr;
 
     for (Widget* ch : snapshot_children_rev(children())) {
         if (!ch->visible()) continue;
-        if (Widget* hit = ch->dispatch_pointer_move(world)) return hit;
+        if (Widget* hit = ch->dispatch_pointer_move(world, dirty)) return hit;
     }
     Point local{ world.x - bounds_.x, world.y - bounds_.y };
-    on_pointer_move(local);
+    if (on_pointer_move(local) && dirty) *dirty = true;
     return this;
 }
 

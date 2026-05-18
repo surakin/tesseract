@@ -108,7 +108,8 @@ public:
     // state (reaction chips, row-hover affordances, etc.). Buttons
     // continue to handle their own hover via the host's Button-hover
     // bookkeeping — this is the generic widget-level hook.
-    virtual void on_pointer_move(Point /*local*/) {}
+    // Returns true if visual state changed and a repaint is needed.
+    virtual bool on_pointer_move(Point /*local*/) { return false; }
     // Mirrors `on_pointer_leave` semantics from the host so widgets can
     // clear hover state when the pointer leaves the surface (or the
     // pointer-move dispatch lands on a different widget).
@@ -124,10 +125,10 @@ public:
 
     // Walk into the deepest visible child under `world` and call
     // `on_pointer_move(local)` on it. Returns the deepest widget that
-    // received the event (or nullptr if `world` was outside). Hosts
-    // call this on the root from their pointer-move handler when no
-    // widget has claimed the press.
-    virtual Widget* dispatch_pointer_move(Point world);
+    // received the event (or nullptr if `world` was outside), and sets
+    // *dirty = true if the widget reported a visual change. Hosts call
+    // this from their pointer-move handler when no widget holds the press.
+    virtual Widget* dispatch_pointer_move(Point world, bool* dirty = nullptr);
 
     // Walk into the hit widget, then bubble up through parents until
     // someone consumes the wheel event. `world` is in root-surface

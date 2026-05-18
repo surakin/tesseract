@@ -34,7 +34,7 @@ public:
     void     paint(tk::PaintCtx& ctx) override;
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
-    void     on_pointer_move(tk::Point local) override;
+    bool     on_pointer_move(tk::Point local) override;
     void     on_pointer_leave() override;
 
 private:

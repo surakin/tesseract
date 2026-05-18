@@ -291,7 +291,6 @@ void StickerPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds) {
 
 void StickerPicker::paint(tk::PaintCtx& ctx) {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
-    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
 
     // Search affordance behind the host's NativeTextField overlay.
     ctx.canvas.fill_rounded_rect(search_rect_, 6.0f,
@@ -410,6 +409,8 @@ void StickerPicker::paint(tk::PaintCtx& ctx) {
         }
     }
     ctx.canvas.pop_clip();
+    // Outer border drawn last so nothing (grid fill, tab strip) paints over it.
+    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -452,18 +453,18 @@ void StickerPicker::on_pointer_up(tk::Point local, bool inside_self) {
     }
 }
 
-void StickerPicker::on_pointer_move(tk::Point local) {
+bool StickerPicker::on_pointer_move(tk::Point local) {
     int cell = -1;
     if (grid_) {
         float lx = local.x - grid_rect_.x;
         float ly = local.y - grid_rect_.y;
-        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h) {
+        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h)
             cell = grid_->index_at({ lx, ly });
-        }
     }
-    if (cell == hovered_grid_cell_) return;
+    if (cell == hovered_grid_cell_) return false;
     hovered_grid_cell_ = cell;
     if (grid_) grid_->invalidate_data();
+    return true;
 }
 
 void StickerPicker::on_pointer_leave() {

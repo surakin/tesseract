@@ -469,11 +469,12 @@ int GridView::index_at(Point local) const {
     return idx;
 }
 
-void GridView::on_pointer_move(Point local) {
+bool GridView::on_pointer_move(Point local) {
     int idx = index_at(local);
-    if (idx == hovered_index_) return;
+    if (idx == hovered_index_) return false;
     hovered_index_ = idx;
     invalidate_data();
+    return true;
 }
 
 void GridView::on_pointer_leave() {
@@ -660,8 +661,9 @@ void ListView::update_hover(Point local) {
     hovered_index_ = idx;
 }
 
-void ListView::on_pointer_move(Point local) {
+bool ListView::on_pointer_move(Point local) {
     update_hover(local);
+    return true;
 }
 
 void ListView::on_pointer_leave() {

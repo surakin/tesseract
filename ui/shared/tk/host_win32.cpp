@@ -986,17 +986,21 @@ public:
         }
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
-        if (hovered != hovered_btn_) {
+        bool btn_changed = (hovered != hovered_btn_);
+        if (btn_changed) {
             if (hovered_btn_) hovered_btn_->set_hovered(false);
             hovered_btn_ = hovered;
             if (hovered_btn_) hovered_btn_->set_hovered(true);
         }
-        Widget* moved = root_->dispatch_pointer_move(local);
-        if (moved != hovered_widget_) {
+        bool dirty = false;
+        Widget* moved = root_->dispatch_pointer_move(local, &dirty);
+        bool widget_changed = (moved != hovered_widget_);
+        if (widget_changed) {
             if (hovered_widget_) hovered_widget_->on_pointer_leave();
             hovered_widget_ = moved;
         }
-        request_repaint();
+        if (btn_changed || widget_changed || dirty)
+            request_repaint();
     }
 
     void on_pointer_leave() {

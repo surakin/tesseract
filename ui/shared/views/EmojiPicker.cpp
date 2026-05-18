@@ -369,7 +369,6 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
     // Backdrop + 1 px border so the picker reads as a card on any host
     // overlay style.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
-    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
 
     // Search-row affordance behind the host's NativeTextField overlay.
     ctx.canvas.fill_rounded_rect(search_rect_, 6.0f,
@@ -506,6 +505,8 @@ void EmojiPicker::paint(tk::PaintCtx& ctx) {
         }
     }
     ctx.canvas.pop_clip();
+    // Outer border drawn last so nothing (grid fill, tab strip) paints over it.
+    ctx.canvas.stroke_rect(bounds_, ctx.theme.palette.popup_border, 1.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -553,22 +554,18 @@ void EmojiPicker::on_pointer_up(tk::Point local, bool inside_self) {
     }
 }
 
-void EmojiPicker::on_pointer_move(tk::Point local) {
+bool EmojiPicker::on_pointer_move(tk::Point local) {
     int cell = -1;
     if (grid_) {
-        // grid_rect_ is in the same world coordinate space as local (both are
-        // widget-local relative to the picker's own origin).
         float lx = local.x - grid_rect_.x;
         float ly = local.y - grid_rect_.y;
-        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h) {
+        if (lx >= 0 && ly >= 0 && lx < grid_rect_.w && ly < grid_rect_.h)
             cell = grid_->index_at({ lx, ly });
-        }
     }
-    if (cell == hovered_grid_cell_) return;
+    if (cell == hovered_grid_cell_) return false;
     hovered_grid_cell_ = cell;
-    // The host already schedules a repaint after every dispatch_pointer_move;
-    // calling invalidate_data on the grid ensures any internal state is flushed.
     if (grid_) grid_->invalidate_data();
+    return true;
 }
 
 void EmojiPicker::on_pointer_leave() {

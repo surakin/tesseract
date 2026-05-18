@@ -178,9 +178,11 @@ void AppearanceSection::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-void AppearanceSection::on_pointer_move(tk::Point local)
+bool AppearanceSection::on_pointer_move(tk::Point local)
 {
+    int prev = hovered_idx_;
     hovered_idx_ = hit_button(local);
+    return hovered_idx_ != prev;
 }
 
 void AppearanceSection::on_pointer_leave()
