@@ -201,12 +201,15 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     RoomListView view;
 
     std::vector<RoomInfo> rooms;
-    rooms.push_back({"!a:example.org", "Alpha room", "", 2, false, "",
-                     "preview a", "", 0, false});
-    rooms.push_back({"!b:example.org", "Beta room", "", 0, false, "",
-                     "preview b", "", 0, false});
-    rooms.push_back(
-        {"!c:example.org", "Gamma room", "", 99, false, "", "", "", 0, false});
+    rooms.push_back(RoomInfo{.id = "!a:example.org",
+                             .name = "Alpha room",
+                             .unread_count = 2,
+                             .last_message_body = "preview a"});
+    rooms.push_back(RoomInfo{.id = "!b:example.org",
+                             .name = "Beta room",
+                             .last_message_body = "preview b"});
+    rooms.push_back(RoomInfo{
+        .id = "!c:example.org", .name = "Gamma room", .unread_count = 99});
     view.set_rooms(rooms);
 
     std::string selected;
@@ -236,8 +239,8 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
     Stage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "A", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "B", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "A"},
+        RoomInfo{.id = "!b:x", .name = "B"},
     };
     view.set_rooms(rooms);
     view.set_selected_room("!b:x");
@@ -247,8 +250,8 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
 
     // Re-order; "b" is now index 0.
     std::vector<RoomInfo> rooms2 = {
-        {"!b:x", "B", "", 0, false, "", "", "", 0, false},
-        {"!a:x", "A", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!b:x", .name = "B"},
+        RoomInfo{.id = "!a:x", .name = "A"},
     };
     view.set_rooms(rooms2);
     st.run(view, {0, 0, 260, 200});
@@ -264,8 +267,8 @@ TEST_CASE("RoomListView search field always visible",
     // Two rooms — content fits easily in a 600 px viewport, but the
     // search bar is unconditionally shown.
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "Alpha", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "Beta", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "Alpha"},
+        RoomInfo{.id = "!b:x", .name = "Beta"},
     };
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 600});
@@ -285,9 +288,8 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
     std::vector<RoomInfo> rooms;
     for (int i = 0; i < 6; ++i)
     {
-        rooms.push_back({"!" + std::to_string(i) + ":x",
-                         "Room " + std::to_string(i), "", 0, false, "", "", "",
-                         0, false});
+        rooms.push_back(RoomInfo{.id = "!" + std::to_string(i) + ":x",
+                                 .name = "Room " + std::to_string(i)});
     }
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 200});
@@ -307,10 +309,10 @@ TEST_CASE(
     Stage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "Alpha room", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "Beta room", "", 0, false, "", "", "", 0, false},
-        {"!c:x", "Gamma room", "", 0, false, "", "", "", 0, false},
-        {"!d:x", "Alpine", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "Alpha room"},
+        RoomInfo{.id = "!b:x", .name = "Beta room"},
+        RoomInfo{.id = "!c:x", .name = "Gamma room"},
+        RoomInfo{.id = "!d:x", .name = "Alpine"},
     };
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 600});
@@ -352,9 +354,9 @@ TEST_CASE("RoomListView preserves selection by id across search filter",
     Stage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "Alpha", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "Beta", "", 0, false, "", "", "", 0, false},
-        {"!c:x", "Gamma", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "Alpha"},
+        RoomInfo{.id = "!b:x", .name = "Beta"},
+        RoomInfo{.id = "!c:x", .name = "Gamma"},
     };
     view.set_rooms(rooms);
     view.set_selected_room("!b:x");
@@ -380,10 +382,11 @@ TEST_CASE("RoomListView sections classify Favorites / DMs / Rooms / Spaces",
 {
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!fav:x", "Fav", "", 0, false, "", "", "", 0, false, true}, // favorite
-        {"!dm:x", "DM", "", 0, true, "", "", "", 0, false, false},   // direct
-        {"!r:x", "Room", "", 0, false, "", "", "", 0, false, false}, // regular
-        {"!sp:x", "Space", "", 0, false, "", "", "", 0, true, false}, // space
+        RoomInfo{
+            .id = "!fav:x", .name = "Fav", .is_favorite = true},    // favorite
+        RoomInfo{.id = "!dm:x", .name = "DM", .is_direct = true},   // direct
+        RoomInfo{.id = "!r:x", .name = "Room"},                     // regular
+        RoomInfo{.id = "!sp:x", .name = "Space", .is_space = true}, // space
     };
     view.set_rooms(rooms);
     // Each room type lands in its own section; all selectable by ID.
@@ -411,8 +414,8 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
     Stage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "A", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "B", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "A"},
+        RoomInfo{.id = "!b:x", .name = "B"},
     };
     view.set_rooms(rooms);
     std::string selected;
@@ -458,8 +461,8 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
     Stage st;
     RoomListView view;
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "Alpha", "", 0, false, "", "", "", 0, false},
-        {"!b:x", "Beta", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "Alpha"},
+        RoomInfo{.id = "!b:x", .name = "Beta"},
     };
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 400});
@@ -492,7 +495,7 @@ TEST_CASE("RoomListView empty sections produce no header row",
     RoomListView view;
     // One regular room → only "Rooms" section has content; others absent.
     std::vector<RoomInfo> rooms = {
-        {"!a:x", "A", "", 0, false, "", "", "", 0, false},
+        RoomInfo{.id = "!a:x", .name = "A"},
     };
     view.set_rooms(rooms);
     std::string selected;
