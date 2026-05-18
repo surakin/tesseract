@@ -1,8 +1,32 @@
 CompileFlags:
   CompilationDatabase: .vscode
   Add:
+    - -std=c++20
     - -I/usr/include/gtk-4.0
     - -I/usr/include/glib-2.0
     - -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
   Remove:
     - -mno-direct-extern-access
+
+---
+# macOS-only code: CoreGraphics/CoreText/AppKit headers are unavailable on Linux.
+If:
+  PathMatch:
+    - ui/macos/.*
+    - ui/shared/tk/canvas_cg\.cpp
+    - ui/shared/tk/canvas_cg\.h
+    - ui/shared/tk/host_macos\.h
+Diagnostics:
+  Suppress: '*'
+
+---
+# Windows-only code: Direct2D/Win32 headers are unavailable on Linux.
+If:
+  PathMatch:
+    - ui/windows/.*
+    - ui/shared/tk/canvas_d2d\.cpp
+    - ui/shared/tk/canvas_d2d\.h
+    - ui/shared/tk/host_win32\.cpp
+    - ui/shared/tk/host_win32\.h
+Diagnostics:
+  Suppress: '*'
