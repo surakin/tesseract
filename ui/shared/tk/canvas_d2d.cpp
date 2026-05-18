@@ -383,6 +383,11 @@ build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // 5. Build a fallback that maps emoji Unicode ranges → Twemoji Mozilla.
     static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
         {0x00A9, 0x00A9},   {0x00AE, 0x00AE}, // © ®
+        // ZWJ must be in the same font run as the surrounding emoji so
+        // DirectWrite's shaper can form gender/family/profession sequences
+        // (e.g. 👩‍💻 = U+1F469 + U+200D + U+1F4BB).  Without this entry
+        // the joiner lands in the system font, splitting the run.
+        {0x200D, 0x200D},                     // ZWJ
         {0x203C, 0x203C},   {0x2049, 0x2049}, // ‼ ⁉
         {0x2122, 0x2122},   {0x2139, 0x2139}, // ™ ℹ
         {0x2194, 0x2199},   {0x21A9, 0x21AA}, // arrows
