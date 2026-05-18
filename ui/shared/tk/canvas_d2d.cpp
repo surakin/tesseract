@@ -1021,7 +1021,7 @@ bool Surface::end_paint()
     HRESULT hr = impl_->dc->EndDraw();
     if (SUCCEEDED(hr))
     {
-        hr = impl_->swap_chain->Present(1, 0);
+        hr = impl_->swap_chain->Present(0, 0);
     }
     if (hr == D2DERR_RECREATE_TARGET)
     {
