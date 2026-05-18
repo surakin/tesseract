@@ -2064,11 +2064,8 @@ void MainWindow::on_create(HWND hwnd)
                 // Compose text area.
                 if (room_text_area_)
                 {
-                    if (hide)
-                    {
-                        room_text_area_->set_visible(false);
-                    }
-                    else
+                    room_text_area_->set_visible(!hide);
+                    if (!hide)
                     {
                         room_text_area_->set_rect(
                             main_app_->compose_text_area_rect());
