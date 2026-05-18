@@ -27,6 +27,8 @@ pub mod ffi {
         pub avatar_url: String,
         pub last_message_body: String,
         pub last_message_sender_name: String,
+        pub last_message_kind: String,
+        pub last_message_sticker_url: String,
         pub last_activity_ts: u64,
         pub is_space: bool,
         pub is_favorite: bool,

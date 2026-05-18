@@ -26,6 +26,12 @@ pub mod ffi {
         /// Display name of the last-message sender; empty when the sender is
         /// the current user (render as "You"), or when there is no last message.
         last_message_sender_name: String,
+        /// Kind of the latest event for preview rendering:
+        /// "text" | "image" | "video" | "file" | "audio" | "sticker" | "".
+        last_message_kind: String,
+        /// mxc:// URI of the sticker image when last_message_kind == "sticker";
+        /// empty otherwise.
+        last_message_sticker_url: String,
         /// Unix timestamp in milliseconds of the most recent activity, or 0.
         last_activity_ts: u64,
         /// True when this room's type is "m.space".

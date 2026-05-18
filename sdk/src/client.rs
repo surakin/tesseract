@@ -4555,43 +4555,166 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     packs
 }
 
-fn latest_event_body(value: &matrix_sdk::latest_events::LatestEventValue) -> Option<String> {
+/// Preview of a room's latest event for the room-list sidebar.
+/// `kind`: "text" | "image" | "video" | "file" | "audio" | "sticker" | ""
+/// (empty = nothing to preview). `text` is the first plain line (text-like
+/// kinds only). `sticker_url` is the mxc URI for "sticker".
+#[derive(Debug, Default, PartialEq)]
+struct LatestPreview {
+    kind: String,
+    text: String,
+    sticker_url: String,
+}
+
+/// First non-empty line of `s`, trimmed. Splits on the first '\n'.
+fn first_line(s: &str) -> String {
+    s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Strip a Matrix `formatted_body` (HTML subset) to its first plain-text
+/// line. Block/break tags become newlines; all other tags are dropped;
+/// the handful of entities Matrix uses are decoded. Char-safe (UTF-8).
+/// No external deps.
+fn html_first_line(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut tag = String::new();
+    for c in html.chars() {
+        if in_tag {
+            if c == '>' {
+                in_tag = false;
+                let lower = tag.to_ascii_lowercase();
+                let name: String = lower
+                    .trim_start_matches('/')
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect();
+                let breaks = matches!(
+                    name.as_str(),
+                    "br" | "p"
+                        | "div"
+                        | "li"
+                        | "tr"
+                        | "blockquote"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "h4"
+                        | "h5"
+                        | "h6"
+                );
+                if breaks {
+                    out.push('\n');
+                }
+                tag.clear();
+            } else {
+                tag.push(c);
+            }
+        } else if c == '<' {
+            in_tag = true;
+        } else {
+            out.push(c);
+        }
+    }
+    let decoded = out
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&");
+    first_line(&decoded)
+}
+
+fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> LatestPreview {
     use matrix_sdk::latest_events::LatestEventValue;
     use matrix_sdk::ruma::events::{
-        room::message::MessageType, AnySyncMessageLikeEvent, AnySyncTimelineEvent,
+        room::message::MessageType, sticker::StickerMediaSource, AnySyncMessageLikeEvent,
+        AnySyncTimelineEvent,
+    };
+
+    let text_kind = |body: &str, formatted: Option<&str>| -> LatestPreview {
+        let line = match formatted {
+            Some(html) if !html.trim().is_empty() => html_first_line(html),
+            _ => String::new(),
+        };
+        let line = if line.is_empty() {
+            first_line(body)
+        } else {
+            line
+        };
+        if line.is_empty() {
+            LatestPreview::default()
+        } else {
+            LatestPreview {
+                kind: "text".to_owned(),
+                text: line,
+                sticker_url: String::new(),
+            }
+        }
+    };
+    let media_kind = |k: &str| LatestPreview {
+        kind: k.to_owned(),
+        text: String::new(),
+        sticker_url: String::new(),
     };
 
     match value {
         LatestEventValue::Remote(timeline_event) => {
-            let event = timeline_event.raw().deserialize().ok()?;
-            let msgtype = match event {
+            let Some(event) = timeline_event.raw().deserialize().ok() else {
+                return LatestPreview::default();
+            };
+            match event {
                 AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) => {
-                    ev.as_original()?.content.msgtype.clone()
+                    let Some(orig) = ev.as_original() else {
+                        return LatestPreview::default();
+                    };
+                    match &orig.content.msgtype {
+                        MessageType::Text(t) => {
+                            text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
+                        }
+                        MessageType::Notice(n) => {
+                            text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str()))
+                        }
+                        MessageType::Emote(e) => {
+                            text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
+                        }
+                        MessageType::Image(_) => media_kind("image"),
+                        MessageType::Video(_) => media_kind("video"),
+                        MessageType::File(_) => media_kind("file"),
+                        MessageType::Audio(_) => media_kind("audio"),
+                        _ => LatestPreview::default(),
+                    }
                 }
-                _ => return None,
-            };
-            let body = match msgtype {
-                // Use plain body for previews; formatted_body is HTML and not suited for sidebar display.
-                MessageType::Text(t) => t.body.trim().to_owned(),
-                MessageType::Image(i) => i.body.trim().to_owned(),
-                MessageType::File(f) => f.body.trim().to_owned(),
-                MessageType::Audio(a) => a.body.trim().to_owned(),
-                MessageType::Video(v) => v.body.trim().to_owned(),
-                _ => return None,
-            };
-            if body.is_empty() {
-                None
-            } else {
-                Some(body)
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(ev)) => {
+                    let Some(orig) = ev.as_original() else {
+                        return LatestPreview::default();
+                    };
+                    let url = match &orig.content.source {
+                        StickerMediaSource::Plain(uri) => uri.to_string(),
+                        StickerMediaSource::Encrypted(f) => f.url.to_string(),
+                        _ => String::new(),
+                    };
+                    LatestPreview {
+                        kind: "sticker".to_owned(),
+                        text: String::new(),
+                        sticker_url: url,
+                    }
+                }
+                _ => LatestPreview::default(),
             }
         }
         LatestEventValue::LocalIsSending(local) | LatestEventValue::LocalCannotBeSent(local) => {
-            extract_local_body(&local.content)
+            extract_local_preview(&local.content)
         }
         LatestEventValue::LocalHasBeenSent { value: local, .. } => {
-            extract_local_body(&local.content)
+            extract_local_preview(&local.content)
         }
-        LatestEventValue::None | LatestEventValue::RemoteInvite { .. } => None,
+        LatestEventValue::None | LatestEventValue::RemoteInvite { .. } => LatestPreview::default(),
     }
 }
 
@@ -4608,6 +4731,9 @@ fn latest_event_sender(
                 AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) => {
                     ev.as_original().map(|e| e.sender.clone())
                 }
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(ev)) => {
+                    ev.as_original().map(|e| e.sender.clone())
+                }
                 _ => None,
             }
         }
@@ -4615,24 +4741,49 @@ fn latest_event_sender(
     }
 }
 
-fn extract_local_body(content: &matrix_sdk::store::SerializableEventContent) -> Option<String> {
+fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) -> LatestPreview {
     use matrix_sdk::ruma::events::{room::message::MessageType, AnyMessageLikeEventContent};
-    let msgtype = match content.deserialize().ok()? {
+    let Some(c) = content.deserialize().ok() else {
+        return LatestPreview::default();
+    };
+    let msgtype = match c {
         AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
-        _ => return None,
+        _ => return LatestPreview::default(),
     };
-    let body = match msgtype {
-        MessageType::Text(t) => t.body.trim().to_owned(),
-        MessageType::Image(i) => i.body.trim().to_owned(),
-        MessageType::File(f) => f.body.trim().to_owned(),
-        MessageType::Audio(a) => a.body.trim().to_owned(),
-        MessageType::Video(v) => v.body.trim().to_owned(),
-        _ => return None,
+    let text_kind = |body: &str, formatted: Option<&str>| -> LatestPreview {
+        let line = match formatted {
+            Some(html) if !html.trim().is_empty() => html_first_line(html),
+            _ => String::new(),
+        };
+        let line = if line.is_empty() {
+            first_line(body)
+        } else {
+            line
+        };
+        if line.is_empty() {
+            LatestPreview::default()
+        } else {
+            LatestPreview {
+                kind: "text".to_owned(),
+                text: line,
+                sticker_url: String::new(),
+            }
+        }
     };
-    if body.is_empty() {
-        None
-    } else {
-        Some(body)
+    let media_kind = |k: &str| LatestPreview {
+        kind: k.to_owned(),
+        text: String::new(),
+        sticker_url: String::new(),
+    };
+    match msgtype {
+        MessageType::Text(t) => text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str())),
+        MessageType::Notice(n) => text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str())),
+        MessageType::Emote(e) => text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str())),
+        MessageType::Image(_) => media_kind("image"),
+        MessageType::Video(_) => media_kind("video"),
+        MessageType::File(_) => media_kind("file"),
+        MessageType::Audio(_) => media_kind("audio"),
+        _ => LatestPreview::default(),
     }
 }
 
@@ -4684,8 +4835,12 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
         // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
         // with an async version (same trick as mark_room_as_read, line 2148).
         let lev = std::ops::Deref::deref(&room).latest_event();
-        let last_message_body = latest_event_body(&lev).unwrap_or_default();
-        let last_message_sender_name = if last_message_body.is_empty() {
+        let LatestPreview {
+            kind: last_message_kind,
+            text: last_message_body,
+            sticker_url: last_message_sticker_url,
+        } = latest_event_preview(&lev);
+        let last_message_sender_name = if last_message_kind.is_empty() {
             String::new()
         } else {
             match latest_event_sender(&lev) {
@@ -4711,6 +4866,8 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             avatar_url: room.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
             last_message_body,
             last_message_sender_name,
+            last_message_kind,
+            last_message_sticker_url,
             last_activity_ts,
             is_space,
             is_favorite,
@@ -6527,7 +6684,7 @@ mod tests {
 
 #[cfg(test)]
 mod tests_latest_event_body {
-    use super::latest_event_body;
+    use super::{latest_event_preview, LatestPreview};
     use matrix_sdk::latest_events::{
         LatestEventValue, LocalLatestEventValue, RemoteLatestEventValue,
     };
@@ -6537,142 +6694,208 @@ mod tests_latest_event_body {
     use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw, MilliSecondsSinceUnixEpoch};
     use matrix_sdk::store::SerializableEventContent;
 
-    #[test]
-    fn none_returns_none() {
-        assert_eq!(latest_event_body(&LatestEventValue::None), None);
+    fn remote(json: serde_json::Value) -> LatestEventValue {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(json.to_string()).unwrap();
+        LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw))
+    }
+    fn text(t: &str) -> LatestPreview {
+        LatestPreview {
+            kind: "text".into(),
+            text: t.into(),
+            sticker_url: String::new(),
+        }
+    }
+    fn media(k: &str) -> LatestPreview {
+        LatestPreview {
+            kind: k.into(),
+            text: String::new(),
+            sticker_url: String::new(),
+        }
     }
 
     #[test]
-    fn remote_invite_returns_none() {
-        let value = LatestEventValue::RemoteInvite {
-            event_id: None,
-            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
-            inviter: None,
-        };
-        assert_eq!(latest_event_body(&value), None);
-    }
-
-    #[test]
-    fn remote_text_message_returns_body() {
-        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
-            serde_json::json!({
-                "type": "m.room.message",
-                "event_id": "$ev0",
-                "room_id": "!r0:example.com",
-                "sender": "@alice:example.com",
-                "origin_server_ts": 1000,
-                "content": { "msgtype": "m.text", "body": "hello world" }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
-        assert_eq!(latest_event_body(&value), Some("hello world".to_owned()));
-    }
-
-    #[test]
-    fn remote_image_returns_filename_body() {
-        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
-            serde_json::json!({
-                "type": "m.room.message",
-                "event_id": "$ev1",
-                "room_id": "!r0:example.com",
-                "sender": "@alice:example.com",
-                "origin_server_ts": 1000,
-                "content": {
-                    "msgtype": "m.image",
-                    "body": "photo.jpg",
-                    "url": "mxc://example.com/abc"
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
-        assert_eq!(latest_event_body(&value), Some("photo.jpg".to_owned()));
-    }
-
-    #[test]
-    fn remote_state_event_returns_none() {
-        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
-            serde_json::json!({
-                "type": "m.room.member",
-                "event_id": "$ev2",
-                "room_id": "!r0:example.com",
-                "sender": "@alice:example.com",
-                "state_key": "@alice:example.com",
-                "origin_server_ts": 1000,
-                "content": { "membership": "join" }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
-        assert_eq!(latest_event_body(&value), None);
-    }
-
-    #[test]
-    fn remote_empty_body_returns_none() {
-        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
-            serde_json::json!({
-                "type": "m.room.message",
-                "event_id": "$ev3",
-                "room_id": "!r0:example.com",
-                "sender": "@alice:example.com",
-                "origin_server_ts": 1000,
-                "content": { "msgtype": "m.text", "body": "   " }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
-        assert_eq!(latest_event_body(&value), None);
-    }
-
-    #[test]
-    fn local_is_sending_text_returns_body() {
-        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
-            RoomMessageEventContent::text_plain("sending\u{2026}"),
-        ))
-        .unwrap();
-        let value = LatestEventValue::LocalIsSending(LocalLatestEventValue {
-            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
-            content,
-        });
+    fn none_returns_default() {
         assert_eq!(
-            latest_event_body(&value),
-            Some("sending\u{2026}".to_owned())
+            latest_event_preview(&LatestEventValue::None),
+            LatestPreview::default()
         );
     }
 
     #[test]
-    fn local_cannot_be_sent_returns_body() {
+    fn remote_invite_returns_default() {
+        let v = LatestEventValue::RemoteInvite {
+            event_id: None,
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            inviter: None,
+        };
+        assert_eq!(latest_event_preview(&v), LatestPreview::default());
+    }
+
+    #[test]
+    fn remote_text_plain() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": { "msgtype": "m.text", "body": "hello world" }
+        }));
+        assert_eq!(latest_event_preview(&v), text("hello world"));
+    }
+
+    #[test]
+    fn remote_text_prefers_formatted_first_line() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.text",
+                "body": "plain line one\nplain line two",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p><b>bold</b> first</p><p>second para</p>"
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("bold first"));
+    }
+
+    #[test]
+    fn remote_text_html_entities_decoded() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.text", "body": "x",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "a &amp; b &lt;c&gt;<br>next"
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("a & b <c>"));
+    }
+
+    #[test]
+    fn remote_text_formatted_utf8_preserved() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.text", "body": "x",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p>h\u{00e9}llo \u{1f31f} w\u{00f6}rld</p><p>2</p>"
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("héllo 🌟 wörld"));
+    }
+
+    #[test]
+    fn remote_notice_and_emote_are_text() {
+        for mt in ["m.notice", "m.emote"] {
+            let v = remote(serde_json::json!({
+                "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+                "sender": "@a:e.com", "origin_server_ts": 1,
+                "content": { "msgtype": mt, "body": "notice/emote body" }
+            }));
+            assert_eq!(latest_event_preview(&v), text("notice/emote body"));
+        }
+    }
+
+    #[test]
+    fn remote_image_video_file_audio_kinds() {
+        let cases = [
+            ("m.image", "image"),
+            ("m.video", "video"),
+            ("m.file", "file"),
+            ("m.audio", "audio"),
+        ];
+        for (mt, kind) in cases {
+            let v = remote(serde_json::json!({
+                "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+                "sender": "@a:e.com", "origin_server_ts": 1,
+                "content": { "msgtype": mt, "body": "f.bin", "url": "mxc://e.com/x" }
+            }));
+            assert_eq!(latest_event_preview(&v), media(kind));
+        }
+    }
+
+    #[test]
+    fn remote_sticker_kind_and_url() {
+        let v = remote(serde_json::json!({
+            "type": "m.sticker", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "body": "wave",
+                "url": "mxc://e.com/stick1",
+                "info": { "w": 128, "h": 128, "mimetype": "image/png" }
+            }
+        }));
+        assert_eq!(
+            latest_event_preview(&v),
+            LatestPreview {
+                kind: "sticker".into(),
+                text: String::new(),
+                sticker_url: "mxc://e.com/stick1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn remote_state_event_returns_default() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.member", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "state_key": "@a:e.com", "origin_server_ts": 1,
+            "content": { "membership": "join" }
+        }));
+        assert_eq!(latest_event_preview(&v), LatestPreview::default());
+    }
+
+    #[test]
+    fn remote_empty_body_returns_default() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": { "msgtype": "m.text", "body": "   " }
+        }));
+        assert_eq!(latest_event_preview(&v), LatestPreview::default());
+    }
+
+    #[test]
+    fn local_is_sending_text() {
+        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
+            RoomMessageEventContent::text_plain("sending\u{2026}"),
+        ))
+        .unwrap();
+        let v = LatestEventValue::LocalIsSending(LocalLatestEventValue {
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            content,
+        });
+        assert_eq!(latest_event_preview(&v), text("sending\u{2026}"));
+    }
+
+    #[test]
+    fn local_cannot_be_sent_text() {
         let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
             RoomMessageEventContent::text_plain("stuck message"),
         ))
         .unwrap();
-        let value = LatestEventValue::LocalCannotBeSent(LocalLatestEventValue {
+        let v = LatestEventValue::LocalCannotBeSent(LocalLatestEventValue {
             timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
             content,
         });
-        assert_eq!(latest_event_body(&value), Some("stuck message".to_owned()));
+        assert_eq!(latest_event_preview(&v), text("stuck message"));
     }
 
     #[test]
-    fn local_has_been_sent_returns_body() {
+    fn local_has_been_sent_text() {
         use matrix_sdk::ruma::owned_event_id;
         let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
             RoomMessageEventContent::text_plain("sent!"),
         ))
         .unwrap();
-        let value = LatestEventValue::LocalHasBeenSent {
+        let v = LatestEventValue::LocalHasBeenSent {
             event_id: owned_event_id!("$ev_sent"),
             value: LocalLatestEventValue {
                 timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
                 content,
             },
         };
-        assert_eq!(latest_event_body(&value), Some("sent!".to_owned()));
+        assert_eq!(latest_event_preview(&v), text("sent!"));
     }
 }
 

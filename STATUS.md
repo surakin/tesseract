@@ -17,7 +17,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 87 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 92 |
 | C++ Catch2 tests via ctest (Qt6 preset) | 323 |
 
 ## Platforms
@@ -51,6 +51,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Timeline FFI** — `subscribe_room`, `unsubscribe_room`, `paginate_back`, `paginate_back_with_status` (reports `reached_start`); position-aligned `on_timeline_reset` / `on_message_inserted` / `on_message_updated` / `on_message_removed` callbacks mirror matrix-sdk-ui's `VectorDiff` semantics.
 - **Back-pagination on scroll-to-top** — UI fires `paginate_back` when the user reaches the top; in-place insertion preserves the visual scroll position.
 - **Background backfill** — `start_background_backfill` walks every joined room not currently subscribed and warms the persistent event cache with bounded concurrency.
+- **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "<user> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
 

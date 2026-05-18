@@ -265,7 +265,7 @@ private:
             text_w = 0;
         }
 
-        bool has_preview = !room.last_message_body.empty();
+        bool has_preview = !room.last_message_kind.empty();
         tk::TextStyle name_style{};
         name_style.role = tk::FontRole::Body;
         name_style.trim = tk::TextTrim::Ellipsis;
@@ -282,28 +282,80 @@ private:
                                  ctx.theme.palette.text_primary);
         }
 
-        if (!room.last_message_body.empty())
+        if (has_preview)
         {
-            tk::TextStyle prev_style{};
-            prev_style.role = tk::FontRole::SidebarPreview;
-            prev_style.trim = tk::TextTrim::Ellipsis;
-            prev_style.max_width = text_w;
-            std::string preview = room.last_message_body;
-            if (!room.is_direct)
+            const std::string& kind = room.last_message_kind;
+            const std::string sender = room.last_message_sender_name.empty()
+                                           ? std::string("You")
+                                           : room.last_message_sender_name;
+
+            bool sticker_thumb_drawn = false;
+            if (kind == "sticker")
             {
-                const std::string& prefix =
-                    room.last_message_sender_name.empty()
-                        ? "You"
-                        : room.last_message_sender_name;
-                preview = prefix + ": " + preview;
+                const tk::Image* thumb = nullptr;
+                if (owner_.sticker_provider_ &&
+                    !room.last_message_sticker_url.empty())
+                {
+                    thumb =
+                        owner_.sticker_provider_(room.last_message_sticker_url);
+                }
+                if (thumb)
+                {
+                    constexpr float kThumb = 28.0f;
+                    tk::Rect dst{text_x, bounds.y + bounds.h - kPadY - kThumb,
+                                 kThumb, kThumb};
+                    ctx.canvas.draw_image(*thumb, dst);
+                    sticker_thumb_drawn = true;
+                }
             }
-            auto prev_layout = ctx.factory.build_text(preview, prev_style);
-            if (prev_layout)
+
+            std::string preview;
+            if (!sticker_thumb_drawn)
             {
-                float prev_y =
-                    bounds.y + bounds.h - kPadY - prev_layout->measure().h;
-                ctx.canvas.draw_text(*prev_layout, {text_x, prev_y},
-                                     ctx.theme.palette.text_secondary);
+                if (kind == "text")
+                {
+                    preview = room.last_message_body;
+                    if (!room.is_direct)
+                    {
+                        preview = sender + ": " + preview;
+                    }
+                }
+                else if (kind == "image")
+                {
+                    preview = sender + " sent an image";
+                }
+                else if (kind == "video")
+                {
+                    preview = sender + " sent a video";
+                }
+                else if (kind == "file")
+                {
+                    preview = sender + " sent a file";
+                }
+                else if (kind == "audio")
+                {
+                    preview = sender + " sent a voice message";
+                }
+                else if (kind == "sticker")
+                {
+                    preview = sender + " sent a sticker";
+                }
+            }
+
+            if (!preview.empty())
+            {
+                tk::TextStyle prev_style{};
+                prev_style.role = tk::FontRole::SidebarPreview;
+                prev_style.trim = tk::TextTrim::Ellipsis;
+                prev_style.max_width = text_w;
+                auto prev_layout = ctx.factory.build_text(preview, prev_style);
+                if (prev_layout)
+                {
+                    float prev_y =
+                        bounds.y + bounds.h - kPadY - prev_layout->measure().h;
+                    ctx.canvas.draw_text(*prev_layout, {text_x, prev_y},
+                                         ctx.theme.palette.text_secondary);
+                }
             }
         }
 
@@ -396,6 +448,11 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 void RoomListView::set_avatar_provider(AvatarProvider p)
 {
     avatar_provider_ = std::move(p);
+}
+
+void RoomListView::set_sticker_provider(StickerProvider p)
+{
+    sticker_provider_ = std::move(p);
 }
 
 void RoomListView::set_selected_room(const std::string& room_id)
