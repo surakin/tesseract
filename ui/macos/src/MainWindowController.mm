@@ -93,8 +93,6 @@ protected:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                               int max_h) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void repaint_pickers_() override;
@@ -168,13 +166,15 @@ public:
     using ShellBase::client_;
     using ShellBase::compose_typing_active_;
     using ShellBase::current_room_id_;
-    using ShellBase::decode_image_;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                               int max_h) override;
     using ShellBase::emoji_fetches_in_flight_;
     using ShellBase::ensure_media_image_;
     using ShellBase::ensure_picker_image_;
     using ShellBase::ensure_reply_details_;
     using ShellBase::ensure_room_avatar_;
     using ShellBase::ensure_row_media_;
+    using ShellBase::ensure_tile_async;
     using ShellBase::ensure_user_avatar_;
     using ShellBase::event_handler_;
     using ShellBase::handle_compose_room_leaving_;
@@ -603,7 +603,7 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
 // and tk::cg::make_image are thread-safe. This is the (former) inline
 // _decodeMediaBytes CGImageSource logic, returning a DecodedImage so the
 // shared ensure_picker_image_/finalize_picker_image_ path can route it.
-ShellBase::DecodedImage
+tesseract::ShellBase::DecodedImage
 MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
                         int /*max_h*/)
 {
