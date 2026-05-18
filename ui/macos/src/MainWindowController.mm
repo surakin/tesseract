@@ -436,7 +436,6 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
-        [c _relayoutRoomSurface];
         [c _relayoutShortcodePopupIfVisible];
         return;
     }
