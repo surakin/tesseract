@@ -4,6 +4,7 @@
 #include "Theme.h"
 
 #include "views/RoomView.h"
+#include "views/text_util.h"
 #include <tesseract/client.h>
 
 #include <string>
@@ -130,14 +131,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     // ── Compose callbacks ────────────────────────────────────────────────
     room_view_->on_send = [this](const std::string& body)
     {
-        std::string trimmed = body;
-        auto l = trimmed.find_first_not_of(" \t\n\r");
-        auto r = trimmed.find_last_not_of(" \t\n\r");
-        if (l == std::string::npos)
-        {
-            return;
-        }
-        trimmed = trimmed.substr(l, r - l + 1);
+        std::string trimmed = tesseract::text::trim(body);
         if (trimmed.empty())
         {
             return;

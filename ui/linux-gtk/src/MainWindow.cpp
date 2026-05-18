@@ -5,6 +5,7 @@
 
 #include "tk/canvas_cairo.h"
 #include "tk/theme.h"
+#include "views/text_util.h"
 
 #include <cairo.h>
 #include <thread>
@@ -789,13 +790,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 return;
             }
-            auto l = body.find_first_not_of(" \t\n\r");
-            auto r = body.find_last_not_of(" \t\n\r");
-            if (l == std::string::npos)
-            {
-                return;
-            }
-            std::string trimmed = body.substr(l, r - l + 1);
+            std::string trimmed = tesseract::text::trim(body);
             if (trimmed.empty())
             {
                 return;
