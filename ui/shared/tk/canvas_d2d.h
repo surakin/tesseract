@@ -111,6 +111,13 @@ struct AnimatedFrame {
     int                    delay_ms;
 };
 
+// Decode a single-frame encoded image (PNG/JPEG/WebP/…) into a tk::Image.
+// Pure WIC (free-threaded): callable off the UI thread; the resulting
+// D2DImage holds a device-independent IWICBitmap and uploads at paint.
+// Returns nullptr on failure / on a multi-frame image.
+std::unique_ptr<Image> decode_image(Backend& backend,
+                                     std::span<const std::uint8_t> bytes);
+
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
 // no padding required). Pixels are copied into an `IWICBitmap` so the
 // resulting Image outlives `pixels`. Returns nullptr on failure.

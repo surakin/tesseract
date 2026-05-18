@@ -192,6 +192,15 @@ protected:
         Tile,       // → tk_images_["tile:z/x/y"], triggers full message-list repaint
     };
 
+    // Result of a worker-thread decode. Exactly one of `still` /
+    // `frames` is populated (frames non-empty ⇒ animated).
+    struct DecodedImage {
+        std::unique_ptr<tk::Image>              still;
+        std::vector<std::unique_ptr<tk::Image>> frames;
+        std::vector<int>                        delays_ms;
+        bool empty() const { return !still && frames.empty(); }
+    };
+
     // ── Theme ─────────────────────────────────────────────────────────────────
 
     // Returns the OS-preferred color scheme. Default: Light.
@@ -262,6 +271,27 @@ protected:
     // Default is a no-op; each platform shell overrides with native image creation.
     virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/, int /*h*/,
                                    std::vector<uint8_t> /*rgba*/) {}
+
+    // Decode `bytes` into a tk::Image (or animated frames). Scaled so the
+    // longest side is ≤ max(max_w, max_h). MUST be safe to call on a
+    // worker thread (no UI/device context): every backend's decoder is
+    // thread-safe; Win32 wraps a device-independent IWICBitmap. Used by
+    // ensure_picker_image_ (worker) and on_media_bytes_ready_ (UI).
+    virtual DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
+                                       int max_w, int max_h) = 0;
+
+    // Monotonic clock in ms from the SAME epoch the shell's animation
+    // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
+    // g_get_monotonic_time/1000; macOS: NSDate*1000; Win32: GetTickCount64).
+    virtual std::int64_t monotonic_ms_() = 0;
+
+    // Start the shell's shared animation frame-tick timer if it is not
+    // already running. Default no-op (shells with no animated content).
+    virtual void start_anim_tick_() {}
+
+    // Repaint whichever picker surfaces are visible (relayout + invalidate).
+    // Default no-op.
+    virtual void repaint_pickers_() {}
 
     // ── Tab state hooks ───────────────────────────────────────────────────────
     // Called after tabs_ and current_room_id_ have been updated. The shell must:
@@ -392,6 +422,21 @@ protected:
     void ensure_room_avatar_(const RoomInfo& r);
     void ensure_user_avatar_(const std::string& mxc);
     void ensure_media_image_(const std::string& url, int max_w, int max_h);
+
+    // Shared async picker-image path. Idempotent: no-op if already in
+    // tk_images_ / anim_cache_ / in-flight. Dedups via
+    // emoji_fetches_in_flight_ (is_sticker == false) or
+    // sticker_fetches_in_flight_ (true). Worker: media_disk_cache_ →
+    // client_->fetch_source_bytes → media_disk_cache_.store →
+    // decode_image_ (OFF the UI thread) → post finalize_picker_image_.
+    void ensure_picker_image_(const std::string& url, bool is_sticker);
+
+    // UI-thread tail of ensure_picker_image_. Erases the in-flight key,
+    // routes `d` into anim_cache_ (animated) or tk_images_ (still),
+    // calls start_anim_tick_() / repaint_pickers_(). Public-testable
+    // logic (see test_picker_image_cache.cpp). Safe if `d.empty()`.
+    void finalize_picker_image_(std::string url, bool is_sticker,
+                                DecodedImage d);
 
     /// Fetch an OSM tile (z/x/y) asynchronously. Idempotent — no-op if already
     /// in tk_images_, in-flight, or previously failed. On success: stores bytes

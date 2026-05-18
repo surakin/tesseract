@@ -61,10 +61,6 @@ namespace win32 {
 // ---------------------------------------------------------------------------
 
 namespace {
-struct StickerBytesPayload {
-    std::string                 cache_key;
-    std::vector<std::uint8_t>   bytes;
-};
 // MediaBytesPayload is no longer posted by this shell — media fetches now flow
 // through ShellBase::ensure_*_() → post_to_ui_ → on_media_bytes_ready_().
 // The struct is kept as a forward stub so any stale queued messages can be
@@ -595,34 +591,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         }
         self->navigate_to_room(payload->room_id);
         delete payload;
-        return 0;
-    }
-    case WM_TESSERACT_STICKER_BYTES: {
-        auto* p = reinterpret_cast<StickerBytesPayload*>(lParam);
-        self->sticker_fetches_in_flight_.erase(p->cache_key);
-        if (!p->bytes.empty()) {
-            // Animated takes priority over static. try_load_animation is
-            // a no-op when the buffer is single-frame; in that case fall
-            // through to the static-decode path.
-            self->try_load_animation(p->cache_key, p->bytes);
-            if (!self->anim_cache_.has(p->cache_key) &&
-                self->main_app_surface_)
-            {
-                if (auto img = self->main_app_surface_->factory().decode_image(p->bytes))
-                    self->tk_images_.emplace(p->cache_key, std::move(img));
-            }
-            if (self->sticker_picker_shared_)
-                self->sticker_picker_shared_->invalidate_image_cache();
-            if (self->emoji_picker_shared_)
-                self->emoji_picker_shared_->invalidate_image_cache();
-            if (self->sticker_picker_surface_ &&
-                self->sticker_picker_surface_->hwnd())
-            {
-                InvalidateRect(self->sticker_picker_surface_->hwnd(),
-                                nullptr, FALSE);
-            }
-        }
-        delete p;
         return 0;
     }
     case WM_TESSERACT_POST_TO_UI: {
@@ -2506,23 +2474,6 @@ void MainWindow::on_anim_tick() {
     }
 }
 
-void MainWindow::request_sticker_image(const std::string& cache_key) {
-    if (cache_key.empty()) return;
-    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) return;
-    if (!sticker_fetches_in_flight_.insert(cache_key).second) return;
-
-    HWND target = hwnd_;
-    run_async_([this, target, cache_key]() {
-        auto bytes = client_->fetch_source_bytes(cache_key);
-        auto* p    = new StickerBytesPayload{ cache_key, std::move(bytes) };
-        if (!PostMessageW(target, WM_TESSERACT_STICKER_BYTES, 0,
-                          reinterpret_cast<LPARAM>(p)))
-        {
-            delete p;   // window already gone; drop the payload.
-        }
-    });
-}
-
 // ---------------------------------------------------------------------------
 // ShellBase virtual hook implementations
 // ---------------------------------------------------------------------------
@@ -2577,6 +2528,52 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     if (invalidate_hwnd)
         InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+}
+
+MainWindow::DecodedImage
+MainWindow::decode_image_(const std::vector<uint8_t>& bytes,
+                          int /*max_w*/, int /*max_h*/) {
+    DecodedImage d;
+    if (bytes.empty()) return d;
+    auto& backend = tk::win32::backend_singleton();
+    std::span<const std::uint8_t> span(bytes.data(), bytes.size());
+    auto frames = tk::d2d::decode_animation(backend, span);
+    if (frames.size() >= 2) {
+        d.frames.reserve(frames.size());
+        d.delays_ms.reserve(frames.size());
+        for (auto& af : frames) {
+            d.frames.push_back(std::move(af.image));
+            d.delays_ms.push_back(af.delay_ms);
+        }
+        return d;
+    }
+    d.still = tk::d2d::decode_image(backend, span);
+    return d;
+}
+
+std::int64_t MainWindow::monotonic_ms_() {
+    return static_cast<std::int64_t>(GetTickCount64());
+}
+
+void MainWindow::start_anim_tick_() {
+    if (!anim_timer_running_ && hwnd_) {
+        SetTimer(hwnd_, kAnimTimerId, kAnimTimerHz, nullptr);
+        anim_timer_running_ = true;
+    }
+}
+
+void MainWindow::repaint_pickers_() {
+    if (main_app_surface_) {
+        main_app_surface_->relayout();
+        if (HWND h = main_app_surface_->hwnd())
+            InvalidateRect(h, nullptr, FALSE);
+    }
+    if (emoji_picker_shared_)   emoji_picker_shared_->invalidate_image_cache();
+    if (sticker_picker_shared_) sticker_picker_shared_->invalidate_image_cache();
+    if (emoji_picker_surface_ && emoji_picker_surface_->hwnd())
+        InvalidateRect(emoji_picker_surface_->hwnd(), nullptr, FALSE);
+    if (sticker_picker_surface_ && sticker_picker_surface_->hwnd())
+        InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
@@ -3163,7 +3160,7 @@ void MainWindow::ensure_emoji_picker_created() {
             if (auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto sit = tk_images_.find(cache_key);
             if (sit != tk_images_.end()) return sit->second.get();
-            const_cast<MainWindow*>(this)->request_sticker_image(cache_key);
+            ensure_picker_image_(cache_key, /*is_sticker=*/false);
             return nullptr;
         });
     emoji_picker_surface_->set_root(std::move(shared));
@@ -3461,16 +3458,17 @@ void MainWindow::ensure_sticker_picker_created() {
         };
     // Image provider: synchronous best-effort lookup against the
     // animated + static caches populated by message-list rendering. On
-    // miss, kick off an async fetch via `request_sticker_image` so the
-    // picker fills in stickers that haven't appeared in any message
-    // yet. Decoded bytes land back via WM_TESSERACT_STICKER_BYTES.
+    // miss, kick off an async decode through the shared ShellBase
+    // image-cache path (worker-thread WIC decode → finalize_picker_image_
+    // → repaint_pickers_) so the picker fills in stickers that haven't
+    // appeared in any message yet.
     sticker_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
                 const std::string& /*source_token*/) -> const tk::Image* {
             if (auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto sit = tk_images_.find(cache_key);
             if (sit != tk_images_.end()) return sit->second.get();
-            const_cast<MainWindow*>(this)->request_sticker_image(cache_key);
+            ensure_picker_image_(cache_key, /*is_sticker=*/true);
             return nullptr;
         });
     sticker_picker_surface_->set_root(std::move(shared));

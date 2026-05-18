@@ -80,6 +80,57 @@ void ShellBase::ensure_media_image_(const std::string& url,
     });
 }
 
+void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker) {
+    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url)) return;
+    auto& inflight = is_sticker ? sticker_fetches_in_flight_
+                                : emoji_fetches_in_flight_;
+    if (!inflight.insert(url).second) return;
+    run_async_([this, url, is_sticker]() {
+        auto bytes = media_disk_cache_.load(url);
+        if (bytes.empty()) {
+            bytes = client_->fetch_source_bytes(url);
+            if (!bytes.empty()) media_disk_cache_.store(url, bytes);
+        }
+        if (bytes.empty()) {
+            post_to_ui_([this, url, is_sticker]() {
+                (is_sticker ? sticker_fetches_in_flight_
+                            : emoji_fetches_in_flight_).erase(url);
+            });
+            return;
+        }
+        // Decode OFF the UI thread. Picker cells are bounded; reuse the
+        // inline-image bound so picker bitmaps are reusable by the
+        // message list (same shared tk_images_ key = the mxc url).
+        // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap it
+        // in a shared_ptr so the post_to_ui_ lambda is copy-constructible
+        // (post_to_ui_ takes std::function, which requires that).
+        auto d = std::make_shared<DecodedImage>(
+            decode_image_(bytes,
+                          visual::kMaxInlineImageWidth,
+                          visual::kMaxInlineImageHeight));
+        post_to_ui_([this, url, is_sticker, d]() mutable {
+            finalize_picker_image_(url, is_sticker, std::move(*d));
+        });
+    });
+}
+
+void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
+                                       DecodedImage d) {
+    (is_sticker ? sticker_fetches_in_flight_
+                : emoji_fetches_in_flight_).erase(url);
+    if (tk_images_.count(url) || anim_cache_.has(url)) return;
+    if (!d.frames.empty()) {
+        anim_cache_.store(url, std::move(d.frames), std::move(d.delays_ms),
+                          monotonic_ms_());
+        start_anim_tick_();
+    } else if (d.still) {
+        tk_images_.emplace(std::move(url), std::move(d.still));
+    } else {
+        return;  // decode failed — leave uncached so a later paint retries
+    }
+    repaint_pickers_();
+}
+
 void ShellBase::ensure_tile_async(int z, int x, int y) {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
     if (tk_images_.count(key) || tile_fetch_failed_.count(key)) return;

@@ -44,6 +44,7 @@ add_executable(tesseract_tests
     cpp/test_map_tiles.cpp
     cpp/test_location_events.cpp
     cpp/test_markdown.cpp
+    cpp/test_picker_image_cache.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

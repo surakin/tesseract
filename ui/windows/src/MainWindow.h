@@ -65,7 +65,8 @@ constexpr UINT WM_TESSERACT_MESSAGE_UPDATED  = WM_APP + 9;
 constexpr UINT WM_TESSERACT_PAGINATE_DONE    = WM_APP + 10;
 constexpr UINT WM_TESSERACT_MESSAGE_REMOVED  = WM_APP + 11;
 constexpr UINT WM_TESSERACT_IMAGE_PACKS      = WM_APP + 12;
-constexpr UINT WM_TESSERACT_STICKER_BYTES    = WM_APP + 13;
+// WM_APP + 13 was WM_TESSERACT_STICKER_BYTES; the sticker picker now uses
+// the shared ShellBase async image-cache path (ensure_picker_image_).
 constexpr UINT WM_TESSERACT_MEDIA_BYTES      = WM_APP + 14;
 constexpr UINT WM_TESSERACT_SUBSCRIBE_DONE   = WM_APP + 15;
 constexpr UINT WM_TESSERACT_ACCOUNT_PREFS    = WM_APP + 16;
@@ -401,12 +402,6 @@ private:
     /// has passed and triggers a single repaint of the message surface +
     /// sticker picker when at least one frame changed.
     void on_anim_tick();
-    /// Async fetch path used by the sticker picker for stickers that
-    /// haven't been seen in any message yet. Deduplicates against
-    /// `sticker_fetches_in_flight_`; on landing, posts
-    /// WM_TESSERACT_STICKER_BYTES to the UI thread which decodes
-    /// (animated or static), caches, and invalidates the picker.
-    void request_sticker_image(const std::string& cache_key);
 
     // run_async_, shutting_down_, workers_mu_, workers_cv_, workers_in_flight_
     // are inherited from tesseract::ShellBase.
@@ -438,6 +433,11 @@ private:
     void on_media_bytes_ready_(const std::string& cache_key,
                                 MediaKind kind,
                                 std::vector<uint8_t> bytes) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
+                               int max_w, int max_h) override;
+    std::int64_t monotonic_ms_() override;
+    void         start_anim_tick_() override;
+    void         repaint_pickers_() override;
     void generate_video_thumbnail_(const std::string& event_id,
                                     const std::string& video_url) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
