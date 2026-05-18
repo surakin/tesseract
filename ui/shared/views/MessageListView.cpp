@@ -1776,8 +1776,14 @@ private:
             {
                 owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
                     m.event_id, m.media_url, m.body, m.sticker_info_json, r};
+                int iw = (sticker_img && sticker_img->width() > 0)
+                             ? sticker_img->width()
+                             : m.media_w;
+                int ih = (sticker_img && sticker_img->height() > 0)
+                             ? sticker_img->height()
+                             : m.media_h;
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.media_url, m.body, m.media_w, m.media_h, r};
+                    m.event_id, m.media_url, m.body, iw, ih, r};
             }
             return y + sz.h;
         }

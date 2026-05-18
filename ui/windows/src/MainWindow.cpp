@@ -795,7 +795,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_TESSERACT_NOTIFY_CLICK:
     {
         auto* payload = reinterpret_cast<win32::NotifyClickPayload*>(lParam);
-        if (IsIconic(hwnd))
+        if (IsIconic(hwnd) || !IsWindowVisible(hwnd))
         {
             ShowWindow(hwnd, SW_RESTORE);
         }
