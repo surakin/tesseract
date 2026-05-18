@@ -9,7 +9,8 @@
 class QPainter;
 class QImage;
 
-namespace tk::qt6 {
+namespace tk::qt6
+{
 
 // Wrap a borrowed QPainter for the duration of one paint pass. Caller
 // owns the QPainter and is responsible for begin()/end(). The Canvas

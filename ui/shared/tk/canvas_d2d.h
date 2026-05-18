@@ -12,10 +12,10 @@
 #include "canvas.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
-#  define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 
@@ -30,10 +30,12 @@ struct IDWriteFactory2;
 struct IDWriteFontFallback;
 struct IWICImagingFactory;
 
-namespace tk::d2d {
+namespace tk::d2d
+{
 
 // One per application. Owns the D2D, DWrite, and WIC factory singletons.
-class Backend {
+class Backend
+{
 public:
     Backend();
     ~Backend();
@@ -41,8 +43,14 @@ public:
     Backend& operator=(const Backend&) = delete;
 
     struct Impl;
-    Impl& impl() { return *impl_; }
-    const Impl& impl() const { return *impl_; }
+    Impl& impl()
+    {
+        return *impl_;
+    }
+    const Impl& impl() const
+    {
+        return *impl_;
+    }
 
 private:
     std::unique_ptr<Impl> impl_;
@@ -58,7 +66,8 @@ private:
 // DWM composites the window's per-pixel alpha channel against the content
 // behind it. The HWND must have WS_EX_NOREDIRECTIONBITMAP. The caller is
 // responsible for clearing each frame to {0,0,0,0} rather than an opaque bg.
-class Surface {
+class Surface
+{
 public:
     Surface(Backend&, HWND, bool transparent = false);
     ~Surface();
@@ -77,7 +86,10 @@ public:
     bool end_paint();
 
     struct Impl;
-    Impl& impl() { return *impl_; }
+    Impl& impl()
+    {
+        return *impl_;
+    }
 
 private:
     std::unique_ptr<Impl> impl_;
@@ -95,10 +107,11 @@ std::unique_ptr<Canvas> make_canvas(Backend&, ID2D1RenderTarget*);
 // Direct access to the underlying D2D / DWrite / WIC factories owned by
 // the Backend. Intended for callers that need to construct their own
 // render target (e.g. tests using CreateWicBitmapRenderTarget).
-struct Factories {
-    ID2D1Factory1*       d2d;
-    IDWriteFactory2*     dwrite;
-    IWICImagingFactory*  wic;
+struct Factories
+{
+    ID2D1Factory1* d2d;
+    IDWriteFactory2* dwrite;
+    IWICImagingFactory* wic;
     IDWriteFontFallback* font_fallback;
 };
 Factories factories(Backend&);
@@ -106,9 +119,10 @@ Factories factories(Backend&);
 // One frame of a decoded multi-frame image. `delay_ms` is the trailing
 // delay (how long to show this frame before advancing to the next),
 // clamped to >= 20 ms so old GIFs encoded with 0 ms don't burn CPU.
-struct AnimatedFrame {
+struct AnimatedFrame
+{
     std::unique_ptr<Image> image;
-    int                    delay_ms;
+    int delay_ms;
 };
 
 // Decode a single-frame encoded image (PNG/JPEG/WebP/…) into a tk::Image.
@@ -116,14 +130,14 @@ struct AnimatedFrame {
 // D2DImage holds a device-independent IWICBitmap and uploads at paint.
 // Returns nullptr on failure / on a multi-frame image.
 std::unique_ptr<Image> decode_image(Backend& backend,
-                                     std::span<const std::uint8_t> bytes);
+                                    std::span<const std::uint8_t> bytes);
 
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
 // no padding required). Pixels are copied into an `IWICBitmap` so the
 // resulting Image outlives `pixels`. Returns nullptr on failure.
 std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
-                                             const std::uint8_t* pixels,
-                                             int w, int h);
+                                            const std::uint8_t* pixels, int w,
+                                            int h);
 
 // Decode a multi-frame image (GIF natively, APNG on Win10 1809+,
 // animated WebP if the Microsoft Store WebP Image Extension is
@@ -131,7 +145,7 @@ std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
 // empty vector when the bytes contain a single-frame image, the codec
 // is not present, or decoding fails. Frames are fully decoded into
 // in-memory IWICBitmaps so the result survives the input span.
-std::vector<AnimatedFrame> decode_animation(
-    Backend&, std::span<const std::uint8_t> bytes);
+std::vector<AnimatedFrame>
+decode_animation(Backend&, std::span<const std::uint8_t> bytes);
 
 } // namespace tk::d2d

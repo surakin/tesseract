@@ -20,66 +20,91 @@
 
 @class TkAvDelegate;
 
-namespace tk::macos {
+namespace tk::macos
+{
 
 class MacosAudioPlayer;
 
 } // namespace tk::macos
 
 @interface TkAvDelegate : NSObject <AVAudioPlayerDelegate>
-@property (nonatomic, assign) tk::macos::MacosAudioPlayer* owner;
+@property(nonatomic, assign) tk::macos::MacosAudioPlayer* owner;
 @end
 
-namespace tk::macos {
+namespace tk::macos
+{
 
-class MacosAudioPlayer : public tk::AudioPlayer {
+class MacosAudioPlayer : public tk::AudioPlayer
+{
 public:
-    MacosAudioPlayer() {
+    MacosAudioPlayer()
+    {
         delegate_ = [[TkAvDelegate alloc] init];
         delegate_.owner = this;
     }
 
-    ~MacosAudioPlayer() override {
+    ~MacosAudioPlayer() override
+    {
         stop_timer();
-        if (player_) [player_ stop];
+        if (player_)
+        {
+            [player_ stop];
+        }
         player_ = nil;
         delegate_.owner = nullptr;
         delegate_ = nil;
     }
 
-    void play(const std::uint8_t* data,
-              std::size_t          size,
-              std::string_view     /*mime*/) override {
-        if (player_) {
+    void play(const std::uint8_t* data, std::size_t size,
+              std::string_view /*mime*/) override
+    {
+        if (player_)
+        {
             [player_ stop];
             player_ = nil;
         }
-        if (!data || size == 0) return;
+        if (!data || size == 0)
+        {
+            return;
+        }
 
         NSData* bytes = [NSData dataWithBytes:data length:size];
         NSError* err = nil;
         player_ = [[AVAudioPlayer alloc] initWithData:bytes error:&err];
-        if (!player_) {
+        if (!player_)
+        {
             // opus on macOS < 14 lands here; emit a single progress tick so
             // the view can render its "playback unavailable" state.
-            if (on_progress) on_progress();
+            if (on_progress)
+            {
+                on_progress();
+            }
             return;
         }
-        player_.delegate   = delegate_;
+        player_.delegate = delegate_;
         player_.enableRate = YES;
-        player_.rate       = rate_;
+        player_.rate = rate_;
         [player_ prepareToPlay];
         [player_ play];
         start_timer();
     }
 
-    void pause() override {
-        if (player_) [player_ pause];
+    void pause() override
+    {
+        if (player_)
+        {
+            [player_ pause];
+        }
         stop_timer();
-        if (on_progress) on_progress();
+        if (on_progress)
+        {
+            on_progress();
+        }
     }
-    void resume() override {
-        if (player_) {
+    void resume() override
+    {
+        if (player_)
+        {
             [player_ play];
             // AVAudioPlayer drops the rate back to 1.0 after pause/stop;
             // restoring it here keeps the user's selection sticky.
@@ -87,77 +112,131 @@ public:
         }
         start_timer();
     }
-    void stop() override {
+    void stop() override
+    {
         stop_timer();
-        if (player_) [player_ stop];
+        if (player_)
+        {
+            [player_ stop];
+        }
         player_ = nil;
-        if (on_progress) on_progress();
-    }
-
-    void seek(std::uint64_t ms) override {
-        if (!player_) return;
-        NSTimeInterval target = static_cast<NSTimeInterval>(ms) / 1000.0;
-        if (target < 0.0)                 target = 0.0;
-        if (target > player_.duration)    target = player_.duration;
-        player_.currentTime = target;
-        if (on_progress) on_progress();
-    }
-
-    void set_playback_rate(float rate) override {
-        if (rate < 0.5f) rate = 0.5f;
-        if (rate > 3.0f) rate = 3.0f;
-        rate_ = rate;
-        if (player_) {
-            player_.enableRate = YES;
-            player_.rate       = rate_;
+        if (on_progress)
+        {
+            on_progress();
         }
     }
-    float playback_rate() const override { return rate_; }
 
-    std::uint64_t position_ms() const override {
-        if (!player_) return 0;
+    void seek(std::uint64_t ms) override
+    {
+        if (!player_)
+        {
+            return;
+        }
+        NSTimeInterval target = static_cast<NSTimeInterval>(ms) / 1000.0;
+        if (target < 0.0)
+        {
+            target = 0.0;
+        }
+        if (target > player_.duration)
+        {
+            target = player_.duration;
+        }
+        player_.currentTime = target;
+        if (on_progress)
+        {
+            on_progress();
+        }
+    }
+
+    void set_playback_rate(float rate) override
+    {
+        if (rate < 0.5f)
+        {
+            rate = 0.5f;
+        }
+        if (rate > 3.0f)
+        {
+            rate = 3.0f;
+        }
+        rate_ = rate;
+        if (player_)
+        {
+            player_.enableRate = YES;
+            player_.rate = rate_;
+        }
+    }
+    float playback_rate() const override
+    {
+        return rate_;
+    }
+
+    std::uint64_t position_ms() const override
+    {
+        if (!player_)
+        {
+            return 0;
+        }
         const NSTimeInterval t = player_.currentTime;
         return t > 0 ? static_cast<std::uint64_t>(t * 1000.0) : 0u;
     }
-    std::uint64_t duration_ms() const override {
-        if (!player_) return 0;
+    std::uint64_t duration_ms() const override
+    {
+        if (!player_)
+        {
+            return 0;
+        }
         const NSTimeInterval t = player_.duration;
         return t > 0 ? static_cast<std::uint64_t>(t * 1000.0) : 0u;
     }
-    bool is_playing() const override {
+    bool is_playing() const override
+    {
         return player_ && player_.playing;
     }
 
-    void on_finished() {
+    void on_finished()
+    {
         stop_timer();
-        if (on_progress) on_progress();
+        if (on_progress)
+        {
+            on_progress();
+        }
     }
 
 private:
-    void start_timer() {
-        if (timer_) return;
+    void start_timer()
+    {
+        if (timer_)
+        {
+            return;
+        }
         // Weak capture not required — the timer is retained by the run loop
         // only as long as `timer_` lives, and `stop_timer` invalidates it.
         timer_ = [NSTimer scheduledTimerWithTimeInterval:0.060
-                                                  repeats:YES
-                                                    block:^(NSTimer* /*t*/) {
-            if (on_progress) on_progress();
-        }];
+                                                 repeats:YES
+                                                   block:^(NSTimer* /*t*/) {
+                                                       if (on_progress)
+                                                       {
+                                                           on_progress();
+                                                       }
+                                                   }];
     }
-    void stop_timer() {
-        if (timer_) {
+    void stop_timer()
+    {
+        if (timer_)
+        {
             [timer_ invalidate];
             timer_ = nil;
         }
     }
 
-    AVAudioPlayer* player_   = nil;
-    TkAvDelegate*  delegate_ = nil;
-    NSTimer*       timer_    = nil;
-    float          rate_     = 1.0f;
+    AVAudioPlayer* player_ = nil;
+    TkAvDelegate* delegate_ = nil;
+    NSTimer* timer_ = nil;
+    float rate_ = 1.0f;
 };
 
-std::unique_ptr<tk::AudioPlayer> make_audio_player_macos() {
+std::unique_ptr<tk::AudioPlayer> make_audio_player_macos()
+{
     return std::make_unique<MacosAudioPlayer>();
 }
 
@@ -165,7 +244,11 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_macos() {
 
 @implementation TkAvDelegate
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)__unused player
-                       successfully:(BOOL)__unused flag {
-    if (self.owner) self.owner->on_finished();
+                       successfully:(BOOL)__unused flag
+{
+    if (self.owner)
+    {
+        self.owner->on_finished();
+    }
 }
 @end

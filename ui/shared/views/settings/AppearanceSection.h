@@ -28,13 +28,13 @@ public:
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
-    void on_pointer_leave()               override;
+    void on_pointer_leave() override;
 
 private:
     // The three selectable options in display order.
@@ -42,23 +42,23 @@ private:
 
     struct RadioButton
     {
-        const char*                      label;
+        const char* label;
         tesseract::Settings::ThemePreference pref;
-        tk::Rect                         bounds;
-        std::unique_ptr<tk::TextLayout>  layout;
+        tk::Rect bounds;
+        std::unique_ptr<tk::TextLayout> layout;
     };
 
     RadioButton buttons_[kButtonCount] = {
-        { "Light",  tesseract::Settings::ThemePreference::Light,  {}, nullptr },
-        { "Dark",   tesseract::Settings::ThemePreference::Dark,   {}, nullptr },
-        { "System", tesseract::Settings::ThemePreference::System, {}, nullptr },
+        {"Light", tesseract::Settings::ThemePreference::Light, {}, nullptr},
+        {"Dark", tesseract::Settings::ThemePreference::Dark, {}, nullptr},
+        {"System", tesseract::Settings::ThemePreference::System, {}, nullptr},
     };
 
     tesseract::Settings::ThemePreference selected_ =
         tesseract::Settings::instance().theme_pref;
 
-    int hovered_idx_ = -1;   // index of the button under the pointer, or -1
-    int pressed_idx_ = -1;   // index of the button being pressed, or -1
+    int hovered_idx_ = -1; // index of the button under the pointer, or -1
+    int pressed_idx_ = -1; // index of the button being pressed, or -1
 
     // Return the index of the button whose bounds contain `local`, or -1.
     int hit_button(tk::Point local) const;

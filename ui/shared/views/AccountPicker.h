@@ -15,16 +15,19 @@
 #include <string>
 #include <vector>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-struct AccountEntry {
-    std::string user_id;        // canonical "@alice:example.org"
+struct AccountEntry
+{
+    std::string user_id; // canonical "@alice:example.org"
     std::string display_name;
-    std::string avatar_url;     // mxc://… (empty → initials fallback)
-    bool        active = false; // true on the row representing the foreground account
+    std::string avatar_url; // mxc://… (empty → initials fallback)
+    bool active = false; // true on the row representing the foreground account
 };
 
-class AccountPicker : public tk::Widget {
+class AccountPicker : public tk::Widget
+{
 public:
     AccountPicker();
     ~AccountPicker() override = default;
@@ -42,18 +45,21 @@ public:
     /// popover and calls `switch_active_account`.
     std::function<void(const std::string& user_id)> on_select;
 
-    const std::vector<AccountEntry>& entries() const { return entries_; }
+    const std::vector<AccountEntry>& entries() const
+    {
+        return entries_;
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void rebuild_rows();
 
     std::vector<AccountEntry> entries_;
-    ImageProvider             image_provider_;
-    std::vector<UserInfo*>    rows_;   // borrowed; ownership in `children()`
+    ImageProvider image_provider_;
+    std::vector<UserInfo*> rows_; // borrowed; ownership in `children()`
 };
 
 } // namespace tesseract::views

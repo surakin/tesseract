@@ -5,11 +5,11 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
-#include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM
+#include <windowsx.h> // GET_X_LPARAM / GET_Y_LPARAM
 #include <wincodec.h>
 #include <objidl.h>
-#include <ole2.h>       // RegisterDragDrop / IDropTarget
-#include <shellapi.h>   // CF_HDROP / DragQueryFileW
+#include <ole2.h>     // RegisterDragDrop / IDropTarget
+#include <shellapi.h> // CF_HDROP / DragQueryFileW
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <wrl/client.h>
@@ -27,7 +27,8 @@
 #include <utility>
 #include <vector>
 
-namespace tk::win32 {
+namespace tk::win32
+{
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Process-wide D2D backend + post-to-UI message
@@ -36,17 +37,20 @@ namespace tk::win32 {
 // External linkage (declared in host_win32.h): the WIC factory it owns is
 // free-threaded, so worker threads can call decode_image / decode_animation
 // against this backend without marshalling to the UI thread.
-d2d::Backend& backend_singleton() {
+d2d::Backend& backend_singleton()
+{
     static d2d::Backend instance;
     return instance;
 }
 
-namespace {
+namespace
+{
 
 // One registered window message per process for the post_to_ui channel.
 // The lParam is a heap-allocated std::function<void()>* that the
 // receiving WndProc invokes and frees.
-UINT post_to_ui_message() {
+UINT post_to_ui_message()
+{
     static UINT msg = RegisterWindowMessageW(L"tk_post_to_ui");
     return msg;
 }
@@ -56,17 +60,19 @@ UINT post_to_ui_message() {
 // text input fields render in the same face and size as message body text.
 // On systems without "Segoe UI Variable Text" (pre-Win11) GDI silently
 // substitutes "Segoe UI" at the same size, which is visually identical.
-HFONT body_font() {
-    static HFONT cached = []() -> HFONT {
+HFONT body_font()
+{
+    static HFONT cached = []() -> HFONT
+    {
         const int pt = tesseract::Settings::instance().font_body;
         HDC hdc = GetDC(nullptr);
         int h = -MulDiv(pt, GetDeviceCaps(hdc, LOGPIXELSY), 72);
         ReleaseDC(nullptr, hdc);
         LOGFONTW lf{};
-        lf.lfHeight         = h;
-        lf.lfWeight         = FW_REGULAR;
-        lf.lfCharSet        = DEFAULT_CHARSET;
-        lf.lfQuality        = CLEARTYPE_QUALITY;
+        lf.lfHeight = h;
+        lf.lfWeight = FW_REGULAR;
+        lf.lfCharSet = DEFAULT_CHARSET;
+        lf.lfQuality = CLEARTYPE_QUALITY;
         lf.lfPitchAndFamily = DEFAULT_PITCH | FF_SWISS;
         wcscpy_s(lf.lfFaceName, L"Segoe UI Variable Text");
         HFONT font = CreateFontIndirectW(&lf);
@@ -77,8 +83,12 @@ HFONT body_font() {
 }
 
 // Converters.
-inline std::wstring utf8_to_wide(const std::string& s) {
-    if (s.empty()) return {};
+inline std::wstring utf8_to_wide(const std::string& s)
+{
+    if (s.empty())
+    {
+        return {};
+    }
     int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
                                 static_cast<int>(s.size()), nullptr, 0);
     std::wstring out(n, L'\0');
@@ -87,15 +97,18 @@ inline std::wstring utf8_to_wide(const std::string& s) {
     return out;
 }
 
-inline std::string wide_to_utf8(const std::wstring& s) {
-    if (s.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, s.data(),
-                                 static_cast<int>(s.size()),
-                                 nullptr, 0, nullptr, nullptr);
+inline std::string wide_to_utf8(const std::wstring& s)
+{
+    if (s.empty())
+    {
+        return {};
+    }
+    int n =
+        WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                            nullptr, 0, nullptr, nullptr);
     std::string out(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, s.data(),
-                         static_cast<int>(s.size()),
-                         out.data(), n, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                        out.data(), n, nullptr, nullptr);
     return out;
 }
 
@@ -105,22 +118,50 @@ inline std::string wide_to_utf8(const std::wstring& s) {
 // and re-encode as PNG so the shared layer doesn't need to understand DIB
 // memory layouts. The output mime is always "image/png" because we lose
 // the source identity when transcoding from a DIB.
-inline bool clipboard_image_to_png(IWICImagingFactory* wic,
-                                    HWND owner,
-                                    std::vector<std::uint8_t>& out) {
-    if (!OpenClipboard(owner)) return false;
-    struct CloseGuard { ~CloseGuard() { CloseClipboard(); } } guard;
+inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
+                                   std::vector<std::uint8_t>& out)
+{
+    if (!OpenClipboard(owner))
+    {
+        return false;
+    }
+    struct CloseGuard
+    {
+        ~CloseGuard()
+        {
+            CloseClipboard();
+        }
+    } guard;
 
     UINT fmt = 0;
-    if (IsClipboardFormatAvailable(CF_DIBV5)) fmt = CF_DIBV5;
-    else if (IsClipboardFormatAvailable(CF_DIB)) fmt = CF_DIB;
-    else return false;
+    if (IsClipboardFormatAvailable(CF_DIBV5))
+    {
+        fmt = CF_DIBV5;
+    }
+    else if (IsClipboardFormatAvailable(CF_DIB))
+    {
+        fmt = CF_DIB;
+    }
+    else
+    {
+        return false;
+    }
 
     HGLOBAL hg = GetClipboardData(fmt);
-    if (!hg) return false;
+    if (!hg)
+    {
+        return false;
+    }
     SIZE_T sz = GlobalSize(hg);
-    void*  data = GlobalLock(hg);
-    if (!data || sz == 0) { if (data) GlobalUnlock(hg); return false; }
+    void* data = GlobalLock(hg);
+    if (!data || sz == 0)
+    {
+        if (data)
+        {
+            GlobalUnlock(hg);
+        }
+        return false;
+    }
 
     // A CF_DIB/CF_DIBV5 payload starts with a BITMAPINFOHEADER (or V5
     // header) followed by colour table + pixel data. WIC's
@@ -129,8 +170,8 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic,
     std::vector<std::uint8_t> bmp;
     bmp.resize(sizeof(BITMAPFILEHEADER) + sz);
     BITMAPFILEHEADER* bfh = reinterpret_cast<BITMAPFILEHEADER*>(bmp.data());
-    bfh->bfType    = 0x4D42;   // 'BM'
-    bfh->bfSize    = static_cast<DWORD>(bmp.size());
+    bfh->bfType = 0x4D42; // 'BM'
+    bfh->bfSize = static_cast<DWORD>(bmp.size());
     bfh->bfReserved1 = 0;
     bfh->bfReserved2 = 0;
 
@@ -139,11 +180,14 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic,
     DWORD header_size = bih->biSize;
     // Colour table for paletted / bitfields formats.
     DWORD palette_bytes = 0;
-    if (bih->biBitCount <= 8) {
-        DWORD entries = bih->biClrUsed ? bih->biClrUsed
-                                       : (1u << bih->biBitCount);
+    if (bih->biBitCount <= 8)
+    {
+        DWORD entries =
+            bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
         palette_bytes = entries * sizeof(RGBQUAD);
-    } else if (bih->biCompression == BI_BITFIELDS) {
+    }
+    else if (bih->biCompression == BI_BITFIELDS)
+    {
         palette_bytes = 3 * sizeof(DWORD);
     }
     bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + header_size + palette_bytes;
@@ -152,46 +196,87 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic,
 
     using Microsoft::WRL::ComPtr;
     ComPtr<IWICStream> stream;
-    if (FAILED(wic->CreateStream(stream.GetAddressOf()))) return false;
-    if (FAILED(stream->InitializeFromMemory(
-            bmp.data(), static_cast<DWORD>(bmp.size())))) return false;
+    if (FAILED(wic->CreateStream(stream.GetAddressOf())))
+    {
+        return false;
+    }
+    if (FAILED(stream->InitializeFromMemory(bmp.data(),
+                                            static_cast<DWORD>(bmp.size()))))
+    {
+        return false;
+    }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(wic->CreateDecoderFromStream(
-            stream.Get(), nullptr,
-            WICDecodeMetadataCacheOnLoad,
-            decoder.GetAddressOf()))) return false;
+    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
+                                            WICDecodeMetadataCacheOnLoad,
+                                            decoder.GetAddressOf())))
+    {
+        return false;
+    }
     ComPtr<IWICBitmapFrameDecode> frame;
-    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return false;
+    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+    {
+        return false;
+    }
 
     // Encode to PNG into an in-memory IStream.
     ComPtr<IStream> mem_stream;
-    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE,
-                                       mem_stream.GetAddressOf())))
+    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, mem_stream.GetAddressOf())))
+    {
         return false;
+    }
     ComPtr<IWICBitmapEncoder> encoder;
     if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr,
-                                    encoder.GetAddressOf()))) return false;
-    if (FAILED(encoder->Initialize(mem_stream.Get(),
-                                     WICBitmapEncoderNoCache))) return false;
+                                  encoder.GetAddressOf())))
+    {
+        return false;
+    }
+    if (FAILED(encoder->Initialize(mem_stream.Get(), WICBitmapEncoderNoCache)))
+    {
+        return false;
+    }
     ComPtr<IWICBitmapFrameEncode> out_frame;
-    ComPtr<IPropertyBag2>         props;
+    ComPtr<IPropertyBag2> props;
     if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
-                                         props.GetAddressOf()))) return false;
-    if (FAILED(out_frame->Initialize(nullptr))) return false;
-    if (FAILED(out_frame->WriteSource(frame.Get(), nullptr))) return false;
-    if (FAILED(out_frame->Commit())) return false;
-    if (FAILED(encoder->Commit())) return false;
+                                       props.GetAddressOf())))
+    {
+        return false;
+    }
+    if (FAILED(out_frame->Initialize(nullptr)))
+    {
+        return false;
+    }
+    if (FAILED(out_frame->WriteSource(frame.Get(), nullptr)))
+    {
+        return false;
+    }
+    if (FAILED(out_frame->Commit()))
+    {
+        return false;
+    }
+    if (FAILED(encoder->Commit()))
+    {
+        return false;
+    }
 
     // Read the encoded bytes back from the stream.
     HGLOBAL h_out = nullptr;
     if (FAILED(GetHGlobalFromStream(mem_stream.Get(), &h_out)) || !h_out)
+    {
         return false;
+    }
     SIZE_T n = GlobalSize(h_out);
     void* p = GlobalLock(h_out);
-    if (!p || n == 0) { if (p) GlobalUnlock(h_out); return false; }
+    if (!p || n == 0)
+    {
+        if (p)
+        {
+            GlobalUnlock(h_out);
+        }
+        return false;
+    }
     out.assign(static_cast<const std::uint8_t*>(p),
-                static_cast<const std::uint8_t*>(p) + n);
+               static_cast<const std::uint8_t*>(p) + n);
     GlobalUnlock(h_out);
     return true;
 }
@@ -207,26 +292,29 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic,
 // EN_CHANGE notifications arrive at the parent surface as WM_COMMAND;
 // the surface forwards them to the right NativeTextField by control ID.
 
-class Win32NativeTextField : public NativeTextField {
+class Win32NativeTextField : public NativeTextField
+{
 public:
     Win32NativeTextField(HWND parent, int ctrl_id)
-        : parent_(parent), id_(ctrl_id) {
+        : parent_(parent), id_(ctrl_id)
+    {
         hwnd_ = CreateWindowExW(
-            0,
-            L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
-            0, 0, 100, 24,
-            parent_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
+            0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
+            0, 0, 100, 24, parent_,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
             reinterpret_cast<HINSTANCE>(
                 GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
             nullptr);
-        if (!hwnd_) return;
-        SendMessageW(hwnd_, WM_SETFONT,
-                      reinterpret_cast<WPARAM>(body_font()), FALSE);
-        SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
-                           1, reinterpret_cast<DWORD_PTR>(this));
+        if (!hwnd_)
+        {
+            return;
+        }
+        SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(body_font()),
+                     FALSE);
+        SetWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc, 1,
+                          reinterpret_cast<DWORD_PTR>(this));
         SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
-                      MAKELONG(8, 8));
+                     MAKELONG(8, 8));
         // Measure the natural one-line height for vertical centering in set_rect.
         HDC hdc = GetDC(hwnd_);
         HGDIOBJ old = SelectObject(hdc, body_font());
@@ -237,18 +325,28 @@ public:
         line_h_ = tm.tmHeight + 4; // 2 px internal top+bottom margin
     }
 
-    ~Win32NativeTextField() override {
-        if (hwnd_) {
-            RemoveWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc, 1);
+    ~Win32NativeTextField() override
+    {
+        if (hwnd_)
+        {
+            RemoveWindowSubclass(hwnd_, &Win32NativeTextField::subclass_proc,
+                                 1);
             DestroyWindow(hwnd_);
             hwnd_ = nullptr;
         }
     }
 
-    void set_rect(Rect r) override {
-        if (!hwnd_) return;
-        if (r.x == last_rect_.x && r.y == last_rect_.y &&
-            r.w == last_rect_.w && r.h == last_rect_.h) return;
+    void set_rect(Rect r) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (r.x == last_rect_.x && r.y == last_rect_.y && r.w == last_rect_.w &&
+            r.h == last_rect_.h)
+        {
+            return;
+        }
         last_rect_ = r;
         int x = static_cast<int>(std::floor(r.x));
         int w = static_cast<int>(std::round(r.w));
@@ -260,89 +358,139 @@ public:
                 (static_cast<int>(std::round(r.h)) - h) / 2;
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
     }
-    void set_text(std::string text) override {
-        if (!hwnd_) return;
+    void set_text(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         suppress_changed_ = true;
         std::wstring w = utf8_to_wide(text);
         SetWindowTextW(hwnd_, w.c_str());
         suppress_changed_ = false;
     }
-    std::string text() const override {
-        if (!hwnd_) return {};
+    std::string text() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
         int len = GetWindowTextLengthW(hwnd_);
-        if (len <= 0) return {};
+        if (len <= 0)
+        {
+            return {};
+        }
         std::wstring w(len, L'\0');
         GetWindowTextW(hwnd_, w.data(), len + 1);
         return wide_to_utf8(w);
     }
-    void set_placeholder(std::string text) override {
-        if (!hwnd_) return;
+    void set_placeholder(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         std::wstring w = utf8_to_wide(text);
         // EM_SETCUEBANNER lives in commctrl.h; available on XP SP1+.
         SendMessageW(hwnd_, EM_SETCUEBANNER, TRUE,
-                      reinterpret_cast<LPARAM>(w.c_str()));
+                     reinterpret_cast<LPARAM>(w.c_str()));
     }
-    void set_focused(bool focused) override {
-        if (hwnd_ && focused) SetFocus(hwnd_);
+    void set_focused(bool focused) override
+    {
+        if (hwnd_ && focused)
+        {
+            SetFocus(hwnd_);
+        }
     }
-    void set_visible(bool visible) override {
-        if (hwnd_) ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+    void set_visible(bool visible) override
+    {
+        if (hwnd_)
+        {
+            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+        }
     }
-    void set_enabled(bool enabled) override {
-        if (hwnd_) EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+    void set_enabled(bool enabled) override
+    {
+        if (hwnd_)
+        {
+            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+        }
     }
-    void set_password(bool password) override {
-        if (!hwnd_) return;
+    void set_password(bool password) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         // EM_SETPASSWORDCHAR is the universal toggle: setting '*' masks
         // the buffer, 0 clears the mask and shows plaintext.
         SendMessageW(hwnd_, EM_SETPASSWORDCHAR,
-                      static_cast<WPARAM>(password ? L'•' : 0), 0);
+                     static_cast<WPARAM>(password ? L'•' : 0), 0);
         InvalidateRect(hwnd_, nullptr, TRUE);
     }
-    void set_on_changed(std::function<void(const std::string&)> cb) override {
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
         on_changed_ = std::move(cb);
     }
-    void set_on_submit(std::function<void()> cb) override {
+    void set_on_submit(std::function<void()> cb) override
+    {
         on_submit_ = std::move(cb);
     }
 
     // Called by Surface's WndProc on WM_COMMAND with EN_CHANGE.
-    void notify_changed() {
-        if (suppress_changed_ || !on_changed_) return;
+    void notify_changed()
+    {
+        if (suppress_changed_ || !on_changed_)
+        {
+            return;
+        }
         on_changed_(text());
     }
-    int  ctrl_id() const { return id_; }
-    HWND hwnd()    const { return hwnd_; }
+    int ctrl_id() const
+    {
+        return id_;
+    }
+    HWND hwnd() const
+    {
+        return hwnd_;
+    }
 
 private:
-    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg,
-                                           WPARAM wParam, LPARAM lParam,
-                                           UINT_PTR /*id*/,
-                                           DWORD_PTR ref) {
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                          LPARAM lParam, UINT_PTR /*id*/,
+                                          DWORD_PTR ref)
+    {
         auto* self = reinterpret_cast<Win32NativeTextField*>(ref);
         if (msg == WM_NCPAINT)
+        {
             return 0;
-        if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-            if (self->on_submit_) self->on_submit_();
+        }
+        if (msg == WM_KEYDOWN && wParam == VK_RETURN)
+        {
+            if (self->on_submit_)
+            {
+                self->on_submit_();
+            }
             return 0;
         }
         // Tell the parent we want all char input forwarded for Enter, so
         // the default beep on VK_RETURN doesn't fire.
-        if (msg == WM_GETDLGCODE) {
+        if (msg == WM_GETDLGCODE)
+        {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             return r | DLGC_WANTALLKEYS;
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    HWND parent_     = nullptr;
-    HWND hwnd_       = nullptr;
-    int  id_         = 0;
-    int  line_h_     = 0;
+    HWND parent_ = nullptr;
+    HWND hwnd_ = nullptr;
+    int id_ = 0;
+    int line_h_ = 0;
     bool suppress_changed_ = false;
-    Rect last_rect_  = {-1.f, -1.f, -1.f, -1.f};
+    Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
     std::function<void(const std::string&)> on_changed_;
-    std::function<void()>                   on_submit_;
+    std::function<void()> on_submit_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -354,41 +502,55 @@ private:
 // Enter falls through and inserts a newline. Natural height comes from a
 // CalcTextSize-ish measurement: line count × DT_HEIGHT_OF_FIRST_LINE.
 
-class Win32NativeTextArea : public NativeTextArea {
+class Win32NativeTextArea : public NativeTextArea
+{
 public:
-    Win32NativeTextArea(HWND parent, int ctrl_id, IWICImagingFactory* wic = nullptr)
-        : parent_(parent), id_(ctrl_id), wic_(wic) {
-        hwnd_ = CreateWindowExW(
-            0,
-            L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE |
-                ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
-            0, 0, 200, 40,
-            parent_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
-            reinterpret_cast<HINSTANCE>(
-                GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
-            nullptr);
-        if (!hwnd_) return;
-        SendMessageW(hwnd_, WM_SETFONT,
-                      reinterpret_cast<WPARAM>(body_font()), FALSE);
-        SetWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc,
-                           1, reinterpret_cast<DWORD_PTR>(this));
+    Win32NativeTextArea(HWND parent, int ctrl_id,
+                        IWICImagingFactory* wic = nullptr)
+        : parent_(parent), id_(ctrl_id), wic_(wic)
+    {
+        hwnd_ =
+            CreateWindowExW(0, L"EDIT", L"",
+                            WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                ES_AUTOVSCROLL | ES_LEFT | ES_WANTRETURN,
+                            0, 0, 200, 40, parent_,
+                            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
+                            reinterpret_cast<HINSTANCE>(
+                                GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
+                            nullptr);
+        if (!hwnd_)
+        {
+            return;
+        }
+        SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(body_font()),
+                     FALSE);
+        SetWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc, 1,
+                          reinterpret_cast<DWORD_PTR>(this));
         SendMessageW(hwnd_, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
-                      MAKELONG(8, 8));
+                     MAKELONG(8, 8));
     }
 
-    ~Win32NativeTextArea() override {
-        if (hwnd_) {
+    ~Win32NativeTextArea() override
+    {
+        if (hwnd_)
+        {
             RemoveWindowSubclass(hwnd_, &Win32NativeTextArea::subclass_proc, 1);
             DestroyWindow(hwnd_);
             hwnd_ = nullptr;
         }
     }
 
-    void set_rect(Rect r) override {
-        if (!hwnd_) return;
-        if (r.x == last_rect_.x && r.y == last_rect_.y &&
-            r.w == last_rect_.w && r.h == last_rect_.h) return;
+    void set_rect(Rect r) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        if (r.x == last_rect_.x && r.y == last_rect_.y && r.w == last_rect_.w &&
+            r.h == last_rect_.h)
+        {
+            return;
+        }
         last_rect_ = r;
         // Multi-line EDIT controls draw text top-aligned within their
         // HWND. Size the HWND to the content's natural height and centre
@@ -396,54 +558,85 @@ public:
         // overflows the rect, fill it so the control scrolls instead.
         int rh = static_cast<int>(std::round(r.h));
         int nh = static_cast<int>(natural_height());
-        int h  = (nh > 0 && nh < rh) ? nh : rh;
-        int y  = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
-        SetWindowPos(hwnd_, nullptr,
-                      static_cast<int>(std::floor(r.x)), y,
-                      static_cast<int>(std::round(r.w)), h,
-                      SWP_NOZORDER | SWP_NOACTIVATE);
+        int h = (nh > 0 && nh < rh) ? nh : rh;
+        int y = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
+        SetWindowPos(hwnd_, nullptr, static_cast<int>(std::floor(r.x)), y,
+                     static_cast<int>(std::round(r.w)), h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
     }
-    void set_text(std::string text) override {
-        if (!hwnd_) return;
+    void set_text(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         suppress_changed_ = true;
         std::wstring w = utf8_to_wide(text);
         SetWindowTextW(hwnd_, w.c_str());
         suppress_changed_ = false;
         float h = natural_height();
-        if (h != last_height_ && on_height_changed_) {
+        if (h != last_height_ && on_height_changed_)
+        {
             last_height_ = h;
             on_height_changed_(h);
         }
     }
-    std::string text() const override {
-        if (!hwnd_) return {};
+    std::string text() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
         int len = GetWindowTextLengthW(hwnd_);
-        if (len <= 0) return {};
+        if (len <= 0)
+        {
+            return {};
+        }
         std::wstring w(len, L'\0');
         GetWindowTextW(hwnd_, w.data(), len + 1);
         return wide_to_utf8(w);
     }
-    void set_placeholder(std::string text) override {
-        if (!hwnd_) return;
+    void set_placeholder(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         std::wstring w = utf8_to_wide(text);
         SendMessageW(hwnd_, EM_SETCUEBANNER, TRUE,
-                      reinterpret_cast<LPARAM>(w.c_str()));
+                     reinterpret_cast<LPARAM>(w.c_str()));
     }
-    void set_focused(bool focused) override {
-        if (hwnd_ && focused) SetFocus(hwnd_);
+    void set_focused(bool focused) override
+    {
+        if (hwnd_ && focused)
+        {
+            SetFocus(hwnd_);
+        }
     }
-    void set_visible(bool visible) override {
-        if (hwnd_) ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+    void set_visible(bool visible) override
+    {
+        if (hwnd_)
+        {
+            ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
+        }
     }
-    void set_enabled(bool enabled) override {
-        if (hwnd_) EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+    void set_enabled(bool enabled) override
+    {
+        if (hwnd_)
+        {
+            EnableWindow(hwnd_, enabled ? TRUE : FALSE);
+        }
     }
-    float natural_height() const override {
-        if (!hwnd_) return 0.f;
+    float natural_height() const override
+    {
+        if (!hwnd_)
+        {
+            return 0.f;
+        }
 
         HDC hdc = GetDC(hwnd_);
-        HFONT font = reinterpret_cast<HFONT>(
-            SendMessageW(hwnd_, WM_GETFONT, 0, 0));
+        HFONT font =
+            reinterpret_cast<HFONT>(SendMessageW(hwnd_, WM_GETFONT, 0, 0));
         HGDIOBJ old = font ? SelectObject(hdc, font) : nullptr;
         TEXTMETRICW tm{};
         GetTextMetricsW(hdc, &tm);
@@ -463,53 +656,76 @@ public:
 
         int len = GetWindowTextLengthW(hwnd_);
         int total_h;
-        if (len <= 0 || wrap_w <= 0) {
-            total_h = per_line;                 // one empty line
-        } else {
+        if (len <= 0 || wrap_w <= 0)
+        {
+            total_h = per_line; // one empty line
+        }
+        else
+        {
             std::wstring buf(len, L'\0');
             GetWindowTextW(hwnd_, buf.data(), len + 1);
-            RECT calc{ 0, 0, wrap_w, 0 };
+            RECT calc{0, 0, wrap_w, 0};
             // DT_EDITCONTROL: wrap exactly like a multi-line EDIT.
             // DT_EXTERNALLEADING: count external leading per line, as
             // the EDIT does. DT_NOPREFIX: keep '&' literal.
             DrawTextW(hdc, buf.c_str(), len, &calc,
                       DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL |
-                      DT_EXTERNALLEADING | DT_NOPREFIX);
+                          DT_EXTERNALLEADING | DT_NOPREFIX);
             total_h = calc.bottom - calc.top;
             // DT_CALCRECT ignores a trailing newline, but the EDIT shows
             // a blank line there for the caret — mirror that.
-            if (buf[len - 1] == L'\n') total_h += per_line;
-            if (total_h < per_line)   total_h = per_line;
+            if (buf[len - 1] == L'\n')
+            {
+                total_h += per_line;
+            }
+            if (total_h < per_line)
+            {
+                total_h = per_line;
+            }
         }
 
-        if (old) SelectObject(hdc, old);
+        if (old)
+        {
+            SelectObject(hdc, old);
+        }
         ReleaseDC(hwnd_, hdc);
-        return static_cast<float>(total_h + 8);  // 4px top + bottom pad
+        return static_cast<float>(total_h + 8); // 4px top + bottom pad
     }
-    void set_on_changed(std::function<void(const std::string&)> cb) override {
+    void set_on_changed(std::function<void(const std::string&)> cb) override
+    {
         on_changed_ = std::move(cb);
     }
-    void set_on_submit(std::function<void()> cb) override {
+    void set_on_submit(std::function<void()> cb) override
+    {
         on_submit_ = std::move(cb);
     }
-    void set_on_height_changed(std::function<void(float)> cb) override {
+    void set_on_height_changed(std::function<void(float)> cb) override
+    {
         on_height_changed_ = std::move(cb);
     }
-    void set_on_image_paste(ImagePasteHandler cb) override {
+    void set_on_image_paste(ImagePasteHandler cb) override
+    {
         on_image_paste_ = std::move(cb);
     }
-    void insert_at_cursor(std::string text) override {
-        if (!hwnd_) return;
+    void insert_at_cursor(std::string text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         std::wstring w = utf8_to_wide(text);
         SendMessageW(hwnd_, EM_REPLACESEL, TRUE,
-                      reinterpret_cast<LPARAM>(w.c_str()));
+                     reinterpret_cast<LPARAM>(w.c_str()));
     }
 
-    tk::Rect cursor_rect() const override {
-        if (!hwnd_) return {};
+    tk::Rect cursor_rect() const override
+    {
+        if (!hwnd_)
+        {
+            return {};
+        }
         DWORD sel_start = 0;
-        SendMessageW(hwnd_, EM_GETSEL,
-                     reinterpret_cast<WPARAM>(&sel_start), 0);
+        SendMessageW(hwnd_, EM_GETSEL, reinterpret_cast<WPARAM>(&sel_start), 0);
 
         TEXTMETRICW tm{};
         HDC hdc = GetDC(hwnd_);
@@ -524,99 +740,154 @@ public:
         // so the words must be read as signed.
         int cx = 0, cy = 0;
         LRESULT pos = SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start, 0);
-        if (pos != -1) {
+        if (pos != -1)
+        {
             cx = static_cast<short>(LOWORD(pos));
             cy = static_cast<short>(HIWORD(pos));
-        } else if (sel_start > 0) {
+        }
+        else if (sel_start > 0)
+        {
             // Anchor to the previous glyph and step right by its advance.
             LRESULT prev =
                 SendMessageW(hwnd_, EM_POSFROMCHAR, sel_start - 1, 0);
-            if (prev != -1) {
+            if (prev != -1)
+            {
                 cx = static_cast<short>(LOWORD(prev)) + tm.tmAveCharWidth;
                 cy = static_cast<short>(HIWORD(prev));
-            } else {
+            }
+            else
+            {
                 RECT fr{};
                 SendMessageW(hwnd_, EM_GETRECT, 0,
                              reinterpret_cast<LPARAM>(&fr));
                 cx = fr.left;
                 cy = fr.top;
             }
-        } else {
+        }
+        else
+        {
             // Empty control, or caret at the very start.
             RECT fr{};
-            SendMessageW(hwnd_, EM_GETRECT, 0,
-                         reinterpret_cast<LPARAM>(&fr));
+            SendMessageW(hwnd_, EM_GETRECT, 0, reinterpret_cast<LPARAM>(&fr));
             cx = fr.left;
             cy = fr.top;
         }
 
-        POINT pt{ cx, cy };
+        POINT pt{cx, cy};
         MapWindowPoints(hwnd_, GetParent(hwnd_), &pt, 1);
-        return { float(pt.x), float(pt.y), 1.0f, float(tm.tmHeight) };
+        return {float(pt.x), float(pt.y), 1.0f, float(tm.tmHeight)};
     }
 
-    void replace_range(int start, int end, std::string utf8_text) override {
-        if (!hwnd_) return;
+    void replace_range(int start, int end, std::string utf8_text) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         std::string current = this->text();
         int w_start = utf8_byte_to_utf16_len(current, start);
-        int w_end   = utf8_byte_to_utf16_len(current, end);
+        int w_end = utf8_byte_to_utf16_len(current, end);
         suppress_changed_ = true;
         SendMessageW(hwnd_, EM_SETSEL, w_start, w_end);
-        int n = MultiByteToWideChar(CP_UTF8, 0, utf8_text.c_str(), -1, nullptr, 0);
+        int n =
+            MultiByteToWideChar(CP_UTF8, 0, utf8_text.c_str(), -1, nullptr, 0);
         std::wstring wide(n - 1, 0);
         MultiByteToWideChar(CP_UTF8, 0, utf8_text.c_str(), -1, wide.data(), n);
         SendMessageW(hwnd_, EM_REPLACESEL, TRUE, (LPARAM)wide.c_str());
         suppress_changed_ = false;
-        if (on_changed_) on_changed_(this->text());
+        if (on_changed_)
+        {
+            on_changed_(this->text());
+        }
     }
 
-    void set_on_popup_nav(std::function<bool(NavKey)> fn) override {
+    void set_on_popup_nav(std::function<bool(NavKey)> fn) override
+    {
         popup_nav_ = std::move(fn);
     }
 
-    void set_on_edit_last(std::function<bool()> fn) override {
+    void set_on_edit_last(std::function<bool()> fn) override
+    {
         on_edit_last_ = std::move(fn);
     }
 
-    void notify_changed() {
-        if (suppress_changed_) return;
+    void notify_changed()
+    {
+        if (suppress_changed_)
+        {
+            return;
+        }
         std::string t = text();
-        if (on_changed_) on_changed_(t);
+        if (on_changed_)
+        {
+            on_changed_(t);
+        }
         float h = natural_height();
-        if (h != last_height_ && on_height_changed_) {
+        if (h != last_height_ && on_height_changed_)
+        {
             last_height_ = h;
             on_height_changed_(h);
         }
     }
-    int  ctrl_id() const { return id_; }
-    HWND hwnd()    const { return hwnd_; }
+    int ctrl_id() const
+    {
+        return id_;
+    }
+    HWND hwnd() const
+    {
+        return hwnd_;
+    }
 
 private:
-    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg,
-                                           WPARAM wParam, LPARAM lParam,
-                                           UINT_PTR /*id*/,
-                                           DWORD_PTR ref) {
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                          LPARAM lParam, UINT_PTR /*id*/,
+                                          DWORD_PTR ref)
+    {
         auto* self = reinterpret_cast<Win32NativeTextArea*>(ref);
         if (msg == WM_NCPAINT)
+        {
             return 0;
-        if (msg == WM_KEYDOWN && self->popup_nav_) {
+        }
+        if (msg == WM_KEYDOWN && self->popup_nav_)
+        {
             NativeTextArea::NavKey nk{};
             bool is_nav = true;
-            if      (wParam == VK_UP)     nk = NativeTextArea::NavKey::Up;
-            else if (wParam == VK_DOWN)   nk = NativeTextArea::NavKey::Down;
-            else if (wParam == VK_ESCAPE) nk = NativeTextArea::NavKey::Escape;
+            if (wParam == VK_UP)
+            {
+                nk = NativeTextArea::NavKey::Up;
+            }
+            else if (wParam == VK_DOWN)
+            {
+                nk = NativeTextArea::NavKey::Down;
+            }
+            else if (wParam == VK_ESCAPE)
+            {
+                nk = NativeTextArea::NavKey::Escape;
+            }
             else if (wParam == VK_TAB)
+            {
                 nk = (GetKeyState(VK_SHIFT) & 0x8000)
                          ? NativeTextArea::NavKey::ShiftTab
                          : NativeTextArea::NavKey::Tab;
-            else is_nav = false;
-            if (is_nav && self->popup_nav_(nk)) return 0;
+            }
+            else
+            {
+                is_nav = false;
+            }
+            if (is_nav && self->popup_nav_(nk))
+            {
+                return 0;
+            }
         }
         // Up in an empty composer (popup didn't consume it above) → edit
         // the last own message (Element/Slack convention).
-        if (msg == WM_KEYDOWN && wParam == VK_UP && self->on_edit_last_
-            && GetWindowTextLengthW(self->hwnd_) == 0) {
-            if (self->on_edit_last_()) return 0;
+        if (msg == WM_KEYDOWN && wParam == VK_UP && self->on_edit_last_ &&
+            GetWindowTextLengthW(self->hwnd_) == 0)
+        {
+            if (self->on_edit_last_())
+            {
+                return 0;
+            }
         }
         // TranslateMessage queues the WM_CHAR for VK_TAB *before* the
         // WM_KEYDOWN above is dispatched, so consuming the keydown alone
@@ -624,11 +895,18 @@ private:
         // which would mutate the compose text and dismiss the popup. While
         // the popup nav hook is live (popup open), swallow the tab WM_CHAR.
         if (msg == WM_CHAR && self->popup_nav_ && wParam == VK_TAB)
+        {
             return 0;
-        if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
+        }
+        if (msg == WM_KEYDOWN && wParam == VK_RETURN)
+        {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-            if (!shift) {
-                if (self->on_submit_) self->on_submit_();
+            if (!shift)
+            {
+                if (self->on_submit_)
+                {
+                    self->on_submit_();
+                }
                 // TranslateMessage already queued WM_CHAR('\r') — drain it now
                 // so it doesn't insert a newline into the cleared field.
                 MSG cr{};
@@ -639,42 +917,48 @@ private:
         // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
         // EDIT inserts text. If clipboard holds a DIB and we have an
         // image-paste handler, route to it and skip the default.
-        if (msg == WM_PASTE && self->on_image_paste_ && self->wic_) {
+        if (msg == WM_PASTE && self->on_image_paste_ && self->wic_)
+        {
             if (IsClipboardFormatAvailable(CF_DIBV5) ||
-                IsClipboardFormatAvailable(CF_DIB)) {
+                IsClipboardFormatAvailable(CF_DIB))
+            {
                 std::vector<std::uint8_t> bytes;
-                if (clipboard_image_to_png(self->wic_, hwnd, bytes)) {
+                if (clipboard_image_to_png(self->wic_, hwnd, bytes))
+                {
                     self->on_image_paste_(std::move(bytes), "image/png");
                     return 0;
                 }
             }
         }
-        if (msg == WM_GETDLGCODE) {
+        if (msg == WM_GETDLGCODE)
+        {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             return r | DLGC_WANTALLKEYS;
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset) {
+    static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
+    {
         byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset,
+                                       nullptr, 0);
         return wlen < 0 ? 0 : wlen;
     }
 
-    HWND parent_     = nullptr;
-    HWND hwnd_       = nullptr;
-    int  id_         = 0;
-    bool  suppress_changed_ = false;
-    float last_height_      = 0.f;
-    Rect  last_rect_        = {-1.f, -1.f, -1.f, -1.f};
+    HWND parent_ = nullptr;
+    HWND hwnd_ = nullptr;
+    int id_ = 0;
+    bool suppress_changed_ = false;
+    float last_height_ = 0.f;
+    Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
-    std::function<void(const std::string&)>      on_changed_;
-    std::function<void()>                        on_submit_;
-    std::function<void(float)>                   on_height_changed_;
-    ImagePasteHandler                            on_image_paste_;
-    std::function<bool(NativeTextArea::NavKey)>  popup_nav_;
-    std::function<bool()>                        on_edit_last_;
+    std::function<void(const std::string&)> on_changed_;
+    std::function<void()> on_submit_;
+    std::function<void(float)> on_height_changed_;
+    ImagePasteHandler on_image_paste_;
+    std::function<bool(NativeTextArea::NavKey)> popup_nav_;
+    std::function<bool()> on_edit_last_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can
@@ -691,31 +975,46 @@ make_video_player_win32(std::function<void(std::function<void()>)> post,
 //  Host — owns the tree, paints into the d2d::Surface, dispatches input
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host {
+class Host : public tk::Host
+{
 public:
     Host(HWND hwnd, const Theme& theme, bool transparent = false)
-        : hwnd_(hwnd),
-          theme_(&theme),
-          transparent_(transparent),
-          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd, transparent)),
-          factory_(d2d::make_factory(backend_singleton())) {}
-
-    void request_repaint() override {
-        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+        : hwnd_(hwnd), theme_(&theme), transparent_(transparent),
+          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd,
+                                                      transparent)),
+          factory_(d2d::make_factory(backend_singleton()))
+    {
     }
 
-    void post_to_ui(std::function<void()> task) override {
-        if (!hwnd_) return;
+    void request_repaint() override
+    {
+        if (hwnd_)
+        {
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+    }
+
+    void post_to_ui(std::function<void()> task) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         auto* heap = new std::function<void()>(std::move(task));
         if (!PostMessageW(hwnd_, post_to_ui_message(), 0,
-                           reinterpret_cast<LPARAM>(heap))) {
+                          reinterpret_cast<LPARAM>(heap)))
+        {
             // PostMessage failed; reclaim the heap copy so we don't leak.
             delete heap;
         }
     }
 
-    void post_delayed(int ms, std::function<void()> fn) override {
-        if (!hwnd_) return;
+    void post_delayed(int ms, std::function<void()> fn) override
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         // Sleep on a detached one-shot thread, then marshal back through
         // the existing post_to_ui channel. We capture hwnd_ + the message
         // id by value (never `this`) so a Host destroyed within `ms` is
@@ -723,23 +1022,30 @@ public:
         // heap copy. Room switches are infrequent and superseded, so the
         // per-call thread cost is negligible.
         HWND hwnd = hwnd_;
-        UINT msg  = post_to_ui_message();
-        std::thread([ms, hwnd, msg, fn = std::move(fn)]() mutable {
-            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-            auto* heap = new std::function<void()>(std::move(fn));
-            if (!PostMessageW(hwnd, msg, 0, reinterpret_cast<LPARAM>(heap)))
-                delete heap;
-        }).detach();
+        UINT msg = post_to_ui_message();
+        std::thread(
+            [ms, hwnd, msg, fn = std::move(fn)]() mutable
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+                auto* heap = new std::function<void()>(std::move(fn));
+                if (!PostMessageW(hwnd, msg, 0, reinterpret_cast<LPARAM>(heap)))
+                {
+                    delete heap;
+                }
+            })
+            .detach();
     }
 
-    std::unique_ptr<NativeTextField> make_text_field() override {
+    std::unique_ptr<NativeTextField> make_text_field() override
+    {
         int id = next_ctrl_id_++;
         auto field = std::make_unique<Win32NativeTextField>(hwnd_, id);
         fields_by_id_.emplace(id, field.get());
         return field;
     }
 
-    std::unique_ptr<NativeTextArea> make_text_area() override {
+    std::unique_ptr<NativeTextArea> make_text_area() override
+    {
         int id = next_ctrl_id_++;
         auto area = std::make_unique<Win32NativeTextArea>(
             hwnd_, id, d2d::factories(backend_singleton()).wic);
@@ -747,53 +1053,93 @@ public:
         return area;
     }
 
-    std::unique_ptr<AudioPlayer> make_audio_player() override {
+    std::unique_ptr<AudioPlayer> make_audio_player() override
+    {
         return make_audio_player_win32(
-            [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
+            [this](std::function<void()> fn)
+            {
+                post_to_ui(std::move(fn));
+            });
     }
-    std::unique_ptr<VideoPlayer> make_video_player() override {
+    std::unique_ptr<VideoPlayer> make_video_player() override
+    {
         return make_video_player_win32(
-            [this](std::function<void()> fn) { post_to_ui(std::move(fn)); },
+            [this](std::function<void()> fn)
+            {
+                post_to_ui(std::move(fn));
+            },
             &backend_singleton());
     }
 
-    EncodedImage encode_for_send(const std::uint8_t* data,
-                                 std::size_t         len,
-                                 bool                compress) override {
+    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
+                                 bool compress) override
+    {
         EncodedImage out{};
-        if (!data || len == 0) return out;
+        if (!data || len == 0)
+        {
+            return out;
+        }
 
         using Microsoft::WRL::ComPtr;
         IWICImagingFactory* wic = d2d::factories(backend_singleton()).wic;
-        if (!wic) return out;
+        if (!wic)
+        {
+            return out;
+        }
 
         // Decode to inspect dimensions + source format.
         ComPtr<IWICStream> stream;
-        if (FAILED(wic->CreateStream(stream.GetAddressOf()))) return out;
-        if (FAILED(stream->InitializeFromMemory(
-                const_cast<BYTE*>(data),
-                static_cast<DWORD>(len)))) return out;
+        if (FAILED(wic->CreateStream(stream.GetAddressOf())))
+        {
+            return out;
+        }
+        if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data),
+                                                static_cast<DWORD>(len))))
+        {
+            return out;
+        }
         ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(wic->CreateDecoderFromStream(
-                stream.Get(), nullptr,
-                WICDecodeMetadataCacheOnLoad,
-                decoder.GetAddressOf()))) return out;
+        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
+                                                WICDecodeMetadataCacheOnLoad,
+                                                decoder.GetAddressOf())))
+        {
+            return out;
+        }
         ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) return out;
+        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+        {
+            return out;
+        }
 
         UINT src_w = 0, src_h = 0;
         frame->GetSize(&src_w, &src_h);
 
-        if (!compress) {
+        if (!compress)
+        {
             out.bytes.assign(data, data + len);
             GUID container = {};
             decoder->GetContainerFormat(&container);
-            if (container == GUID_ContainerFormatPng)       out.mime = "image/png";
-            else if (container == GUID_ContainerFormatJpeg) out.mime = "image/jpeg";
-            else if (container == GUID_ContainerFormatGif)  out.mime = "image/gif";
-            else if (container == GUID_ContainerFormatBmp)  out.mime = "image/bmp";
-            else                                            out.mime = "image/png";
-            out.width  = src_w;
+            if (container == GUID_ContainerFormatPng)
+            {
+                out.mime = "image/png";
+            }
+            else if (container == GUID_ContainerFormatJpeg)
+            {
+                out.mime = "image/jpeg";
+            }
+            else if (container == GUID_ContainerFormatGif)
+            {
+                out.mime = "image/gif";
+            }
+            else if (container == GUID_ContainerFormatBmp)
+            {
+                out.mime = "image/bmp";
+            }
+            else
+            {
+                out.mime = "image/png";
+            }
+            out.width = src_w;
             out.height = src_h;
             return out;
         }
@@ -801,119 +1147,193 @@ public:
         constexpr UINT kMaxW = 1600;
         constexpr UINT kMaxH = 1200;
         UINT dst_w = src_w, dst_h = src_h;
-        if (src_w > kMaxW || src_h > kMaxH) {
-            double s = std::min({1.0,
-                                  static_cast<double>(kMaxW) / src_w,
-                                  static_cast<double>(kMaxH) / src_h});
+        if (src_w > kMaxW || src_h > kMaxH)
+        {
+            double s = std::min({1.0, static_cast<double>(kMaxW) / src_w,
+                                 static_cast<double>(kMaxH) / src_h});
             dst_w = std::max<UINT>(1, static_cast<UINT>(std::round(src_w * s)));
             dst_h = std::max<UINT>(1, static_cast<UINT>(std::round(src_h * s)));
         }
 
         ComPtr<IWICBitmapSource> source;
-        if (dst_w != src_w || dst_h != src_h) {
+        if (dst_w != src_w || dst_h != src_h)
+        {
             ComPtr<IWICBitmapScaler> scaler;
             if (FAILED(wic->CreateBitmapScaler(scaler.GetAddressOf())))
+            {
                 return EncodedImage{};
+            }
             if (FAILED(scaler->Initialize(frame.Get(), dst_w, dst_h,
-                                            WICBitmapInterpolationModeFant)))
+                                          WICBitmapInterpolationModeFant)))
+            {
                 return EncodedImage{};
+            }
             source = scaler;
-        } else {
+        }
+        else
+        {
             source = frame;
         }
 
         // Encode JPEG into an in-memory IStream.
         ComPtr<IStream> mem;
         if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, mem.GetAddressOf())))
+        {
             return EncodedImage{};
+        }
         ComPtr<IWICBitmapEncoder> encoder;
         if (FAILED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr,
-                                        encoder.GetAddressOf())))
+                                      encoder.GetAddressOf())))
+        {
             return EncodedImage{};
+        }
         if (FAILED(encoder->Initialize(mem.Get(), WICBitmapEncoderNoCache)))
+        {
             return EncodedImage{};
+        }
         ComPtr<IWICBitmapFrameEncode> out_frame;
-        ComPtr<IPropertyBag2>         props;
+        ComPtr<IPropertyBag2> props;
         if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
-                                             props.GetAddressOf())))
+                                           props.GetAddressOf())))
+        {
             return EncodedImage{};
+        }
         // Quality 0.75.
         PROPBAG2 opt = {};
         opt.pstrName = const_cast<LPOLESTR>(L"ImageQuality");
-        VARIANT v;  VariantInit(&v);
-        v.vt = VT_R4; v.fltVal = 0.75f;
+        VARIANT v;
+        VariantInit(&v);
+        v.vt = VT_R4;
+        v.fltVal = 0.75f;
         props->Write(1, &opt, &v);
         VariantClear(&v);
-        if (FAILED(out_frame->Initialize(props.Get()))) return EncodedImage{};
-        if (FAILED(out_frame->SetSize(dst_w, dst_h)))   return EncodedImage{};
-        if (FAILED(out_frame->WriteSource(source.Get(), nullptr)))
+        if (FAILED(out_frame->Initialize(props.Get())))
+        {
             return EncodedImage{};
-        if (FAILED(out_frame->Commit())) return EncodedImage{};
-        if (FAILED(encoder->Commit()))   return EncodedImage{};
+        }
+        if (FAILED(out_frame->SetSize(dst_w, dst_h)))
+        {
+            return EncodedImage{};
+        }
+        if (FAILED(out_frame->WriteSource(source.Get(), nullptr)))
+        {
+            return EncodedImage{};
+        }
+        if (FAILED(out_frame->Commit()))
+        {
+            return EncodedImage{};
+        }
+        if (FAILED(encoder->Commit()))
+        {
+            return EncodedImage{};
+        }
 
         HGLOBAL h_out = nullptr;
         if (FAILED(GetHGlobalFromStream(mem.Get(), &h_out)) || !h_out)
+        {
             return EncodedImage{};
+        }
         SIZE_T n = GlobalSize(h_out);
         void* p = GlobalLock(h_out);
-        if (!p || n == 0) { if (p) GlobalUnlock(h_out); return EncodedImage{}; }
+        if (!p || n == 0)
+        {
+            if (p)
+            {
+                GlobalUnlock(h_out);
+            }
+            return EncodedImage{};
+        }
         out.bytes.assign(static_cast<const std::uint8_t*>(p),
-                          static_cast<const std::uint8_t*>(p) + n);
+                         static_cast<const std::uint8_t*>(p) + n);
         GlobalUnlock(h_out);
-        out.mime   = "image/jpeg";
-        out.width  = dst_w;
+        out.mime = "image/jpeg";
+        out.width = dst_w;
         out.height = dst_h;
         return out;
     }
 
     // Look up the NativeTextField owning a child EDIT control by ID.
-    Win32NativeTextField* field_by_id(int id) {
+    Win32NativeTextField* field_by_id(int id)
+    {
         auto it = fields_by_id_.find(id);
         return it == fields_by_id_.end() ? nullptr : it->second;
     }
-    Win32NativeTextArea* area_by_id(int id) {
+    Win32NativeTextArea* area_by_id(int id)
+    {
         auto it = areas_by_id_.find(id);
         return it == areas_by_id_.end() ? nullptr : it->second;
     }
 
     // ── Internal ──────────────────────────────────────────────────────
-    void set_root(std::unique_ptr<Widget> root) {
+    void set_root(std::unique_ptr<Widget> root)
+    {
         root_ = std::move(root);
         relayout();
     }
-    Widget* root() const { return root_.get(); }
-    const Theme& theme() const { return *theme_; }
-    void set_theme(const Theme& t) { theme_ = &t; }
-    CanvasFactory& factory() { return *factory_; }
-    HWND hwnd() const { return hwnd_; }
+    Widget* root() const
+    {
+        return root_.get();
+    }
+    const Theme& theme() const
+    {
+        return *theme_;
+    }
+    void set_theme(const Theme& t)
+    {
+        theme_ = &t;
+    }
+    CanvasFactory& factory()
+    {
+        return *factory_;
+    }
+    HWND hwnd() const
+    {
+        return hwnd_;
+    }
 
-    void relayout() {
-        if (!root_ || !hwnd_) return;
+    void relayout()
+    {
+        if (!root_ || !hwnd_)
+        {
+            return;
+        }
         RECT rc;
         GetClientRect(hwnd_, &rc);
-        LayoutCtx ctx{ *factory_, *theme_ };
-        Rect bounds{ 0, 0,
-                      static_cast<float>(rc.right  - rc.left),
-                      static_cast<float>(rc.bottom - rc.top) };
-        root_->measure(ctx, { bounds.w, bounds.h });
+        LayoutCtx ctx{*factory_, *theme_};
+        Rect bounds{0, 0, static_cast<float>(rc.right - rc.left),
+                    static_cast<float>(rc.bottom - rc.top)};
+        root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
-        if (on_layout_) on_layout_();
+        if (on_layout_)
+        {
+            on_layout_();
+        }
         request_repaint();
     }
 
-    void set_on_layout(std::function<void()> cb) {
+    void set_on_layout(std::function<void()> cb)
+    {
         on_layout_ = std::move(cb);
     }
 
-    void on_resize() {
-        if (!hwnd_) return;
-        RECT rc; GetClientRect(hwnd_, &rc);
+    void on_resize()
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
+        RECT rc;
+        GetClientRect(hwnd_, &rc);
         d2d_surface_->resize(rc.right - rc.left, rc.bottom - rc.top);
         relayout();
     }
 
-    void on_paint() {
-        if (!hwnd_) return;
+    void on_paint()
+    {
+        if (!hwnd_)
+        {
+            return;
+        }
         PAINTSTRUCT ps;
         BeginPaint(hwnd_, &ps);
 
@@ -921,67 +1341,94 @@ public:
         // Transparent surfaces (overlays) clear to fully transparent so DWM
         // composites the per-pixel alpha against the content behind the window.
         canvas.clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
-        if (root_) {
-            PaintCtx ctx{ canvas, *factory_, *theme_ };
+        if (root_)
+        {
+            PaintCtx ctx{canvas, *factory_, *theme_};
             root_->paint(ctx);
         }
-        if (drag_active_) {
+        if (drag_active_)
+        {
             RECT rc;
             GetClientRect(hwnd_, &rc);
             float w = static_cast<float>(rc.right - rc.left);
             float h = static_cast<float>(rc.bottom - rc.top);
             const float inset = 8.0f;
-            Rect area{ inset, inset,
-                       std::max(0.0f, w - inset * 2),
-                       std::max(0.0f, h - inset * 2) };
-            if (area.w > 0 && area.h > 0) {
+            Rect area{inset, inset, std::max(0.0f, w - inset * 2),
+                      std::max(0.0f, h - inset * 2)};
+            if (area.w > 0 && area.h > 0)
+            {
                 Color accent = theme_->palette.accent;
-                Color fill   = accent;  fill.a = 28;
-                Color stroke = accent;  stroke.a = 192;
+                Color fill = accent;
+                fill.a = 28;
+                Color stroke = accent;
+                stroke.a = 192;
                 canvas.fill_rounded_rect(area, 12.0f, fill);
                 canvas.stroke_rounded_rect(area, 12.0f, stroke, 2.0f);
                 TextStyle st{};
                 st.role = FontRole::Title;
                 auto layout = factory_->build_text("Drop to attach", st);
-                if (layout) {
+                if (layout)
+                {
                     Size sz = layout->measure();
                     canvas.draw_text(*layout,
-                        { area.x + (area.w - sz.w) * 0.5f,
-                          area.y + (area.h - sz.h) * 0.5f },
-                        accent);
+                                     {area.x + (area.w - sz.w) * 0.5f,
+                                      area.y + (area.h - sz.h) * 0.5f},
+                                     accent);
                 }
             }
         }
         bool lost = d2d_surface_->end_paint();
         EndPaint(hwnd_, &ps);
-        if (lost) InvalidateRect(hwnd_, nullptr, FALSE);
+        if (lost)
+        {
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
     }
 
-    void on_pointer_down(int x, int y) {
-        if (!root_) return;
+    void on_pointer_down(int x, int y)
+    {
+        if (!root_)
+        {
+            return;
+        }
         SetCapture(hwnd_);
-        Point local{ static_cast<float>(x), static_cast<float>(y) };
+        Point local{static_cast<float>(x), static_cast<float>(y)};
         pressed_widget_ = root_->dispatch_pointer_down(local);
-        if (pressed_widget_) request_repaint();
+        if (pressed_widget_)
+        {
+            request_repaint();
+        }
     }
 
-    void on_pointer_up(int x, int y) {
-        if (GetCapture() == hwnd_) ReleaseCapture();
-        if (!pressed_widget_) return;
-        Point world{ static_cast<float>(x), static_cast<float>(y) };
+    void on_pointer_up(int x, int y)
+    {
+        if (GetCapture() == hwnd_)
+        {
+            ReleaseCapture();
+        }
+        if (!pressed_widget_)
+        {
+            return;
+        }
+        Point world{static_cast<float>(x), static_cast<float>(y)};
         Point ws = pressed_widget_->world_to_local(world);
-        bool inside = (ws.x >= 0 && ws.y >= 0 &&
-                        ws.x < pressed_widget_->bounds().w &&
-                        ws.y < pressed_widget_->bounds().h);
+        bool inside =
+            (ws.x >= 0 && ws.y >= 0 && ws.x < pressed_widget_->bounds().w &&
+             ws.y < pressed_widget_->bounds().h);
         pressed_widget_->on_pointer_up(ws, inside);
         pressed_widget_ = nullptr;
         request_repaint();
     }
 
-    void on_pointer_move(int x, int y) {
-        if (!root_) return;
-        Point local{ static_cast<float>(x), static_cast<float>(y) };
-        if (pressed_widget_) {
+    void on_pointer_move(int x, int y)
+    {
+        if (!root_)
+        {
+            return;
+        }
+        Point local{static_cast<float>(x), static_cast<float>(y)};
+        if (pressed_widget_)
+        {
             Point ws = pressed_widget_->world_to_local(local);
             pressed_widget_->on_pointer_drag(ws);
             request_repaint();
@@ -990,218 +1437,306 @@ public:
         Widget* hit = root_->hit_test(local);
         Button* hovered = dynamic_cast<Button*>(hit);
         bool btn_changed = (hovered != hovered_btn_);
-        if (btn_changed) {
-            if (hovered_btn_) hovered_btn_->set_hovered(false);
+        if (btn_changed)
+        {
+            if (hovered_btn_)
+            {
+                hovered_btn_->set_hovered(false);
+            }
             hovered_btn_ = hovered;
-            if (hovered_btn_) hovered_btn_->set_hovered(true);
+            if (hovered_btn_)
+            {
+                hovered_btn_->set_hovered(true);
+            }
         }
         bool dirty = false;
         Widget* moved = root_->dispatch_pointer_move(local, &dirty);
         bool widget_changed = (moved != hovered_widget_);
-        if (widget_changed) {
-            if (hovered_widget_) hovered_widget_->on_pointer_leave();
+        if (widget_changed)
+        {
+            if (hovered_widget_)
+            {
+                hovered_widget_->on_pointer_leave();
+            }
             hovered_widget_ = moved;
         }
         if (btn_changed || widget_changed || dirty)
+        {
             request_repaint();
+        }
     }
 
-    void on_pointer_leave() {
-        if (hovered_btn_) { hovered_btn_->set_hovered(false); hovered_btn_ = nullptr; }
-        if (hovered_widget_) { hovered_widget_->on_pointer_leave(); hovered_widget_ = nullptr; }
-        if (pressed_widget_) {
+    void on_pointer_leave()
+    {
+        if (hovered_btn_)
+        {
+            hovered_btn_->set_hovered(false);
+            hovered_btn_ = nullptr;
+        }
+        if (hovered_widget_)
+        {
+            hovered_widget_->on_pointer_leave();
+            hovered_widget_ = nullptr;
+        }
+        if (pressed_widget_)
+        {
             pressed_widget_->on_pointer_up({-1, -1}, false);
             pressed_widget_ = nullptr;
         }
         request_repaint();
     }
 
-    void on_wheel(int screen_x, int screen_y, int delta_steps) {
-        if (!root_ || !hwnd_) return;
-        POINT pt{ screen_x, screen_y };
+    void on_wheel(int screen_x, int screen_y, int delta_steps)
+    {
+        if (!root_ || !hwnd_)
+        {
+            return;
+        }
+        POINT pt{screen_x, screen_y};
         ScreenToClient(hwnd_, &pt);
         // WM_MOUSEWHEEL: positive WHEEL_DELTA = forward away from user.
         // The toolkit convention is positive dy = scroll content down,
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
-        if (root_->dispatch_wheel({ static_cast<float>(pt.x),
-                                       static_cast<float>(pt.y) }, 0, dy)) {
+        if (root_->dispatch_wheel(
+                {static_cast<float>(pt.x), static_cast<float>(pt.y)}, 0, dy))
+        {
             request_repaint();
         }
     }
 
-    void detach() { hwnd_ = nullptr; }
+    void detach()
+    {
+        hwnd_ = nullptr;
+    }
 
 private:
-    HWND                                 hwnd_;
-    const Theme*                         theme_;
-    bool                                 transparent_    = false;
-    std::unique_ptr<d2d::Surface>        d2d_surface_;
-    std::unique_ptr<CanvasFactory>       factory_;
-    std::unique_ptr<Widget>              root_;
-    std::function<void()>                on_layout_;
-    Widget*                              pressed_widget_ = nullptr;
-    Button*                              hovered_btn_    = nullptr;
-    Widget*                              hovered_widget_ = nullptr;
+    HWND hwnd_;
+    const Theme* theme_;
+    bool transparent_ = false;
+    std::unique_ptr<d2d::Surface> d2d_surface_;
+    std::unique_ptr<CanvasFactory> factory_;
+    std::unique_ptr<Widget> root_;
+    std::function<void()> on_layout_;
+    Widget* pressed_widget_ = nullptr;
+    Button* hovered_btn_ = nullptr;
+    Widget* hovered_widget_ = nullptr;
 
-    int                                  next_ctrl_id_ = 0x4000;
+    int next_ctrl_id_ = 0x4000;
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
-    std::unordered_map<int, Win32NativeTextArea*>  areas_by_id_;
+    std::unordered_map<int, Win32NativeTextArea*> areas_by_id_;
 
 public:
-    void set_on_file_drop(FileDropHandler cb) {
+    void set_on_file_drop(FileDropHandler cb)
+    {
         on_file_drop_ = std::move(cb);
     }
-    bool has_file_drop_handler() const {
+    bool has_file_drop_handler() const
+    {
         return static_cast<bool>(on_file_drop_);
     }
-    void fire_file_drop(std::vector<std::uint8_t> bytes,
-                         std::string               mime,
-                         std::string               filename) {
+    void fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime,
+                        std::string filename)
+    {
         if (on_file_drop_)
+        {
             on_file_drop_(std::move(bytes), std::move(mime),
-                            std::move(filename));
+                          std::move(filename));
+        }
     }
-    void set_on_right_click(std::function<void(tk::Point)> cb) {
+    void set_on_right_click(std::function<void(tk::Point)> cb)
+    {
         on_right_click_ = std::move(cb);
     }
-    void fire_right_click(int x, int y) {
+    void fire_right_click(int x, int y)
+    {
         if (on_right_click_)
-            on_right_click_(tk::Point{ static_cast<float>(x),
-                                       static_cast<float>(y) });
+        {
+            on_right_click_(
+                tk::Point{static_cast<float>(x), static_cast<float>(y)});
+        }
     }
-    void set_drag_active(bool active) {
-        if (drag_active_ == active) return;
+    void set_drag_active(bool active)
+    {
+        if (drag_active_ == active)
+        {
+            return;
+        }
         drag_active_ = active;
-        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+        if (hwnd_)
+        {
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
     }
-    bool drag_active() const { return drag_active_; }
+    bool drag_active() const
+    {
+        return drag_active_;
+    }
 
 private:
-    FileDropHandler                      on_file_drop_;
-    std::function<void(tk::Point)>       on_right_click_;
-    bool                                 drag_active_ = false;
+    FileDropHandler on_file_drop_;
+    std::function<void(tk::Point)> on_right_click_;
+    bool drag_active_ = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Surface — child HWND + window-class registration
 // ─────────────────────────────────────────────────────────────────────────
 
-namespace {
+namespace
+{
 
 constexpr const wchar_t* kSurfaceClass = L"tk_win32_Surface";
 
-LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
-                                   WPARAM wParam, LPARAM lParam) {
-    Host* host = reinterpret_cast<Host*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
+                                  LPARAM lParam)
+{
+    Host* host =
+        reinterpret_cast<Host*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     // The runtime-registered post_to_ui message — handled before any
     // standard switch so it isn't confused with normal Win32 messages.
-    if (host && msg == post_to_ui_message()) {
+    if (host && msg == post_to_ui_message())
+    {
         auto* fn = reinterpret_cast<std::function<void()>*>(lParam);
-        if (fn) {
-            if (*fn) (*fn)();
+        if (fn)
+        {
+            if (*fn)
+            {
+                (*fn)();
+            }
             delete fn;
         }
         return 0;
     }
 
-    switch (msg) {
-        case WM_NCCREATE: {
-            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                               reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-            return TRUE;
+    switch (msg)
+    {
+    case WM_NCCREATE:
+    {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
+                          reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return TRUE;
+    }
+    case WM_MOUSEACTIVATE:
+        // Prevent the Surface from stealing keyboard focus from native
+        // overlays (NativeTextArea, NativeTextField) when buttons are
+        // clicked. All input handling is mouse-driven; no WM_KEYDOWN
+        // handling lives in this proc.
+        return MA_NOACTIVATE;
+    case WM_ERASEBKGND:
+        return 1; // we paint the full client area in WM_PAINT
+    case WM_PAINT:
+        if (host)
+        {
+            host->on_paint();
         }
-        case WM_MOUSEACTIVATE:
-            // Prevent the Surface from stealing keyboard focus from native
-            // overlays (NativeTextArea, NativeTextField) when buttons are
-            // clicked. All input handling is mouse-driven; no WM_KEYDOWN
-            // handling lives in this proc.
-            return MA_NOACTIVATE;
-        case WM_ERASEBKGND:
-            return 1;   // we paint the full client area in WM_PAINT
-        case WM_PAINT:
-            if (host) host->on_paint();
-            else      ValidateRect(hwnd, nullptr);
-            return 0;
-        case WM_SIZE:
-            if (host) host->on_resize();
-            return 0;
-        case WM_LBUTTONDOWN:
-            if (host) host->on_pointer_down(GET_X_LPARAM(lParam),
-                                              GET_Y_LPARAM(lParam));
-            return 0;
-        case WM_LBUTTONUP:
-            if (host) host->on_pointer_up(GET_X_LPARAM(lParam),
-                                            GET_Y_LPARAM(lParam));
-            return 0;
-        case WM_RBUTTONUP:
-            if (host) host->fire_right_click(GET_X_LPARAM(lParam),
-                                              GET_Y_LPARAM(lParam));
-            return 0;
-        case WM_MOUSEMOVE: {
-            if (host) host->on_pointer_move(GET_X_LPARAM(lParam),
-                                              GET_Y_LPARAM(lParam));
-            // Subscribe to WM_MOUSELEAVE for hover-out tracking.
-            TRACKMOUSEEVENT tme{};
-            tme.cbSize    = sizeof(tme);
-            tme.dwFlags   = TME_LEAVE;
-            tme.hwndTrack = hwnd;
-            TrackMouseEvent(&tme);
-            return 0;
+        else
+        {
+            ValidateRect(hwnd, nullptr);
         }
-        case WM_MOUSELEAVE:
-            if (host) host->on_pointer_leave();
-            return 0;
-        case WM_MOUSEWHEEL: {
-            if (host) {
-                short delta = static_cast<short>(HIWORD(wParam));
-                // WM_MOUSEWHEEL coordinates are in screen pixels; the
-                // host converts via ScreenToClient.
-                host->on_wheel(GET_X_LPARAM(lParam),
-                                GET_Y_LPARAM(lParam),
-                                delta);
+        return 0;
+    case WM_SIZE:
+        if (host)
+        {
+            host->on_resize();
+        }
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (host)
+        {
+            host->on_pointer_down(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (host)
+        {
+            host->on_pointer_up(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+        return 0;
+    case WM_RBUTTONUP:
+        if (host)
+        {
+            host->fire_right_click(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+    {
+        if (host)
+        {
+            host->on_pointer_move(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+        // Subscribe to WM_MOUSELEAVE for hover-out tracking.
+        TRACKMOUSEEVENT tme{};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd;
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        if (host)
+        {
+            host->on_pointer_leave();
+        }
+        return 0;
+    case WM_MOUSEWHEEL:
+    {
+        if (host)
+        {
+            short delta = static_cast<short>(HIWORD(wParam));
+            // WM_MOUSEWHEEL coordinates are in screen pixels; the
+            // host converts via ScreenToClient.
+            host->on_wheel(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), delta);
+        }
+        return 0;
+    }
+    case WM_CTLCOLOREDIT:
+    {
+        // Paint EDIT-control backgrounds with the theme's input-card colour
+        // instead of the system default white. Multi-line areas (compose
+        // bar) use compose_card_bg; single-line fields use bg.
+        if (host)
+        {
+            HDC dc = reinterpret_cast<HDC>(wParam);
+            HWND ctrl = reinterpret_cast<HWND>(lParam);
+            int id = GetDlgCtrlID(ctrl);
+            const auto& pal = host->theme().palette;
+            tk::Color col = host->area_by_id(id) ? pal.compose_card_bg : pal.bg;
+            COLORREF bg = RGB(col.r, col.g, col.b);
+            SetBkColor(dc, bg);
+            SetTextColor(dc, RGB(pal.text_primary.r, pal.text_primary.g,
+                                 pal.text_primary.b));
+            SetDCBrushColor(dc, bg);
+            return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
+        }
+        break;
+    }
+    case WM_COMMAND:
+    {
+        // EN_CHANGE from a child EDIT belonging to one of our
+        // NativeTextField overlays. wParam HIWORD = notification,
+        // LOWORD = control id.
+        int id = LOWORD(wParam);
+        WORD code = HIWORD(wParam);
+        if (host && code == EN_CHANGE)
+        {
+            if (auto* f = host->field_by_id(id))
+            {
+                f->notify_changed();
             }
-            return 0;
-        }
-        case WM_CTLCOLOREDIT: {
-            // Paint EDIT-control backgrounds with the theme's input-card colour
-            // instead of the system default white. Multi-line areas (compose
-            // bar) use compose_card_bg; single-line fields use bg.
-            if (host) {
-                HDC  dc   = reinterpret_cast<HDC>(wParam);
-                HWND ctrl = reinterpret_cast<HWND>(lParam);
-                int  id   = GetDlgCtrlID(ctrl);
-                const auto& pal = host->theme().palette;
-                tk::Color col = host->area_by_id(id) ? pal.compose_card_bg
-                                                     : pal.bg;
-                COLORREF bg = RGB(col.r, col.g, col.b);
-                SetBkColor(dc, bg);
-                SetTextColor(dc, RGB(pal.text_primary.r,
-                                     pal.text_primary.g,
-                                     pal.text_primary.b));
-                SetDCBrushColor(dc, bg);
-                return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
+            else if (auto* a = host->area_by_id(id))
+            {
+                a->notify_changed();
             }
-            break;
         }
-        case WM_COMMAND: {
-            // EN_CHANGE from a child EDIT belonging to one of our
-            // NativeTextField overlays. wParam HIWORD = notification,
-            // LOWORD = control id.
-            int  id   = LOWORD(wParam);
-            WORD code = HIWORD(wParam);
-            if (host && code == EN_CHANGE) {
-                if (auto* f = host->field_by_id(id)) f->notify_changed();
-                else if (auto* a = host->area_by_id(id)) a->notify_changed();
-            }
-            return 0;
-        }
-        case WM_DESTROY:
-            return 0;
-        default:
-            break;
+        return 0;
+    }
+    case WM_DESTROY:
+        return 0;
+    default:
+        break;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
@@ -1212,13 +1747,21 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
 // RegisterDragDrop in its ctor and RevokeDragDrop + Release in its dtor,
 // so the lifetime of the COM ref overlaps the Host's lifetime safely.
 
-class DropTarget final : public IDropTarget {
+class DropTarget final : public IDropTarget
+{
 public:
-    explicit DropTarget(Host* host) : host_(host) {}
+    explicit DropTarget(Host* host) : host_(host)
+    {
+    }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (!ppv) return E_POINTER;
-        if (riid == __uuidof(IUnknown) || riid == __uuidof(IDropTarget)) {
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+    {
+        if (!ppv)
+        {
+            return E_POINTER;
+        }
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IDropTarget))
+        {
             *ppv = static_cast<IDropTarget*>(this);
             AddRef();
             return S_OK;
@@ -1226,146 +1769,252 @@ public:
         *ppv = nullptr;
         return E_NOINTERFACE;
     }
-    ULONG STDMETHODCALLTYPE AddRef()  override { return ++refs_; }
-    ULONG STDMETHODCALLTYPE Release() override {
+    ULONG STDMETHODCALLTYPE AddRef() override
+    {
+        return ++refs_;
+    }
+    ULONG STDMETHODCALLTYPE Release() override
+    {
         ULONG n = --refs_;
-        if (n == 0) delete this;
+        if (n == 0)
+        {
+            delete this;
+        }
         return n;
     }
 
     HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data,
-                                         DWORD /*grfKeyState*/,
-                                         POINTL /*pt*/,
-                                         DWORD* pdwEffect) override {
-        if (!pdwEffect) return E_POINTER;
-        accept_ = host_ && host_->has_file_drop_handler()
-                && acceptable(data);
+                                        DWORD /*grfKeyState*/, POINTL /*pt*/,
+                                        DWORD* pdwEffect) override
+    {
+        if (!pdwEffect)
+        {
+            return E_POINTER;
+        }
+        accept_ = host_ && host_->has_file_drop_handler() && acceptable(data);
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
-        if (accept_ && host_) host_->set_drag_active(true);
+        if (accept_ && host_)
+        {
+            host_->set_drag_active(true);
+        }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/,
-                                        POINTL /*pt*/,
-                                        DWORD* pdwEffect) override {
-        if (!pdwEffect) return E_POINTER;
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/, POINTL /*pt*/,
+                                       DWORD* pdwEffect) override
+    {
+        if (!pdwEffect)
+        {
+            return E_POINTER;
+        }
         *pdwEffect = accept_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragLeave() override {
+    HRESULT STDMETHODCALLTYPE DragLeave() override
+    {
         accept_ = false;
-        if (host_) host_->set_drag_active(false);
+        if (host_)
+        {
+            host_->set_drag_active(false);
+        }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE Drop(IDataObject* data,
-                                    DWORD /*grfKeyState*/,
-                                    POINTL /*pt*/,
-                                    DWORD* pdwEffect) override {
-        if (pdwEffect) *pdwEffect = DROPEFFECT_NONE;
-        if (host_) host_->set_drag_active(false);
-        if (!accept_ || !host_) return S_OK;
+    HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD /*grfKeyState*/,
+                                   POINTL /*pt*/, DWORD* pdwEffect) override
+    {
+        if (pdwEffect)
+        {
+            *pdwEffect = DROPEFFECT_NONE;
+        }
+        if (host_)
+        {
+            host_->set_drag_active(false);
+        }
+        if (!accept_ || !host_)
+        {
+            return S_OK;
+        }
 
-        FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM stg{};
-        if (FAILED(data->GetData(&fe, &stg))) return S_OK;
+        if (FAILED(data->GetData(&fe, &stg)))
+        {
+            return S_OK;
+        }
         HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
         bool dispatched = false;
-        if (hdrop) {
+        if (hdrop)
+        {
             UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-            for (UINT i = 0; i < n_files; ++i) {
+            for (UINT i = 0; i < n_files; ++i)
+            {
                 UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-                if (len == 0) continue;
+                if (len == 0)
+                {
+                    continue;
+                }
                 std::wstring path(len, L'\0');
                 if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
+                {
                     continue;
-                if (try_dispatch_file(path)) dispatched = true;
+                }
+                if (try_dispatch_file(path))
+                {
+                    dispatched = true;
+                }
             }
             GlobalUnlock(stg.hGlobal);
         }
         ReleaseStgMedium(&stg);
 
-        if (dispatched && pdwEffect) *pdwEffect = DROPEFFECT_COPY;
+        if (dispatched && pdwEffect)
+        {
+            *pdwEffect = DROPEFFECT_COPY;
+        }
         return S_OK;
     }
 
-    void detach_host() { host_ = nullptr; }
+    void detach_host()
+    {
+        host_ = nullptr;
+    }
 
 private:
     // Extension → MIME table used as a fallback when content-sniffing
     // via FindMimeFromData isn't conclusive. Covers the common chat
     // payloads; the rest fall back to application/octet-stream.
-    static const char* mime_from_ext(const std::wstring& ext_lower) {
-        if (ext_lower == L"png")                       return "image/png";
-        if (ext_lower == L"jpg" || ext_lower == L"jpeg") return "image/jpeg";
-        if (ext_lower == L"webp")                      return "image/webp";
-        if (ext_lower == L"bmp")                       return "image/bmp";
-        if (ext_lower == L"gif")                       return "image/gif";
-        if (ext_lower == L"pdf")                       return "application/pdf";
-        if (ext_lower == L"zip")                       return "application/zip";
-        if (ext_lower == L"txt")                       return "text/plain";
-        if (ext_lower == L"json")                      return "application/json";
+    static const char* mime_from_ext(const std::wstring& ext_lower)
+    {
+        if (ext_lower == L"png")
+        {
+            return "image/png";
+        }
+        if (ext_lower == L"jpg" || ext_lower == L"jpeg")
+        {
+            return "image/jpeg";
+        }
+        if (ext_lower == L"webp")
+        {
+            return "image/webp";
+        }
+        if (ext_lower == L"bmp")
+        {
+            return "image/bmp";
+        }
+        if (ext_lower == L"gif")
+        {
+            return "image/gif";
+        }
+        if (ext_lower == L"pdf")
+        {
+            return "application/pdf";
+        }
+        if (ext_lower == L"zip")
+        {
+            return "application/zip";
+        }
+        if (ext_lower == L"txt")
+        {
+            return "text/plain";
+        }
+        if (ext_lower == L"json")
+        {
+            return "application/json";
+        }
         return nullptr;
     }
 
-    static std::wstring path_extension_lower(const std::wstring& p) {
+    static std::wstring path_extension_lower(const std::wstring& p)
+    {
         size_t slash = p.find_last_of(L"\\/");
-        size_t dot   = p.find_last_of(L'.');
+        size_t dot = p.find_last_of(L'.');
         if (dot == std::wstring::npos ||
-            (slash != std::wstring::npos && dot < slash)) return {};
+            (slash != std::wstring::npos && dot < slash))
+        {
+            return {};
+        }
         std::wstring ext = p.substr(dot + 1);
-        for (wchar_t& c : ext) {
-            if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c + (L'a' - L'A'));
+        for (wchar_t& c : ext)
+        {
+            if (c >= L'A' && c <= L'Z')
+            {
+                c = static_cast<wchar_t>(c + (L'a' - L'A'));
+            }
         }
         return ext;
     }
 
-    static std::wstring basename(const std::wstring& p) {
+    static std::wstring basename(const std::wstring& p)
+    {
         size_t slash = p.find_last_of(L"\\/");
         return slash == std::wstring::npos ? p : p.substr(slash + 1);
     }
 
     // Returns true when the drop carries at least one local file.
-    static bool acceptable(IDataObject* data) {
-        if (!data) return false;
-        FORMATETC fe{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    static bool acceptable(IDataObject* data)
+    {
+        if (!data)
+        {
+            return false;
+        }
+        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         return data->QueryGetData(&fe) == S_OK;
     }
 
-    bool try_dispatch_file(const std::wstring& path) {
-        if (!host_) return false;
+    bool try_dispatch_file(const std::wstring& path)
+    {
+        if (!host_)
+        {
+            return false;
+        }
 
         // Size guard via GetFileAttributesEx — single syscall, no open.
         WIN32_FILE_ATTRIBUTE_DATA fa{};
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+        {
             return false;
+        }
         ULARGE_INTEGER sz{};
-        sz.LowPart  = fa.nFileSizeLow;
+        sz.LowPart = fa.nFileSizeLow;
         sz.HighPart = fa.nFileSizeHigh;
         if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
+        {
             return false;
+        }
 
-        HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                                nullptr, OPEN_EXISTING,
-                                FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h == INVALID_HANDLE_VALUE) return false;
+        HANDLE h =
+            CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
 
         std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
         DWORD read_total = 0;
-        while (read_total < bytes.size()) {
+        while (read_total < bytes.size())
+        {
             DWORD got = 0;
-            BOOL  ok  = ReadFile(h, bytes.data() + read_total,
-                                  static_cast<DWORD>(bytes.size() - read_total),
-                                  &got, nullptr);
-            if (!ok || got == 0) break;
+            BOOL ok = ReadFile(h, bytes.data() + read_total,
+                               static_cast<DWORD>(bytes.size() - read_total),
+                               &got, nullptr);
+            if (!ok || got == 0)
+            {
+                break;
+            }
             read_total += got;
         }
         CloseHandle(h);
-        if (read_total != bytes.size()) return false;
+        if (read_total != bytes.size())
+        {
+            return false;
+        }
 
         // Mime: extension table first (cheap), default to
         // application/octet-stream when unknown. FindMimeFromData would
         // need urlmon.lib; the table covers the common chat payloads.
         std::string mime = "application/octet-stream";
-        if (const char* m = mime_from_ext(path_extension_lower(path))) {
+        if (const char* m = mime_from_ext(path_extension_lower(path)))
+        {
             mime = m;
         }
 
@@ -1374,23 +2023,28 @@ private:
         return true;
     }
 
-    Host*               host_;
-    std::atomic<ULONG>  refs_{1};
-    bool                accept_ = false;
+    Host* host_;
+    std::atomic<ULONG> refs_{1};
+    bool accept_ = false;
 };
 
-bool ensure_class_registered(HINSTANCE inst) {
+bool ensure_class_registered(HINSTANCE inst)
+{
     static bool registered = false;
-    if (registered) return true;
+    if (registered)
+    {
+        return true;
+    }
     WNDCLASSEXW wc{};
-    wc.cbSize        = sizeof(wc);
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc   = &surface_wnd_proc;
-    wc.hInstance     = inst;
-    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = nullptr;       // we paint everything
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = &surface_wnd_proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = nullptr; // we paint everything
     wc.lpszClassName = kSurfaceClass;
-    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+    {
         return false;
     }
     registered = true;
@@ -1402,52 +2056,66 @@ bool ensure_class_registered(HINSTANCE inst) {
 // One IDropTarget per Surface, indexed by hwnd so the dtor can find it
 // at teardown. Keeping it out of Host avoids forward-declaration churn
 // (DropTarget is defined later in this TU than Host).
-namespace {
-std::unordered_map<HWND, DropTarget*>& drop_targets_by_hwnd() {
+namespace
+{
+std::unordered_map<HWND, DropTarget*>& drop_targets_by_hwnd()
+{
     static std::unordered_map<HWND, DropTarget*> instance;
     return instance;
 }
 } // namespace
 
-Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme, bool transparent) {
-    if (!ensure_class_registered(inst)) return;
+Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
+                 bool transparent)
+{
+    if (!ensure_class_registered(inst))
+    {
+        return;
+    }
 
     // WS_EX_NOREDIRECTIONBITMAP is required for DXGI_ALPHA_MODE_PREMULTIPLIED
     // swap chains: it tells DWM not to create a GDI redirection surface for
     // this HWND, so the flip-model swap chain's alpha channel reaches the
     // compositor unchanged.
     const DWORD ex_style = transparent ? WS_EX_NOREDIRECTIONBITMAP : 0;
-    HWND hwnd = CreateWindowExW(
-        ex_style,
-        kSurfaceClass, L"",
-        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-        0, 0, 100, 100,
-        parent, nullptr, inst,
-        /*lpCreateParams=*/nullptr);
-    if (!hwnd) return;
+    HWND hwnd = CreateWindowExW(ex_style, kSurfaceClass, L"",
+                                WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN |
+                                    WS_CLIPSIBLINGS,
+                                0, 0, 100, 100, parent, nullptr, inst,
+                                /*lpCreateParams=*/nullptr);
+    if (!hwnd)
+    {
+        return;
+    }
 
     host_ = std::make_unique<Host>(hwnd, theme, transparent);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                       reinterpret_cast<LONG_PTR>(host_.get()));
+                      reinterpret_cast<LONG_PTR>(host_.get()));
 
     // Register an OLE drop target. The handler isn't wired yet — the
     // target stays a no-op until the shell calls set_on_image_drop.
     // RegisterDragDrop fails silently when the caller hasn't OleInitialize'd
     // their thread; the shell is responsible for that (main.cpp).
     auto* dt = new DropTarget(host_.get());
-    if (SUCCEEDED(RegisterDragDrop(hwnd, dt))) {
+    if (SUCCEEDED(RegisterDragDrop(hwnd, dt)))
+    {
         drop_targets_by_hwnd().emplace(hwnd, dt);
-    } else {
+    }
+    else
+    {
         dt->Release();
     }
 }
 
-Surface::~Surface() {
-    if (host_ && host_->hwnd()) {
+Surface::~Surface()
+{
+    if (host_ && host_->hwnd())
+    {
         HWND hwnd = host_->hwnd();
         auto& map = drop_targets_by_hwnd();
         auto it = map.find(hwnd);
-        if (it != map.end()) {
+        if (it != map.end())
+        {
             RevokeDragDrop(hwnd);
             it->second->detach_host();
             it->second->Release();
@@ -1458,47 +2126,69 @@ Surface::~Surface() {
     }
 }
 
-HWND Surface::hwnd() const {
+HWND Surface::hwnd() const
+{
     return host_ ? host_->hwnd() : nullptr;
 }
 
-tk::Host& Surface::host() { return *host_; }
-const Theme& Surface::theme() const { return host_->theme(); }
+tk::Host& Surface::host()
+{
+    return *host_;
+}
+const Theme& Surface::theme() const
+{
+    return host_->theme();
+}
 
-void Surface::set_root(std::unique_ptr<Widget> root) {
+void Surface::set_root(std::unique_ptr<Widget> root)
+{
     host_->set_root(std::move(root));
 }
 
-Widget* Surface::root() const { return host_->root(); }
+Widget* Surface::root() const
+{
+    return host_->root();
+}
 
-void Surface::relayout() { host_->relayout(); }
+void Surface::relayout()
+{
+    host_->relayout();
+}
 
-void Surface::set_theme(const Theme& t) {
+void Surface::set_theme(const Theme& t)
+{
     host_->set_theme(t);
     relayout();
 }
 
-void Surface::set_on_layout(std::function<void()> cb) {
+void Surface::set_on_layout(std::function<void()> cb)
+{
     host_->set_on_layout(std::move(cb));
 }
 
-CanvasFactory& Surface::factory() { return host_->factory(); }
+CanvasFactory& Surface::factory()
+{
+    return host_->factory();
+}
 
-void Surface::set_on_file_drop(FileDropHandler cb) {
+void Surface::set_on_file_drop(FileDropHandler cb)
+{
     host_->set_on_file_drop(std::move(cb));
 }
 
-void Surface::set_on_right_click(std::function<void(tk::Point)> cb) {
+void Surface::set_on_right_click(std::function<void(tk::Point)> cb)
+{
     host_->set_on_right_click(std::move(cb));
 }
 
-std::vector<tk::d2d::AnimatedFrame> decode_animation(
-    std::span<const std::uint8_t> bytes)
+std::vector<tk::d2d::AnimatedFrame>
+decode_animation(std::span<const std::uint8_t> bytes)
 {
     return tk::d2d::decode_animation(backend_singleton(), bytes);
 }
 
-IDWriteFontFallback* dwrite_font_fallback() {
+IDWriteFontFallback* dwrite_font_fallback()
+{
     return tk::d2d::factories(backend_singleton()).font_fallback;
 }
 

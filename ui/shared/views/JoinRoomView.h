@@ -26,9 +26,11 @@
 #include <functional>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class JoinRoomView : public tk::Widget {
+class JoinRoomView : public tk::Widget
+{
 public:
     JoinRoomView();
     ~JoinRoomView() override = default;
@@ -37,18 +39,23 @@ public:
     static constexpr float kPreferredW = 440.0f;
     static constexpr float kPreferredH = 420.0f;
 
-    enum class State {
-        Idle,     // waiting for user to type an alias
-        Loading,  // get_room_summary in flight
-        Preview,  // summary arrived — preview card visible
-        Joining,  // join_room in flight
-        Error,    // lookup or join failed
+    enum class State
+    {
+        Idle,    // waiting for user to type an alias
+        Loading, // get_room_summary in flight
+        Preview, // summary arrived — preview card visible
+        Joining, // join_room in flight
+        Error,   // lookup or join failed
     };
 
-    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider =
+        std::function<const tk::Image*(const std::string& mxc_url)>;
 
-    void  set_state(State s);
-    State state()   const { return state_; }
+    void set_state(State s);
+    State state() const
+    {
+        return state_;
+    }
 
     // Populate the preview card and transition to State::Preview.
     void set_preview(const tesseract::RoomSummary& summary);
@@ -59,42 +66,51 @@ public:
     void set_avatar_provider(AvatarProvider p);
 
     // Room ID from the last successful set_preview(); empty otherwise.
-    const std::string& preview_room_id() const { return preview_.room_id; }
+    const std::string& preview_room_id() const
+    {
+        return preview_.room_id;
+    }
 
     // NativeTextField overlay rect (widget-local). Empty rect when the
     // field should not be interactable (Joining state).
-    tk::Rect alias_field_rect()    const;
-    bool     alias_field_visible() const;
+    tk::Rect alias_field_rect() const;
+    bool alias_field_visible() const;
 
     // Host pipes the alias input text back in.
-    void               set_alias_text(std::string text) { alias_text_ = std::move(text); }
-    const std::string& alias_text()                     const { return alias_text_; }
+    void set_alias_text(std::string text)
+    {
+        alias_text_ = std::move(text);
+    }
+    const std::string& alias_text() const
+    {
+        return alias_text_;
+    }
 
     // Fired when the user clicks "Look up".
-    std::function<void(const std::string& alias)>         on_lookup_requested;
+    std::function<void(const std::string& alias)> on_lookup_requested;
     // Fired when the user clicks "Join".
     std::function<void(const std::string& room_id_or_alias)> on_join_requested;
     // Fired when the user clicks "Cancel" / "✕".
-    std::function<void()>                                  on_cancel;
+    std::function<void()> on_cancel;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void apply_state();
 
-    State              state_      = State::Idle;
-    std::string        alias_text_;
-    std::string        error_msg_;
+    State state_ = State::Idle;
+    std::string alias_text_;
+    std::string error_msg_;
     tesseract::RoomSummary preview_;
-    AvatarProvider     avatar_provider_;
+    AvatarProvider avatar_provider_;
 
     // Child widgets (borrowed — owned by widget tree via add_child).
-    tk::Button* lookup_btn_  = nullptr;
-    tk::Button* join_btn_    = nullptr;
-    tk::Button* cancel_btn_  = nullptr;
-    tk::Label*  status_lbl_  = nullptr;
+    tk::Button* lookup_btn_ = nullptr;
+    tk::Button* join_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Label* status_lbl_ = nullptr;
 
     // Layout rects (world-space, valid after arrange()).
     tk::Rect alias_field_rect_{};

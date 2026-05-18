@@ -13,48 +13,79 @@
 #include <memory>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
 // Inset/outset on the four edges, in logical pixels. The "trbl" naming
 // matches the CSS order so reading mixed sources stays unambiguous.
-struct Edges {
-    float top    = 0;
-    float right  = 0;
+struct Edges
+{
+    float top = 0;
+    float right = 0;
     float bottom = 0;
-    float left   = 0;
+    float left = 0;
 
-    static constexpr Edges all(float v)              { return { v, v, v, v }; }
-    static constexpr Edges symmetric(float h, float v) { return { v, h, v, h }; }
-    constexpr float horizontal() const { return left + right; }
-    constexpr float vertical()   const { return top + bottom; }
+    static constexpr Edges all(float v)
+    {
+        return {v, v, v, v};
+    }
+    static constexpr Edges symmetric(float h, float v)
+    {
+        return {v, h, v, h};
+    }
+    constexpr float horizontal() const
+    {
+        return left + right;
+    }
+    constexpr float vertical() const
+    {
+        return top + bottom;
+    }
 };
 
 // Flex-style axis alignment. Main = along the layout axis (vertical for
 // VBox, horizontal for HBox); Cross = perpendicular to it.
-enum class Main  { Start, Center, End, SpaceBetween, SpaceAround };
-enum class Cross { Start, Center, End, Stretch };
+enum class Main
+{
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+    SpaceAround
+};
+enum class Cross
+{
+    Start,
+    Center,
+    End,
+    Stretch
+};
 
 // Per-widget tug on its parent's measure: when fill_main == true the
 // widget asks for the leftover main-axis space; fill_cross == true asks
 // to span the cross axis. Used by layout containers; ignored otherwise.
-struct LayoutHints {
-    bool fill_main  = false;
+struct LayoutHints
+{
+    bool fill_main = false;
     bool fill_cross = false;
 };
 
 // Layout / paint contexts. Widgets never reach for global state; the
 // owning tree threads these in from the platform host.
-struct LayoutCtx {
+struct LayoutCtx
+{
     CanvasFactory& factory;
-    const Theme&   theme;
+    const Theme& theme;
 };
-struct PaintCtx {
-    Canvas&        canvas;
+struct PaintCtx
+{
+    Canvas& canvas;
     CanvasFactory& factory;
-    const Theme&   theme;
+    const Theme& theme;
 };
 
-class Widget {
+class Widget
+{
 public:
     virtual ~Widget() = default;
 
@@ -81,27 +112,35 @@ public:
     // Return true to consume; otherwise the dispatcher walks up the
     // parent chain so containers can handle wheel events that bubble
     // out of inert children (typical for ScrollView / ListView).
-    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/) {
+    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/)
+    {
         return false;
     }
 
     // Pointer-down. Return true to claim ownership of the subsequent
     // pointer_up. The host remembers the claimer so a release outside
     // the widget still routes back to it (with inside_self=false).
-    virtual bool on_pointer_down(Point /*local*/) { return false; }
+    virtual bool on_pointer_down(Point /*local*/)
+    {
+        return false;
+    }
 
     // Pointer-up on the widget that consumed the matching pointer_down.
     // `inside_self` tells the widget whether the release landed inside
     // its own bounds — Button uses this to fire on_click only when the
     // user released on the same control they pressed.
-    virtual void on_pointer_up(Point /*local*/, bool /*inside_self*/) {}
+    virtual void on_pointer_up(Point /*local*/, bool /*inside_self*/)
+    {
+    }
 
     // Pointer-drag: the host forwards every pointer-move after a
     // pointer-down that this widget claimed, until the matching
     // pointer-up arrives. `local` is in widget-local coordinates and
     // can land outside the widget's bounds when the user drags off the
     // control. Used by ListView for scrollbar-thumb dragging.
-    virtual void on_pointer_drag(Point /*local*/) {}
+    virtual void on_pointer_drag(Point /*local*/)
+    {
+    }
 
     // Pointer-move without a press. Called via `dispatch_pointer_move`
     // on the deepest hit widget so views can update per-element hover
@@ -109,11 +148,16 @@ public:
     // continue to handle their own hover via the host's Button-hover
     // bookkeeping — this is the generic widget-level hook.
     // Returns true if visual state changed and a repaint is needed.
-    virtual bool on_pointer_move(Point /*local*/) { return false; }
+    virtual bool on_pointer_move(Point /*local*/)
+    {
+        return false;
+    }
     // Mirrors `on_pointer_leave` semantics from the host so widgets can
     // clear hover state when the pointer leaves the surface (or the
     // pointer-move dispatch lands on a different widget).
-    virtual void on_pointer_leave() {}
+    virtual void on_pointer_leave()
+    {
+    }
 
     // Walk into the deepest visible child under `world`, then bubble
     // back up to find a widget whose on_pointer_down returns true.
@@ -147,31 +191,51 @@ public:
     bool contains_world(Point world) const;
 
     // Tree.
-    Widget*  parent() const { return parent_; }
-    Rect     bounds() const { return bounds_; }
-    bool     visible() const { return visible_; }
-    void     set_visible(bool v) { visible_ = v; }
-    void     set_layout_hints(LayoutHints h) { hints_ = h; }
-    LayoutHints layout_hints() const { return hints_; }
+    Widget* parent() const
+    {
+        return parent_;
+    }
+    Rect bounds() const
+    {
+        return bounds_;
+    }
+    bool visible() const
+    {
+        return visible_;
+    }
+    void set_visible(bool v)
+    {
+        visible_ = v;
+    }
+    void set_layout_hints(LayoutHints h)
+    {
+        hints_ = h;
+    }
+    LayoutHints layout_hints() const
+    {
+        return hints_;
+    }
 
     // Take ownership of a child. Returns a borrowed pointer for callers
     // that want to keep wiring (e.g. on_click handlers, dynamic state).
     template <typename W>
-    W* add_child(std::unique_ptr<W> w) {
+    W* add_child(std::unique_ptr<W> w)
+    {
         W* raw = w.get();
         w->parent_ = this;
         children_.push_back(std::move(w));
         return raw;
     }
 
-    const std::vector<std::unique_ptr<Widget>>& children() const {
+    const std::vector<std::unique_ptr<Widget>>& children() const
+    {
         return children_;
     }
 
 protected:
-    Rect        bounds_{};
+    Rect bounds_{};
     LayoutHints hints_{};
-    bool        visible_ = true;
+    bool visible_ = true;
 
 private:
     Widget* parent_ = nullptr;
@@ -179,18 +243,28 @@ private:
 };
 
 // Convenience for widgets that simply paint a coloured background.
-class FillBackground : public Widget {
+class FillBackground : public Widget
+{
 public:
-    explicit FillBackground(Color c) : colour_(c) {}
-    Size measure(LayoutCtx&, Size constraints) override {
+    explicit FillBackground(Color c) : colour_(c)
+    {
+    }
+    Size measure(LayoutCtx&, Size constraints) override
+    {
         return constraints;
     }
-    void paint(PaintCtx& ctx) override {
+    void paint(PaintCtx& ctx) override
+    {
         ctx.canvas.fill_rect(bounds_, colour_);
-        for (auto& ch : children()) {
-            if (ch->visible()) ch->paint(ctx);
+        for (auto& ch : children())
+        {
+            if (ch->visible())
+            {
+                ch->paint(ctx);
+            }
         }
     }
+
 private:
     Color colour_;
 };

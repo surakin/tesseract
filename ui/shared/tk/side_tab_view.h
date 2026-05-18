@@ -19,7 +19,8 @@
 #include <string>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
 class SideTabView : public Widget
 {
@@ -36,39 +37,42 @@ public:
     void select(int idx);
 
     // Current selected index, or -1 when no tabs have been added.
-    int selected_idx() const { return selected_idx_; }
+    int selected_idx() const
+    {
+        return selected_idx_;
+    }
 
     // Optional callback fired when the selection changes.
     std::function<void(int)> on_tab_selected;
 
     // Widget interface.
     Size measure(LayoutCtx&, Size constraints) override;
-    void arrange(LayoutCtx&, Rect bounds)      override;
-    void paint  (PaintCtx&)                    override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint(PaintCtx&) override;
 
 private:
     // Visual constants.
-    static constexpr float kSidebarWidth  = 200.0f;
-    static constexpr float kTabHeight     = 36.0f;
-    static constexpr float kTabHPad       = 14.0f;
-    static constexpr float kTabVPad       = 8.0f;
-    static constexpr float kTabRadius     = 6.0f;
-    static constexpr float kTabInset      = 6.0f;  // horizontal inset inside column
+    static constexpr float kSidebarWidth = 200.0f;
+    static constexpr float kTabHeight = 36.0f;
+    static constexpr float kTabHPad = 14.0f;
+    static constexpr float kTabVPad = 8.0f;
+    static constexpr float kTabRadius = 6.0f;
+    static constexpr float kTabInset = 6.0f; // horizontal inset inside column
 
     struct Tab
     {
-        std::string              label;
-        std::unique_ptr<TextLayout> layout;   // built lazily in measure/paint
-        float                    layout_max_w = -2.0f;
-        Widget*                  content = nullptr;  // borrowed; owned via add_child
-        bool                     hovered = false;
+        std::string label;
+        std::unique_ptr<TextLayout> layout; // built lazily in measure/paint
+        float layout_max_w = -2.0f;
+        Widget* content = nullptr; // borrowed; owned via add_child
+        bool hovered = false;
     };
 
     // Pointer hit-testing for the sidebar column.
-    bool on_pointer_down(Point local)                      override;
-    void on_pointer_up  (Point local, bool inside_self)    override;
-    bool on_pointer_move(Point local)                      override;
-    void on_pointer_leave()                                override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.
@@ -82,8 +86,8 @@ private:
     void ensure_layout_(Ctx& ctx, int i, float max_w);
 
     std::vector<Tab> tabs_;
-    int              selected_idx_ = -1;
-    int              pressed_idx_  = -1;   // index of button currently held down
+    int selected_idx_ = -1;
+    int pressed_idx_ = -1; // index of button currently held down
 };
 
 } // namespace tk

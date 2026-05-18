@@ -37,8 +37,7 @@ public:
     // ----- Account section --------------------------------------------------
 
     // Populate the Account section with the signed-in user's info.
-    void set_account_info(std::string display_name,
-                          std::string user_id,
+    void set_account_info(std::string display_name, std::string user_id,
                           std::string avatar_mxc);
 
     // Wire up the avatar image cache from the shell.
@@ -60,32 +59,32 @@ public:
     // ----- Callbacks wired by the shell -------------------------------------
 
     // Fired when the user clicks "← Back".
-    std::function<void()>                                    on_close;
+    std::function<void()> on_close;
 
     // Fired when the user selects a different theme.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
 
     // Fired when the user toggles notifications.
-    std::function<void(bool)>                                on_notifications_changed;
+    std::function<void(bool)> on_notifications_changed;
 
     // Fired when the user toggles image/sticker notification previews.
-    std::function<void(bool)>                                on_image_previews_changed;
+    std::function<void(bool)> on_image_previews_changed;
 
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     // Height of the back-bar strip at the top of the view.
     static constexpr float kBarHeight = 48.0f;
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
-    tk::Button*          back_btn_    = nullptr;
-    tk::SideTabView*     tabs_        = nullptr;
-    AccountSection*      account_     = nullptr;
-    AppearanceSection*   appearance_  = nullptr;
+    tk::Button* back_btn_ = nullptr;
+    tk::SideTabView* tabs_ = nullptr;
+    AccountSection* account_ = nullptr;
+    AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
 };
 

@@ -17,14 +17,17 @@
 
 #include <tesseract/types.h>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class VerificationBanner : public tk::Widget {
+class VerificationBanner : public tk::Widget
+{
 public:
     VerificationBanner();
     ~VerificationBanner() override = default;
 
-    enum class State {
+    enum class State
+    {
         /// Unverified prompt: "Verify this device" + [Verify] [Dismiss] — 48 px
         Prompt,
         /// Another device sent a request: "Another device wants to verify" +
@@ -42,8 +45,11 @@ public:
         Cancelled,
     };
 
-    void  set_state(State s);
-    State state() const { return state_; }
+    void set_state(State s);
+    State state() const
+    {
+        return state_;
+    }
 
     /// Supply the 7 emoji received from on_sas_ready. Switches state to
     /// ShowEmojis automatically.
@@ -53,46 +59,50 @@ public:
     void set_cancel_reason(std::string reason);
 
     // Button callbacks
-    std::function<void()> on_verify;      // Prompt: start verification
-    std::function<void()> on_accept;      // IncomingRequest: accept + start SAS
-    std::function<void()> on_match;       // ShowEmojis: emojis match
-    std::function<void()> on_mismatch;    // ShowEmojis: emojis don't match
-    std::function<void()> on_cancel;      // Waiting: cancel flow
-    std::function<void()> on_dismiss;          // Prompt / Cancelled: hide banner
-    std::function<void()> on_done;             // Done: fired after brief pause
-    std::function<void()> on_use_recovery_key; // Prompt: switch to recovery key flow
+    std::function<void()> on_verify;   // Prompt: start verification
+    std::function<void()> on_accept;   // IncomingRequest: accept + start SAS
+    std::function<void()> on_match;    // ShowEmojis: emojis match
+    std::function<void()> on_mismatch; // ShowEmojis: emojis don't match
+    std::function<void()> on_cancel;   // Waiting: cancel flow
+    std::function<void()> on_dismiss;  // Prompt / Cancelled: hide banner
+    std::function<void()> on_done;     // Done: fired after brief pause
+    std::function<void()>
+        on_use_recovery_key; // Prompt: switch to recovery key flow
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
-    static constexpr float kHeightNormal    = 48.0f;
+    static constexpr float kHeightNormal = 48.0f;
     static constexpr float kHeightShowEmoji = 124.0f;
-    static constexpr int   kEmojiCount      = 7;
+    static constexpr int kEmojiCount = 7;
 
     void apply_state();
     std::string label_text() const;
 
-    State              state_       = State::Prompt;
-    std::string        cancel_reason_;
-    std::vector<VerificationEmoji> emojis_;  // up to 7 entries in ShowEmojis
+    State state_ = State::Prompt;
+    std::string cancel_reason_;
+    std::vector<VerificationEmoji> emojis_; // up to 7 entries in ShowEmojis
 
-    tk::Label*  label_   = nullptr;   // borrowed
-    tk::Button* primary_   = nullptr;  // borrowed — context-dependent action
-    tk::Button* secondary_ = nullptr;  // borrowed — context-dependent dismiss/decline
-    tk::Button* dismiss_   = nullptr;  // borrowed — always visible in Prompt/Cancelled
-    tk::Button* link_      = nullptr;  // borrowed — "Use recovery key" in Prompt state
+    tk::Label* label_ = nullptr;    // borrowed
+    tk::Button* primary_ = nullptr; // borrowed — context-dependent action
+    tk::Button* secondary_ =
+        nullptr; // borrowed — context-dependent dismiss/decline
+    tk::Button* dismiss_ =
+        nullptr; // borrowed — always visible in Prompt/Cancelled
+    tk::Button* link_ =
+        nullptr; // borrowed — "Use recovery key" in Prompt state
 
     // Cached layout rects (computed in arrange)
-    tk::Rect label_rect_     {};
-    tk::Rect primary_rect_   {};
-    tk::Rect secondary_rect_ {};
-    tk::Rect dismiss_rect_   {};
-    tk::Rect link_rect_      {};
+    tk::Rect label_rect_{};
+    tk::Rect primary_rect_{};
+    tk::Rect secondary_rect_{};
+    tk::Rect dismiss_rect_{};
+    tk::Rect link_rect_{};
     // One rect per emoji tile in ShowEmojis state
-    std::array<tk::Rect, kEmojiCount> emoji_rects_ {};
-    std::array<tk::Rect, kEmojiCount> emoji_label_rects_ {};
+    std::array<tk::Rect, kEmojiCount> emoji_rects_{};
+    std::array<tk::Rect, kEmojiCount> emoji_label_rects_{};
 };
 
 } // namespace tesseract::views

@@ -26,7 +26,8 @@
 #include <unordered_set>
 #include <vector>
 
-namespace tesseract {
+namespace tesseract
+{
 
 // ShellBase holds all state and platform-agnostic logic that is identical
 // across the Qt6, GTK4, Win32, and macOS shells. Platform-specific concerns
@@ -37,7 +38,8 @@ namespace tesseract {
 // variables it owns, implement the virtual hooks below, and call the
 // concrete helpers (ensure_row_media_, push_rooms_, etc.) instead of the
 // per-shell duplicates.
-class ShellBase {
+class ShellBase
+{
     // EventHandlerBase calls post_to_ui_, push_rooms_, push_room_list_state_,
     // and all the handle_*_ui_ / on_room_list_state_ui_ virtuals from lambdas
     // captured on the worker thread — these are protected but EventHandlerBase
@@ -76,16 +78,16 @@ public:
 protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
-    int            active_account_index_       = -1;
-    Client*        client_                     = nullptr; // non-owning alias
-    IEventHandler* event_handler_              = nullptr; // non-owning alias
+    int active_account_index_ = -1;
+    Client* client_ = nullptr;               // non-owning alias
+    IEventHandler* event_handler_ = nullptr; // non-owning alias
 
     std::unordered_map<std::string, std::vector<RoomInfo>> per_account_rooms_;
 
-    std::unique_ptr<Client>   pending_login_client_;
-    std::filesystem::path     pending_login_temp_dir_;
+    std::unique_ptr<Client> pending_login_client_;
+    std::filesystem::path pending_login_temp_dir_;
     bool pending_login_is_add_account_ = false;
-    int  add_account_return_idx_       = -1;
+    int add_account_return_idx_ = -1;
 
     // ── Active-account identity ───────────────────────────────────────────────
     std::string my_user_id_;
@@ -93,35 +95,36 @@ protected:
     std::string my_avatar_url_;
 
     // ── Tab state ─────────────────────────────────────────────────────────────
-    struct TabState {
+    struct TabState
+    {
         std::string room_id;
-        float       scroll_offset = 0.f;  // fractional [0,1]: 0=top, 1=bottom
+        float scroll_offset = 0.f; // fractional [0,1]: 0=top, 1=bottom
         std::string compose_draft;
     };
     std::vector<TabState> tabs_;
-    size_t                active_tab_idx_ = 0;
+    size_t active_tab_idx_ = 0;
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
-    std::string           current_room_id_;
+    std::string current_room_id_;
     // The room whose timeline the message view currently displays. Differs
     // from current_room_id_ between a room switch and the timeline-reset
     // that fills it. Used to tell a genuine switch (gate the display) from
     // an in-place reconnect / gappy-sync reset of the room already shown
     // (refresh in place, no blank). Updated by each shell's
     // handle_timeline_reset_ui_.
-    std::string           view_displayed_room_id_;
-    std::string           pending_restore_room_;
+    std::string view_displayed_room_id_;
+    std::string pending_restore_room_;
     std::vector<std::string> space_stack_;
-    bool                  compose_typing_active_   = false;
-    bool                  typing_bar_visible_      = false;
+    bool compose_typing_active_ = false;
+    bool typing_bar_visible_ = false;
 
     // ── Image caches ──────────────────────────────────────────────────────────
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_avatars_;
     std::unordered_map<std::string, std::unique_ptr<tk::Image>> tk_images_;
-    tk::AnimImageCache    anim_cache_;
-    tk::MediaDiskCache    media_disk_cache_{tesseract::cache_dir() / "media"};
-    bool                  media_disk_cache_pruned_ = false;
+    tk::AnimImageCache anim_cache_;
+    tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
+    bool media_disk_cache_pruned_ = false;
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
@@ -134,33 +137,35 @@ protected:
     std::unordered_set<std::string> tile_fetch_failed_;
 
     // ── URL preview cache ─────────────────────────────────────────────────────
-    std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
+    std::unordered_map<std::string, tesseract::Client::UrlPreview>
+        url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
 
     // ── BlurHash decode dedup ────────────────────────────────────────────────
     std::unordered_set<std::string> blurhash_attempted_;
 
     // ── Sync / backup state ───────────────────────────────────────────────────
-    RoomListState  last_room_list_state_ = RoomListState::Init;
-    BackupState    last_backup_state_    = BackupState::Unknown;
-    std::uint64_t  last_imported_keys_   = 0;
-    bool           sync_progress_shown_  = false;
+    RoomListState last_room_list_state_ = RoomListState::Init;
+    BackupState last_backup_state_ = BackupState::Unknown;
+    std::uint64_t last_imported_keys_ = 0;
+    bool sync_progress_shown_ = false;
 
     // ── Recovery ──────────────────────────────────────────────────────────────
     bool recovery_banner_dismissed_ = false;
 
     // ── Cross-signing / SAS device verification ───────────────────────────────
-    bool        verification_banner_dismissed_  = false;
-    std::string active_verification_flow_id_;   // "" = no flow in progress
+    bool verification_banner_dismissed_ = false;
+    std::string active_verification_flow_id_; // "" = no flow in progress
 
     // ── Pagination ────────────────────────────────────────────────────────────
-    struct PaginationState {
-        bool        in_flight      = false;
-        bool        reached_start  = false;
-        bool        fwd_in_flight  = false;   // forward paginate guard
-        bool        reached_end    = false;
-        bool        is_focused     = false;   // true = using with_focus timeline
-        std::string focus_event_id;           // scroll target after timeline reset
+    struct PaginationState
+    {
+        bool in_flight = false;
+        bool reached_start = false;
+        bool fwd_in_flight = false; // forward paginate guard
+        bool reached_end = false;
+        bool is_focused = false;    // true = using with_focus timeline
+        std::string focus_event_id; // scroll target after timeline reset
     };
     std::unordered_map<std::string, PaginationState> pagination_;
 
@@ -173,43 +178,53 @@ protected:
     // One window per room_id at most (raise-existing policy).
     // owned_secondary_windows_ holds lifetime; secondary_windows_ is a fast-
     // lookup index into it (raw pointers, always valid while owned_ holds them).
-    std::vector<std::unique_ptr<RoomWindowBase>>     owned_secondary_windows_;
+    std::vector<std::unique_ptr<RoomWindowBase>> owned_secondary_windows_;
     std::unordered_map<std::string, RoomWindowBase*> secondary_windows_;
     // Ref-count of active subscriptions per room_id across all secondary windows.
     std::unordered_map<std::string, int> room_subscription_refs_;
 
     // ── Worker threads ────────────────────────────────────────────────────────
-    std::atomic<bool>       shutting_down_{false};
-    std::mutex              workers_mu_;
+    std::atomic<bool> shutting_down_{false};
+    std::mutex workers_mu_;
     std::condition_variable workers_cv_;
-    int                     workers_in_flight_ = 0;
+    int workers_in_flight_ = 0;
 
     // ── Media kind tag ────────────────────────────────────────────────────────
-    enum class MediaKind : std::uint8_t {
+    enum class MediaKind : std::uint8_t
+    {
         RoomAvatar, // → tk_avatars_, triggers room-list repaint
         UserAvatar, // → tk_avatars_, triggers message-list repaint
         MediaImage, // → anim_cache_ or tk_images_, triggers message-list repaint
-        Tile,       // → tk_images_["tile:z/x/y"], triggers full message-list repaint
+        Tile, // → tk_images_["tile:z/x/y"], triggers full message-list repaint
     };
 
     // Result of a worker-thread decode. Exactly one of `still` /
     // `frames` is populated (frames non-empty ⇒ animated).
-    struct DecodedImage {
-        std::unique_ptr<tk::Image>              still;
+    struct DecodedImage
+    {
+        std::unique_ptr<tk::Image> still;
         std::vector<std::unique_ptr<tk::Image>> frames;
-        std::vector<int>                        delays_ms;
-        bool empty() const { return !still && frames.empty(); }
+        std::vector<int> delays_ms;
+        bool empty() const
+        {
+            return !still && frames.empty();
+        }
     };
 
     // ── Theme ─────────────────────────────────────────────────────────────────
 
     // Returns the OS-preferred color scheme. Default: Light.
     // Each platform shell overrides with its native API.
-    virtual tk::ThemeMode os_color_scheme_() const { return tk::ThemeMode::Light; }
+    virtual tk::ThemeMode os_color_scheme_() const
+    {
+        return tk::ThemeMode::Light;
+    }
 
     // Apply theme to all surfaces owned by this shell. Called on the UI thread.
     // Each platform shell overrides to call set_theme() on each of its surfaces.
-    virtual void apply_theme_ui_(const tk::Theme&) {}
+    virtual void apply_theme_ui_(const tk::Theme&)
+    {
+    }
 
     // Re-theme every open pop-out room window. Each shell's apply_theme_ui_()
     // calls this so secondary windows follow the theme setting.
@@ -246,31 +261,39 @@ protected:
     // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
     // (or calls anim_cache_.store), and triggers a repaint.
     virtual void on_media_bytes_ready_(const std::string& cache_key,
-                                        MediaKind kind,
-                                        std::vector<uint8_t> bytes) = 0;
+                                       MediaKind kind,
+                                       std::vector<uint8_t> bytes) = 0;
 
     // Client-side first-frame generation for m.video when the server provides
     // no thumbnail.  Default is a no-op; shells with a video-decode pipeline
     // (GTK4/GStreamer, Qt6/QMediaPlayer, etc.) override this.
     virtual void generate_video_thumbnail_(const std::string& /*event_id*/,
-                                            const std::string& /*video_url*/) {}
+                                           const std::string& /*video_url*/)
+    {
+    }
 
     // Called on the UI thread when a URL preview fetch completes successfully.
     // Default is a no-op; shells override to update their preview cache and
     // request a repaint.
     virtual void on_url_preview_ready_(const std::string& /*url*/,
-                                        const Client::UrlPreview& /*preview*/) {}
+                                       const Client::UrlPreview& /*preview*/)
+    {
+    }
 
     // Called on the UI thread when a URL preview fetch finished but produced
     // no usable card (failed / no metadata). Default no-op; shells override
     // to ping the message list so its room-switch gate stops waiting on this
     // URL (the row's height is unaffected — it never gained a preview card).
-    virtual void on_url_preview_failed_(const std::string& /*url*/) {}
+    virtual void on_url_preview_failed_(const std::string& /*url*/)
+    {
+    }
 
     // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.
-    virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/, int /*h*/,
-                                   std::vector<uint8_t> /*rgba*/) {}
+    virtual void cache_rgba_image_(const std::string& /*key*/, int /*w*/,
+                                   int /*h*/, std::vector<uint8_t> /*rgba*/)
+    {
+    }
 
     // Decode `bytes` into a tk::Image (or animated frames). Scaled so the
     // longest side is ≤ max(max_w, max_h). MUST be safe to call on a
@@ -287,11 +310,15 @@ protected:
 
     // Start the shell's shared animation frame-tick timer if it is not
     // already running. Default no-op (shells with no animated content).
-    virtual void start_anim_tick_() {}
+    virtual void start_anim_tick_()
+    {
+    }
 
     // Repaint whichever picker surfaces are visible (relayout + invalidate).
     // Default no-op.
-    virtual void repaint_pickers_() {}
+    virtual void repaint_pickers_()
+    {
+    }
 
     // ── Tab state hooks ───────────────────────────────────────────────────────
     // Called after tabs_ and current_room_id_ have been updated. The shell must:
@@ -302,79 +329,129 @@ protected:
     virtual void on_tab_state_changed_ui_() = 0;
 
     // Read the current fractional scroll position [0,1] of the message list.
-    virtual float       get_message_scroll_fraction_()               { return 0.f; }
+    virtual float get_message_scroll_fraction_()
+    {
+        return 0.f;
+    }
     // Seek the message list to fractional position t.
-    virtual void        set_message_scroll_fraction_(float /*t*/)    {}
+    virtual void set_message_scroll_fraction_(float /*t*/)
+    {
+    }
     // Read the current compose-bar draft text.
-    virtual std::string get_compose_draft_()                         { return {}; }
+    virtual std::string get_compose_draft_()
+    {
+        return {};
+    }
     // Write text into the compose bar (called after a tab switch restores draft).
-    virtual void        set_compose_draft_(const std::string& /*s*/) {}
+    virtual void set_compose_draft_(const std::string& /*s*/)
+    {
+    }
 
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
     // implementations are no-ops; each shell overrides what it needs.
 
-    virtual void handle_timeline_reset_ui_(
-        std::string /*room_id*/,
-        std::vector<std::unique_ptr<Event>> /*snapshot*/) {}
-    virtual void handle_message_inserted_ui_(
-        std::string /*room_id*/, std::size_t /*index*/,
-        std::unique_ptr<Event> /*ev*/) {}
-    virtual void handle_message_updated_ui_(
-        std::string /*room_id*/, std::size_t /*index*/,
-        std::unique_ptr<Event> /*ev*/) {}
-    virtual void handle_message_removed_ui_(
-        std::string /*room_id*/, std::size_t /*index*/) {}
-    virtual void handle_sync_error_ui_(
-        std::string /*context*/, std::string /*user_id*/,
-        std::string /*description*/, bool /*soft_logout*/) {}
-    virtual void handle_backup_progress_ui_(BackupProgress /*progress*/) {}
-    virtual void handle_image_packs_updated_ui_() {}
-    virtual void handle_account_prefs_updated_ui_(
-        std::string /*user_id*/, std::string /*json*/) {}
-    virtual void handle_notification_ui_(
-        std::string /*user_id*/, std::string /*room_id*/,
-        std::string /*room_name*/, std::string /*sender*/,
-        std::string /*body*/, bool /*is_mention*/,
-        std::vector<uint8_t> /*avatar_bytes*/,
-        std::vector<uint8_t> /*image_bytes*/) {}
+    virtual void
+    handle_timeline_reset_ui_(std::string /*room_id*/,
+                              std::vector<std::unique_ptr<Event>> /*snapshot*/)
+    {
+    }
+    virtual void handle_message_inserted_ui_(std::string /*room_id*/,
+                                             std::size_t /*index*/,
+                                             std::unique_ptr<Event> /*ev*/)
+    {
+    }
+    virtual void handle_message_updated_ui_(std::string /*room_id*/,
+                                            std::size_t /*index*/,
+                                            std::unique_ptr<Event> /*ev*/)
+    {
+    }
+    virtual void handle_message_removed_ui_(std::string /*room_id*/,
+                                            std::size_t /*index*/)
+    {
+    }
+    virtual void handle_sync_error_ui_(std::string /*context*/,
+                                       std::string /*user_id*/,
+                                       std::string /*description*/,
+                                       bool /*soft_logout*/)
+    {
+    }
+    virtual void handle_backup_progress_ui_(BackupProgress /*progress*/)
+    {
+    }
+    virtual void handle_image_packs_updated_ui_()
+    {
+    }
+    virtual void handle_account_prefs_updated_ui_(std::string /*user_id*/,
+                                                  std::string /*json*/)
+    {
+    }
+    virtual void
+    handle_notification_ui_(std::string /*user_id*/, std::string /*room_id*/,
+                            std::string /*room_name*/, std::string /*sender*/,
+                            std::string /*body*/, bool /*is_mention*/,
+                            std::vector<uint8_t> /*avatar_bytes*/,
+                            std::vector<uint8_t> /*image_bytes*/)
+    {
+    }
 
     // Install the platform screen-lock probe (called once by the concrete
     // shell at startup, mirroring the per-account INotifier injection).
-    void set_screen_lock_(std::unique_ptr<IScreenLock> sl) {
-        if (sl) screen_lock_ = std::move(sl);
+    void set_screen_lock_(std::unique_ptr<IScreenLock> sl)
+    {
+        if (sl)
+        {
+            screen_lock_ = std::move(sl);
+        }
     }
     // Centralised notification-image privacy gate. Each shell calls this
     // when building the Notification: the message picture is shown only
     // when previews are enabled in settings AND the screen is unlocked.
     // Room avatars are intentionally NOT gated (low-sensitivity room
     // metadata). Returns true → keep image_bytes; false → clear it.
-    bool notification_image_allowed_() const {
-        return tesseract::Settings::instance().notification_image_previews
-            && !(screen_lock_ && screen_lock_->is_locked());
+    bool notification_image_allowed_() const
+    {
+        return tesseract::Settings::instance().notification_image_previews &&
+               !(screen_lock_ && screen_lock_->is_locked());
     }
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
-    virtual void on_room_list_state_ui_() {}
+    virtual void on_room_list_state_ui_()
+    {
+    }
 
     // ── Verification banner hooks (default no-op) ──────────────────────────────
-    virtual void handle_verification_request_ui_(
-        std::string /*flow_id*/, std::string /*user_id*/,
-        std::string /*device_id*/, bool /*incoming*/) {}
-    virtual void handle_sas_ready_ui_(
-        std::string /*flow_id*/, std::vector<VerificationEmoji> /*emojis*/) {}
-    virtual void handle_verification_done_ui_(std::string /*flow_id*/) {}
-    virtual void handle_verification_cancelled_ui_(
-        std::string /*flow_id*/, std::string /*reason*/) {}
-    virtual void handle_verification_state_ui_(bool /*is_verified*/) {}
+    virtual void handle_verification_request_ui_(std::string /*flow_id*/,
+                                                 std::string /*user_id*/,
+                                                 std::string /*device_id*/,
+                                                 bool /*incoming*/)
+    {
+    }
+    virtual void handle_sas_ready_ui_(std::string /*flow_id*/,
+                                      std::vector<VerificationEmoji> /*emojis*/)
+    {
+    }
+    virtual void handle_verification_done_ui_(std::string /*flow_id*/)
+    {
+    }
+    virtual void handle_verification_cancelled_ui_(std::string /*flow_id*/,
+                                                   std::string /*reason*/)
+    {
+    }
+    virtual void handle_verification_state_ui_(bool /*is_verified*/)
+    {
+    }
 
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.
     void handle_typing_changed_ui_(std::string room_id,
-                                    std::vector<std::string> names);
+                                   std::vector<std::string> names);
     // Override in each shell to push text into the platform typing-bar widget.
     // text is empty when no one is typing.
-    virtual void update_typing_bar_(const std::string& /*text*/, bool /*visible*/) {}
+    virtual void update_typing_bar_(const std::string& /*text*/,
+                                    bool /*visible*/)
+    {
+    }
 
     // ── Compose typing send helpers ───────────────────────────────────────────
     // Call from the shell's NativeTextArea on_changed callback.
@@ -385,12 +462,12 @@ protected:
     // ── Secondary window registry ─────────────────────────────────────────────
 
     // Register/unregister a secondary window. Called by RoomWindowBase.
-    void register_room_window_  (RoomWindowBase* w);
+    void register_room_window_(RoomWindowBase* w);
     void unregister_room_window_(RoomWindowBase* w);
     // Remove the owning unique_ptr for w from owned_secondary_windows_,
     // destroying the C++ object. Called by RoomWindowBase::schedule_self_close_()
     // via post_to_ui_ so deletion happens outside the window's own message handler.
-    void release_owned_window_  (RoomWindowBase* w);
+    void release_owned_window_(RoomWindowBase* w);
 
     // Subscription ref-counting for secondary windows. acquire_() starts an
     // async subscribe_room when the ref goes from 0→1 (unless the main window
@@ -408,8 +485,11 @@ protected:
     // subclass. The subclass constructor must call finish_init_() before
     // returning. Default: no-op (secondary windows are inert until a shell
     // overrides this).
-    virtual RoomWindowBase* create_secondary_room_window_(
-        const std::string& /*room_id*/) { return nullptr; }
+    virtual RoomWindowBase*
+    create_secondary_room_window_(const std::string& /*room_id*/)
+    {
+        return nullptr;
+    }
 
     // ── Concrete helpers ──────────────────────────────────────────────────────
 
@@ -454,8 +534,8 @@ protected:
     // Decode the BlurHash for `event_id` and store the result via cache_rgba_image_.
     // Idempotent — skips events already attempted or already cached.
     void ensure_blurhash_image_(const std::string& event_id,
-                                const std::string& hash,
-                                int media_w, int media_h);
+                                const std::string& hash, int media_w,
+                                int media_h);
 
     // Walk all media references in ev and call ensure_*_ for each.
     void ensure_row_media_(const Event& ev);
@@ -468,7 +548,7 @@ protected:
 
     // MSC3030: begin a focused-timeline subscription centred on event_id.
     void begin_focused_subscription_(const std::string& room_id,
-                                      const std::string& event_id);
+                                     const std::string& event_id);
 
     // MSC3030: clear stale focused-timeline state when (re-)entering a room via
     // the live room-selection path.  Must be called before subscribe_room() so
@@ -485,7 +565,7 @@ protected:
     // room_id if it differs from the last one sent this session. No-op when
     // either arg is empty.
     void maybe_send_read_receipt_(const std::string& room_id,
-                                   const std::string& event_id);
+                                  const std::string& event_id);
 
     // Optimistically zero the unread count for room_id in the local room list
     // and dispatch mark_room_as_read asynchronously. Call on room open so the

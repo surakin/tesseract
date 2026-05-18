@@ -4,7 +4,8 @@
 #include <string_view>
 #include <vector>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
 // Parse the Matrix HTML formatted_body subset into a flat list of TextSpans.
 //

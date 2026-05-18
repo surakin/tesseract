@@ -17,39 +17,55 @@
 
 #include <utility>
 
-namespace tk::qt6 {
+namespace tk::qt6
+{
 
-class QtAudioPlayer : public tk::AudioPlayer {
+class QtAudioPlayer : public tk::AudioPlayer
+{
 public:
-    QtAudioPlayer() {
+    QtAudioPlayer()
+    {
         player_.setAudioOutput(&output_);
         // Periodic progress ticks while a clip is playing.
         ticker_.setInterval(60);
-        QObject::connect(&ticker_, &QTimer::timeout,
-                         &ticker_, [this]() { fire_progress(); });
+        QObject::connect(&ticker_, &QTimer::timeout, &ticker_,
+                         [this]()
+                         {
+                             fire_progress();
+                         });
         // Position updates from QMediaPlayer arrive every ~1 s; we use them
         // for accuracy alongside the ticker which drives smoother repaints.
-        QObject::connect(&player_, &QMediaPlayer::positionChanged,
-                         &player_, [this](qint64) { fire_progress(); });
-        QObject::connect(&player_, &QMediaPlayer::durationChanged,
-                         &player_, [this](qint64) { fire_progress(); });
+        QObject::connect(&player_, &QMediaPlayer::positionChanged, &player_,
+                         [this](qint64)
+                         {
+                             fire_progress();
+                         });
+        QObject::connect(&player_, &QMediaPlayer::durationChanged, &player_,
+                         [this](qint64)
+                         {
+                             fire_progress();
+                         });
         QObject::connect(&player_, &QMediaPlayer::playbackStateChanged,
-                         &player_, [this](QMediaPlayer::PlaybackState s) {
-            if (s == QMediaPlayer::StoppedState) {
-                ticker_.stop();
-            }
-            fire_progress();
-        });
+                         &player_,
+                         [this](QMediaPlayer::PlaybackState s)
+                         {
+                             if (s == QMediaPlayer::StoppedState)
+                             {
+                                 ticker_.stop();
+                             }
+                             fire_progress();
+                         });
     }
 
-    ~QtAudioPlayer() override {
+    ~QtAudioPlayer() override
+    {
         ticker_.stop();
         player_.stop();
     }
 
-    void play(const std::uint8_t* data,
-              std::size_t          size,
-              std::string_view     /*mime*/) override {
+    void play(const std::uint8_t* data, std::size_t size,
+              std::string_view /*mime*/) override
+    {
         player_.stop();
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data),
@@ -62,58 +78,93 @@ public:
         ticker_.start();
     }
 
-    void pause()  override { player_.pause();  ticker_.stop();  fire_progress(); }
-    void resume() override { player_.play();   ticker_.start(); }
-    void stop()   override {
+    void pause() override
+    {
+        player_.pause();
+        ticker_.stop();
+        fire_progress();
+    }
+    void resume() override
+    {
+        player_.play();
+        ticker_.start();
+    }
+    void stop() override
+    {
         player_.stop();
         ticker_.stop();
         buffer_.close();
         fire_progress();
     }
 
-    void seek(std::uint64_t ms) override {
+    void seek(std::uint64_t ms) override
+    {
         const qint64 dur = player_.duration();
         qint64 target = static_cast<qint64>(ms);
-        if (dur > 0 && target > dur) target = dur;
-        if (target < 0) target = 0;
+        if (dur > 0 && target > dur)
+        {
+            target = dur;
+        }
+        if (target < 0)
+        {
+            target = 0;
+        }
         player_.setPosition(target);
         fire_progress();
     }
 
-    void set_playback_rate(float rate) override {
-        if (rate < 0.5f) rate = 0.5f;
-        if (rate > 3.0f) rate = 3.0f;
+    void set_playback_rate(float rate) override
+    {
+        if (rate < 0.5f)
+        {
+            rate = 0.5f;
+        }
+        if (rate > 3.0f)
+        {
+            rate = 3.0f;
+        }
         rate_ = rate;
         player_.setPlaybackRate(static_cast<qreal>(rate_));
     }
-    float playback_rate() const override { return rate_; }
+    float playback_rate() const override
+    {
+        return rate_;
+    }
 
-    std::uint64_t position_ms() const override {
+    std::uint64_t position_ms() const override
+    {
         const qint64 p = player_.position();
         return p < 0 ? 0u : static_cast<std::uint64_t>(p);
     }
-    std::uint64_t duration_ms() const override {
+    std::uint64_t duration_ms() const override
+    {
         const qint64 d = player_.duration();
         return d < 0 ? 0u : static_cast<std::uint64_t>(d);
     }
-    bool is_playing() const override {
+    bool is_playing() const override
+    {
         return player_.playbackState() == QMediaPlayer::PlayingState;
     }
 
 private:
-    void fire_progress() {
-        if (on_progress) on_progress();
+    void fire_progress()
+    {
+        if (on_progress)
+        {
+            on_progress();
+        }
     }
 
     QMediaPlayer player_;
     QAudioOutput output_;
-    QByteArray   bytes_;
-    QBuffer      buffer_;
-    QTimer       ticker_;
-    float        rate_ = 1.0f;
+    QByteArray bytes_;
+    QBuffer buffer_;
+    QTimer ticker_;
+    float rate_ = 1.0f;
 };
 
-std::unique_ptr<tk::AudioPlayer> make_audio_player_qt() {
+std::unique_ptr<tk::AudioPlayer> make_audio_player_qt()
+{
     return std::make_unique<QtAudioPlayer>();
 }
 

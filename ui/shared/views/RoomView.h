@@ -35,9 +35,11 @@
 #include <string>
 #include <vector>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class RoomView : public tk::Widget {
+class RoomView : public tk::Widget
+{
 public:
     RoomView();
     ~RoomView() override = default;
@@ -45,13 +47,12 @@ public:
     // ── Providers (forwarded to MessageListView / RoomHeader) ────────────
 
     void set_avatar_provider(MessageListView::ImageProvider p);
-    void set_image_provider (MessageListView::ImageProvider p);
+    void set_image_provider(MessageListView::ImageProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
-    void set_audio_player   (std::unique_ptr<tk::AudioPlayer> player);
+    void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(MessageListView::VoiceBytesProvider p);
-    void set_repaint_requester   (std::function<void()> f);
-    void set_post_delayed        (std::function<void(int,
-                                                     std::function<void()>)> f);
+    void set_repaint_requester(std::function<void()> f);
+    void set_post_delayed(std::function<void(int, std::function<void()>)> f);
     void set_video_player_factory(MessageListView::VideoPlayerFactory f);
     void set_video_fetch_provider(MessageListView::VideoFetchProvider f);
 
@@ -65,14 +66,14 @@ public:
     // accounts or logging out so the splash reappears.
     void clear_room();
 
-    void set_messages  (std::vector<MessageRowData> msgs,
-                        bool room_switch = false);
+    void set_messages(std::vector<MessageRowData> msgs,
+                      bool room_switch = false);
     void insert_message(std::size_t index, MessageRowData msg);
     void update_message(std::size_t index, MessageRowData msg);
     void remove_message(std::size_t index);
     void append_message(MessageRowData msg);
 
-    void notify_image_ready      (const std::string& url);
+    void notify_image_ready(const std::string& url);
     void notify_url_preview_ready(const std::string& url);
 
     // Typing indicator text (e.g. "Alice is typing…"). Pass an empty string
@@ -108,9 +109,18 @@ public:
     // Needed by the shell for: emoji/sticker picker anchor (popupAt),
     // pending attachment (set_pending_image / set_pending_file),
     // and cursor insert after emoji selection.
-    RoomHeader*      header()       const { return header_;       }
-    ComposeBar*      compose_bar()  const { return compose_bar_;  }
-    MessageListView* message_list() const { return message_list_; }
+    RoomHeader* header() const
+    {
+        return header_;
+    }
+    ComposeBar* compose_bar() const
+    {
+        return compose_bar_;
+    }
+    MessageListView* message_list() const
+    {
+        return message_list_;
+    }
 
     // "Press Up in an empty composer to edit your last message." Wired by
     // the shell to the NativeTextArea's set_on_edit_last hook. No-op (and
@@ -125,50 +135,49 @@ public:
     std::function<void(std::string body)> on_send;
 
     // Reply send.
-    std::function<void(std::string reply_event_id, std::string body)> on_send_reply;
+    std::function<void(std::string reply_event_id, std::string body)>
+        on_send_reply;
 
     // Edit send.
-    std::function<void(std::string event_id, std::string new_body)> on_send_edit;
+    std::function<void(std::string event_id, std::string new_body)>
+        on_send_edit;
 
     // Image send.
-    std::function<void(std::vector<std::uint8_t> bytes,
-                       std::string mime,
-                       std::string filename,
-                       std::string caption,
-                       int w, int h,
-                       std::string reply_event_id)> on_send_image;
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption, int w, int h,
+                       std::string reply_event_id)>
+        on_send_image;
 
     // File send.
-    std::function<void(std::vector<std::uint8_t> bytes,
-                       std::string mime,
-                       std::string filename,
-                       std::string caption,
-                       std::string reply_event_id)> on_send_file;
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::string reply_event_id)>
+        on_send_file;
 
-    std::function<void(std::string event_id)>              on_delete_requested;
-    std::function<void(std::string event_id,
-                       std::string emoji)>                 on_reaction_toggled;
-    std::function<void(std::string event_id,
-                       tk::Rect anchor)>                   on_add_reaction_requested;
-    std::function<void(std::string url)>                   on_link_clicked;
-    std::function<void(std::string url)>                   on_link_hovered;
-    std::function<void(std::string event_id)>              on_receipt_needed;
-    std::function<void(MessageListView::ImageHit)>         on_image_clicked;
-    std::function<void(MessageListView::VideoHit)>         on_video_clicked;
-    std::function<void()>                                  on_near_top;
-    std::function<void()>                                  on_near_bottom;
-    std::function<void()>                                  on_return_to_live;
-    std::function<void()>                                  on_jump_to_date_requested;
-    std::function<void(std::string original_event_id)>     on_scroll_to_original;
+    std::function<void(std::string event_id)> on_delete_requested;
+    std::function<void(std::string event_id, std::string emoji)>
+        on_reaction_toggled;
+    std::function<void(std::string event_id, tk::Rect anchor)>
+        on_add_reaction_requested;
+    std::function<void(std::string url)> on_link_clicked;
+    std::function<void(std::string url)> on_link_hovered;
+    std::function<void(std::string event_id)> on_receipt_needed;
+    std::function<void(MessageListView::ImageHit)> on_image_clicked;
+    std::function<void(MessageListView::VideoHit)> on_video_clicked;
+    std::function<void()> on_near_top;
+    std::function<void()> on_near_bottom;
+    std::function<void()> on_return_to_live;
+    std::function<void()> on_jump_to_date_requested;
+    std::function<void(std::string original_event_id)> on_scroll_to_original;
 
     // Fired when the pointer enters a topic text that was truncated (i.e. the
     // topic didn't fit and shows an ellipsis). Shell should show a tooltip with
     // the full text anchored to `anchor`. on_hide_tooltip fires when the
     // pointer leaves, so the shell can dismiss it.
     std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
-    std::function<void()>                                   on_hide_tooltip;
-    std::function<void(tk::Rect)>                          on_emoji;
-    std::function<void(tk::Rect)>                          on_sticker;
+    std::function<void()> on_hide_tooltip;
+    std::function<void(tk::Rect)> on_emoji;
+    std::function<void(tk::Rect)> on_sticker;
 
     // Fired when the compose bar or typing indicator changes the internal
     // layout. Shell should call roomSurface_->relayout() in response.
@@ -188,19 +197,19 @@ public:
     // ── tk::Widget overrides ─────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void wire_internal_callbacks();
 
-    bool has_room_ = false;   // true after the first set_room() call
+    bool has_room_ = false; // true after the first set_room() call
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
-    BrandView*       brand_view_   = nullptr;
-    RoomHeader*      header_       = nullptr;
+    BrandView* brand_view_ = nullptr;
+    RoomHeader* header_ = nullptr;
     MessageListView* message_list_ = nullptr;
-    ComposeBar*      compose_bar_  = nullptr;
+    ComposeBar* compose_bar_ = nullptr;
 };
 
 } // namespace tesseract::views

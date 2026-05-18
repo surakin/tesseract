@@ -18,18 +18,19 @@
 
 #include <memory>
 
-namespace tk::qt6 {
+namespace tk::qt6
+{
 
 class Host;
 
-class Surface : public QWidget {
+class Surface : public QWidget
+{
 public:
     explicit Surface(const Theme& theme = Theme::light(),
-                     QWidget* parent    = nullptr,
-                     bool transparent   = false);
+                     QWidget* parent = nullptr, bool transparent = false);
     ~Surface() override;
 
-    tk::Host&   host();
+    tk::Host& host();
     const tk::Theme& theme() const;
 
     // Mount the root widget. Triggers an immediate measure + arrange
@@ -57,30 +58,36 @@ public:
     // Pass {} to disable.
     void set_on_file_drop(FileDropHandler cb);
     // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
+    void set_on_image_drop(FileDropHandler cb)
+    {
+        set_on_file_drop(std::move(cb));
+    }
 
     // True while a drag is hovering over the Surface (between
     // dragEnter / dragLeave / drop). Painted as a translucent
     // "Drop to attach" overlay so the user sees a valid target.
-    bool drag_active() const { return drag_active_; }
+    bool drag_active() const
+    {
+        return drag_active_;
+    }
 
 protected:
-    void paintEvent       (QPaintEvent*)      override;
-    void resizeEvent      (QResizeEvent*)     override;
-    void mousePressEvent  (QMouseEvent*)      override;
-    void mouseReleaseEvent(QMouseEvent*)      override;
-    void mouseMoveEvent   (QMouseEvent*)      override;
-    void wheelEvent       (QWheelEvent*)      override;
-    void leaveEvent       (QEvent*)           override;
-    void dragEnterEvent   (QDragEnterEvent*)  override;
-    void dragMoveEvent    (QDragMoveEvent*)   override;
-    void dragLeaveEvent   (QDragLeaveEvent*)  override;
-    void dropEvent        (QDropEvent*)       override;
+    void paintEvent(QPaintEvent*) override;
+    void resizeEvent(QResizeEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void wheelEvent(QWheelEvent*) override;
+    void leaveEvent(QEvent*) override;
+    void dragEnterEvent(QDragEnterEvent*) override;
+    void dragMoveEvent(QDragMoveEvent*) override;
+    void dragLeaveEvent(QDragLeaveEvent*) override;
+    void dropEvent(QDropEvent*) override;
 
 private:
     std::unique_ptr<Host> host_;
-    FileDropHandler       on_file_drop_;
-    bool                  drag_active_ = false;
+    FileDropHandler on_file_drop_;
+    bool drag_active_ = false;
 };
 
 } // namespace tk::qt6

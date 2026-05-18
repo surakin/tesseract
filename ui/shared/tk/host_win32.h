@@ -14,10 +14,10 @@
 #include "widget.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
-#  define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 
@@ -29,28 +29,29 @@
 
 struct IDWriteFontFallback;
 
-namespace tk::win32 {
+namespace tk::win32
+{
 
 class Host;
 
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then
 // SetWindowPos / MoveWindow it as the parent resizes.
-class Surface {
+class Surface
+{
 public:
     // transparent=true creates the HWND with WS_EX_NOREDIRECTIONBITMAP and
     // uses a DXGI_ALPHA_MODE_PREMULTIPLIED swap chain so DWM composites the
     // window's per-pixel alpha against the content behind it. The host clears
     // each frame to {0,0,0,0} instead of palette.bg; the widget tree is
     // responsible for painting whatever it wants to be visible.
-    Surface(HINSTANCE inst, HWND parent,
-            const Theme& theme = Theme::light(),
-            bool transparent   = false);
+    Surface(HINSTANCE inst, HWND parent, const Theme& theme = Theme::light(),
+            bool transparent = false);
     ~Surface();
-    Surface(const Surface&)            = delete;
+    Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
 
-    HWND        hwnd() const;
-    tk::Host&   host();
+    HWND hwnd() const;
+    tk::Host& host();
     const Theme& theme() const;
 
     void set_root(std::unique_ptr<Widget> root);
@@ -81,7 +82,10 @@ public:
     // thread before the first Surface is constructed.
     void set_on_file_drop(FileDropHandler cb);
     // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
+    void set_on_image_drop(FileDropHandler cb)
+    {
+        set_on_file_drop(std::move(cb));
+    }
 
     // Install a right-click handler. Receives surface-local coordinates in
     // the same logical pixel space as pointer-down/up events. Fired on
@@ -100,8 +104,8 @@ tk::d2d::Backend& backend_singleton();
 // backend singleton owned by host_win32.cpp. Hosts call this to detect
 // + decode animated GIF / APNG / animated WebP without needing to plumb
 // a backend reference into application code.
-std::vector<tk::d2d::AnimatedFrame> decode_animation(
-    std::span<const std::uint8_t> bytes);
+std::vector<tk::d2d::AnimatedFrame>
+decode_animation(std::span<const std::uint8_t> bytes);
 
 // Returns the Twemoji-first IDWriteFontFallback built by the D2D backend.
 // May return nullptr before the first Surface is constructed (i.e. before

@@ -12,9 +12,11 @@
 #include <memory>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class UserInfo : public tk::Widget {
+class UserInfo : public tk::Widget
+{
 public:
     UserInfo();
     ~UserInfo() override = default;
@@ -22,8 +24,8 @@ public:
     // ----- Content ----------------------------------------------------------
 
     void set_display_name(std::string name);
-    void set_user_id     (std::string user_id);   // shown under display_name
-    void set_avatar_url  (std::string mxc_url);   // empty → initials fallback
+    void set_user_id(std::string user_id);    // shown under display_name
+    void set_avatar_url(std::string mxc_url); // empty → initials fallback
 
     // Host hook: given an mxc:// URL, return a decoded image or null. The
     // shell typically reads a `tk_avatars_` cache and kicks off an async
@@ -35,7 +37,10 @@ public:
     // Visual marker on the right side. Used by AccountPicker to flag the
     // currently-active row.
     void set_active_indicator(bool on);
-    bool active_indicator() const { return active_indicator_; }
+    bool active_indicator() const
+    {
+        return active_indicator_;
+    }
 
     // Two-line layout (default) vs single-line. False collapses the Matrix
     // ID and centres the display name beside the avatar.
@@ -45,9 +50,18 @@ public:
     // user-strip / account row size.
     void set_avatar_size(float diameter);
 
-    const std::string& display_name() const { return display_name_; }
-    const std::string& user_id()      const { return user_id_; }
-    const std::string& avatar_url()   const { return avatar_url_; }
+    const std::string& display_name() const
+    {
+        return display_name_;
+    }
+    const std::string& user_id() const
+    {
+        return user_id_;
+    }
+    const std::string& avatar_url() const
+    {
+        return avatar_url_;
+    }
 
     // ----- Callbacks --------------------------------------------------------
 
@@ -65,23 +79,23 @@ public:
     // ----- tk::Widget overrides --------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
-    void on_pointer_leave()               override;
+    void on_pointer_leave() override;
 
 private:
-    void invalidate_text();   // drop cached text layouts when content changes
+    void invalidate_text(); // drop cached text layouts when content changes
 
-    std::string   display_name_;
-    std::string   user_id_;
-    std::string   avatar_url_;
-    bool          show_user_id_      = true;
-    bool          active_indicator_  = false;
-    float         avatar_size_       = 32.0f;
+    std::string display_name_;
+    std::string user_id_;
+    std::string avatar_url_;
+    bool show_user_id_ = true;
+    bool active_indicator_ = false;
+    float avatar_size_ = 32.0f;
     ImageProvider image_provider_;
 
     // Cached layouts — rebuilt lazily inside paint() when the content or

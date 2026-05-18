@@ -17,9 +17,11 @@
 #include <string>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
-class TabBar : public Widget {
+class TabBar : public Widget
+{
 public:
     // Height of the bar in logical pixels.
     static constexpr float kHeight = 40.0f;
@@ -41,17 +43,23 @@ public:
     void set_active(const std::string& room_id);
 
     // Update display_name and avatar for an existing tab. No-op if absent.
-    void update_tab(const std::string& room_id,
-                    std::string display_name, const Image* avatar);
+    void update_tab(const std::string& room_id, std::string display_name,
+                    const Image* avatar);
 
     // Remove all tabs and reset scroll. Use before a full rebuild.
     void clear();
 
     // How many tabs are currently held.
-    int item_count() const { return static_cast<int>(items_.size()); }
+    int item_count() const
+    {
+        return static_cast<int>(items_.size());
+    }
 
     // room_id of the tab at position i (no bounds check — caller guards).
-    const std::string& room_id_at(int i) const { return items_[i].room_id; }
+    const std::string& room_id_at(int i) const
+    {
+        return items_[i].room_id;
+    }
 
     // Fires when the user clicks a tab body (not the × button).
     std::function<void(const std::string& room_id)> on_tab_selected;
@@ -61,41 +69,42 @@ public:
     std::function<void(const std::string& room_id)> on_tab_closed;
 
     // tk::Widget overrides.
-    Size    measure(LayoutCtx&, Size constraints)          override;
-    void    arrange(LayoutCtx&, Rect bounds)               override;
-    void    paint  (PaintCtx&)                             override;
-    bool    on_pointer_down(Point local)                   override;
-    void    on_pointer_up  (Point local, bool inside_self) override;
-    bool    on_pointer_move(Point local)                   override;
-    void    on_pointer_leave()                             override;
-    bool    on_wheel(Point local, float dx, float dy)      override;
+    Size measure(LayoutCtx&, Size constraints) override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint(PaintCtx&) override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
+    bool on_wheel(Point local, float dx, float dy) override;
 
 private:
     // ── Visual constants (all logical pixels) ────────────────────────────
-    static constexpr float kAvatarSz  = 20.0f;
-    static constexpr float kCloseSz   = 16.0f;
-    static constexpr float kPadOuter  =  4.0f;
-    static constexpr float kPadInner  =  8.0f;
-    static constexpr float kTabMin    = 120.0f;
-    static constexpr float kTabMax    = 240.0f;
-    static constexpr float kRadius    =  4.0f;
+    static constexpr float kAvatarSz = 20.0f;
+    static constexpr float kCloseSz = 16.0f;
+    static constexpr float kPadOuter = 4.0f;
+    static constexpr float kPadInner = 8.0f;
+    static constexpr float kTabMin = 120.0f;
+    static constexpr float kTabMax = 240.0f;
+    static constexpr float kRadius = 4.0f;
 
     // Fixed per-tab chrome: left-pad + avatar + inner-gap + inner-gap + × + right-pad.
-    static constexpr float kChrome = kPadOuter + kAvatarSz + kPadInner
-                                   + kPadInner + kCloseSz  + kPadOuter;
+    static constexpr float kChrome =
+        kPadOuter + kAvatarSz + kPadInner + kPadInner + kCloseSz + kPadOuter;
 
-    struct TabItem {
-        std::string       room_id;
-        std::string       display_name;
-        const Image*      avatar        = nullptr;  // non-owning
-        float             x             = 0.f;      // left edge in scroll-space
-        float             width         = 0.f;      // set by arrange()
-        bool              hovered       = false;
-        bool              close_hovered = false;
+    struct TabItem
+    {
+        std::string room_id;
+        std::string display_name;
+        const Image* avatar = nullptr; // non-owning
+        float x = 0.f;                 // left edge in scroll-space
+        float width = 0.f;             // set by arrange()
+        bool hovered = false;
+        bool close_hovered = false;
         // Cached name TextLayout; rebuilt when display_name or width changes.
         std::unique_ptr<TextLayout> layout;
-        float             layout_max_w  = -1.f;
-        std::string       layout_name;
+        float layout_max_w = -1.f;
+        std::string layout_name;
     };
 
     // Rect of the × button for tab i, in scroll-space x-coordinates.
@@ -103,7 +112,7 @@ private:
 
     // Index of the tab that contains scroll_x_local (= pointer.x + scroll_x_),
     // or -1 if none.
-    int  tab_at_(float scroll_x_local) const;
+    int tab_at_(float scroll_x_local) const;
 
     void clamp_scroll_();
 
@@ -113,11 +122,11 @@ private:
     void ensure_layout_(Ctx& ctx, TabItem& t, float max_w);
 
     std::vector<TabItem> items_;
-    int    active_idx_    = -1;
-    float  scroll_x_      = 0.f;
-    float  total_width_   = 0.f;     // sum of all tab widths; set by arrange()
-    int    pressed_idx_   = -1;
-    bool   pressed_close_ = false;
+    int active_idx_ = -1;
+    float scroll_x_ = 0.f;
+    float total_width_ = 0.f; // sum of all tab widths; set by arrange()
+    int pressed_idx_ = -1;
+    bool pressed_close_ = false;
 
     // Cached "×" layout (built once in arrange, reused in paint).
     std::unique_ptr<TextLayout> close_layout_;

@@ -9,25 +9,27 @@
 
 #include <memory>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class BrandView : public tk::Widget {
+class BrandView : public tk::Widget
+{
 public:
     BrandView() = default;
     ~BrandView() override = default;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
-    std::unique_ptr<tk::Image>      icon_;
+    std::unique_ptr<tk::Image> icon_;
     std::unique_ptr<tk::TextLayout> name_layout_;
     std::unique_ptr<tk::TextLayout> version_layout_;
 
     static constexpr float kIconDiameter = 80.0f;
-    static constexpr float kIconToName   = 20.0f;
-    static constexpr float kNameToVer    =  6.0f;
+    static constexpr float kIconToName = 20.0f;
+    static constexpr float kNameToVer = 6.0f;
 };
 
 } // namespace tesseract::views

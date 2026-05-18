@@ -15,26 +15,28 @@
 
 typedef struct _GtkWidget GtkWidget;
 
-namespace tk::gtk4 {
+namespace tk::gtk4
+{
 
 class Host;
 
 // Embed `widget()` (a GtkOverlay) into your normal GTK4 widget tree.
 // Everything inside paints through the shared toolkit; child native
 // widgets like GtkEntry layer on top of the canvas via NativeTextField.
-class Surface {
+class Surface
+{
 public:
     explicit Surface(const Theme& theme = Theme::light(),
-                     bool transparent   = false);
+                     bool transparent = false);
     ~Surface();
-    Surface(const Surface&)            = delete;
+    Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
 
     // The GtkOverlay you embed in your normal GTK4 layout. Owned by the
     // Surface; the Surface destructor unrefs the toplevel.
     GtkWidget* widget() const;
 
-    tk::Host&   host();
+    tk::Host& host();
     const Theme& theme() const;
 
     void set_root(std::unique_ptr<Widget> root);
@@ -57,7 +59,10 @@ public:
     // MIME, and basename. The shell dispatches by MIME. Pass {} to disable.
     void set_on_file_drop(FileDropHandler cb);
     // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
+    void set_on_image_drop(FileDropHandler cb)
+    {
+        set_on_file_drop(std::move(cb));
+    }
 
 private:
     std::unique_ptr<Host> host_;

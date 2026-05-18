@@ -24,11 +24,16 @@
 #include <string>
 #include <vector>
 
-namespace tesseract { class Client; }
+namespace tesseract
+{
+class Client;
+}
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class EmojiPicker : public tk::Widget {
+class EmojiPicker : public tk::Widget
+{
 public:
     EmojiPicker();
     ~EmojiPicker() override;
@@ -49,9 +54,8 @@ public:
 
     /// Host-supplied image cache (same shape as MessageListView). Used to
     /// render custom emoticon tabs.
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& cache_key,
-                                        const std::string& source_token)>;
+    using ImageProvider = std::function<const tk::Image*(
+        const std::string& cache_key, const std::string& source_token)>;
     void set_image_provider(ImageProvider p);
 
     /// Force a grid repaint after the host's media cache lands new bitmaps.
@@ -59,7 +63,10 @@ public:
 
     /// Host hook for the search-row overlay. Bounds in widget-local
     /// coordinates; valid after the first arrange() pass.
-    tk::Rect search_field_rect() const { return search_rect_; }
+    tk::Rect search_field_rect() const
+    {
+        return search_rect_;
+    }
 
     /// Called by the host's NativeTextField on every text change.
     void set_search_query(std::string query);
@@ -74,18 +81,24 @@ public:
     std::function<void(const tesseract::ImagePackImage&)> on_emoticon_selected;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
-    bool     on_pointer_down (tk::Point local)                      override;
-    void     on_pointer_up   (tk::Point local, bool inside_self)    override;
-    bool     on_wheel        (tk::Point local, float dx, float dy)  override;
-    bool     on_pointer_move (tk::Point local)                      override;
-    void     on_pointer_leave()                                      override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
 private:
     class GridAdapter;
 
-    enum class Page : std::uint8_t { Frequents, Category, CustomPack, Search };
+    enum class Page : std::uint8_t
+    {
+        Frequents,
+        Category,
+        CustomPack,
+        Search
+    };
 
     void switch_to_frequents();
     void switch_to_category(tesseract::emoji::Category c);
@@ -97,37 +110,47 @@ private:
     //   0          → Frequents
     //   1..N       → Unicode categories (kCategories)
     //   N+1..end   → Custom MSC2545 emoticon packs (in custom_packs_ order)
-    int      tab_at(tk::Point local) const;
+    int tab_at(tk::Point local) const;
     tk::Rect tab_strip_rect() const;
-    int      builtin_tab_count() const;   // 1 + kCategories (constant)
-    int      total_tab_count()   const;   // frequents (if any) + categories + custom packs
-    bool     has_frequents_tab() const { return !frequents_glyphs_.empty(); }
-    int      frequents_tab_offset() const { return has_frequents_tab() ? 1 : 0; }
+    int builtin_tab_count() const; // 1 + kCategories (constant)
+    int
+    total_tab_count() const; // frequents (if any) + categories + custom packs
+    bool has_frequents_tab() const
+    {
+        return !frequents_glyphs_.empty();
+    }
+    int frequents_tab_offset() const
+    {
+        return has_frequents_tab() ? 1 : 0;
+    }
 
-    tesseract::Client*                   client_   = nullptr;
-    ImageProvider                        provider_;
+    tesseract::Client* client_ = nullptr;
+    ImageProvider provider_;
 
-    Page                                 page_     = Page::Category;
-    tesseract::emoji::Category           category_ = tesseract::emoji::Category::SmileysPeople;
-    int                                  custom_pack_idx_ = -1;
-    std::string                          query_;
+    Page page_ = Page::Category;
+    tesseract::emoji::Category category_ =
+        tesseract::emoji::Category::SmileysPeople;
+    int custom_pack_idx_ = -1;
+    std::string query_;
 
-    std::vector<std::string>             frequents_glyphs_;
-    std::vector<std::string>             current_glyphs_;     // unicode page items
-    std::vector<tesseract::ImagePack>    custom_packs_;       // emoticon-capable
-    std::vector<tesseract::ImagePackImage> current_emoticons_; // image-cell items
-    std::vector<std::string>             current_shortcodes_; // parallel to current_glyphs_ / current_emoticons_
-    int                                  hovered_grid_cell_ = -1;
+    std::vector<std::string> frequents_glyphs_;
+    std::vector<std::string> current_glyphs_;        // unicode page items
+    std::vector<tesseract::ImagePack> custom_packs_; // emoticon-capable
+    std::vector<tesseract::ImagePackImage>
+        current_emoticons_; // image-cell items
+    std::vector<std::string>
+        current_shortcodes_; // parallel to current_glyphs_ / current_emoticons_
+    int hovered_grid_cell_ = -1;
 
-    tk::GridView*                        grid_         = nullptr;   // borrowed
-    std::unique_ptr<GridAdapter>         grid_adapter_;
+    tk::GridView* grid_ = nullptr; // borrowed
+    std::unique_ptr<GridAdapter> grid_adapter_;
 
-    tk::Rect                             search_rect_{};
-    tk::Rect                             grid_rect_{};
-    tk::Rect                             tab_rect_{};
-    int                                  pressed_tab_idx_ = -1;
-    int                                  hovered_tab_idx_ = -1;
-    float                                tab_scroll_offset_ = 0.0f;
+    tk::Rect search_rect_{};
+    tk::Rect grid_rect_{};
+    tk::Rect tab_rect_{};
+    int pressed_tab_idx_ = -1;
+    int hovered_tab_idx_ = -1;
+    float tab_scroll_offset_ = 0.0f;
 };
 
 } // namespace tesseract::views

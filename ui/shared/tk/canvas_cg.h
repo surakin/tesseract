@@ -11,9 +11,10 @@
 #include "canvas.h"
 
 typedef struct CGContext* CGContextRef;
-typedef struct CGImage*   CGImageRef;
+typedef struct CGImage* CGImageRef;
 
-namespace tk::cg {
+namespace tk::cg
+{
 
 // Wrap a borrowed CGContextRef for one paint pass. The caller's NSView
 // should override `-isFlipped` to return YES so the origin is top-left

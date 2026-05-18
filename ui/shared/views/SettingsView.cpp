@@ -15,11 +15,16 @@ namespace tesseract::views
 SettingsView::SettingsView()
 {
     // Back button — placed left-aligned inside the bar by arrange().
-    auto back = std::make_unique<tk::Button>(
-        "← Back",
-        std::function<void()>{},
-        tk::Button::Variant::Subtle);
-    back->set_on_click([this] { if (on_close) { on_close(); } });
+    auto back = std::make_unique<tk::Button>("← Back", std::function<void()>{},
+                                             tk::Button::Variant::Subtle);
+    back->set_on_click(
+        [this]
+        {
+            if (on_close)
+            {
+                on_close();
+            }
+        });
     back_btn_ = add_child(std::move(back));
 
     // Account section.
@@ -30,29 +35,36 @@ SettingsView::SettingsView()
     auto appearance = std::make_unique<AppearanceSection>();
     appearance->on_theme_changed =
         [this](tesseract::Settings::ThemePreference pref)
+    {
+        if (on_theme_changed)
         {
-            if (on_theme_changed) { on_theme_changed(pref); }
-        };
+            on_theme_changed(pref);
+        }
+    };
     appearance_ = appearance.get();
 
     // Notifications section.
     auto notifications = std::make_unique<NotificationsSection>();
-    notifications->on_notifications_changed =
-        [this](bool enabled)
+    notifications->on_notifications_changed = [this](bool enabled)
+    {
+        if (on_notifications_changed)
         {
-            if (on_notifications_changed) { on_notifications_changed(enabled); }
-        };
-    notifications->on_image_previews_changed =
-        [this](bool enabled)
+            on_notifications_changed(enabled);
+        }
+    };
+    notifications->on_image_previews_changed = [this](bool enabled)
+    {
+        if (on_image_previews_changed)
         {
-            if (on_image_previews_changed) { on_image_previews_changed(enabled); }
-        };
+            on_image_previews_changed(enabled);
+        }
+    };
     notifications_ = notifications.get();
 
     // SideTabView — owns the three section widgets.
     auto tabs = std::make_unique<tk::SideTabView>();
-    tabs->add_tab("Account",       std::move(account));
-    tabs->add_tab("Appearance",    std::move(appearance));
+    tabs->add_tab("Account", std::move(account));
+    tabs->add_tab("Appearance", std::move(appearance));
     tabs->add_tab("Notifications", std::move(notifications));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs_ = add_child(std::move(tabs));
@@ -63,33 +75,47 @@ SettingsView::SettingsView()
 // ---------------------------------------------------------------------------
 
 void SettingsView::set_account_info(std::string display_name,
-                                    std::string user_id,
-                                    std::string avatar_mxc)
+                                    std::string user_id, std::string avatar_mxc)
 {
-    if (!account_) { return; }
+    if (!account_)
+    {
+        return;
+    }
     account_->set_display_name(std::move(display_name));
-    account_->set_user_id     (std::move(user_id));
-    account_->set_avatar_url  (std::move(avatar_mxc));
+    account_->set_user_id(std::move(user_id));
+    account_->set_avatar_url(std::move(avatar_mxc));
 }
 
 void SettingsView::set_image_provider(AccountSection::ImageProvider provider)
 {
-    if (account_) { account_->set_image_provider(std::move(provider)); }
+    if (account_)
+    {
+        account_->set_image_provider(std::move(provider));
+    }
 }
 
 void SettingsView::set_theme_pref(tesseract::Settings::ThemePreference pref)
 {
-    if (appearance_) { appearance_->set_selected(pref); }
+    if (appearance_)
+    {
+        appearance_->set_selected(pref);
+    }
 }
 
 void SettingsView::set_notifications_enabled(bool enabled)
 {
-    if (notifications_) { notifications_->set_checked(enabled); }
+    if (notifications_)
+    {
+        notifications_->set_checked(enabled);
+    }
 }
 
 void SettingsView::set_image_previews_enabled(bool enabled)
 {
-    if (notifications_) { notifications_->set_image_previews_checked(enabled); }
+    if (notifications_)
+    {
+        notifications_->set_image_previews_checked(enabled);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +133,7 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
 
     // Top bar: full width, fixed height.
-    const tk::Rect bar_rect = { bounds.x, bounds.y, bounds.w, kBarHeight };
+    const tk::Rect bar_rect = {bounds.x, bounds.y, bounds.w, kBarHeight};
 
     // Place the back button left-aligned with a small horizontal margin.
     // Button measures its own natural size; we let it determine its width but
@@ -115,12 +141,11 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     constexpr float kBtnHInset = 12.0f;
     if (back_btn_)
     {
-        tk::Size btn_size = back_btn_->measure(ctx, { bounds.w, kBarHeight });
+        tk::Size btn_size = back_btn_->measure(ctx, {bounds.w, kBarHeight});
         const float btn_w = btn_size.w;
         const float btn_h = std::min(btn_size.h, kBarHeight);
         const float btn_y = bar_rect.y + (kBarHeight - btn_h) * 0.5f;
-        back_btn_->arrange(ctx,
-            { bar_rect.x + kBtnHInset, btn_y, btn_w, btn_h });
+        back_btn_->arrange(ctx, {bar_rect.x + kBtnHInset, btn_y, btn_w, btn_h});
     }
 
     // SideTabView: remaining height below the bar + 1 px separator.
@@ -128,7 +153,7 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float tabs_h = std::max(0.0f, bounds.h - kBarHeight - 1.0f);
     if (tabs_)
     {
-        tabs_->arrange(ctx, { bounds.x, tabs_y, bounds.w, tabs_h });
+        tabs_->arrange(ctx, {bounds.x, tabs_y, bounds.w, tabs_h});
     }
 }
 
@@ -140,21 +165,23 @@ void SettingsView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, pal.bg);
 
     // Back bar background (sidebar tone so it feels like chrome).
-    const tk::Rect bar_rect = { bounds_.x, bounds_.y, bounds_.w, kBarHeight };
+    const tk::Rect bar_rect = {bounds_.x, bounds_.y, bounds_.w, kBarHeight};
     ctx.canvas.fill_rect(bar_rect, pal.sidebar_bg);
 
     // 1 px separator between the back bar and the tab view.
-    const tk::Rect sep_rect = {
-        bounds_.x,
-        bounds_.y + kBarHeight,
-        bounds_.w,
-        1.0f
-    };
+    const tk::Rect sep_rect = {bounds_.x, bounds_.y + kBarHeight, bounds_.w,
+                               1.0f};
     ctx.canvas.fill_rect(sep_rect, pal.separator);
 
     // Paint children (back button + SideTabView).
-    if (back_btn_ && back_btn_->visible()) { back_btn_->paint(ctx); }
-    if (tabs_     && tabs_->visible())     { tabs_->paint(ctx);     }
+    if (back_btn_ && back_btn_->visible())
+    {
+        back_btn_->paint(ctx);
+    }
+    if (tabs_ && tabs_->visible())
+    {
+        tabs_->paint(ctx);
+    }
 }
 
 } // namespace tesseract::views

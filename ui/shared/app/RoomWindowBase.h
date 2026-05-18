@@ -7,7 +7,8 @@
 #include <string>
 #include <vector>
 
-namespace tesseract {
+namespace tesseract
+{
 
 class ShellBase;
 
@@ -18,27 +19,36 @@ class ShellBase;
 // Platform subclasses create a native window + surface, set room_view_, then
 // call finish_init_() to register with ShellBase and start the event feed.
 // The destructor unregisters and releases the subscription automatically.
-class RoomWindowBase {
+class RoomWindowBase
+{
 public:
     RoomWindowBase(ShellBase* shell, std::string room_id);
     virtual ~RoomWindowBase();
 
-    const std::string&      room_id()   const { return room_id_;   }
-    views::RoomView*        room_view() const { return room_view_; }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
+    views::RoomView* room_view() const
+    {
+        return room_view_;
+    }
 
     // Called by ShellBase on the UI thread when SDK events arrive for this room.
     void on_room_info_updated(const RoomInfo& r);
     void on_timeline_reset(std::vector<views::MessageRowData> rows);
     void on_message_inserted(std::size_t idx, views::MessageRowData row);
-    void on_message_updated (std::size_t idx, views::MessageRowData row);
-    void on_message_removed (std::size_t idx);
-    void on_typing_changed  (const std::string& text, bool visible);
+    void on_message_updated(std::size_t idx, views::MessageRowData row);
+    void on_message_removed(std::size_t idx);
+    void on_typing_changed(const std::string& text, bool visible);
 
     // Platform overrides.
-    virtual void bring_to_front()   = 0;
-    virtual void close_window()     = 0;
+    virtual void bring_to_front() = 0;
+    virtual void close_window() = 0;
     virtual void request_relayout() = 0;
-    virtual void update_window_title_(const std::string& /*name*/) {}
+    virtual void update_window_title_(const std::string& /*name*/)
+    {
+    }
     // Re-theme this pop-out window's surface (and any native chrome).
     // Called by the shell's apply_theme_ui_() so secondary windows track
     // the theme setting just like the main window.
@@ -57,12 +67,13 @@ protected:
 
     // SDK operation helpers — forward to shell_->client_ (accessible via
     // friend class ShellBase). All must be called on the UI thread.
-    void send_message_     (const std::string& body);
-    void send_reply_       (const std::string& reply_event_id, const std::string& body);
-    void send_edit_        (const std::string& event_id,       const std::string& new_body);
-    void delete_event_     (const std::string& event_id);
-    void toggle_reaction_  (const std::string& event_id,       const std::string& key);
-    void send_receipt_     (const std::string& event_id);
+    void send_message_(const std::string& body);
+    void send_reply_(const std::string& reply_event_id,
+                     const std::string& body);
+    void send_edit_(const std::string& event_id, const std::string& new_body);
+    void delete_event_(const std::string& event_id);
+    void toggle_reaction_(const std::string& event_id, const std::string& key);
+    void send_receipt_(const std::string& event_id);
     void send_typing_notice_(bool typing);
     void retry_send_(const std::string& txn_id);
     void abort_send_(const std::string& txn_id);
@@ -71,18 +82,20 @@ protected:
     // Image cache accessors — friend access to ShellBase protected members
     // so platform subclasses don't need their own friend declarations.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
-    const tk::Image* shell_image_ (const std::string& mxc) const;
-    std::vector<std::uint8_t> fetch_source_bytes_(const std::string& source_json);
+    const tk::Image* shell_image_(const std::string& mxc) const;
+    std::vector<std::uint8_t>
+    fetch_source_bytes_(const std::string& source_json);
 
-    ShellBase*       shell_;
-    std::string      room_id_;
-    views::RoomView* room_view_             = nullptr; // borrowed; owned by surface widget tree
-    bool             compose_typing_active_ = false;
-    bool             typing_bar_visible_    = false;
+    ShellBase* shell_;
+    std::string room_id_;
+    views::RoomView* room_view_ =
+        nullptr; // borrowed; owned by surface widget tree
+    bool compose_typing_active_ = false;
+    bool typing_bar_visible_ = false;
     // First timeline reset = initial fill of this pop-out (gate the display
     // like a room switch); later resets are reconnect/gappy refreshes of the
     // room already shown (refresh in place, no blank).
-    bool             displayed_once_        = false;
+    bool displayed_once_ = false;
 };
 
 } // namespace tesseract

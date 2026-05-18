@@ -22,75 +22,84 @@
 #include <string>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
 // A borrowed handle to a native text input control overlaid on top of
 // the canvas, positioned to align with a tk::Widget's rect. Caller
 // destroys to remove the overlay. Hosts back this with QLineEdit,
 // GtkEntry, Win32 EDIT, UITextField respectively.
-class NativeTextField {
+class NativeTextField
+{
 public:
     virtual ~NativeTextField() = default;
 
     // Position + size of the overlay in widget-tree coordinates (the
     // same coordinate space root_widget->arrange() operates in).
-    virtual void set_rect       (Rect r)              = 0;
-    virtual void set_text       (std::string text)    = 0;
-    virtual std::string text    () const              = 0;
-    virtual void set_placeholder(std::string text)    = 0;
-    virtual void set_focused    (bool focused)        = 0;
-    virtual void set_visible    (bool visible)        = 0;
-    virtual void set_enabled    (bool enabled)        = 0;
+    virtual void set_rect(Rect r) = 0;
+    virtual void set_text(std::string text) = 0;
+    virtual std::string text() const = 0;
+    virtual void set_placeholder(std::string text) = 0;
+    virtual void set_focused(bool focused) = 0;
+    virtual void set_visible(bool visible) = 0;
+    virtual void set_enabled(bool enabled) = 0;
 
     // Password / obscured-entry mode. Used by the recovery-banner key
     // field so the user's recovery secret isn't shoulder-surfed.
-    virtual void set_password   (bool password)       = 0;
+    virtual void set_password(bool password) = 0;
 
     // Text-change + submit (Enter) hooks. Hosts invoke these on the UI
     // thread; the callable can mutate the widget tree freely.
     virtual void set_on_changed(std::function<void(const std::string&)>) = 0;
-    virtual void set_on_submit (std::function<void()>)                    = 0;
+    virtual void set_on_submit(std::function<void()>) = 0;
 
     // Focus-change hook. Called with `true` when the field gains focus,
     // `false` when it loses it. Default no-op so backends can opt in.
-    virtual void set_on_focus_changed(std::function<void(bool)>) {}
+    virtual void set_on_focus_changed(std::function<void(bool)>)
+    {
+    }
 };
 
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the
 // compose bar's height tracks the text content. Backs the ComposeBar's
 // input affordance; IME / selection stay native.
-class NativeTextArea {
+class NativeTextArea
+{
 public:
     virtual ~NativeTextArea() = default;
 
-    virtual void set_rect       (Rect r)              = 0;
-    virtual void set_text       (std::string text)    = 0;
-    virtual std::string text    () const              = 0;
-    virtual void set_placeholder(std::string text)    = 0;
-    virtual void set_focused    (bool focused)        = 0;
-    virtual void set_visible    (bool visible)        = 0;
-    virtual void set_enabled    (bool enabled)        = 0;
+    virtual void set_rect(Rect r) = 0;
+    virtual void set_text(std::string text) = 0;
+    virtual std::string text() const = 0;
+    virtual void set_placeholder(std::string text) = 0;
+    virtual void set_focused(bool focused) = 0;
+    virtual void set_visible(bool visible) = 0;
+    virtual void set_enabled(bool enabled) = 0;
 
     // Set the font used to render and measure input text. Callers pass a
     // FontRole so each backend can apply the role's metrics natively (QFont
     // point size, GTK CSS font-size, etc.). Defaults to a no-op so backends
     // that haven't implemented it yet compile without changes.
-    virtual void set_font_role(FontRole) {}
+    virtual void set_font_role(FontRole)
+    {
+    }
 
     // Set the foreground text color to match the active tk::Theme instead of
     // inheriting the system application palette. Call once after creation and
     // again whenever the theme changes. Default no-op for backends that rely
     // solely on the system palette.
-    virtual void set_text_color(Color) {}
+    virtual void set_text_color(Color)
+    {
+    }
 
     // Push the natural content height up to the host on every change so
     // the parent layout can resize the compose envelope inside its
     // [min, max] clamp.
     virtual float natural_height() const = 0;
 
-    virtual void set_on_changed       (std::function<void(const std::string&)>) = 0;
-    virtual void set_on_submit        (std::function<void()>)                    = 0;
-    virtual void set_on_height_changed(std::function<void(float)>)               = 0;
+    virtual void set_on_changed(std::function<void(const std::string&)>) = 0;
+    virtual void set_on_submit(std::function<void()>) = 0;
+    virtual void set_on_height_changed(std::function<void(float)>) = 0;
 
     // Insert `text` at the current cursor position (or replace the
     // selection). Leaves the cursor after the inserted text, so successive
@@ -100,7 +109,14 @@ public:
 
     // Tab / ShiftTab cycle forward / backward through the shortcode popup
     // (wrapping at the ends); Up / Down clamp at the ends.
-    enum class NavKey { Up, Down, Escape, Tab, ShiftTab };
+    enum class NavKey
+    {
+        Up,
+        Down,
+        Escape,
+        Tab,
+        ShiftTab
+    };
 
     /// Bounding rect of the insertion cursor in surface-local coordinates.
     virtual tk::Rect cursor_rect() const = 0;
@@ -137,10 +153,8 @@ public:
 // should receive — empty for in-app image-data drops where no filename
 // is available (the ComposeBar synthesises one). `application/octet-
 // stream` is used when the backend can't sniff a more specific mime.
-using FileDropHandler =
-    std::function<void(std::vector<std::uint8_t> bytes,
-                       std::string               mime,
-                       std::string               filename)>;
+using FileDropHandler = std::function<void(
+    std::vector<std::uint8_t> bytes, std::string mime, std::string filename)>;
 
 // Deprecated alias for `FileDropHandler` kept while shells migrate.
 using ImageDropHandler = FileDropHandler;
@@ -158,14 +172,16 @@ inline constexpr std::size_t kMaxDroppedFileBytes = 2ull * 1024 * 1024 * 1024;
 // Result of `Host::encode_for_send`. Bytes are owned; `mime` is e.g.
 // "image/png" or "image/jpeg". `width` and `height` are 0 only when the
 // decoder couldn't recover them.
-struct EncodedImage {
+struct EncodedImage
+{
     std::vector<std::uint8_t> bytes;
-    std::string               mime;
-    std::uint32_t             width  = 0;
-    std::uint32_t             height = 0;
+    std::string mime;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
 };
 
-class Host {
+class Host
+{
 public:
     virtual ~Host() = default;
 
@@ -191,19 +207,19 @@ public:
 
     // Multi-line variant — IME-friendly, expanding inside the host's
     // clamp. Used by the shared ComposeBar for the message-input row.
-    virtual std::unique_ptr<NativeTextArea>  make_text_area()  = 0;
+    virtual std::unique_ptr<NativeTextArea> make_text_area() = 0;
 
     // Create an `AudioPlayer` backed by the platform's native audio stack
     // (QMediaPlayer / GStreamer / AVAudioPlayer / Media Foundation). The
     // caller owns the returned player and may destroy it at any time. May
     // return `nullptr` on platforms that do not yet ship a backend; callers
     // must check before invoking.
-    virtual std::unique_ptr<AudioPlayer>     make_audio_player() = 0;
+    virtual std::unique_ptr<AudioPlayer> make_audio_player() = 0;
 
     // Create a `VideoPlayer` backed by the platform's native media stack.
     // Returns `nullptr` on platforms without a video backend; callers must
     // check before invoking.
-    virtual std::unique_ptr<VideoPlayer>     make_video_player() = 0;
+    virtual std::unique_ptr<VideoPlayer> make_video_player() = 0;
 
     // Decode `data[0..len)` and produce a payload ready to upload to the
     // homeserver. `compress=true` caps the image at 1600×1200 (preserving
@@ -212,8 +228,7 @@ public:
     // mime sniffed by the decoder. Returns an `EncodedImage` with an empty
     // `bytes` vector if the input can't be decoded.
     virtual EncodedImage encode_for_send(const std::uint8_t* data,
-                                         std::size_t         len,
-                                         bool                compress) = 0;
+                                         std::size_t len, bool compress) = 0;
 };
 
 } // namespace tk

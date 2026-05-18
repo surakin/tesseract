@@ -16,28 +16,30 @@
 #include <functional>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
-class ListAdapter {
+class ListAdapter
+{
 public:
     virtual ~ListAdapter() = default;
 
     virtual std::size_t count() const = 0;
 
     // Return the row's pixel height given `available_width`.
-    virtual float measure_row_height(std::size_t index,
-                                       LayoutCtx& ctx,
-                                       float available_width) = 0;
+    virtual float measure_row_height(std::size_t index, LayoutCtx& ctx,
+                                     float available_width) = 0;
 
     // Paint a single row into `bounds`. `selected` and `hovered` reflect
     // user-interaction state owned by ListView.
-    virtual void paint_row(std::size_t index, PaintCtx& ctx,
-                            Rect bounds,
-                            bool selected,
-                            bool hovered) = 0;
+    virtual void paint_row(std::size_t index, PaintCtx& ctx, Rect bounds,
+                           bool selected, bool hovered) = 0;
 
     // Override to disable selection on individual rows (e.g. separators).
-    virtual bool is_selectable(std::size_t /*index*/) const { return true; }
+    virtual bool is_selectable(std::size_t /*index*/) const
+    {
+        return true;
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -48,7 +50,8 @@ public:
 //  the adapter.
 // ─────────────────────────────────────────────────────────────────────────
 
-class GridAdapter {
+class GridAdapter
+{
 public:
     virtual ~GridAdapter() = default;
 
@@ -56,27 +59,35 @@ public:
 
     // Paint one cell into `bounds`. The grid clamps the bounds to its
     // cell_size — the adapter never has to clip.
-    virtual void paint_cell(std::size_t index, PaintCtx& ctx,
-                             Rect bounds,
-                             bool selected,
-                             bool hovered) = 0;
+    virtual void paint_cell(std::size_t index, PaintCtx& ctx, Rect bounds,
+                            bool selected, bool hovered) = 0;
 
-    virtual bool is_selectable(std::size_t /*index*/) const { return true; }
+    virtual bool is_selectable(std::size_t /*index*/) const
+    {
+        return true;
+    }
 };
 
-class GridView : public Widget {
+class GridView : public Widget
+{
 public:
     GridView() = default;
 
     void set_adapter(GridAdapter* adapter);
-    GridAdapter* adapter() const { return adapter_; }
+    GridAdapter* adapter() const
+    {
+        return adapter_;
+    }
 
     void set_cell_size(float w, float h);
-    void set_spacing (float h_spacing, float v_spacing);
-    void set_padding (Edges padding);
+    void set_spacing(float h_spacing, float v_spacing);
+    void set_padding(Edges padding);
 
     void set_selected_index(int idx);
-    int  selected_index() const { return selected_index_; }
+    int selected_index() const
+    {
+        return selected_index_;
+    }
 
     std::function<void(int /*index*/)> on_cell_clicked;
 
@@ -86,62 +97,75 @@ public:
     int index_at(Point local) const;
 
     Size measure(LayoutCtx&, Size constraints) override;
-    void arrange(LayoutCtx&, Rect bounds)      override;
-    void paint  (PaintCtx&)                    override;
-    bool on_wheel       (Point local, float dx, float dy) override;
-    bool on_pointer_down(Point local)                      override;
-    void on_pointer_up  (Point local, bool inside_self)    override;
-    void on_pointer_drag(Point local)                      override;
-    bool on_pointer_move(Point local)                      override;
-    void on_pointer_leave()                                override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint(PaintCtx&) override;
+    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    void on_pointer_drag(Point local) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     // Index of the currently hovered cell (-1 when none).
-    int  hovered_index()  const { return hovered_index_; }
+    int hovered_index() const
+    {
+        return hovered_index_;
+    }
 
     // Widget-local rect of cell `idx`, or a zero-area rect when out of bounds.
     tk::Rect rect_at(int idx) const;
 
 private:
-    int  cols(float available_w) const;
-    int  rows(int n_cells, int cols_) const;
+    int cols(float available_w) const;
+    int rows(int n_cells, int cols_) const;
     void clamp_scroll();
     float content_height() const;
 
-    struct ThumbGeom { float track_top, track_h, thumb_h, thumb_top; };
-    ThumbGeom thumb_geom()     const;
-    bool      thumb_hit(Point) const;
+    struct ThumbGeom
+    {
+        float track_top, track_h, thumb_h, thumb_top;
+    };
+    ThumbGeom thumb_geom() const;
+    bool thumb_hit(Point) const;
 
     GridAdapter* adapter_ = nullptr;
 
-    float cell_w_      = 32;
-    float cell_h_      = 32;
-    float h_spacing_   = 2;
-    float v_spacing_   = 2;
-    Edges padding_     = {};
+    float cell_w_ = 32;
+    float cell_h_ = 32;
+    float h_spacing_ = 2;
+    float v_spacing_ = 2;
+    Edges padding_ = {};
 
-    int    selected_index_ = -1;
-    int    hovered_index_  = -1;
-    int    pressed_index_  = -1;
+    int selected_index_ = -1;
+    int hovered_index_ = -1;
+    int pressed_index_ = -1;
 
-    bool   scrollbar_drag_ = false;
-    float  drag_anchor_y_  = 0;
+    bool scrollbar_drag_ = false;
+    float drag_anchor_y_ = 0;
 
-    float  scroll_y_       = 0;
+    float scroll_y_ = 0;
 };
 
-class ListView : public Widget {
+class ListView : public Widget
+{
 public:
     ListView() = default;
 
     void set_adapter(ListAdapter* adapter);
-    ListAdapter* adapter() const { return adapter_; }
+    ListAdapter* adapter() const
+    {
+        return adapter_;
+    }
 
     // Re-measure all row heights on the next arrange/paint.
     void invalidate_data();
 
     // Selection state, plumbed through `paint_row(... selected ...)`.
     void set_selected_index(int idx);
-    int  selected_index() const { return selected_index_; }
+    int selected_index() const
+    {
+        return selected_index_;
+    }
 
     // Click + hover hooks. The host's pointer-event pipeline calls into
     // on_pointer_down/up/move so these fire automatically.
@@ -157,11 +181,20 @@ public:
     // Not fired while `stick_to_bottom_` is true (initial state after
     // set_messages); the host must scroll up first.
     std::function<void()> on_near_top;
-    void  set_near_top_threshold_px(float px) { near_top_threshold_px_ = px; }
-    float near_top_threshold_px() const       { return near_top_threshold_px_; }
+    void set_near_top_threshold_px(float px)
+    {
+        near_top_threshold_px_ = px;
+    }
+    float near_top_threshold_px() const
+    {
+        return near_top_threshold_px_;
+    }
     // Re-arm the `on_near_top` latch. Call after data changes so the next
     // approach to the top fires again.
-    void  reset_near_top_latch() { was_near_top_ = false; }
+    void reset_near_top_latch()
+    {
+        was_near_top_ = false;
+    }
 
     // Fired exactly once each time the viewport's bottom edge first enters the
     // near_bottom_threshold_px zone (default 200px). Re-arms when content is
@@ -169,9 +202,18 @@ public:
     // Not fired while stick_to_bottom_ is true.
     // Also not fired when content fits within the viewport.
     std::function<void()> on_near_bottom;
-    void  set_near_bottom_threshold_px(float px) { near_bottom_threshold_px_ = px; }
-    float near_bottom_threshold_px() const       { return near_bottom_threshold_px_; }
-    void  reset_near_bottom_latch() { was_near_bottom_ = false; }
+    void set_near_bottom_threshold_px(float px)
+    {
+        near_bottom_threshold_px_ = px;
+    }
+    float near_bottom_threshold_px() const
+    {
+        return near_bottom_threshold_px_;
+    }
+    void reset_near_bottom_latch()
+    {
+        was_near_bottom_ = false;
+    }
 
     // Run `mutate` (which is expected to change the adapter's row count
     // and call `invalidate_data`) while preserving the user's visual
@@ -187,12 +229,15 @@ public:
     void scroll_to_top();
     void scroll_to_bottom();
     void scroll_to_index(int idx, bool align_top = false);
-    float scroll_y() const { return scroll_y_; }
+    float scroll_y() const
+    {
+        return scroll_y_;
+    }
 
     // Fractional scroll position [0,1] (0=top, 1=bottom).
     // Used by the tab system to save/restore position across tab switches.
     float scroll_fraction() const;
-    void  scroll_to_offset(float t);
+    void scroll_to_offset(float t);
 
     // Total content height (sum of all row heights). 0 if no adapter or
     // measure hasn't run yet.
@@ -215,17 +260,20 @@ public:
 
     // Widget overrides
     Size measure(LayoutCtx&, Size constraints) override;
-    void arrange(LayoutCtx&, Rect bounds)      override;
-    void paint  (PaintCtx&)                    override;
-    bool on_wheel       (Point local, float dx, float dy) override;
-    bool on_pointer_down(Point local)                      override;
-    void on_pointer_up  (Point local, bool inside_self)    override;
-    void on_pointer_drag(Point local)                      override;
-    bool on_pointer_move(Point local)                      override;
-    void on_pointer_leave()                                 override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint(PaintCtx&) override;
+    bool on_wheel(Point local, float dx, float dy) override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    void on_pointer_drag(Point local) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
 protected:
-    int  hovered_row_index() const { return hovered_index_; }
+    int hovered_row_index() const
+    {
+        return hovered_index_;
+    }
 
 private:
     void rebuild_heights(LayoutCtx&, float width);
@@ -237,45 +285,48 @@ private:
     // Scrollbar geometry helpers. Return the thumb rect (in widget-local
     // coords) and the visible scroll range, or 0-width thumb when there's
     // no overflow.
-    struct ThumbGeom { float track_top, track_h, thumb_h, thumb_top; };
+    struct ThumbGeom
+    {
+        float track_top, track_h, thumb_h, thumb_top;
+    };
     ThumbGeom thumb_geom() const;
-    bool      thumb_hit(Point local) const;
+    bool thumb_hit(Point local) const;
 
     ListAdapter* adapter_ = nullptr;
 
-    int    selected_index_ = -1;
-    int    hovered_index_  = -1;
-    int    pressed_index_  = -1;
+    int selected_index_ = -1;
+    int hovered_index_ = -1;
+    int pressed_index_ = -1;
 
     // Scrollbar drag state. When `scrollbar_drag_` is true, the
     // pointer-down hit the thumb and `drag_anchor_y_` records the local
     // y-offset within the thumb that should stay under the cursor for
     // the duration of the drag.
-    bool   scrollbar_drag_  = false;
-    float  drag_anchor_y_   = 0;
+    bool scrollbar_drag_ = false;
+    float drag_anchor_y_ = 0;
 
-    float  scroll_y_         = 0;
-    float  measured_width_   = 0;
-    bool   heights_dirty_    = true;
-    bool   stick_to_bottom_  = false;  // re-snap to bottom on heights rebuild
+    float scroll_y_ = 0;
+    float measured_width_ = 0;
+    bool heights_dirty_ = true;
+    bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild
 
     // `on_near_top` machinery — see public docs.
-    float  near_top_threshold_px_ = 200.0f;
-    bool   was_near_top_          = false;
+    float near_top_threshold_px_ = 200.0f;
+    bool was_near_top_ = false;
 
     // `on_near_bottom` machinery — see public docs.
-    float  near_bottom_threshold_px_ = 200.0f;
-    bool   was_near_bottom_          = false;
+    float near_bottom_threshold_px_ = 200.0f;
+    bool was_near_bottom_ = false;
 
     // `preserve_top_through` machinery. Sentinel < 0 means "no anchor
     // pending". Set by `preserve_top_through`, consumed by `arrange` once
     // heights are rebuilt and a fresh `content_height()` is known. Stays
     // < 0 across normal arranges so width-driven rebuilds don't shift the
     // viewport.
-    float  anchor_pre_height_     = -1.0f;
+    float anchor_pre_height_ = -1.0f;
 
     std::vector<float> row_heights_;
-    std::vector<float> row_offsets_;   // size = count + 1, last = total height
+    std::vector<float> row_offsets_; // size = count + 1, last = total height
 };
 
 } // namespace tk

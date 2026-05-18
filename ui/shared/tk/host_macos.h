@@ -16,16 +16,18 @@
 #include <functional>
 #include <memory>
 
-namespace tk::macos {
+namespace tk::macos
+{
 
 class Host;
 
-class Surface {
+class Surface
+{
 public:
     explicit Surface(const Theme& theme = Theme::light(),
-                     bool transparent   = false);
+                     bool transparent = false);
     ~Surface();
-    Surface(const Surface&)            = delete;
+    Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
 
     // Returns the underlying NSView* as an opaque pointer. From .mm
@@ -33,7 +35,7 @@ public:
     // view. The Surface retains the view; callers must NOT release it.
     void* view_handle() const;
 
-    tk::Host&   host();
+    tk::Host& host();
     const Theme& theme() const;
 
     void set_root(std::unique_ptr<Widget> root);
@@ -54,7 +56,10 @@ public:
     // and basename. The shell dispatches by MIME. Pass {} to disable.
     void set_on_file_drop(FileDropHandler cb);
     // Deprecated alias.
-    void set_on_image_drop(FileDropHandler cb) { set_on_file_drop(std::move(cb)); }
+    void set_on_image_drop(FileDropHandler cb)
+    {
+        set_on_file_drop(std::move(cb));
+    }
 
     // Install a right-click handler. Receives surface-local widget coordinates.
     void set_on_right_click(std::function<void(tk::Point)> cb);

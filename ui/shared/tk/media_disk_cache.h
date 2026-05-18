@@ -4,14 +4,16 @@
 #include <string>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
 // Persistent disk cache for raw media bytes (avatars, inline images, stickers).
 // Files are stored flat under dir_, named by FNV-1a hash of the cache key.
 // Writes are atomic (temp file → rename). Thread-safe for concurrent loads
 // and stores of distinct keys; ShellBase's in-flight set prevents concurrent
 // writes to the same key.
-class MediaDiskCache {
+class MediaDiskCache
+{
 public:
     // Creates dir_ (and any missing parents) on construction.
     explicit MediaDiskCache(std::filesystem::path dir);

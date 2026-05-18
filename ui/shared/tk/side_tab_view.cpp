@@ -2,7 +2,8 @@
 
 #include <algorithm>
 
-namespace tk {
+namespace tk
+{
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -13,7 +14,7 @@ SideTabView::SideTabView() = default;
 void SideTabView::add_tab(std::string label, std::unique_ptr<Widget> content)
 {
     Tab t;
-    t.label   = std::move(label);
+    t.label = std::move(label);
     t.content = add_child(std::move(content));
 
     const bool first = tabs_.empty();
@@ -79,7 +80,7 @@ Size SideTabView::measure(LayoutCtx& ctx, Size constraints)
     if (selected_idx_ >= 0 && selected_idx_ < static_cast<int>(tabs_.size()))
     {
         Widget* w = tabs_[selected_idx_].content;
-        Size cs = w->measure(ctx, { content_w, avail_h });
+        Size cs = w->measure(ctx, {content_w, avail_h});
         content_h = cs.h;
     }
 
@@ -87,7 +88,7 @@ Size SideTabView::measure(LayoutCtx& ctx, Size constraints)
     const float sidebar_h = static_cast<float>(tabs_.size()) * kTabHeight;
     const float h = avail_h > 0 ? avail_h : std::max(sidebar_h, content_h);
 
-    return { avail_w, h };
+    return {avail_w, h};
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +111,7 @@ void SideTabView::arrange(LayoutCtx& ctx, Rect bounds)
 
     // Arrange every content widget into the right pane, but only the
     // selected one is visible (set_visible controls paint + hit-test).
-    Rect content_bounds{ content_x, bounds.y, content_w, bounds.h };
+    Rect content_bounds{content_x, bounds.y, content_w, bounds.h};
     for (auto& t : tabs_)
     {
         t.content->arrange(ctx, content_bounds);
@@ -126,25 +127,25 @@ void SideTabView::paint(PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
 
     // Sidebar background.
-    Rect sidebar{ bounds_.x, bounds_.y, kSidebarWidth, bounds_.h };
+    Rect sidebar{bounds_.x, bounds_.y, kSidebarWidth, bounds_.h};
     ctx.canvas.fill_rect(sidebar, pal.sidebar_bg);
 
     // Draw each tab button.
-    const float btn_x   = bounds_.x + kTabInset;
-    const float btn_w   = kSidebarWidth - kTabInset * 2;
+    const float btn_x = bounds_.x + kTabInset;
+    const float btn_w = kSidebarWidth - kTabInset * 2;
     const float label_w = btn_w - kTabHPad * 2;
 
     for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
     {
         auto& t = tabs_[i];
 
-        Rect btn{ btn_x,
-                  bounds_.y + static_cast<float>(i) * kTabHeight + kTabVPad * 0.5f,
-                  btn_w,
-                  kTabHeight - kTabVPad };
+        Rect btn{btn_x,
+                 bounds_.y + static_cast<float>(i) * kTabHeight +
+                     kTabVPad * 0.5f,
+                 btn_w, kTabHeight - kTabVPad};
 
         // Choose fill colour based on state.
-        Color fill = Color::rgba(0, 0, 0, 0);   // transparent default
+        Color fill = Color::rgba(0, 0, 0, 0); // transparent default
         if (i == selected_idx_)
         {
             fill = pal.sidebar_selected;
@@ -166,13 +167,14 @@ void SideTabView::paint(PaintCtx& ctx)
             Size ts = t.layout->measure();
             float tx = btn.x + kTabHPad;
             float ty = btn.y + (btn.h - ts.h) * 0.5f;
-            Color tc = (i == selected_idx_) ? pal.text_primary : pal.text_secondary;
-            ctx.canvas.draw_text(*t.layout, { tx, ty }, tc);
+            Color tc =
+                (i == selected_idx_) ? pal.text_primary : pal.text_secondary;
+            ctx.canvas.draw_text(*t.layout, {tx, ty}, tc);
         }
     }
 
     // Vertical separator between sidebar and content area.
-    Rect sep{ bounds_.x + kSidebarWidth - 1.0f, bounds_.y, 1.0f, bounds_.h };
+    Rect sep{bounds_.x + kSidebarWidth - 1.0f, bounds_.y, 1.0f, bounds_.h};
     ctx.canvas.fill_rect(sep, pal.separator);
 
     // Paint the selected content widget.
@@ -228,10 +230,12 @@ void SideTabView::on_pointer_up(Point local, bool inside_self)
 
 bool SideTabView::on_pointer_move(Point local)
 {
-    const int hit = (local.x >= 0 && local.x < kSidebarWidth)
-        ? tab_at_y(local.y) : -1;
+    const int hit =
+        (local.x >= 0 && local.x < kSidebarWidth) ? tab_at_y(local.y) : -1;
     for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    {
         tabs_[i].hovered = (i == hit);
+    }
     return true;
 }
 
@@ -271,15 +275,15 @@ void SideTabView::ensure_layout_(Ctx& ctx, int i, float max_w)
         return;
     }
     TextStyle st{};
-    st.role      = FontRole::UiSemibold;
-    st.halign    = TextHAlign::Leading;
-    st.trim      = TextTrim::Ellipsis;
+    st.role = FontRole::UiSemibold;
+    st.halign = TextHAlign::Leading;
+    st.trim = TextTrim::Ellipsis;
     st.max_width = max_w;
-    t.layout     = ctx.factory.build_text(t.label, st);
+    t.layout = ctx.factory.build_text(t.label, st);
     t.layout_max_w = max_w;
 }
 
 template void SideTabView::ensure_layout_(LayoutCtx&, int, float);
-template void SideTabView::ensure_layout_(PaintCtx&,  int, float);
+template void SideTabView::ensure_layout_(PaintCtx&, int, float);
 
 } // namespace tk

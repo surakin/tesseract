@@ -17,9 +17,11 @@
 #include <string>
 #include <string_view>
 
-namespace tk {
+namespace tk
+{
 
-class AudioPlayer {
+class AudioPlayer
+{
 public:
     virtual ~AudioPlayer() = default;
 
@@ -28,17 +30,16 @@ public:
     // bytes are copied into a backend-owned buffer, so the caller may free
     // them immediately after this returns. Replaces any currently-playing
     // clip with no transition.
-    virtual void play  (const std::uint8_t* data,
-                        std::size_t          size,
-                        std::string_view     mime) = 0;
+    virtual void play(const std::uint8_t* data, std::size_t size,
+                      std::string_view mime) = 0;
 
-    virtual void pause () = 0;
+    virtual void pause() = 0;
     virtual void resume() = 0;
-    virtual void stop  () = 0;
+    virtual void stop() = 0;
 
     // Jump to `ms` within the currently-loaded clip. No-op when nothing
     // is loaded. Implementations clamp to [0, duration_ms()].
-    virtual void seek  (std::uint64_t ms) = 0;
+    virtual void seek(std::uint64_t ms) = 0;
 
     // Speed control. `1.0` is normal speed; common UI affordances cycle
     // through 1.0 / 1.5 / 2.0. Implementations clamp to a sensible range
@@ -55,7 +56,7 @@ public:
     virtual std::uint64_t duration_ms() const = 0;
     // True while a clip is loaded and actively progressing. False after
     // pause(), stop(), end-of-stream, or a load error.
-    virtual bool          is_playing () const = 0;
+    virtual bool is_playing() const = 0;
 
     // Fired on the UI thread roughly every 60 ms while playing, and once
     // more on completion / error. Implementations marshal through

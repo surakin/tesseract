@@ -40,9 +40,11 @@
 #include <string>
 #include <string_view>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class MainAppWidget : public tk::Widget {
+class MainAppWidget : public tk::Widget
+{
 public:
     MainAppWidget();
     ~MainAppWidget() override = default;
@@ -56,7 +58,7 @@ public:
     // ── Banner visibility ─────────────────────────────────────────────────
 
     void show_recovery_banner(bool show);
-    void show_verif_banner   (bool show);
+    void show_verif_banner(bool show);
 
     // ── Lightbox overlays ─────────────────────────────────────────────────
 
@@ -65,14 +67,38 @@ public:
 
     // ── Sub-view accessors ────────────────────────────────────────────────
 
-    RoomListView*       room_list_view()  const { return room_list_view_; }
-    RoomView*           room_view()       const { return room_view_; }
-    RecoveryBanner*     recovery_banner() const { return recovery_banner_; }
-    VerificationBanner* verif_banner()    const { return verif_banner_; }
-    ImageViewerOverlay* image_viewer()    const { return img_viewer_; }
-    VideoViewerOverlay* video_viewer()    const { return vid_viewer_; }
-    UserInfo*           user_info()       const { return user_info_; }
-    tk::TabBar*         tab_bar()         const { return tab_bar_; }
+    RoomListView* room_list_view() const
+    {
+        return room_list_view_;
+    }
+    RoomView* room_view() const
+    {
+        return room_view_;
+    }
+    RecoveryBanner* recovery_banner() const
+    {
+        return recovery_banner_;
+    }
+    VerificationBanner* verif_banner() const
+    {
+        return verif_banner_;
+    }
+    ImageViewerOverlay* image_viewer() const
+    {
+        return img_viewer_;
+    }
+    VideoViewerOverlay* video_viewer() const
+    {
+        return vid_viewer_;
+    }
+    UserInfo* user_info() const
+    {
+        return user_info_;
+    }
+    tk::TabBar* tab_bar() const
+    {
+        return tab_bar_;
+    }
 
     // Show/hide the tab bar and toggle the RoomHeader into condensed mode.
     // Call from on_tab_state_changed_ui_() whenever tabs_.size() changes
@@ -81,11 +107,11 @@ public:
 
     // ── Native overlay rects (call from the surface's set_on_layout) ──────
 
-    tk::Rect compose_text_area_rect()     const;
-    bool     room_search_field_visible()  const;
-    tk::Rect room_search_field_rect()     const;
-    bool     recovery_key_field_visible() const;
-    tk::Rect recovery_key_field_rect()    const;
+    tk::Rect compose_text_area_rect() const;
+    bool room_search_field_visible() const;
+    tk::Rect room_search_field_rect() const;
+    bool recovery_key_field_visible() const;
+    tk::Rect recovery_key_field_rect() const;
 
     // ── Callbacks ─────────────────────────────────────────────────────────
 
@@ -95,37 +121,39 @@ public:
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
-    static constexpr float kSidebarW   = static_cast<float>(tesseract::visual::kSidebarWidth);
-    static constexpr float kSepW       = 1.0f;
-    static constexpr float kSpaceNavH  = 36.0f;
-    static constexpr float kUserStripH = static_cast<float>(tesseract::visual::kUserStripHeight);
-    static constexpr float kBannerH    = 48.0f;
+    static constexpr float kSidebarW =
+        static_cast<float>(tesseract::visual::kSidebarWidth);
+    static constexpr float kSepW = 1.0f;
+    static constexpr float kSpaceNavH = 36.0f;
+    static constexpr float kUserStripH =
+        static_cast<float>(tesseract::visual::kUserStripHeight);
+    static constexpr float kBannerH = 48.0f;
 
     bool space_nav_visible_ = false;
 
     // Sidebar children — borrowed raw pointers back from add_child()
-    tk::Button*         nav_back_btn_    = nullptr;
-    tk::Label*          nav_name_lbl_    = nullptr;
-    RoomListView*       room_list_view_  = nullptr;
-    UserInfo*           user_info_       = nullptr;
+    tk::Button* nav_back_btn_ = nullptr;
+    tk::Label* nav_name_lbl_ = nullptr;
+    RoomListView* room_list_view_ = nullptr;
+    UserInfo* user_info_ = nullptr;
 
     // Chat panel children
-    RecoveryBanner*     recovery_banner_ = nullptr;
-    VerificationBanner* verif_banner_    = nullptr;
-    tk::TabBar*         tab_bar_         = nullptr;
-    bool                tab_bar_visible_ = false;
-    RoomView*           room_view_       = nullptr;
+    RecoveryBanner* recovery_banner_ = nullptr;
+    VerificationBanner* verif_banner_ = nullptr;
+    tk::TabBar* tab_bar_ = nullptr;
+    bool tab_bar_visible_ = false;
+    RoomView* room_view_ = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
-    ImageViewerOverlay* img_viewer_      = nullptr;
-    VideoViewerOverlay* vid_viewer_      = nullptr;
+    ImageViewerOverlay* img_viewer_ = nullptr;
+    VideoViewerOverlay* vid_viewer_ = nullptr;
 
     bool recovery_visible_ = false;
-    bool verif_visible_    = false;
+    bool verif_visible_ = false;
 };
 
 } // namespace tesseract::views

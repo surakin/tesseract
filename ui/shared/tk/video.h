@@ -21,43 +21,48 @@
 #include <memory>
 #include <string_view>
 
-namespace tk {
+namespace tk
+{
 
-class VideoPlayer {
+class VideoPlayer
+{
 public:
     virtual ~VideoPlayer() = default;
 
     // Load and begin playback of `data[0..size)`. `mime` is a format hint
     // ("video/mp4", "video/webm", …). Bytes are copied into a backend-owned
     // buffer. Replaces any currently-playing clip with no transition.
-    virtual void play  (const std::uint8_t* data,
-                        std::size_t          size,
-                        std::string_view     mime) = 0;
+    virtual void play(const std::uint8_t* data, std::size_t size,
+                      std::string_view mime) = 0;
 
-    virtual void pause () = 0;
+    virtual void pause() = 0;
     virtual void resume() = 0;
-    virtual void stop  () = 0;
+    virtual void stop() = 0;
 
     // Jump to `ms` within the currently-loaded clip. Implementations clamp
     // to [0, duration_ms()].
-    virtual void seek  (std::uint64_t ms) = 0;
+    virtual void seek(std::uint64_t ms) = 0;
 
     // Playback speed. Common affordance cycles 1.0 / 1.5 / 2.0.
     // Implementations clamp to a sensible range.
-    virtual void  set_playback_rate(float rate) = 0;
+    virtual void set_playback_rate(float rate) = 0;
     virtual float playback_rate() const = 0;
 
     // Loop: restart the clip at end-of-stream when true.
     // Default no-op — backends that can't loop degrade gracefully.
-    virtual void set_loop (bool) {}
+    virtual void set_loop(bool)
+    {
+    }
 
     // Muted: silence the audio track when true.
     // Default no-op — backends that can't mute degrade gracefully.
-    virtual void set_muted(bool) {}
+    virtual void set_muted(bool)
+    {
+    }
 
-    virtual std::uint64_t position_ms () const = 0;
-    virtual std::uint64_t duration_ms () const = 0;
-    virtual bool          is_playing  () const = 0;
+    virtual std::uint64_t position_ms() const = 0;
+    virtual std::uint64_t duration_ms() const = 0;
+    virtual bool is_playing() const = 0;
 
     // Current decoded video frame, or nullptr before the first frame has
     // been produced. Only call from the UI thread (inside paint()).

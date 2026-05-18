@@ -14,14 +14,17 @@
 #include <functional>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class RecoveryBanner : public tk::Widget {
+class RecoveryBanner : public tk::Widget
+{
 public:
     RecoveryBanner();
     ~RecoveryBanner() override = default;
 
-    enum class State {
+    enum class State
+    {
         /// Initial prompt: "Verify this device:" + visible key entry +
         /// Verify button. Host-overlay is visible and editable.
         Form,
@@ -37,8 +40,11 @@ public:
         Failed,
     };
 
-    void  set_state(State s);
-    State state() const { return state_; }
+    void set_state(State s);
+    State state() const
+    {
+        return state_;
+    }
 
     /// Sets the trailing detail for the Failed state's label. Ignored in
     /// other states.
@@ -59,35 +65,38 @@ public:
     bool recovery_key_field_visible() const;
 
     std::function<void(/*key*/ const std::string&)> on_verify;
-    std::function<void()>                            on_dismiss;
+    std::function<void()> on_dismiss;
 
     /// Host bridge: integration code routes its NativeTextField's text
     /// into the banner before firing the verify button. Stored here so
     /// the verify-button click can pull the latest key without the
     /// integration needing to thread the field reference through.
-    void set_current_key(std::string key) { current_key_ = std::move(key); }
+    void set_current_key(std::string key)
+    {
+        current_key_ = std::move(key);
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void apply_state();
     std::string label_text() const;
 
-    State              state_         = State::Form;
-    std::string        failure_msg_;
-    std::uint64_t      imported_keys_ = 0;
-    std::string        current_key_;
+    State state_ = State::Form;
+    std::string failure_msg_;
+    std::uint64_t imported_keys_ = 0;
+    std::string current_key_;
 
-    tk::Label*         label_     = nullptr;   // borrowed
-    tk::Button*        verify_    = nullptr;   // borrowed
-    tk::Button*        dismiss_   = nullptr;   // borrowed
+    tk::Label* label_ = nullptr;    // borrowed
+    tk::Button* verify_ = nullptr;  // borrowed
+    tk::Button* dismiss_ = nullptr; // borrowed
 
-    tk::Rect           label_rect_   {};
-    tk::Rect           key_field_rect_{};
-    tk::Rect           verify_rect_  {};
-    tk::Rect           dismiss_rect_ {};
+    tk::Rect label_rect_{};
+    tk::Rect key_field_rect_{};
+    tk::Rect verify_rect_{};
+    tk::Rect dismiss_rect_{};
 };
 
 } // namespace tesseract::views

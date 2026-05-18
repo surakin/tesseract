@@ -6,28 +6,34 @@
 
 #include "canvas.h"
 
-namespace tk {
+namespace tk
+{
 
 // Visual mode the palette was built for. Dark-mode parity is roadmap
 // work — for now Theme::light() is the only built-in palette.
-enum class ThemeMode { Light, Dark };
+enum class ThemeMode
+{
+    Light,
+    Dark
+};
 
-struct Palette {
+struct Palette
+{
     // Surfaces & chrome
-    Color bg;                 // chat area background
+    Color bg; // chat area background
     Color sidebar_bg;
     Color sidebar_selected;
     Color sidebar_hover;
-    Color chrome_bg;          // headers, status, banner backgrounds
+    Color chrome_bg; // headers, status, banner backgrounds
     Color compose_card_bg;
     Color border;
     Color separator;
-    Color popup_border;         // outer frame of floating pickers
+    Color popup_border; // outer frame of floating pickers
 
     // Text
     Color text_primary;
     Color text_secondary;
-    Color text_muted;         // timestamp, hint text
+    Color text_muted; // timestamp, hint text
     Color text_on_accent;
 
     // Accent + interactive
@@ -54,9 +60,10 @@ struct Palette {
     Color avatar_initials_text;
 };
 
-struct Theme {
+struct Theme
+{
     ThemeMode mode;
-    Palette   palette;
+    Palette palette;
 
     static const Theme& light();
     static const Theme& dark();

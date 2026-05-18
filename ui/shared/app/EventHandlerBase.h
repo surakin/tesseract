@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-namespace tesseract {
+namespace tesseract
+{
 
 class ShellBase; // forward declaration — full definition in ShellBase.h
 
@@ -14,20 +15,28 @@ class ShellBase; // forward declaration — full definition in ShellBase.h
 // shell->post_to_ui_(), then calls the corresponding handle_*_ui_() virtual
 // on the shell. Platform EventHandler/EventBridge classes can inherit from
 // this (adding only what is platform-unique, e.g. Qt6's QObject base).
-class EventHandlerBase : public IEventHandler {
+class EventHandlerBase : public IEventHandler
+{
 public:
-    explicit EventHandlerBase(ShellBase* shell) : shell_(shell) {}
+    explicit EventHandlerBase(ShellBase* shell) : shell_(shell)
+    {
+    }
 
-    void set_user_id(std::string id) { user_id_ = std::move(id); }
-    const std::string& user_id() const { return user_id_; }
+    void set_user_id(std::string id)
+    {
+        user_id_ = std::move(id);
+    }
+    const std::string& user_id() const
+    {
+        return user_id_;
+    }
 
-    void on_timeline_reset(const std::string& room_id,
-                           std::vector<std::unique_ptr<Event>> snapshot) override;
-    void on_message_inserted(const std::string& room_id,
-                             std::size_t index,
+    void
+    on_timeline_reset(const std::string& room_id,
+                      std::vector<std::unique_ptr<Event>> snapshot) override;
+    void on_message_inserted(const std::string& room_id, std::size_t index,
                              std::unique_ptr<Event> event) override;
-    void on_message_updated(const std::string& room_id,
-                            std::size_t index,
+    void on_message_updated(const std::string& room_id, std::size_t index,
                             std::unique_ptr<Event> event) override;
     void on_message_removed(const std::string& room_id,
                             std::size_t index) override;
@@ -40,26 +49,27 @@ public:
     void on_room_list_state(RoomListState state) override;
     void on_image_packs_updated() override;
     void on_account_prefs_updated(const std::string& json) override;
-    void on_notification(const std::string& room_id, const std::string& room_name,
+    void on_notification(const std::string& room_id,
+                         const std::string& room_name,
                          const std::string& sender, const std::string& body,
                          bool is_mention,
                          const std::vector<uint8_t>& avatar_bytes,
                          const std::vector<uint8_t>& image_bytes) override;
     void on_verification_request(const std::string& flow_id,
-                                  const std::string& user_id,
-                                  const std::string& device_id,
-                                  bool incoming) override;
+                                 const std::string& user_id,
+                                 const std::string& device_id,
+                                 bool incoming) override;
     void on_sas_ready(const std::string& flow_id,
                       std::vector<VerificationEmoji> emojis) override;
     void on_verification_done(const std::string& flow_id) override;
     void on_verification_cancelled(const std::string& flow_id,
-                                    const std::string& reason) override;
+                                   const std::string& reason) override;
     void on_verification_state_changed(bool is_verified) override;
     void on_typing_changed(const std::string& room_id,
                            const std::vector<std::string>& names) override;
 
 protected:
-    ShellBase*  shell_;
+    ShellBase* shell_;
     std::string user_id_;
 };
 

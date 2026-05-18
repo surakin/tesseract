@@ -1,22 +1,27 @@
 #include "AccountPicker.h"
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
 AccountPicker::AccountPicker() = default;
 
-void AccountPicker::set_entries(std::vector<AccountEntry> entries) {
+void AccountPicker::set_entries(std::vector<AccountEntry> entries)
+{
     entries_ = std::move(entries);
     rebuild_rows();
 }
 
-void AccountPicker::set_image_provider(ImageProvider p) {
+void AccountPicker::set_image_provider(ImageProvider p)
+{
     image_provider_ = std::move(p);
-    for (auto* row : rows_) {
+    for (auto* row : rows_)
+    {
         row->set_image_provider(image_provider_);
     }
 }
 
-void AccountPicker::rebuild_rows() {
+void AccountPicker::rebuild_rows()
+{
     // Wipe and re-build. We can't simply clear() the parent's children_
     // because Widget keeps it private, so we have to relinquish ownership by
     // replacing the entire widget — instead we mirror RecoveryBanner's
@@ -37,10 +42,12 @@ void AccountPicker::rebuild_rows() {
     // calling set_entries(). We tolerate set_entries() being called again
     // on the same instance only when the row count is monotonically the
     // same — otherwise the host should reconstruct.
-    if (!rows_.empty()) {
+    if (!rows_.empty())
+    {
         // Update in place when possible.
         const size_t n = std::min(rows_.size(), entries_.size());
-        for (size_t i = 0; i < n; ++i) {
+        for (size_t i = 0; i < n; ++i)
+        {
             auto& e = entries_[i];
             rows_[i]->set_display_name(e.display_name);
             rows_[i]->set_user_id(e.user_id);
@@ -53,18 +60,26 @@ void AccountPicker::rebuild_rows() {
     }
 
     rows_.reserve(entries_.size());
-    for (const auto& e : entries_) {
+    for (const auto& e : entries_)
+    {
         auto row = std::make_unique<UserInfo>();
         row->set_display_name(e.display_name);
         row->set_user_id(e.user_id);
         row->set_avatar_url(e.avatar_url);
         row->set_active_indicator(e.active);
-        if (image_provider_) row->set_image_provider(image_provider_);
+        if (image_provider_)
+        {
+            row->set_image_provider(image_provider_);
+        }
 
         // Capture the user_id by value into the per-row callback.
         const std::string uid = e.user_id;
-        row->on_primary = [this, uid](tk::Point) {
-            if (on_select) on_select(uid);
+        row->on_primary = [this, uid](tk::Point)
+        {
+            if (on_select)
+            {
+                on_select(uid);
+            }
         };
 
         rows_.push_back(add_child(std::move(row)));
@@ -75,30 +90,39 @@ void AccountPicker::rebuild_rows() {
 // Layout
 // ---------------------------------------------------------------------------
 
-tk::Size AccountPicker::measure(tk::LayoutCtx& lc, tk::Size constraints) {
+tk::Size AccountPicker::measure(tk::LayoutCtx& lc, tk::Size constraints)
+{
     const float w = constraints.w > 0 ? constraints.w : 0;
     float total_h = 0;
-    for (auto* row : rows_) {
-        auto s = row->measure(lc, { w, 0 });
+    for (auto* row : rows_)
+    {
+        auto s = row->measure(lc, {w, 0});
         total_h += s.h;
     }
-    return { w, total_h };
+    return {w, total_h};
 }
 
-void AccountPicker::arrange(tk::LayoutCtx& lc, tk::Rect bounds) {
+void AccountPicker::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
+{
     bounds_ = bounds;
     float y = bounds.y;
-    for (auto* row : rows_) {
-        auto s = row->measure(lc, { bounds.w, 0 });
-        row->arrange(lc, { bounds.x, y, bounds.w, s.h });
+    for (auto* row : rows_)
+    {
+        auto s = row->measure(lc, {bounds.w, 0});
+        row->arrange(lc, {bounds.x, y, bounds.w, s.h});
         y += s.h;
     }
 }
 
-void AccountPicker::paint(tk::PaintCtx& ctx) {
+void AccountPicker::paint(tk::PaintCtx& ctx)
+{
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.sidebar_bg);
-    for (auto* row : rows_) {
-        if (row->visible()) row->paint(ctx);
+    for (auto* row : rows_)
+    {
+        if (row->visible())
+        {
+            row->paint(ctx);
+        }
     }
 }
 

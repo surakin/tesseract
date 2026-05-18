@@ -9,7 +9,8 @@
 
 typedef struct _cairo cairo_t;
 
-namespace tk::cairo_pango {
+namespace tk::cairo_pango
+{
 
 // Wrap a borrowed cairo_t for one paint pass. Caller owns the context.
 std::unique_ptr<Canvas> make_canvas(cairo_t* cr);

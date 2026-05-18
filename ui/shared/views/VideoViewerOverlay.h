@@ -9,7 +9,8 @@
 #include <memory>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
 // Full-window video lightbox overlay. Parallel to ImageViewerOverlay.
 //
@@ -20,26 +21,27 @@ namespace tesseract::views {
 //   4. Call open() when the user clicks a video thumbnail.
 //   5. Call load_bytes() once the async byte fetch completes.
 //   6. The shell handles Escape natively by calling close() when is_open().
-class VideoViewerOverlay : public tk::Widget {
+class VideoViewerOverlay : public tk::Widget
+{
 public:
     // Show the overlay for the given video. Transitions to the loading state
     // while waiting for load_bytes(). The thumbnail is shown immediately.
     // The fi.mau.* params default to false so existing callers need no changes.
-    void open(std::string source_json,
-              std::string thumb_url,
-              std::string mime_type,
-              std::uint64_t duration_ms,
-              int natural_w,
-              int natural_h,
-              bool autoplay      = false,
-              bool loop          = false,
-              bool no_audio      = false,
-              bool hide_controls = false);
+    void open(std::string source_json, std::string thumb_url,
+              std::string mime_type, std::uint64_t duration_ms, int natural_w,
+              int natural_h, bool autoplay = false, bool loop = false,
+              bool no_audio = false, bool hide_controls = false);
 
     // Hide the overlay. Stops playback and fires on_close.
     void close();
-    bool is_open()    const { return is_open_; }
-    bool is_loading() const { return is_loading_; }
+    bool is_open() const
+    {
+        return is_open_;
+    }
+    bool is_loading() const
+    {
+        return is_loading_;
+    }
 
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
@@ -48,8 +50,8 @@ public:
     void set_video_player(std::unique_ptr<tk::VideoPlayer> player);
 
     // Same provider lambda used by MessageListView.
-    void set_image_provider(
-        std::function<const tk::Image*(const std::string&)> fn);
+    void
+    set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
 
     // Must be set by the shell so on_frame / on_progress can trigger a
     // repaint of the hosting surface. Typically: [this]{ surface_->relayout(); }
@@ -60,35 +62,35 @@ public:
 
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
-    bool on_pointer_down(tk::Point local)                   override;
-    void on_pointer_up  (tk::Point local, bool inside_self) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
 private:
     void do_play_or_pause();
     void cycle_speed();
     void recompute_layout();
 
-    bool          is_open_    = false;
-    bool          is_loading_ = false;
-    std::string   source_json_;
-    std::string   thumb_url_;
-    std::string   mime_type_;
-    std::uint64_t duration_ms_    = 0;
-    int           natural_w_      = 0;
-    int           natural_h_      = 0;
-    float         rate_           = 1.0f;
+    bool is_open_ = false;
+    bool is_loading_ = false;
+    std::string source_json_;
+    std::string thumb_url_;
+    std::string mime_type_;
+    std::uint64_t duration_ms_ = 0;
+    int natural_w_ = 0;
+    int natural_h_ = 0;
+    float rate_ = 1.0f;
     // fi.mau.* playback hints — reset on each open().
-    bool          autoplay_       = false;
-    bool          loop_           = false;
-    bool          no_audio_       = false;
-    bool          hide_controls_  = false;
+    bool autoplay_ = false;
+    bool loop_ = false;
+    bool no_audio_ = false;
+    bool hide_controls_ = false;
 
-    std::unique_ptr<tk::VideoPlayer>                    video_player_;
+    std::unique_ptr<tk::VideoPlayer> video_player_;
     std::function<const tk::Image*(const std::string&)> image_provider_;
-    std::function<void()>                               request_repaint_;
+    std::function<void()> request_repaint_;
 
     tk::Rect video_rect_{};
     tk::Rect controls_bar_{};
@@ -97,10 +99,10 @@ private:
     tk::Rect speed_pill_{};
     tk::Rect close_btn_{};
 
-    bool press_play_    = false;
-    bool press_scrub_   = false;
-    bool press_speed_   = false;
-    bool press_close_   = false;
+    bool press_play_ = false;
+    bool press_scrub_ = false;
+    bool press_speed_ = false;
+    bool press_close_ = false;
     bool press_outside_ = false;
 };
 

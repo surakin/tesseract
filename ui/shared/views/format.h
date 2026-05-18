@@ -9,23 +9,32 @@
 #include <cstdio>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
 // Human-readable byte count: "823 B" / "12 KB" / "4.3 MB" / "1.2 GB".
 // Single-fraction-digit precision in the >=KB ranges; integer in the
 // B/KB ranges.
-inline std::string format_size(std::uint64_t bytes) {
+inline std::string format_size(std::uint64_t bytes)
+{
     char buf[64];
-    if (bytes >= 1024ull * 1024 * 1024) {
+    if (bytes >= 1024ull * 1024 * 1024)
+    {
         std::snprintf(buf, sizeof(buf), "%.1f GB",
                       static_cast<double>(bytes) / (1024.0 * 1024 * 1024));
-    } else if (bytes >= 1024ull * 1024) {
+    }
+    else if (bytes >= 1024ull * 1024)
+    {
         std::snprintf(buf, sizeof(buf), "%.1f MB",
                       static_cast<double>(bytes) / (1024.0 * 1024));
-    } else if (bytes >= 1024ull) {
+    }
+    else if (bytes >= 1024ull)
+    {
         std::snprintf(buf, sizeof(buf), "%.0f KB",
                       static_cast<double>(bytes) / 1024.0);
-    } else {
+    }
+    else
+    {
         std::snprintf(buf, sizeof(buf), "%llu B",
                       static_cast<unsigned long long>(bytes));
     }

@@ -20,13 +20,19 @@
 #include <optional>
 #include <string>
 
-namespace tesseract::views {
+namespace tesseract::views
+{
 
-class LoginView : public tk::Widget {
+class LoginView : public tk::Widget
+{
 public:
     LoginView();
 
-    enum class State { Form, Waiting };
+    enum class State
+    {
+        Form,
+        Waiting
+    };
 
     /// `Initial` — the very first login on a fresh install. Cancel button
     /// is hidden in both `Form` and `Waiting` states, because there is no
@@ -37,19 +43,29 @@ public:
     /// `AddAccount` — the user is adding a second/Nth account from the
     /// avatar right-click menu. Cancel button is visible in both states so
     /// they can back out and return to the previous active account.
-    enum class Mode  { Initial, AddAccount };
+    enum class Mode
+    {
+        Initial,
+        AddAccount
+    };
 
     void set_state(State s);
-    State state() const { return state_; }
+    State state() const
+    {
+        return state_;
+    }
 
     void set_mode(Mode m);
-    Mode  mode() const { return mode_; }
+    Mode mode() const
+    {
+        return mode_;
+    }
 
     /// True when the Cancel button is currently visible. Always `false` in
     /// `Mode::Initial`; always `true` in `Mode::AddAccount`. Exposed so the
     /// hosts and the multi-account tests don't have to walk the widget
     /// tree to introspect it.
-    bool  cancel_visible() const;
+    bool cancel_visible() const;
 
     // Status banner shown beneath the form (errors during phase = Form,
     // progress text during phase = Waiting). Empty string hides it.
@@ -59,18 +75,33 @@ public:
     // not own a TextField widget yet (deferred until tk::TextField + the
     // IME-passthrough host glue land).
     void set_homeserver_label(std::string url);
-    const std::string& homeserver_label() const { return homeserver_label_; }
+    const std::string& homeserver_label() const
+    {
+        return homeserver_label_;
+    }
 
     // Homeserver discovery result displayed beneath the input field.
-    enum class DiscoveryState { Idle, Discovering, Resolved, Failed };
+    enum class DiscoveryState
+    {
+        Idle,
+        Discovering,
+        Resolved,
+        Failed
+    };
 
     /// Called by the shell when discovery state changes.
     /// In Resolved state, `detail` is the resolved base URL.
     /// In Failed state, `detail` is the error message (may be empty).
     void set_discovery_state(DiscoveryState s, std::string detail = "");
 
-    DiscoveryState     discovery_state()    const { return discovery_state_; }
-    const std::string& resolved_base_url()  const { return resolved_base_url_; }
+    DiscoveryState discovery_state() const
+    {
+        return discovery_state_;
+    }
+    const std::string& resolved_base_url() const
+    {
+        return resolved_base_url_;
+    }
 
     // The host wires these to the OAuth flow. Defaults are no-ops so the
     // visual tree can be exercised standalone.
@@ -80,34 +111,37 @@ public:
     // Rect inside the LoginView (in widget-local coordinates) that the
     // host should place a native edit control over. Valid after the
     // first arrange() pass.
-    tk::Rect homeserver_field_rect() const { return homeserver_field_rect_; }
+    tk::Rect homeserver_field_rect() const
+    {
+        return homeserver_field_rect_;
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void rebuild_tree();
 
-    State        state_       = State::Form;
-    Mode         mode_        = Mode::Initial;
-    std::string  homeserver_label_ = "matrix.org";
+    State state_ = State::Form;
+    Mode mode_ = Mode::Initial;
+    std::string homeserver_label_ = "matrix.org";
 
-    DiscoveryState discovery_state_    = DiscoveryState::Idle;
-    std::string    resolved_base_url_;
+    DiscoveryState discovery_state_ = DiscoveryState::Idle;
+    std::string resolved_base_url_;
 
     // Borrowed: all of these are owned by `card_` which is owned by `this`.
-    tk::VBox*    card_            = nullptr;
-    tk::Label*   title_lbl_       = nullptr;
-    tk::Label*   caption_lbl_     = nullptr;
-    tk::Label*   hs_input_label_  = nullptr;
-    tk::Label*   hs_field_lbl_    = nullptr;
-    tk::Label*   discovery_lbl_   = nullptr;
-    tk::Button*  sign_in_btn_     = nullptr;
-    tk::Button*  cancel_btn_      = nullptr;
-    tk::Label*   status_lbl_      = nullptr;
+    tk::VBox* card_ = nullptr;
+    tk::Label* title_lbl_ = nullptr;
+    tk::Label* caption_lbl_ = nullptr;
+    tk::Label* hs_input_label_ = nullptr;
+    tk::Label* hs_field_lbl_ = nullptr;
+    tk::Label* discovery_lbl_ = nullptr;
+    tk::Button* sign_in_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Label* status_lbl_ = nullptr;
 
-    tk::Rect     homeserver_field_rect_{};
+    tk::Rect homeserver_field_rect_{};
 };
 
 } // namespace tesseract::views

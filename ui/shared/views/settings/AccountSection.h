@@ -23,8 +23,8 @@ public:
     // ----- Content ----------------------------------------------------------
 
     void set_display_name(std::string name);
-    void set_user_id     (std::string user_id);
-    void set_avatar_url  (std::string mxc_url);
+    void set_user_id(std::string user_id);
+    void set_avatar_url(std::string mxc_url);
 
     // Given an mxc:// URL, return a decoded image or null. The shell wires
     // this up to the same avatar cache it uses for UserInfo rows.
@@ -35,15 +35,15 @@ public:
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds)      override;
-    void     paint  (tk::PaintCtx&)                        override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
 private:
     void invalidate_text();
 
-    std::string   display_name_;
-    std::string   user_id_;
-    std::string   avatar_url_;
+    std::string display_name_;
+    std::string user_id_;
+    std::string avatar_url_;
     ImageProvider image_provider_;
 
     // Cached layouts rebuilt lazily in paint() when content changes.
