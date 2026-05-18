@@ -1,0 +1,49 @@
+# clang-format config encoding STYLE.md (C++ / Objective-C++).
+#
+# Enforces the rules clang-format CAN enforce:
+#   - Universal Rules §1: Allman braces (BreakBeforeBraces: Allman)
+#   - Universal Rules §2: always brace control-flow bodies (InsertBraces)
+#   - 4-space indent, ~80 col, T* pointer, non-indented namespaces
+#     (matches the existing codebase per STYLE.md "match surrounding code")
+#
+# STYLE.md rules clang-format CANNOT enforce (left to review / clang-tidy):
+#   - naming (snake_case fns/vars, PascalCase types, member `_` suffix)
+#   - nullptr over NULL, `using` over `typedef`, `auto` for iterators
+#   - braced switch `case` bodies (clang-format does not insert these)
+
+Language: Cpp
+Standard: c++20
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 80
+
+# STYLE.md §1 — opening brace always on its own line (C++/ObjC).
+BreakBeforeBraces: Allman
+
+# STYLE.md §2 — single-statement if/else/while/for/do bodies get braces.
+InsertBraces: true
+
+# Keep Allman intact: never collapse bodies/functions onto one line.
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+
+# Match the existing codebase (STYLE.md: unspecified → match surrounding).
+NamespaceIndentation: None
+PointerAlignment: Left
+DerivePointerAlignment: false
+AccessModifierOffset: -4
+BreakConstructorInitializers: BeforeColon
+AlwaysBreakTemplateDeclarations: Yes
+
+# Behavior-safety: do not reorder includes (platform #if-guarded groups
+# rely on order) and do not reflow hand-wrapped comments.
+SortIncludes: Never
+ReflowComments: false
