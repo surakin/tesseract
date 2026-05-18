@@ -1,8 +1,6 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
 #include "views/RoomView.h"
-#include "views/text_util.h"
-#include <tesseract/client.h>
 
 namespace gtk4
 {

@@ -2,8 +2,6 @@
 #include "MainWindow.h"
 
 #include "views/RoomView.h"
-#include "views/text_util.h"
-#include <tesseract/client.h>
 
 #include <QCloseEvent>
 #include <QResizeEvent>

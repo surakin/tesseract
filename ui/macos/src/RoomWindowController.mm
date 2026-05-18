@@ -1,11 +1,9 @@
 #import "RoomWindowController.h"
-#include "util.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
 #include "views/RoomView.h"
 #include "views/MessageListView.h"
-#include <tesseract/client.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Forward declaration — lets @interface reference MacRoomWindow before the
