@@ -10,10 +10,9 @@ namespace qt6
 
 namespace
 {
-constexpr const char* kService = "org.freedesktop.login1";
-constexpr const char* kSessIf = "org.freedesktop.login1.Session";
-// "auto" resolves to the calling process's own session.
-constexpr const char* kSessObj = "/org/freedesktop/login1/session/auto";
+constexpr const char* kService = tesseract::screenlock::kLogindService;
+constexpr const char* kSessIf = tesseract::screenlock::kSessionIface;
+constexpr const char* kSessObj = tesseract::screenlock::kSessionPath;
 } // namespace
 
 LinuxScreenLockQt::LinuxScreenLockQt()
@@ -47,7 +46,7 @@ void LinuxScreenLockQt::refresh_locked_hint()
                                         QStringLiteral("LockedHint"));
     if (r.isValid())
     {
-        locked_ = r.value().toBool();
+        state_.set_initial(r.value().toBool());
     }
 }
 
