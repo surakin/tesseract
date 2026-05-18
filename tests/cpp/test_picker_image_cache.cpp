@@ -33,6 +33,7 @@ struct TestShell : ShellBase {
     int repaints         = 0;
 
     using ShellBase::finalize_picker_image_;
+    // DecodedImage is protected in ShellBase; re-export so tests can name it.
     using ShellBase::DecodedImage;
     using ShellBase::tk_images_;
     using ShellBase::anim_cache_;
