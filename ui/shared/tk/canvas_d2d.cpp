@@ -298,64 +298,30 @@ struct TwemojiFirstFallback : IDWriteFontFallback
                               bst, mapped_len, mapped_font, scale);
         if (*mapped_font)
         {
-            // Extend mapped_len through any ZWJ + emoji continuations so
-            // the full grapheme cluster lands in one font run.  DirectWrite
-            // only runs GSUB ligature substitution within a single run, so
-            // keeping the whole sequence together is what allows Twemoji to
-            // substitute the combined glyph (e.g. 🚴 + ZWJ + ♀️ → 🚴‍♀️).
-            UINT32 end = pos + *mapped_len;
-            const UINT32 text_end = pos + len;
-            while (end < text_end)
+            // If ZWJ immediately follows the matched run, this is a gender,
+            // profession, or family sequence (e.g. 🚴+ZWJ+♀️).  Twemoji
+            // Mozilla (COLR/CPAL v0) stores combined glyphs via GSUB, but
+            // DirectWrite does not execute GSUB ligature lookups for
+            // Common-script characters.  Discard the Twemoji match and let
+            // the system fallback handle the whole cluster: Segoe UI Emoji
+            // resolves ZWJ sequences through OS-level emoji support that
+            // does not rely on GSUB, so the combined glyph renders correctly.
+            const UINT32 end = pos + *mapped_len;
+            if (end < pos + len)
             {
-                const wchar_t* chunk = nullptr;
-                UINT32 chunk_len = 0;
-                if (FAILED(src->GetTextAtPosition(end, &chunk, &chunk_len)) ||
-                    !chunk || chunk_len == 0)
-                    break;
-                if (chunk[0] != 0x200D) // not ZWJ
-                    break;
-
-                const UINT32 after_zwj = end + 1;
-                if (after_zwj >= text_end)
-                    break;
-
-                const wchar_t* next = nullptr;
-                UINT32 next_len = 0;
-                if (FAILED(src->GetTextAtPosition(after_zwj, &next, &next_len)) ||
-                    !next || next_len == 0)
-                    break;
-
-                // Decode the codepoint after ZWJ (handle surrogate pairs).
-                UINT32 cp, cp_len;
-                if (next[0] >= 0xD800 && next[0] <= 0xDBFF && next_len >= 2 &&
-                    next[1] >= 0xDC00 && next[1] <= 0xDFFF)
+                const wchar_t* peek = nullptr;
+                UINT32 peek_len = 0;
+                if (SUCCEEDED(src->GetTextAtPosition(end, &peek, &peek_len)) &&
+                    peek && peek_len > 0 && peek[0] == 0x200D)
                 {
-                    cp = 0x10000u + ((UINT32(next[0]) - 0xD800u) << 10) +
-                         (UINT32(next[1]) - 0xDC00u);
-                    cp_len = 2;
-                }
-                else
-                {
-                    cp = UINT32(next[0]);
-                    cp_len = 1;
-                }
-
-                if (!is_emoji_cp(cp))
-                    break;
-
-                end = after_zwj + cp_len;
-
-                // Consume an optional trailing variation selector U+FE0F.
-                if (end < text_end)
-                {
-                    const wchar_t* vs = nullptr;
-                    UINT32 vs_len = 0;
-                    if (SUCCEEDED(src->GetTextAtPosition(end, &vs, &vs_len)) &&
-                        vs && vs_len > 0 && vs[0] == 0xFE0Fu)
-                        end += 1;
+                    (*mapped_font)->Release();
+                    *mapped_font = nullptr;
+                    // Fall through to system_ below.
                 }
             }
-            *mapped_len = end - pos;
+        }
+        if (*mapped_font)
+        {
             return S_OK;
         }
         return system_->MapCharacters(src, pos, len, base_coll, base_family, bw,
@@ -718,11 +684,13 @@ public:
     D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt)
         : backend_(backend), rt_(rt)
     {
+        update_dc(rt);
     }
 
     void rebind(ID2D1RenderTarget* rt)
     {
         rt_ = rt;
+        update_dc(rt);
         brush_cache_.clear();
     }
 
@@ -777,8 +745,13 @@ public:
         {
             return;
         }
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        D2D1_RECT_F d = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        else
+            rt_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
 
     void draw_image_subregion(const Image& image, Rect src, Rect dst) override
@@ -791,8 +764,13 @@ public:
             return;
         }
         D2D1_RECT_F srcr = to_d2d(src);
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
+        D2D1_RECT_F dstr = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &dstr, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcr);
+        else
+            rt_->DrawBitmap(bmp, &dstr, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
     }
 
     void draw_circle_image(const Image& image, Point centre,
@@ -822,8 +800,13 @@ public:
         rt_->PushLayer(lp, nullptr);
         Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
                  diameter, diameter};
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        D2D1_RECT_F d = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        else
+            rt_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         rt_->PopLayer();
     }
 
@@ -925,6 +908,17 @@ private:
         Layer
     };
 
+    void update_dc(ID2D1RenderTarget* rt)
+    {
+        dc_ = nullptr;
+        void* p = nullptr;
+        if (SUCCEEDED(rt->QueryInterface(__uuidof(ID2D1DeviceContext), &p)))
+        {
+            dc_ = static_cast<ID2D1DeviceContext*>(p);
+            dc_->Release(); // rt_ already holds the ref
+        }
+    }
+
     ID2D1SolidColorBrush* brush(Color c)
     {
         std::uint32_t key = (std::uint32_t(c.r) << 24) |
@@ -944,6 +938,7 @@ private:
 
     Backend::Impl& backend_;
     ID2D1RenderTarget* rt_;
+    ID2D1DeviceContext* dc_ = nullptr; // non-owning; valid iff rt_ IS a DeviceContext
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
         brush_cache_;
     std::vector<ClipKind> clip_stack_;
