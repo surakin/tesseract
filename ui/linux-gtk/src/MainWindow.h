@@ -219,6 +219,9 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
+    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    void apply_cached_messages_(
+        const std::vector<views::MessageRowData>& msgs) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
     void on_url_preview_ready_(

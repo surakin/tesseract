@@ -4369,6 +4369,8 @@ void MainWindow::switch_active_account(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     clear_messages();
 
     active_account_index_ = new_idx;
@@ -4480,6 +4482,8 @@ void MainWindow::logout_active_account()
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     refresh_room_list();
     if (main_app_)
     {
@@ -4887,6 +4891,7 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
+        try_restore_message_cache_(active.room_id);
         on_room_selected(active.room_id);
         if (!active.compose_draft.empty())
         {
@@ -4943,6 +4948,25 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     if (room_view_)
     {
         room_view_->set_current_text(draft);
+    }
+}
+
+const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+{
+    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
+    return ml ? &ml->messages() : nullptr;
+}
+
+void MainWindow::apply_cached_messages_(
+    const std::vector<views::MessageRowData>& msgs)
+{
+    if (room_view_)
+    {
+        room_view_->set_messages(msgs, /*room_switch=*/false);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
     }
 }
 

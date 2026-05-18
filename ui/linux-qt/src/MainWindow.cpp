@@ -3311,6 +3311,7 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
+        try_restore_message_cache_(active.room_id);
         onRoomSelected(active.room_id);
 
         // Restore compose draft (onRoomSelected clears it via set_text("")).
@@ -3372,6 +3373,25 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     }
 }
 
+const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+{
+    auto* ml = mainApp_ ? mainApp_->room_view()->message_list() : nullptr;
+    return ml ? &ml->messages() : nullptr;
+}
+
+void MainWindow::apply_cached_messages_(
+    const std::vector<views::MessageRowData>& msgs)
+{
+    if (mainApp_)
+    {
+        mainApp_->room_view()->set_messages(msgs, /*room_switch=*/false);
+    }
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->relayout();
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 void MainWindow::on_room_list_state_ui_()
@@ -3416,6 +3436,8 @@ void MainWindow::switchActiveAccount(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     clearMessages();
 
     active_account_index_ = new_idx;
@@ -3550,6 +3572,8 @@ void MainWindow::logoutActiveAccount()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
     refreshRoomList();
     clearMessages();
     if (mainApp_)
