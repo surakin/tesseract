@@ -34,6 +34,8 @@ class RoomListView : public tk::Widget
 public:
     using AvatarProvider =
         std::function<const tk::Image*(const std::string& mxc_url)>;
+    using StickerProvider =
+        std::function<const tk::Image*(const std::string& mxc_url)>;
 
     RoomListView();
     ~RoomListView() override; // out-of-line — Adapter is opaque here
@@ -50,6 +52,8 @@ public:
     // null when the image isn't ready yet, in which case the row falls
     // back to an initials disc.
     void set_avatar_provider(AvatarProvider p);
+
+    void set_sticker_provider(StickerProvider p);
 
     // Selection by room ID. Stays stable across filter changes — when
     // the filter excludes the selected room, the index is cleared on the
@@ -144,6 +148,7 @@ private:
 
     std::string search_text_;
     AvatarProvider avatar_provider_;
+    StickerProvider sticker_provider_;
 
     std::unique_ptr<Adapter> adapter_;
     tk::ListView* list_ = nullptr;
