@@ -100,6 +100,7 @@ private:
     tk::VBox*    card_            = nullptr;
     tk::Label*   title_lbl_       = nullptr;
     tk::Label*   caption_lbl_     = nullptr;
+    tk::Label*   hs_input_label_  = nullptr;
     tk::Label*   hs_field_lbl_    = nullptr;
     tk::Label*   discovery_lbl_   = nullptr;
     tk::Button*  sign_in_btn_     = nullptr;

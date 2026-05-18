@@ -65,6 +65,13 @@ add_executable(tesseract_win32 WIN32
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
+# MSVC defaults to interpreting source files as Windows-1252. /utf-8 sets
+# both source and execution charset to UTF-8 so that L"…" wide-string
+# literals compile to the correct Unicode codepoints.
+if(MSVC)
+    target_compile_options(tesseract_win32 PRIVATE /utf-8)
+endif()
+
 # Windows SDK 10.0.19041's bundled C++/WinRT headers predate /permissive-
 # (implied by /std:c++20). winrt/impl/Windows.Foundation.0.h issues the
 # qualified call winrt::impl::wait_for() before that template is declared

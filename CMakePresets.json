@@ -38,6 +38,14 @@
       }
     },
     {
+      "name": "linux-gtk-release",
+      "displayName": "Linux – GTK4 (Release)",
+      "inherits": "linux-gtk-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "linux-qt6-debug",
       "displayName": "Linux – Qt6 (Debug)",
       "inherits": "base",
@@ -97,6 +105,7 @@
     { "name": "windows-debug",              "configurePreset": "windows-debug"              },
     { "name": "windows-release",            "configurePreset": "windows-release"            },
     { "name": "linux-gtk-debug",            "configurePreset": "linux-gtk-debug"            },
+    { "name": "linux-gtk-release",          "configurePreset": "linux-gtk-release"          },
     { "name": "linux-qt6-debug",            "configurePreset": "linux-qt6-debug"            },
     { "name": "linux-qt6-release",          "configurePreset": "linux-qt6-release"          },
     { "name": "macos-appkit-arm64-debug",   "configurePreset": "macos-appkit-arm64-debug"   },

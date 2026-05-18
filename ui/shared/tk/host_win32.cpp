@@ -1160,13 +1160,16 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg,
         }
         case WM_CTLCOLOREDIT: {
             // Paint EDIT-control backgrounds with the theme's input-card colour
-            // instead of the system default white.
+            // instead of the system default white. Multi-line areas (compose
+            // bar) use compose_card_bg; single-line fields use bg.
             if (host) {
-                HDC dc = reinterpret_cast<HDC>(wParam);
+                HDC  dc   = reinterpret_cast<HDC>(wParam);
+                HWND ctrl = reinterpret_cast<HWND>(lParam);
+                int  id   = GetDlgCtrlID(ctrl);
                 const auto& pal = host->theme().palette;
-                COLORREF bg = RGB(pal.compose_card_bg.r,
-                                  pal.compose_card_bg.g,
-                                  pal.compose_card_bg.b);
+                tk::Color col = host->area_by_id(id) ? pal.compose_card_bg
+                                                     : pal.bg;
+                COLORREF bg = RGB(col.r, col.g, col.b);
                 SetBkColor(dc, bg);
                 SetTextColor(dc, RGB(pal.text_primary.r,
                                      pal.text_primary.g,

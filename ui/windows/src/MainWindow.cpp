@@ -1124,6 +1124,15 @@ void MainWindow::on_create(HWND hwnd) {
 
         // ── Sticker right-click on main surface ─────────────────────────────
         main_app_surface_->set_on_right_click([this](tk::Point p) {
+            if (main_app_ && main_app_->user_info()) {
+                const auto& r = main_app_->user_info()->bounds();
+                if (p.x >= r.x && p.x < r.right() &&
+                    p.y >= r.y && p.y < r.bottom()) {
+                    if (main_app_->user_info()->on_secondary)
+                        main_app_->user_info()->on_secondary(p);
+                    return;
+                }
+            }
             if (!room_view_ || !client_) return;
             auto hit = room_view_->message_list()->sticker_hit_at(p);
             if (!hit) return;
@@ -1414,8 +1423,11 @@ void MainWindow::on_create(HWND hwnd) {
             if (room_search_field_) {
                 bool srch = main_app_->room_search_field_visible();
                 room_search_field_->set_visible(srch);
-                if (srch)
-                    room_search_field_->set_rect(main_app_->room_search_field_rect());
+                if (srch) {
+                    tk::Rect r = main_app_->room_search_field_rect();
+                    r.x += 1; r.y += 1; r.w -= 2; r.h -= 2;
+                    room_search_field_->set_rect(r);
+                }
             }
 
             // Recovery key field.
@@ -3165,8 +3177,9 @@ void MainWindow::ensure_emoji_picker_created() {
         });
     emoji_picker_surface_->set_on_layout([this] {
         if (emoji_picker_search_field_ && emoji_picker_shared_) {
-            emoji_picker_search_field_->set_rect(
-                emoji_picker_shared_->search_field_rect());
+            tk::Rect r = emoji_picker_shared_->search_field_rect();
+            r.x += 1; r.y += 1; r.w -= 2; r.h -= 2;
+            emoji_picker_search_field_->set_rect(r);
         }
     });
 }
@@ -3472,8 +3485,9 @@ void MainWindow::ensure_sticker_picker_created() {
         });
     sticker_picker_surface_->set_on_layout([this] {
         if (sticker_picker_search_field_ && sticker_picker_shared_) {
-            sticker_picker_search_field_->set_rect(
-                sticker_picker_shared_->search_field_rect());
+            tk::Rect r = sticker_picker_shared_->search_field_rect();
+            r.x += 1; r.y += 1; r.w -= 2; r.h -= 2;
+            sticker_picker_search_field_->set_rect(r);
         }
     });
 }

@@ -158,6 +158,9 @@ target_link_libraries(tesseract_tk PUBLIC
 )
 
 if(TESSERACT_UI STREQUAL "win32")
+    if(MSVC)
+        target_compile_options(tesseract_tk PRIVATE /utf-8)
+    endif()
     target_compile_definitions(tesseract_tk PRIVATE
         UNICODE _UNICODE
         WIN32_LEAN_AND_MEAN NOMINMAX

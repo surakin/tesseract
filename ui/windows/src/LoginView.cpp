@@ -52,7 +52,9 @@ void LoginView::set_theme(const tk::Theme& t) {
 
 void LoginView::position_overlay() {
     if (!shared_ || !hs_field_) return;
-    hs_field_->set_rect(shared_->homeserver_field_rect());
+    tk::Rect r = shared_->homeserver_field_rect();
+    r.x += 1; r.y += 1; r.w -= 2; r.h -= 2;
+    hs_field_->set_rect(r);
 }
 
 // ---------------------------------------------------------------------------

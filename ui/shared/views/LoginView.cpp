@@ -40,6 +40,10 @@ void LoginView::rebuild_tree() {
     caption->set_halign(tk::TextHAlign::Center);
     caption->set_wrap(true);
 
+    auto hs_input_label = std::make_unique<tk::Label>(
+        "Homeserver or Matrix ID", tk::FontRole::Small);
+    hs_input_label->set_halign(tk::TextHAlign::Leading);
+
     // Homeserver field — layout spacer only. The host overlays a native
     // edit control on top of homeserver_field_rect(); this widget holds
     // the space and drives the rect calculation but must not draw text
@@ -73,9 +77,10 @@ void LoginView::rebuild_tree() {
     status->set_wrap(true);
     status->set_visible(false);
 
-    title_lbl_      = card->add_child(std::move(title));
-    caption_lbl_    = card->add_child(std::move(caption));
-    hs_field_lbl_   = card->add_child(std::move(hs_field));
+    title_lbl_       = card->add_child(std::move(title));
+    caption_lbl_     = card->add_child(std::move(caption));
+    hs_input_label_  = card->add_child(std::move(hs_input_label));
+    hs_field_lbl_    = card->add_child(std::move(hs_field));
     discovery_lbl_  = card->add_child(std::move(discovery));
     sign_in_btn_    = card->add_child(std::move(sign_in));
     cancel_btn_     = card->add_child(std::move(cancel));

@@ -279,13 +279,13 @@ void VerificationBanner::paint(tk::PaintCtx& ctx) {
         // Paint 7 emoji tiles.
         tk::TextStyle glyph_style;
         glyph_style.role   = tk::FontRole::BigEmoji;
-        glyph_style.halign = tk::TextHAlign::Center;
-        glyph_style.valign = tk::TextVAlign::Center;
+        glyph_style.halign = tk::TextHAlign::Leading;
+        glyph_style.valign = tk::TextVAlign::Top;
 
         tk::TextStyle caption_style;
         caption_style.role   = tk::FontRole::Small;
-        caption_style.halign = tk::TextHAlign::Center;
-        caption_style.valign = tk::TextVAlign::Center;
+        caption_style.halign = tk::TextHAlign::Leading;
+        caption_style.valign = tk::TextVAlign::Top;
 
         for (int i = 0; i < kEmojiCount; ++i) {
             const auto& r = emoji_rects_[i];
