@@ -914,6 +914,15 @@ MainWindow::MainWindow(QWidget* parent)
     // `io.element.recent_emoji`), so no local-disk load is needed.
     emojiPicker_ = new EmojiPicker(this);
     emojiPicker_->setClient(client_);
+    emojiPicker_->setImageProvider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
+            auto it = tk_images_.find(cache_key);
+            if (it != tk_images_.end()) return it->second.get();
+            ensure_picker_image_(cache_key, /*is_sticker=*/false);
+            return nullptr;
+        });
     emojiPicker_->onSelected = [this](const QString& glyph) {
         // Reaction mode: a message's "+" chip set pendingReactionEventId_
         // before opening the picker. Route the glyph through
@@ -962,6 +971,15 @@ MainWindow::MainWindow(QWidget* parent)
     // sdk encrypts transparently in E2EE rooms).
     stickerPicker_ = new StickerPicker(this);
     stickerPicker_->setClient(client_);
+    stickerPicker_->setImageProvider(
+        [this](const std::string& cache_key,
+                const std::string& /*source_token*/) -> const tk::Image* {
+            if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
+            auto it = tk_images_.find(cache_key);
+            if (it != tk_images_.end()) return it->second.get();
+            ensure_picker_image_(cache_key, /*is_sticker=*/true);
+            return nullptr;
+        });
     stickerPicker_->onSelected =
         [this](const tesseract::ImagePackImage& img) {
             if (current_room_id_.empty())
@@ -1896,20 +1914,44 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         return;
     }
 
-    // MediaImage — animated probe first, then static fallback.
-    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key))
-    {
+    // MediaImage — decode (same path as pickers) then store. Decode stays
+    // on the UI thread here (unchanged behaviour); pickers decode on a
+    // worker via ensure_picker_image_.
+    if (tk_images_.count(cache_key) || anim_cache_.has(cache_key)) {
         mediaImageSizes_.erase(cache_key);
         return;
     }
     int max_w = kMaxImageWidth, max_h = kMaxImageHeight;
-    if (auto sit = mediaImageSizes_.find(cache_key); sit != mediaImageSizes_.end())
-    {
+    if (auto sit = mediaImageSizes_.find(cache_key);
+        sit != mediaImageSizes_.end()) {
         max_w = sit->second.first;
         max_h = sit->second.second;
         mediaImageSizes_.erase(sit);
     }
+    DecodedImage d = decode_image_(bytes, max_w, max_h);
+    if (!d.frames.empty()) {
+        anim_cache_.store(cache_key, std::move(d.frames),
+                          std::move(d.delays_ms),
+                          QDateTime::currentMSecsSinceEpoch());
+        if (tk_anim_timer_ && !tk_anim_timer_->isActive())
+            tk_anim_timer_->start();
+    } else if (d.still) {
+        tk_images_.emplace(cache_key, std::move(d.still));
+    } else {
+        return;
+    }
+    if (mainApp_) mainApp_->room_view()->notify_image_ready(cache_key);
+    if (mainAppSurface_) { mainAppSurface_->relayout(); mainAppSurface_->update(); }
+    if (shortcode_popup_visible_() && shortcode_popup_surface_)
+        shortcode_popup_surface_->update();
+    return;
+}
 
+MainWindow::DecodedImage
+MainWindow::decode_image_(const std::vector<uint8_t>& bytes,
+                          int max_w, int max_h) {
+    DecodedImage d;
+    if (bytes.empty()) return d;
     QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
                   static_cast<int>(bytes.size()));
     QBuffer buf(&qb);
@@ -1917,75 +1959,48 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
 
-    if (reader.supportsAnimation() && reader.imageCount() > 1)
-    {
-        std::vector<std::unique_ptr<tk::Image>> frames;
-        std::vector<int>                        delays;
-        frames.reserve(reader.imageCount());
-        delays.reserve(reader.imageCount());
+    if (reader.supportsAnimation() && reader.imageCount() > 1) {
         QImage frame;
-        while (reader.read(&frame))
-        {
+        while (reader.read(&frame)) {
             int delay = reader.nextImageDelay();
-            if (delay <= 0)
-            {
-                delay = 100;
-            }
-            if (delay < 20)
-            {
-                delay = 20;
-            }
+            if (delay <= 0) delay = 100;
+            if (delay < 20) delay = 20;
             QImage scaled = frame.scaled(max_w, max_h,
                                           Qt::KeepAspectRatio,
                                           Qt::SmoothTransformation);
-            frames.push_back(tk::qt6::make_image(std::move(scaled)));
-            delays.push_back(delay);
+            d.frames.push_back(tk::qt6::make_image(std::move(scaled)));
+            d.delays_ms.push_back(delay);
         }
-        if (!frames.empty())
-        {
-            anim_cache_.store(cache_key, std::move(frames), std::move(delays),
-                              QDateTime::currentMSecsSinceEpoch());
-            if (tk_anim_timer_ && !tk_anim_timer_->isActive())
-            {
-                tk_anim_timer_->start();
-            }
-            if (mainApp_)
-            {
-                mainApp_->room_view()->notify_image_ready(cache_key);
-            }
-            if (mainAppSurface_)
-            {
-                mainAppSurface_->relayout();
-                mainAppSurface_->update();
-            }
-            return;
-        }
+        if (!d.frames.empty()) return d;
+        d.delays_ms.clear();
         buf.seek(0);
     }
-
     QImage img;
     if (!img.loadFromData(reinterpret_cast<const uchar*>(qb.constData()),
                           qb.size()))
-    {
-        return;
-    }
+        return d;
     QImage scaled = img.scaled(max_w, max_h,
                                 Qt::KeepAspectRatio,
                                 Qt::SmoothTransformation);
-    tk_images_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
-    if (mainApp_)
-    {
-        mainApp_->room_view()->notify_image_ready(cache_key);
-    }
-    if (mainAppSurface_)
-    {
-        mainAppSurface_->relayout();
-        mainAppSurface_->update();
-    }
+    d.still = tk::qt6::make_image(std::move(scaled));
+    return d;
+}
+
+std::int64_t MainWindow::monotonic_ms_() {
+    return QDateTime::currentMSecsSinceEpoch();
+}
+
+void MainWindow::start_anim_tick_() {
+    if (tk_anim_timer_ && !tk_anim_timer_->isActive())
+        tk_anim_timer_->start();
+}
+
+void MainWindow::repaint_pickers_() {
+    if (emojiPicker_)   emojiPicker_->invalidateImages();
+    if (stickerPicker_) stickerPicker_->invalidateImages();
+    if (mainAppSurface_) { mainAppSurface_->relayout(); mainAppSurface_->update(); }
     if (shortcode_popup_visible_() && shortcode_popup_surface_)
-    {
         shortcode_popup_surface_->update();
-    }
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,

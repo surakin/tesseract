@@ -793,57 +793,11 @@ bool Surface::end_paint() {
 
 class D2DFactory : public CanvasFactory {
 public:
-    explicit D2DFactory(Backend& b) : backend_(b.impl()) {}
+    explicit D2DFactory(Backend& b) : owner_(b), backend_(b.impl()) {}
 
     std::unique_ptr<Image>
     decode_image(std::span<const std::uint8_t> bytes) override {
-        if (bytes.empty()) return nullptr;
-
-        ComPtr<IWICStream> stream;
-        if (FAILED(backend_.wic->CreateStream(stream.GetAddressOf())))
-            return nullptr;
-        if (FAILED(stream->InitializeFromMemory(
-                const_cast<BYTE*>(bytes.data()),
-                static_cast<DWORD>(bytes.size()))))
-            return nullptr;
-
-        ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(backend_.wic->CreateDecoderFromStream(
-                stream.Get(), nullptr,
-                WICDecodeMetadataCacheOnLoad,
-                decoder.GetAddressOf())))
-            return nullptr;
-
-        ComPtr<IWICBitmapFrameDecode> frame;
-        if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
-            return nullptr;
-
-        ComPtr<IWICFormatConverter> converter;
-        if (FAILED(backend_.wic->CreateFormatConverter(
-                converter.GetAddressOf())))
-            return nullptr;
-        if (FAILED(converter->Initialize(
-                frame.Get(),
-                GUID_WICPixelFormat32bppPBGRA,
-                WICBitmapDitherTypeNone, nullptr, 0.0f,
-                WICBitmapPaletteTypeMedianCut)))
-            return nullptr;
-
-        // Force an eager decode into an in-memory IWICBitmap. The
-        // decoder/converter chain otherwise reads pixels lazily from the
-        // IWICStream, which was initialised from caller-owned memory that
-        // does not outlive this call.
-        ComPtr<IWICBitmap> cached;
-        if (FAILED(backend_.wic->CreateBitmapFromSource(
-                converter.Get(), WICBitmapCacheOnLoad,
-                cached.GetAddressOf())))
-            return nullptr;
-
-        UINT w = 0, h = 0;
-        cached->GetSize(&w, &h);
-        return std::make_unique<D2DImage>(std::move(cached),
-                                          static_cast<int>(w),
-                                          static_cast<int>(h));
+        return tk::d2d::decode_image(owner_, bytes);
     }
 
     std::unique_ptr<Image>
@@ -988,6 +942,7 @@ public:
     }
 
 private:
+    Backend&       owner_;
     Backend::Impl& backend_;
 };
 
@@ -1099,6 +1054,60 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame) {
 }
 
 } // namespace
+
+std::unique_ptr<Image> decode_image(
+    Backend& b, std::span<const std::uint8_t> bytes)
+{
+    if (bytes.empty()) return nullptr;
+
+    Backend::Impl& impl = b.impl();
+
+    ComPtr<IWICStream> stream;
+    if (FAILED(impl.wic->CreateStream(stream.GetAddressOf())))
+        return nullptr;
+    if (FAILED(stream->InitializeFromMemory(
+            const_cast<BYTE*>(bytes.data()),
+            static_cast<DWORD>(bytes.size()))))
+        return nullptr;
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(impl.wic->CreateDecoderFromStream(
+            stream.Get(), nullptr,
+            WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf())))
+        return nullptr;
+
+    ComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+        return nullptr;
+
+    ComPtr<IWICFormatConverter> converter;
+    if (FAILED(impl.wic->CreateFormatConverter(
+            converter.GetAddressOf())))
+        return nullptr;
+    if (FAILED(converter->Initialize(
+            frame.Get(),
+            GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone, nullptr, 0.0f,
+            WICBitmapPaletteTypeMedianCut)))
+        return nullptr;
+
+    // Force an eager decode into an in-memory IWICBitmap. The
+    // decoder/converter chain otherwise reads pixels lazily from the
+    // IWICStream, which was initialised from caller-owned memory that
+    // does not outlive this call.
+    ComPtr<IWICBitmap> cached;
+    if (FAILED(impl.wic->CreateBitmapFromSource(
+            converter.Get(), WICBitmapCacheOnLoad,
+            cached.GetAddressOf())))
+        return nullptr;
+
+    UINT w = 0, h = 0;
+    cached->GetSize(&w, &h);
+    return std::make_unique<D2DImage>(std::move(cached),
+                                      static_cast<int>(w),
+                                      static_cast<int>(h));
+}
 
 std::vector<AnimatedFrame> decode_animation(
     Backend& b, std::span<const std::uint8_t> bytes)

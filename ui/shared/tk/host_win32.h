@@ -92,6 +92,10 @@ private:
     std::unique_ptr<Host> host_;
 };
 
+// Process-wide D2D backend. WIC factory is free-threaded; safe to use
+// from worker threads for decode_image / decode_animation.
+tk::d2d::Backend& backend_singleton();
+
 // Wrapper around tk::d2d::decode_animation that uses the per-process
 // backend singleton owned by host_win32.cpp. Hosts call this to detect
 // + decode animated GIF / APNG / animated WebP without needing to plumb

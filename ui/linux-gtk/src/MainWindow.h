@@ -193,9 +193,6 @@ private:
     void populate_user_strip();
     void maybe_show_recovery_banner();
 
-    void ensure_sticker_image_async(std::string url);
-    void ensure_emoji_image_async  (std::string url);
-
     // ShellBase virtual hooks (GTK4 implementations).
     void apply_theme_ui_(const tk::Theme& t) override;
     tk::ThemeMode os_color_scheme_() const override;
@@ -204,6 +201,11 @@ private:
     void on_media_bytes_ready_(const std::string& cache_key,
                                 MediaKind kind,
                                 std::vector<uint8_t> bytes) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
+                               int max_w, int max_h) override;
+    std::int64_t monotonic_ms_() override;
+    void         start_anim_tick_() override;
+    void         repaint_pickers_() override;
 
     // Tab management hooks.
     void        on_tab_state_changed_ui_()             override;

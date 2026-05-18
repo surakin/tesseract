@@ -33,12 +33,15 @@ namespace tk::win32 {
 //  Process-wide D2D backend + post-to-UI message
 // ─────────────────────────────────────────────────────────────────────────
 
-namespace {
-
+// External linkage (declared in host_win32.h): the WIC factory it owns is
+// free-threaded, so worker threads can call decode_image / decode_animation
+// against this backend without marshalling to the UI thread.
 d2d::Backend& backend_singleton() {
     static d2d::Backend instance;
     return instance;
 }
+
+namespace {
 
 // One registered window message per process for the post_to_ui channel.
 // The lParam is a heap-allocated std::function<void()>* that the

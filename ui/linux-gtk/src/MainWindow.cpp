@@ -2025,119 +2025,6 @@ gboolean MainWindow::on_tk_anim_tick_(gpointer user_data) {
     return G_SOURCE_CONTINUE;
 }
 
-void MainWindow::ensure_sticker_image_async(std::string url) {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
-        return;
-    if (!sticker_fetches_in_flight_.insert(url).second) return;
-
-    struct IdleData {
-        MainWindow*           self;
-        std::string           url;
-        std::vector<uint8_t>  bytes;
-    };
-
-    // Detached worker — `client_` is thread-safe (the SDK runs on its own
-    // tokio runtime; FFI calls are sync wrappers). The picker outlives
-    // any in-flight fetch.
-    run_async_([this, url]() mutable {
-        auto bytes = client_->fetch_source_bytes(url);
-        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
-        g_idle_add([](gpointer p) -> gboolean {
-            auto* d = static_cast<IdleData*>(p);
-            d->self->sticker_fetches_in_flight_.erase(d->url);
-            if (!d->bytes.empty()
-                && !d->self->tk_images_.count(d->url)
-                && !d->self->anim_cache_.has(d->url))
-            {
-                // Probe for animation first; animated stickers ride the
-                // frame-tick loop. Static formats fall through to tk_images_.
-                if (auto anim = decode_animation(d->bytes)) {
-                    std::vector<std::unique_ptr<tk::Image>> frames;
-                    frames.reserve(anim->frames.size());
-                    for (cairo_surface_t* s : anim->frames) {
-                        frames.push_back(tk::cairo_pango::make_image(s));
-                        cairo_surface_destroy(s);
-                    }
-                    if (!frames.empty()) {
-                        const gint64 now_ms = g_get_monotonic_time() / 1000;
-                        d->self->anim_cache_.store(d->url, std::move(frames),
-                                                   std::move(anim->delays_ms),
-                                                   now_ms);
-                        d->self->start_anim_tick_if_needed_();
-                        d->self->invalidate_anim_consumers_();
-                    }
-                } else if (cairo_surface_t* surface =
-                              decode_image_to_cairo_surface(d->bytes))
-                {
-                    auto img = tk::cairo_pango::make_image(surface);
-                    cairo_surface_destroy(surface);
-                    d->self->tk_images_.emplace(d->url, std::move(img));
-                    if (d->self->sticker_picker_shared_)
-                        d->self->sticker_picker_shared_->invalidate_image_cache();
-                    if (d->self->sticker_picker_surface_)
-                        d->self->sticker_picker_surface_->relayout();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        }, data);
-    });
-}
-
-void MainWindow::ensure_emoji_image_async(std::string url) {
-    if (url.empty() || tk_images_.count(url) || anim_cache_.has(url))
-        return;
-    if (!emoji_fetches_in_flight_.insert(url).second) return;
-
-    struct IdleData {
-        MainWindow*           self;
-        std::string           url;
-        std::vector<uint8_t>  bytes;
-    };
-
-    run_async_([this, url]() mutable {
-        auto bytes = client_->fetch_source_bytes(url);
-        auto* data = new IdleData{ this, std::move(url), std::move(bytes) };
-        g_idle_add([](gpointer p) -> gboolean {
-            auto* d = static_cast<IdleData*>(p);
-            d->self->emoji_fetches_in_flight_.erase(d->url);
-            if (!d->bytes.empty()
-                && !d->self->tk_images_.count(d->url)
-                && !d->self->anim_cache_.has(d->url))
-            {
-                if (auto anim = decode_animation(d->bytes)) {
-                    std::vector<std::unique_ptr<tk::Image>> frames;
-                    frames.reserve(anim->frames.size());
-                    for (cairo_surface_t* s : anim->frames) {
-                        frames.push_back(tk::cairo_pango::make_image(s));
-                        cairo_surface_destroy(s);
-                    }
-                    if (!frames.empty()) {
-                        const gint64 now_ms = g_get_monotonic_time() / 1000;
-                        d->self->anim_cache_.store(d->url, std::move(frames),
-                                                   std::move(anim->delays_ms),
-                                                   now_ms);
-                        d->self->start_anim_tick_if_needed_();
-                        d->self->invalidate_anim_consumers_();
-                    }
-                } else if (cairo_surface_t* surface =
-                              decode_image_to_cairo_surface(d->bytes))
-                {
-                    auto img = tk::cairo_pango::make_image(surface);
-                    cairo_surface_destroy(surface);
-                    d->self->tk_images_.emplace(d->url, std::move(img));
-                    if (d->self->emoji_picker_shared_)
-                        d->self->emoji_picker_shared_->invalidate_image_cache();
-                    if (d->self->emoji_picker_surface_)
-                        d->self->emoji_picker_surface_->relayout();
-                }
-            }
-            delete d;
-            return G_SOURCE_REMOVE;
-        }, data);
-    });
-}
-
 // ---------------------------------------------------------------------------
 
 void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms) {
@@ -2265,6 +2152,46 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                 shortcode_popup_surface_->relayout();
         }
     }
+}
+
+MainWindow::DecodedImage
+MainWindow::decode_image_(const std::vector<uint8_t>& bytes,
+                          int /*max_w*/, int /*max_h*/) {
+    // decode_image_to_cairo_surface / decode_animation are in this
+    // file's anonymous namespace and are thread-safe (GdkPixbuf + cairo).
+    // tk::cairo_pango::make_image refcounts the surface (thread-safe).
+    DecodedImage d;
+    if (auto anim = decode_animation(bytes)) {
+        d.frames.reserve(anim->frames.size());
+        for (cairo_surface_t* s : anim->frames) {
+            d.frames.push_back(tk::cairo_pango::make_image(s));
+            cairo_surface_destroy(s);
+        }
+        d.delays_ms = std::move(anim->delays_ms);
+        if (!d.frames.empty()) return d;
+        d.delays_ms.clear();
+    }
+    if (cairo_surface_t* surf = decode_image_to_cairo_surface(bytes)) {
+        d.still = tk::cairo_pango::make_image(surf);
+        cairo_surface_destroy(surf);
+    }
+    return d;
+}
+
+std::int64_t MainWindow::monotonic_ms_() {
+    return g_get_monotonic_time() / 1000;
+}
+
+void MainWindow::start_anim_tick_() {
+    start_anim_tick_if_needed_();
+}
+
+void MainWindow::repaint_pickers_() {
+    if (emoji_picker_shared_)   emoji_picker_shared_->invalidate_image_cache();
+    if (emoji_picker_surface_)  emoji_picker_surface_->relayout();
+    if (sticker_picker_shared_) sticker_picker_shared_->invalidate_image_cache();
+    if (sticker_picker_surface_) sticker_picker_surface_->relayout();
+    invalidate_anim_consumers_();
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,
@@ -2877,7 +2804,7 @@ void MainWindow::build_emoji_popover() {
             if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto it = tk_images_.find(cache_key);
             if (it != tk_images_.end()) return it->second.get();
-            ensure_emoji_image_async(cache_key);
+            ensure_picker_image_(cache_key, /*is_sticker=*/false);
             return nullptr;
         });
     emoji_picker_surface_->set_root(std::move(shared));
@@ -2933,7 +2860,7 @@ void MainWindow::build_sticker_popover() {
         };
     // Share the same caches the message list reads from. Animated
     // entries take priority; static entries are the second hop; on
-    // miss kick off an async fetch via `ensure_sticker_image_async`
+    // miss kick off an async fetch via the shared `ensure_picker_image_`
     // so the next paint after the worker posts back finds the bitmap.
     sticker_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
@@ -2941,7 +2868,7 @@ void MainWindow::build_sticker_popover() {
             if (const auto* f = anim_cache_.current_frame(cache_key)) return f;
             auto it = tk_images_.find(cache_key);
             if (it != tk_images_.end()) return it->second.get();
-            ensure_sticker_image_async(cache_key);
+            ensure_picker_image_(cache_key, /*is_sticker=*/true);
             return nullptr;
         });
     sticker_picker_surface_->set_root(std::move(shared));

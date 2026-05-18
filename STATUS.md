@@ -9,7 +9,7 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-18
 > `xdg_activation_v1` token granted by the compositor when the user clicks the
 > notification; Qt6 passes it via `QWindow::setProperty("_q_waylandActivationToken")`
 > and GTK4 via `gtk_window_set_startup_id()`, so GNOME Shell now reliably brings the
-> window to the foreground. 308/308 C++ tests pass.
+> window to the foreground. 323/323 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -17,8 +17,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 86 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 308 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 87 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 323 |
 
 ## Platforms
 
@@ -113,6 +113,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Add to Saved Stickers** — right-click on an inline sticker offers `save_sticker_to_user_pack` (all four platforms: Qt6 / GTK4 / macOS / Win32 via `WM_RBUTTONUP` + `TrackPopupMenu`). All platforms now pass the real `ImageInfo` JSON instead of `"{}"`, so width/height/mimetype/size are preserved in the saved pack entry.
 - **Toggle favourite** — `toggle_favorite_sticker` flips the `im.tesseract.favorite` flag on user-pack entries.
 - **Async sticker image fetch** — Win32 + Qt6 + macOS + GTK4 all run a worker thread + decode + post-to-UI + cache + repaint per pending sticker. GTK4 also wires the same async path for `EmojiPicker` custom emoticon tabs (`ensure_emoji_image_async`, deduped via `emoji_fetches_in_flight_`).
+- **Unified async picker image cache** — `EmojiPicker` and `StickerPicker` now share the message list's `tk_images_` / `anim_cache_` on all four shells (Qt6 dropped its private per-picker caches), so picker artwork and inline-message artwork are decoded once and reused. Images route through `media_disk_cache_`, so custom emoticons and stickers survive an app restart, and decode runs off the UI thread (Qt6 `QImageReader`, GTK4 `GdkPixbuf` + cairo, macOS `CGImageSource`, Win32 WIC) so the first paint of a large pack no longer stalls the UI.
 
 ## MSC2545 image packs
 
