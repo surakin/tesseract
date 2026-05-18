@@ -117,6 +117,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 auto it = tk_avatars_.find(mxc);
                 return it == tk_avatars_.end() ? nullptr : it->second.get();
             });
+        mainApp_->room_list_view()->set_sticker_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                if (const auto* f = anim_cache_.current_frame(mxc))
+                {
+                    return f;
+                }
+                auto it = tk_images_.find(mxc);
+                if (it != tk_images_.end())
+                {
+                    return it->second.get();
+                }
+                ensure_media_image_(mxc, 64, 64);
+                return nullptr;
+            });
         mainApp_->room_list_view()->on_room_selected =
             [this](const std::string& room_id)
         {
