@@ -10,29 +10,41 @@
 
 // Forward-declare the Rust opaque type so we don't need to pull in cxx headers
 // in every translation unit that just uses this interface.
-namespace tesseract_ffi { class ClientFfi; }
+namespace tesseract_ffi
+{
+class ClientFfi;
+}
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// Result of a client operation.
-struct Result {
-    bool        ok      = false;
+struct Result
+{
+    bool ok = false;
     std::string message;
 
-    explicit operator bool() const noexcept { return ok; }
+    explicit operator bool() const noexcept
+    {
+        return ok;
+    }
 };
 
 /// Result of `Client::paginate_back_with_status` and `paginate_forward`.
 /// `reached_start` is true when matrix-sdk-ui reports the timeline has no
 /// further history to load. `reached_end` is true when a focused timeline
 /// has caught up to the live end. UIs latch their scroll triggers off these.
-struct PaginateResult {
-    bool        ok            = false;
+struct PaginateResult
+{
+    bool ok = false;
     std::string message;
-    bool        reached_start = false;
-    bool        reached_end   = false;
+    bool reached_start = false;
+    bool reached_end = false;
 
-    explicit operator bool() const noexcept { return ok; }
+    explicit operator bool() const noexcept
+    {
+        return ok;
+    }
 };
 
 /// High-level C++ Matrix client.
@@ -40,20 +52,21 @@ struct PaginateResult {
 /// Thread-safety: methods may be called from any thread; the underlying Rust
 /// runtime serialises concurrent calls.  Event callbacks arrive on a background
 /// thread – marshal them to the UI thread as required.
-class Client {
+class Client
+{
 public:
     Client();
     ~Client();
 
-    Client(const Client&)            = delete;
+    Client(const Client&) = delete;
     Client& operator=(const Client&) = delete;
     // Movable. A moved-from Client is in the standard "valid but unspecified,
     // do not use" state: its members dereference an internal pimpl that is
     // null after a move, so calling any method other than the destructor or
     // move-assignment on a moved-from instance is undefined. Do not call
     // methods on a Client after moving out of it.
-    Client(Client&&)                 noexcept;
-    Client& operator=(Client&&)      noexcept;
+    Client(Client&&) noexcept;
+    Client& operator=(Client&&) noexcept;
 
     // ------------------------------------------------------------------
     // Data directory
@@ -70,21 +83,30 @@ public:
     // Authentication (OAuth 2.0 / Matrix Authentication Service)
     // ------------------------------------------------------------------
 
-    struct OAuthFlow {
-        bool        ok = false;
+    struct OAuthFlow
+    {
+        bool ok = false;
         std::string message;
         std::string auth_url;
         std::string redirect_uri;
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
-    struct DiscoveryResult {
-        bool        ok = false;      ///< false when the server is unreachable
-        std::string base_url;        ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
-        std::string error;           ///< human-readable error when ok==false
+    struct DiscoveryResult
+    {
+        bool ok = false; ///< false when the server is unreachable
+        std::string
+            base_url; ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
+        std::string error; ///< human-readable error when ok==false
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
     /// Discover the homeserver URL for a server name or Matrix ID.
@@ -94,15 +116,15 @@ public:
     /// Blocks the calling thread — invoke only from a worker thread.
     DiscoveryResult discover_homeserver(const std::string& server_name_or_mxid);
 
-    OAuthFlow   begin_oauth(const std::string& homeserver);
-    Result      await_oauth();
-    void        cancel_oauth();
+    OAuthFlow begin_oauth(const std::string& homeserver);
+    Result await_oauth();
+    void cancel_oauth();
 
     static bool open_in_browser(const std::string& url);
 
-    Result      restore_session(const std::string& session_json);
+    Result restore_session(const std::string& session_json);
     std::string export_session() const;
-    Result      logout();
+    Result logout();
 
     // ------------------------------------------------------------------
     // Sync loop
@@ -127,7 +149,7 @@ public:
     Result subscribe_room(const std::string& room_id);
 
     /// Unsubscribe from a room's timeline and cancel its background task.
-    void   unsubscribe_room(const std::string& room_id);
+    void unsubscribe_room(const std::string& room_id);
 
     /// Paginate backwards in a subscribed room. Older history arrives via
     /// `IEventHandler::on_message_prepended`.
@@ -144,23 +166,22 @@ public:
     /// ≥ ts) or `"b"` (backward — last event ≤ ts). On success
     /// `Result::message` holds the resolved event ID; on failure it holds
     /// the error description.
-    Result         timestamp_to_event(const std::string& room_id,
-                                       uint64_t ts_ms,
-                                       const std::string& dir);
+    Result timestamp_to_event(const std::string& room_id, uint64_t ts_ms,
+                              const std::string& dir);
 
     /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
     /// specific event. Behaves like `subscribe_room` but centers the
     /// timeline on `focus_event_id`. Call `paginate_forward` (and
     /// `paginate_back`) to load events in either direction from the focus.
-    Result         subscribe_room_at(const std::string& room_id,
-                                      const std::string& focus_event_id);
+    Result subscribe_room_at(const std::string& room_id,
+                             const std::string& focus_event_id);
 
     /// MSC3030 Jump to Date: paginate forward in a focused timeline.
     /// Only valid after `subscribe_room_at`. `reached_end` is true when the
     /// live end has been reached; the UI should then switch to a live
     /// subscription via `subscribe_room`.
     PaginateResult paginate_forward(const std::string& room_id,
-                                     std::uint16_t count);
+                                    std::uint16_t count);
 
     /// Kick off a background pass that paginates the given rooms (those
     /// currently visible in the room list), up to ~50 events each, with
@@ -171,7 +192,7 @@ public:
 
     /// Cancel an in-progress background backfill (also called automatically
     /// on stop_sync / destruction). No-op if none is running.
-    void   stop_background_backfill();
+    void stop_background_backfill();
 
     // ------------------------------------------------------------------
     // Messaging
@@ -206,10 +227,8 @@ public:
     /// encryption in E2EE rooms) before posting the event.
     Result send_image(const std::string& room_id,
                       const std::vector<uint8_t>& bytes,
-                      const std::string& mime_type,
-                      const std::string& filename,
-                      const std::string& caption,
-                      std::uint32_t width,
+                      const std::string& mime_type, const std::string& filename,
+                      const std::string& caption, std::uint32_t width,
                       std::uint32_t height,
                       const std::string& reply_event_id = "");
 
@@ -221,8 +240,7 @@ public:
     /// handled transparently by matrix-sdk.
     Result send_file(const std::string& room_id,
                      const std::vector<uint8_t>& bytes,
-                     const std::string& mime_type,
-                     const std::string& filename,
+                     const std::string& mime_type, const std::string& filename,
                      const std::string& caption,
                      const std::string& reply_event_id = "");
 
@@ -249,8 +267,7 @@ public:
     /// room is currently subscribed via `subscribe_room`. `key` may be a
     /// Unicode emoji (e.g. "👍") or an mxc:// URI for MSC4027 image reactions.
     Result send_reaction(const std::string& room_id,
-                         const std::string& event_id,
-                         const std::string& key);
+                         const std::string& event_id, const std::string& key);
 
     /// Send an MSC4027 custom-image reaction (always adds, never toggles).
     /// `key` is the mxc:// URI; `shortcode` is stored as
@@ -267,14 +284,12 @@ public:
     /// else's event) surface in `Result::message`. On success the SDK
     /// re-emits the timeline item as a redacted tombstone, which the UI
     /// receives via the existing `on_message_event` re-render path.
-    Result redact_event(const std::string& room_id,
-                        const std::string& event_id,
+    Result redact_event(const std::string& room_id, const std::string& event_id,
                         const std::string& reason = "");
 
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds
     /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
-    Result send_reply(const std::string& room_id,
-                      const std::string& event_id,
+    Result send_reply(const std::string& room_id, const std::string& event_id,
                       const std::string& body,
                       const std::string& formatted_body = "");
 
@@ -288,8 +303,7 @@ public:
 
     /// Edit `event_id` in `room_id` replacing its body with `new_body`.
     /// Only works on own `m.text` events. Does not require `subscribe_room`.
-    Result send_edit(const std::string& room_id,
-                     const std::string& event_id,
+    Result send_edit(const std::string& room_id, const std::string& event_id,
                      const std::string& new_body,
                      const std::string& formatted_body = "");
 
@@ -374,15 +388,19 @@ public:
     // ------------------------------------------------------------------
 
     /// OpenGraph metadata fetched from the homeserver for a given URL.
-    struct UrlPreview {
+    struct UrlPreview
+    {
         std::string title;
         std::string description;
-        std::string image_mxc;   ///< mxc:// URI of the og:image, or empty
-        int         image_w = 0;
-        int         image_h = 0;
-        bool        failed  = false; ///< true when server returned no data
+        std::string image_mxc; ///< mxc:// URI of the og:image, or empty
+        int image_w = 0;
+        int image_h = 0;
+        bool failed = false; ///< true when server returned no data
 
-        bool has_content() const { return !title.empty() || !description.empty(); }
+        bool has_content() const
+        {
+            return !title.empty() || !description.empty();
+        }
     };
 
     /// Fetch OpenGraph preview metadata for an http(s) URL from the homeserver.
@@ -421,7 +439,7 @@ public:
     /// `filter`. Use `PackUsageFilter::Sticker` for the StickerPicker and
     /// `PackUsageFilter::Emoticon` for the EmojiPicker's custom tab.
     std::vector<ImagePackImage> list_pack_images(const std::string& pack_id,
-                                                  PackUsageFilter filter) const;
+                                                 PackUsageFilter filter) const;
 
     /// Flatten every favourite-marked entry across all packs. Sticker-only;
     /// emoticon favourites are out of scope.
@@ -431,8 +449,7 @@ public:
     /// `image_url` is the mxc:// URI; `info_json` is the literal MSC2545
     /// `info` object (`"{}"` is fine). matrix-sdk handles E2EE rooms
     /// transparently.
-    Result send_sticker(const std::string& room_id,
-                        const std::string& body,
+    Result send_sticker(const std::string& room_id, const std::string& body,
                         const std::string& image_url,
                         const std::string& info_json);
 
@@ -518,7 +535,8 @@ public:
     /// Return the cached 7 SAS emoji for `flow_id` after
     /// `IEventHandler::on_sas_ready` has fired. Returns an empty vector
     /// if the flow has no emoji yet (call too early) or is unknown.
-    std::vector<VerificationEmoji> get_sas_emojis(const std::string& flow_id) const;
+    std::vector<VerificationEmoji>
+    get_sas_emojis(const std::string& flow_id) const;
 
     // ------------------------------------------------------------------
     // Server pushers (Step 12)

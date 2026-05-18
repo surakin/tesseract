@@ -1,9 +1,11 @@
 #pragma once
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
-class ITrayIcon {
+class ITrayIcon
+{
 public:
     virtual ~ITrayIcon() = default;
 

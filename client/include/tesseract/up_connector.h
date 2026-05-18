@@ -1,14 +1,16 @@
 #pragma once
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
 class Client; // forward declaration — callers include client.h themselves
 
 /// Abstract interface for a UnifiedPush D-Bus connector.
 /// Implemented by LinuxUpConnectorQt (Qt6) and LinuxUpConnectorGtk (GTK4).
 /// The field is null on Windows and macOS where UnifiedPush is not supported.
-class IUpConnector {
+class IUpConnector
+{
 public:
     virtual ~IUpConnector() = default;
 

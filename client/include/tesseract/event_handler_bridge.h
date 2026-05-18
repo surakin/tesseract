@@ -10,39 +10,41 @@
 #include <memory>
 
 // Forward declarations for cxx-generated types.
-namespace tesseract_ffi {
-    struct TimelineEvent;
-    struct RoomInfo;
-    struct BackupProgress;
-    struct VerificationEmoji;
-}
+namespace tesseract_ffi
+{
+struct TimelineEvent;
+struct RoomInfo;
+struct BackupProgress;
+struct VerificationEmoji;
+} // namespace tesseract_ffi
 
-namespace tesseract_ffi {
+namespace tesseract_ffi
+{
 
 /// Concrete bridge object whose pointer is handed to the Rust sync loop.
 /// Rust holds a UniquePtr<EventHandlerBridge> and calls the methods below.
-class EventHandlerBridge {
+class EventHandlerBridge
+{
 public:
     explicit EventHandlerBridge(tesseract::IEventHandler* handler)
-        : handler_(handler) {}
+        : handler_(handler)
+    {
+    }
 
     /// Atomically reset the room's timeline to `snapshot` (oldest-first).
     void on_timeline_reset(rust::Str room_id,
-                            const rust::Vec<TimelineEvent>& snapshot) const;
+                           const rust::Vec<TimelineEvent>& snapshot) const;
 
     /// Insert `event` at visible-index `index` in `room_id`'s timeline.
-    void on_message_inserted(rust::Str room_id,
-                              std::uint64_t index,
-                              const TimelineEvent& event) const;
-
-    /// Replace the event currently at visible-index `index` with `event`.
-    void on_message_updated(rust::Str room_id,
-                             std::uint64_t index,
+    void on_message_inserted(rust::Str room_id, std::uint64_t index,
                              const TimelineEvent& event) const;
 
+    /// Replace the event currently at visible-index `index` with `event`.
+    void on_message_updated(rust::Str room_id, std::uint64_t index,
+                            const TimelineEvent& event) const;
+
     /// Remove the event at visible-index `index`.
-    void on_message_removed(rust::Str room_id,
-                             std::uint64_t index) const;
+    void on_message_removed(rust::Str room_id, std::uint64_t index) const;
 
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
@@ -57,7 +59,7 @@ public:
                          rust::Slice<const uint8_t> image_bytes) const;
 
     void on_verification_request(rust::Str flow_id, rust::Str user_id,
-                                  rust::Str device_id, bool incoming) const;
+                                 rust::Str device_id, bool incoming) const;
     void on_sas_ready(rust::Str flow_id,
                       const rust::Vec<VerificationEmoji>& emojis) const;
     void on_verification_done(rust::Str flow_id) const;

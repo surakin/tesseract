@@ -2,9 +2,11 @@
 #include <string>
 #include <string_view>
 
-namespace tesseract {
+namespace tesseract
+{
 
-struct MarkdownResult {
+struct MarkdownResult
+{
     std::string body;           // original typed text (unchanged)
     std::string formatted_body; // HTML; empty when no markdown was detected
 };

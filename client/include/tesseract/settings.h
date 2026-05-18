@@ -10,11 +10,14 @@
 // Font sizes here correspond 1:1 with tk::FontRole values; reaction-chip
 // sizes are read by MessageListView and the per-platform shells.
 
-namespace tesseract {
+namespace tesseract
+{
 
-class Settings {
+class Settings
+{
 public:
-    static Settings& instance() {
+    static Settings& instance()
+    {
         static Settings s;
         return s;
     }
@@ -25,20 +28,20 @@ public:
     Settings& operator=(Settings&&) = delete;
 
     // ── Font sizes (pt) — one per tk::FontRole ────────────────────────
-    int font_small           =  8;
-    int font_body            = 12;
-    int font_sender_name     = 11;
-    int font_timestamp       =  9;
-    int font_sidebar_name    = 12;
+    int font_small = 8;
+    int font_body = 12;
+    int font_sender_name = 11;
+    int font_timestamp = 9;
+    int font_sidebar_name = 12;
     int font_sidebar_preview = 10;
-    int font_unread_badge    = 10;
-    int font_title           = 14;
-    int font_ui_semibold     = 10;
-    int font_big_emoji       = 24;  // 2× body — emoji-only messages
+    int font_unread_badge = 10;
+    int font_title = 14;
+    int font_ui_semibold = 10;
+    int font_big_emoji = 24; // 2× body — emoji-only messages
 
     // ── Reaction chip ────────────────────────────────────────────────
     int reaction_chip_height = 28;
-    int reaction_chip_gap    =  6;
+    int reaction_chip_gap = 6;
 
     // ── Message grouping ─────────────────────────────────────────────
     // Consecutive messages from the same sender within this window
@@ -57,13 +60,22 @@ public:
     //   Compressed → cap to 1600×1200 (keep aspect ratio), re-encode
     //                as image/jpeg quality 75.
     //   Unmodified → pass clipboard bytes through unchanged.
-    enum class ImageQuality { Compressed, Unmodified };
+    enum class ImageQuality
+    {
+        Compressed,
+        Unmodified
+    };
     ImageQuality image_quality = ImageQuality::Compressed;
 
     // ── Theme preference ─────────────────────────────────────────────
     // System → follow the OS light/dark setting (default).
     // Light / Dark → override the OS preference.
-    enum class ThemePreference { Light, Dark, System };
+    enum class ThemePreference
+    {
+        Light,
+        Dark,
+        System
+    };
     ThemePreference theme_pref = ThemePreference::System;
 
     // ── Notifications ─────────────────────────────────────────────────

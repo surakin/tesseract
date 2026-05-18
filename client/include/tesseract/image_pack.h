@@ -7,27 +7,32 @@
 #include <string>
 #include <vector>
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// MSC2545 usage bits. A pack/image with neither bit set means "both" per
 /// spec (missing/empty `usage` is treated as "all usages allowed"); the
 /// aggregator normalises that to `PackUsage::Any` before surfacing.
-enum class PackUsage : std::uint8_t {
-    None     = 0,
-    Sticker  = 1 << 0,
+enum class PackUsage : std::uint8_t
+{
+    None = 0,
+    Sticker = 1 << 0,
     Emoticon = 1 << 1,
-    Any      = Sticker | Emoticon,
+    Any = Sticker | Emoticon,
 };
 
-constexpr inline PackUsage operator|(PackUsage a, PackUsage b) noexcept {
-    return static_cast<PackUsage>(
-        static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b));
+constexpr inline PackUsage operator|(PackUsage a, PackUsage b) noexcept
+{
+    return static_cast<PackUsage>(static_cast<std::uint8_t>(a) |
+                                  static_cast<std::uint8_t>(b));
 }
-constexpr inline PackUsage operator&(PackUsage a, PackUsage b) noexcept {
-    return static_cast<PackUsage>(
-        static_cast<std::uint8_t>(a) & static_cast<std::uint8_t>(b));
+constexpr inline PackUsage operator&(PackUsage a, PackUsage b) noexcept
+{
+    return static_cast<PackUsage>(static_cast<std::uint8_t>(a) &
+                                  static_cast<std::uint8_t>(b));
 }
-constexpr inline bool any(PackUsage v) noexcept {
+constexpr inline bool any(PackUsage v) noexcept
+{
     return static_cast<std::uint8_t>(v) != 0;
 }
 
@@ -35,17 +40,22 @@ constexpr inline bool any(PackUsage v) noexcept {
 /// in the user's account_data; `Room` packs live as state events in another
 /// room which the user has globally enabled via
 /// `im.ponies.emote_rooms` / `m.image_pack.rooms`.
-enum class PackSourceKind : std::uint8_t { User, Room };
+enum class PackSourceKind : std::uint8_t
+{
+    User,
+    Room
+};
 
-struct ImagePack {
+struct ImagePack
+{
     /// Synthetic stable id. `"user"` for the user pack, `"room:!id/key"` for
     /// every (room_id, state_key) combination. Stable across rebuilds — UIs
     /// can use it as a hash key.
     std::string id;
     std::string display_name;
-    std::string avatar_url;   // mxc://
+    std::string avatar_url; // mxc://
     std::string attribution;
-    PackUsage   usage = PackUsage::Any;
+    PackUsage usage = PackUsage::Any;
     PackSourceKind source_kind = PackSourceKind::User;
     /// For `PackSourceKind::Room`, the source room's Matrix ID. Empty
     /// otherwise.
@@ -55,7 +65,8 @@ struct ImagePack {
     std::string source_state_key;
 };
 
-struct ImagePackImage {
+struct ImagePackImage
+{
     /// Pack this entry belongs to (matches `ImagePack::id`).
     std::string pack_id;
     /// Short identifier — the map key in `images` (e.g. "happy").
@@ -66,21 +77,32 @@ struct ImagePackImage {
     std::string body;
     /// Literal MSC2545 `info` object serialised as JSON ("{}" when absent).
     std::string info_json;
-    PackUsage   usage    = PackUsage::Any;
+    PackUsage usage = PackUsage::Any;
     /// Tesseract-private flag (`im.tesseract.favorite`). Surfaced in the
     /// sticker picker's Favorites tab. Not part of MSC2545.
-    bool        favorite = false;
+    bool favorite = false;
 };
 
 /// Predicate filter used by `Client::list_pack_images`.
-enum class PackUsageFilter : std::uint8_t { Any, Sticker, Emoticon };
+enum class PackUsageFilter : std::uint8_t
+{
+    Any,
+    Sticker,
+    Emoticon
+};
 
-inline const char* pack_usage_filter_to_str(PackUsageFilter f) noexcept {
-    switch (f) {
-        case PackUsageFilter::Sticker:  return "sticker";
-        case PackUsageFilter::Emoticon: return "emoticon";
-        case PackUsageFilter::Any:      [[fallthrough]];
-        default:                        return "any";
+inline const char* pack_usage_filter_to_str(PackUsageFilter f) noexcept
+{
+    switch (f)
+    {
+    case PackUsageFilter::Sticker:
+        return "sticker";
+    case PackUsageFilter::Emoticon:
+        return "emoticon";
+    case PackUsageFilter::Any:
+        [[fallthrough]];
+    default:
+        return "any";
     }
 }
 

@@ -8,7 +8,8 @@
 #include <memory>
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// Everything the host needs to drive a single Matrix account: the `Client`
 /// (its own tokio runtime + matrix-sdk Client), the per-account
@@ -21,7 +22,8 @@ namespace tesseract {
 /// move/destructor. The host owns a `std::vector<std::unique_ptr<AccountSession>>`
 /// and rebinds shared UI surfaces to the active entry through the
 /// `MainWindow::switch_active_account` chokepoint.
-struct AccountSession {
+struct AccountSession
+{
     // bridge must be declared BEFORE client so that it is destroyed LAST
     // (C++ destroys fields in reverse declaration order). The tokio runtime
     // inside ClientFfi calls rt.drop() last, which blocks until all spawned
@@ -29,15 +31,15 @@ struct AccountSession {
     // invoke C++ callbacks — the IEventHandler must still be alive for the
     // entire duration of rt.drop(). Declaring client second guarantees that.
     std::unique_ptr<IEventHandler> bridge;
-    std::unique_ptr<Client>        client;
+    std::unique_ptr<Client> client;
     // notifier is declared after client so it is destroyed first (before
     // client teardown), stopping incoming notifications before the SDK tears
     // down. bridge is still declared first so it outlives both.
-    std::unique_ptr<INotifier>     notifier;
+    std::unique_ptr<INotifier> notifier;
     // up_connector registers with the UnifiedPush distributor via D-Bus.
     // Null on Win32 and macOS. Declared after notifier (destroyed before it)
     // so the D-Bus listener is torn down before notifications stop.
-    std::unique_ptr<IUpConnector>  up_connector;
+    std::unique_ptr<IUpConnector> up_connector;
 
     /// Canonical Matrix ID, e.g. `@alice:example.org`. Used as the key in
     /// `accounts.json` and as the parent of `SessionStore::account_dir`.

@@ -4,7 +4,8 @@
 #include <string>
 #include <vector>
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// Persistent on-disk store for OAuth session blobs.
 ///
@@ -28,23 +29,25 @@ namespace tesseract {
 /// access/refresh tokens into the platform secret store (DPAPI / libsecret /
 /// Keychain) and keep only homeserver + user_id in this file. Don't add
 /// fields without thinking about that migration.
-class SessionStore {
+class SessionStore
+{
 public:
     // ---------- Legacy single-account API (kept until shells migrate) ----------
 
     /// Absolute path to the legacy single-account session file.
     static std::string path();
     static std::optional<std::string> load();
-    static bool        save(const std::string& json);
-    static void        clear();
+    static bool save(const std::string& json);
+    static void clear();
 
     // ---------- Multi-account API ----------
 
     /// Index of every account whose session is persisted on disk, plus which
     /// one is the foreground account. `active_user_id` is empty when no
     /// accounts are present.
-    struct AccountIndex {
-        std::string              active_user_id;
+    struct AccountIndex
+    {
+        std::string active_user_id;
         std::vector<std::string> user_ids;
     };
 
@@ -75,7 +78,8 @@ public:
     /// Atomically write a PersistedSession JSON into the account directory.
     /// Creates the directory tree on demand. Returns false on filesystem
     /// error.
-    static bool save_account(const std::string& user_id, const std::string& json);
+    static bool save_account(const std::string& user_id,
+                             const std::string& json);
 
     /// Remove `<config>/accounts/<sanitize(user_id)>/` (session, SDK store,
     /// everything). Idempotent.

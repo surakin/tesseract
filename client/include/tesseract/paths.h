@@ -1,7 +1,8 @@
 #pragma once
 #include <filesystem>
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// Per-user Tesseract config directory.
 /// - Windows: `%APPDATA%/Tesseract`

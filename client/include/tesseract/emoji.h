@@ -3,12 +3,14 @@
 #include <string_view>
 #include <vector>
 
-namespace tesseract::emoji {
+namespace tesseract::emoji
+{
 
 /// Picker categories — combines Unicode's "Smileys & Emotion" and
 /// "People & Body" into a single tab for the standard mobile-keyboard
 /// layout. Order is the order tabs appear in the picker.
-enum class Category : std::uint8_t {
+enum class Category : std::uint8_t
+{
     SmileysPeople,
     AnimalsNature,
     FoodDrink,
@@ -21,12 +23,15 @@ enum class Category : std::uint8_t {
 
 /// Single emoji entry. All fields are static string views into the
 /// embedded data table — never owned, never freed.
-struct Entry {
-    std::string_view glyph;      ///< UTF-8 glyph (may be a multi-codepoint sequence).
-    std::string_view name;       ///< CLDR short name, e.g. "grinning face".
-    std::string_view keywords;   ///< Space-separated search terms, lowercase.
-    Category         category;
-    std::string_view shortcodes; ///< Space-separated; first token is canonical (snake_case CLDR name).
+struct Entry
+{
+    std::string_view
+        glyph;             ///< UTF-8 glyph (may be a multi-codepoint sequence).
+    std::string_view name; ///< CLDR short name, e.g. "grinning face".
+    std::string_view keywords; ///< Space-separated search terms, lowercase.
+    Category category;
+    std::string_view
+        shortcodes; ///< Space-separated; first token is canonical (snake_case CLDR name).
 };
 
 /// All bundled emoji, in Unicode-CLDR display order grouped by category.
