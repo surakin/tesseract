@@ -1388,13 +1388,22 @@ void MainWindow::on_create(HWND hwnd) {
         main_app_surface_->set_on_layout([this] {
             if (!main_app_) return;
 
+            // Native overlays must be hidden while an image/video viewer is open —
+            // Win32 child HWNDs always paint over canvas-drawn overlays.
+            const bool hide = (img_viewer_ && img_viewer_->is_open())
+                           || (vid_viewer_ && vid_viewer_->is_open());
+
             // Compose text area.
-            if (room_text_area_)
-                room_text_area_->set_rect(main_app_->compose_text_area_rect());
+            if (room_text_area_) {
+                if (hide)
+                    room_text_area_->set_visible(false);
+                else
+                    room_text_area_->set_rect(main_app_->compose_text_area_rect());
+            }
 
             // Room search field.
             if (room_search_field_) {
-                bool srch = main_app_->room_search_field_visible();
+                bool srch = !hide && main_app_->room_search_field_visible();
                 room_search_field_->set_visible(srch);
                 if (srch) {
                     tk::Rect r = main_app_->room_search_field_rect();
@@ -1405,7 +1414,7 @@ void MainWindow::on_create(HWND hwnd) {
 
             // Recovery key field.
             if (recovery_key_field_) {
-                bool rec = main_app_->recovery_key_field_visible();
+                bool rec = !hide && main_app_->recovery_key_field_visible();
                 recovery_key_field_->set_visible(rec);
                 if (rec)
                     recovery_key_field_->set_rect(main_app_->recovery_key_field_rect());
