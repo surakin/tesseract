@@ -436,6 +436,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
+        [c _relayoutRoomSurface];
         [c _relayoutShortcodePopupIfVisible];
         return;
     }
@@ -1431,6 +1432,26 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 auto it = s->_shell->tk_avatars_.find(mxc);
                 return it == s->_shell->tk_avatars_.end() ? nullptr
                                                           : it->second.get();
+            });
+        _mainApp->room_list_view()->set_sticker_provider(
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return nullptr;
+                }
+                if (const auto* f = s->_shell->anim_cache_.current_frame(mxc))
+                {
+                    return f;
+                }
+                auto it = s->_shell->tk_images_.find(mxc);
+                if (it != s->_shell->tk_images_.end())
+                {
+                    return it->second.get();
+                }
+                s->_shell->ensure_media_image_(mxc, 64, 64);
+                return nullptr;
             });
         _mainApp->room_list_view()->on_room_selected =
             [weakSelf](const std::string& room_id)
