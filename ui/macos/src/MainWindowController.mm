@@ -148,9 +148,10 @@ protected:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
-    const std::vector<views::MessageRowData>* get_current_messages_() override;
+    const std::vector<tesseract::views::MessageRowData>*
+    get_current_messages_() override;
     void apply_cached_messages_(
-        const std::vector<views::MessageRowData>& msgs) override;
+        const std::vector<tesseract::views::MessageRowData>& msgs) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
@@ -1116,14 +1117,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 }
 
-const std::vector<views::MessageRowData>* MacShell::get_current_messages_()
+const std::vector<tesseract::views::MessageRowData>*
+MacShell::get_current_messages_()
 {
     auto* ml = room_view_ ? room_view_->message_list() : nullptr;
     return ml ? &ml->messages() : nullptr;
 }
 
 void MacShell::apply_cached_messages_(
-    const std::vector<views::MessageRowData>& msgs)
+    const std::vector<tesseract::views::MessageRowData>& msgs)
 {
     if (room_view_)
     {
