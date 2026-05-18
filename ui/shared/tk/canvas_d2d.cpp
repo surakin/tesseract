@@ -15,7 +15,6 @@
 static constexpr int kTwemojiFontResourceId = 201;
 
 #include <algorithm>
-#include <atomic>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -233,68 +232,11 @@ struct Backend::Impl
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────
-//  Twemoji emoji-first font fallback
-// ─────────────────────────────────────────────────────────────────────────
-
-// Chains two IDWriteFontFallback objects: tries `emoji_` first (covers only
-// emoji Unicode ranges → Twemoji Mozilla), then delegates to `system_` for
-// everything not resolved by the emoji fallback.
-struct TwemojiFirstFallback : IDWriteFontFallback
-{
-    TwemojiFirstFallback(ComPtr<IDWriteFontFallback> emoji,
-                         ComPtr<IDWriteFontFallback> system)
-        : emoji_(std::move(emoji)), system_(std::move(system))
-    {
-    }
-
-    IFACEMETHOD(MapCharacters)(IDWriteTextAnalysisSource* src, UINT32 pos,
-                               UINT32 len, IDWriteFontCollection* base_coll,
-                               const wchar_t* base_family,
-                               DWRITE_FONT_WEIGHT bw, DWRITE_FONT_STYLE bs,
-                               DWRITE_FONT_STRETCH bst, UINT32* mapped_len,
-                               IDWriteFont** mapped_font, FLOAT* scale) override
-    {
-        *mapped_font = nullptr;
-        emoji_->MapCharacters(src, pos, len, base_coll, base_family, bw, bs,
-                              bst, mapped_len, mapped_font, scale);
-        if (*mapped_font)
-        {
-            return S_OK;
-        }
-        return system_->MapCharacters(src, pos, len, base_coll, base_family, bw,
-                                      bs, bst, mapped_len, mapped_font, scale);
-    }
-
-    IFACEMETHOD_(ULONG, AddRef)() override
-    {
-        return ++ref_;
-    }
-    IFACEMETHOD_(ULONG, Release)() override
-    {
-        ULONG r = --ref_;
-        if (!r)
-        {
-            delete this;
-        }
-        return r;
-    }
-    IFACEMETHOD(QueryInterface)(REFIID riid, void** p) override
-    {
-        if (riid == __uuidof(IDWriteFontFallback) || riid == __uuidof(IUnknown))
-        {
-            return *p = this, AddRef(), S_OK;
-        }
-        return *p = nullptr, E_NOINTERFACE;
-    }
-
-    ComPtr<IDWriteFontFallback> emoji_, system_;
-    std::atomic<ULONG> ref_{1};
-};
-
 // Loads the Twemoji Mozilla TTF from the embedded RCDATA resource and builds
-// an emoji-first IDWriteFontFallback that checks Twemoji for all emoji Unicode
-// ranges before falling through to the system fallback.
+// an IDWriteFontFallback that maps only country-flag Regional Indicator pairs
+// (U+1F1E0–U+1F1FF) to Twemoji Mozilla, then chains the system fallback for
+// everything else (Segoe UI Emoji handles all other emoji including ZWJ
+// sequences natively).
 // Returns nullptr (and leaves mem_loader_out untouched) on any failure — the
 // caller then keeps using the system-only fallback.
 static ComPtr<IDWriteFontFallback>
@@ -380,26 +322,9 @@ build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
         return nullptr;
     }
 
-    // 5. Build a fallback that maps emoji Unicode ranges → Twemoji Mozilla.
-    static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
-        {0x00A9, 0x00A9},   {0x00AE, 0x00AE}, // © ®
-        {0x203C, 0x203C},   {0x2049, 0x2049}, // ‼ ⁉
-        {0x2122, 0x2122},   {0x2139, 0x2139}, // ™ ℹ
-        {0x2194, 0x2199},   {0x21A9, 0x21AA}, // arrows
-        {0x231A, 0x231B},   {0x2328, 0x2328}, // watch, keyboard
-        {0x23CF, 0x23CF},   {0x23E9, 0x23FA}, // eject, media controls
-        {0x24C2, 0x24C2},                     // Ⓜ
-        {0x25AA, 0x25FE},                     // geometric shapes
-        {0x2600, 0x27BF},                     // misc symbols + dingbats
-        {0x2934, 0x2935},   {0x2B05, 0x2B55}, // arrows, squares, star
-        {0x3030, 0x3030},   {0x303D, 0x303D},   {0x3297, 0x3297},
-        {0x3299, 0x3299},   {0x1F004, 0x1F004}, {0x1F0CF, 0x1F0CF},
-        {0x1F170, 0x1F171}, {0x1F17E, 0x1F17F}, {0x1F18E, 0x1F18E},
-        {0x1F191, 0x1F19A}, {0x1F1E0, 0x1F1FF}, // Regional Indicator (country flags)
-        {0x1F201, 0x1F251},                     // enclosed ideographic
-        {0x1F300, 0x1F9FF},                     // main emoji block
-        {0x1FA00, 0x1FAFF}, // extended (chess, medical, misc)
-        {0xFE00, 0xFE0F},   // variation selectors
+    // 5. Build a fallback: flags → Twemoji Mozilla, everything else → system.
+    static const DWRITE_UNICODE_RANGE kFlagRanges[] = {
+        {0x1F1E0, 0x1F1FF}, // Regional Indicator Symbols (country flags)
     };
     const wchar_t* family[] = {L"Twemoji Mozilla"};
 
@@ -408,24 +333,23 @@ build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     {
         return nullptr;
     }
-    if (FAILED(fb_builder->AddMapping(kEmojiRanges, ARRAYSIZE(kEmojiRanges),
+    if (FAILED(fb_builder->AddMapping(kFlagRanges, ARRAYSIZE(kFlagRanges),
                                       family, 1, twemoji_coll.Get(), nullptr,
                                       nullptr, 1.0f)))
     {
         return nullptr;
     }
-
-    ComPtr<IDWriteFontFallback> emoji_fallback;
-    if (FAILED(fb_builder->CreateFontFallback(&emoji_fallback)))
+    // Chain the system fallback (Segoe UI Emoji etc.) for all other characters.
+    if (FAILED(fb_builder->AddMappings(system_fallback.Get())))
     {
         return nullptr;
     }
 
-    // 6. Wrap emoji fallback + system fallback into a composite chain.
-    auto* raw = new TwemojiFirstFallback(std::move(emoji_fallback),
-                                         std::move(system_fallback));
     ComPtr<IDWriteFontFallback> result;
-    result.Attach(static_cast<IDWriteFontFallback*>(raw));
+    if (FAILED(fb_builder->CreateFontFallback(&result)))
+    {
+        return nullptr;
+    }
 
     mem_loader_out = std::move(mem_loader);
     return result;
