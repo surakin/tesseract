@@ -29,7 +29,7 @@ if (condition) {
 
 ### 2. Always brace control flow bodies (all languages)
 
-Single-statement bodies after `if`, `else`, `while`, `for`, `do`, and `switch`/`match` arms must be wrapped in braces. This applies to Rust, C++, and Objective-C.
+Single-statement bodies after `if`, `else`, `while`, `for`, `do`, and `switch` arms must be wrapped in braces. This applies to C++ and Objective-C. Rust's `if`/`else`/`while`/`for`/`loop` bodies are always blocks (the language requires it); a **trivial single-expression Rust `match` arm stays idiomatic and unbraced** (e.g. `Some(n) => n,`) — brace a Rust `match` arm only when its body is multi-statement.
 
 Do:
 
@@ -58,9 +58,9 @@ This prevents goto-fail style bugs and keeps diffs clean when statements are add
 > Rust uses standard idiomatic style — opening brace on the **same line**
 > (the Allman rule in Universal Rules §1 is C++/Objective-C only). Run
 > `rustfmt` (`cargo fmt`) with its defaults; it produces the correct
-> layout. The one project-specific deviation is Universal Rules §2
-> (always brace single-expression `match` arms): `rustfmt` preserves
-> braced arms but will not add them, so add those by hand.
+> layout, including brace placement and `match`-arm formatting. No
+> manual brace pass is needed for Rust — per Universal Rules §2, trivial
+> single-expression `match` arms stay idiomatic and unbraced.
 
 Functions:
 
@@ -71,14 +71,14 @@ fn parse_input(input: &str) -> Result<Config, Error> {
 }
 ```
 
-Match arms — always braced, even for single expressions:
+Match arms — trivial single-expression arms stay unbraced; brace only
+multi-statement bodies (`rustfmt` handles both automatically):
 
 ```rust
 match value {
-    Some(n) => {
-        process(n)
-    }
+    Some(n) => n,
     None => {
+        log_miss();
         default()
     }
 }
