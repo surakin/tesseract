@@ -226,6 +226,7 @@ void MainWindow::apply_default_font(HWND h)
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
+    win32::theme::refresh_from_system();
     return win32::theme::current_mode() == win32::theme::Mode::Dark
                ? tk::ThemeMode::Dark
                : tk::ThemeMode::Light;

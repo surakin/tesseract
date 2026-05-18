@@ -641,11 +641,13 @@ public:
     D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt)
         : backend_(backend), rt_(rt)
     {
+        update_dc(rt);
     }
 
     void rebind(ID2D1RenderTarget* rt)
     {
         rt_ = rt;
+        update_dc(rt);
         brush_cache_.clear();
     }
 
@@ -700,8 +702,13 @@ public:
         {
             return;
         }
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        D2D1_RECT_F d = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        else
+            rt_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
 
     void draw_image_subregion(const Image& image, Rect src, Rect dst) override
@@ -714,8 +721,13 @@ public:
             return;
         }
         D2D1_RECT_F srcr = to_d2d(src);
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
+        D2D1_RECT_F dstr = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &dstr, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcr);
+        else
+            rt_->DrawBitmap(bmp, &dstr, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
     }
 
     void draw_circle_image(const Image& image, Point centre,
@@ -745,8 +757,13 @@ public:
         rt_->PushLayer(lp, nullptr);
         Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
                  diameter, diameter};
-        rt_->DrawBitmap(bmp, to_d2d(dst), 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        D2D1_RECT_F d = to_d2d(dst);
+        if (dc_)
+            dc_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        else
+            rt_->DrawBitmap(bmp, &d, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         rt_->PopLayer();
     }
 
@@ -848,6 +865,17 @@ private:
         Layer
     };
 
+    void update_dc(ID2D1RenderTarget* rt)
+    {
+        dc_ = nullptr;
+        void* p = nullptr;
+        if (SUCCEEDED(rt->QueryInterface(__uuidof(ID2D1DeviceContext), &p)))
+        {
+            dc_ = static_cast<ID2D1DeviceContext*>(p);
+            dc_->Release(); // rt_ already holds the ref
+        }
+    }
+
     ID2D1SolidColorBrush* brush(Color c)
     {
         std::uint32_t key = (std::uint32_t(c.r) << 24) |
@@ -867,6 +895,7 @@ private:
 
     Backend::Impl& backend_;
     ID2D1RenderTarget* rt_;
+    ID2D1DeviceContext* dc_ = nullptr; // non-owning; valid iff rt_ IS a DeviceContext
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
         brush_cache_;
     std::vector<ClipKind> clip_stack_;
