@@ -29,6 +29,10 @@ protected:
     void resizeEvent(QResizeEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
 
+    void surface_repaint_() override;
+    const tesseract::views::UrlPreviewData*
+    preview_lookup_(const std::string& url) override;
+
 private:
     MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
