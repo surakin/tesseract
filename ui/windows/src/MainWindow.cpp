@@ -1978,6 +1978,15 @@ void MainWindow::on_create(HWND hwnd)
             {
                 main_app_surface_->relayout();
             }
+            // Move keyboard focus to the top-level window so its WM_KEYDOWN
+            // handler receives Esc immediately. The viewer is opened by a
+            // mouse click that may leave focus on a child HWND (surface /
+            // native edit), which would otherwise swallow Esc until an
+            // app deactivate/reactivate restores top-level focus.
+            if (hwnd_)
+            {
+                SetFocus(hwnd_);
+            }
         };
 
         // ── VideoViewerOverlay callbacks ─────────────────────────────────────
@@ -2024,6 +2033,12 @@ void MainWindow::on_create(HWND hwnd)
             if (main_app_surface_)
             {
                 main_app_surface_->relayout();
+            }
+            // Focus the top-level window so its WM_KEYDOWN handler gets Esc
+            // immediately (see the image-viewer path for the rationale).
+            if (hwnd_)
+            {
+                SetFocus(hwnd_);
             }
             // Async byte fetch via PostMessage.
             HWND target = hwnd_;
