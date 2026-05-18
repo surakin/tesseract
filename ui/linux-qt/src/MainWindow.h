@@ -201,6 +201,12 @@ private:
                                 MediaKind kind,
                                 std::vector<uint8_t> bytes) override;
 
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
+                               int max_w, int max_h) override;
+    std::int64_t monotonic_ms_() override;
+    void         start_anim_tick_() override;
+    void         repaint_pickers_() override;
+
     // Tab management hooks.
     void        on_tab_state_changed_ui_()             override;
     float       get_message_scroll_fraction_()         override;
