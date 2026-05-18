@@ -881,7 +881,12 @@ void MainWindow::on_create(HWND hwnd) {
                 return it == tk_avatars_.end() ? nullptr : it->second.get();
             });
         room_list_view_->on_room_selected =
-            [this](const std::string& room_id) { tab_select_room(room_id); };
+            [this](const std::string& room_id) {
+                if (GetKeyState(VK_CONTROL) & 0x8000)
+                    tab_open_room(room_id);
+                else
+                    tab_select_room(room_id);
+            };
         room_list_view_->on_scroll = [this] {
             KillTimer(hwnd_, kScrollDebounceTimerId);
             SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
