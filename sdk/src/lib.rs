@@ -18,134 +18,134 @@ pub use bridge::ffi;
 pub mod ffi {
     #[derive(Debug, PartialEq, Default)]
     pub struct RoomInfo {
-        pub id:                String,
-        pub name:              String,
-        pub topic:             String,
-        pub topic_html:        String,
-        pub unread_count:      u64,
-        pub is_direct:         bool,
-        pub avatar_url:        String,
-        pub last_message_body:        String,
+        pub id: String,
+        pub name: String,
+        pub topic: String,
+        pub topic_html: String,
+        pub unread_count: u64,
+        pub is_direct: bool,
+        pub avatar_url: String,
+        pub last_message_body: String,
         pub last_message_sender_name: String,
-        pub last_activity_ts:         u64,
-        pub is_space:          bool,
-        pub is_favorite:       bool,
+        pub last_activity_ts: u64,
+        pub is_space: bool,
+        pub is_favorite: bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct ReactionGroup {
-        pub key:           String,
-        pub count:         u64,
+        pub key: String,
+        pub count: u64,
         pub reacted_by_me: bool,
-        pub source_json:   String,
-        pub senders:       Vec<String>,
+        pub source_json: String,
+        pub senders: Vec<String>,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct ReadReceipt {
-        pub user_id:      String,
+        pub user_id: String,
         pub display_name: String,
-        pub avatar_url:   String,
+        pub avatar_url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct TimelineEvent {
-        pub event_id:          String,
-        pub room_id:           String,
-        pub sender:            String,
-        pub sender_name:       String,
+        pub event_id: String,
+        pub room_id: String,
+        pub sender: String,
+        pub sender_name: String,
         pub sender_avatar_url: String,
-        pub body:              String,
-        pub timestamp:         u64,
-        pub msg_type:          String,
-        pub source_json:       String,
-        pub width:             u64,
-        pub height:            u64,
-        pub file_json:         String,
-        pub file_name:         String,
-        pub file_size:         u64,
-        pub image_filename:    String,
+        pub body: String,
+        pub timestamp: u64,
+        pub msg_type: String,
+        pub source_json: String,
+        pub width: u64,
+        pub height: u64,
+        pub file_json: String,
+        pub file_name: String,
+        pub file_size: u64,
+        pub image_filename: String,
         pub audio_source_json: String,
         pub audio_duration_ms: u64,
-        pub audio_waveform:    Vec<u16>,
-        pub audio_mime:        String,
+        pub audio_waveform: Vec<u16>,
+        pub audio_mime: String,
         pub video_thumbnail_json: String,
-        pub video_duration_ms:    u64,
-        pub video_mime:           String,
-        pub video_autoplay:       bool,
-        pub video_loop:           bool,
-        pub video_no_audio:       bool,
-        pub video_hide_controls:  bool,
-        pub video_gif:            bool,
-        pub reactions:         Vec<ReactionGroup>,
-        pub read_receipts:     Vec<ReadReceipt>,
-        pub in_reply_to_id:          String,
+        pub video_duration_ms: u64,
+        pub video_mime: String,
+        pub video_autoplay: bool,
+        pub video_loop: bool,
+        pub video_no_audio: bool,
+        pub video_hide_controls: bool,
+        pub video_gif: bool,
+        pub reactions: Vec<ReactionGroup>,
+        pub read_receipts: Vec<ReadReceipt>,
+        pub in_reply_to_id: String,
         pub in_reply_to_sender_name: String,
-        pub in_reply_to_body:        String,
-        pub is_edited:               bool,
-        pub formatted_body:          String,
-        pub blurhash:                String,
-        pub sticker_info_json:       String,
-        pub image_animated:          bool,
-        pub pending_state:           String,
-        pub pending_error:           String,
-        pub pending_recoverable:     bool,
-        pub pending_txn_id:          String,
-        pub location_lat:            f64,
-        pub location_lon:            f64,
-        pub location_description:    String,
+        pub in_reply_to_body: String,
+        pub is_edited: bool,
+        pub formatted_body: String,
+        pub blurhash: String,
+        pub sticker_info_json: String,
+        pub image_animated: bool,
+        pub pending_state: String,
+        pub pending_error: String,
+        pub pending_recoverable: bool,
+        pub pending_txn_id: String,
+        pub location_lat: f64,
+        pub location_lon: f64,
+        pub location_description: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct OpResult {
-        pub ok:      bool,
+        pub ok: bool,
         pub message: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct PaginateResult {
-        pub ok:            bool,
-        pub message:       String,
+        pub ok: bool,
+        pub message: String,
         pub reached_start: bool,
-        pub reached_end:   bool,
+        pub reached_end: bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct OAuthBegin {
-        pub ok:           bool,
-        pub message:      String,
-        pub auth_url:     String,
+        pub ok: bool,
+        pub message: String,
+        pub auth_url: String,
         pub redirect_uri: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct BackupProgress {
-        pub state:         u8,
+        pub state: u8,
         pub imported_keys: u64,
-        pub total_keys:    u64,
+        pub total_keys: u64,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct ImagePackFfi {
-        pub id:               String,
-        pub display_name:     String,
-        pub avatar_url:       String,
-        pub attribution:      String,
-        pub usage_mask:       u8,
-        pub source_kind:      String,
-        pub source_room:      String,
+        pub id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+        pub attribution: String,
+        pub usage_mask: u8,
+        pub source_kind: String,
+        pub source_room: String,
         pub source_state_key: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
     pub struct ImageEntryFfi {
-        pub pack_id:    String,
-        pub shortcode:  String,
-        pub url:        String,
-        pub body:       String,
-        pub info_json:  String,
+        pub pack_id: String,
+        pub shortcode: String,
+        pub url: String,
+        pub body: String,
+        pub info_json: String,
         pub usage_mask: u8,
-        pub favorite:   bool,
+        pub favorite: bool,
     }
 
     pub struct EventHandlerBridge;
@@ -160,7 +160,14 @@ pub mod ffi {
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
-        pub fn on_notification(&self, _room_id: &str, _room_name: &str,
-                               _sender: &str, _body: &str, _is_mention: bool) {}
+        pub fn on_notification(
+            &self,
+            _room_id: &str,
+            _room_name: &str,
+            _sender: &str,
+            _body: &str,
+            _is_mention: bool,
+        ) {
+        }
     }
 }

@@ -12,26 +12,26 @@ pub mod ffi {
 
     /// Lightweight room descriptor returned by list_rooms().
     struct RoomInfo {
-        id:                String,
-        name:              String,
-        topic:             String,
+        id: String,
+        name: String,
+        topic: String,
         /// HTML body from the MSC3765 `m.topic` block; empty when absent.
-        topic_html:        String,
-        unread_count:      u64,
-        is_direct:         bool,
+        topic_html: String,
+        unread_count: u64,
+        is_direct: bool,
         /// mxc:// URI of the room avatar, empty string if none.
-        avatar_url:        String,
+        avatar_url: String,
         /// Body text of the most recent message (best-effort, may be empty).
         last_message_body: String,
         /// Display name of the last-message sender; empty when the sender is
         /// the current user (render as "You"), or when there is no last message.
         last_message_sender_name: String,
         /// Unix timestamp in milliseconds of the most recent activity, or 0.
-        last_activity_ts:  u64,
+        last_activity_ts: u64,
         /// True when this room's type is "m.space".
-        is_space:          bool,
+        is_space: bool,
         /// True when the room is tagged `m.favourite` by the current user.
-        is_favorite:       bool,
+        is_favorite: bool,
     }
 
     /// One aggregated reaction key on a `TimelineEvent`.
@@ -39,18 +39,18 @@ pub mod ffi {
     struct ReactionGroup {
         /// Unicode emoji string for normal reactions, or `:shortcode:` for
         /// MSC 4027 custom-image reactions.
-        key:           String,
-        count:         u64,
+        key: String,
+        count: u64,
         /// True when the current user is among the senders for this key.
         reacted_by_me: bool,
         /// JSON-serialised `MediaSource` (compatible with
         /// `fetch_source_bytes`) when this is an MSC 4027 custom-image
         /// reaction. Empty string for plain Unicode reactions.
-        source_json:   String,
+        source_json: String,
         /// Display label for each sender, in iteration order from the SDK.
         /// Each entry is the member's display name when resolvable from the
         /// room state, otherwise the bare Matrix ID.
-        senders:       Vec<String>,
+        senders: Vec<String>,
     }
 
     /// One user's most recent read receipt landing on a timeline event.
@@ -59,9 +59,9 @@ pub mod ffi {
     /// unset). Receipts for the current user are filtered on the Rust side
     /// so the UI never has to render its own avatar on every message.
     struct ReadReceipt {
-        user_id:      String,
+        user_id: String,
         display_name: String,
-        avatar_url:   String,
+        avatar_url: String,
     }
 
     /// A single timeline event (message).
@@ -86,34 +86,34 @@ pub mod ffi {
     ///                   only when the replied-to item is present in the local cache;
     ///                   both are empty strings when the cache doesn't have it yet).
     struct TimelineEvent {
-        event_id:          String,
-        room_id:           String,
-        sender:            String,
-        sender_name:       String,
+        event_id: String,
+        room_id: String,
+        sender: String,
+        sender_name: String,
         sender_avatar_url: String,
-        body:              String,
+        body: String,
         /// Unix timestamp in milliseconds.
-        timestamp:         u64,
+        timestamp: u64,
         /// "m.text" | "m.image" | "m.file" | "m.sticker" | "m.voice" | "m.redacted" | …
         /// "m.redacted" → body is empty; render as a tombstone placeholder.
         /// Virtual items passed through from matrix-sdk-ui:
         ///   "virtual.date_divider"  → timestamp = day epoch in ms (local midnight).
         ///   "virtual.read_marker"   → marks the user's last-read position.
         ///   "virtual.timeline_start"→ no earlier history to paginate.
-        msg_type:          String,
+        msg_type: String,
         /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
-        source_json:       String,
-        width:             u64,
-        height:            u64,
+        source_json: String,
+        width: u64,
+        height: u64,
         /// JSON serialisation of a `MediaSource` for the file attachment.
         /// Non-empty when msg_type is "m.file".
-        file_json:         String,
-        file_name:         String,
-        file_size:         u64,
+        file_json: String,
+        file_name: String,
+        file_size: u64,
         /// Non-empty when msg_type is "m.image" and the sender provided an explicit
         /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
         /// user-written caption and should be displayed below the image.
-        image_filename:    String,
+        image_filename: String,
         /// JSON-serialised `MediaSource` for the voice clip (plain mxc:// or
         /// encrypted `EncryptedFile`). Non-empty when `msg_type == "m.voice"`.
         audio_source_json: String,
@@ -122,78 +122,78 @@ pub mod ffi {
         audio_duration_ms: u64,
         /// MSC1767 waveform samples, each clamped to 0..=1024. Empty when the
         /// sender did not include one (the UI renders flat placeholder bars).
-        audio_waveform:    Vec<u16>,
+        audio_waveform: Vec<u16>,
         /// MIME type advertised by the sender (typically "audio/ogg"). May be
         /// empty when missing from `info.mimetype`.
-        audio_mime:        String,
+        audio_mime: String,
         /// Thumbnail MediaSource JSON for `m.video` events (plain mxc:// or
         /// encrypted JSON). Empty when the server omits a thumbnail.
         video_thumbnail_json: String,
         /// Duration of the video in milliseconds. 0 when not provided.
-        video_duration_ms:    u64,
+        video_duration_ms: u64,
         /// MIME type of the video (e.g. "video/mp4"). May be empty.
-        video_mime:           String,
+        video_mime: String,
         /// fi.mau.* vendor hints from content.info. All false when absent.
         /// autoplay: start playback immediately on load.
         /// loop: restart the clip at end-of-stream.
         /// no_audio: mute the audio track.
         /// hide_controls: suppress the player controls bar.
         /// gif: composite marker — implies all four above.
-        video_autoplay:       bool,
-        video_loop:           bool,
-        video_no_audio:       bool,
-        video_hide_controls:  bool,
-        video_gif:            bool,
+        video_autoplay: bool,
+        video_loop: bool,
+        video_no_audio: bool,
+        video_hide_controls: bool,
+        video_gif: bool,
         /// Aggregated reactions, grouped by key. May be empty.
-        reactions:         Vec<ReactionGroup>,
+        reactions: Vec<ReactionGroup>,
         /// Users (other than the current user) whose latest read receipt
         /// landed on this event. Order matches the SDK's iteration order.
-        read_receipts:     Vec<ReadReceipt>,
+        read_receipts: Vec<ReadReceipt>,
         /// Event ID of the message being replied to. Empty when this is not a reply.
-        in_reply_to_id:          String,
+        in_reply_to_id: String,
         /// Display name of the replied-to sender (room profile, or bare Matrix ID
         /// as fallback). Empty when not a reply or the event isn't cached yet.
         in_reply_to_sender_name: String,
         /// Short body snippet of the replied-to message. For non-text types this is
         /// "(image)", "(file)", "(voice)", "(sticker)", or "(deleted)" for redacted.
         /// Empty when not a reply.
-        in_reply_to_body:        String,
+        in_reply_to_body: String,
         /// True when the body has been superseded by an `m.replace` edit.
         /// Only set for `msg_type == "m.text"`; always false for other types.
-        is_edited:               bool,
+        is_edited: bool,
         /// HTML body from `formatted_body` when `format == "org.matrix.custom.html"`.
         /// Empty string for all non-text message types and plain-text messages.
-        formatted_body:          String,
+        formatted_body: String,
         /// BlurHash placeholder string for this media item (MSC2448).
         /// Empty when absent. Decoded by the UI layer before the real
         /// bytes arrive; the unstable field name is xyz.amorgan.blurhash.
-        blurhash:                String,
+        blurhash: String,
         /// JSON-serialised `ImageInfo` for `m.sticker` events (width, height,
         /// mimetype, size, etc. as sent by the sender). Empty string for all
         /// other message types. Lets right-click handlers pass real metadata
         /// to `save_sticker_to_user_pack` instead of `"{}"`.
-        sticker_info_json:       String,
+        sticker_info_json: String,
         /// True when the sender set MSC4230 `org.matrix.msc4230.is_animated` to true
         /// in the event `info` block. Valid for `m.image` and `m.sticker`; always
         /// false for all other message types.
-        image_animated:          bool,
+        image_animated: bool,
         /// Local-echo send state: "sending" | "failed" | "" (server event).
-        pending_state:           String,
+        pending_state: String,
         /// Human-readable error message when `pending_state == "failed"`.
-        pending_error:           String,
+        pending_error: String,
         /// True when the failure is recoverable (retry re-enables the queue).
-        pending_recoverable:     bool,
+        pending_recoverable: bool,
         /// Transaction ID of the pending local echo (for abort_send).
-        pending_txn_id:          String,
+        pending_txn_id: String,
         // m.location / MSC3488 (valid when msg_type == "m.location")
-        location_lat:         f64,
-        location_lon:         f64,
+        location_lat: f64,
+        location_lon: f64,
         location_description: String,
     }
 
     /// Outcome of an asynchronous SDK operation.
     struct OpResult {
-        ok:      bool,
+        ok: bool,
         message: String,
     }
 
@@ -206,17 +206,17 @@ pub mod ffi {
     /// timelines; always `false` for live timelines). UIs use this to switch
     /// back to live mode after the user scrolls past the focus point.
     struct PaginateResult {
-        ok:            bool,
-        message:       String,
+        ok: bool,
+        message: String,
         reached_start: bool,
-        reached_end:   bool,
+        reached_end: bool,
     }
 
     /// First-phase result of an OAuth flow.
     struct OAuthBegin {
-        ok:           bool,
-        message:      String,
-        auth_url:     String,
+        ok: bool,
+        message: String,
+        auth_url: String,
         redirect_uri: String,
     }
 
@@ -226,7 +226,7 @@ pub mod ffi {
     /// The UI renders both side-by-side for each of the 7 tiles so the user
     /// can compare them with the other device's display.
     struct VerificationEmoji {
-        symbol:      String,
+        symbol: String,
         description: String,
     }
 
@@ -243,13 +243,13 @@ pub mod ffi {
     ///   3 = Downloading (still importing keys from the backup)
     ///   4 = Creating    (uploading initial backup)
     struct BackupProgress {
-        state:         u8,
+        state: u8,
         /// Room keys imported into the local store since recover() started,
         /// or 0 when no recover is in progress.
         imported_keys: u64,
         /// Best-effort total of room keys present on the server-side backup,
         /// or 0 when unknown.
-        total_keys:    u64,
+        total_keys: u64,
     }
 
     /// One MSC2545 image pack surfaced to C++. Three sources:
@@ -259,27 +259,27 @@ pub mod ffi {
     /// 2 = emoticon; per-image usage may override it. `attribution` is
     /// optional metadata from the pack author.
     struct ImagePackFfi {
-        id:                String,
-        display_name:      String,
-        avatar_url:        String,
-        attribution:       String,
-        usage_mask:        u8,
-        source_kind:       String,
-        source_room:       String,
-        source_state_key:  String,
+        id: String,
+        display_name: String,
+        avatar_url: String,
+        attribution: String,
+        usage_mask: u8,
+        source_kind: String,
+        source_room: String,
+        source_state_key: String,
     }
 
     /// One image entry inside a pack. `usage_mask` is the per-image usage
     /// after inheriting from the pack when not set on the image. `info_json`
     /// is the literal `info` object serialised as JSON (`"{}"` when absent).
     struct ImageEntryFfi {
-        pack_id:    String,
-        shortcode:  String,
-        url:        String,
-        body:       String,
-        info_json:  String,
+        pack_id: String,
+        shortcode: String,
+        url: String,
+        body: String,
+        info_json: String,
         usage_mask: u8,
-        favorite:   bool,
+        favorite: bool,
     }
 
     // -------------------------------------------------------------------------
@@ -301,26 +301,30 @@ pub mod ffi {
         /// Atomically reset a room's timeline to `snapshot` (oldest-first).
         /// The callee clears its model for `room_id` and rebuilds it from
         /// the snapshot in a single update.
-        fn on_timeline_reset(self: &EventHandlerBridge,
-                              room_id: &str,
-                              snapshot: &Vec<TimelineEvent>);
+        fn on_timeline_reset(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            snapshot: &Vec<TimelineEvent>,
+        );
         /// Insert `event` at visible-index `index` in `room_id`'s
         /// timeline. `index == current_length` means "append at the end".
-        fn on_message_inserted(self: &EventHandlerBridge,
-                                room_id: &str,
-                                index: u64,
-                                event: &TimelineEvent);
+        fn on_message_inserted(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            index: u64,
+            event: &TimelineEvent,
+        );
         /// Replace the event currently at visible-index `index` with
         /// `event` (edit, redaction, reaction change, sender-profile
         /// resolution).
-        fn on_message_updated(self: &EventHandlerBridge,
-                               room_id: &str,
-                               index: u64,
-                               event: &TimelineEvent);
+        fn on_message_updated(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            index: u64,
+            event: &TimelineEvent,
+        );
         /// Remove the event at visible-index `index`.
-        fn on_message_removed(self: &EventHandlerBridge,
-                               room_id: &str,
-                               index: u64);
+        fn on_message_removed(self: &EventHandlerBridge, room_id: &str, index: u64);
 
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
@@ -354,33 +358,35 @@ pub mod ffi {
         /// should be shown. Only called for non-self messages, only for live
         /// PushBack (not pagination). `is_mention` is true when the push rules
         /// returned a `SetHighlight(true)` tweak (@ mention or highlight rule).
-        fn on_notification(self: &EventHandlerBridge,
-                           room_id:      &str,
-                           room_name:    &str,
-                           sender:       &str,
-                           body:         &str,
-                           is_mention:   bool,
-                           avatar_bytes: &[u8],
-                           image_bytes:  &[u8]);
+        fn on_notification(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            room_name: &str,
+            sender: &str,
+            body: &str,
+            is_mention: bool,
+            avatar_bytes: &[u8],
+            image_bytes: &[u8],
+        );
 
         /// Fired when an incoming SAS verification request arrives from another
         /// device (`incoming = true`), or when an outgoing request we sent has
         /// been accepted and is ready for key exchange (`incoming = false`).
         /// `flow_id` is the opaque transaction ID that identifies this request
         /// across all subsequent verification calls.
-        fn on_verification_request(self: &EventHandlerBridge,
-                                   flow_id:   &str,
-                                   user_id:   &str,
-                                   device_id: &str,
-                                   incoming:  bool);
+        fn on_verification_request(
+            self: &EventHandlerBridge,
+            flow_id: &str,
+            user_id: &str,
+            device_id: &str,
+            incoming: bool,
+        );
 
         /// Fired when the SAS short-auth-string key exchange completes and the
         /// 7 emoji are ready to compare. The UI should transition to its
         /// ShowEmojis state and render the tiles. `flow_id` matches the one
         /// supplied by `on_verification_request`.
-        fn on_sas_ready(self: &EventHandlerBridge,
-                        flow_id: &str,
-                        emojis:  &Vec<VerificationEmoji>);
+        fn on_sas_ready(self: &EventHandlerBridge, flow_id: &str, emojis: &Vec<VerificationEmoji>);
 
         /// Fired after both sides called `confirm_sas` — the device is now
         /// cross-signing verified. The UI should transition to Done state and
@@ -390,9 +396,7 @@ pub mod ffi {
         /// Fired when a verification flow is cancelled for any reason
         /// (mismatch, timeout, explicit cancel by either party). `reason` is a
         /// human-readable description from the cancel code.
-        fn on_verification_cancelled(self: &EventHandlerBridge,
-                                     flow_id: &str,
-                                     reason:  &str);
+        fn on_verification_cancelled(self: &EventHandlerBridge, flow_id: &str, reason: &str);
 
         /// Fired when the cross-signing verification state for the current
         /// account changes. `verified` is `true` when the SDK considers the
@@ -404,8 +408,11 @@ pub mod ffi {
         /// Fired when the set of typing users in `room_id` changes. `typing_user_ids`
         /// contains the localpart of each typing user (excluding the local user).
         /// An empty vec means no one is typing.
-        fn on_typing_changed(self: &EventHandlerBridge, room_id: &str,
-                             typing_user_ids: &Vec<String>);
+        fn on_typing_changed(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            typing_user_ids: &Vec<String>,
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -467,19 +474,23 @@ pub mod ffi {
         /// Like `paginate_back` but also reports whether the timeline has
         /// reached its first event (no further pagination possible). UIs use
         /// `reached_start` to latch their scroll-up trigger off.
-        fn paginate_back_with_status(self: &mut ClientFfi,
-                                     room_id: &str,
-                                     count: u16) -> PaginateResult;
+        fn paginate_back_with_status(
+            self: &mut ClientFfi,
+            room_id: &str,
+            count: u16,
+        ) -> PaginateResult;
 
         /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
         /// nearest event ID in `room_id`. `dir` is `"f"` (forward — first
         /// event ≥ ts) or `"b"` (backward — last event ≤ ts). On success
         /// `OpResult.message` holds the event ID string; on failure it holds
         /// the error description.
-        fn timestamp_to_event(self: &mut ClientFfi,
-                              room_id: &str,
-                              ts_ms:   u64,
-                              dir:     &str) -> OpResult;
+        fn timestamp_to_event(
+            self: &mut ClientFfi,
+            room_id: &str,
+            ts_ms: u64,
+            dir: &str,
+        ) -> OpResult;
 
         /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
         /// specific event. Behaves like `subscribe_room` but builds a
@@ -487,18 +498,15 @@ pub mod ffi {
         /// `is_focused = true` on the per-room state so `paginate_forward`
         /// can gate itself. Fires `on_timeline_reset` + individual event
         /// callbacks identically to `subscribe_room`.
-        fn subscribe_room_at(self: &mut ClientFfi,
-                             room_id:        &str,
-                             focus_event_id: &str) -> OpResult;
+        fn subscribe_room_at(self: &mut ClientFfi, room_id: &str, focus_event_id: &str)
+            -> OpResult;
 
         /// MSC3030 Jump to Date: paginate forward in a focused timeline.
         /// Only valid after `subscribe_room_at`; returns
         /// `ok=false, message="not in focused mode"` for live timelines.
         /// `reached_end` is `true` when the live end of the timeline has been
         /// reached and the UI should switch back to a live subscription.
-        fn paginate_forward(self: &mut ClientFfi,
-                            room_id: &str,
-                            count:   u16) -> PaginateResult;
+        fn paginate_forward(self: &mut ClientFfi, room_id: &str, count: u16) -> PaginateResult;
 
         /// Kick off a background pass that paginates every joined room not
         /// currently subscribed, up to ~50 events each, with bounded
@@ -506,8 +514,10 @@ pub mod ffi {
         /// path. Silent: emits no `on_message_event` / `on_timeline_reset`
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
-        fn start_background_backfill(self: &mut ClientFfi,
-                                     room_ids: &CxxVector<CxxString>) -> OpResult;
+        fn start_background_backfill(
+            self: &mut ClientFfi,
+            room_ids: &CxxVector<CxxString>,
+        ) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.
@@ -515,7 +525,12 @@ pub mod ffi {
 
         // ----- Messaging -----
 
-        fn send_message(self: &mut ClientFfi, room_id: &str, body: &str, formatted_body: &str) -> OpResult;
+        fn send_message(
+            self: &mut ClientFfi,
+            room_id: &str,
+            body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
 
         /// Re-enable the send queue for `room_id` after a recoverable failure.
         /// The SDK automatically retries all pending sends.
@@ -532,19 +547,19 @@ pub mod ffi {
         /// `m.in_reply_to` relation and sends via `room.send()`. Does not require
         /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
         /// renders its own quote block for the reply indicator).
-        fn send_reply(self: &mut ClientFfi,
-                      room_id:        &str,
-                      event_id:       &str,
-                      body:           &str,
-                      formatted_body: &str) -> OpResult;
+        fn send_reply(
+            self: &mut ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
 
         /// Trigger an async fetch of the details of the event referenced by
         /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
         /// the result arrives via `on_message_updated` for every message in
         /// the subscribed timeline that references `event_id`.
-        fn fetch_reply_details(self: &mut ClientFfi,
-                               room_id:  &str,
-                               event_id: &str) -> OpResult;
+        fn fetch_reply_details(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK
@@ -556,16 +571,18 @@ pub mod ffi {
         /// `caption` is empty, `body` is set to the filename and the
         /// MSC2530 `filename` field is omitted (legacy fallback). `width`
         /// and `height` populate `info.{w,h}`; pass 0 when unknown.
-        fn send_image(self: &mut ClientFfi,
-                      room_id: &str,
-                      bytes: &[u8],
-                      mime_type: &str,
-                      filename: &str,
-                      caption: &str,
-                      width: u32,
-                      height: u32,
-                      /// When non-empty, adds an `m.in_reply_to` relation.
-                      reply_event_id: &str) -> OpResult;
+        fn send_image(
+            self: &mut ClientFfi,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            width: u32,
+            height: u32,
+            /// When non-empty, adds an `m.in_reply_to` relation.
+            reply_event_id: &str,
+        ) -> OpResult;
 
         /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes`
         /// are the raw file payload (no client-side re-encoding); `mime_type`
@@ -575,25 +592,29 @@ pub mod ffi {
         /// non-empty the event follows MSC2530 framing: `body` carries the
         /// caption and the dedicated `filename` field carries the file name.
         /// matrix-sdk handles plain and E2EE rooms transparently.
-        fn send_file(self: &mut ClientFfi,
-                     room_id: &str,
-                     bytes: &[u8],
-                     mime_type: &str,
-                     filename: &str,
-                     caption: &str,
-                     /// When non-empty, adds an `m.in_reply_to` relation.
-                     reply_event_id: &str) -> OpResult;
+        fn send_file(
+            self: &mut ClientFfi,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            /// When non-empty, adds an `m.in_reply_to` relation.
+            reply_event_id: &str,
+        ) -> OpResult;
 
         /// Edit `event_id` in `room_id` replacing its body with `new_body`.
         /// Uses `Room::make_edit_event` + `RoomSendQueue::send` so the edit
         /// is correctly formatted (Replacement relation + fallback body). Only
         /// works on own `m.text` events; returns `ok=false` for non-own or
         /// non-text events.
-        fn send_edit(self: &mut ClientFfi,
-                     room_id:        &str,
-                     event_id:       &str,
-                     new_body:       &str,
-                     formatted_body: &str) -> OpResult;
+        fn send_edit(
+            self: &mut ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            new_body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
 
         /// Homeserver-reported maximum upload size in bytes
         /// (`/_matrix/media/v3/config`). Cached after the first successful
@@ -606,27 +627,29 @@ pub mod ffi {
         /// with this key; redacts it when they have. Wraps matrix-sdk-ui's
         /// `Timeline::toggle_reaction`. Requires that `room_id` is
         /// currently subscribed via `subscribe_room`.
-        fn send_reaction(self: &mut ClientFfi,
-                         room_id: &str,
-                         event_id: &str,
-                         key: &str) -> OpResult;
+        fn send_reaction(
+            self: &mut ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            key: &str,
+        ) -> OpResult;
 
         /// Send an MSC4027 custom-image reaction. `key` is the mxc:// URI of
         /// the image; `shortcode` is the optional human-readable fallback
         /// (e.g. `:partyparrot:`) stored as `com.beeper.reaction.shortcode`.
         /// Omit shortcode (pass "") to skip the field. Unlike `send_reaction`
         /// this always sends (not toggles); redaction uses `send_reaction`.
-        fn send_reaction_custom(self: &mut ClientFfi,
-                                room_id: &str,
-                                event_id: &str,
-                                key: &str,
-                                shortcode: &str) -> OpResult;
+        fn send_reaction_custom(
+            self: &mut ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            key: &str,
+            shortcode: &str,
+        ) -> OpResult;
 
         /// Send public `m.read` and private `m.read.private` receipts for
         /// `event_id` in `room_id`. Does not require the room to be subscribed.
-        fn send_read_receipt(self: &mut ClientFfi,
-                             room_id:  &str,
-                             event_id: &str) -> OpResult;
+        fn send_read_receipt(self: &mut ClientFfi, room_id: &str, event_id: &str) -> OpResult;
 
         /// Send public `m.read` and private `m.read.private` receipts for the
         /// latest cached event in `room_id`. Used to clear the unread badge
@@ -637,10 +660,12 @@ pub mod ffi {
         /// Wraps matrix-sdk-ui's `Timeline::redact`. Requires that the room
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
-        fn redact_event(self: &mut ClientFfi,
-                        room_id: &str,
-                        event_id: &str,
-                        reason: &str) -> OpResult;
+        fn redact_event(
+            self: &mut ClientFfi,
+            room_id: &str,
+            event_id: &str,
+            reason: &str,
+        ) -> OpResult;
 
         // ----- MSC2545 image packs (Step 8) -----
 
@@ -702,10 +727,7 @@ pub mod ffi {
         /// Flip the `im.tesseract.favorite` flag on the user-pack entry
         /// whose `url` matches `image_url`. No-op when the sticker isn't in
         /// the user pack (call `save_sticker_to_user_pack` first).
-        fn toggle_favorite_sticker(
-            self: &mut ClientFfi,
-            image_url: &str,
-        ) -> OpResult;
+        fn toggle_favorite_sticker(self: &mut ClientFfi, image_url: &str) -> OpResult;
 
         // ----- Application prefs (im.gnomos.tesseract global account-data) -----
 
@@ -858,18 +880,18 @@ pub mod ffi {
         /// `pushkey` uniquely identifies this pusher instance (e.g. sanitised
         /// Matrix user ID + hostname). `endpoint_url` is the push gateway URL
         /// provided by the UnifiedPush distributor.
-        fn register_pusher(self: &mut ClientFfi,
-                            pushkey:             &str,
-                            app_id:              &str,
-                            app_display_name:    &str,
-                            device_display_name: &str,
-                            endpoint_url:        &str,
-                            lang:                &str) -> OpResult;
+        fn register_pusher(
+            self: &mut ClientFfi,
+            pushkey: &str,
+            app_id: &str,
+            app_display_name: &str,
+            device_display_name: &str,
+            endpoint_url: &str,
+            lang: &str,
+        ) -> OpResult;
 
         /// Remove a pusher from the homeserver by `pushkey` / `app_id`.
-        fn remove_pusher(self: &mut ClientFfi,
-                         pushkey: &str,
-                         app_id:  &str) -> OpResult;
+        fn remove_pusher(self: &mut ClientFfi, pushkey: &str, app_id: &str) -> OpResult;
 
         // ----- Session teardown -----
 

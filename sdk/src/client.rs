@@ -1,16 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::Context as _;
-use serde::{Deserialize, Serialize};
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
-    ruma::{
-        events::room::message::RoomMessageEventContent,
-        OwnedRoomId,
-    },
+    ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId},
     store::RoomLoadSettings,
     Client,
 };
+use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
@@ -18,25 +15,15 @@ use crate::ffi::{BackupProgress, OAuthBegin, OpResult, PaginateResult};
 use crate::oauth;
 
 #[cfg(not(test))]
-use std::collections::HashMap;
-#[cfg(not(test))]
-use std::sync::{Arc, Mutex};
+use crate::ffi::{
+    EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent, VerificationEmoji,
+};
 #[cfg(not(test))]
 use cxx::UniquePtr;
 #[cfg(not(test))]
-use matrix_sdk::SessionChange;
-#[cfg(not(test))]
-use matrix_sdk_ui::{
-    eyeball_im::VectorDiff,
-    sync_service::SyncService,
-    timeline::{EventSendState, MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails, TimelineEventItemId, TimelineEventFocusThreadMode, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem},
-};
-#[cfg(not(test))]
 use futures_util::StreamExt;
 #[cfg(not(test))]
-use crate::ffi::{EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent, VerificationEmoji};
-#[cfg(not(test))]
-use matrix_sdk::{Room, ruma::UserId};
+use matrix_sdk::ruma::api::client::push::{PusherIds, PusherInit, PusherKind};
 #[cfg(not(test))]
 use matrix_sdk::ruma::{
     events::AnySyncTimelineEvent,
@@ -45,23 +32,45 @@ use matrix_sdk::ruma::{
     UInt,
 };
 #[cfg(not(test))]
-use matrix_sdk::ruma::api::client::push::{PusherIds, PusherInit, PusherKind};
+use matrix_sdk::SessionChange;
+#[cfg(not(test))]
+use matrix_sdk::{ruma::UserId, Room};
+#[cfg(not(test))]
+use matrix_sdk_ui::{
+    eyeball_im::VectorDiff,
+    sync_service::SyncService,
+    timeline::{
+        EventSendState, MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails,
+        TimelineEventFocusThreadMode, TimelineEventItemId, TimelineFocus, TimelineItem,
+        TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    },
+};
+#[cfg(not(test))]
+use std::collections::HashMap;
+#[cfg(not(test))]
+use std::sync::{Arc, Mutex};
 
 // ---------------------------------------------------------------------------
 
 fn ok(msg: impl Into<String>) -> OpResult {
-    OpResult { ok: true, message: msg.into() }
+    OpResult {
+        ok: true,
+        message: msg.into(),
+    }
 }
 
 fn err(msg: impl Into<String>) -> OpResult {
-    OpResult { ok: false, message: msg.into() }
+    OpResult {
+        ok: false,
+        message: msg.into(),
+    }
 }
 
 fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
     OAuthBegin {
-        ok:           false,
-        message:      msg.into(),
-        auth_url:     String::new(),
+        ok: false,
+        message: msg.into(),
+        auth_url: String::new(),
         redirect_uri: String::new(),
     }
 }
@@ -69,49 +78,53 @@ fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
 // `BackupProgress.state` encoding — kept in sync with the docs on the cxx
 // shared struct in `bridge.rs` and the `BackupState` enum in
 // `client/include/tesseract/types.h`.
-const BACKUP_STATE_UNKNOWN:     u8 = 0;
-const BACKUP_STATE_DISABLED:    u8 = 1;
-const BACKUP_STATE_ENABLED:     u8 = 2;
+const BACKUP_STATE_UNKNOWN: u8 = 0;
+const BACKUP_STATE_DISABLED: u8 = 1;
+const BACKUP_STATE_ENABLED: u8 = 2;
 const BACKUP_STATE_DOWNLOADING: u8 = 3;
-const BACKUP_STATE_CREATING:    u8 = 4;
+const BACKUP_STATE_CREATING: u8 = 4;
 
 #[cfg(not(test))]
 fn backup_state_code(s: matrix_sdk::encryption::backups::BackupState) -> u8 {
     use matrix_sdk::encryption::backups::BackupState as B;
     match s {
-        B::Unknown                   => BACKUP_STATE_UNKNOWN,
-        B::Disabling                 => BACKUP_STATE_DISABLED,
-        B::Enabled                   => BACKUP_STATE_ENABLED,
+        B::Unknown => BACKUP_STATE_UNKNOWN,
+        B::Disabling => BACKUP_STATE_DISABLED,
+        B::Enabled => BACKUP_STATE_ENABLED,
         B::Downloading | B::Enabling | B::Resuming => BACKUP_STATE_DOWNLOADING,
-        B::Creating                  => BACKUP_STATE_CREATING,
+        B::Creating => BACKUP_STATE_CREATING,
     }
 }
 
 // `on_room_list_state` payload encoding — kept in sync with the
 // `RoomListState` enum in `client/include/tesseract/types.h`. Mirrors
 // `matrix_sdk_ui::room_list_service::State`.
-pub(crate) const ROOM_LIST_STATE_INIT:       u8 = 0;
+pub(crate) const ROOM_LIST_STATE_INIT: u8 = 0;
 pub(crate) const ROOM_LIST_STATE_SETTING_UP: u8 = 1;
 pub(crate) const ROOM_LIST_STATE_RECOVERING: u8 = 2;
-pub(crate) const ROOM_LIST_STATE_RUNNING:    u8 = 3;
-pub(crate) const ROOM_LIST_STATE_ERROR:      u8 = 4;
+pub(crate) const ROOM_LIST_STATE_RUNNING: u8 = 3;
+pub(crate) const ROOM_LIST_STATE_ERROR: u8 = 4;
 pub(crate) const ROOM_LIST_STATE_TERMINATED: u8 = 5;
 
 fn room_list_state_code(s: &matrix_sdk_ui::room_list_service::State) -> u8 {
     use matrix_sdk_ui::room_list_service::State as S;
     match s {
-        S::Init             => ROOM_LIST_STATE_INIT,
-        S::SettingUp        => ROOM_LIST_STATE_SETTING_UP,
-        S::Recovering       => ROOM_LIST_STATE_RECOVERING,
-        S::Running          => ROOM_LIST_STATE_RUNNING,
-        S::Error { .. }     => ROOM_LIST_STATE_ERROR,
+        S::Init => ROOM_LIST_STATE_INIT,
+        S::SettingUp => ROOM_LIST_STATE_SETTING_UP,
+        S::Recovering => ROOM_LIST_STATE_RECOVERING,
+        S::Running => ROOM_LIST_STATE_RUNNING,
+        S::Error { .. } => ROOM_LIST_STATE_ERROR,
         S::Terminated { .. } => ROOM_LIST_STATE_TERMINATED,
     }
 }
 
 #[cfg(test)]
 fn backup_progress_default() -> BackupProgress {
-    BackupProgress { state: BACKUP_STATE_UNKNOWN, imported_keys: 0, total_keys: 0 }
+    BackupProgress {
+        state: BACKUP_STATE_UNKNOWN,
+        imported_keys: 0,
+        total_keys: 0,
+    }
 }
 
 /// Default per-platform location for the matrix-sdk SQLite store. Used as the
@@ -120,14 +133,16 @@ fn backup_progress_default() -> BackupProgress {
 /// account directory in the multi-account layout).
 fn default_data_dir() -> PathBuf {
     let base = dirs_like_home().unwrap_or_else(std::env::temp_dir);
-    let dir  = base.join("tesseract").join("matrix-store");
+    let dir = base.join("tesseract").join("matrix-store");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
 fn dirs_like_home() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
-    { std::env::var_os("APPDATA").map(PathBuf::from) }
+    {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    }
     #[cfg(target_os = "macos")]
     {
         std::env::var_os("HOME")
@@ -153,17 +168,19 @@ unsafe impl Send for SendHandler {}
 #[cfg(not(test))]
 impl std::ops::Deref for SendHandler {
     type Target = UniquePtr<EventHandlerBridge>;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[cfg(not(test))]
 struct TimelineHandle {
-    timeline:    Arc<matrix_sdk_ui::Timeline>,
+    timeline: Arc<matrix_sdk_ui::Timeline>,
     abort_tasks: Vec<tokio::task::AbortHandle>,
     /// `true` when this timeline was built via `subscribe_room_at` (focused on
     /// a specific event); `false` for the live timeline built by
     /// `subscribe_room`. `paginate_forward` requires `is_focused == true`.
-    is_focused:  bool,
+    is_focused: bool,
 }
 
 /// Serialisable wrapper for a full OAuth session (client_id + user session).
@@ -175,20 +192,20 @@ struct PersistedSession {
 }
 
 pub struct ClientFfi {
-    client:     Option<Client>,
-    stop_tx:    Option<watch::Sender<bool>>,
+    client: Option<Client>,
+    stop_tx: Option<watch::Sender<bool>>,
     /// Persistent receiver clone used by `paginate_back_with_status` to race
     /// the network call against shutdown. Set in `start_sync`; survives until
     /// the `ClientFfi` is dropped so the cancel arm fires even if the call
     /// starts just before `stop_sync` takes `stop_tx`.
-    stop_rx:    Option<watch::Receiver<bool>>,
+    stop_rx: Option<watch::Receiver<bool>>,
     oauth_flow: Option<oauth::PendingFlow>,
     #[cfg(not(test))]
-    handler:      Option<Arc<Mutex<SendHandler>>>,
+    handler: Option<Arc<Mutex<SendHandler>>>,
     #[cfg(not(test))]
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
-    timelines:    HashMap<OwnedRoomId, TimelineHandle>,
+    timelines: HashMap<OwnedRoomId, TimelineHandle>,
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
@@ -214,7 +231,7 @@ pub struct ClientFfi {
     /// Running counter of room keys imported from the backup since this
     /// process started. Reset to 0 only on logout.
     #[cfg(not(test))]
-    imported_keys:    Arc<AtomicU64>,
+    imported_keys: Arc<AtomicU64>,
     /// Cached homeserver media upload limit in bytes. 0 = unknown / unfetched.
     /// Populated lazily on first `media_upload_limit()` call after login.
     media_upload_limit: AtomicU64,
@@ -241,7 +258,7 @@ pub struct ClientFfi {
     /// Directory holding the matrix-sdk SQLite store for this client. Set via
     /// `set_data_dir` before `oauth_begin` / `restore_session`. Defaults to
     /// `default_data_dir()` for legacy single-account callers.
-    data_dir:   PathBuf,
+    data_dir: PathBuf,
     /// Shared HTTP client for generic URL fetches (OSM tile images, etc.).
     /// Created once so TLS root certificates are loaded only on startup and
     /// connection pools are reused across calls.
@@ -259,14 +276,16 @@ pub struct ClientFfi {
     sas_emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
-    rt:         Runtime,
+    rt: Runtime,
 }
 
 impl Drop for ClientFfi {
     fn drop(&mut self) {
         self.stop_sync();
         #[cfg(not(test))]
-        if let Some(h) = self.backfill_task.take() { h.abort(); }
+        if let Some(h) = self.backfill_task.take() {
+            h.abort();
+        }
         // Drop SDK objects that call Handle::current() in their Drop impls
         // (SqliteStateStore via matrix_sdk::Client, Timeline) with the runtime
         // handle in TLS.  Without enter() here, dropping pending_login_client_
@@ -277,7 +296,9 @@ impl Drop for ClientFfi {
             let _guard = self.rt.enter();
             #[cfg(not(test))]
             for (_, th) in self.timelines.drain() {
-                for h in th.abort_tasks { h.abort(); }
+                for h in th.abort_tasks {
+                    h.abort();
+                }
             }
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
@@ -316,7 +337,8 @@ async fn send_both_receipts(
             .fully_read_marker(event_id.clone())
             .public_read_receipt(event_id.clone())
             .private_read_receipt(event_id),
-    ).await
+    )
+    .await
 }
 
 /// Hard upper bound on a single media download (64 MiB). A malicious or
@@ -330,7 +352,8 @@ fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() > MAX_MEDIA_BYTES {
         tracing::warn!(
             "media download {} bytes exceeds {} byte cap; discarding",
-            bytes.len(), MAX_MEDIA_BYTES,
+            bytes.len(),
+            MAX_MEDIA_BYTES,
         );
         return Vec::new();
     }
@@ -353,7 +376,10 @@ async fn fetch_notification_image(
     source: matrix_sdk::ruma::events::room::MediaSource,
 ) -> Vec<u8> {
     use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
-    let request = MediaRequestParameters { source, format: MediaFormat::File };
+    let request = MediaRequestParameters {
+        source,
+        format: MediaFormat::File,
+    };
     match client.media().get_media_content(&request, true).await {
         Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b,
         _ => Vec::new(),
@@ -370,16 +396,16 @@ impl ClientFfi {
             .try_init();
 
         Self {
-            client:     None,
-            stop_tx:    None,
-            stop_rx:    None,
+            client: None,
+            stop_tx: None,
+            stop_rx: None,
             oauth_flow: None,
             #[cfg(not(test))]
-            handler:      None,
+            handler: None,
             #[cfg(not(test))]
             sync_service: None,
             #[cfg(not(test))]
-            timelines:    HashMap::new(),
+            timelines: HashMap::new(),
             #[cfg(not(test))]
             backfill_task: None,
             #[cfg(not(test))]
@@ -389,7 +415,7 @@ impl ClientFfi {
             #[cfg(not(test))]
             backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
             #[cfg(not(test))]
-            imported_keys:    Arc::new(AtomicU64::new(0)),
+            imported_keys: Arc::new(AtomicU64::new(0)),
             media_upload_limit: AtomicU64::new(0),
             #[cfg(not(test))]
             image_packs: Arc::new(Mutex::new(Vec::new())),
@@ -397,7 +423,7 @@ impl ClientFfi {
             user_pack_write_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(not(test))]
             account_data_lock: Arc::new(tokio::sync::Mutex::new(())),
-            data_dir:   default_data_dir(),
+            data_dir: default_data_dir(),
             http_client: reqwest::Client::builder()
                 .user_agent("Tesseract/0.1 (Matrix client)")
                 .timeout(std::time::Duration::from_secs(10))
@@ -407,15 +433,15 @@ impl ClientFfi {
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
-            rt:         tokio::runtime::Builder::new_multi_thread()
-                            .enable_all()
-                            // Timeline construction collects cached events
-                            // into an `imbl::Vector`; chunk promotion for
-                            // large `TimelineEvent`s recurses deeply. The
-                            // 2 MB tokio default is tight, so widen it.
-                            .thread_stack_size(8 * 1024 * 1024)
-                            .build()
-                            .expect("tokio runtime"),
+            rt: tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                // Timeline construction collects cached events
+                // into an `imbl::Vector`; chunk promotion for
+                // large `TimelineEvent`s recurses deeply. The
+                // 2 MB tokio default is tight, so widen it.
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .expect("tokio runtime"),
         }
     }
 
@@ -425,7 +451,9 @@ impl ClientFfi {
     /// the directory if it does not exist; silently ignores empty input so
     /// FFI callers that pass through an empty string keep the default.
     pub fn set_data_dir(&mut self, path: &str) {
-        if path.is_empty() { return; }
+        if path.is_empty() {
+            return;
+        }
         let p = PathBuf::from(path);
         let _ = std::fs::create_dir_all(&p);
         self.data_dir = p;
@@ -440,7 +468,7 @@ impl ClientFfi {
             oauth::cancel(&prev);
         }
 
-        let hs   = homeserver.to_owned();
+        let hs = homeserver.to_owned();
         let path = self.data_dir.clone();
 
         // Only start from a clean store when there is no active session. If a
@@ -455,10 +483,15 @@ impl ClientFfi {
 
         match self.rt.block_on(oauth::begin(&hs, &path)) {
             Ok(begin) => {
-                let auth_url     = begin.auth_url;
+                let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;
-                self.oauth_flow  = Some(begin.flow);
-                OAuthBegin { ok: true, message: String::new(), auth_url, redirect_uri }
+                self.oauth_flow = Some(begin.flow);
+                OAuthBegin {
+                    ok: true,
+                    message: String::new(),
+                    auth_url,
+                    redirect_uri,
+                }
             }
             Err(e) => oauth_err(e.to_string()),
         }
@@ -494,12 +527,12 @@ impl ClientFfi {
 
     pub fn restore_session(&mut self, session_json: &str) -> OpResult {
         let persisted: PersistedSession = match serde_json::from_str(session_json) {
-            Ok(s)  => s,
+            Ok(s) => s,
             Err(e) => return err(format!("parse session JSON: {e}")),
         };
 
         let homeserver = persisted.user.meta.user_id.server_name().to_string();
-        let path       = self.data_dir.clone();
+        let path = self.data_dir.clone();
         let _ = std::fs::create_dir_all(&path);
 
         let result = self.rt.block_on(async move {
@@ -511,7 +544,10 @@ impl ClientFfi {
                 .await
                 .context("build client")?;
 
-            let session = OAuthSession { client_id: persisted.client_id, user: persisted.user };
+            let session = OAuthSession {
+                client_id: persisted.client_id,
+                user: persisted.user,
+            };
             client
                 .oauth()
                 .restore_session(session, RoomLoadSettings::default())
@@ -536,9 +572,16 @@ impl ClientFfi {
     }
 
     pub fn export_session(&self) -> String {
-        let Some(client) = &self.client else { return String::new() };
-        let Some(session) = client.oauth().full_session() else { return String::new() };
-        let persisted = PersistedSession { client_id: session.client_id, user: session.user };
+        let Some(client) = &self.client else {
+            return String::new();
+        };
+        let Some(session) = client.oauth().full_session() else {
+            return String::new();
+        };
+        let persisted = PersistedSession {
+            client_id: session.client_id,
+            user: session.user,
+        };
         serde_json::to_string(&persisted).unwrap_or_default()
     }
 
@@ -559,7 +602,9 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
-        let Some(client) = self.client.clone() else { return };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
 
         let (stop_tx, stop_rx) = watch::channel(false);
         let stop_tx_auth = stop_tx.clone();
@@ -585,19 +630,23 @@ impl ClientFfi {
 
         // Session refresh watcher.
         {
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
             self.spawn_tracked(async move {
                 let mut changes = client_clone.subscribe_to_session_changes();
                 loop {
                     match changes.recv().await {
                         Ok(SessionChange::TokensRefreshed) => {
-                            let Some(full) = client_clone.oauth().full_session() else { continue };
+                            let Some(full) = client_clone.oauth().full_session() else {
+                                continue;
+                            };
                             let persisted = PersistedSession {
                                 client_id: full.client_id,
-                                user:      full.user,
+                                user: full.user,
                             };
-                            let Ok(json) = serde_json::to_string(&persisted) else { continue };
+                            let Ok(json) = serde_json::to_string(&persisted) else {
+                                continue;
+                            };
                             if let Ok(guard) = h.lock() {
                                 guard.on_session_refreshed(&json);
                             }
@@ -627,54 +676,68 @@ impl ClientFfi {
         {
             use matrix_sdk::ruma::events::room::message::MessageType;
             use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
             self.event_handler_handles.push(client.add_event_handler(
-                move |ev: OriginalSyncMessageLikeEvent<RoomMessageEventContent>,
-                      room: Room| {
-                    let h            = Arc::clone(&h);
+                move |ev: OriginalSyncMessageLikeEvent<RoomMessageEventContent>, room: Room| {
+                    let h = Arc::clone(&h);
                     let client_clone = client_clone.clone();
                     async move {
                         let (body, msg_type_str) = match &ev.content.msgtype {
-                            MessageType::Text(t)  => (t.body.trim().to_owned(), "m.text"),
+                            MessageType::Text(t) => (t.body.trim().to_owned(), "m.text"),
                             MessageType::Image(i) => (i.body.trim().to_owned(), "m.image"),
-                            MessageType::File(f)  => (f.body.trim().to_owned(), "m.file"),
+                            MessageType::File(f) => (f.body.trim().to_owned(), "m.file"),
                             MessageType::Audio(a) => (a.body.trim().to_owned(), "m.audio"),
                             MessageType::Video(v) => (v.body.trim().to_owned(), "m.video"),
                             _ => return,
                         };
-                        if body.is_empty() { return; }
+                        if body.is_empty() {
+                            return;
+                        }
                         let me = client_clone.user_id().map(|u| u.to_owned());
                         let sender = ev.sender.as_str().to_owned();
-                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) { return; }
-                        let room_id  = room.room_id().as_str().to_owned();
+                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) {
+                            return;
+                        }
+                        let room_id = room.room_id().as_str().to_owned();
                         let event_id = ev.event_id.as_str();
-                        let ts: u64  = ev.origin_server_ts.get().into();
+                        let ts: u64 = ev.origin_server_ts.get().into();
                         let synthetic = build_push_rule_json(
-                            &room_id, event_id, &sender, &body, msg_type_str, ts);
+                            &room_id,
+                            event_id,
+                            &sender,
+                            &body,
+                            msg_type_str,
+                            ts,
+                        );
                         let (should_notify, is_mention) =
                             evaluate_push_rules(&client_clone, &room, &synthetic).await;
                         if should_notify {
-                            let room_name = room.display_name().await
+                            let room_name = room
+                                .display_name()
+                                .await
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| room_id.clone());
                             // Resolve the sender's display name and keep the
                             // member for the avatar fallback below.
-                            let sender_member = room
-                                .get_member_no_sync(&ev.sender).await
-                                .ok().flatten();
-                            let sender_name = sender_member.as_ref()
+                            let sender_member =
+                                room.get_member_no_sync(&ev.sender).await.ok().flatten();
+                            let sender_name = sender_member
+                                .as_ref()
                                 .and_then(|m| m.display_name().map(str::to_owned))
                                 .unwrap_or_else(|| ev.sender.localpart().to_string());
                             // Room avatar, falling back to the sender's avatar
                             // (covers DMs and rooms that have no room icon).
                             let room_avatar = room
                                 .avatar(matrix_sdk::media::MediaFormat::File)
-                                .await.ok().flatten().unwrap_or_default();
+                                .await
+                                .ok()
+                                .flatten()
+                                .unwrap_or_default();
                             let avatar = if !room_avatar.is_empty() {
                                 room_avatar
-                            } else if let Some(url) = sender_member
-                                .as_ref().and_then(|m| m.avatar_url())
+                            } else if let Some(url) =
+                                sender_member.as_ref().and_then(|m| m.avatar_url())
                             {
                                 use matrix_sdk::media::MediaRequestParameters;
                                 use matrix_sdk::ruma::events::room::MediaSource;
@@ -682,24 +745,32 @@ impl ClientFfi {
                                     source: MediaSource::Plain(url.to_owned()),
                                     format: matrix_sdk::media::MediaFormat::File,
                                 };
-                                client_clone.media()
+                                client_clone
+                                    .media()
                                     .get_media_content(&req, true)
-                                    .await.unwrap_or_default()
+                                    .await
+                                    .unwrap_or_default()
                             } else {
                                 Vec::new()
                             };
                             // Image messages carry a preview picture; other
                             // msgtypes get an empty slice (text + avatar only).
                             let preview = match &ev.content.msgtype {
-                                MessageType::Image(i) =>
-                                    fetch_notification_image(
-                                        &client_clone, i.source.clone()).await,
+                                MessageType::Image(i) => {
+                                    fetch_notification_image(&client_clone, i.source.clone()).await
+                                }
                                 _ => Vec::new(),
                             };
                             if let Ok(g) = h.lock() {
-                                g.on_notification(&room_id, &room_name,
-                                                  &sender_name, &body, is_mention,
-                                                  &avatar, &preview);
+                                g.on_notification(
+                                    &room_id,
+                                    &room_name,
+                                    &sender_name,
+                                    &body,
+                                    is_mention,
+                                    &avatar,
+                                    &preview,
+                                );
                             }
                         }
                     }
@@ -714,74 +785,101 @@ impl ClientFfi {
         // eval (synthetic "m.sticker" m.room.message), display name, avatar,
         // and the sticker image as the preview.
         {
-            use matrix_sdk::ruma::events::sticker::{
-                StickerEventContent, StickerMediaSource};
             use matrix_sdk::ruma::events::room::MediaSource;
+            use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
             use matrix_sdk::ruma::events::OriginalSyncMessageLikeEvent;
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
             self.event_handler_handles.push(client.add_event_handler(
-                move |ev: OriginalSyncMessageLikeEvent<StickerEventContent>,
-                      room: Room| {
-                    let h            = Arc::clone(&h);
+                move |ev: OriginalSyncMessageLikeEvent<StickerEventContent>, room: Room| {
+                    let h = Arc::clone(&h);
                     let client_clone = client_clone.clone();
                     async move {
                         let body = ev.content.body.trim().to_owned();
-                        if body.is_empty() { return; }
+                        if body.is_empty() {
+                            return;
+                        }
                         let me = client_clone.user_id().map(|u| u.to_owned());
                         let sender = ev.sender.as_str().to_owned();
-                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) { return; }
-                        let room_id  = room.room_id().as_str().to_owned();
+                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) {
+                            return;
+                        }
+                        let room_id = room.room_id().as_str().to_owned();
                         let event_id = ev.event_id.as_str();
-                        let ts: u64  = ev.origin_server_ts.get().into();
+                        let ts: u64 = ev.origin_server_ts.get().into();
                         let synthetic = build_push_rule_json(
-                            &room_id, event_id, &sender, &body, "m.sticker", ts);
+                            &room_id,
+                            event_id,
+                            &sender,
+                            &body,
+                            "m.sticker",
+                            ts,
+                        );
                         let (should_notify, is_mention) =
                             evaluate_push_rules(&client_clone, &room, &synthetic).await;
                         if should_notify {
-                            let room_name = room.display_name().await
+                            let room_name = room
+                                .display_name()
+                                .await
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| room_id.clone());
-                            let sender_member = room
-                                .get_member_no_sync(&ev.sender).await
-                                .ok().flatten();
-                            let sender_name = sender_member.as_ref()
+                            let sender_member =
+                                room.get_member_no_sync(&ev.sender).await.ok().flatten();
+                            let sender_name = sender_member
+                                .as_ref()
                                 .and_then(|m| m.display_name().map(str::to_owned))
                                 .unwrap_or_else(|| ev.sender.localpart().to_string());
                             let room_avatar = room
                                 .avatar(matrix_sdk::media::MediaFormat::File)
-                                .await.ok().flatten().unwrap_or_default();
+                                .await
+                                .ok()
+                                .flatten()
+                                .unwrap_or_default();
                             let avatar = if !room_avatar.is_empty() {
                                 room_avatar
-                            } else if let Some(url) = sender_member
-                                .as_ref().and_then(|m| m.avatar_url())
+                            } else if let Some(url) =
+                                sender_member.as_ref().and_then(|m| m.avatar_url())
                             {
                                 use matrix_sdk::media::MediaRequestParameters;
                                 let req = MediaRequestParameters {
                                     source: MediaSource::Plain(url.to_owned()),
                                     format: matrix_sdk::media::MediaFormat::File,
                                 };
-                                client_clone.media()
+                                client_clone
+                                    .media()
                                     .get_media_content(&req, true)
-                                    .await.unwrap_or_default()
+                                    .await
+                                    .unwrap_or_default()
                             } else {
                                 Vec::new()
                             };
                             let preview = match &ev.content.source {
-                                StickerMediaSource::Plain(uri) =>
+                                StickerMediaSource::Plain(uri) => {
                                     fetch_notification_image(
                                         &client_clone,
-                                        MediaSource::Plain(uri.clone())).await,
-                                StickerMediaSource::Encrypted(f) =>
+                                        MediaSource::Plain(uri.clone()),
+                                    )
+                                    .await
+                                }
+                                StickerMediaSource::Encrypted(f) => {
                                     fetch_notification_image(
                                         &client_clone,
-                                        MediaSource::Encrypted(f.clone())).await,
+                                        MediaSource::Encrypted(f.clone()),
+                                    )
+                                    .await
+                                }
                                 _ => Vec::new(),
                             };
                             if let Ok(g) = h.lock() {
-                                g.on_notification(&room_id, &room_name,
-                                                  &sender_name, &body, is_mention,
-                                                  &avatar, &preview);
+                                g.on_notification(
+                                    &room_id,
+                                    &room_name,
+                                    &sender_name,
+                                    &body,
+                                    is_mention,
+                                    &avatar,
+                                    &preview,
+                                );
                             }
                         }
                     }
@@ -794,24 +892,27 @@ impl ClientFfi {
         // never shows the local user in the typing bar.
         {
             use matrix_sdk::ruma::events::typing::SyncTypingEvent;
-            let h    = Arc::clone(&handler);
-            let me   = client.user_id().map(|u| u.to_owned());
+            let h = Arc::clone(&handler);
+            let me = client.user_id().map(|u| u.to_owned());
             self.event_handler_handles.push(client.add_event_handler(
                 move |ev: SyncTypingEvent, room: Room| {
-                    let h  = Arc::clone(&h);
+                    let h = Arc::clone(&h);
                     let me = me.clone();
                     async move {
-                        let rid  = room.room_id().to_string();
+                        let rid = room.room_id().to_string();
                         let mut uids: Vec<String> = Vec::new();
                         for u in ev.content.user_ids.iter() {
-                            if me.as_deref() == Some(u.as_ref()) { continue; }
+                            if me.as_deref() == Some(u.as_ref()) {
+                                continue;
+                            }
                             // Prefer the cached room-member display name so the
                             // typing strip shows a readable name rather than an
                             // opaque localpart (e.g. "@78fa3bcde:hs"). Falls
                             // back to the localpart when no member profile is
                             // cached (no extra network round-trip).
                             let name = match room.get_member_no_sync(u).await {
-                                Ok(Some(m)) => m.display_name()
+                                Ok(Some(m)) => m
+                                    .display_name()
                                     .map(str::to_owned)
                                     .unwrap_or_else(|| u.localpart().to_string()),
                                 _ => u.localpart().to_string(),
@@ -827,9 +928,10 @@ impl ClientFfi {
         }
 
         // Build SyncService.
-        let sync_service = match self.rt.block_on(
-            SyncService::builder(client.clone()).build()
-        ) {
+        let sync_service = match self
+            .rt
+            .block_on(SyncService::builder(client.clone()).build())
+        {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 if let Ok(guard) = handler.lock() {
@@ -842,12 +944,12 @@ impl ClientFfi {
 
         // Room info watcher: re-emits the full room list on every notable room update.
         {
-            let h                 = Arc::clone(&handler);
-            let client_clone      = client.clone();
-            let mut notable_rx    = client.room_info_notable_update_receiver();
+            let h = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let mut notable_rx = client.room_info_notable_update_receiver();
             let mut stop_rx_rooms = stop_rx.clone();
-            let packs_cache       = Arc::clone(&self.image_packs);
-            let write_pending     = Arc::clone(&self.user_pack_write_pending);
+            let packs_cache = Arc::clone(&self.image_packs);
+            let write_pending = Arc::clone(&self.user_pack_write_pending);
 
             self.spawn_tracked(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
@@ -989,11 +1091,11 @@ impl ClientFfi {
         // callback (instead of adding a dedicated one) keeps the FFI small —
         // the UI was already re-checking via this slot.
         {
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            let state_code   = Arc::clone(&self.backup_state_code);
-            let imported     = Arc::clone(&self.imported_keys);
-            let mut stop_rx  = stop_rx.clone();
+            let state_code = Arc::clone(&self.backup_state_code);
+            let imported = Arc::clone(&self.imported_keys);
+            let mut stop_rx = stop_rx.clone();
 
             self.spawn_tracked(async move {
                 use futures_util::StreamExt;
@@ -1028,11 +1130,11 @@ impl ClientFfi {
         // `total_keys` is left at 0 because matrix-sdk does not expose a cheap
         // "how many keys does the backup contain" query.
         {
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            let state_code   = Arc::clone(&self.backup_state_code);
-            let imported     = Arc::clone(&self.imported_keys);
-            let mut stop_rx  = stop_rx.clone();
+            let state_code = Arc::clone(&self.backup_state_code);
+            let imported = Arc::clone(&self.imported_keys);
+            let mut stop_rx = stop_rx.clone();
 
             self.spawn_tracked(async move {
                 use futures_util::StreamExt;
@@ -1045,9 +1147,9 @@ impl ClientFfi {
                     state_code.store(s, Ordering::Relaxed);
                     if let Ok(guard) = h.lock() {
                         guard.on_backup_progress(&BackupProgress {
-                            state:         s,
+                            state: s,
                             imported_keys: imported.load(Ordering::Relaxed),
-                            total_keys:    0,
+                            total_keys: 0,
                         });
                     }
                 }
@@ -1086,22 +1188,20 @@ impl ClientFfi {
         // then forward each batch's `.len()` into the shared imported_keys
         // counter and re-emit an `on_backup_progress` so the UI updates live.
         {
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            let state_code   = Arc::clone(&self.backup_state_code);
-            let imported     = Arc::clone(&self.imported_keys);
-            let mut stop_rx  = stop_rx.clone();
+            let state_code = Arc::clone(&self.backup_state_code);
+            let imported = Arc::clone(&self.imported_keys);
+            let mut stop_rx = stop_rx.clone();
 
             self.spawn_tracked(async move {
                 use futures_util::StreamExt;
 
                 let keys_stream = loop {
-                    if *stop_rx.borrow() { return; }
-                    if let Some(s) = client_clone
-                        .encryption()
-                        .room_keys_received_stream()
-                        .await
-                    {
+                    if *stop_rx.borrow() {
+                        return;
+                    }
+                    if let Some(s) = client_clone.encryption().room_keys_received_stream().await {
                         break s;
                     }
                     tokio::select! {
@@ -1150,12 +1250,12 @@ impl ClientFfi {
         // before the first transition still has a starting value, matching
         // the backup-state watcher above.
         {
-            let h            = Arc::clone(&handler);
-            let svc_clone    = Arc::clone(&sync_service);
-            let mut stop_rx  = stop_rx.clone();
+            let h = Arc::clone(&handler);
+            let svc_clone = Arc::clone(&sync_service);
+            let mut stop_rx = stop_rx.clone();
 
             self.spawn_tracked(async move {
-                let rls          = svc_clone.room_list_service();
+                let rls = svc_clone.room_list_service();
                 let mut state_rx = rls.state();
 
                 // Initial snapshot.
@@ -1190,9 +1290,9 @@ impl ClientFfi {
         // account changes (Unknown → Unverified → Verified). Fires an initial
         // snapshot on startup so the UI always has a starting value.
         {
-            let h            = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            let mut stop_rx  = stop_rx.clone();
+            let mut stop_rx = stop_rx.clone();
 
             self.spawn_tracked(async move {
                 use matrix_sdk::encryption::VerificationState;
@@ -1235,19 +1335,19 @@ impl ClientFfi {
                 key::verification::request::ToDeviceKeyVerificationRequestEventContent,
                 ToDeviceEvent,
             };
-            let h          = Arc::clone(&handler);
+            let h = Arc::clone(&handler);
             let flow_users = Arc::clone(&self.verification_flow_users);
             let emoji_cache = Arc::clone(&self.sas_emoji_cache);
 
             self.event_handler_handles.push(client.add_event_handler(
                 move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
                       client: Client| {
-                    let h           = Arc::clone(&h);
-                    let flow_users  = Arc::clone(&flow_users);
+                    let h = Arc::clone(&h);
+                    let flow_users = Arc::clone(&flow_users);
                     let emoji_cache = Arc::clone(&emoji_cache);
                     async move {
-                        let flow_id   = ev.content.transaction_id.to_string();
-                        let user_id   = ev.sender.as_str().to_owned();
+                        let flow_id = ev.content.transaction_id.to_string();
+                        let user_id = ev.sender.as_str().to_owned();
                         let device_id = ev.content.from_device.as_str().to_owned();
 
                         // The OlmMachine processes the to-device event and
@@ -1259,31 +1359,34 @@ impl ClientFfi {
                         let mut req = None;
                         let mut delay_ms = 50u64;
                         for _ in 0..6 {
-                            tokio::time::sleep(
-                                std::time::Duration::from_millis(delay_ms)).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                             req = client
                                 .encryption()
                                 .get_verification_request(&ev.sender, &flow_id)
                                 .await;
-                            if req.is_some() { break; }
+                            if req.is_some() {
+                                break;
+                            }
                             delay_ms *= 2;
                         }
                         if let Some(req) = req {
-                            lock_or_recover(&flow_users)
-                                .insert(flow_id.clone(), user_id.clone());
+                            lock_or_recover(&flow_users).insert(flow_id.clone(), user_id.clone());
                             if let Ok(guard) = h.lock() {
-                                guard.on_verification_request(
-                                    &flow_id, &user_id, &device_id, true);
+                                guard.on_verification_request(&flow_id, &user_id, &device_id, true);
                             }
                             // Spawn a watcher so we can surface request-level
                             // transitions (Done / Cancelled) that occur before
                             // start_sas is called.
-                            let h2           = Arc::clone(&h);
-                            let flow_users2  = Arc::clone(&flow_users);
+                            let h2 = Arc::clone(&h);
+                            let flow_users2 = Arc::clone(&flow_users);
                             let emoji_cache2 = Arc::clone(&emoji_cache);
-                            let flow_id2     = flow_id.clone();
+                            let flow_id2 = flow_id.clone();
                             tokio::spawn(watch_verification_request(
-                                req, flow_id2, h2, flow_users2, emoji_cache2,
+                                req,
+                                flow_id2,
+                                h2,
+                                flow_users2,
+                                emoji_cache2,
                             ));
                         } else {
                             tracing::warn!(
@@ -1297,8 +1400,8 @@ impl ClientFfi {
         }
 
         // Start SyncService and monitor state.
-        let svc_clone      = Arc::clone(&sync_service);
-        let h_state        = Arc::clone(&handler);
+        let svc_clone = Arc::clone(&sync_service);
+        let h_state = Arc::clone(&handler);
         let mut stop_rx_sv = stop_rx.clone();
 
         self.spawn_tracked(async move {
@@ -1373,7 +1476,10 @@ impl ClientFfi {
         #[cfg(not(test))]
         if let (Some(client), Some(handler)) = (&self.client, &handler) {
             if let Some(full) = client.oauth().full_session() {
-                let persisted = PersistedSession { client_id: full.client_id, user: full.user };
+                let persisted = PersistedSession {
+                    client_id: full.client_id,
+                    user: full.user,
+                };
                 if let Ok(json) = serde_json::to_string(&persisted) {
                     if let Ok(guard) = handler.lock() {
                         guard.on_session_refreshed(&json);
@@ -1409,7 +1515,9 @@ impl ClientFfi {
         }
         #[cfg(not(test))]
         if let Some(svc) = self.sync_service.take() {
-            self.rt.block_on(async move { let _ = svc.stop().await; });
+            self.rt.block_on(async move {
+                let _ = svc.stop().await;
+            });
         }
     }
 
@@ -1426,50 +1534,60 @@ impl ClientFfi {
     /// is the string form of the room ID used by handler callbacks.
     #[cfg(not(test))]
     fn spawn_timeline_tasks(
-        timeline:    &Arc<matrix_sdk_ui::Timeline>,
-        room:        &matrix_sdk::Room,
+        timeline: &Arc<matrix_sdk_ui::Timeline>,
+        room: &matrix_sdk::Room,
         room_id_str: String,
-        handler:     &Arc<Mutex<SendHandler>>,
-        client:      &Client,
-        rt:          &tokio::runtime::Runtime,
+        handler: &Arc<Mutex<SendHandler>>,
+        client: &Client,
+        rt: &tokio::runtime::Runtime,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
-        let tl         = Arc::clone(timeline);
-        let h          = Arc::clone(handler);
-        let rid        = room_id_str;
+        let tl = Arc::clone(timeline);
+        let h = Arc::clone(handler);
+        let rid = room_id_str;
         let room_clone = room.clone();
-        let me         = client.user_id().map(|u| u.to_owned());
+        let me = client.user_id().map(|u| u.to_owned());
         let client_ref = client.clone();
 
-        let abort = rt.spawn(async move {
-            let (initial_items, mut stream) = tl.subscribe().await;
+        let abort = rt
+            .spawn(async move {
+                let (initial_items, mut stream) = tl.subscribe().await;
 
-            // Build the visibility mirror + initial snapshot in one pass.
-            // The mirror is `true` for every matrix-sdk-ui timeline slot
-            // whose `timeline_item_to_ffi` yields Some — this covers both
-            // real message events and virtual items (day-dividers,
-            // read-markers, timeline-start). State events and membership
-            // changes remain `false` so they are silently filtered.
-            let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
-            let mut snapshot: Vec<TimelineEvent> = Vec::new();
-            for item in initial_items.iter() {
-                let ev = timeline_item_to_ffi(
-                    item, &rid, &room_clone, me.as_deref()).await;
-                visible.push(ev.is_some());
-                if let Some(ev) = ev { snapshot.push(ev); }
-            }
-            if let Ok(guard) = h.lock() {
-                guard.on_timeline_reset(&rid, &snapshot);
-            }
-            drop(snapshot);
-
-            while let Some(diffs) = stream.next().await {
-                for diff in diffs {
-                    handle_timeline_diff(
-                        diff, &mut visible, &h, &rid, &room_clone, me.as_deref(),
-                        &client_ref).await;
+                // Build the visibility mirror + initial snapshot in one pass.
+                // The mirror is `true` for every matrix-sdk-ui timeline slot
+                // whose `timeline_item_to_ffi` yields Some — this covers both
+                // real message events and virtual items (day-dividers,
+                // read-markers, timeline-start). State events and membership
+                // changes remain `false` so they are silently filtered.
+                let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
+                let mut snapshot: Vec<TimelineEvent> = Vec::new();
+                for item in initial_items.iter() {
+                    let ev = timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await;
+                    visible.push(ev.is_some());
+                    if let Some(ev) = ev {
+                        snapshot.push(ev);
+                    }
                 }
-            }
-        }).abort_handle();
+                if let Ok(guard) = h.lock() {
+                    guard.on_timeline_reset(&rid, &snapshot);
+                }
+                drop(snapshot);
+
+                while let Some(diffs) = stream.next().await {
+                    for diff in diffs {
+                        handle_timeline_diff(
+                            diff,
+                            &mut visible,
+                            &h,
+                            &rid,
+                            &room_clone,
+                            me.as_deref(),
+                            &client_ref,
+                        )
+                        .await;
+                    }
+                }
+            })
+            .abort_handle();
 
         // Backfill sender profiles. `matrix-sdk-ui`'s Timeline does not
         // sync member info on its own — `EventTimelineItem::sender_profile()`
@@ -1482,17 +1600,23 @@ impl ClientFfi {
         // spawn it separately so the initial items aren't blocked
         // behind a multi-second member sync on big rooms.
         let tl_for_members = Arc::clone(timeline);
-        let fetch_abort = rt.spawn(async move {
-            tl_for_members.fetch_members().await;
-        }).abort_handle();
+        let fetch_abort = rt
+            .spawn(async move {
+                tl_for_members.fetch_members().await;
+            })
+            .abort_handle();
 
         (abort, fetch_abort)
     }
 
     #[cfg(not(test))]
     pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let Some(handler) = self.handler.clone() else { return err("sync not started") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.clone() else {
+            return err("sync not started");
+        };
 
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -1501,10 +1625,14 @@ impl ClientFfi {
 
         // Drop any previous subscription for this room.
         if let Some(prev) = self.timelines.remove(&room_id) {
-            for h in prev.abort_tasks { h.abort(); }
+            for h in prev.abort_tasks {
+                h.abort();
+            }
         }
 
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
 
         // Build the timeline on a runtime worker thread, not the calling FFI
         // thread. `Timeline::init_focus` collects the cached events into an
@@ -1514,11 +1642,12 @@ impl ClientFfi {
         // have the widened 8 MB stack configured on the runtime above.
         let room_for_build = room.clone();
         let timeline = match self.rt.block_on(
-            self.rt.spawn(async move { room_for_build.timeline().await })
+            self.rt
+                .spawn(async move { room_for_build.timeline().await }),
         ) {
-            Ok(Ok(t))  => Arc::new(t),
+            Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build timeline: {e}")),
-            Err(e)     => return err(format!("build timeline task: {e}")),
+            Err(e) => return err(format!("build timeline task: {e}")),
         };
 
         let room_id_str = room_id.to_string();
@@ -1533,15 +1662,17 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
-        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
-            &timeline, &room, room_id_str, &handler, &client, &self.rt,
-        );
+        let (abort, fetch_abort) =
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt);
 
-        self.timelines.insert(room_id, TimelineHandle {
-            timeline,
-            abort_tasks: vec![abort, fetch_abort],
-            is_focused:  false,
-        });
+        self.timelines.insert(
+            room_id,
+            TimelineHandle {
+                timeline,
+                abort_tasks: vec![abort, fetch_abort],
+                is_focused: false,
+            },
+        );
 
         ok("")
     }
@@ -1550,7 +1681,9 @@ impl ClientFfi {
     pub fn unsubscribe_room(&mut self, room_id: &str) {
         if let Ok(id) = room_id.parse::<OwnedRoomId>() {
             if let Some(h) = self.timelines.remove(&id) {
-                for abort in h.abort_tasks { abort.abort(); }
+                for abort in h.abort_tasks {
+                    abort.abort();
+                }
             }
         }
     }
@@ -1558,23 +1691,24 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn paginate_back(&mut self, room_id: &str, count: u16) -> OpResult {
         let result = self.paginate_back_with_status(room_id, count);
-        OpResult { ok: result.ok, message: result.message }
+        OpResult {
+            ok: result.ok,
+            message: result.message,
+        }
     }
 
     #[cfg(not(test))]
-    pub fn paginate_back_with_status(
-        &mut self,
-        room_id: &str,
-        count: u16,
-    ) -> PaginateResult {
+    pub fn paginate_back_with_status(&mut self, room_id: &str, count: u16) -> PaginateResult {
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
-            Err(e) => return PaginateResult {
-                ok: false,
-                message: format!("invalid room id: {e}"),
-                reached_start: false,
-                reached_end:   false,
-            },
+            Err(e) => {
+                return PaginateResult {
+                    ok: false,
+                    message: format!("invalid room id: {e}"),
+                    reached_start: false,
+                    reached_end: false,
+                }
+            }
         };
 
         let Some(handle) = self.timelines.get(&room_id) else {
@@ -1582,11 +1716,11 @@ impl ClientFfi {
                 ok: false,
                 message: "room not subscribed; call subscribe_room first".into(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             };
         };
 
-        let tl      = Arc::clone(&handle.timeline);
+        let tl = Arc::clone(&handle.timeline);
         let stop_rx = self.stop_rx.clone();
 
         // Race the network round-trip against the shutdown signal so that
@@ -1619,13 +1753,13 @@ impl ClientFfi {
                 ok: false,
                 message: "shutdown in progress".into(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             },
             Err(e) => PaginateResult {
                 ok: false,
                 message: e.to_string(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             },
         }
     }
@@ -1638,18 +1772,15 @@ impl ClientFfi {
     /// in `room_id`. `dir` is `"f"` (forward) or `"b"` (backward).
     /// On success, `OpResult.message` holds the event ID string.
     #[cfg(not(test))]
-    pub fn timestamp_to_event(
-        &mut self,
-        room_id: &str,
-        ts_ms:   u64,
-        dir:     &str,
-    ) -> OpResult {
+    pub fn timestamp_to_event(&mut self, room_id: &str, ts_ms: u64, dir: &str) -> OpResult {
         use matrix_sdk::ruma::{
+            api::{client::room::get_event_by_timestamp::v1::Request, Direction},
             MilliSecondsSinceUnixEpoch,
-            api::{Direction, client::room::get_event_by_timestamp::v1::Request},
         };
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
 
         let room_id: matrix_sdk::ruma::OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -1659,12 +1790,16 @@ impl ClientFfi {
         let direction = match dir {
             "f" => Direction::Forward,
             "b" => Direction::Backward,
-            _   => return err(format!("invalid dir {:?}: expected \"f\" or \"b\"", dir)),
+            _ => return err(format!("invalid dir {:?}: expected \"f\" or \"b\"", dir)),
         };
 
         let ts = match UInt::try_from(ts_ms) {
-            Ok(u)  => MilliSecondsSinceUnixEpoch(u),
-            Err(_) => return err(format!("timestamp {ts_ms} is out of range for MilliSecondsSinceUnixEpoch")),
+            Ok(u) => MilliSecondsSinceUnixEpoch(u),
+            Err(_) => {
+                return err(format!(
+                    "timestamp {ts_ms} is out of range for MilliSecondsSinceUnixEpoch"
+                ))
+            }
         };
 
         let req = Request::new(room_id, ts, direction);
@@ -1673,7 +1808,7 @@ impl ClientFfi {
         // round-trip) and not in a loop, so blocking the thread is acceptable.
         match self.rt.block_on(async move { client.send(req).await }) {
             Ok(resp) => ok(resp.event_id.to_string()),
-            Err(e)   => err(e.to_string()),
+            Err(e) => err(e.to_string()),
         }
     }
 
@@ -1688,13 +1823,13 @@ impl ClientFfi {
     /// event callbacks identically to `subscribe_room`. Sets `is_focused = true`
     /// so that `paginate_forward` can gate itself.
     #[cfg(not(test))]
-    pub fn subscribe_room_at(
-        &mut self,
-        room_id:        &str,
-        focus_event_id: &str,
-    ) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let Some(handler) = self.handler.clone() else { return err("sync not started") };
+    pub fn subscribe_room_at(&mut self, room_id: &str, focus_event_id: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.clone() else {
+            return err("sync not started");
+        };
 
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -1708,10 +1843,14 @@ impl ClientFfi {
 
         // Drop any previous subscription for this room.
         if let Some(prev) = self.timelines.remove(&room_id) {
-            for h in prev.abort_tasks { h.abort(); }
+            for h in prev.abort_tasks {
+                h.abort();
+            }
         }
 
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
 
         let focus = TimelineFocus::Event {
             target,
@@ -1725,11 +1864,15 @@ impl ClientFfi {
         // the focused build runs the same imbl `collect()` over cached events.
         let room_for_build = room.clone();
         let timeline = match self.rt.block_on(self.rt.spawn(async move {
-            room_for_build.timeline_builder().with_focus(focus).build().await
+            room_for_build
+                .timeline_builder()
+                .with_focus(focus)
+                .build()
+                .await
         })) {
-            Ok(Ok(t))  => Arc::new(t),
+            Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build focused timeline: {e}")),
-            Err(e)     => return err(format!("build focused timeline task: {e}")),
+            Err(e) => return err(format!("build focused timeline task: {e}")),
         };
 
         let room_id_str = room_id.to_string();
@@ -1740,15 +1883,17 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
-        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
-            &timeline, &room, room_id_str, &handler, &client, &self.rt,
-        );
+        let (abort, fetch_abort) =
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt);
 
-        self.timelines.insert(room_id, TimelineHandle {
-            timeline,
-            abort_tasks: vec![abort, fetch_abort],
-            is_focused:  true,
-        });
+        self.timelines.insert(
+            room_id,
+            TimelineHandle {
+                timeline,
+                abort_tasks: vec![abort, fetch_abort],
+                is_focused: true,
+            },
+        );
 
         ok("")
     }
@@ -1765,12 +1910,14 @@ impl ClientFfi {
     pub fn paginate_forward(&mut self, room_id: &str, count: u16) -> PaginateResult {
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
-            Err(e) => return PaginateResult {
-                ok: false,
-                message: format!("invalid room id: {e}"),
-                reached_start: false,
-                reached_end:   false,
-            },
+            Err(e) => {
+                return PaginateResult {
+                    ok: false,
+                    message: format!("invalid room id: {e}"),
+                    reached_start: false,
+                    reached_end: false,
+                }
+            }
         };
 
         let Some(handle) = self.timelines.get(&room_id) else {
@@ -1778,7 +1925,7 @@ impl ClientFfi {
                 ok: false,
                 message: "room not subscribed; call subscribe_room_at first".into(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             };
         };
 
@@ -1787,11 +1934,11 @@ impl ClientFfi {
                 ok: false,
                 message: "not in focused mode".into(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             };
         }
 
-        let tl      = Arc::clone(&handle.timeline);
+        let tl = Arc::clone(&handle.timeline);
         let stop_rx = self.stop_rx.clone();
 
         match self.rt.block_on(async move {
@@ -1822,13 +1969,13 @@ impl ClientFfi {
                 ok: false,
                 message: "shutdown in progress".into(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             },
             Err(e) => PaginateResult {
                 ok: false,
                 message: e.to_string(),
                 reached_start: false,
-                reached_end:   false,
+                reached_end: false,
             },
         }
     }
@@ -1839,7 +1986,7 @@ impl ClientFfi {
             ok: false,
             message: "not in focused mode".into(),
             reached_start: false,
-            reached_end:   false,
+            reached_end: false,
         }
     }
 
@@ -1879,14 +2026,19 @@ impl ClientFfi {
         // Snapshot the work set up-front so the orchestrator owns no
         // borrows of `self`. Skip rooms that already have a foreground
         // Timeline (the user-active one).
-        let skip: std::collections::HashSet<OwnedRoomId> =
-            self.timelines.keys().cloned().collect();
+        let skip: std::collections::HashSet<OwnedRoomId> = self.timelines.keys().cloned().collect();
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
         for id_cxx in room_ids {
-            let Ok(id_str) = id_cxx.to_str() else { continue };
-            let Ok(id) = OwnedRoomId::try_from(id_str) else { continue };
-            if skip.contains(&id) { continue; }
+            let Ok(id_str) = id_cxx.to_str() else {
+                continue;
+            };
+            let Ok(id) = OwnedRoomId::try_from(id_str) else {
+                continue;
+            };
+            if skip.contains(&id) {
+                continue;
+            }
             if let Some(room) = client.get_room(&id) {
                 if !room.is_tombstoned() {
                     to_backfill.push(id);
@@ -1898,24 +2050,27 @@ impl ClientFfi {
             return ok("");
         }
 
-        let abort = self.rt.spawn(async move {
-            let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
-            let mut joinset = tokio::task::JoinSet::new();
+        let abort = self
+            .rt
+            .spawn(async move {
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(3));
+                let mut joinset = tokio::task::JoinSet::new();
 
-            for rid in to_backfill {
-                let client = client.clone();
-                let sem    = semaphore.clone();
-                joinset.spawn(async move {
-                    let _permit = match sem.acquire_owned().await {
-                        Ok(p)  => p,
-                        Err(_) => return,
-                    };
-                    let _ = backfill_room_silent(&client, &rid, 50).await;
-                });
-            }
+                for rid in to_backfill {
+                    let client = client.clone();
+                    let sem = semaphore.clone();
+                    joinset.spawn(async move {
+                        let _permit = match sem.acquire_owned().await {
+                            Ok(p) => p,
+                            Err(_) => return,
+                        };
+                        let _ = backfill_room_silent(&client, &rid, 50).await;
+                    });
+                }
 
-            while joinset.join_next().await.is_some() {}
-        }).abort_handle();
+                while joinset.join_next().await.is_some() {}
+            })
+            .abort_handle();
 
         self.backfill_task = Some(abort);
         ok("")
@@ -1933,7 +2088,9 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     pub fn send_message(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
@@ -1947,33 +2104,44 @@ impl ClientFfi {
         #[cfg(not(test))]
         if let Some(handle) = self.timelines.get(&room_id) {
             let timeline = handle.timeline.clone();
-            return match self.rt.block_on(async move { timeline.send(content.into()).await }) {
-                Ok(_)  => ok(""),
+            return match self
+                .rt
+                .block_on(async move { timeline.send(content.into()).await })
+            {
+                Ok(_) => ok(""),
                 Err(e) => err(e.to_string()),
             };
         }
         // Fallback: no timeline subscribed for this room.
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(not(test))]
     pub fn retry_send(&mut self, room_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         room.send_queue().set_enabled(true);
         ok("")
     }
 
     #[cfg(test)]
-    pub fn retry_send(&mut self, _room_id: &str) -> OpResult { ok("") }
+    pub fn retry_send(&mut self, _room_id: &str) -> OpResult {
+        ok("")
+    }
 
     #[cfg(not(test))]
     pub fn abort_send(&mut self, room_id: &str, txn_id: &str) -> OpResult {
@@ -1987,25 +2155,34 @@ impl ClientFfi {
         };
         let timeline = handle.timeline.clone();
         let item_id = TimelineEventItemId::TransactionId(txn_id);
-        match self.rt.block_on(async move { timeline.redact(&item_id, None).await }) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(async move { timeline.redact(&item_id, None).await })
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn abort_send(&mut self, _room_id: &str, _txn_id: &str) -> OpResult { ok("") }
+    pub fn abort_send(&mut self, _room_id: &str, _txn_id: &str) -> OpResult {
+        ok("")
+    }
 
     /// Send a typing notice to `room_id`. Fire-and-forget; errors are swallowed.
     #[cfg(not(test))]
     pub fn send_typing_notice(&mut self, room_id: &str, typing: bool) {
-        let Some(client) = self.client.clone() else { return };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(_) => return,
         };
         self.rt.spawn(async move {
-            let Some(room) = client.get_room(&room_id) else { return };
+            let Some(room) = client.get_room(&room_id) else {
+                return;
+            };
             let _ = room.typing_notice(typing).await;
         });
     }
@@ -2018,11 +2195,19 @@ impl ClientFfi {
     /// `subscribe_room`. Does not add the plain-text fallback body (Tesseract
     /// renders its own quote block).
     #[cfg(not(test))]
-    pub fn send_reply(&mut self, room_id: &str, event_id: &str, body: &str, formatted_body: &str) -> OpResult {
-        use matrix_sdk::ruma::events::room::message::Relation;
+    pub fn send_reply(
+        &mut self,
+        room_id: &str,
+        event_id: &str,
+        body: &str,
+        formatted_body: &str,
+    ) -> OpResult {
         use matrix_sdk::ruma::events::relation::{InReplyTo, Reply};
+        use matrix_sdk::ruma::events::room::message::Relation;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
@@ -2031,23 +2216,29 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         let mut content = if formatted_body.is_empty() {
             RoomMessageEventContent::text_plain(body)
         } else {
             RoomMessageEventContent::text_html(body, formatted_body)
         };
-        content.relates_to = Some(Relation::Reply(
-            Reply::new(InReplyTo::new(event_id)),
-        ));
+        content.relates_to = Some(Relation::Reply(Reply::new(InReplyTo::new(event_id))));
         match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn send_reply(&mut self, _room_id: &str, _event_id: &str, _body: &str, _formatted_body: &str) -> OpResult {
+    pub fn send_reply(
+        &mut self,
+        _room_id: &str,
+        _event_id: &str,
+        _body: &str,
+        _formatted_body: &str,
+    ) -> OpResult {
         err("not logged in")
     }
 
@@ -2101,27 +2292,39 @@ impl ClientFfi {
         reply_event_id: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
-        use matrix_sdk::ruma::UInt;
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::room::reply::{EnforceThread, Reply};
         use matrix_sdk::ruma::events::room::message::AddMentions;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
 
         let info = BaseImageInfo {
-            width:       if width  != 0 { UInt::new(width  as u64) } else { None },
-            height:      if height != 0 { UInt::new(height as u64) } else { None },
-            size:        UInt::new(bytes.len() as u64),
-            blurhash:    None,
+            width: if width != 0 {
+                UInt::new(width as u64)
+            } else {
+                None
+            },
+            height: if height != 0 {
+                UInt::new(height as u64)
+            } else {
+                None
+            },
+            size: UInt::new(bytes.len() as u64),
+            blurhash: None,
             is_animated: None,
         };
         let mut config = AttachmentConfig::new().info(AttachmentInfo::Image(info));
@@ -2133,16 +2336,21 @@ impl ClientFfi {
                 Ok(id) => id,
                 Err(e) => return err(format!("invalid reply event id: {e}")),
             };
-            config = config.reply(Some(Reply { event_id: reply_id, enforce_thread: EnforceThread::Unthreaded, add_mentions: AddMentions::No }));
+            config = config.reply(Some(Reply {
+                event_id: reply_id,
+                enforce_thread: EnforceThread::Unthreaded,
+                add_mentions: AddMentions::No,
+            }));
         }
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self.rt.block_on(async move {
-            room.send_attachment(filename, &mime, data, config).await
-        }) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2178,16 +2386,20 @@ impl ClientFfi {
         reply_event_id: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::AttachmentConfig;
-        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::room::reply::{EnforceThread, Reply};
         use matrix_sdk::ruma::events::room::message::AddMentions;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
@@ -2202,16 +2414,21 @@ impl ClientFfi {
                 Ok(id) => id,
                 Err(e) => return err(format!("invalid reply event id: {e}")),
             };
-            config = config.reply(Some(Reply { event_id: reply_id, enforce_thread: EnforceThread::Unthreaded, add_mentions: AddMentions::No }));
+            config = config.reply(Some(Reply {
+                event_id: reply_id,
+                enforce_thread: EnforceThread::Unthreaded,
+                add_mentions: AddMentions::No,
+            }));
         }
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
 
-        match self.rt.block_on(async move {
-            room.send_attachment(filename, &mime, data, config).await
-        }) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2237,11 +2454,17 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn media_upload_limit(&mut self) -> u64 {
         let cached = self.media_upload_limit.load(Ordering::Relaxed);
-        if cached != 0 { return cached; }
+        if cached != 0 {
+            return cached;
+        }
 
-        let Some(client) = self.client.clone() else { return 0 };
+        let Some(client) = self.client.clone() else {
+            return 0;
+        };
         let limit = self.rt.block_on(async move {
-            client.load_or_fetch_max_upload_size().await
+            client
+                .load_or_fetch_max_upload_size()
+                .await
                 .map(u64::from)
                 .unwrap_or(0)
         });
@@ -2252,7 +2475,9 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn media_upload_limit(&mut self) -> u64 { 0 }
+    pub fn media_upload_limit(&mut self) -> u64 {
+        0
+    }
 
     /// Toggle the current user's `key` reaction on `event_id` in `room_id`.
     /// First call adds the reaction; second redacts it. Requires that
@@ -2260,8 +2485,12 @@ impl ClientFfi {
     /// its `Timeline` handle to invoke `toggle_reaction`.
     #[cfg(not(test))]
     pub fn send_reaction(&mut self, room_id: &str, event_id: &str, key: &str) -> OpResult {
-        if self.client.is_none() { return err("not logged in"); }
-        if key.is_empty() { return err("reaction key is empty"); }
+        if self.client.is_none() {
+            return err("not logged in");
+        }
+        if key.is_empty() {
+            return err("reaction key is empty");
+        }
 
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -2279,10 +2508,11 @@ impl ClientFfi {
         let item_id = TimelineEventItemId::EventId(event_id);
         let key = key.to_owned();
 
-        match self.rt.block_on(async move {
-            tl.toggle_reaction(&item_id, &key).await
-        }) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(async move { tl.toggle_reaction(&item_id, &key).await })
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2300,8 +2530,12 @@ impl ClientFfi {
         key: &str,
         shortcode: &str,
     ) -> OpResult {
-        if self.client.is_none() { return err("not logged in"); }
-        if key.is_empty() { return err("reaction key is empty"); }
+        if self.client.is_none() {
+            return err("not logged in");
+        }
+        if key.is_empty() {
+            return err("reaction key is empty");
+        }
 
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -2311,8 +2545,12 @@ impl ClientFfi {
         let key = key.to_owned();
         let shortcode = shortcode.to_owned();
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
 
         match self.rt.block_on(async move {
             let mut content = serde_json::json!({
@@ -2323,12 +2561,11 @@ impl ClientFfi {
                 }
             });
             if !shortcode.is_empty() {
-                content["com.beeper.reaction.shortcode"] =
-                    serde_json::Value::String(shortcode);
+                content["com.beeper.reaction.shortcode"] = serde_json::Value::String(shortcode);
             }
             room.send_raw("m.reaction", content).await
         }) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2340,11 +2577,15 @@ impl ClientFfi {
         _event_id: &str,
         _key: &str,
         _shortcode: &str,
-    ) -> OpResult { err("not logged in") }
+    ) -> OpResult {
+        err("not logged in")
+    }
 
     #[cfg(not(test))]
     pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
-        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
@@ -2355,10 +2596,10 @@ impl ClientFfi {
         };
         let room = match client.get_room(&room_id) {
             Some(r) => r,
-            None    => return err("room not found"),
+            None => return err("room not found"),
         };
         match self.rt.block_on(send_both_receipts(&room, event_id)) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2373,14 +2614,16 @@ impl ClientFfi {
     /// requiring the room to be subscribed via `subscribe_room`.
     #[cfg(not(test))]
     pub fn mark_room_as_read(&mut self, room_id: &str) -> OpResult {
-        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
         let room = match client.get_room(&room_id) {
             Some(r) => r,
-            None    => return err("room not found"),
+            None => return err("room not found"),
         };
         // Deref to the base room type to get the synchronous `latest_event()`
         // with `event_id()`. The `RoomExt` trait (from matrix-sdk-ui, in scope
@@ -2388,10 +2631,10 @@ impl ClientFfi {
         // that doesn't carry the event ID.
         let event_id = match std::ops::Deref::deref(&room).latest_event().event_id() {
             Some(id) => id.to_owned(),
-            None     => return ok(""),
+            None => return ok(""),
         };
         match self.rt.block_on(send_both_receipts(&room, event_id)) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2408,7 +2651,9 @@ impl ClientFfi {
     /// as `OpResult { ok: false, message: ... }`.
     #[cfg(not(test))]
     pub fn redact_event(&mut self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
-        if self.client.is_none() { return err("not logged in"); }
+        if self.client.is_none() {
+            return err("not logged in");
+        }
 
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
@@ -2424,12 +2669,17 @@ impl ClientFfi {
         };
         let tl = Arc::clone(&handle.timeline);
         let item_id = TimelineEventItemId::EventId(event_id);
-        let reason_opt = if reason.is_empty() { None } else { Some(reason.to_owned()) };
+        let reason_opt = if reason.is_empty() {
+            None
+        } else {
+            Some(reason.to_owned())
+        };
 
-        match self.rt.block_on(async move {
-            tl.redact(&item_id, reason_opt.as_deref()).await
-        }) {
-            Ok(_)  => ok(""),
+        match self
+            .rt
+            .block_on(async move { tl.redact(&item_id, reason_opt.as_deref()).await })
+        {
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -2445,10 +2695,18 @@ impl ClientFfi {
     /// can be edited; the SDK returns an error for non-own or non-text
     /// events. Does not require `subscribe_room`.
     #[cfg(not(test))]
-    pub fn send_edit(&mut self, room_id: &str, event_id: &str, new_body: &str, formatted_body: &str) -> OpResult {
+    pub fn send_edit(
+        &mut self,
+        room_id: &str,
+        event_id: &str,
+        new_body: &str,
+        formatted_body: &str,
+    ) -> OpResult {
         use matrix_sdk::room::edit::EditedContent;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
@@ -2457,7 +2715,9 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
         let new_content = if formatted_body.is_empty() {
             RoomMessageEventContent::text_plain(new_body)
         } else {
@@ -2468,15 +2728,24 @@ impl ClientFfi {
                 .make_edit_event(&event_id, EditedContent::RoomMessage(new_content.into()))
                 .await
                 .map_err(|e| e.to_string())?;
-            room.send_queue().send(edit_event).await.map_err(|e| e.to_string())
+            room.send_queue()
+                .send(edit_event)
+                .await
+                .map_err(|e| e.to_string())
         }) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e),
         }
     }
 
     #[cfg(test)]
-    pub fn send_edit(&mut self, _room_id: &str, _event_id: &str, _new_body: &str, _formatted_body: &str) -> OpResult {
+    pub fn send_edit(
+        &mut self,
+        _room_id: &str,
+        _event_id: &str,
+        _new_body: &str,
+        _formatted_body: &str,
+    ) -> OpResult {
         err("not logged in")
     }
 
@@ -2491,15 +2760,19 @@ impl ClientFfi {
     /// any deserialization error: a broken blob never stalls the picker.
     #[cfg(not(test))]
     pub fn recent_emoji_top(&mut self, n: u32) -> Vec<String> {
-        let Some(client) = self.client.clone() else { return Vec::new(); };
-        let entries = self.rt.block_on(async move {
-            read_recent_emoji_entries(&client).await
-        });
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        let entries = self
+            .rt
+            .block_on(async move { read_recent_emoji_entries(&client).await });
         crate::recent_emoji::top_by_count(&entries, n as usize)
     }
 
     #[cfg(test)]
-    pub fn recent_emoji_top(&mut self, _n: u32) -> Vec<String> { Vec::new() }
+    pub fn recent_emoji_top(&mut self, _n: u32) -> Vec<String> {
+        Vec::new()
+    }
 
     /// Record one use of `glyph` in the user's account-data. Fire-and-forget
     /// against the homeserver: the GET-modify-PUT round-trips would
@@ -2514,8 +2787,12 @@ impl ClientFfi {
     /// manage their own copy.
     #[cfg(not(test))]
     pub fn recent_emoji_bump(&mut self, glyph: &str) {
-        if glyph.is_empty() { return; }
-        let Some(client) = self.client.clone() else { return; };
+        if glyph.is_empty() {
+            return;
+        }
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let glyph = glyph.to_owned();
         let ad_lock = Arc::clone(&self.account_data_lock);
         self.rt.spawn(async move {
@@ -2526,10 +2803,10 @@ impl ClientFfi {
             // writers so rapid bumps build on each other instead of racing.
             let _ad_guard = ad_lock.lock().await;
             let entries = read_recent_emoji_entries(&client).await;
-            let bumped  = crate::recent_emoji::bump(entries, &glyph);
+            let bumped = crate::recent_emoji::bump(entries, &glyph);
             let content = crate::recent_emoji::serialize_msc4356(&bumped);
             let raw = match Raw::new(&content) {
-                Ok(r)  => r.cast_unchecked(),
+                Ok(r) => r.cast_unchecked(),
                 Err(_) => return,
             };
             // Dual-write to stable + unstable types. Errors are swallowed
@@ -2539,7 +2816,8 @@ impl ClientFfi {
                 crate::recent_emoji::TYPE_UNSTABLE,
             ] {
                 let ev_type = GlobalAccountDataEventType::from(ty);
-                let _ = client.account()
+                let _ = client
+                    .account()
                     .set_account_data_raw(ev_type, raw.clone())
                     .await;
             }
@@ -2553,32 +2831,46 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn load_prefs(&mut self) -> String {
-        let Some(client) = self.client.clone() else { return "{}".to_owned(); };
+        let Some(client) = self.client.clone() else {
+            return "{}".to_owned();
+        };
         self.rt.block_on(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
-            client.account()
-                .account_data_raw(et).await
-                .ok().flatten()
+            client
+                .account()
+                .account_data_raw(et)
+                .await
+                .ok()
+                .flatten()
                 .map(|r| r.json().get().to_owned())
                 .unwrap_or_else(|| "{}".to_owned())
         })
     }
 
     #[cfg(test)]
-    pub fn load_prefs(&mut self) -> String { "{}".to_owned() }
+    pub fn load_prefs(&mut self) -> String {
+        "{}".to_owned()
+    }
 
     #[cfg(not(test))]
     pub fn save_prefs(&mut self, json: &str) {
-        let Some(client) = self.client.clone() else { return; };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         let json = json.to_owned();
         self.rt.spawn(async move {
             use matrix_sdk::ruma::events::GlobalAccountDataEventType;
             use matrix_sdk::ruma::serde::Raw;
-            let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&json) else { return; };
-            let Ok(raw) = Raw::new(&raw_value) else { return; };
+            let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&json) else {
+                return;
+            };
+            let Ok(raw) = Raw::new(&raw_value) else {
+                return;
+            };
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
-            let _ = client.account()
+            let _ = client
+                .account()
                 .set_account_data_raw(et, raw.cast_unchecked())
                 .await;
         });
@@ -2596,7 +2888,9 @@ impl ClientFfi {
     }
 
     pub fn current_user_display_name(&self) -> String {
-        let Some(client) = self.client.clone() else { return String::new() };
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
         self.rt.block_on(async move {
             client
                 .account()
@@ -2609,7 +2903,9 @@ impl ClientFfi {
     }
 
     pub fn current_user_avatar_url(&self) -> String {
-        let Some(client) = self.client.clone() else { return String::new() };
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
         self.rt.block_on(async move {
             client
                 .account()
@@ -2623,20 +2919,28 @@ impl ClientFfi {
     }
 
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
-        let Some(client) = self.client.clone() else { return Vec::new() };
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
         self.rt.block_on(build_room_infos(&client))
     }
 
     pub fn space_children(&self, space_id: &str) -> Vec<String> {
-        let Some(client) = self.client.as_ref() else { return vec![]; };
-        let Ok(room_id) = OwnedRoomId::try_from(space_id) else { return vec![]; };
-        let Some(space_room) = client.get_room(&room_id) else { return vec![]; };
+        let Some(client) = self.client.as_ref() else {
+            return vec![];
+        };
+        let Ok(room_id) = OwnedRoomId::try_from(space_id) else {
+            return vec![];
+        };
+        let Some(space_room) = client.get_room(&room_id) else {
+            return vec![];
+        };
         let client = client.clone();
 
         self.rt.block_on(async move {
             use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-            use matrix_sdk::ruma::events::SyncStateEvent;
             use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+            use matrix_sdk::ruma::events::SyncStateEvent;
 
             let Ok(events) = space_room
                 .get_state_events_static::<SpaceChildEventContent>()
@@ -2666,12 +2970,16 @@ impl ClientFfi {
 
     pub fn fetch_avatar_bytes(&mut self, room_id: &str) -> Vec<u8> {
         use matrix_sdk::media::MediaFormat;
-        let Some(client) = self.client.clone() else { return Vec::new() };
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(_) => return Vec::new(),
         };
-        let Some(room) = client.get_room(&room_id) else { return Vec::new() };
+        let Some(room) = client.get_room(&room_id) else {
+            return Vec::new();
+        };
         let stop_rx = self.stop_rx.clone();
         self.rt.block_on(async move {
             tokio::select! {
@@ -2686,9 +2994,13 @@ impl ClientFfi {
         use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
-        let Some(client) = self.client.clone() else { return Vec::new() };
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
         let uri = OwnedMxcUri::from(mxc_url);
-        if !uri.is_valid() { return Vec::new(); }
+        if !uri.is_valid() {
+            return Vec::new();
+        }
         let request = MediaRequestParameters {
             source: MediaSource::Plain(uri.into()),
             format: MediaFormat::File,
@@ -2715,16 +3027,22 @@ impl ClientFfi {
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
 
-        let Some(client) = self.client.clone() else { return Vec::new() };
-        if source.is_empty() { return Vec::new(); }
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        if source.is_empty() {
+            return Vec::new();
+        }
 
         let media_source = if source.starts_with("mxc://") {
             let uri = OwnedMxcUri::from(source);
-            if !uri.is_valid() { return Vec::new(); }
+            if !uri.is_valid() {
+                return Vec::new();
+            }
             MediaSource::Plain(uri.into())
         } else {
             match serde_json::from_str::<MediaSource>(source) {
-                Ok(s)  => s,
+                Ok(s) => s,
                 Err(_) => return Vec::new(),
             }
         };
@@ -2745,7 +3063,9 @@ impl ClientFfi {
     }
 
     pub fn fetch_url_bytes(&mut self, url: &str) -> Vec<u8> {
-        if url.is_empty() { return Vec::new(); }
+        if url.is_empty() {
+            return Vec::new();
+        }
         let url = url.to_owned();
         let stop_rx = self.stop_rx.clone();
         let client = self.http_client.clone();
@@ -2778,8 +3098,12 @@ impl ClientFfi {
     pub fn get_url_preview(&mut self, url: &str) -> String {
         use ruma::api::client::media::get_media_preview::v3::Request;
 
-        let Some(client) = self.client.clone() else { return String::new() };
-        if url.is_empty() { return String::new(); }
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if url.is_empty() {
+            return String::new();
+        }
 
         let url_str = url.to_owned();
         let stop_rx = self.stop_rx.clone();
@@ -2811,11 +3135,15 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn get_room_summary(&mut self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
-        use matrix_sdk::ruma::OwnedRoomOrAliasId;
         use matrix_sdk::ruma::room::{JoinRuleSummary, RoomType};
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else { return String::new() };
-        if room_id_or_alias.is_empty() { return String::new(); }
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if room_id_or_alias.is_empty() {
+            return String::new();
+        }
 
         let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
             Ok(id) => id,
@@ -2877,8 +3205,12 @@ impl ClientFfi {
     pub fn join_room(&mut self, room_id_or_alias: &str) -> String {
         use matrix_sdk::ruma::OwnedRoomOrAliasId;
 
-        let Some(client) = self.client.clone() else { return String::new() };
-        if room_id_or_alias.is_empty() { return String::new(); }
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if room_id_or_alias.is_empty() {
+            return String::new();
+        }
 
         let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
             Ok(id) => id,
@@ -2911,11 +3243,16 @@ impl ClientFfi {
     // None if the server returned non-2xx or the key is absent.
     #[cfg(not(test))]
     async fn fetch_well_known(http: &reqwest::Client, server: &str) -> Option<String> {
-        let url  = format!("https://{}/.well-known/matrix/client", server);
+        let url = format!("https://{}/.well-known/matrix/client", server);
         let resp = http.get(&url).send().await.ok()?;
-        if !resp.status().is_success() { return None; }
+        if !resp.status().is_success() {
+            return None;
+        }
         let body: serde_json::Value = resp.json().await.ok()?;
-        let base = body["m.homeserver"]["base_url"].as_str()?.trim_end_matches('/').to_owned();
+        let base = body["m.homeserver"]["base_url"]
+            .as_str()?
+            .trim_end_matches('/')
+            .to_owned();
         Some(base)
     }
 
@@ -2924,7 +3261,11 @@ impl ClientFfi {
     #[cfg(not(test))]
     async fn validate_homeserver(http: &reqwest::Client, base_url: &str) -> bool {
         let url = format!("{}/_matrix/client/versions", base_url);
-        http.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
+        http.get(&url)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
     }
 
     /// Discover the homeserver base URL for a server name or Matrix ID.
@@ -2939,7 +3280,10 @@ impl ClientFfi {
         let server = if input.starts_with('@') {
             match input.find(':') {
                 Some(i) => &input[i + 1..],
-                None    => return r#"{"base_url":"","error":"Invalid Matrix ID — expected @user:server"}"#.to_owned(),
+                None => {
+                    return r#"{"base_url":"","error":"Invalid Matrix ID — expected @user:server"}"#
+                        .to_owned()
+                }
             }
         } else {
             input
@@ -2955,9 +3299,13 @@ impl ClientFfi {
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
             {
-                Ok(c)  => c,
+                Ok(c) => c,
                 Err(e) => {
-                    let msg = e.to_string().replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ");
+                    let msg = e
+                        .to_string()
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', " ");
                     return format!(r#"{{"base_url":"","error":"{msg}"}}"#);
                 }
             };
@@ -2965,13 +3313,21 @@ impl ClientFfi {
             let base_url = if server.starts_with("https://") || server.starts_with("http://") {
                 // Caller passed a full URL — validate it directly.
                 let candidate = server.trim_end_matches('/').to_owned();
-                if Self::validate_homeserver(&http, &candidate).await { Some(candidate) } else { None }
+                if Self::validate_homeserver(&http, &candidate).await {
+                    Some(candidate)
+                } else {
+                    None
+                }
             } else {
                 // Try .well-known first; fall back to https://{server} on failure.
                 let candidate = Self::fetch_well_known(&http, &server)
                     .await
                     .unwrap_or_else(|| format!("https://{}", server));
-                if Self::validate_homeserver(&http, &candidate).await { Some(candidate) } else { None }
+                if Self::validate_homeserver(&http, &candidate).await {
+                    Some(candidate)
+                } else {
+                    None
+                }
             };
 
             match base_url {
@@ -2999,24 +3355,28 @@ impl ClientFfi {
     /// roundtrip.
     #[cfg(not(test))]
     pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
-        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
+        let Ok(cache) = self.image_packs.lock() else {
+            return Vec::new();
+        };
         cache
             .iter()
             .map(|p| crate::ffi::ImagePackFfi {
-                id:               p.id.clone(),
-                display_name:     p.display_name.clone(),
-                avatar_url:       p.avatar_url.clone(),
-                attribution:      p.attribution.clone(),
-                usage_mask:       p.usage,
-                source_kind:      p.source_kind().to_owned(),
-                source_room:      p.source_room().to_owned(),
+                id: p.id.clone(),
+                display_name: p.display_name.clone(),
+                avatar_url: p.avatar_url.clone(),
+                attribution: p.attribution.clone(),
+                usage_mask: p.usage,
+                source_kind: p.source_kind().to_owned(),
+                source_room: p.source_room().to_owned(),
                 source_state_key: p.source_state_key().to_owned(),
             })
             .collect()
     }
 
     #[cfg(test)]
-    pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> { Vec::new() }
+    pub fn list_image_packs(&self) -> Vec<crate::ffi::ImagePackFfi> {
+        Vec::new()
+    }
 
     /// Return every entry in `pack_id` whose usage mask intersects
     /// `usage_filter` ("sticker" | "emoticon" | "any" — anything else is
@@ -3028,12 +3388,16 @@ impl ClientFfi {
         usage_filter: &str,
     ) -> Vec<crate::ffi::ImageEntryFfi> {
         let needed = match usage_filter {
-            "sticker"  => crate::image_packs::USAGE_STICKER,
+            "sticker" => crate::image_packs::USAGE_STICKER,
             "emoticon" => crate::image_packs::USAGE_EMOTICON,
-            _          => crate::image_packs::USAGE_ANY,
+            _ => crate::image_packs::USAGE_ANY,
         };
-        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
-        let Some(pack) = cache.iter().find(|p| p.id == pack_id) else { return Vec::new() };
+        let Ok(cache) = self.image_packs.lock() else {
+            return Vec::new();
+        };
+        let Some(pack) = cache.iter().find(|p| p.id == pack_id) else {
+            return Vec::new();
+        };
         pack.images
             .iter()
             .filter(|e| e.usage & needed != 0)
@@ -3046,13 +3410,17 @@ impl ClientFfi {
         &self,
         _pack_id: &str,
         _usage_filter: &str,
-    ) -> Vec<crate::ffi::ImageEntryFfi> { Vec::new() }
+    ) -> Vec<crate::ffi::ImageEntryFfi> {
+        Vec::new()
+    }
 
     /// Flatten every favourite-marked entry across all packs. Sticker-usage
     /// only (Favorites tab is sticker-specific).
     #[cfg(not(test))]
     pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> {
-        let Ok(cache) = self.image_packs.lock() else { return Vec::new() };
+        let Ok(cache) = self.image_packs.lock() else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         for pack in cache.iter() {
             for e in &pack.images {
@@ -3065,7 +3433,9 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> { Vec::new() }
+    pub fn list_favorite_stickers(&self) -> Vec<crate::ffi::ImageEntryFfi> {
+        Vec::new()
+    }
 
     /// Send an `m.sticker` event to `room_id`. Wraps
     /// `room.send(StickerEventContent { .. })`. matrix-sdk encrypts in E2EE
@@ -3079,16 +3449,20 @@ impl ClientFfi {
         image_url: &str,
         info_json: &str,
     ) -> OpResult {
-        use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
         use matrix_sdk::ruma::events::room::ImageInfo;
+        use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
         use matrix_sdk::ruma::OwnedMxcUri;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         let room_id = match matrix_sdk::ruma::RoomId::parse(room_id) {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let Some(room) = client.get_room(&room_id) else { return err("room not found") };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
 
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -3116,7 +3490,7 @@ impl ClientFfi {
         let content = StickerEventContent::new(body.to_owned(), info, uri);
 
         match self.rt.block_on(async move { room.send(content).await }) {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
     }
@@ -3128,7 +3502,9 @@ impl ClientFfi {
         _body: &str,
         _image_url: &str,
         _info_json: &str,
-    ) -> OpResult { err("not logged in") }
+    ) -> OpResult {
+        err("not logged in")
+    }
 
     /// Add a sticker to the user's MSC2545 personal pack
     /// (`im.ponies.user_emotes`). Reads the current content (creating an
@@ -3148,7 +3524,9 @@ impl ClientFfi {
         use matrix_sdk::ruma::serde::Raw;
         use serde_json::Value;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
 
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -3164,7 +3542,7 @@ impl ClientFfi {
             use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
             use matrix_sdk::ruma::events::room::MediaSource;
             let ms: MediaSource = match serde_json::from_str(image_url) {
-                Ok(v)  => v,
+                Ok(v) => v,
                 Err(_) => return err("image_url is not a valid mxc:// uri"),
             };
             match ms {
@@ -3173,7 +3551,8 @@ impl ClientFfi {
                 }
                 MediaSource::Encrypted(file) => {
                     encrypted_media_id = Some(
-                        file.url.as_str()
+                        file.url
+                            .as_str()
                             .rsplit('/')
                             .next()
                             .unwrap_or("")
@@ -3189,16 +3568,19 @@ impl ClientFfi {
 
                     let client_dl = client.clone();
                     let bytes = self.rt.block_on(async move {
-                        client_dl.media().get_media_content(
-                            &MediaRequestParameters {
-                                source: serde_json::from_str(image_url).unwrap(),
-                                format: MediaFormat::File,
-                            },
-                            true,
-                        ).await
+                        client_dl
+                            .media()
+                            .get_media_content(
+                                &MediaRequestParameters {
+                                    source: serde_json::from_str(image_url).unwrap(),
+                                    format: MediaFormat::File,
+                                },
+                                true,
+                            )
+                            .await
                     });
                     let bytes = match bytes {
-                        Ok(b)  => b,
+                        Ok(b) => b,
                         Err(e) => return err(format!("download encrypted sticker: {e}")),
                     };
 
@@ -3207,7 +3589,7 @@ impl ClientFfi {
                         client_ul.media().upload(&mime, bytes, None).await
                     });
                     let response = match upload {
-                        Ok(r)  => r,
+                        Ok(r) => r,
                         Err(e) => return err(format!("re-upload sticker: {e}")),
                     };
                     image_url_owned = response.content_uri.to_string();
@@ -3222,8 +3604,7 @@ impl ClientFfi {
             return err("image_url is not a valid mxc:// uri");
         }
 
-        let ev_type =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
 
         // Hold the account-data lock across the whole read→modify→write so a
         // concurrent toggle_favorite / save cannot clobber this change.
@@ -3234,14 +3615,17 @@ impl ClientFfi {
 
         let client_for_read = client.clone();
         let read_result = self.rt.block_on(async move {
-            client_for_read.account().account_data_raw(ev_type.clone()).await
+            client_for_read
+                .account()
+                .account_data_raw(ev_type.clone())
+                .await
         });
 
         let current_content: Value = match read_result {
             Ok(Some(raw)) => serde_json::from_str(raw.json().get())
                 .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
             Ok(None) => Value::Object(serde_json::Map::new()),
-            Err(e)   => return err(format!("read user pack: {e}")),
+            Err(e) => return err(format!("read user pack: {e}")),
         };
 
         // Compute final shortcode (collision-free) against the existing
@@ -3259,23 +3643,22 @@ impl ClientFfi {
         // "whatsapp_fa96dd5e".  The same sticker always produces the same
         // base, so we can use it as a duplicate key alongside the mxc URL.
         let derived_base: Option<String> = encrypted_media_id.as_deref().map(|media_id| {
-            let network = serde_json::from_str::<Value>(info_json)
-                .ok()
-                .and_then(|v| {
-                    v.get("fi.mau.bridged_sticker")?
-                        .get("network")?
-                        .as_str()
-                        .map(str::to_owned)
-                });
+            let network = serde_json::from_str::<Value>(info_json).ok().and_then(|v| {
+                v.get("fi.mau.bridged_sticker")?
+                    .get("network")?
+                    .as_str()
+                    .map(str::to_owned)
+            });
             match network {
                 Some(n) => format!("{n}_{media_id}"),
-                None    => media_id.to_owned(),
+                None => media_id.to_owned(),
             }
         });
 
         // Already saved? Check by shortcode base (encrypted re-upload gives a
         // new mxc URI each time) and by mxc URL as fallback.
-        let already_saved = derived_base.as_deref()
+        let already_saved = derived_base
+            .as_deref()
             .map(|b| existing_images.contains_key(b))
             .unwrap_or(false)
             || crate::image_packs::pack_contains_url(&current_content, image_url);
@@ -3284,10 +3667,12 @@ impl ClientFfi {
             return ok("");
         }
 
-        let base = derived_base.as_deref()
-            .unwrap_or(if shortcode.is_empty() { body } else { shortcode });
-        let final_shortcode =
-            crate::image_packs::suggest_shortcode(base, &existing_images);
+        let base = derived_base.as_deref().unwrap_or(if shortcode.is_empty() {
+            body
+        } else {
+            shortcode
+        });
+        let final_shortcode = crate::image_packs::suggest_shortcode(base, &existing_images);
 
         let new_content = crate::image_packs::upsert_image_into_user_pack(
             current_content,
@@ -3300,7 +3685,7 @@ impl ClientFfi {
         );
 
         let raw = match Raw::new(&new_content) {
-            Ok(r)  => r.cast_unchecked(),
+            Ok(r) => r.cast_unchecked(),
             Err(e) => return err(format!("serialize user pack: {e}")),
         };
 
@@ -3338,20 +3723,29 @@ impl ClientFfi {
         _body: &str,
         _image_url: &str,
         _info_json: &str,
-    ) -> OpResult { err("not logged in") }
+    ) -> OpResult {
+        err("not logged in")
+    }
 
     #[cfg(not(test))]
     pub fn user_pack_has_sticker(&self, image_url: &str) -> bool {
-        if image_url.is_empty() { return false; }
-        let Ok(cache) = self.image_packs.lock() else { return false };
-        cache.iter()
+        if image_url.is_empty() {
+            return false;
+        }
+        let Ok(cache) = self.image_packs.lock() else {
+            return false;
+        };
+        cache
+            .iter()
             .filter(|p| matches!(p.source, crate::image_packs::PackSource::User))
             .flat_map(|p| p.images.iter())
             .any(|e| e.url == image_url)
     }
 
     #[cfg(test)]
-    pub fn user_pack_has_sticker(&self, _image_url: &str) -> bool { false }
+    pub fn user_pack_has_sticker(&self, _image_url: &str) -> bool {
+        false
+    }
 
     #[cfg(not(test))]
     pub fn toggle_favorite_sticker(&mut self, image_url: &str) -> OpResult {
@@ -3359,11 +3753,14 @@ impl ClientFfi {
         use matrix_sdk::ruma::serde::Raw;
         use serde_json::Value;
 
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        if image_url.is_empty() { return err("image_url is empty"); }
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        if image_url.is_empty() {
+            return err("image_url is empty");
+        }
 
-        let ev_type =
-            GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
+        let ev_type = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
 
         // Hold the account-data lock across the whole read→modify→write so a
         // concurrent save / favorite toggle cannot clobber this change.
@@ -3373,29 +3770,32 @@ impl ClientFfi {
         };
 
         let client_for_read = client.clone();
-        let read_result = self.rt.block_on(async move {
-            client_for_read.account().account_data_raw(ev_type).await
-        });
+        let read_result = self
+            .rt
+            .block_on(async move { client_for_read.account().account_data_raw(ev_type).await });
 
         let current: Value = match read_result {
             Ok(Some(raw)) => serde_json::from_str(raw.json().get())
                 .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
             Ok(None) => return err("sticker is not saved; add it before favoriting"),
-            Err(e)   => return err(format!("read user pack: {e}")),
+            Err(e) => return err(format!("read user pack: {e}")),
         };
 
         let (new_content, _new_state) =
             crate::image_packs::toggle_favorite_in_user_pack(current, image_url);
 
         let raw = match Raw::new(&new_content) {
-            Ok(r)  => r.cast_unchecked(),
+            Ok(r) => r.cast_unchecked(),
             Err(e) => return err(format!("serialize user pack: {e}")),
         };
         let client_for_write = client.clone();
         let ev_type_for_write =
             GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
         let write_result = self.rt.block_on(async move {
-            client_for_write.account().set_account_data_raw(ev_type_for_write, raw).await
+            client_for_write
+                .account()
+                .set_account_data_raw(ev_type_for_write, raw)
+                .await
         });
 
         match write_result {
@@ -3423,12 +3823,15 @@ impl ClientFfi {
             "user".to_owned(),
             crate::image_packs::PackSource::User,
             content,
-        ) else { return };
+        ) else {
+            return;
+        };
         if pack.display_name.is_empty() {
             pack.display_name = "Saved Stickers".to_owned();
         }
         if let Ok(mut cache) = self.image_packs.lock() {
-            if let Some(slot) = cache.iter_mut()
+            if let Some(slot) = cache
+                .iter_mut()
                 .find(|p| p.source == crate::image_packs::PackSource::User)
             {
                 *slot = pack;
@@ -3437,7 +3840,9 @@ impl ClientFfi {
             }
         }
         if let Some(h) = &self.handler {
-            if let Ok(g) = h.lock() { g.on_image_packs_updated(); }
+            if let Ok(g) = h.lock() {
+                g.on_image_packs_updated();
+            }
         }
     }
 
@@ -3450,16 +3855,23 @@ impl ClientFfi {
     /// UI surfaces a "Verify this device" banner when this is true.
     #[cfg(not(test))]
     pub fn needs_recovery(&self) -> bool {
-        let Some(client) = self.client.as_ref() else { return false };
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
         // `Recovery::state()` is a synchronous observable read; no runtime
         // block_on needed (the previous block_on of an already-ready future
         // added no value and ran on the UI thread).
         use matrix_sdk::encryption::recovery::RecoveryState;
-        matches!(client.encryption().recovery().state(), RecoveryState::Incomplete)
+        matches!(
+            client.encryption().recovery().state(),
+            RecoveryState::Incomplete
+        )
     }
 
     #[cfg(test)]
-    pub fn needs_recovery(&self) -> bool { false }
+    pub fn needs_recovery(&self) -> bool {
+        false
+    }
 
     /// Unlock the server-side secret storage with the supplied recovery key
     /// (or passphrase), importing the cross-signing private keys and the
@@ -3467,16 +3879,19 @@ impl ClientFfi {
     /// runs asynchronously; observe `on_backup_progress` for progress.
     #[cfg(not(test))]
     pub fn recover(&mut self, key_or_passphrase: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
         if key_or_passphrase.trim().is_empty() {
             return err("recovery key or passphrase is empty");
         }
         let key = key_or_passphrase.to_owned();
-        match self.rt.block_on(async move {
-            client.encryption().recovery().recover(&key).await
-        }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+        match self
+            .rt
+            .block_on(async move { client.encryption().recovery().recover(&key).await })
+        {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
@@ -3490,14 +3905,16 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn backup_state(&self) -> BackupProgress {
         BackupProgress {
-            state:         self.backup_state_code.load(Ordering::Relaxed),
+            state: self.backup_state_code.load(Ordering::Relaxed),
             imported_keys: self.imported_keys.load(Ordering::Relaxed),
-            total_keys:    0,
+            total_keys: 0,
         }
     }
 
     #[cfg(test)]
-    pub fn backup_state(&self) -> BackupProgress { backup_progress_default() }
+    pub fn backup_state(&self) -> BackupProgress {
+        backup_progress_default()
+    }
 
     // -----------------------------------------------------------------------
     // SAS device verification
@@ -3508,19 +3925,25 @@ impl ClientFfi {
     /// device accepts; the UI should then call `start_sas(flow_id)`.
     #[cfg(not(test))]
     pub fn request_self_verification(&mut self) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let Some(handler) = self.handler.clone() else { return err("not syncing") };
-        let flow_users   = Arc::clone(&self.verification_flow_users);
-        let emoji_cache  = Arc::clone(&self.sas_emoji_cache);
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.clone() else {
+            return err("not syncing");
+        };
+        let flow_users = Arc::clone(&self.verification_flow_users);
+        let emoji_cache = Arc::clone(&self.sas_emoji_cache);
 
         match self.rt.block_on(async move {
-            let user_id = client.user_id()
+            let user_id = client
+                .user_id()
                 .ok_or_else(|| anyhow::anyhow!("not logged in"))?
                 .to_owned();
             // Use the user identity (not the own device) so the request is
             // broadcast to all other E2EE sessions — not looped back to this
             // device, which would show an unwanted incoming-request banner.
-            let identity = client.encryption()
+            let identity = client
+                .encryption()
                 .get_user_identity(&user_id)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("own identity not found"))?;
@@ -3531,95 +3954,127 @@ impl ClientFfi {
             lock_or_recover(&flow_users).insert(flow_id.clone(), user_id);
 
             tokio::spawn(watch_verification_request(
-                req, flow_id, handler, flow_users, emoji_cache,
+                req,
+                flow_id,
+                handler,
+                flow_users,
+                emoji_cache,
             ));
             Ok::<(), anyhow::Error>(())
         }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn request_self_verification(&mut self) -> OpResult { err("not logged in") }
+    pub fn request_self_verification(&mut self) -> OpResult {
+        err("not logged in")
+    }
 
     /// Accept an incoming verification request. Call after receiving
     /// `on_verification_request(incoming=true)`, then call `start_sas`.
     #[cfg(not(test))]
     pub fn accept_verification(&mut self, flow_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let user_id = match lock_or_recover(&self.verification_flow_users)
+            .get(flow_id)
+            .cloned()
+        {
             Some(u) => u,
-            None    => return err("no pending verification request for this flow_id"),
+            None => return err("no pending verification request for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
-            let req = client.encryption()
+            let req = client
+                .encryption()
                 .get_verification_request(uid, &flow_id)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
             req.accept().await?;
             Ok::<(), anyhow::Error>(())
         }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn accept_verification(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+    pub fn accept_verification(&mut self, _flow_id: &str) -> OpResult {
+        err("not logged in")
+    }
 
     /// Start the SAS key exchange. `on_sas_ready` fires when the 7 emoji are
     /// computed. Call after `accept_verification` (incoming) or after
     /// `on_verification_request(incoming=false)` (outgoing).
     #[cfg(not(test))]
     pub fn start_sas(&mut self, flow_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
-            Some(u) => u,
-            None    => return err("no pending verification request for this flow_id"),
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
         };
-        let flow_id_str  = flow_id.to_owned();
-        let Some(handler) = self.handler.clone() else { return err("not syncing") };
-        let emoji_cache  = Arc::clone(&self.sas_emoji_cache);
+        let user_id = match lock_or_recover(&self.verification_flow_users)
+            .get(flow_id)
+            .cloned()
+        {
+            Some(u) => u,
+            None => return err("no pending verification request for this flow_id"),
+        };
+        let flow_id_str = flow_id.to_owned();
+        let Some(handler) = self.handler.clone() else {
+            return err("not syncing");
+        };
+        let emoji_cache = Arc::clone(&self.sas_emoji_cache);
 
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
             let uid = <&UserId>::try_from(user_id.as_str())?;
-            let req = client.encryption()
+            let req = client
+                .encryption()
                 .get_verification_request(uid, &flow_id_str)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification request not found"))?;
-            let sas = req.start_sas().await?
+            let sas = req
+                .start_sas()
+                .await?
                 .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?;
             tokio::spawn(watch_sas(sas, flow_id_str, handler, emoji_cache));
             Ok::<(), anyhow::Error>(())
         }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn start_sas(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+    pub fn start_sas(&mut self, _flow_id: &str) -> OpResult {
+        err("not logged in")
+    }
 
     /// Confirm that the SAS emoji match. Fires `on_verification_done` when
     /// both sides confirm. Call from the "They Match" button handler.
     #[cfg(not(test))]
     pub fn confirm_sas(&mut self, flow_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let user_id = match lock_or_recover(&self.verification_flow_users)
+            .get(flow_id)
+            .cloned()
+        {
             Some(u) => u,
-            None    => return err("no active SAS for this flow_id"),
+            None => return err("no active SAS for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
         match self.rt.block_on(async move {
-            use matrix_sdk::ruma::UserId;
             use matrix_sdk::encryption::verification::Verification;
-            let uid  = <&UserId>::try_from(user_id.as_str())?;
-            let verif = client.encryption()
+            use matrix_sdk::ruma::UserId;
+            let uid = <&UserId>::try_from(user_id.as_str())?;
+            let verif = client
+                .encryption()
                 .get_verification(uid, &flow_id)
                 .await
                 .ok_or_else(|| anyhow::anyhow!("verification not found"))?;
@@ -3628,59 +4083,74 @@ impl ClientFfi {
             }
             Ok::<(), anyhow::Error>(())
         }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn confirm_sas(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+    pub fn confirm_sas(&mut self, _flow_id: &str) -> OpResult {
+        err("not logged in")
+    }
 
     /// Cancel or decline a verification flow (mismatch or user dismiss).
     #[cfg(not(test))]
     pub fn cancel_verification(&mut self, flow_id: &str) -> OpResult {
-        let Some(client) = self.client.clone() else { return err("not logged in") };
-        let user_id = match lock_or_recover(&self.verification_flow_users).get(flow_id).cloned() {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let user_id = match lock_or_recover(&self.verification_flow_users)
+            .get(flow_id)
+            .cloned()
+        {
             Some(u) => u,
-            None    => return err("no active verification for this flow_id"),
+            None => return err("no active verification for this flow_id"),
         };
         let flow_id = flow_id.to_owned();
         match self.rt.block_on(async move {
-            use matrix_sdk::ruma::UserId;
             use matrix_sdk::encryption::verification::Verification;
-            let uid   = <&UserId>::try_from(user_id.as_str())?;
+            use matrix_sdk::ruma::UserId;
+            let uid = <&UserId>::try_from(user_id.as_str())?;
             // Try the SAS object first; fall back to the request.
-            if let Some(Verification::SasV1(sas)) = client.encryption()
-                .get_verification(uid, &flow_id).await
+            if let Some(Verification::SasV1(sas)) =
+                client.encryption().get_verification(uid, &flow_id).await
             {
                 sas.cancel().await?;
-            } else if let Some(req) = client.encryption()
-                .get_verification_request(uid, &flow_id).await
+            } else if let Some(req) = client
+                .encryption()
+                .get_verification_request(uid, &flow_id)
+                .await
             {
                 req.cancel().await?;
             }
             Ok::<(), anyhow::Error>(())
         }) {
-            Ok(())  => ok(""),
-            Err(e)  => err(e.to_string()),
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
         }
     }
 
     #[cfg(test)]
-    pub fn cancel_verification(&mut self, _flow_id: &str) -> OpResult { err("not logged in") }
+    pub fn cancel_verification(&mut self, _flow_id: &str) -> OpResult {
+        err("not logged in")
+    }
 
     /// Return the 7 SAS emoji for `flow_id` after `on_sas_ready` has fired.
     #[cfg(not(test))]
     pub fn get_sas_emojis(&self, flow_id: &str) -> Vec<VerificationEmoji> {
         lock_or_recover(&self.sas_emoji_cache)
             .get(flow_id)
-            .map(|pairs| pairs.iter().map(|(sym, desc)| VerificationEmoji {
-                symbol:      sym.clone(),
-                description: desc.clone(),
-            }).collect())
+            .map(|pairs| {
+                pairs
+                    .iter()
+                    .map(|(sym, desc)| VerificationEmoji {
+                        symbol: sym.clone(),
+                        description: desc.clone(),
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
-
 
     // -----------------------------------------------------------------------
     // Logout
@@ -3701,13 +4171,16 @@ impl ClientFfi {
         {
             let _guard = self.rt.enter();
             for (_, th) in self.timelines.drain() {
-                for h in th.abort_tasks { h.abort(); }
+                for h in th.abort_tasks {
+                    h.abort();
+                }
             }
         }
         #[cfg(not(test))]
         {
             self.imported_keys.store(0, Ordering::Relaxed);
-            self.backup_state_code.store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
+            self.backup_state_code
+                .store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
         }
         self.media_upload_limit.store(0, Ordering::Relaxed);
 
@@ -3716,14 +4189,14 @@ impl ClientFfi {
             return ok("");
         };
 
-        let revoke = self.rt.block_on(async move {
-            client.oauth().logout().await
-        });
+        let revoke = self
+            .rt
+            .block_on(async move { client.oauth().logout().await });
 
         let _ = std::fs::remove_dir_all(&self.data_dir);
 
         match revoke {
-            Ok(_)  => ok(""),
+            Ok(_) => ok(""),
             Err(e) => err(format!("oauth logout failed (local store cleared): {e}")),
         }
     }
@@ -3743,7 +4216,11 @@ async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
     };
     loop {
         match rx.changed().await {
-            Ok(()) => { if *rx.borrow() { return; } }
+            Ok(()) => {
+                if *rx.borrow() {
+                    return;
+                }
+            }
             Err(_) => return,
         }
     }
@@ -3761,8 +4238,8 @@ async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
 /// round-trip.
 #[cfg(not(test))]
 async fn backfill_room_silent(
-    client:        &Client,
-    room_id:       &OwnedRoomId,
+    client: &Client,
+    room_id: &OwnedRoomId,
     target_events: usize,
 ) -> anyhow::Result<()> {
     let Some(room) = client.get_room(room_id) else {
@@ -3774,17 +4251,21 @@ async fn backfill_room_silent(
     // We don't propagate items to the UI, so subscribe + drop the stream.
     // The initial snapshot tells us how much history is already cached.
     let (initial, _stream) = timeline.subscribe().await;
-    let mut have = initial.iter()
+    let mut have = initial
+        .iter()
         .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
         .count();
 
     while have < target_events {
         match timeline.paginate_backwards(50).await {
-            Ok(true)  => break,           // reached the start
+            Ok(true) => break, // reached the start
             Ok(false) => {}
-            Err(_)    => break,           // soft-fail: no point spinning
+            Err(_) => break, // soft-fail: no point spinning
         }
-        have = timeline.items().await.iter()
+        have = timeline
+            .items()
+            .await
+            .iter()
             .filter(|i| matches!(i.kind(), TimelineItemKind::Event(_)))
             .count();
     }
@@ -3798,16 +4279,16 @@ async fn backfill_room_silent(
 #[cfg(not(test))]
 fn image_entry_to_ffi(
     pack_id: &str,
-    e:       &crate::image_packs::ImageEntry,
+    e: &crate::image_packs::ImageEntry,
 ) -> crate::ffi::ImageEntryFfi {
     crate::ffi::ImageEntryFfi {
-        pack_id:    pack_id.to_owned(),
-        shortcode:  e.shortcode.clone(),
-        url:        e.url.clone(),
-        body:       e.body.clone(),
-        info_json:  e.info_json.clone(),
+        pack_id: pack_id.to_owned(),
+        shortcode: e.shortcode.clone(),
+        url: e.url.clone(),
+        body: e.body.clone(),
+        info_json: e.info_json.clone(),
         usage_mask: e.usage,
-        favorite:   e.favorite,
+        favorite: e.favorite,
     }
 }
 
@@ -3831,11 +4312,15 @@ async fn read_recent_emoji_entries(client: &Client) -> Vec<crate::recent_emoji::
 
     if let Some(v) = fetch(client, crate::recent_emoji::TYPE_STABLE).await {
         let entries = crate::recent_emoji::parse_msc4356(&v);
-        if !entries.is_empty() { return entries; }
+        if !entries.is_empty() {
+            return entries;
+        }
     }
     if let Some(v) = fetch(client, crate::recent_emoji::TYPE_UNSTABLE).await {
         let entries = crate::recent_emoji::parse_msc4356(&v);
-        if !entries.is_empty() { return entries; }
+        if !entries.is_empty() {
+            return entries;
+        }
     }
     if let Some(v) = fetch(client, crate::recent_emoji::TYPE_LEGACY).await {
         return crate::recent_emoji::parse_legacy_element(&v);
@@ -3849,9 +4334,12 @@ async fn read_recent_emoji_entries(client: &Client) -> Vec<crate::recent_emoji::
 async fn read_prefs_json(client: &Client) -> String {
     use matrix_sdk::ruma::events::GlobalAccountDataEventType;
     let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
-    client.account()
-        .account_data_raw(et).await
-        .ok().flatten()
+    client
+        .account()
+        .account_data_raw(et)
+        .await
+        .ok()
+        .flatten()
         .map(|r| r.json().get().to_owned())
         .unwrap_or_else(|| "{}".to_owned())
 }
@@ -3899,8 +4387,7 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     // MSC2545 defines no personal pack, so there is only the de-facto
     // `im.ponies.user_emotes` — no stable name to prefer.
     {
-        let et = GlobalAccountDataEventType::from(
-            crate::image_packs::TYPE_USER_PACK);
+        let et = GlobalAccountDataEventType::from(crate::image_packs::TYPE_USER_PACK);
         if let Ok(Some(raw)) = client.account().account_data_raw(et).await {
             if let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) {
                 if let Some(mut pack) = crate::image_packs::parse_pack_content(
@@ -3921,20 +4408,26 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
     let mut room_refs: Vec<(String, String)> = Vec::new();
     for ev_type_str in crate::image_packs::EMOTE_ROOMS_TYPES {
         let et = GlobalAccountDataEventType::from(ev_type_str);
-        let Ok(Some(raw)) = client.account().account_data_raw(et).await else { continue };
-        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else { continue };
+        let Ok(Some(raw)) = client.account().account_data_raw(et).await else {
+            continue;
+        };
+        let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
+            continue;
+        };
         room_refs = crate::image_packs::iter_emote_rooms(&content);
         break;
     }
 
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     for (room_id_str, state_key) in room_refs {
-        let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else { continue };
+        let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
+            continue;
+        };
 
         // Helper: extract content Value from a state event envelope.
         let extract_content = |raw_state: &RawAnySyncOrStrippedState| -> Option<Value> {
             match raw_state {
-                RawAnySyncOrStrippedState::Sync(raw)     => raw.get_field("content").ok().flatten(),
+                RawAnySyncOrStrippedState::Sync(raw) => raw.get_field("content").ok().flatten(),
                 RawAnySyncOrStrippedState::Stripped(raw) => raw.get_field("content").ok().flatten(),
             }
         };
@@ -3948,10 +4441,14 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
                 // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
                 // `Raw<AnySyncStateEvent>` or `Raw<AnyStrippedStateEvent>`. Both
                 // variants carry `{type, content, state_key,...}`.
-                let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else { continue };
-                let Some(content) = extract_content(&raw_state) else { continue };
+                let Ok(Some(raw_state)) = room.get_state_event(et, &state_key).await else {
+                    continue;
+                };
+                let Some(content) = extract_content(&raw_state) else {
+                    continue;
+                };
                 let source = crate::image_packs::PackSource::Room {
-                    room_id:   room_id_str.clone(),
+                    room_id: room_id_str.clone(),
                     state_key: state_key.clone(),
                 };
                 let id = crate::image_packs::pack_id_for(&source);
@@ -3976,10 +4473,15 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
                     et,
                     state_key.clone(),
                 );
-                let Ok(response) = client.send(req).await else { continue };
-                let Ok(content) = serde_json::from_str::<Value>(response.event_or_content.get()) else { continue };
+                let Ok(response) = client.send(req).await else {
+                    continue;
+                };
+                let Ok(content) = serde_json::from_str::<Value>(response.event_or_content.get())
+                else {
+                    continue;
+                };
                 let source = crate::image_packs::PackSource::Room {
-                    room_id:   room_id_str.clone(),
+                    room_id: room_id_str.clone(),
                     state_key: state_key.clone(),
                 };
                 let id = crate::image_packs::pack_id_for(&source);
@@ -4003,38 +4505,50 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         let room_id_str = room.room_id().to_string();
         for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
             let et = StateEventType::from(ev_type_str);
-            let Ok(events) = room.get_state_events(et).await else { continue };
+            let Ok(events) = room.get_state_events(et).await else {
+                continue;
+            };
             for raw_state in &events {
                 let (state_key, content_opt): (String, Option<Value>) = match raw_state {
                     RawAnySyncOrStrippedState::Sync(raw) => (
-                        raw.get_field("state_key").ok().flatten().unwrap_or_default(),
+                        raw.get_field("state_key")
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default(),
                         raw.get_field("content").ok().flatten(),
                     ),
                     RawAnySyncOrStrippedState::Stripped(raw) => (
-                        raw.get_field("state_key").ok().flatten().unwrap_or_default(),
+                        raw.get_field("state_key")
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default(),
                         raw.get_field("content").ok().flatten(),
                     ),
                 };
                 let source = crate::image_packs::PackSource::Room {
-                    room_id:   room_id_str.clone(),
+                    room_id: room_id_str.clone(),
                     state_key: state_key.clone(),
                 };
                 let id = crate::image_packs::pack_id_for(&source);
-                if !added_ids.insert(id.clone()) { continue; }
+                if !added_ids.insert(id.clone()) {
+                    continue;
+                }
                 let Some(content) = content_opt else { continue };
-                if let Some(mut pack) =
-                    crate::image_packs::parse_pack_content(id, source, &content)
+                if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content)
                 {
                     if pack.display_name.is_empty() {
                         pack.display_name = room
-                            .display_name().await
+                            .display_name()
+                            .await
                             .map(|n| n.to_string())
                             .unwrap_or_default();
                     }
                     packs.push(pack);
                 }
             }
-            if !events.is_empty() { break; }
+            if !events.is_empty() {
+                break;
+            }
         }
     }
 
@@ -4044,32 +4558,34 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
 fn latest_event_body(value: &matrix_sdk::latest_events::LatestEventValue) -> Option<String> {
     use matrix_sdk::latest_events::LatestEventValue;
     use matrix_sdk::ruma::events::{
-        AnySyncMessageLikeEvent, AnySyncTimelineEvent,
-        room::message::MessageType,
+        room::message::MessageType, AnySyncMessageLikeEvent, AnySyncTimelineEvent,
     };
 
     match value {
         LatestEventValue::Remote(timeline_event) => {
             let event = timeline_event.raw().deserialize().ok()?;
             let msgtype = match event {
-                AnySyncTimelineEvent::MessageLike(
-                    AnySyncMessageLikeEvent::RoomMessage(ev)
-                ) => ev.as_original()?.content.msgtype.clone(),
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) => {
+                    ev.as_original()?.content.msgtype.clone()
+                }
                 _ => return None,
             };
             let body = match msgtype {
                 // Use plain body for previews; formatted_body is HTML and not suited for sidebar display.
-                MessageType::Text(t)  => t.body.trim().to_owned(),
+                MessageType::Text(t) => t.body.trim().to_owned(),
                 MessageType::Image(i) => i.body.trim().to_owned(),
-                MessageType::File(f)  => f.body.trim().to_owned(),
+                MessageType::File(f) => f.body.trim().to_owned(),
                 MessageType::Audio(a) => a.body.trim().to_owned(),
                 MessageType::Video(v) => v.body.trim().to_owned(),
                 _ => return None,
             };
-            if body.is_empty() { None } else { Some(body) }
+            if body.is_empty() {
+                None
+            } else {
+                Some(body)
+            }
         }
-        LatestEventValue::LocalIsSending(local)
-        | LatestEventValue::LocalCannotBeSent(local) => {
+        LatestEventValue::LocalIsSending(local) | LatestEventValue::LocalCannotBeSent(local) => {
             extract_local_body(&local.content)
         }
         LatestEventValue::LocalHasBeenSent { value: local, .. } => {
@@ -4089,9 +4605,9 @@ fn latest_event_sender(
         LatestEventValue::Remote(timeline_event) => {
             let event = timeline_event.raw().deserialize().ok()?;
             match event {
-                AnySyncTimelineEvent::MessageLike(
-                    AnySyncMessageLikeEvent::RoomMessage(ev)
-                ) => ev.as_original().map(|e| e.sender.clone()),
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) => {
+                    ev.as_original().map(|e| e.sender.clone())
+                }
                 _ => None,
             }
         }
@@ -4099,23 +4615,25 @@ fn latest_event_sender(
     }
 }
 
-fn extract_local_body(
-    content: &matrix_sdk::store::SerializableEventContent,
-) -> Option<String> {
-    use matrix_sdk::ruma::events::{AnyMessageLikeEventContent, room::message::MessageType};
+fn extract_local_body(content: &matrix_sdk::store::SerializableEventContent) -> Option<String> {
+    use matrix_sdk::ruma::events::{room::message::MessageType, AnyMessageLikeEventContent};
     let msgtype = match content.deserialize().ok()? {
         AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
         _ => return None,
     };
     let body = match msgtype {
-        MessageType::Text(t)  => t.body.trim().to_owned(),
+        MessageType::Text(t) => t.body.trim().to_owned(),
         MessageType::Image(i) => i.body.trim().to_owned(),
-        MessageType::File(f)  => f.body.trim().to_owned(),
+        MessageType::File(f) => f.body.trim().to_owned(),
         MessageType::Audio(a) => a.body.trim().to_owned(),
         MessageType::Video(v) => v.body.trim().to_owned(),
         _ => return None,
     };
-    if body.is_empty() { None } else { Some(body) }
+    if body.is_empty() {
+        None
+    } else {
+        Some(body)
+    }
 }
 
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
@@ -4138,20 +4656,19 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .latest_event_timestamp()
             .map(|t| u64::from(t.0))
             .unwrap_or(0);
-        let is_favorite = room.tags().await
+        let is_favorite = room
+            .tags()
+            .await
             .ok()
             .flatten()
-            .map(|tags| tags.contains_key(
-                &matrix_sdk::ruma::events::tag::TagName::Favorite))
+            .map(|tags| tags.contains_key(&matrix_sdk::ruma::events::tag::TagName::Favorite))
             .unwrap_or(false);
         // MSC3765: extract HTML body from the m.topic content block when present.
         let topic_html = {
-            use matrix_sdk::ruma::events::{
-                room::topic::RoomTopicEventContent,
-                SyncStateEvent,
-            };
             use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-            room.get_state_event_static::<RoomTopicEventContent>().await
+            use matrix_sdk::ruma::events::{room::topic::RoomTopicEventContent, SyncStateEvent};
+            room.get_state_event_static::<RoomTopicEventContent>()
+                .await
                 .ok()
                 .flatten()
                 .and_then(|raw| raw.deserialize().ok())
@@ -4174,7 +4691,8 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             match latest_event_sender(&lev) {
                 Some(sender) if client.user_id().is_some_and(|me| me != &*sender) => {
                     match room.get_member_no_sync(&sender).await {
-                        Ok(Some(m)) => m.display_name()
+                        Ok(Some(m)) => m
+                            .display_name()
                             .map(str::to_owned)
                             .unwrap_or_else(|| sender.localpart().to_string()),
                         _ => sender.localpart().to_string(),
@@ -4184,15 +4702,13 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             }
         };
         result.push(crate::ffi::RoomInfo {
-            id:                       room.room_id().to_string(),
+            id: room.room_id().to_string(),
             name,
-            topic:                    room.topic().unwrap_or_default(),
+            topic: room.topic().unwrap_or_default(),
             topic_html,
             unread_count,
-            is_direct:                room.is_direct().await.unwrap_or(false),
-            avatar_url:               room.avatar_url()
-                                          .map(|u| u.to_string())
-                                          .unwrap_or_default(),
+            is_direct: room.is_direct().await.unwrap_or(false),
+            avatar_url: room.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
             last_message_body,
             last_message_sender_name,
             last_activity_ts,
@@ -4285,7 +4801,9 @@ async fn collect_read_receipts(
         // pattern `collect_reactions` uses for resolving sender labels.
         let (display_name, avatar_url) = match room.get_member_no_sync(uid).await {
             Ok(Some(m)) => (
-                m.display_name().map(str::to_owned).unwrap_or_else(|| uid.to_string()),
+                m.display_name()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| uid.to_string()),
                 m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
             ),
             _ => (uid.to_string(), String::new()),
@@ -4324,57 +4842,54 @@ async fn timeline_item_to_ffi(
         TimelineItemKind::Event(e) => e,
         TimelineItemKind::Virtual(v) => {
             let (msg_type, timestamp): (&str, u64) = match v {
-                VirtualTimelineItem::DateDivider(ts) =>
-                    ("virtual.date_divider", ts.get().into()),
-                VirtualTimelineItem::ReadMarker =>
-                    ("virtual.read_marker", 0),
-                VirtualTimelineItem::TimelineStart =>
-                    ("virtual.timeline_start", 0),
+                VirtualTimelineItem::DateDivider(ts) => ("virtual.date_divider", ts.get().into()),
+                VirtualTimelineItem::ReadMarker => ("virtual.read_marker", 0),
+                VirtualTimelineItem::TimelineStart => ("virtual.timeline_start", 0),
             };
             return Some(TimelineEvent {
-                room_id:              room_id.to_owned(),
-                msg_type:             msg_type.to_owned(),
+                room_id: room_id.to_owned(),
+                msg_type: msg_type.to_owned(),
                 timestamp,
-                event_id:             String::new(),
-                sender:               String::new(),
-                sender_name:          String::new(),
-                sender_avatar_url:    String::new(),
-                body:                 String::new(),
-                source_json:          String::new(),
-                width:                0,
-                height:               0,
-                file_json:            String::new(),
-                file_name:            String::new(),
-                file_size:            0,
-                image_filename:       String::new(),
-                audio_source_json:    String::new(),
-                audio_duration_ms:    0,
-                audio_waveform:       Vec::new(),
-                audio_mime:           String::new(),
+                event_id: String::new(),
+                sender: String::new(),
+                sender_name: String::new(),
+                sender_avatar_url: String::new(),
+                body: String::new(),
+                source_json: String::new(),
+                width: 0,
+                height: 0,
+                file_json: String::new(),
+                file_name: String::new(),
+                file_size: 0,
+                image_filename: String::new(),
+                audio_source_json: String::new(),
+                audio_duration_ms: 0,
+                audio_waveform: Vec::new(),
+                audio_mime: String::new(),
                 video_thumbnail_json: String::new(),
-                video_duration_ms:    0,
-                video_mime:           String::new(),
-                video_autoplay:       false,
-                video_loop:           false,
-                video_no_audio:       false,
-                video_hide_controls:  false,
-                video_gif:            false,
-                reactions:            Vec::new(),
-                read_receipts:        Vec::new(),
-                in_reply_to_id:          String::new(),
+                video_duration_ms: 0,
+                video_mime: String::new(),
+                video_autoplay: false,
+                video_loop: false,
+                video_no_audio: false,
+                video_hide_controls: false,
+                video_gif: false,
+                reactions: Vec::new(),
+                read_receipts: Vec::new(),
+                in_reply_to_id: String::new(),
                 in_reply_to_sender_name: String::new(),
-                in_reply_to_body:        String::new(),
-                is_edited:               false,
-                formatted_body:          String::new(),
-                blurhash:                String::new(),
-                sticker_info_json:       String::new(),
-                image_animated:          false,
-                pending_state:        String::new(),
-                pending_error:        String::new(),
-                pending_recoverable:  false,
-                pending_txn_id:       String::new(),
-                location_lat:         0.0,
-                location_lon:         0.0,
+                in_reply_to_body: String::new(),
+                is_edited: false,
+                formatted_body: String::new(),
+                blurhash: String::new(),
+                sticker_info_json: String::new(),
+                image_animated: false,
+                pending_state: String::new(),
+                pending_error: String::new(),
+                pending_recoverable: false,
+                pending_txn_id: String::new(),
+                location_lat: 0.0,
+                location_lon: 0.0,
                 location_description: String::new(),
             });
         }
@@ -4383,14 +4898,18 @@ async fn timeline_item_to_ffi(
     // Compute pending fields once for all non-virtual event paths.
     let (pending_state, pending_error, pending_recoverable, pending_txn_id) =
         if event_item.is_local_echo() {
-            let txn = event_item.transaction_id()
+            let txn = event_item
+                .transaction_id()
                 .map(|t| t.to_string())
                 .unwrap_or_default();
             match event_item.send_state() {
-                Some(EventSendState::NotSentYet { .. }) =>
-                    ("sending".to_owned(), String::new(), false, txn),
-                Some(EventSendState::SendingFailed { error, is_recoverable }) =>
-                    ("failed".to_owned(), error.to_string(), *is_recoverable, txn),
+                Some(EventSendState::NotSentYet { .. }) => {
+                    ("sending".to_owned(), String::new(), false, txn)
+                }
+                Some(EventSendState::SendingFailed {
+                    error,
+                    is_recoverable,
+                }) => ("failed".to_owned(), error.to_string(), *is_recoverable, txn),
                 _ => (String::new(), String::new(), false, txn),
             }
         } else {
@@ -4401,81 +4920,90 @@ async fn timeline_item_to_ffi(
     // MsgLikeKind::Redacted in place. Surface it as a tombstone (msg_type
     // "m.redacted") so the UI can swap the existing row to a placeholder
     // instead of leaving the stale body on screen.
-    if let TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Redacted, .. }) =
-        event_item.content()
+    if let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::Redacted,
+        ..
+    }) = event_item.content()
     {
         let (sender_name, sender_avatar_url) =
             if let TimelineDetails::Ready(p) = event_item.sender_profile() {
                 (
                     p.display_name.clone().unwrap_or_default(),
-                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                    p.avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default(),
                 )
             } else {
                 (String::new(), String::new())
             };
         return Some(TimelineEvent {
-            event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
-            room_id:           room_id.to_owned(),
-            sender:            event_item.sender().to_string(),
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            room_id: room_id.to_owned(),
+            sender: event_item.sender().to_string(),
             sender_name,
             sender_avatar_url,
-            body:              String::new(),
-            timestamp:         event_item.timestamp().get().into(),
-            msg_type:          "m.redacted".to_owned(),
-            source_json:       String::new(),
-            width:             0u64,
-            height:            0u64,
-            file_json:         String::new(),
-            file_name:         String::new(),
-            file_size:         0u64,
-            image_filename:    String::new(),
-            audio_source_json:    String::new(),
-            audio_duration_ms:    0u64,
-            audio_waveform:       Vec::new(),
-            audio_mime:           String::new(),
+            body: String::new(),
+            timestamp: event_item.timestamp().get().into(),
+            msg_type: "m.redacted".to_owned(),
+            source_json: String::new(),
+            width: 0u64,
+            height: 0u64,
+            file_json: String::new(),
+            file_name: String::new(),
+            file_size: 0u64,
+            image_filename: String::new(),
+            audio_source_json: String::new(),
+            audio_duration_ms: 0u64,
+            audio_waveform: Vec::new(),
+            audio_mime: String::new(),
             video_thumbnail_json: String::new(),
-            video_duration_ms:    0u64,
-            video_mime:           String::new(),
-            video_autoplay:       false,
-            video_loop:           false,
-            video_no_audio:       false,
-            video_hide_controls:  false,
-            video_gif:            false,
-            reactions:         Vec::new(),
+            video_duration_ms: 0u64,
+            video_mime: String::new(),
+            video_autoplay: false,
+            video_loop: false,
+            video_no_audio: false,
+            video_hide_controls: false,
+            video_gif: false,
+            reactions: Vec::new(),
             // Receipts on a tombstone are meaningless — the original event
             // is gone; the redacted placeholder doesn't carry a reading
             // audience worth surfacing.
-            read_receipts:        Vec::new(),
-            in_reply_to_id:          String::new(),
+            read_receipts: Vec::new(),
+            in_reply_to_id: String::new(),
             in_reply_to_sender_name: String::new(),
-            in_reply_to_body:        String::new(),
-            is_edited:               false,
-            formatted_body:          String::new(),
-            blurhash:                String::new(),
-            sticker_info_json:       String::new(),
-            image_animated:          false,
-            pending_state:           String::new(),
-            pending_error:           String::new(),
-            pending_recoverable:     false,
-            pending_txn_id:          String::new(),
-            location_lat:            0.0,
-            location_lon:            0.0,
-            location_description:    String::new(),
+            in_reply_to_body: String::new(),
+            is_edited: false,
+            formatted_body: String::new(),
+            blurhash: String::new(),
+            sticker_info_json: String::new(),
+            image_animated: false,
+            pending_state: String::new(),
+            pending_error: String::new(),
+            pending_recoverable: false,
+            pending_txn_id: String::new(),
+            location_lat: 0.0,
+            location_lon: 0.0,
+            location_description: String::new(),
         });
     }
 
     // Sticker events are MsgLikeKind::Sticker, not MsgLikeKind::Message.
     // Handle them before falling through to the message-only path.
-    if let TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Sticker(s), .. }) =
-        event_item.content()
+    if let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::Sticker(s),
+        ..
+    }) = event_item.content()
     {
         let c = s.content();
         // For encrypted sticker sources (MSC2545 + ruma compat-encrypted-stickers
         // feature) we serialise the full MediaSource as JSON so the C++ side can
         // pipe it back through fetch_source_bytes for decryption.
         let src = match &c.source {
-            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) =>
-                uri.to_string(),
+            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) => uri.to_string(),
             matrix_sdk::ruma::events::sticker::StickerMediaSource::Encrypted(file) => {
                 let ms = matrix_sdk::ruma::events::room::MediaSource::Encrypted(file.clone());
                 serde_json::to_string(&ms).unwrap_or_default()
@@ -4488,7 +5016,10 @@ async fn timeline_item_to_ffi(
             if let TimelineDetails::Ready(p) = event_item.sender_profile() {
                 (
                     p.display_name.clone().unwrap_or_default(),
-                    p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                    p.avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default(),
                 )
             } else {
                 (String::new(), String::new())
@@ -4496,279 +5027,525 @@ async fn timeline_item_to_ffi(
         let reactions = collect_reactions(event_item, room, me).await;
         let read_receipts = collect_read_receipts(event_item, room, me).await;
         return Some(TimelineEvent {
-            event_id:          event_item.event_id().map(|id| id.to_string()).unwrap_or_default(),
-            room_id:           room_id.to_owned(),
-            sender:            event_item.sender().to_string(),
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            room_id: room_id.to_owned(),
+            sender: event_item.sender().to_string(),
             sender_name,
             sender_avatar_url,
-            body:              c.body.clone(),
-            timestamp:         event_item.timestamp().get().into(),
-            msg_type:          "m.sticker".to_owned(),
-            source_json:       src,
-            width:             w,
-            height:            h,
-            file_json:         String::new(),
-            file_name:         String::new(),
-            file_size:         0u64,
-            image_filename:    String::new(),
-            audio_source_json:    String::new(),
-            audio_duration_ms:    0u64,
-            audio_waveform:       Vec::new(),
-            audio_mime:           String::new(),
+            body: c.body.clone(),
+            timestamp: event_item.timestamp().get().into(),
+            msg_type: "m.sticker".to_owned(),
+            source_json: src,
+            width: w,
+            height: h,
+            file_json: String::new(),
+            file_name: String::new(),
+            file_size: 0u64,
+            image_filename: String::new(),
+            audio_source_json: String::new(),
+            audio_duration_ms: 0u64,
+            audio_waveform: Vec::new(),
+            audio_mime: String::new(),
             video_thumbnail_json: String::new(),
-            video_duration_ms:    0u64,
-            video_mime:           String::new(),
-            video_autoplay:       false,
-            video_loop:           false,
-            video_no_audio:       false,
-            video_hide_controls:  false,
-            video_gif:            false,
+            video_duration_ms: 0u64,
+            video_mime: String::new(),
+            video_autoplay: false,
+            video_loop: false,
+            video_no_audio: false,
+            video_hide_controls: false,
+            video_gif: false,
             reactions,
             read_receipts,
-            in_reply_to_id:          String::new(),
+            in_reply_to_id: String::new(),
             in_reply_to_sender_name: String::new(),
-            in_reply_to_body:        String::new(),
-            is_edited:               false,
-            formatted_body:          String::new(),
-            blurhash:                c.info.blurhash.as_deref().unwrap_or("").to_owned(),
-            sticker_info_json:       serde_json::to_string(&c.info)
-                                         .unwrap_or_else(|_| "{}".to_owned()),
-            image_animated:          c.info.is_animated.unwrap_or(false),
-            pending_state:        pending_state.clone(),
-            pending_error:        pending_error.clone(),
+            in_reply_to_body: String::new(),
+            is_edited: false,
+            formatted_body: String::new(),
+            blurhash: c.info.blurhash.as_deref().unwrap_or("").to_owned(),
+            sticker_info_json: serde_json::to_string(&c.info).unwrap_or_else(|_| "{}".to_owned()),
+            image_animated: c.info.is_animated.unwrap_or(false),
+            pending_state: pending_state.clone(),
+            pending_error: pending_error.clone(),
             pending_recoverable,
-            pending_txn_id:       pending_txn_id.clone(),
-            location_lat:         0.0,
-            location_lon:         0.0,
+            pending_txn_id: pending_txn_id.clone(),
+            location_lat: 0.0,
+            location_lon: 0.0,
             location_description: String::new(),
         });
     }
 
     let msg_content = match event_item.content() {
-        TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Message(msg), .. }) => msg,
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Message(msg),
+            ..
+        }) => msg,
         _ => return None,
     };
 
-    let (body, formatted_body, msg_type, source_json, width, height,
-         file_json, file_name, file_size, image_filename,
-         audio_source_json, audio_duration_ms, audio_waveform, audio_mime,
-         video_thumbnail_json, video_duration_ms, video_mime,
-         video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif,
-         location_lat, location_lon, location_description) =
-        match msg_content.msgtype() {
-            MessageType::Text(t) => {
-                let fmt = t.formatted.as_ref()
-                    .filter(|f| matches!(
+    let (
+        body,
+        formatted_body,
+        msg_type,
+        source_json,
+        width,
+        height,
+        file_json,
+        file_name,
+        file_size,
+        image_filename,
+        audio_source_json,
+        audio_duration_ms,
+        audio_waveform,
+        audio_mime,
+        video_thumbnail_json,
+        video_duration_ms,
+        video_mime,
+        video_autoplay,
+        video_loop,
+        video_no_audio,
+        video_hide_controls,
+        video_gif,
+        location_lat,
+        location_lon,
+        location_description,
+    ) = match msg_content.msgtype() {
+        MessageType::Text(t) => {
+            let fmt = t
+                .formatted
+                .as_ref()
+                .filter(|f| {
+                    matches!(
                         f.format,
                         matrix_sdk::ruma::events::room::message::MessageFormat::Html
-                    ))
-                    .map(|f| f.body.clone())
-                    .unwrap_or_default();
-                (
-                    t.body.clone(), fmt, "m.text".to_owned(),
-                    String::new(), 0u64, 0u64,
-                    String::new(), String::new(), 0u64, String::new(),
-                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
-                    String::new(), 0u64, String::new(),
-                    false, false, false, false, false,
-                    0.0f64, 0.0f64, String::new(),
-                )
-            }
-            MessageType::Image(i) => {
-                // Plain → plain mxc URI string; encrypted → full MediaSource
-                // serialised as JSON so `fetch_source_bytes` can decrypt it.
-                // Matches the sticker handler above (no point of difference).
-                let source_str = match &i.source {
-                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
-                        serde_json::to_string(&i.source).unwrap_or_default(),
-                };
-                let (w, h) = i
-                    .info
-                    .as_ref()
-                    .map(|info| (
+                    )
+                })
+                .map(|f| f.body.clone())
+                .unwrap_or_default();
+            (
+                t.body.clone(),
+                fmt,
+                "m.text".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::<u16>::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        MessageType::Image(i) => {
+            // Plain → plain mxc URI string; encrypted → full MediaSource
+            // serialised as JSON so `fetch_source_bytes` can decrypt it.
+            // Matches the sticker handler above (no point of difference).
+            let source_str = match &i.source {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                    serde_json::to_string(&i.source).unwrap_or_default()
+                }
+            };
+            let (w, h) = i
+                .info
+                .as_ref()
+                .map(|info| {
+                    (
                         info.width.map(|v| u64::from(v)).unwrap_or(0u64),
                         info.height.map(|v| u64::from(v)).unwrap_or(0u64),
-                    ))
-                    .unwrap_or((0u64, 0u64));
-                // MSC2530: filename field signals that body is a user caption.
-                let img_filename = i.filename.clone().unwrap_or_default();
-                (i.body.clone(), String::new(), "m.image".to_owned(), source_str, w, h,
-                 String::new(), String::new(), 0u64, img_filename,
-                 String::new(), 0u64, Vec::new(), String::new(),
-                 String::new(), 0u64, String::new(),
-                 false, false, false, false, false,
-                 0.0f64, 0.0f64, String::new())
-            }
-            MessageType::File(f) => {
-                let file_str = match &f.source {
-                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
-                        serde_json::to_string(&f.source).unwrap_or_default(),
-                };
-                let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
-                let size = f
-                    .info
-                    .as_ref()
-                    .and_then(|info| info.size)
-                    .map(|v| u64::from(v))
-                    .unwrap_or(0u64);
-                (f.body.clone(), String::new(), "m.file".to_owned(), String::new(), 0u64, 0u64,
-                 file_str, name, size, String::new(),
-                 String::new(), 0u64, Vec::new(), String::new(),
-                 String::new(), 0u64, String::new(),
-                 false, false, false, false, false,
-                 0.0f64, 0.0f64, String::new())
-            }
-            // MSC3245: voice messages are `m.audio` events tagged with
-            // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
-            // duration + waveform. Plain `m.audio` (no voice marker) folds
-            // into the file-card path so the UI still surfaces them.
-            MessageType::Audio(a) => {
-                let source_str = serde_json::to_string(&a.source).unwrap_or_default();
-                let info_mime = a.info.as_deref().and_then(|i| i.mimetype.clone()).unwrap_or_default();
-                let info_duration_ms = a.info.as_deref()
-                    .and_then(|i| i.duration)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0u64);
-                if a.voice.is_some() {
-                    let (duration_ms, waveform) = match &a.audio {
-                        Some(block) => {
-                            let dur = block.duration.as_millis() as u64;
-                            let wf: Vec<u16> = block.waveform.iter()
-                                .map(|amp| u16::try_from(u64::from(amp.get())).unwrap_or(0))
-                                .collect();
-                            (if dur != 0 { dur } else { info_duration_ms }, wf)
-                        }
-                        None => (info_duration_ms, Vec::new()),
-                    };
-                    (a.body.clone(), String::new(), "m.voice".to_owned(), String::new(), 0u64, 0u64,
-                     String::new(), String::new(), 0u64, String::new(),
-                     source_str, duration_ms, waveform, info_mime,
-                     String::new(), 0u64, String::new(),
-                     false, false, false, false, false,
-                     0.0f64, 0.0f64, String::new())
-                } else {
-                    let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
-                    let size = a.info.as_deref()
-                        .and_then(|i| i.size)
-                        .map(u64::from)
-                        .unwrap_or(0u64);
-                    (a.body.clone(), String::new(), "m.file".to_owned(), String::new(), 0u64, 0u64,
-                     source_str, name, size, String::new(),
-                     String::new(), 0u64, Vec::new(), String::new(),
-                     String::new(), 0u64, String::new(),
-                     false, false, false, false, false,
-                     0.0f64, 0.0f64, String::new())
+                    )
+                })
+                .unwrap_or((0u64, 0u64));
+            // MSC2530: filename field signals that body is a user caption.
+            let img_filename = i.filename.clone().unwrap_or_default();
+            (
+                i.body.clone(),
+                String::new(),
+                "m.image".to_owned(),
+                source_str,
+                w,
+                h,
+                String::new(),
+                String::new(),
+                0u64,
+                img_filename,
+                String::new(),
+                0u64,
+                Vec::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        MessageType::File(f) => {
+            let file_str = match &f.source {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                    serde_json::to_string(&f.source).unwrap_or_default()
                 }
-            }
-            MessageType::Video(v) => {
-                let source_str = match &v.source {
-                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
-                        serde_json::to_string(&v.source).unwrap_or_default(),
+            };
+            let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
+            let size = f
+                .info
+                .as_ref()
+                .and_then(|info| info.size)
+                .map(|v| u64::from(v))
+                .unwrap_or(0u64);
+            (
+                f.body.clone(),
+                String::new(),
+                "m.file".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                file_str,
+                name,
+                size,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        // MSC3245: voice messages are `m.audio` events tagged with
+        // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
+        // duration + waveform. Plain `m.audio` (no voice marker) folds
+        // into the file-card path so the UI still surfaces them.
+        MessageType::Audio(a) => {
+            let source_str = serde_json::to_string(&a.source).unwrap_or_default();
+            let info_mime = a
+                .info
+                .as_deref()
+                .and_then(|i| i.mimetype.clone())
+                .unwrap_or_default();
+            let info_duration_ms = a
+                .info
+                .as_deref()
+                .and_then(|i| i.duration)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0u64);
+            if a.voice.is_some() {
+                let (duration_ms, waveform) = match &a.audio {
+                    Some(block) => {
+                        let dur = block.duration.as_millis() as u64;
+                        let wf: Vec<u16> = block
+                            .waveform
+                            .iter()
+                            .map(|amp| u16::try_from(u64::from(amp.get())).unwrap_or(0))
+                            .collect();
+                        (if dur != 0 { dur } else { info_duration_ms }, wf)
+                    }
+                    None => (info_duration_ms, Vec::new()),
                 };
-                let (w, h, dur_ms, mime, thumb_json) = v.info.as_ref().map(|info| {
-                    let w    = info.width   .map(u64::from).unwrap_or(0u64);
-                    let h    = info.height  .map(u64::from).unwrap_or(0u64);
-                    let dur  = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0u64);
+                (
+                    a.body.clone(),
+                    String::new(),
+                    "m.voice".to_owned(),
+                    String::new(),
+                    0u64,
+                    0u64,
+                    String::new(),
+                    String::new(),
+                    0u64,
+                    String::new(),
+                    source_str,
+                    duration_ms,
+                    waveform,
+                    info_mime,
+                    String::new(),
+                    0u64,
+                    String::new(),
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    0.0f64,
+                    0.0f64,
+                    String::new(),
+                )
+            } else {
+                let name = a.filename.clone().unwrap_or_else(|| a.body.clone());
+                let size = a
+                    .info
+                    .as_deref()
+                    .and_then(|i| i.size)
+                    .map(u64::from)
+                    .unwrap_or(0u64);
+                (
+                    a.body.clone(),
+                    String::new(),
+                    "m.file".to_owned(),
+                    String::new(),
+                    0u64,
+                    0u64,
+                    source_str,
+                    name,
+                    size,
+                    String::new(),
+                    String::new(),
+                    0u64,
+                    Vec::new(),
+                    String::new(),
+                    String::new(),
+                    0u64,
+                    String::new(),
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    0.0f64,
+                    0.0f64,
+                    String::new(),
+                )
+            }
+        }
+        MessageType::Video(v) => {
+            let source_str = match &v.source {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                    serde_json::to_string(&v.source).unwrap_or_default()
+                }
+            };
+            let (w, h, dur_ms, mime, thumb_json) = v
+                .info
+                .as_ref()
+                .map(|info| {
+                    let w = info.width.map(u64::from).unwrap_or(0u64);
+                    let h = info.height.map(u64::from).unwrap_or(0u64);
+                    let dur = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0u64);
                     let mime = info.mimetype.clone().unwrap_or_default();
-                    let thumb = info.thumbnail_source.as_ref()
+                    let thumb = info
+                        .thumbnail_source
+                        .as_ref()
                         .map(|ts| match ts {
-                            matrix_sdk::ruma::events::room::MediaSource::Plain(uri) =>
-                                uri.to_string(),
-                            matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) =>
-                                serde_json::to_string(ts).unwrap_or_default(),
+                            matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => {
+                                uri.to_string()
+                            }
+                            matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                                serde_json::to_string(ts).unwrap_or_default()
+                            }
                         })
                         .unwrap_or_default();
                     (w, h, dur, mime, thumb)
-                }).unwrap_or_default();
-                let vid_filename = v.filename.clone().unwrap_or_default();
-                // Parse fi.mau.* vendor hints from the raw event JSON.
-                let mau = |key: &str| -> bool {
-                    let path = format!("/content/info/{}", key);
-                    event_item.original_json()
-                        .and_then(|raw| {
-                            serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
-                        })
-                        .and_then(|json| json.pointer(&path)?.as_bool())
-                        .unwrap_or(false)
-                };
-                let video_gif           = mau("fi.mau.gif");
-                let video_autoplay      = mau("fi.mau.autoplay")      || video_gif;
-                let video_loop          = mau("fi.mau.loop")          || video_gif;
-                let video_no_audio      = mau("fi.mau.no_audio")      || video_gif;
-                let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
-                (v.body.clone(), String::new(), "m.video".to_owned(), source_str, w, h,
-                 String::new(), String::new(), 0u64, vid_filename,
-                 String::new(), 0u64, Vec::new(), String::new(),
-                 thumb_json, dur_ms, mime,
-                 video_autoplay, video_loop, video_no_audio, video_hide_controls, video_gif,
-                 0.0f64, 0.0f64, String::new())
-            }
-            MessageType::Emote(e) => {
-                let fmt = e.formatted.as_ref()
-                    .filter(|f| matches!(
+                })
+                .unwrap_or_default();
+            let vid_filename = v.filename.clone().unwrap_or_default();
+            // Parse fi.mau.* vendor hints from the raw event JSON.
+            let mau = |key: &str| -> bool {
+                let path = format!("/content/info/{}", key);
+                event_item
+                    .original_json()
+                    .and_then(|raw| {
+                        serde_json::from_str::<serde_json::Value>(raw.json().get()).ok()
+                    })
+                    .and_then(|json| json.pointer(&path)?.as_bool())
+                    .unwrap_or(false)
+            };
+            let video_gif = mau("fi.mau.gif");
+            let video_autoplay = mau("fi.mau.autoplay") || video_gif;
+            let video_loop = mau("fi.mau.loop") || video_gif;
+            let video_no_audio = mau("fi.mau.no_audio") || video_gif;
+            let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
+            (
+                v.body.clone(),
+                String::new(),
+                "m.video".to_owned(),
+                source_str,
+                w,
+                h,
+                String::new(),
+                String::new(),
+                0u64,
+                vid_filename,
+                String::new(),
+                0u64,
+                Vec::new(),
+                String::new(),
+                thumb_json,
+                dur_ms,
+                mime,
+                video_autoplay,
+                video_loop,
+                video_no_audio,
+                video_hide_controls,
+                video_gif,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        MessageType::Emote(e) => {
+            let fmt = e
+                .formatted
+                .as_ref()
+                .filter(|f| {
+                    matches!(
                         f.format,
                         matrix_sdk::ruma::events::room::message::MessageFormat::Html
-                    ))
-                    .map(|f| f.body.clone())
-                    .unwrap_or_default();
-                (
-                    e.body.clone(), fmt, "m.emote".to_owned(),
-                    String::new(), 0u64, 0u64,
-                    String::new(), String::new(), 0u64, String::new(),
-                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
-                    String::new(), 0u64, String::new(),
-                    false, false, false, false, false,
-                    0.0f64, 0.0f64, String::new(),
-                )
-            }
-            MessageType::Notice(n) => {
-                let fmt = n.formatted.as_ref()
-                    .filter(|f| matches!(
+                    )
+                })
+                .map(|f| f.body.clone())
+                .unwrap_or_default();
+            (
+                e.body.clone(),
+                fmt,
+                "m.emote".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::<u16>::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        MessageType::Notice(n) => {
+            let fmt = n
+                .formatted
+                .as_ref()
+                .filter(|f| {
+                    matches!(
                         f.format,
                         matrix_sdk::ruma::events::room::message::MessageFormat::Html
-                    ))
-                    .map(|f| f.body.clone())
-                    .unwrap_or_default();
-                (
-                    n.body.clone(), fmt, "m.notice".to_owned(),
-                    String::new(), 0u64, 0u64,
-                    String::new(), String::new(), 0u64, String::new(),
-                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
-                    String::new(), 0u64, String::new(),
-                    false, false, false, false, false,
-                    0.0f64, 0.0f64, String::new(),
-                )
-            }
-            MessageType::Location(l) => {
-                let (lat, lon) = parse_geo_uri(l.geo_uri()).unwrap_or((0.0, 0.0));
-                (
-                    l.body.clone(), String::new(), "m.location".to_owned(),
-                    String::new(), 0u64, 0u64,
-                    String::new(), String::new(), 0u64, String::new(),
-                    String::new(), 0u64, Vec::<u16>::new(), String::new(),
-                    String::new(), 0u64, String::new(),
-                    false, false, false, false, false,
-                    lat, lon, l.body.clone(),
-                )
-            }
-            _ => return None,
-        };
+                    )
+                })
+                .map(|f| f.body.clone())
+                .unwrap_or_default();
+            (
+                n.body.clone(),
+                fmt,
+                "m.notice".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::<u16>::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                0.0f64,
+                0.0f64,
+                String::new(),
+            )
+        }
+        MessageType::Location(l) => {
+            let (lat, lon) = parse_geo_uri(l.geo_uri()).unwrap_or((0.0, 0.0));
+            (
+                l.body.clone(),
+                String::new(),
+                "m.location".to_owned(),
+                String::new(),
+                0u64,
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                String::new(),
+                0u64,
+                Vec::<u16>::new(),
+                String::new(),
+                String::new(),
+                0u64,
+                String::new(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                lat,
+                lon,
+                l.body.clone(),
+            )
+        }
+        _ => return None,
+    };
 
     let blurhash = match msg_content.msgtype() {
-        MessageType::Image(i) => i.info.as_ref()
+        MessageType::Image(i) => i
+            .info
+            .as_ref()
             .and_then(|info| info.blurhash.as_deref())
-            .unwrap_or("").to_owned(),
-        MessageType::Video(v) => v.info.as_ref()
+            .unwrap_or("")
+            .to_owned(),
+        MessageType::Video(v) => v
+            .info
+            .as_ref()
             .and_then(|info| info.blurhash.as_deref())
-            .unwrap_or("").to_owned(),
+            .unwrap_or("")
+            .to_owned(),
         _ => String::new(),
     };
 
     let image_animated = match msg_content.msgtype() {
-        MessageType::Image(i) => i.info.as_ref()
+        MessageType::Image(i) => i
+            .info
+            .as_ref()
             .and_then(|info| info.is_animated)
             .unwrap_or(false),
         _ => false,
@@ -4778,7 +5555,10 @@ async fn timeline_item_to_ffi(
         if let TimelineDetails::Ready(p) = event_item.sender_profile() {
             (
                 p.display_name.clone().unwrap_or_default(),
-                p.avatar_url.as_ref().map(|u| u.to_string()).unwrap_or_default(),
+                p.avatar_url
+                    .as_ref()
+                    .map(|u| u.to_string())
+                    .unwrap_or_default(),
             )
         } else {
             (String::new(), String::new())
@@ -4803,23 +5583,26 @@ async fn timeline_item_to_ffi(
                         };
                         let snippet = match &replied.content {
                             TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Message(m), ..
+                                kind: MsgLikeKind::Message(m),
+                                ..
                             }) => {
                                 use matrix_sdk::ruma::events::room::message::MessageType;
                                 match m.msgtype() {
                                     MessageType::Text(t) => t.body.clone(),
                                     MessageType::Image(_) => "(image)".to_owned(),
-                                    MessageType::File(_)  => "(file)".to_owned(),
+                                    MessageType::File(_) => "(file)".to_owned(),
                                     MessageType::Audio(_) => "(voice)".to_owned(),
                                     MessageType::Video(_) => "(video)".to_owned(),
-                                    _                     => "(message)".to_owned(),
+                                    _ => "(message)".to_owned(),
                                 }
                             }
                             TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Sticker(_), ..
+                                kind: MsgLikeKind::Sticker(_),
+                                ..
                             }) => "(sticker)".to_owned(),
                             TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Redacted, ..
+                                kind: MsgLikeKind::Redacted,
+                                ..
                             }) => "(deleted)".to_owned(),
                             _ => String::new(),
                         };
@@ -4835,15 +5618,16 @@ async fn timeline_item_to_ffi(
     let read_receipts = collect_read_receipts(event_item, room, me).await;
 
     Some(TimelineEvent {
-        event_id:          event_item.event_id()
+        event_id: event_item
+            .event_id()
             .map(|id| id.to_string())
             .unwrap_or_default(),
-        room_id:           room_id.to_owned(),
-        sender:            event_item.sender().to_string(),
+        room_id: room_id.to_owned(),
+        sender: event_item.sender().to_string(),
         sender_name,
         sender_avatar_url,
         body,
-        timestamp:         event_item.timestamp().get().into(),
+        timestamp: event_item.timestamp().get().into(),
         msg_type,
         source_json,
         width,
@@ -4904,15 +5688,23 @@ fn visible_len(visible: &[bool]) -> u64 {
 /// control characters (\n, \r, \t, …) are escaped correctly.
 #[cfg(not(test))]
 fn build_push_rule_json(
-    room_id:   &str,
-    event_id:  &str,
-    sender:    &str,
-    body:      &str,
-    msg_type:  &str,
+    room_id: &str,
+    event_id: &str,
+    sender: &str,
+    body: &str,
+    msg_type: &str,
     timestamp: u64,
 ) -> String {
-    let msg_type  = if msg_type.is_empty()  { "m.text"    } else { msg_type  };
-    let event_id  = if event_id.is_empty()  { "$unknown"  } else { event_id  };
+    let msg_type = if msg_type.is_empty() {
+        "m.text"
+    } else {
+        msg_type
+    };
+    let event_id = if event_id.is_empty() {
+        "$unknown"
+    } else {
+        event_id
+    };
     // Every interpolated string is serialized through serde_json so a server
     // that returns an event_id / msg_type containing `"` or `\` cannot break
     // the envelope (or inject extra JSON keys into the push-rule evaluation).
@@ -4923,7 +5715,8 @@ fn build_push_rule_json(
         "room_id": room_id,
         "origin_server_ts": timestamp,
         "content": { "msgtype": msg_type, "body": body },
-    }).to_string()
+    })
+    .to_string()
 }
 
 /// Evaluates Matrix push rules for `source_json` (a synthetic raw event
@@ -4931,31 +5724,43 @@ fn build_push_rule_json(
 /// Returns `(false, false)` on any error — callers must not rely on errors being
 /// propagated.
 #[cfg(not(test))]
-async fn evaluate_push_rules(
-    client: &Client,
-    room: &Room,
-    source_json: &str,
-) -> (bool, bool) {
+async fn evaluate_push_rules(client: &Client, room: &Room, source_json: &str) -> (bool, bool) {
     use matrix_sdk::ruma::events::GlobalAccountDataEventType;
     use serde_json::Value;
 
     // Read push rules from the local account-data cache (no network).
     let push_rules_et = GlobalAccountDataEventType::from("m.push_rules");
-    let Some(raw) = client.account().account_data_raw(push_rules_et).await.ok().flatten()
-        else { return (false, false) };
-    let Ok(content) = serde_json::from_str::<Value>(raw.json().get())
-        else { return (false, false) };
+    let Some(raw) = client
+        .account()
+        .account_data_raw(push_rules_et)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (false, false);
+    };
+    let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
+        return (false, false);
+    };
     let global = content.get("global").cloned().unwrap_or_default();
-    let Ok(ruleset) = serde_json::from_value::<Ruleset>(global)
-        else { return (false, false) };
+    let Ok(ruleset) = serde_json::from_value::<Ruleset>(global) else {
+        return (false, false);
+    };
 
     // Build push-condition context (no power-level data available without an
     // extra network round-trip — this skips sender_notification_permission
     // conditions but correctly handles member_count, contains_user_name, and
     // event_match rules such as mentions and keywords).
-    let Some(uid) = client.user_id().map(|u| u.to_owned()) else { return (false, false) };
-    let display_name = client.account().get_display_name().await
-        .ok().flatten().unwrap_or_default();
+    let Some(uid) = client.user_id().map(|u| u.to_owned()) else {
+        return (false, false);
+    };
+    let display_name = client
+        .account()
+        .get_display_name()
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let member_count = room.joined_members_count();
     let ctx = PushConditionRoomCtx::new(
         room.room_id().to_owned(),
@@ -4966,7 +5771,9 @@ async fn evaluate_push_rules(
 
     // Wrap source_json (synthetic event envelope) as Raw<AnySyncTimelineEvent>.
     let Ok(raw_value) = serde_json::from_str::<Box<serde_json::value::RawValue>>(source_json)
-        else { return (false, false) };
+    else {
+        return (false, false);
+    };
     let raw_event = Raw::<AnySyncTimelineEvent>::from_json(raw_value);
 
     let actions = ruleset.get_actions(&raw_event, &ctx).await;
@@ -5050,7 +5857,9 @@ async fn handle_timeline_diff(
                 // desync the C++ row count further; skip and log instead.
                 tracing::error!(
                     "VectorDiff::Set index {} out of range (len {}) for {}",
-                    index, visible.len(), room_id,
+                    index,
+                    visible.len(),
+                    room_id,
                 );
                 return;
             }
@@ -5065,14 +5874,18 @@ async fn handle_timeline_diff(
                 }
                 (false, Some(ev)) => {
                     let v_idx = visible_index_of(visible, index);
-                    if let Some(slot) = visible.get_mut(index) { *slot = true; }
+                    if let Some(slot) = visible.get_mut(index) {
+                        *slot = true;
+                    }
                     if let Ok(g) = handler.lock() {
                         g.on_message_inserted(room_id, v_idx, &ev);
                     }
                 }
                 (true, None) => {
                     let v_idx = visible_index_of(visible, index);
-                    if let Some(slot) = visible.get_mut(index) { *slot = false; }
+                    if let Some(slot) = visible.get_mut(index) {
+                        *slot = false;
+                    }
                     if let Ok(g) = handler.lock() {
                         g.on_message_removed(room_id, v_idx);
                     }
@@ -5144,7 +5957,9 @@ async fn handle_timeline_diff(
             for item in &values {
                 let ev = timeline_item_to_ffi(item, room_id, room, me).await;
                 visible.push(ev.is_some());
-                if let Some(ev) = ev { snapshot.push(ev); }
+                if let Some(ev) = ev {
+                    snapshot.push(ev);
+                }
             }
             if let Ok(g) = handler.lock() {
                 g.on_timeline_reset(room_id, &snapshot);
@@ -5163,23 +5978,26 @@ async fn handle_timeline_diff(
 /// Also surfaces top-level Done / Cancelled transitions before SAS starts.
 #[cfg(not(test))]
 async fn watch_verification_request(
-    req:         matrix_sdk::encryption::verification::VerificationRequest,
-    flow_id:     String,
-    handler:     Arc<Mutex<SendHandler>>,
-    flow_users:  Arc<Mutex<HashMap<String, String>>>,
+    req: matrix_sdk::encryption::verification::VerificationRequest,
+    flow_id: String,
+    handler: Arc<Mutex<SendHandler>>,
+    flow_users: Arc<Mutex<HashMap<String, String>>>,
     emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
 ) {
     use futures_util::StreamExt;
-    use matrix_sdk::encryption::verification::{VerificationRequestState, Verification};
+    use matrix_sdk::encryption::verification::{Verification, VerificationRequestState};
 
-    let user_id    = req.other_user_id().as_str().to_owned();
+    let user_id = req.other_user_id().as_str().to_owned();
     let we_started = req.we_started();
 
     let mut changes = req.changes();
 
     while let Some(state) = changes.next().await {
         match state {
-            VerificationRequestState::Ready { ref other_device_data, .. } => {
+            VerificationRequestState::Ready {
+                ref other_device_data,
+                ..
+            } => {
                 // The other side accepted our outgoing request. Signal the UI
                 // to transition from Waiting and call start_sas.
                 if we_started {
@@ -5191,8 +6009,8 @@ async fn watch_verification_request(
             }
             VerificationRequestState::Transitioned { verification } => {
                 if let Verification::SasV1(sas) = verification {
-                    let h2           = Arc::clone(&handler);
-                    let flow_id2     = flow_id.clone();
+                    let h2 = Arc::clone(&handler);
+                    let flow_id2 = flow_id.clone();
                     let emoji_cache2 = Arc::clone(&emoji_cache);
                     tokio::spawn(watch_sas(sas, flow_id2, h2, emoji_cache2));
                 }
@@ -5222,9 +6040,9 @@ async fn watch_verification_request(
 /// `on_verification_cancelled` on mismatch or cancel.
 #[cfg(not(test))]
 async fn watch_sas(
-    sas:         SasVerification,
-    flow_id:     String,
-    handler:     Arc<Mutex<SendHandler>>,
+    sas: SasVerification,
+    flow_id: String,
+    handler: Arc<Mutex<SendHandler>>,
     emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
 ) {
     use futures_util::StreamExt;
@@ -5236,13 +6054,16 @@ async fn watch_sas(
         match state {
             SasState::KeysExchanged { emojis, .. } => {
                 if let Some(emojis) = emojis {
-                    let pairs: Vec<(String, String)> = emojis.emojis.iter()
+                    let pairs: Vec<(String, String)> = emojis
+                        .emojis
+                        .iter()
                         .map(|e| (e.symbol.to_owned(), e.description.to_owned()))
                         .collect();
                     lock_or_recover(&emoji_cache).insert(flow_id.clone(), pairs.clone());
-                    let ve: Vec<VerificationEmoji> = pairs.into_iter()
+                    let ve: Vec<VerificationEmoji> = pairs
+                        .into_iter()
                         .map(|(sym, desc)| VerificationEmoji {
-                            symbol:      sym,
+                            symbol: sym,
                             description: desc,
                         })
                         .collect();
@@ -5260,10 +6081,7 @@ async fn watch_sas(
             }
             SasState::Cancelled(info) => {
                 if let Ok(guard) = handler.lock() {
-                    guard.on_verification_cancelled(
-                        &flow_id,
-                        &format!("{}", info.reason()),
-                    );
+                    guard.on_verification_cancelled(&flow_id, &format!("{}", info.reason()));
                 }
                 lock_or_recover(&emoji_cache).remove(&flow_id);
                 break;
@@ -5284,12 +6102,12 @@ use matrix_sdk::encryption::verification::SasVerification;
 impl ClientFfi {
     pub fn register_pusher(
         &mut self,
-        pushkey:             &str,
-        app_id:              &str,
-        app_display_name:    &str,
+        pushkey: &str,
+        app_id: &str,
+        app_display_name: &str,
         device_display_name: &str,
-        endpoint_url:        &str,
-        lang:                &str,
+        endpoint_url: &str,
+        lang: &str,
     ) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -5297,12 +6115,12 @@ impl ClientFfi {
         let mut http_data = HttpPusherData::new(endpoint_url.to_owned());
         http_data.format = Some(PushFormat::EventIdOnly);
         let pusher = PusherInit {
-            ids:                 PusherIds::new(pushkey.to_owned(), app_id.to_owned()),
-            app_display_name:    app_display_name.to_owned(),
-            kind:                PusherKind::Http(http_data),
-            lang:                lang.to_owned(),
+            ids: PusherIds::new(pushkey.to_owned(), app_id.to_owned()),
+            app_display_name: app_display_name.to_owned(),
+            kind: PusherKind::Http(http_data),
+            lang: lang.to_owned(),
             device_display_name: device_display_name.to_owned(),
-            profile_tag:         None,
+            profile_tag: None,
         };
         match self.rt.block_on(client.pusher().set(pusher.into())) {
             Ok(()) => ok(""),
@@ -5324,9 +6142,15 @@ impl ClientFfi {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn register_pusher(&mut self, _pushkey: &str, _app_id: &str,
-                            _app_display_name: &str, _device_display_name: &str,
-                            _endpoint_url: &str, _lang: &str) -> OpResult {
+    pub fn register_pusher(
+        &mut self,
+        _pushkey: &str,
+        _app_id: &str,
+        _app_display_name: &str,
+        _device_display_name: &str,
+        _endpoint_url: &str,
+        _lang: &str,
+    ) -> OpResult {
         err("not logged in")
     }
 
@@ -5537,16 +6361,26 @@ mod tests {
     #[test]
     fn room_list_state_code_maps_every_variant() {
         use matrix_sdk_ui::room_list_service::State as S;
-        assert_eq!(room_list_state_code(&S::Init),                ROOM_LIST_STATE_INIT);
-        assert_eq!(room_list_state_code(&S::SettingUp),           ROOM_LIST_STATE_SETTING_UP);
-        assert_eq!(room_list_state_code(&S::Recovering),          ROOM_LIST_STATE_RECOVERING);
-        assert_eq!(room_list_state_code(&S::Running),             ROOM_LIST_STATE_RUNNING);
+        assert_eq!(room_list_state_code(&S::Init), ROOM_LIST_STATE_INIT);
         assert_eq!(
-            room_list_state_code(&S::Error { from: Box::new(S::Running) }),
+            room_list_state_code(&S::SettingUp),
+            ROOM_LIST_STATE_SETTING_UP
+        );
+        assert_eq!(
+            room_list_state_code(&S::Recovering),
+            ROOM_LIST_STATE_RECOVERING
+        );
+        assert_eq!(room_list_state_code(&S::Running), ROOM_LIST_STATE_RUNNING);
+        assert_eq!(
+            room_list_state_code(&S::Error {
+                from: Box::new(S::Running)
+            }),
             ROOM_LIST_STATE_ERROR,
         );
         assert_eq!(
-            room_list_state_code(&S::Terminated { from: Box::new(S::Running) }),
+            room_list_state_code(&S::Terminated {
+                from: Box::new(S::Running)
+            }),
             ROOM_LIST_STATE_TERMINATED,
         );
     }
@@ -5581,10 +6415,19 @@ mod tests {
         let block = content.audio.as_ref().expect("audio details block present");
         assert_eq!(block.duration.as_millis() as u64, 4200);
         assert_eq!(block.waveform.len(), 7);
-        let max = block.waveform.iter().map(|a| u64::from(a.get())).max().unwrap_or(0);
+        let max = block
+            .waveform
+            .iter()
+            .map(|a| u64::from(a.get()))
+            .max()
+            .unwrap_or(0);
         assert_eq!(max, 1024);
         assert_eq!(
-            content.info.as_deref().and_then(|i| i.mimetype.clone()).as_deref(),
+            content
+                .info
+                .as_deref()
+                .and_then(|i| i.mimetype.clone())
+                .as_deref(),
             Some("audio/ogg")
         );
     }
@@ -5600,8 +6443,14 @@ mod tests {
         });
         let content: AudioMessageEventContent =
             serde_json::from_value(json).expect("AudioMessageEventContent deserialises");
-        assert!(content.voice.is_none(), "plain audio must not carry the voice marker");
-        assert!(content.audio.is_none(), "plain audio carries no MSC1767 details");
+        assert!(
+            content.voice.is_none(),
+            "plain audio must not carry the voice marker"
+        );
+        assert!(
+            content.audio.is_none(),
+            "plain audio carries no MSC1767 details"
+        );
     }
 
     #[test]
@@ -5655,9 +6504,14 @@ mod tests {
     #[test]
     fn register_pusher_fails_when_not_logged_in() {
         let mut c = ClientFfi::new();
-        let r = c.register_pusher("key", "im.gnomos.tesseract",
-                                   "Tesseract", "My Device",
-                                   "https://push.example.com/up", "en");
+        let r = c.register_pusher(
+            "key",
+            "im.gnomos.tesseract",
+            "Tesseract",
+            "My Device",
+            "https://push.example.com/up",
+            "en",
+        );
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
     }
@@ -5674,10 +6528,14 @@ mod tests {
 #[cfg(test)]
 mod tests_latest_event_body {
     use super::latest_event_body;
-    use matrix_sdk::latest_events::{LatestEventValue, LocalLatestEventValue, RemoteLatestEventValue};
-    use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, serde::Raw, events::AnySyncTimelineEvent};
+    use matrix_sdk::latest_events::{
+        LatestEventValue, LocalLatestEventValue, RemoteLatestEventValue,
+    };
+    use matrix_sdk::ruma::events::{
+        room::message::RoomMessageEventContent, AnyMessageLikeEventContent,
+    };
+    use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw, MilliSecondsSinceUnixEpoch};
     use matrix_sdk::store::SerializableEventContent;
-    use matrix_sdk::ruma::events::{AnyMessageLikeEventContent, room::message::RoomMessageEventContent};
 
     #[test]
     fn none_returns_none() {
@@ -5704,8 +6562,10 @@ mod tests_latest_event_body {
                 "sender": "@alice:example.com",
                 "origin_server_ts": 1000,
                 "content": { "msgtype": "m.text", "body": "hello world" }
-            }).to_string()
-        ).unwrap();
+            })
+            .to_string(),
+        )
+        .unwrap();
         let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
         assert_eq!(latest_event_body(&value), Some("hello world".to_owned()));
     }
@@ -5724,8 +6584,10 @@ mod tests_latest_event_body {
                     "body": "photo.jpg",
                     "url": "mxc://example.com/abc"
                 }
-            }).to_string()
-        ).unwrap();
+            })
+            .to_string(),
+        )
+        .unwrap();
         let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
         assert_eq!(latest_event_body(&value), Some("photo.jpg".to_owned()));
     }
@@ -5741,8 +6603,10 @@ mod tests_latest_event_body {
                 "state_key": "@alice:example.com",
                 "origin_server_ts": 1000,
                 "content": { "membership": "join" }
-            }).to_string()
-        ).unwrap();
+            })
+            .to_string(),
+        )
+        .unwrap();
         let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
         assert_eq!(latest_event_body(&value), None);
     }
@@ -5757,33 +6621,36 @@ mod tests_latest_event_body {
                 "sender": "@alice:example.com",
                 "origin_server_ts": 1000,
                 "content": { "msgtype": "m.text", "body": "   " }
-            }).to_string()
-        ).unwrap();
+            })
+            .to_string(),
+        )
+        .unwrap();
         let value = LatestEventValue::Remote(RemoteLatestEventValue::from_plaintext(raw));
         assert_eq!(latest_event_body(&value), None);
     }
 
     #[test]
     fn local_is_sending_text_returns_body() {
-        let content = SerializableEventContent::new(
-            &AnyMessageLikeEventContent::RoomMessage(
-                RoomMessageEventContent::text_plain("sending\u{2026}")
-            )
-        ).unwrap();
+        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
+            RoomMessageEventContent::text_plain("sending\u{2026}"),
+        ))
+        .unwrap();
         let value = LatestEventValue::LocalIsSending(LocalLatestEventValue {
             timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
             content,
         });
-        assert_eq!(latest_event_body(&value), Some("sending\u{2026}".to_owned()));
+        assert_eq!(
+            latest_event_body(&value),
+            Some("sending\u{2026}".to_owned())
+        );
     }
 
     #[test]
     fn local_cannot_be_sent_returns_body() {
-        let content = SerializableEventContent::new(
-            &AnyMessageLikeEventContent::RoomMessage(
-                RoomMessageEventContent::text_plain("stuck message")
-            )
-        ).unwrap();
+        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
+            RoomMessageEventContent::text_plain("stuck message"),
+        ))
+        .unwrap();
         let value = LatestEventValue::LocalCannotBeSent(LocalLatestEventValue {
             timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
             content,
@@ -5794,11 +6661,10 @@ mod tests_latest_event_body {
     #[test]
     fn local_has_been_sent_returns_body() {
         use matrix_sdk::ruma::owned_event_id;
-        let content = SerializableEventContent::new(
-            &AnyMessageLikeEventContent::RoomMessage(
-                RoomMessageEventContent::text_plain("sent!")
-            )
-        ).unwrap();
+        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::RoomMessage(
+            RoomMessageEventContent::text_plain("sent!"),
+        ))
+        .unwrap();
         let value = LatestEventValue::LocalHasBeenSent {
             event_id: owned_event_id!("$ev_sent"),
             value: LocalLatestEventValue {

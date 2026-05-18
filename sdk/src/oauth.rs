@@ -26,9 +26,7 @@ use std::{
 use anyhow::{anyhow, bail, Context as _};
 use matrix_sdk::{
     authentication::oauth::{
-        registration::{
-            ApplicationType, ClientMetadata, Localized, OAuthGrantType,
-        },
+        registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType},
         ClientRegistrationData,
     },
     utils::UrlOrQuery,
@@ -58,41 +56,36 @@ fn build_device_display_name() -> Option<String> {
 /// State carried between `begin` and `await_callback`.
 pub struct PendingFlow {
     /// The half-built client; `finish_login` populates it with tokens.
-    pub client:        Client,
+    pub client: Client,
     /// Listener that owns the local TCP socket; consumed by `await_callback`.
-    pub server:        Arc<Server>,
+    pub server: Arc<Server>,
     /// Path component the SDK was configured to redirect to.
     pub redirect_path: String,
     /// Cooperative cancel flag; tripped by `cancel()`.
-    pub cancel:        Arc<AtomicBool>,
+    pub cancel: Arc<AtomicBool>,
 }
 
 /// Output of `begin`.
 pub struct BeginResult {
-    pub auth_url:     String,
+    pub auth_url: String,
     pub redirect_uri: String,
-    pub flow:         PendingFlow,
+    pub flow: PendingFlow,
 }
 
 /// Phase 1 — bind the loopback socket, register the client, build the auth URL.
-pub async fn begin(
-    homeserver: &str,
-    sqlite_path: &std::path::Path,
-) -> anyhow::Result<BeginResult> {
+pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::Result<BeginResult> {
     // 1. Pick an ephemeral port. We bind first so we know the port number
     //    *before* asking the SDK to embed it in the redirect URI.
-    let std_listener = TcpListener::bind("127.0.0.1:0")
-        .context("bind loopback redirect listener")?;
+    let std_listener =
+        TcpListener::bind("127.0.0.1:0").context("bind loopback redirect listener")?;
     std_listener.set_nonblocking(false).ok();
     let local_addr: SocketAddr = std_listener.local_addr()?;
-    let server = Arc::new(
-        Server::from_listener(std_listener, None)
-            .map_err(|e| anyhow!("tiny_http: {e}"))?,
-    );
+    let server =
+        Arc::new(Server::from_listener(std_listener, None).map_err(|e| anyhow!("tiny_http: {e}"))?);
 
     let redirect_path = "/callback".to_owned();
-    let redirect_uri  = format!("http://{local_addr}{redirect_path}");
-    let redirect_url  = Url::parse(&redirect_uri).expect("redirect URI parse");
+    let redirect_uri = format!("http://{local_addr}{redirect_path}");
+    let redirect_url = Url::parse(&redirect_uri).expect("redirect URI parse");
 
     // 2. Build the SDK client. `server_name_or_homeserver_url` accepts
     //    either `matrix.org` or `https://matrix.org` and performs
@@ -114,10 +107,7 @@ pub async fn begin(
                 redirect_uris: vec![redirect_url.clone()],
             }],
             // client_uri – purely informational; required to be a valid URL.
-            Localized::new(
-                Url::parse("https://github.com/").expect("client_uri"),
-                [],
-            ),
+            Localized::new(Url::parse("https://github.com/").expect("client_uri"), []),
         )
     };
     let raw_metadata = matrix_sdk::ruma::serde::Raw::new(&metadata)
@@ -133,19 +123,27 @@ pub async fn begin(
     //    `Client` until `finish_login` is called on the same instance.
     let mut auth_data = client
         .oauth()
-        .login(redirect_url, None /* device_id */, Some(registration_data), None /* additional_scopes */)
+        .login(
+            redirect_url,
+            None, /* device_id */
+            Some(registration_data),
+            None, /* additional_scopes */
+        )
         .build()
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;
 
     if let Some(name) = build_device_display_name() {
-        auth_data.url.query_pairs_mut().append_pair("device_display_name", &name);
+        auth_data
+            .url
+            .query_pairs_mut()
+            .append_pair("device_display_name", &name);
     }
 
     Ok(BeginResult {
-        auth_url:     auth_data.url.to_string(),
+        auth_url: auth_data.url.to_string(),
         redirect_uri,
-        flow:         PendingFlow {
+        flow: PendingFlow {
             client,
             server,
             redirect_path,
@@ -157,9 +155,9 @@ pub async fn begin(
 /// Phase 2 — block the worker thread until the browser hits the loopback
 /// redirect, then ask the SDK to finalise the login.
 pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
-    let server  = flow.server.clone();
-    let cancel  = flow.cancel.clone();
-    let path    = flow.redirect_path.clone();
+    let server = flow.server.clone();
+    let cancel = flow.cancel.clone();
+    let path = flow.redirect_path.clone();
 
     // tiny_http is sync; run it in a blocking task and return the captured
     // query string.
@@ -170,11 +168,11 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
             }
             // Poll with a short timeout so we observe `cancel` promptly.
             match server.recv_timeout(Duration::from_millis(250))? {
-                None      => continue,
+                None => continue,
                 Some(req) => {
                     if req.method() != &Method::Get || !req.url().starts_with(&path) {
-                        let _ = req.respond(Response::from_string("Not found")
-                            .with_status_code(404));
+                        let _ =
+                            req.respond(Response::from_string("Not found").with_status_code(404));
                         continue;
                     }
                     // Capture the URL with its query string before we respond.
@@ -187,12 +185,11 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
                         HTML_SUCCESS
                     };
                     let _ = req.respond(
-                        Response::from_string(body)
-                            .with_header(
-                                "Content-Type: text/html; charset=utf-8"
-                                    .parse::<tiny_http::Header>()
-                                    .unwrap(),
-                            ),
+                        Response::from_string(body).with_header(
+                            "Content-Type: text/html; charset=utf-8"
+                                .parse::<tiny_http::Header>()
+                                .unwrap(),
+                        ),
                     );
                     return Ok(captured);
                 }
@@ -224,8 +221,7 @@ pub async fn await_callback(flow: PendingFlow) -> anyhow::Result<Client> {
         hostname::get().ok().and_then(|h| h.into_string().ok()),
     ) {
         use ruma::api::client::device::update_device::v3;
-        let display_name = build_device_display_name()
-            .unwrap_or_else(|| "Tesseract".to_owned());
+        let display_name = build_device_display_name().unwrap_or_else(|| "Tesseract".to_owned());
         let mut req = v3::Request::new(device_id.to_owned());
         req.display_name = Some(display_name.clone());
         if let Err(e) = flow.client.send(req).await {
@@ -272,8 +268,7 @@ pub fn cancel(flow: &PendingFlow) {
         let _ = thread::Builder::new()
             .name("oauth-cancel-poke".into())
             .spawn(move || {
-                let _ = std::net::TcpStream::connect_timeout(
-                    &addr, Duration::from_millis(250));
+                let _ = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(250));
             });
     }
 }

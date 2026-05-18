@@ -25,9 +25,9 @@
 
 use serde_json::{json, Map, Value};
 
-pub const TYPE_STABLE:   &str = "m.recent_emoji";
+pub const TYPE_STABLE: &str = "m.recent_emoji";
 pub const TYPE_UNSTABLE: &str = "io.github.johennes.msc4356.recent_emoji";
-pub const TYPE_LEGACY:   &str = "io.element.recent_emoji";
+pub const TYPE_LEGACY: &str = "io.element.recent_emoji";
 
 /// MSC4356 RECOMMENDS clients trim to 100 entries. The picker only ever
 /// reads the top-N (N << 100) so the cap exists purely to keep the
@@ -54,12 +54,23 @@ pub fn parse_msc4356(raw: &Value) -> Vec<Entry> {
     let mut out: Vec<Entry> = Vec::with_capacity(arr.len());
     let mut seen = std::collections::HashSet::<String>::new();
     for item in arr {
-        let Some(obj) = item.as_object() else { continue };
-        let Some(emoji) = obj.get("emoji").and_then(Value::as_str) else { continue };
-        if emoji.is_empty() { continue }
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let Some(emoji) = obj.get("emoji").and_then(Value::as_str) else {
+            continue;
+        };
+        if emoji.is_empty() {
+            continue;
+        }
         let total = obj.get("total").and_then(Value::as_u64).unwrap_or(0);
-        if !seen.insert(emoji.to_owned()) { continue }
-        out.push(Entry { emoji: emoji.to_owned(), total });
+        if !seen.insert(emoji.to_owned()) {
+            continue;
+        }
+        out.push(Entry {
+            emoji: emoji.to_owned(),
+            total,
+        });
     }
     out
 }
@@ -84,23 +95,42 @@ pub fn parse_legacy_element(raw: &Value) -> Vec<Entry> {
         let mut out: Vec<Entry> = Vec::with_capacity(arr.len());
         let mut seen = std::collections::HashSet::<String>::new();
         for item in arr {
-            let Some(pair) = item.as_array() else { continue };
-            if pair.len() < 2 { continue }
-            let Some(emoji) = pair[0].as_str() else { continue };
-            if emoji.is_empty() { continue }
+            let Some(pair) = item.as_array() else {
+                continue;
+            };
+            if pair.len() < 2 {
+                continue;
+            }
+            let Some(emoji) = pair[0].as_str() else {
+                continue;
+            };
+            if emoji.is_empty() {
+                continue;
+            }
             let total = pair[1].as_u64().unwrap_or(0);
-            if !seen.insert(emoji.to_owned()) { continue }
-            out.push(Entry { emoji: emoji.to_owned(), total });
+            if !seen.insert(emoji.to_owned()) {
+                continue;
+            }
+            out.push(Entry {
+                emoji: emoji.to_owned(),
+                total,
+            });
         }
         return out;
     }
 
     // Object-map form.
     if let Some(obj) = inner.as_object() {
-        let mut out: Vec<Entry> = obj.iter()
+        let mut out: Vec<Entry> = obj
+            .iter()
             .filter_map(|(k, v)| {
-                if k.is_empty() { return None }
-                Some(Entry { emoji: k.clone(), total: v.as_u64().unwrap_or(0) })
+                if k.is_empty() {
+                    return None;
+                }
+                Some(Entry {
+                    emoji: k.clone(),
+                    total: v.as_u64().unwrap_or(0),
+                })
             })
             .collect();
         // Object iteration order is unspecified; sort by count desc for a
@@ -116,7 +146,9 @@ pub fn parse_legacy_element(raw: &Value) -> Vec<Entry> {
 /// or insert a fresh `{ emoji: glyph, total: 1 }` at the front. Truncates
 /// to [`MAX_ENTRIES`] from the tail. No-op when `glyph` is empty.
 pub fn bump(mut entries: Vec<Entry>, glyph: &str) -> Vec<Entry> {
-    if glyph.is_empty() { return entries; }
+    if glyph.is_empty() {
+        return entries;
+    }
 
     let existing = entries.iter().position(|e| e.emoji == glyph);
     match existing {
@@ -126,7 +158,13 @@ pub fn bump(mut entries: Vec<Entry>, glyph: &str) -> Vec<Entry> {
             entries.insert(0, e);
         }
         None => {
-            entries.insert(0, Entry { emoji: glyph.to_owned(), total: 1 });
+            entries.insert(
+                0,
+                Entry {
+                    emoji: glyph.to_owned(),
+                    total: 1,
+                },
+            );
         }
     }
     if entries.len() > MAX_ENTRIES {
@@ -140,11 +178,14 @@ pub fn bump(mut entries: Vec<Entry>, glyph: &str) -> Vec<Entry> {
 /// and most-used-first matches the existing UX. Ties preserve input order
 /// (so MSC4356's most-recent-first ordering breaks ties naturally).
 pub fn top_by_count(entries: &[Entry], n: usize) -> Vec<String> {
-    if n == 0 || entries.is_empty() { return Vec::new(); }
+    if n == 0 || entries.is_empty() {
+        return Vec::new();
+    }
     let mut indexed: Vec<(usize, &Entry)> = entries.iter().enumerate().collect();
     // Stable sort: by total desc, tie-break by original index asc.
     indexed.sort_by(|a, b| b.1.total.cmp(&a.1.total).then(a.0.cmp(&b.0)));
-    indexed.into_iter()
+    indexed
+        .into_iter()
         .take(n)
         .map(|(_, e)| e.emoji.clone())
         .collect()
@@ -183,15 +224,33 @@ mod tests {
         });
         let entries = parse_msc4356(&raw);
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0], Entry { emoji: "😀".into(), total: 5 });
-        assert_eq!(entries[1], Entry { emoji: "🎉".into(), total: 2 });
+        assert_eq!(
+            entries[0],
+            Entry {
+                emoji: "😀".into(),
+                total: 5
+            }
+        );
+        assert_eq!(
+            entries[1],
+            Entry {
+                emoji: "🎉".into(),
+                total: 2
+            }
+        );
     }
 
     #[test]
     fn parse_msc4356_round_trips_through_serialize() {
         let entries = vec![
-            Entry { emoji: "🚀".into(), total: 7 },
-            Entry { emoji: "👋".into(), total: 1 },
+            Entry {
+                emoji: "🚀".into(),
+                total: 7,
+            },
+            Entry {
+                emoji: "👋".into(),
+                total: 1,
+            },
         ];
         let raw = serialize_msc4356(&entries);
         let parsed = parse_msc4356(&raw);
@@ -211,10 +270,19 @@ mod tests {
             ]
         });
         let entries = parse_msc4356(&raw);
-        assert_eq!(entries, vec![
-            Entry { emoji: "😀".into(), total: 3 },
-            Entry { emoji: "🎉".into(), total: 0 },
-        ]);
+        assert_eq!(
+            entries,
+            vec![
+                Entry {
+                    emoji: "😀".into(),
+                    total: 3
+                },
+                Entry {
+                    emoji: "🎉".into(),
+                    total: 0
+                },
+            ]
+        );
     }
 
     #[test]
@@ -251,10 +319,19 @@ mod tests {
             ]
         });
         let entries = parse_legacy_element(&raw);
-        assert_eq!(entries, vec![
-            Entry { emoji: "😀".into(), total: 5 },
-            Entry { emoji: "🚀".into(), total: 7 },
-        ]);
+        assert_eq!(
+            entries,
+            vec![
+                Entry {
+                    emoji: "😀".into(),
+                    total: 5
+                },
+                Entry {
+                    emoji: "🚀".into(),
+                    total: 7
+                },
+            ]
+        );
     }
 
     #[test]
@@ -267,9 +344,27 @@ mod tests {
         // Object iteration order is undefined in JSON; the parser sorts
         // count desc so we can rely on this even though the input map
         // could come in any order.
-        assert_eq!(entries[0], Entry { emoji: "😀".into(), total: 10 });
-        assert_eq!(entries[1], Entry { emoji: "🔥".into(), total: 7 });
-        assert_eq!(entries[2], Entry { emoji: "🎉".into(), total: 3 });
+        assert_eq!(
+            entries[0],
+            Entry {
+                emoji: "😀".into(),
+                total: 10
+            }
+        );
+        assert_eq!(
+            entries[1],
+            Entry {
+                emoji: "🔥".into(),
+                total: 7
+            }
+        );
+        assert_eq!(
+            entries[2],
+            Entry {
+                emoji: "🎉".into(),
+                total: 3
+            }
+        );
     }
 
     #[test]
@@ -281,33 +376,69 @@ mod tests {
 
     #[test]
     fn bump_inserts_new_glyph_at_front() {
-        let entries = vec![Entry { emoji: "😀".into(), total: 5 }];
+        let entries = vec![Entry {
+            emoji: "😀".into(),
+            total: 5,
+        }];
         let out = bump(entries, "🎉");
-        assert_eq!(out, vec![
-            Entry { emoji: "🎉".into(), total: 1 },
-            Entry { emoji: "😀".into(), total: 5 },
-        ]);
+        assert_eq!(
+            out,
+            vec![
+                Entry {
+                    emoji: "🎉".into(),
+                    total: 1
+                },
+                Entry {
+                    emoji: "😀".into(),
+                    total: 5
+                },
+            ]
+        );
     }
 
     #[test]
     fn bump_promotes_existing_glyph_and_increments() {
         let entries = vec![
-            Entry { emoji: "😀".into(), total: 5 },
-            Entry { emoji: "🎉".into(), total: 2 },
-            Entry { emoji: "🔥".into(), total: 7 },
+            Entry {
+                emoji: "😀".into(),
+                total: 5,
+            },
+            Entry {
+                emoji: "🎉".into(),
+                total: 2,
+            },
+            Entry {
+                emoji: "🔥".into(),
+                total: 7,
+            },
         ];
         let out = bump(entries, "🎉");
-        assert_eq!(out, vec![
-            Entry { emoji: "🎉".into(), total: 3 },
-            Entry { emoji: "😀".into(), total: 5 },
-            Entry { emoji: "🔥".into(), total: 7 },
-        ]);
+        assert_eq!(
+            out,
+            vec![
+                Entry {
+                    emoji: "🎉".into(),
+                    total: 3
+                },
+                Entry {
+                    emoji: "😀".into(),
+                    total: 5
+                },
+                Entry {
+                    emoji: "🔥".into(),
+                    total: 7
+                },
+            ]
+        );
     }
 
     #[test]
     fn bump_truncates_to_max_entries() {
         let mut entries: Vec<Entry> = (0..MAX_ENTRIES)
-            .map(|i| Entry { emoji: format!("e{}", i), total: 1 })
+            .map(|i| Entry {
+                emoji: format!("e{}", i),
+                total: 1,
+            })
             .collect();
         // Insert a fresh glyph — the oldest tail entry should fall off.
         entries = bump(entries, "🆕");
@@ -315,19 +446,28 @@ mod tests {
         assert_eq!(entries[0].emoji, "🆕");
         // The original last entry ("e99") is now at index MAX-2; the
         // tail of the input ("e99") used to be there before insertion.
-        assert_eq!(entries.last().unwrap().emoji, format!("e{}", MAX_ENTRIES - 2));
+        assert_eq!(
+            entries.last().unwrap().emoji,
+            format!("e{}", MAX_ENTRIES - 2)
+        );
     }
 
     #[test]
     fn bump_is_noop_on_empty_glyph() {
-        let entries = vec![Entry { emoji: "😀".into(), total: 3 }];
+        let entries = vec![Entry {
+            emoji: "😀".into(),
+            total: 3,
+        }];
         let out = bump(entries.clone(), "");
         assert_eq!(out, entries);
     }
 
     #[test]
     fn bump_saturates_at_u64_max() {
-        let entries = vec![Entry { emoji: "😀".into(), total: u64::MAX }];
+        let entries = vec![Entry {
+            emoji: "😀".into(),
+            total: u64::MAX,
+        }];
         let out = bump(entries, "😀");
         assert_eq!(out[0].total, u64::MAX);
     }
@@ -335,35 +475,61 @@ mod tests {
     #[test]
     fn top_by_count_stable_sorts_desc() {
         let entries = vec![
-            Entry { emoji: "a".into(), total: 1 },
-            Entry { emoji: "b".into(), total: 5 },
-            Entry { emoji: "c".into(), total: 3 },
-            Entry { emoji: "d".into(), total: 5 },   // tie with b — keep b first
+            Entry {
+                emoji: "a".into(),
+                total: 1,
+            },
+            Entry {
+                emoji: "b".into(),
+                total: 5,
+            },
+            Entry {
+                emoji: "c".into(),
+                total: 3,
+            },
+            Entry {
+                emoji: "d".into(),
+                total: 5,
+            }, // tie with b — keep b first
         ];
-        assert_eq!(top_by_count(&entries, 3),
-                   vec!["b".to_owned(), "d".to_owned(), "c".to_owned()]);
+        assert_eq!(
+            top_by_count(&entries, 3),
+            vec!["b".to_owned(), "d".to_owned(), "c".to_owned()]
+        );
     }
 
     #[test]
     fn top_by_count_clamps_n() {
-        let entries = vec![Entry { emoji: "a".into(), total: 1 }];
+        let entries = vec![Entry {
+            emoji: "a".into(),
+            total: 1,
+        }];
         assert_eq!(top_by_count(&entries, 0), Vec::<String>::new());
         assert_eq!(top_by_count(&entries, 99), vec!["a".to_owned()]);
-        assert_eq!(top_by_count(&[], 5),    Vec::<String>::new());
+        assert_eq!(top_by_count(&[], 5), Vec::<String>::new());
     }
 
     #[test]
     fn serialize_emits_canonical_shape() {
         let entries = vec![
-            Entry { emoji: "😀".into(), total: 5 },
-            Entry { emoji: "🎉".into(), total: 2 },
+            Entry {
+                emoji: "😀".into(),
+                total: 5,
+            },
+            Entry {
+                emoji: "🎉".into(),
+                total: 2,
+            },
         ];
         let v = serialize_msc4356(&entries);
-        assert_eq!(v, json!({
-            "recent_emoji": [
-                { "emoji": "😀", "total": 5 },
-                { "emoji": "🎉", "total": 2 },
-            ]
-        }));
+        assert_eq!(
+            v,
+            json!({
+                "recent_emoji": [
+                    { "emoji": "😀", "total": 5 },
+                    { "emoji": "🎉", "total": 2 },
+                ]
+            })
+        );
     }
 }

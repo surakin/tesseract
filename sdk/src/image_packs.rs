@@ -28,7 +28,9 @@ fn empty_object() -> Value {
 /// cache; anything that is not a well-formed mxc URI (`http://`,
 /// `javascript:`, …) must never reach that layer.
 pub fn is_valid_mxc(s: &str) -> bool {
-    let Some(rest) = s.strip_prefix("mxc://") else { return false };
+    let Some(rest) = s.strip_prefix("mxc://") else {
+        return false;
+    };
     let mut parts = rest.splitn(2, '/');
     match (parts.next(), parts.next()) {
         (Some(server), Some(media_id)) => {
@@ -54,8 +56,11 @@ pub struct PackImage {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub usage: Option<Vec<String>>,
 
-    #[serde(rename = "im.tesseract.favorite",
-            skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "im.tesseract.favorite",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub favorite: Option<bool>,
 
     #[serde(flatten)]
@@ -64,43 +69,47 @@ pub struct PackImage {
 
 /// Convert a `usage` array of strings (from `PackImage`) to a bitmask.
 fn usage_strs_to_mask(strs: &[String]) -> u8 {
-    if strs.is_empty() { return USAGE_ANY; }
+    if strs.is_empty() {
+        return USAGE_ANY;
+    }
     let mut mask = 0u8;
     for s in strs {
         match s.as_str() {
-            "sticker"  => mask |= USAGE_STICKER,
+            "sticker" => mask |= USAGE_STICKER,
             "emoticon" => mask |= USAGE_EMOTICON,
             _ => {}
         }
     }
-    if mask == 0 { USAGE_ANY } else { mask }
+    if mask == 0 {
+        USAGE_ANY
+    } else {
+        mask
+    }
 }
 
-pub const USAGE_STICKER:  u8 = 1 << 0;
+pub const USAGE_STICKER: u8 = 1 << 0;
 pub const USAGE_EMOTICON: u8 = 1 << 1;
-pub const USAGE_ANY:      u8 = USAGE_STICKER | USAGE_EMOTICON;
+pub const USAGE_ANY: u8 = USAGE_STICKER | USAGE_EMOTICON;
 
 // MSC2545 (merged) defines stable types for the per-room pack and the
 // enabled-rooms list, each with an `im.ponies.*` unstable equivalent. It
 // does NOT define a personal account-data pack at all — `im.ponies.user_emotes`
 // is a de-facto Element/Cinny extension with no stable name, so it has a
 // single identifier.
-pub const TYPE_USER_PACK:            &str = "im.ponies.user_emotes";
+pub const TYPE_USER_PACK: &str = "im.ponies.user_emotes";
 
-pub const TYPE_EMOTE_ROOMS_STABLE:   &str = "m.image_pack.rooms";
+pub const TYPE_EMOTE_ROOMS_STABLE: &str = "m.image_pack.rooms";
 pub const TYPE_EMOTE_ROOMS_UNSTABLE: &str = "im.ponies.emote_rooms";
-pub const TYPE_ROOM_PACK_STABLE:     &str = "m.room.image_pack";
-pub const TYPE_ROOM_PACK_UNSTABLE:   &str = "im.ponies.room_emotes";
+pub const TYPE_ROOM_PACK_STABLE: &str = "m.room.image_pack";
+pub const TYPE_ROOM_PACK_UNSTABLE: &str = "im.ponies.room_emotes";
 
 /// Identifier precedence for the two MSC2545 types that have a stable form:
 /// **stable first** (preferred now the MSC is merged), unstable as the
 /// compat fallback. Reads iterate these and take the first hit; future
 /// writers must dual-write every entry (see `set_account_data_both`) until
 /// the ecosystem has fully migrated off the unstable names.
-pub const EMOTE_ROOMS_TYPES: [&str; 2] =
-    [TYPE_EMOTE_ROOMS_STABLE, TYPE_EMOTE_ROOMS_UNSTABLE];
-pub const ROOM_PACK_TYPES: [&str; 2] =
-    [TYPE_ROOM_PACK_STABLE, TYPE_ROOM_PACK_UNSTABLE];
+pub const EMOTE_ROOMS_TYPES: [&str; 2] = [TYPE_EMOTE_ROOMS_STABLE, TYPE_EMOTE_ROOMS_UNSTABLE];
+pub const ROOM_PACK_TYPES: [&str; 2] = [TYPE_ROOM_PACK_STABLE, TYPE_ROOM_PACK_UNSTABLE];
 
 /// Tesseract-private flag stored alongside image entries to mark favorites.
 /// Spec is open about unknown keys; other clients ignore it.
@@ -115,35 +124,44 @@ pub enum PackSource {
 #[derive(Debug, Clone)]
 pub struct ImageEntry {
     pub shortcode: String,
-    pub url:       String,
-    pub body:      String,
+    pub url: String,
+    pub body: String,
     /// JSON-serialised `info` object — `"{}"` when the entry has no info.
     pub info_json: String,
     /// Bitmask of `USAGE_STICKER` and `USAGE_EMOTICON`. Always non-zero.
-    pub usage:     u8,
-    pub favorite:  bool,
+    pub usage: u8,
+    pub favorite: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct ImagePack {
-    pub id:           String,
+    pub id: String,
     pub display_name: String,
-    pub avatar_url:   String,
-    pub attribution:  String,
-    pub usage:        u8,
-    pub source:       PackSource,
-    pub images:       Vec<ImageEntry>,
+    pub avatar_url: String,
+    pub attribution: String,
+    pub usage: u8,
+    pub source: PackSource,
+    pub images: Vec<ImageEntry>,
 }
 
 impl ImagePack {
     pub fn source_kind(&self) -> &'static str {
-        match self.source { PackSource::User => "user", PackSource::Room { .. } => "room" }
+        match self.source {
+            PackSource::User => "user",
+            PackSource::Room { .. } => "room",
+        }
     }
     pub fn source_room(&self) -> &str {
-        match &self.source { PackSource::Room { room_id, .. } => room_id, _ => "" }
+        match &self.source {
+            PackSource::Room { room_id, .. } => room_id,
+            _ => "",
+        }
     }
     pub fn source_state_key(&self) -> &str {
-        match &self.source { PackSource::Room { state_key, .. } => state_key, _ => "" }
+        match &self.source {
+            PackSource::Room { state_key, .. } => state_key,
+            _ => "",
+        }
     }
 }
 
@@ -151,18 +169,24 @@ impl ImagePack {
 /// "any usage allowed" per MSC2545; an array containing only unknown values
 /// is treated the same way (forwards-compat).
 fn usage_array_to_mask(arr: &[Value]) -> u8 {
-    if arr.is_empty() { return USAGE_ANY; }
+    if arr.is_empty() {
+        return USAGE_ANY;
+    }
     let mut mask = 0u8;
     for v in arr {
         if let Some(s) = v.as_str() {
             match s {
-                "sticker"  => mask |= USAGE_STICKER,
+                "sticker" => mask |= USAGE_STICKER,
                 "emoticon" => mask |= USAGE_EMOTICON,
                 _ => {}
             }
         }
     }
-    if mask == 0 { USAGE_ANY } else { mask }
+    if mask == 0 {
+        USAGE_ANY
+    } else {
+        mask
+    }
 }
 
 /// Parse the `content` of an image pack event (user account_data, or
@@ -171,13 +195,9 @@ fn usage_array_to_mask(arr: &[Value]) -> u8 {
 /// Returns `None` when `images` is missing or not an object — per spec
 /// `images` is required; a content lacking it is malformed and the pack is
 /// discarded rather than surfaced as empty.
-pub fn parse_pack_content(
-    id:      String,
-    source:  PackSource,
-    content: &Value,
-) -> Option<ImagePack> {
+pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Option<ImagePack> {
     let images_obj = content.get("images")?.as_object()?;
-    let pack_obj   = content.get("pack").and_then(Value::as_object);
+    let pack_obj = content.get("pack").and_then(Value::as_object);
 
     let display_name = pack_obj
         .and_then(|p| p.get("display_name").and_then(Value::as_str))
@@ -200,19 +220,25 @@ pub fn parse_pack_content(
 
     let mut entries: Vec<ImageEntry> = Vec::with_capacity(images_obj.len());
     for (shortcode, img) in images_obj {
-        let Ok(pack_img) = serde_json::from_value::<PackImage>(img.clone()) else { continue };
-        if !is_valid_mxc(&pack_img.url) { continue; }
+        let Ok(pack_img) = serde_json::from_value::<PackImage>(img.clone()) else {
+            continue;
+        };
+        if !is_valid_mxc(&pack_img.url) {
+            continue;
+        }
         let info_json = serde_json::to_string(&pack_img.info).unwrap_or_else(|_| "{}".to_owned());
-        let usage = pack_img.usage.as_deref()
+        let usage = pack_img
+            .usage
+            .as_deref()
             .map(usage_strs_to_mask)
             .unwrap_or(pack_usage);
         entries.push(ImageEntry {
             shortcode: shortcode.clone(),
-            url:       pack_img.url,
-            body:      pack_img.body,
+            url: pack_img.url,
+            body: pack_img.body,
             info_json,
             usage,
-            favorite:  pack_img.favorite.unwrap_or(false),
+            favorite: pack_img.favorite.unwrap_or(false),
         });
     }
 
@@ -233,7 +259,9 @@ pub fn parse_pack_content(
 /// degenerate shape some clients write where the inner value is `null`.
 pub fn iter_emote_rooms(content: &Value) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let Some(rooms) = content.get("rooms").and_then(Value::as_object) else { return out; };
+    let Some(rooms) = content.get("rooms").and_then(Value::as_object) else {
+        return out;
+    };
     for (room_id, val) in rooms {
         if let Some(inner) = val.as_object() {
             for state_key in inner.keys() {
@@ -280,8 +308,8 @@ pub fn upsert_image_into_user_pack(
     favorite: Option<bool>,
     default_pack_name: &str,
 ) -> Value {
-    let info: Value = serde_json::from_str(info_json)
-        .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+    let info: Value =
+        serde_json::from_str(info_json).unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
 
     if !content.is_object() {
         content = Value::Object(serde_json::Map::new());
@@ -290,13 +318,18 @@ pub fn upsert_image_into_user_pack(
 
     // Ensure `pack.display_name` is set on first write.
     {
-        let pack_entry = obj.entry("pack").or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let pack_entry = obj
+            .entry("pack")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
         if let Some(pack) = pack_entry.as_object_mut() {
-            pack.entry("display_name").or_insert_with(|| Value::String(default_pack_name.to_owned()));
+            pack.entry("display_name")
+                .or_insert_with(|| Value::String(default_pack_name.to_owned()));
         }
     }
 
-    let images_entry = obj.entry("images").or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let images_entry = obj
+        .entry("images")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
     let Some(images) = images_entry.as_object_mut() else {
         return content;
     };
@@ -308,10 +341,14 @@ pub fn upsert_image_into_user_pack(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
 
-    pack_img.url  = url.to_owned();
-    if !body.is_empty() { pack_img.body = body.to_owned(); }
+    pack_img.url = url.to_owned();
+    if !body.is_empty() {
+        pack_img.body = body.to_owned();
+    }
     pack_img.info = info;
-    if let Some(fav) = favorite { pack_img.favorite = Some(fav); }
+    if let Some(fav) = favorite {
+        pack_img.favorite = Some(fav);
+    }
 
     images.insert(
         shortcode.to_owned(),
@@ -326,7 +363,10 @@ pub fn pack_contains_url(content: &Value, url: &str) -> bool {
     content
         .get("images")
         .and_then(Value::as_object)
-        .map(|imgs| imgs.values().any(|v| v.get("url").and_then(Value::as_str) == Some(url)))
+        .map(|imgs| {
+            imgs.values()
+                .any(|v| v.get("url").and_then(Value::as_str) == Some(url))
+        })
         .unwrap_or(false)
 }
 
@@ -334,20 +374,28 @@ pub fn pack_contains_url(content: &Value, url: &str) -> bool {
 /// Toggles `im.tesseract.favorite` on the first entry whose `url` matches.
 /// Returns `(new_content, new_state)`. When no matching entry exists, the
 /// content is returned unchanged with `false`.
-pub fn toggle_favorite_in_user_pack(
-    mut content: Value,
-    url: &str,
-) -> (Value, bool) {
-    let Some(obj) = content.as_object_mut() else { return (content, false) };
+pub fn toggle_favorite_in_user_pack(mut content: Value, url: &str) -> (Value, bool) {
+    let Some(obj) = content.as_object_mut() else {
+        return (content, false);
+    };
     let Some(images) = obj.get_mut("images").and_then(Value::as_object_mut) else {
         return (content, false);
     };
     let mut new_state = false;
     for (_short, img) in images.iter_mut() {
-        let Some(img_obj) = img.as_object_mut() else { continue };
-        let Some(entry_url) = img_obj.get("url").and_then(Value::as_str) else { continue };
-        if entry_url != url { continue; }
-        let cur = img_obj.get(FAVORITE_KEY).and_then(Value::as_bool).unwrap_or(false);
+        let Some(img_obj) = img.as_object_mut() else {
+            continue;
+        };
+        let Some(entry_url) = img_obj.get("url").and_then(Value::as_str) else {
+            continue;
+        };
+        if entry_url != url {
+            continue;
+        }
+        let cur = img_obj
+            .get(FAVORITE_KEY)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         new_state = !cur;
         img_obj.insert(FAVORITE_KEY.to_owned(), Value::Bool(new_state));
         return (content, new_state);
@@ -362,16 +410,28 @@ pub fn suggest_shortcode(body: &str, existing: &serde_json::Map<String, Value>) 
     let base: String = body
         .chars()
         .filter_map(|c| {
-            if c.is_ascii_alphanumeric() { Some(c.to_ascii_lowercase()) }
-            else if c == ' ' || c == '_' || c == '-' { Some('_') }
-            else { None }
+            if c.is_ascii_alphanumeric() {
+                Some(c.to_ascii_lowercase())
+            } else if c == ' ' || c == '_' || c == '-' {
+                Some('_')
+            } else {
+                None
+            }
         })
         .collect();
-    let base = if base.is_empty() { "sticker".to_owned() } else { base };
-    if !existing.contains_key(&base) { return base; }
+    let base = if base.is_empty() {
+        "sticker".to_owned()
+    } else {
+        base
+    };
+    if !existing.contains_key(&base) {
+        return base;
+    }
     for n in 2..=10_000 {
         let candidate = format!("{base}_{n}");
-        if !existing.contains_key(&candidate) { return candidate; }
+        if !existing.contains_key(&candidate) {
+            return candidate;
+        }
     }
     // Pathological pack (10k collisions). Fall back to a value that cannot
     // already exist rather than overwriting an entry or looping for billions
@@ -477,11 +537,14 @@ mod tests {
         });
         let mut out = iter_emote_rooms(&c);
         out.sort();
-        assert_eq!(out, vec![
-            ("!a:h".into(), "".into()),
-            ("!a:h".into(), "pack1".into()),
-            ("!b:h".into(), "main".into()),
-        ]);
+        assert_eq!(
+            out,
+            vec![
+                ("!a:h".into(), "".into()),
+                ("!a:h".into(), "pack1".into()),
+                ("!b:h".into(), "main".into()),
+            ]
+        );
     }
 
     #[test]
@@ -495,13 +558,22 @@ mod tests {
     fn pack_id_user_is_stable() {
         assert_eq!(pack_id_for(&PackSource::User), "user");
         assert_eq!(
-            pack_id_for(&PackSource::Room { room_id: "!a:h".into(), state_key: "k".into() }),
+            pack_id_for(&PackSource::Room {
+                room_id: "!a:h".into(),
+                state_key: "k".into()
+            }),
             "room:4:!a:h/k"
         );
         // Length prefix keeps ambiguous (room_id, state_key) splits distinct.
         assert_ne!(
-            pack_id_for(&PackSource::Room { room_id: "!a:h".into(), state_key: "b/c".into() }),
-            pack_id_for(&PackSource::Room { room_id: "!a:h/b".into(), state_key: "c".into() }),
+            pack_id_for(&PackSource::Room {
+                room_id: "!a:h".into(),
+                state_key: "b/c".into()
+            }),
+            pack_id_for(&PackSource::Room {
+                room_id: "!a:h/b".into(),
+                state_key: "c".into()
+            }),
         );
     }
 
@@ -517,11 +589,21 @@ mod tests {
             "Saved Stickers",
         );
         let pack = content.get("pack").unwrap().as_object().unwrap();
-        assert_eq!(pack.get("display_name").unwrap().as_str().unwrap(), "Saved Stickers");
-        let img = content.pointer("/images/happy").unwrap().as_object().unwrap();
+        assert_eq!(
+            pack.get("display_name").unwrap().as_str().unwrap(),
+            "Saved Stickers"
+        );
+        let img = content
+            .pointer("/images/happy")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert_eq!(img.get("url").unwrap().as_str().unwrap(), "mxc://h/happy");
         assert_eq!(img.get("body").unwrap().as_str().unwrap(), "Happy");
-        assert_eq!(img.get("info").unwrap().get("w").unwrap().as_u64().unwrap(), 256);
+        assert_eq!(
+            img.get("info").unwrap().get("w").unwrap().as_u64().unwrap(),
+            256
+        );
     }
 
     #[test]
@@ -537,7 +619,11 @@ mod tests {
             "Saved Stickers",
         );
         assert_eq!(
-            content.pointer("/pack/display_name").unwrap().as_str().unwrap(),
+            content
+                .pointer("/pack/display_name")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "Existing"
         );
     }
@@ -547,10 +633,22 @@ mod tests {
         let c = json!({ "images": { "a": { "url": "mxc://h/a" } } });
         let (c, on) = toggle_favorite_in_user_pack(c, "mxc://h/a");
         assert!(on);
-        assert_eq!(c.pointer("/images/a/im.tesseract.favorite").unwrap().as_bool().unwrap(), true);
+        assert_eq!(
+            c.pointer("/images/a/im.tesseract.favorite")
+                .unwrap()
+                .as_bool()
+                .unwrap(),
+            true
+        );
         let (c, on) = toggle_favorite_in_user_pack(c, "mxc://h/a");
         assert!(!on);
-        assert_eq!(c.pointer("/images/a/im.tesseract.favorite").unwrap().as_bool().unwrap(), false);
+        assert_eq!(
+            c.pointer("/images/a/im.tesseract.favorite")
+                .unwrap()
+                .as_bool()
+                .unwrap(),
+            false
+        );
     }
 
     #[test]
@@ -584,7 +682,10 @@ mod tests {
 
     #[test]
     fn pack_contains_url_empty_pack() {
-        assert!(!pack_contains_url(&Value::Object(serde_json::Map::new()), "mxc://h/a"));
+        assert!(!pack_contains_url(
+            &Value::Object(serde_json::Map::new()),
+            "mxc://h/a"
+        ));
         assert!(!pack_contains_url(&Value::Null, "mxc://h/a"));
     }
 
