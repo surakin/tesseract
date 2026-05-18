@@ -250,4 +250,168 @@ void Button::on_pointer_up(Point /*local*/, bool inside_self)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  CheckButton
+// ─────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+
+constexpr float kCbBoxSize  = 18.0f;
+constexpr float kCbBoxRad   = 4.0f;
+constexpr float kCbBorder   = 1.5f;
+constexpr float kCbGap      = 10.0f;
+constexpr float kCbMinH     = 36.0f;
+constexpr float kCbHoverRad = 4.0f;
+
+} // namespace
+
+CheckButton::CheckButton(std::string label, bool checked)
+    : label_(std::move(label)), checked_(checked)
+{
+}
+
+void CheckButton::set_checked(bool checked)
+{
+    checked_ = checked;
+}
+
+void CheckButton::set_enabled(bool enabled)
+{
+    enabled_ = enabled;
+}
+
+Size CheckButton::measure(LayoutCtx& ctx, Size constraints)
+{
+    float avail_w = constraints.w > 0
+                        ? constraints.w - kCbBoxSize - kCbGap
+                        : -1.0f;
+    if (avail_w <= 0.0f)
+        avail_w = -1.0f;
+
+    if (!label_layout_ || cached_max_w_ != avail_w)
+    {
+        TextStyle st{};
+        st.role      = FontRole::Body;
+        st.halign    = TextHAlign::Leading;
+        st.valign    = TextVAlign::Top;
+        st.trim      = TextTrim::Ellipsis;
+        st.max_width = avail_w;
+        label_layout_ = ctx.factory.build_text(label_, st);
+        cached_max_w_ = avail_w;
+        label_size_   = label_layout_ ? label_layout_->measure() : Size{};
+    }
+
+    float h = std::max({kCbBoxSize, label_size_.h, kCbMinH});
+    float w = constraints.w > 0
+                  ? constraints.w
+                  : kCbBoxSize + kCbGap + label_size_.w;
+    return {w, h};
+}
+
+void CheckButton::arrange(LayoutCtx& /*ctx*/, Rect bounds)
+{
+    bounds_ = bounds;
+    float avail_w = std::max(0.0f, bounds.w - kCbBoxSize - kCbGap);
+    if (cached_max_w_ != avail_w)
+    {
+        label_layout_.reset();
+        cached_max_w_ = -2.0f;
+    }
+}
+
+void CheckButton::paint(PaintCtx& ctx)
+{
+    const auto& pal = ctx.theme.palette;
+
+    if (hovered_ || pressed_)
+    {
+        Color bg = pressed_ ? pal.subtle_pressed : pal.subtle_hover;
+        ctx.canvas.fill_rounded_rect(bounds_, kCbHoverRad, bg);
+    }
+
+    float box_y = bounds_.y + (bounds_.h - kCbBoxSize) * 0.5f;
+    Rect  box{bounds_.x, box_y, kCbBoxSize, kCbBoxSize};
+
+    if (checked_)
+    {
+        ctx.canvas.fill_rounded_rect(box, kCbBoxRad, pal.accent);
+        TextStyle st{};
+        st.role      = FontRole::UiSemibold;
+        st.max_width = box.w;
+        auto lo = ctx.factory.build_text("\xE2\x9C\x93", st); // U+2713 ✓
+        if (lo)
+        {
+            Size sz = lo->measure();
+            ctx.canvas.draw_text(*lo,
+                                 {box.x + (box.w - sz.w) * 0.5f,
+                                  box.y + (box.h - sz.h) * 0.5f},
+                                 pal.text_on_accent);
+        }
+    }
+    else
+    {
+        ctx.canvas.fill_rounded_rect(box, kCbBoxRad,
+                                     Color::rgba(0, 0, 0, 0));
+        ctx.canvas.stroke_rounded_rect(box, kCbBoxRad, pal.border, kCbBorder);
+    }
+
+    if (!label_layout_)
+    {
+        float avail_w = std::max(0.0f, bounds_.w - kCbBoxSize - kCbGap);
+        TextStyle st{};
+        st.role      = FontRole::Body;
+        st.halign    = TextHAlign::Leading;
+        st.valign    = TextVAlign::Top;
+        st.trim      = TextTrim::Ellipsis;
+        st.max_width = avail_w;
+        label_layout_ = ctx.factory.build_text(label_, st);
+        label_size_   = label_layout_ ? label_layout_->measure() : Size{};
+        cached_max_w_ = avail_w;
+    }
+    if (label_layout_)
+    {
+        float lx = bounds_.x + kCbBoxSize + kCbGap;
+        float ly = bounds_.y + (bounds_.h - label_size_.h) * 0.5f;
+        ctx.canvas.draw_text(*label_layout_, {lx, ly},
+                             enabled_ ? pal.text_primary : pal.text_muted);
+    }
+}
+
+bool CheckButton::on_pointer_down(Point /*local*/)
+{
+    if (!enabled_)
+        return false;
+    pressed_ = true;
+    return true;
+}
+
+void CheckButton::on_pointer_up(Point /*local*/, bool inside_self)
+{
+    bool was = pressed_;
+    pressed_ = false;
+    if (was && inside_self && enabled_)
+    {
+        checked_ = !checked_;
+        if (on_change)
+            on_change(checked_);
+    }
+}
+
+bool CheckButton::on_pointer_move(Point /*local*/)
+{
+    if (!hovered_)
+    {
+        hovered_ = true;
+        return true;
+    }
+    return false;
+}
+
+void CheckButton::on_pointer_leave()
+{
+    hovered_ = false;
+    pressed_ = false;
+}
+
 } // namespace tk

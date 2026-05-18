@@ -21,6 +21,9 @@ namespace
 constexpr DWORD kDwmaUseImmersiveDarkMode_Pre20H1 = 19;
 constexpr DWORD kDwmaUseImmersiveDarkMode = 20;
 constexpr DWORD kDwmaWindowCornerPreference = 33;
+constexpr DWORD kDwmaBorderColor = 34;
+constexpr DWORD kDwmaCaptionColor = 35;
+constexpr DWORD kDwmaTextColor = 36;
 constexpr DWORD kDwmaSystemBackdropType = 38;
 
 constexpr int kDwmwcpRound = 2;      // DWMWCP_ROUND
@@ -286,6 +289,19 @@ void apply_window_attributes(HWND hwnd)
         DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode_Pre20H1, &dark,
                               sizeof(dark));
     }
+
+    // Title bar colours (Win11 22H2+). Silently ignored on older builds.
+    // CAPTION_COLOR overrides the Mica translucency in the caption area in
+    // favour of a solid chrome that matches the rest of the window.
+    const auto& pal = palette();
+    COLORREF caption = pal.chrome_bg;
+    COLORREF caption_text = pal.text_primary;
+    COLORREF border_col = pal.border;
+    DwmSetWindowAttribute(hwnd, kDwmaCaptionColor, &caption, sizeof(caption));
+    DwmSetWindowAttribute(hwnd, kDwmaTextColor, &caption_text,
+                          sizeof(caption_text));
+    DwmSetWindowAttribute(hwnd, kDwmaBorderColor, &border_col,
+                          sizeof(border_col));
 
     // Mica backdrop (Win11 22H2+). Ignored on older builds.
     int backdrop = kDwmsbtMainWindow;

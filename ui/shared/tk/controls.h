@@ -223,4 +223,41 @@ private:
     Size cached_size_{};
 };
 
+// A labelled two-state checkbox. Hover and press are tracked internally;
+// on_change fires with the new boolean state on every user toggle.
+class CheckButton : public Widget
+{
+public:
+    explicit CheckButton(std::string label, bool checked = false);
+
+    void set_checked(bool checked);
+    bool checked() const
+    {
+        return checked_;
+    }
+    void set_enabled(bool enabled);
+
+    std::function<void(bool)> on_change;
+
+    Size measure(LayoutCtx&, Size constraints) override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint(PaintCtx&) override;
+
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
+
+private:
+    std::string label_;
+    bool checked_ = false;
+    bool enabled_ = true;
+    bool hovered_ = false;
+    bool pressed_ = false;
+
+    std::unique_ptr<TextLayout> label_layout_;
+    float cached_max_w_ = -2.0f;
+    Size label_size_{};
+};
+
 } // namespace tk
