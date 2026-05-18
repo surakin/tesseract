@@ -440,6 +440,8 @@ Expected: zero errors, ctest 323/323, GTK4 clean.
 
 ## Task 6: Shared `UpConnectorCore`
 
+> **STATUS: SKIPPED (2026-05-18)** — normalize_endpoint is not behaviour-equivalent between the Qt6 QUrl implementation and the GTK4 hand-parser; unifying it would change observable push-URL output for edge inputs, violating the behaviour-preserving constraint. Deferred by user decision; sanitize_token + register/remove_pusher were the only safely-unifiable parts and were left in place per-shell.
+
 `LinuxUpConnectorQt` and `LinuxUpConnectorGtk` each reimplement `sanitize_token()`, the push-endpoint normalize rule (require `https://`, non-empty host, force path `/_matrix/push/v1/notify`, strip query/fragment), and the `register_pusher`/`remove_pusher` calls. Extract the pure logic; the QtDBus/GDBus bus glue stays per-shell.
 
 **Files:** new `ui/shared/up_connector_core.{h,cpp}` (or header-only); `ui/shared/CMakeLists.txt` (if a .cpp); `LinuxUpConnector{Qt,Gtk}.cpp`.
