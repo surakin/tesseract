@@ -4577,48 +4577,50 @@ fn first_line(s: &str) -> String {
 
 /// Strip a Matrix `formatted_body` (HTML subset) to its first plain-text
 /// line. Block/break tags become newlines; all other tags are dropped;
-/// the handful of entities Matrix uses are decoded. No external deps.
+/// the handful of entities Matrix uses are decoded. Char-safe (UTF-8).
+/// No external deps.
 fn html_first_line(html: &str) -> String {
-    let mut text = String::with_capacity(html.len());
-    let bytes = html.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
-            let start = i + 1;
-            let mut j = start;
-            while j < bytes.len() && bytes[j] != b'>' {
-                j += 1;
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut tag = String::new();
+    for c in html.chars() {
+        if in_tag {
+            if c == '>' {
+                in_tag = false;
+                let lower = tag.to_ascii_lowercase();
+                let name: String = lower
+                    .trim_start_matches('/')
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect();
+                let breaks = matches!(
+                    name.as_str(),
+                    "br" | "p"
+                        | "div"
+                        | "li"
+                        | "tr"
+                        | "blockquote"
+                        | "h1"
+                        | "h2"
+                        | "h3"
+                        | "h4"
+                        | "h5"
+                        | "h6"
+                );
+                if breaks {
+                    out.push('\n');
+                }
+                tag.clear();
+            } else {
+                tag.push(c);
             }
-            let tag = html[start..j.min(html.len())].to_ascii_lowercase();
-            let name: String = tag
-                .trim_start_matches('/')
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric())
-                .collect();
-            let breaks = matches!(
-                name.as_str(),
-                "br" | "p"
-                    | "div"
-                    | "li"
-                    | "tr"
-                    | "blockquote"
-                    | "h1"
-                    | "h2"
-                    | "h3"
-                    | "h4"
-                    | "h5"
-                    | "h6"
-            );
-            if breaks {
-                text.push('\n');
-            }
-            i = j + 1;
+        } else if c == '<' {
+            in_tag = true;
         } else {
-            text.push(bytes[i] as char);
-            i += 1;
+            out.push(c);
         }
     }
-    let decoded = text
+    let decoded = out
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
@@ -6765,6 +6767,20 @@ mod tests_latest_event_body {
             }
         }));
         assert_eq!(latest_event_preview(&v), text("a & b <c>"));
+    }
+
+    #[test]
+    fn remote_text_formatted_utf8_preserved() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": {
+                "msgtype": "m.text", "body": "x",
+                "format": "org.matrix.custom.html",
+                "formatted_body": "<p>h\u{00e9}llo \u{1f31f} w\u{00f6}rld</p><p>2</p>"
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), text("héllo 🌟 wörld"));
     }
 
     #[test]
