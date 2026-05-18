@@ -8,9 +8,10 @@
 #include <memory>
 #include <string>
 
-namespace {
+namespace
+{
 
-constexpr CGFloat kPanelWidth  = 320;
+constexpr CGFloat kPanelWidth = 320;
 constexpr CGFloat kPanelHeight = 360;
 
 } // namespace
@@ -19,54 +20,71 @@ constexpr CGFloat kPanelHeight = 360;
 // shell the already-created panel for re-theming without force-creating one.
 static EmojiPickerPanel* g_emojiPanel = nil;
 
-@implementation EmojiPickerPanel {
-    std::unique_ptr<tk::macos::Surface>             _surface;
-    tesseract::views::EmojiPicker*                  _shared;        // borrowed
-    std::unique_ptr<tk::NativeTextField>            _searchField;
+@implementation EmojiPickerPanel
+{
+    std::unique_ptr<tk::macos::Surface> _surface;
+    tesseract::views::EmojiPicker* _shared; // borrowed
+    std::unique_ptr<tk::NativeTextField> _searchField;
 }
 
-+ (instancetype)existingPanel { return g_emojiPanel; }
-
-- (void)setTheme:(const tk::Theme&)t {
-    if (_surface) _surface->set_theme(t);
++ (instancetype)existingPanel
+{
+    return g_emojiPanel;
 }
 
-+ (instancetype)sharedPanel {
+- (void)setTheme:(const tk::Theme&)t
+{
+    if (_surface)
+    {
+        _surface->set_theme(t);
+    }
+}
+
++ (instancetype)sharedPanel
+{
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSWindowStyleMask mask = NSWindowStyleMaskTitled
-                                  | NSWindowStyleMaskClosable
-                                  | NSWindowStyleMaskUtilityWindow
-                                  | NSWindowStyleMaskHUDWindow
-                                  | NSWindowStyleMaskNonactivatingPanel;
+        NSWindowStyleMask mask =
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+            NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow |
+            NSWindowStyleMaskNonactivatingPanel;
         NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
-        g_emojiPanel = [[EmojiPickerPanel alloc]
-                   initWithContentRect:frame
-                              styleMask:mask
-                                backing:NSBackingStoreBuffered
-                                  defer:NO];
-        g_emojiPanel.title                  = @"Emoji";
-        g_emojiPanel.floatingPanel          = YES;
+        g_emojiPanel =
+            [[EmojiPickerPanel alloc] initWithContentRect:frame
+                                                styleMask:mask
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+        g_emojiPanel.title = @"Emoji";
+        g_emojiPanel.floatingPanel = YES;
         g_emojiPanel.becomesKeyOnlyIfNeeded = NO;
-        g_emojiPanel.hidesOnDeactivate      = YES;
-        g_emojiPanel.releasedWhenClosed     = NO;
+        g_emojiPanel.hidesOnDeactivate = YES;
+        g_emojiPanel.releasedWhenClosed = NO;
         [g_emojiPanel _setUpContent];
     });
     return g_emojiPanel;
 }
 
-- (void)_setUpContent {
+- (void)_setUpContent
+{
     _surface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
 
     auto shared = std::make_unique<tesseract::views::EmojiPicker>();
     _shared = shared.get();
     __weak EmojiPickerPanel* weakSelf = self;
-    _shared->on_selected = [weakSelf](const std::string& glyph) {
+    _shared->on_selected = [weakSelf](const std::string& glyph)
+    {
         EmojiPickerPanel* s = weakSelf;
-        if (!s) return;
-        if (s.onSelect) {
+        if (!s)
+        {
+            return;
+        }
+        if (s.onSelect)
+        {
             NSString* g = [NSString stringWithUTF8String:glyph.c_str()];
-            if (g) s.onSelect(g);
+            if (g)
+            {
+                s.onSelect(g);
+            }
         }
     };
     _surface->set_root(std::move(shared));
@@ -75,120 +93,207 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     surfaceView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentView addSubview:surfaceView];
     [NSLayoutConstraint activateConstraints:@[
-        [surfaceView.topAnchor      constraintEqualToAnchor:self.contentView.topAnchor],
-        [surfaceView.leadingAnchor  constraintEqualToAnchor:self.contentView.leadingAnchor],
-        [surfaceView.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor],
-        [surfaceView.bottomAnchor   constraintEqualToAnchor:self.contentView.bottomAnchor],
+        [surfaceView.topAnchor
+            constraintEqualToAnchor:self.contentView.topAnchor],
+        [surfaceView.leadingAnchor
+            constraintEqualToAnchor:self.contentView.leadingAnchor],
+        [surfaceView.trailingAnchor
+            constraintEqualToAnchor:self.contentView.trailingAnchor],
+        [surfaceView.bottomAnchor
+            constraintEqualToAnchor:self.contentView.bottomAnchor],
     ]];
 
     _searchField = _surface->host().make_text_field();
     _searchField->set_placeholder("Search emoji");
-    _searchField->set_on_changed([weakSelf](const std::string& q) {
-        EmojiPickerPanel* s = weakSelf;
-        if (s) [s _onSearchChanged:q];
-    });
-    _surface->set_on_layout([weakSelf] {
-        EmojiPickerPanel* s = weakSelf;
-        if (s) [s _positionOverlay];
-    });
+    _searchField->set_on_changed(
+        [weakSelf](const std::string& q)
+        {
+            EmojiPickerPanel* s = weakSelf;
+            if (s)
+            {
+                [s _onSearchChanged:q];
+            }
+        });
+    _surface->set_on_layout(
+        [weakSelf]
+        {
+            EmojiPickerPanel* s = weakSelf;
+            if (s)
+            {
+                [s _positionOverlay];
+            }
+        });
 }
 
-- (void)setClient:(tesseract::Client*)client {
+- (void)setClient:(tesseract::Client*)client
+{
     _client = client;
-    if (_shared) _shared->set_client(client);
+    if (_shared)
+    {
+        _shared->set_client(client);
+    }
 }
 
-- (void)setImageProvider:(std::function<const tk::Image*(const std::string&,
-                                                          const std::string&)>)provider {
-    if (_shared) _shared->set_image_provider(std::move(provider));
+- (void)setImageProvider:
+    (std::function<const tk::Image*(const std::string&, const std::string&)>)
+        provider
+{
+    if (_shared)
+    {
+        _shared->set_image_provider(std::move(provider));
+    }
 }
 
-- (void)invalidateImageCache {
-    if (_shared) _shared->invalidate_image_cache();
-    if (_surface) _surface->relayout();
+- (void)invalidateImageCache
+{
+    if (_shared)
+    {
+        _shared->invalidate_image_cache();
+    }
+    if (_surface)
+    {
+        _surface->relayout();
+    }
 }
 
-- (void)_onSearchChanged:(const std::string&)q {
-    if (_shared) _shared->set_search_query(q);
-    if (_surface) _surface->relayout();
+- (void)_onSearchChanged:(const std::string&)q
+{
+    if (_shared)
+    {
+        _shared->set_search_query(q);
+    }
+    if (_surface)
+    {
+        _surface->relayout();
+    }
 }
 
-- (void)_positionOverlay {
-    if (!_shared || !_searchField) return;
+- (void)_positionOverlay
+{
+    if (!_shared || !_searchField)
+    {
+        return;
+    }
     _searchField->set_rect(_shared->search_field_rect());
 }
 
-- (void)popupAboveView:(NSView*)anchor {
-    if (!anchor || !anchor.window) return;
+- (void)popupAboveView:(NSView*)anchor
+{
+    if (!anchor || !anchor.window)
+    {
+        return;
+    }
 
-    if (_shared) {
+    if (_shared)
+    {
         _shared->refresh_frequents();
         _shared->set_search_query("");
     }
-    if (_searchField) _searchField->set_text("");
+    if (_searchField)
+    {
+        _searchField->set_text("");
+    }
 
     // Position above the anchor in screen coords.
     NSRect anchorRectInWindow = [anchor convertRect:anchor.bounds toView:nil];
-    NSRect anchorRectScreen   = [anchor.window convertRectToScreen:anchorRectInWindow];
+    NSRect anchorRectScreen =
+        [anchor.window convertRectToScreen:anchorRectInWindow];
     NSScreen* screen = anchor.window.screen ?: NSScreen.mainScreen;
-    NSRect visible   = screen.visibleFrame;
+    NSRect visible = screen.visibleFrame;
 
     NSRect frame = self.frame;
-    frame.origin.x = anchorRectScreen.origin.x
-                      + anchorRectScreen.size.width - frame.size.width;
-    frame.origin.y = anchorRectScreen.origin.y
-                      + anchorRectScreen.size.height + 4;
-    if (frame.origin.x < visible.origin.x) frame.origin.x = visible.origin.x + 4;
+    frame.origin.x = anchorRectScreen.origin.x + anchorRectScreen.size.width -
+                     frame.size.width;
+    frame.origin.y =
+        anchorRectScreen.origin.y + anchorRectScreen.size.height + 4;
+    if (frame.origin.x < visible.origin.x)
+    {
+        frame.origin.x = visible.origin.x + 4;
+    }
     if (frame.origin.x + frame.size.width > NSMaxX(visible))
+    {
         frame.origin.x = NSMaxX(visible) - frame.size.width - 4;
+    }
     if (frame.origin.y + frame.size.height > NSMaxY(visible))
+    {
         frame.origin.y = anchorRectScreen.origin.y - frame.size.height - 4;
+    }
 
     [self setFrame:frame display:NO];
     [self orderFront:nil];
-    if (_searchField) _searchField->set_focused(true);
-    if (_surface) _surface->relayout();
+    if (_searchField)
+    {
+        _searchField->set_focused(true);
+    }
+    if (_surface)
+    {
+        _surface->relayout();
+    }
 }
 
-- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor {
-    if (!anchor || !anchor.window) return;
+- (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor
+{
+    if (!anchor || !anchor.window)
+    {
+        return;
+    }
 
-    if (_shared) {
+    if (_shared)
+    {
         _shared->refresh_frequents();
         _shared->set_search_query("");
     }
-    if (_searchField) _searchField->set_text("");
+    if (_searchField)
+    {
+        _searchField->set_text("");
+    }
 
     // tk::Rect lives in the surface's flipped (top-left origin) widget
     // coordinates. The shared message-list view is the root of a
     // tk::macos::Surface whose backing NSView has isFlipped == YES, so
     // the rect maps directly into the anchor view's local rect.
-    NSRect anchorRectLocal = NSMakeRect(localRect.x, localRect.y,
-                                         localRect.w, localRect.h);
+    NSRect anchorRectLocal =
+        NSMakeRect(localRect.x, localRect.y, localRect.w, localRect.h);
     NSRect anchorRectInWindow = [anchor convertRect:anchorRectLocal toView:nil];
-    NSRect anchorRectScreen   = [anchor.window convertRectToScreen:anchorRectInWindow];
+    NSRect anchorRectScreen =
+        [anchor.window convertRectToScreen:anchorRectInWindow];
 
     NSScreen* screen = anchor.window.screen ?: NSScreen.mainScreen;
-    NSRect visible   = screen.visibleFrame;
+    NSRect visible = screen.visibleFrame;
 
     NSRect frame = self.frame;
     // Prefer popping above the rect, centered on it. In NSWindow
     // (non-flipped) coordinates, "above" means a larger y.
-    frame.origin.x = anchorRectScreen.origin.x
-                     + anchorRectScreen.size.width / 2.0
-                     - frame.size.width / 2.0;
+    frame.origin.x = anchorRectScreen.origin.x +
+                     anchorRectScreen.size.width / 2.0 - frame.size.width / 2.0;
     frame.origin.y = NSMaxY(anchorRectScreen) + 4;
     if (frame.origin.y + frame.size.height > NSMaxY(visible))
+    {
         frame.origin.y = anchorRectScreen.origin.y - frame.size.height - 4;
-    if (frame.origin.x < visible.origin.x) frame.origin.x = visible.origin.x + 4;
+    }
+    if (frame.origin.x < visible.origin.x)
+    {
+        frame.origin.x = visible.origin.x + 4;
+    }
     if (frame.origin.x + frame.size.width > NSMaxX(visible))
+    {
         frame.origin.x = NSMaxX(visible) - frame.size.width - 4;
-    if (frame.origin.y < visible.origin.y) frame.origin.y = visible.origin.y + 4;
+    }
+    if (frame.origin.y < visible.origin.y)
+    {
+        frame.origin.y = visible.origin.y + 4;
+    }
 
     [self setFrame:frame display:NO];
     [self orderFront:nil];
-    if (_searchField) _searchField->set_focused(true);
-    if (_surface) _surface->relayout();
+    if (_searchField)
+    {
+        _searchField->set_focused(true);
+    }
+    if (_surface)
+    {
+        _surface->relayout();
+    }
 }
 
 @end

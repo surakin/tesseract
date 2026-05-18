@@ -10,13 +10,19 @@
 
 using namespace tk;
 
-namespace {
+namespace
+{
 
 // Minimal content widget — no drawing needed for state tests.
 struct NullWidget : Widget
 {
-    Size measure(LayoutCtx&, Size constraints) override { return constraints; }
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size constraints) override
+    {
+        return constraints;
+    }
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 struct Stage
@@ -25,16 +31,16 @@ struct Stage
 
     LayoutCtx layout_ctx()
     {
-        return LayoutCtx{ surface->factory(), Theme::light() };
+        return LayoutCtx{surface->factory(), Theme::light()};
     }
     PaintCtx paint_ctx()
     {
-        return PaintCtx{ surface->canvas(), surface->factory(), Theme::light() };
+        return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
     void run(Widget& root, Rect bounds)
     {
         auto lc = layout_ctx();
-        root.measure(lc, { bounds.w, bounds.h });
+        root.measure(lc, {bounds.w, bounds.h});
         root.arrange(lc, bounds);
         auto pc = paint_ctx();
         root.paint(pc);
@@ -51,21 +57,26 @@ TEST_CASE("SideTabView starts with selected_idx == -1", "[tk][side_tab_view]")
     CHECK(tabs.selected_idx() == -1);
 }
 
-TEST_CASE("SideTabView first tab auto-selected on add_tab", "[tk][side_tab_view]")
+TEST_CASE("SideTabView first tab auto-selected on add_tab",
+          "[tk][side_tab_view]")
 {
     SideTabView tabs;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     CHECK(tabs.selected_idx() == 0);
 }
 
-TEST_CASE("SideTabView select fires on_tab_selected callback", "[tk][side_tab_view]")
+TEST_CASE("SideTabView select fires on_tab_selected callback",
+          "[tk][side_tab_view]")
 {
     SideTabView tabs;
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
 
     int fired = -1;
-    tabs.on_tab_selected = [&](int idx) { fired = idx; };
+    tabs.on_tab_selected = [&](int idx)
+    {
+        fired = idx;
+    };
 
     tabs.select(1);
     CHECK(fired == 1);
@@ -79,12 +90,15 @@ TEST_CASE("SideTabView select does not fire callback when same tab re-selected",
     tabs.add_tab("General", std::make_unique<NullWidget>());
     tabs.add_tab("Privacy", std::make_unique<NullWidget>());
 
-    tabs.select(1);  // move away from 0 first
+    tabs.select(1); // move away from 0 first
 
     int call_count = 0;
-    tabs.on_tab_selected = [&](int) { ++call_count; };
+    tabs.on_tab_selected = [&](int)
+    {
+        ++call_count;
+    };
 
-    tabs.select(1);  // same index — must not fire
+    tabs.select(1); // same index — must not fire
     CHECK(call_count == 0);
 }
 
@@ -94,12 +108,15 @@ TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
     tabs.add_tab("General", std::make_unique<NullWidget>());
 
     int fired = -99;
-    tabs.on_tab_selected = [&](int idx) { fired = idx; };
+    tabs.on_tab_selected = [&](int idx)
+    {
+        fired = idx;
+    };
 
     tabs.select(-1);
     tabs.select(5);
-    CHECK(tabs.selected_idx() == 0);  // unchanged from auto-select
-    CHECK(fired == -99);              // callback never called
+    CHECK(tabs.selected_idx() == 0); // unchanged from auto-select
+    CHECK(fired == -99);             // callback never called
 }
 
 TEST_CASE("SideTabView measure and paint do not crash with two tabs",
@@ -112,6 +129,6 @@ TEST_CASE("SideTabView measure and paint do not crash with two tabs",
     tabs.select(1);
 
     // Should not throw or assert.
-    st.run(tabs, { 0, 0, 600, 400 });
+    st.run(tabs, {0, 0, 600, 400});
     CHECK(tabs.selected_idx() == 1);
 }

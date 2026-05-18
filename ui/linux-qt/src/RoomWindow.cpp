@@ -8,14 +8,16 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
-namespace qt6 {
+namespace qt6
+{
 
 RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
-    : QWidget(nullptr, Qt::Window)
-    , tesseract::RoomWindowBase(parent_shell, room_id)
-    , parent_shell_(parent_shell)
+    : QWidget(nullptr, Qt::Window),
+      tesseract::RoomWindowBase(parent_shell, room_id),
+      parent_shell_(parent_shell)
 {
-    setAttribute(Qt::WA_DeleteOnClose, false);  // we manage lifetime via unique_ptr
+    setAttribute(Qt::WA_DeleteOnClose,
+                 false); // we manage lifetime via unique_ptr
     resize(800, 600);
 
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
@@ -29,41 +31,52 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── RoomView providers ────────────────────────────────────────────────
     room_view_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
+        [this](const std::string& mxc) -> const tk::Image*
+        {
             return shell_avatar_(mxc);
         });
     room_view_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
+        [this](const std::string& mxc) -> const tk::Image*
+        {
             return shell_image_(mxc);
         });
     room_view_->set_preview_provider(
-        [this](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+        [this](
+            const std::string& url) -> const tesseract::views::UrlPreviewData*
+        {
             auto it = parent_shell_->url_preview_data_.find(url);
-            return it == parent_shell_->url_preview_data_.end() ? nullptr : &it->second;
+            return it == parent_shell_->url_preview_data_.end() ? nullptr
+                                                                : &it->second;
         });
     if (auto player = surface_->host().make_audio_player())
     {
         room_view_->set_audio_player(std::move(player));
     }
     room_view_->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+        [this](const std::string& source_json) -> std::vector<std::uint8_t>
+        {
             return fetch_source_bytes_(source_json);
         });
 
     // ── Repaint / layout ─────────────────────────────────────────────────
-    room_view_->set_repaint_requester([this] {
-        if (surface_)
+    room_view_->set_repaint_requester(
+        [this]
         {
-            surface_->update();
-        }
-    });
-    room_view_->set_post_delayed([this](int ms, std::function<void()> fn) {
-        if (surface_)
+            if (surface_)
+            {
+                surface_->update();
+            }
+        });
+    room_view_->set_post_delayed(
+        [this](int ms, std::function<void()> fn)
         {
-            surface_->host().post_delayed(ms, std::move(fn));
-        }
-    });
-    room_view_->on_layout_changed = [this] {
+            if (surface_)
+            {
+                surface_->host().post_delayed(ms, std::move(fn));
+            }
+        });
+    room_view_->on_layout_changed = [this]
+    {
         if (surface_)
         {
             surface_->relayout();
@@ -71,10 +84,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     };
 
     // ── Compose callbacks ────────────────────────────────────────────────
-    room_view_->on_send = [this](const std::string& body) {
+    room_view_->on_send = [this](const std::string& body)
+    {
         std::string trimmed = body;
         auto l = trimmed.find_first_not_of(" \t\n\r");
-        auto r = trimmed.find_last_not_of (" \t\n\r");
+        auto r = trimmed.find_last_not_of(" \t\n\r");
         if (l == std::string::npos)
         {
             return;
@@ -87,8 +101,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         send_message_(trimmed);
         room_view_->set_current_text({});
     };
-    room_view_->on_send_reply = [this](const std::string& reply_id,
-                                        const std::string& body) {
+    room_view_->on_send_reply =
+        [this](const std::string& reply_id, const std::string& body)
+    {
         if (body.empty())
         {
             return;
@@ -96,8 +111,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         send_reply_(reply_id, body);
         room_view_->set_current_text({});
     };
-    room_view_->on_send_edit = [this](const std::string& event_id,
-                                       const std::string& new_body) {
+    room_view_->on_send_edit =
+        [this](const std::string& event_id, const std::string& new_body)
+    {
         if (new_body.empty())
         {
             return;
@@ -105,25 +121,37 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         send_edit_(event_id, new_body);
         room_view_->set_current_text({});
     };
-    room_view_->on_edit_cancelled = [this] { room_view_->set_current_text({}); };
-    room_view_->on_edit_prefill = [this](const std::string& body) {
+    room_view_->on_edit_cancelled = [this]
+    {
+        room_view_->set_current_text({});
+    };
+    room_view_->on_edit_prefill = [this](const std::string& body)
+    {
         room_view_->set_current_text(body);
     };
-    room_view_->on_reply_focus = [] { /* no NativeTextArea on Qt6 secondary */ };
-    room_view_->on_delete_requested = [this](const std::string& event_id) {
+    room_view_->on_reply_focus =
+        [] { /* no NativeTextArea on Qt6 secondary */ };
+    room_view_->on_delete_requested = [this](const std::string& event_id)
+    {
         delete_event_(event_id);
     };
     room_view_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key) {
-            toggle_reaction_(event_id, key);
-        };
-    room_view_->on_receipt_needed = [this](const std::string& event_id) {
+        [this](const std::string& event_id, const std::string& key)
+    {
+        toggle_reaction_(event_id, key);
+    };
+    room_view_->on_receipt_needed = [this](const std::string& event_id)
+    {
         send_receipt_(event_id);
     };
-    room_view_->on_link_clicked = [](const std::string& url) {
+    room_view_->on_link_clicked = [](const std::string& url)
+    {
         tesseract::Client::open_in_browser(url);
     };
-    room_view_->on_near_top = [this] { request_pagination_back_(); };
+    room_view_->on_near_top = [this]
+    {
+        request_pagination_back_();
+    };
 
     // NativeTextArea is not used here: Qt6's host creates it lazily if needed.
     // The compose bar's built-in QTextEdit handles input on this platform.
@@ -163,7 +191,10 @@ void RoomWindow::update_window_title_(const std::string& name)
 
 void RoomWindow::apply_theme(const tk::Theme& t)
 {
-    if (surface_) surface_->set_theme(t);
+    if (surface_)
+    {
+        surface_->set_theme(t);
+    }
 }
 
 void RoomWindow::resizeEvent(QResizeEvent* ev)
@@ -184,8 +215,8 @@ void RoomWindow::closeEvent(QCloseEvent* ev)
 
 // ---------------------------------------------------------------------------
 
-tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(
-    const std::string& room_id)
+tesseract::RoomWindowBase*
+MainWindow::create_secondary_room_window_(const std::string& room_id)
 {
     return new RoomWindow(this, room_id);
 }

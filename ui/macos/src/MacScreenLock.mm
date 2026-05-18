@@ -1,13 +1,14 @@
 #import "MacScreenLock.h"
 #import <Foundation/Foundation.h>
 
-namespace mac {
+namespace mac
+{
 
 MacScreenLock::MacScreenLock()
 {
     NSDistributedNotificationCenter* c =
         [NSDistributedNotificationCenter defaultCenter];
-    auto locked = locked_;  // capture the shared_ptr (block owns a copy)
+    auto locked = locked_; // capture the shared_ptr (block owns a copy)
 
     observer_locked_ = (__bridge_retained void*)[c
         addObserverForName:@"com.apple.screenIsLocked"
@@ -29,12 +30,14 @@ MacScreenLock::~MacScreenLock()
 {
     NSDistributedNotificationCenter* c =
         [NSDistributedNotificationCenter defaultCenter];
-    if (observer_locked_) {
+    if (observer_locked_)
+    {
         id obs = (__bridge_transfer id)observer_locked_;
         [c removeObserver:obs];
         observer_locked_ = nullptr;
     }
-    if (observer_unlocked_) {
+    if (observer_unlocked_)
+    {
         id obs = (__bridge_transfer id)observer_unlocked_;
         [c removeObserver:obs];
         observer_unlocked_ = nullptr;

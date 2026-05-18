@@ -8,7 +8,10 @@
 #include "tk/host_qt.h"
 #include "views/JoinRoomView.h"
 
-namespace tesseract { class Client; }
+namespace tesseract
+{
+class Client;
+}
 
 /// Centred dialog for looking up and joining a room (MSC3266).
 /// Hosts the shared tesseract::views::JoinRoomView inside a tk::qt6::Surface
@@ -39,9 +42,9 @@ protected:
 private:
     void layout_overlay();
 
-    tesseract::Client*                      client_  = nullptr;
-    tk::qt6::Surface*                       surface_ = nullptr;
-    tesseract::views::JoinRoomView*         shared_  = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField>    alias_field_;
-    uint32_t                                gen_     = 0;  // guards stale async callbacks
+    tesseract::Client* client_ = nullptr;
+    tk::qt6::Surface* surface_ = nullptr;
+    tesseract::views::JoinRoomView* shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> alias_field_;
+    uint32_t gen_ = 0; // guards stale async callbacks
 };

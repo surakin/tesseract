@@ -28,10 +28,10 @@ private slots:
 private:
     bool use_portal() const;
 
-    QDBusInterface                               iface_;
-    QDBusInterface                               portal_;
+    QDBusInterface iface_;
+    QDBusInterface portal_;
     std::function<void(std::string, std::string)> on_activate_;
-    std::unordered_map<uint32_t, std::string>    id_to_room_;
+    std::unordered_map<uint32_t, std::string> id_to_room_;
     // Portal notifications use string IDs (sanitized room_id).
     std::unordered_map<std::string, std::string> portal_id_to_room_;
 };

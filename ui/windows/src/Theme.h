@@ -1,9 +1,9 @@
 #pragma once
 #ifndef WIN32_LEAN_AND_MEAN
-#  define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 // GDI+ headers reference IUnknown / IStream / PROPID / byte / MIDL_INTERFACE,
@@ -18,24 +18,30 @@ using std::max;
 using std::min;
 #include <gdiplus.h>
 
-namespace win32::theme {
+namespace win32::theme
+{
 
-enum class Mode { Light, Dark };
+enum class Mode
+{
+    Light,
+    Dark
+};
 
 // All colour fields are COLORREF (0x00BBGGRR) for use with GDI/Win32 APIs.
 // Convert with gpc() when handing to GDI+.
-struct Palette {
-    COLORREF window_bg;             // chat area / message list background
+struct Palette
+{
+    COLORREF window_bg; // chat area / message list background
     COLORREF sidebar_bg;
     COLORREF sidebar_sel_bg;
     COLORREF sidebar_hover_bg;
-    COLORREF chrome_bg;             // room header / user strip / status / banner
+    COLORREF chrome_bg; // room header / user strip / status / banner
     COLORREF compose_card_bg;
     COLORREF border;
     COLORREF separator;
     COLORREF text_primary;
     COLORREF text_secondary;
-    COLORREF text_muted;            // even dimmer (timestamp, hint)
+    COLORREF text_muted; // even dimmer (timestamp, hint)
     COLORREF text_on_accent;
     COLORREF accent;
     COLORREF accent_hover;
@@ -75,12 +81,13 @@ void apply_window_attributes(HWND);
 // recent uxtheme.dll; old versions ignore unknown class lists.
 void apply_control_theme(HWND);
 
-enum class FontRole {
-    Small,       //  9pt regular (preview, status, hint)
-    Body,        // 10pt regular (message body)
-    Ui,          // 11pt regular (default control label)
-    UiSemibold,  // 11pt semibold (button label, sender name)
-    Title,       // 15pt semibold (room header)
+enum class FontRole
+{
+    Small,      //  9pt regular (preview, status, hint)
+    Body,       // 10pt regular (message body)
+    Ui,         // 11pt regular (default control label)
+    UiSemibold, // 11pt semibold (button label, sender name)
+    Title,      // 15pt semibold (room header)
 };
 
 // Owned by the theme module; do not DeleteObject. Lazily created with
@@ -102,14 +109,21 @@ void shutdown();
 // Subclass a BS_OWNERDRAW button so it paints as a flat Win11 Fluent
 // button with hover / pressed / disabled tracking. Pair with
 // theme::draw_button() in your WM_DRAWITEM handler.
-enum class ButtonStyle { Primary, Subtle, Icon };
+enum class ButtonStyle
+{
+    Primary,
+    Subtle,
+    Icon
+};
 void register_button(HWND, ButtonStyle);
-void draw_button(DRAWITEMSTRUCT*);   // dispatches by registered style
+void draw_button(DRAWITEMSTRUCT*); // dispatches by registered style
 
-inline Gdiplus::Color gpc(COLORREF c) {
+inline Gdiplus::Color gpc(COLORREF c)
+{
     return Gdiplus::Color(255, GetRValue(c), GetGValue(c), GetBValue(c));
 }
-inline Gdiplus::Color gpc(COLORREF c, BYTE alpha) {
+inline Gdiplus::Color gpc(COLORREF c, BYTE alpha)
+{
     return Gdiplus::Color(alpha, GetRValue(c), GetGValue(c), GetBValue(c));
 }
 

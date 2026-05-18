@@ -10,7 +10,10 @@
 
 #include <tesseract/image_pack.h>
 
-namespace tesseract { class Client; }
+namespace tesseract
+{
+class Client;
+}
 
 /// Floating sticker picker. Mirrors the EmojiPicker wrapper for Qt: hosts
 /// the shared `tesseract::views::StickerPicker` inside a `tk::qt6::Surface`
@@ -52,15 +55,15 @@ public:
     std::function<void(const tesseract::ImagePackImage&)> onSelected;
 
 protected:
-    void showEvent  (QShowEvent*   e) override;
-    void hideEvent  (QHideEvent*   e) override;
+    void showEvent(QShowEvent* e) override;
+    void hideEvent(QHideEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
 private:
     void layout_overlay();
 
-    tesseract::Client*                      client_       = nullptr;
-    tk::qt6::Surface*                       surface_      = nullptr;
-    tesseract::views::StickerPicker*        shared_       = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField>    search_field_;
+    tesseract::Client* client_ = nullptr;
+    tk::qt6::Surface* surface_ = nullptr;
+    tesseract::views::StickerPicker* shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> search_field_;
 };

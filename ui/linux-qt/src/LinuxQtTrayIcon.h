@@ -14,18 +14,20 @@ class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon
 public:
     LinuxQtTrayIcon(std::function<void()> on_show,
                     std::function<void()> on_toggle,
-                    std::function<void()> on_quit,
-                    QObject* parent = nullptr);
+                    std::function<void()> on_quit, QObject* parent = nullptr);
     ~LinuxQtTrayIcon() override;
 
-    bool is_available() const override { return available_; }
+    bool is_available() const override
+    {
+        return available_;
+    }
     void set_tooltip(const std::string& text) override;
 
 private:
-    std::function<void()>            on_show_;
-    std::function<void()>            on_toggle_;
-    std::function<void()>            on_quit_;
+    std::function<void()> on_show_;
+    std::function<void()> on_toggle_;
+    std::function<void()> on_quit_;
     std::unique_ptr<QSystemTrayIcon> tray_;
-    std::unique_ptr<QMenu>           menu_;
-    bool                             available_ = false;
+    std::unique_ptr<QMenu> menu_;
+    bool available_ = false;
 };

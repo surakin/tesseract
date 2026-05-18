@@ -13,7 +13,8 @@
 #include <memory>
 #include <utility>
 
-namespace {
+namespace
+{
 
 constexpr int kPickerW = 320;
 constexpr int kPickerH = 360;
@@ -36,14 +37,16 @@ EmojiPicker::EmojiPicker(QWidget* parent)
 
     auto shared_owner = std::make_unique<tesseract::views::EmojiPicker>();
     shared_ = shared_owner.get();
-    shared_->on_selected = [this](const std::string& glyph) {
+    shared_->on_selected = [this](const std::string& glyph)
+    {
         if (onSelected)
         {
             onSelected(QString::fromStdString(glyph));
         }
         hide();
     };
-    shared_->on_emoticon_selected = [this](const tesseract::ImagePackImage& img) {
+    shared_->on_emoticon_selected = [this](const tesseract::ImagePackImage& img)
+    {
         if (onEmoticonSelected)
         {
             onEmoticonSelected(img);
@@ -56,7 +59,8 @@ EmojiPicker::EmojiPicker(QWidget* parent)
     search_field_ = surface_->host().make_text_field();
     search_field_->set_placeholder("Search emoji");
     search_field_->set_on_changed(
-        [this](const std::string& q) {
+        [this](const std::string& q)
+        {
             shared_->set_search_query(q);
             surface_->relayout();
         });
@@ -89,17 +93,27 @@ void EmojiPicker::invalidateImages()
     {
         shared_->invalidate_image_cache();
     }
-    if (surface_) surface_->relayout();
+    if (surface_)
+    {
+        surface_->relayout();
+    }
 }
 
 void EmojiPicker::set_theme(const tk::Theme& t)
 {
-    if (surface_) surface_->set_theme(t);
+    if (surface_)
+    {
+        surface_->set_theme(t);
+    }
 }
 
 void EmojiPicker::setImageProvider(
-        tesseract::views::EmojiPicker::ImageProvider p) {
-    if (shared_) shared_->set_image_provider(std::move(p));
+    tesseract::views::EmojiPicker::ImageProvider p)
+{
+    if (shared_)
+    {
+        shared_->set_image_provider(std::move(p));
+    }
 }
 
 void EmojiPicker::popupAt(QWidget* anchor)
@@ -167,8 +181,7 @@ void EmojiPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
     // coords are widget-logical-pixels (no DPI scale on the Qt surface),
     // so they map directly to QWidget coords.
     QPoint topLeftGlobal = anchor->mapToGlobal(
-        QPoint(static_cast<int>(localRect.x),
-               static_cast<int>(localRect.y)));
+        QPoint(static_cast<int>(localRect.x), static_cast<int>(localRect.y)));
     int rectW = static_cast<int>(localRect.w);
     int rectH = static_cast<int>(localRect.h);
 

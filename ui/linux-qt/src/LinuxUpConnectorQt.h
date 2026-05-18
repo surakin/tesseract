@@ -22,7 +22,7 @@ public:
     void on_unregistered();
 
 private:
-    tesseract::Client* client_              = nullptr;
-    std::string        token_;
-    std::string        distributor_service_;
+    tesseract::Client* client_ = nullptr;
+    std::string token_;
+    std::string distributor_service_;
 };

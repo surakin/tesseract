@@ -3,7 +3,8 @@
 #include <gio/gio.h>
 #include <string>
 
-class LinuxUpConnectorGtk final : public tesseract::IUpConnector {
+class LinuxUpConnectorGtk final : public tesseract::IUpConnector
+{
 public:
     LinuxUpConnectorGtk();
     ~LinuxUpConnectorGtk() override;
@@ -17,7 +18,7 @@ public:
     void on_unregistered();
 
 private:
-    tesseract::Client* client_              = nullptr;
-    std::string        token_;
-    std::string        distributor_service_;
+    tesseract::Client* client_ = nullptr;
+    std::string token_;
+    std::string distributor_service_;
 };

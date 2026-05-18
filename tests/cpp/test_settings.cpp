@@ -8,7 +8,8 @@
 namespace fs = std::filesystem;
 
 // Write arbitrary content to a file, creating parent directories first.
-static void write_file(const fs::path& p, const std::string& content) {
+static void write_file(const fs::path& p, const std::string& content)
+{
     std::error_code ec;
     fs::create_directories(p.parent_path(), ec);
     std::ofstream f(p, std::ios::trunc);
@@ -16,15 +17,18 @@ static void write_file(const fs::path& p, const std::string& content) {
 }
 
 // Helper: reset the singleton to defaults before each test.
-static void reset_settings() {
+static void reset_settings()
+{
     tesseract::Settings::instance().theme_pref =
         tesseract::Settings::ThemePreference::System;
     tesseract::Settings::instance().notifications_enabled = true;
 }
 
 // Each test uses a unique subdirectory under the OS temp path.
-static fs::path make_tmp_dir(const std::string& suffix) {
-    auto base = fs::temp_directory_path() / ("tesseract_test_settings_" + suffix);
+static fs::path make_tmp_dir(const std::string& suffix)
+{
+    auto base =
+        fs::temp_directory_path() / ("tesseract_test_settings_" + suffix);
     std::error_code ec;
     fs::remove_all(base, ec);
     fs::create_directories(base, ec);
@@ -33,7 +37,8 @@ static fs::path make_tmp_dir(const std::string& suffix) {
 
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Settings round-trip: Light") {
+TEST_CASE("Settings round-trip: Light")
+{
     reset_settings();
     auto dir = make_tmp_dir("light");
 
@@ -48,7 +53,8 @@ TEST_CASE("Settings round-trip: Light") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings round-trip: Dark") {
+TEST_CASE("Settings round-trip: Dark")
+{
     reset_settings();
     auto dir = make_tmp_dir("dark");
 
@@ -63,7 +69,8 @@ TEST_CASE("Settings round-trip: Dark") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings round-trip: System") {
+TEST_CASE("Settings round-trip: System")
+{
     reset_settings();
     auto dir = make_tmp_dir("system");
 
@@ -78,13 +85,14 @@ TEST_CASE("Settings round-trip: System") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings load missing file defaults to System") {
+TEST_CASE("Settings load missing file defaults to System")
+{
     reset_settings();
     auto dir = make_tmp_dir("missing");
     // Do not create app_settings.json.
 
     auto& s = tesseract::Settings::instance();
-    s.theme_pref = tesseract::Settings::ThemePreference::Light;  // dirty state
+    s.theme_pref = tesseract::Settings::ThemePreference::Light; // dirty state
     s.load_from_disk(dir);
     // load_from_disk is a no-op when the file is absent — value stays as-is.
     // The documented contract is "missing file → keep defaults", which means
@@ -101,7 +109,8 @@ TEST_CASE("Settings load missing file defaults to System") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings load unknown theme value defaults to System") {
+TEST_CASE("Settings load unknown theme value defaults to System")
+{
     reset_settings();
     auto dir = make_tmp_dir("unknown");
     write_file(dir / "app_settings.json", "{\"theme\":\"neon\"}");
@@ -113,7 +122,8 @@ TEST_CASE("Settings load unknown theme value defaults to System") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings load ignores extra unknown JSON fields") {
+TEST_CASE("Settings load ignores extra unknown JSON fields")
+{
     reset_settings();
     auto dir = make_tmp_dir("extra_fields");
     write_file(dir / "app_settings.json",
@@ -126,23 +136,25 @@ TEST_CASE("Settings load ignores extra unknown JSON fields") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings save creates config directory if needed") {
+TEST_CASE("Settings save creates config directory if needed")
+{
     reset_settings();
     // Use a nested path that does not yet exist.
     auto dir = make_tmp_dir("mkdir") / "sub" / "deeper";
 
     auto& s = tesseract::Settings::instance();
     s.theme_pref = tesseract::Settings::ThemePreference::Light;
-    s.save_to_disk(dir);  // must not throw or crash
+    s.save_to_disk(dir); // must not throw or crash
 
     reset_settings();
     s.load_from_disk(dir);
     CHECK(s.theme_pref == tesseract::Settings::ThemePreference::Light);
 
-    fs::remove_all(make_tmp_dir("mkdir"));  // clean up root
+    fs::remove_all(make_tmp_dir("mkdir")); // clean up root
 }
 
-TEST_CASE("Settings notifications_enabled round-trip: false") {
+TEST_CASE("Settings notifications_enabled round-trip: false")
+{
     reset_settings();
     auto dir = make_tmp_dir("notif_false");
 
@@ -150,14 +162,15 @@ TEST_CASE("Settings notifications_enabled round-trip: false") {
     s.notifications_enabled = false;
     s.save_to_disk(dir);
 
-    reset_settings();  // resets notifications_enabled back to true
+    reset_settings(); // resets notifications_enabled back to true
     s.load_from_disk(dir);
     REQUIRE(s.notifications_enabled == false);
 
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings notifications_enabled round-trip: true") {
+TEST_CASE("Settings notifications_enabled round-trip: true")
+{
     reset_settings();
     auto dir = make_tmp_dir("notif_true");
 
@@ -173,7 +186,8 @@ TEST_CASE("Settings notifications_enabled round-trip: true") {
     fs::remove_all(dir);
 }
 
-TEST_CASE("Settings notifications_enabled missing key keeps default true") {
+TEST_CASE("Settings notifications_enabled missing key keeps default true")
+{
     reset_settings();
     auto dir = make_tmp_dir("notif_missing_key");
     // Write a file with no notifications_enabled key at all.

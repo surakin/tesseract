@@ -28,7 +28,9 @@ class UpConnector1Adaptor : public QDBusAbstractAdaptor
     Q_CLASSINFO("D-Bus Interface", "org.unifiedpush.Connector1")
 public:
     explicit UpConnector1Adaptor(QObject* parent, UpSharedBusQt* bus)
-        : QDBusAbstractAdaptor(parent), bus_(bus) {}
+        : QDBusAbstractAdaptor(parent), bus_(bus)
+    {
+    }
 
 public slots:
     void Message(const QString& /*token*/, const QByteArray& /*message*/,
@@ -75,7 +77,7 @@ public:
                 QDBusConnection::sessionBus().interface()->unregisterService(
                     QStringLiteral("im.gnomos.Tesseract"));
                 delete host_;
-                host_   = nullptr;
+                host_ = nullptr;
                 active_ = false;
             }
         }
@@ -85,7 +87,10 @@ public:
     {
         routes_[token] = conn;
     }
-    void remove_route(const std::string& token) { routes_.erase(token); }
+    void remove_route(const std::string& token)
+    {
+        routes_.erase(token);
+    }
 
     // Scan the session bus for the first service exposing Distributor1.
     // Safe to call from a worker thread — uses the thread's own D-Bus connection.
@@ -103,14 +108,13 @@ public:
             {
                 continue; // skip unique names
             }
-            QDBusInterface iface(svc,
-                QStringLiteral("/org/unifiedpush/Distributor"),
+            QDBusInterface iface(
+                svc, QStringLiteral("/org/unifiedpush/Distributor"),
                 QStringLiteral("org.freedesktop.DBus.Introspectable"),
                 QDBusConnection::sessionBus());
             QDBusReply<QString> xml = iface.call(QStringLiteral("Introspect"));
-            if (xml.isValid() &&
-                xml.value().contains(
-                    QStringLiteral("org.unifiedpush.Distributor1")))
+            if (xml.isValid() && xml.value().contains(QStringLiteral(
+                                     "org.unifiedpush.Distributor1")))
             {
                 return svc;
             }
@@ -124,45 +128,46 @@ public:
     {
         auto* watcher = new QFutureWatcher<QString>(this);
         std::string tok = token;
-        QObject::connect(watcher, &QFutureWatcher<QString>::finished,
-                         this, [this, watcher, tok]() {
-            QString dist = watcher->result();
-            watcher->deleteLater();
-            if (dist.isEmpty())
+        QObject::connect(
+            watcher, &QFutureWatcher<QString>::finished, this,
+            [this, watcher, tok]()
             {
-                return;
-            }
-            auto it = routes_.find(tok);
-            if (it == routes_.end())
+                QString dist = watcher->result();
+                watcher->deleteLater();
+                if (dist.isEmpty())
+                {
+                    return;
+                }
+                auto it = routes_.find(tok);
+                if (it == routes_.end())
+                {
+                    return; // connector stopped before scan finished
+                }
+                it->second->set_distributor(dist.toStdString());
+                distributor_register(dist, tok);
+            });
+        watcher->setFuture(QtConcurrent::run(
+            [this]()
             {
-                return; // connector stopped before scan finished
-            }
-            it->second->set_distributor(dist.toStdString());
-            distributor_register(dist, tok);
-        });
-        watcher->setFuture(QtConcurrent::run([this]() {
-            return find_distributor();
-        }));
+                return find_distributor();
+            }));
     }
 
     void distributor_register(const QString& svc, const std::string& token)
     {
-        QDBusInterface dist(svc,
-            QStringLiteral("/org/unifiedpush/Distributor"),
-            QStringLiteral("org.unifiedpush.Distributor1"),
-            QDBusConnection::sessionBus());
-        dist.asyncCall(QStringLiteral("Register"),
-                       QStringLiteral("im.gnomos.Tesseract"),
-                       QString::fromStdString(token),
-                       QStringLiteral("Tesseract"));
+        QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
+                            QStringLiteral("org.unifiedpush.Distributor1"),
+                            QDBusConnection::sessionBus());
+        dist.asyncCall(
+            QStringLiteral("Register"), QStringLiteral("im.gnomos.Tesseract"),
+            QString::fromStdString(token), QStringLiteral("Tesseract"));
     }
 
     void distributor_unregister(const QString& svc, const std::string& token)
     {
-        QDBusInterface dist(svc,
-            QStringLiteral("/org/unifiedpush/Distributor"),
-            QStringLiteral("org.unifiedpush.Distributor1"),
-            QDBusConnection::sessionBus());
+        QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
+                            QStringLiteral("org.unifiedpush.Distributor1"),
+                            QDBusConnection::sessionBus());
         dist.asyncCall(QStringLiteral("Unregister"),
                        QString::fromStdString(token));
     }
@@ -187,9 +192,9 @@ public:
 private:
     UpSharedBusQt() = default;
 
-    int                                                  ref_    = 0;
-    bool                                                 active_ = false;
-    QObject*                                             host_   = nullptr;
+    int ref_ = 0;
+    bool active_ = false;
+    QObject* host_ = nullptr;
     std::unordered_map<std::string, LinuxUpConnectorQt*> routes_;
 };
 
@@ -221,7 +226,7 @@ bool UpSharedBusQt::acquire()
 }
 
 void UpConnector1Adaptor::NewEndpoint(const QString& token,
-                                       const QString& endpoint)
+                                      const QString& endpoint)
 {
     bus_->dispatch_new_endpoint(token, endpoint);
 }
@@ -259,14 +264,14 @@ LinuxUpConnectorQt::~LinuxUpConnectorQt()
 }
 
 void LinuxUpConnectorQt::start(tesseract::Client* client,
-                                const std::string& user_id)
+                               const std::string& user_id)
 {
     if (client_)
     {
         return; // already started
     }
     client_ = client;
-    token_  = sanitize_token(user_id);
+    token_ = sanitize_token(user_id);
 
     UpSharedBusQt& bus = UpSharedBusQt::get();
     if (!bus.acquire())
@@ -275,7 +280,8 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
     }
 
     bus.add_route(token_, this);
-    bus.find_distributor_async(token_); // non-blocking; callback sets distributor
+    bus.find_distributor_async(
+        token_); // non-blocking; callback sets distributor
 }
 
 void LinuxUpConnectorQt::stop()
@@ -300,8 +306,8 @@ void LinuxUpConnectorQt::logout()
     UpSharedBusQt& bus = UpSharedBusQt::get();
     if (!distributor_service_.empty())
     {
-        bus.distributor_unregister(
-            QString::fromStdString(distributor_service_), token_);
+        bus.distributor_unregister(QString::fromStdString(distributor_service_),
+                                   token_);
     }
     client_->remove_pusher(token_, "im.gnomos.tesseract");
     stop();
@@ -328,13 +334,9 @@ void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint)
     url.setPath(QStringLiteral("/_matrix/push/v1/notify"));
     url.setQuery(QString{});
     url.setFragment(QString{});
-    client_->register_pusher(
-        token_,
-        "im.gnomos.tesseract",
-        "Tesseract",
-        "Linux Desktop",
-        url.toString().toStdString(),
-        "en");
+    client_->register_pusher(token_, "im.gnomos.tesseract", "Tesseract",
+                             "Linux Desktop", url.toString().toStdString(),
+                             "en");
 }
 
 void LinuxUpConnectorQt::on_unregistered()

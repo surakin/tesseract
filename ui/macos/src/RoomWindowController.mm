@@ -15,29 +15,31 @@
 class MacRoomWindow;
 
 @interface RoomWindowController ()
-@property (nonatomic, assign) MacRoomWindow* cppWindow;
+@property(nonatomic, assign) MacRoomWindow* cppWindow;
 @end
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MacRoomWindow — C++ RoomWindowBase subclass for macOS pop-out windows
 // ─────────────────────────────────────────────────────────────────────────────
 
-class MacRoomWindow : public tesseract::RoomWindowBase {
+class MacRoomWindow : public tesseract::RoomWindowBase
+{
 public:
     MacRoomWindow(
-        tesseract::ShellBase* shell,
-        const std::string& room_id,
-        const std::unordered_map<std::string, tesseract::views::UrlPreviewData>* preview_data);
+        tesseract::ShellBase* shell, const std::string& room_id,
+        const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
+            preview_data);
     ~MacRoomWindow() override;
 
-    void bring_to_front()                              override;
-    void close_window()                                override;
-    void request_relayout()                            override;
+    void bring_to_front() override;
+    void close_window() override;
+    void request_relayout() override;
     void update_window_title_(const std::string& name) override;
-    void apply_theme(const tk::Theme& t)               override;
+    void apply_theme(const tk::Theme& t) override;
 
     // Called by -windowWillClose: delegate method.
-    void on_window_will_close() {
+    void on_window_will_close()
+    {
         window_closed_ = true;
         schedule_self_close_();
     }
@@ -54,17 +56,15 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 
 MacRoomWindow::MacRoomWindow(
-    tesseract::ShellBase* shell,
-    const std::string& room_id,
-    const std::unordered_map<std::string, tesseract::views::UrlPreviewData>* preview_data)
+    tesseract::ShellBase* shell, const std::string& room_id,
+    const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
+        preview_data)
     : tesseract::RoomWindowBase(shell, room_id)
 {
     NSRect frame = NSMakeRect(0, 0, 800, 600);
     NSWindowStyleMask style =
-        NSWindowStyleMaskTitled         |
-        NSWindowStyleMaskClosable       |
-        NSWindowStyleMaskMiniaturizable |
-        NSWindowStyleMaskResizable;
+        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
     NSWindow* win = [[NSWindow alloc] initWithContentRect:frame
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
@@ -83,106 +83,205 @@ MacRoomWindow::MacRoomWindow(
 
     // ── RoomView providers ───────────────────────────────────────────────────
     room_view_->set_avatar_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
+        [this](const std::string& mxc) -> const tk::Image*
+        {
             return shell_avatar_(mxc);
         });
     room_view_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image* {
+        [this](const std::string& mxc) -> const tk::Image*
+        {
             return shell_image_(mxc);
         });
     room_view_->set_preview_provider(
-        [preview_data](const std::string& url) -> const tesseract::views::UrlPreviewData* {
-            if (!preview_data) return nullptr;
+        [preview_data](
+            const std::string& url) -> const tesseract::views::UrlPreviewData*
+        {
+            if (!preview_data)
+            {
+                return nullptr;
+            }
             auto it = preview_data->find(url);
             return it == preview_data->end() ? nullptr : &it->second;
         });
     if (auto player = surface_->host().make_audio_player())
+    {
         room_view_->set_audio_player(std::move(player));
+    }
     room_view_->set_voice_bytes_provider(
-        [this](const std::string& source_json) -> std::vector<std::uint8_t> {
+        [this](const std::string& source_json) -> std::vector<std::uint8_t>
+        {
             return fetch_source_bytes_(source_json);
         });
 
     // ── Repaint / layout ─────────────────────────────────────────────────────
-    room_view_->set_repaint_requester([this] {
-        if (surface_) surface_->relayout();
-    });
-    room_view_->set_post_delayed([this](int ms, std::function<void()> fn) {
-        if (surface_) surface_->host().post_delayed(ms, std::move(fn));
-    });
-    room_view_->on_layout_changed = [this] {
-        if (surface_) surface_->relayout();
+    room_view_->set_repaint_requester(
+        [this]
+        {
+            if (surface_)
+            {
+                surface_->relayout();
+            }
+        });
+    room_view_->set_post_delayed(
+        [this](int ms, std::function<void()> fn)
+        {
+            if (surface_)
+            {
+                surface_->host().post_delayed(ms, std::move(fn));
+            }
+        });
+    room_view_->on_layout_changed = [this]
+    {
+        if (surface_)
+        {
+            surface_->relayout();
+        }
     };
 
     // ── Compose callbacks ─────────────────────────────────────────────────────
-    room_view_->on_send = [this](const std::string& body) {
+    room_view_->on_send = [this](const std::string& body)
+    {
         std::string trimmed = tesseract::macos::trim(body);
-        if (trimmed.empty()) return;
+        if (trimmed.empty())
+        {
+            return;
+        }
         send_message_(trimmed);
-        if (text_area_) text_area_->set_text("");
-        if (room_view_) room_view_->set_current_text({});
+        if (text_area_)
+        {
+            text_area_->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->set_current_text({});
+        }
     };
-    room_view_->on_send_reply = [this](const std::string& reply_id,
-                                        const std::string& body) {
-        if (body.empty()) return;
+    room_view_->on_send_reply =
+        [this](const std::string& reply_id, const std::string& body)
+    {
+        if (body.empty())
+        {
+            return;
+        }
         send_reply_(reply_id, body);
-        if (text_area_) text_area_->set_text("");
-        if (room_view_) room_view_->set_current_text({});
+        if (text_area_)
+        {
+            text_area_->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->set_current_text({});
+        }
     };
-    room_view_->on_send_edit = [this](const std::string& event_id,
-                                       const std::string& new_body) {
-        if (new_body.empty()) return;
+    room_view_->on_send_edit =
+        [this](const std::string& event_id, const std::string& new_body)
+    {
+        if (new_body.empty())
+        {
+            return;
+        }
         send_edit_(event_id, new_body);
-        if (text_area_) text_area_->set_text("");
-        if (room_view_) room_view_->set_current_text({});
+        if (text_area_)
+        {
+            text_area_->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->set_current_text({});
+        }
     };
-    room_view_->on_edit_cancelled = [this] {
-        if (text_area_) text_area_->set_text("");
-        if (room_view_) room_view_->set_current_text({});
+    room_view_->on_edit_cancelled = [this]
+    {
+        if (text_area_)
+        {
+            text_area_->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->set_current_text({});
+        }
     };
-    room_view_->on_edit_prefill = [this](const std::string& body) {
-        if (text_area_) text_area_->set_text(body);
+    room_view_->on_edit_prefill = [this](const std::string& body)
+    {
+        if (text_area_)
+        {
+            text_area_->set_text(body);
+        }
     };
-    room_view_->on_reply_focus = [this] {
-        if (text_area_) text_area_->set_focused(true);
+    room_view_->on_reply_focus = [this]
+    {
+        if (text_area_)
+        {
+            text_area_->set_focused(true);
+        }
     };
-    room_view_->on_delete_requested = [this](const std::string& event_id) {
+    room_view_->on_delete_requested = [this](const std::string& event_id)
+    {
         delete_event_(event_id);
     };
     room_view_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key) {
-            toggle_reaction_(event_id, key);
-        };
-    room_view_->on_receipt_needed = [this](const std::string& event_id) {
+        [this](const std::string& event_id, const std::string& key)
+    {
+        toggle_reaction_(event_id, key);
+    };
+    room_view_->on_receipt_needed = [this](const std::string& event_id)
+    {
         send_receipt_(event_id);
     };
-    room_view_->on_link_clicked = [](const std::string& url) {
+    room_view_->on_link_clicked = [](const std::string& url)
+    {
         tesseract::Client::open_in_browser(url);
     };
-    room_view_->on_near_top = [this] { request_pagination_back_(); };
+    room_view_->on_near_top = [this]
+    {
+        request_pagination_back_();
+    };
 
     // ── NativeTextArea overlay ────────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
     text_area_->set_placeholder("Message\xe2\x80\xa6");
-    text_area_->set_on_changed([this](const std::string& s) {
-        bool typing = !s.empty();
-        if (typing != compose_typing_active_) {
-            compose_typing_active_ = typing;
-            send_typing_notice_(typing);
-        }
-        if (room_view_) room_view_->set_current_text(s);
-    });
-    text_area_->set_on_submit([this] {
-        if (room_view_) room_view_->compose_bar()->trigger_send();
-    });
-    text_area_->set_on_height_changed([this](float h) {
-        if (room_view_) room_view_->set_text_area_natural_height(h);
-        if (surface_) surface_->relayout();
-    });
-    surface_->set_on_layout([this] {
-        if (room_view_ && text_area_)
-            text_area_->set_rect(room_view_->compose_text_area_rect());
-    });
+    text_area_->set_on_changed(
+        [this](const std::string& s)
+        {
+            bool typing = !s.empty();
+            if (typing != compose_typing_active_)
+            {
+                compose_typing_active_ = typing;
+                send_typing_notice_(typing);
+            }
+            if (room_view_)
+            {
+                room_view_->set_current_text(s);
+            }
+        });
+    text_area_->set_on_submit(
+        [this]
+        {
+            if (room_view_)
+            {
+                room_view_->compose_bar()->trigger_send();
+            }
+        });
+    text_area_->set_on_height_changed(
+        [this](float h)
+        {
+            if (room_view_)
+            {
+                room_view_->set_text_area_natural_height(h);
+            }
+            if (surface_)
+            {
+                surface_->relayout();
+            }
+        });
+    surface_->set_on_layout(
+        [this]
+        {
+            if (room_view_ && text_area_)
+            {
+                text_area_->set_rect(room_view_->compose_text_area_rect());
+            }
+        });
 
     // Wire up the ObjC window controller.
     controller_ = [[RoomWindowController alloc] initWithWindow:win];
@@ -194,41 +293,59 @@ MacRoomWindow::MacRoomWindow(
     finish_init_();
 }
 
-MacRoomWindow::~MacRoomWindow() {
+MacRoomWindow::~MacRoomWindow()
+{
     close_window();
 }
 
-void MacRoomWindow::bring_to_front() {
+void MacRoomWindow::bring_to_front()
+{
     if (!window_closed_ && controller_)
+    {
         [controller_.window makeKeyAndOrderFront:nil];
+    }
 }
 
-void MacRoomWindow::close_window() {
-    if (!window_closed_ && controller_) {
+void MacRoomWindow::close_window()
+{
+    if (!window_closed_ && controller_)
+    {
         window_closed_ = true;
         [controller_.window close];
     }
 }
 
-void MacRoomWindow::request_relayout() {
-    if (surface_) surface_->relayout();
+void MacRoomWindow::request_relayout()
+{
+    if (surface_)
+    {
+        surface_->relayout();
+    }
 }
 
-void MacRoomWindow::update_window_title_(const std::string& name) {
-    if (!window_closed_ && controller_) {
+void MacRoomWindow::update_window_title_(const std::string& name)
+{
+    if (!window_closed_ && controller_)
+    {
         NSString* title = [NSString stringWithUTF8String:name.c_str()] ?: @"";
         [controller_.window setTitle:title];
     }
 }
 
-void MacRoomWindow::apply_theme(const tk::Theme& t) {
-    if (surface_) surface_->set_theme(t);
+void MacRoomWindow::apply_theme(const tk::Theme& t)
+{
+    if (surface_)
+    {
+        surface_->set_theme(t);
+    }
     // Window chrome follows the app-wide NSApp.appearance set by the main
     // controller's -_applyTheme:, but pin it on this window too so a
     // pop-out opened before the next app-appearance change is consistent.
-    if (!window_closed_ && controller_) {
+    if (!window_closed_ && controller_)
+    {
         NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-            ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+                                    ? NSAppearanceNameDarkAqua
+                                    : NSAppearanceNameAqua;
         controller_.window.appearance = [NSAppearance appearanceNamed:name];
     }
 }
@@ -241,11 +358,13 @@ void MacRoomWindow::apply_theme(const tk::Theme& t) {
 
 @synthesize cppWindow = _cppWindow;
 
-- (void)windowWillClose:(NSNotification*)notification {
+- (void)windowWillClose:(NSNotification*)notification
+{
     (void)notification;
-    if (_cppWindow) {
+    if (_cppWindow)
+    {
         _cppWindow->on_window_will_close();
-        _cppWindow = nullptr;  // prevent any further calls into the C++ object
+        _cppWindow = nullptr; // prevent any further calls into the C++ object
     }
 }
 
@@ -255,11 +374,11 @@ void MacRoomWindow::apply_theme(const tk::Theme& t) {
 // C++ factory — called from MacShell::create_secondary_room_window_
 // ─────────────────────────────────────────────────────────────────────────────
 
-namespace tesseract {
+namespace tesseract
+{
 
 RoomWindowBase* make_mac_room_window(
-    ShellBase* shell,
-    const std::string& room_id,
+    ShellBase* shell, const std::string& room_id,
     const std::unordered_map<std::string, views::UrlPreviewData>* preview_data)
 {
     return new MacRoomWindow(shell, room_id, preview_data);

@@ -1,9 +1,9 @@
 #pragma once
 #ifndef WIN32_LEAN_AND_MEAN
-#  define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 
@@ -19,7 +19,8 @@
 #include "tk/host_win32.h"
 #include "views/LoginView.h"
 
-namespace win32 {
+namespace win32
+{
 
 /// Inline sign-in view shown inside the main window when the user is not
 /// logged in. Visuals come from the shared `tesseract::views::LoginView`
@@ -27,18 +28,22 @@ namespace win32 {
 /// worker threads + native EDIT overlay live in this shell. The
 /// homeserver field stays native until tk::TextField + IME passthrough
 /// lands.
-class LoginView {
+class LoginView
+{
 public:
     LoginView(HINSTANCE hInst, HWND hParent);
     ~LoginView();
 
-    LoginView(const LoginView&)            = delete;
+    LoginView(const LoginView&) = delete;
     LoginView& operator=(const LoginView&) = delete;
 
     HWND hwnd() const;
 
     /// Rebind before each login attempt.
-    void set_client(tesseract::Client* c) { client_ = c; }
+    void set_client(tesseract::Client* c)
+    {
+        client_ = c;
+    }
 
     /// Initial = Cancel hidden; AddAccount = Cancel visible in Form + Waiting.
     void set_mode(tesseract::views::LoginView::Mode m);
@@ -58,13 +63,22 @@ public:
     /// Called on the UI thread just before the OAuth worker thread starts.
     /// Used by MainWindow to lazily create the pending account directory and
     /// call set_data_dir() only when the user actually initiates login.
-    void set_on_begin_oauth(std::function<void()> cb) { on_begin_oauth_ = std::move(cb); }
+    void set_on_begin_oauth(std::function<void()> cb)
+    {
+        on_begin_oauth_ = std::move(cb);
+    }
 
     /// Called on the UI thread when the OAuth flow completes successfully.
-    void set_on_success(std::function<void()> cb) { on_success_ = std::move(cb); }
+    void set_on_success(std::function<void()> cb)
+    {
+        on_success_ = std::move(cb);
+    }
 
     /// Called on the UI thread when the user cancels (AddAccount mode only).
-    void set_on_cancel(std::function<void()> cb) { on_cancel_fn_ = std::move(cb); }
+    void set_on_cancel(std::function<void()> cb)
+    {
+        on_cancel_fn_ = std::move(cb);
+    }
 
 private:
     void on_sign_in();
@@ -75,21 +89,21 @@ private:
     void position_overlay();
     void join_worker();
 
-    static std::string  trim         (std::string s);
-    static std::string  wstring_to_utf8(const std::wstring& s);
+    static std::string trim(std::string s);
+    static std::string wstring_to_utf8(const std::wstring& s);
 
-    tesseract::Client*                     client_ = nullptr;
-    std::function<void()>                  on_begin_oauth_;
-    std::function<void()>                  on_success_;
-    std::function<void()>                  on_cancel_fn_;
+    tesseract::Client* client_ = nullptr;
+    std::function<void()> on_begin_oauth_;
+    std::function<void()> on_success_;
+    std::function<void()> on_cancel_fn_;
 
-    std::unique_ptr<tk::win32::Surface>    surface_;
-    tesseract::views::LoginView*           shared_   = nullptr;
-    std::unique_ptr<tk::NativeTextField>   hs_field_;
+    std::unique_ptr<tk::win32::Surface> surface_;
+    tesseract::views::LoginView* shared_ = nullptr;
+    std::unique_ptr<tk::NativeTextField> hs_field_;
 
-    std::thread                 worker_;
-    std::atomic<bool>           cancelled_{ false };
-    std::atomic<uint32_t>       discovery_gen_{ 0 };
+    std::thread worker_;
+    std::atomic<bool> cancelled_{false};
+    std::atomic<uint32_t> discovery_gen_{0};
 };
 
 } // namespace win32

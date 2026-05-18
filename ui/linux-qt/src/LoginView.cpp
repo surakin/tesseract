@@ -8,17 +8,23 @@
 
 #include "tk/theme.h"
 
-namespace qt6 {
+namespace qt6
+{
 
 LoginView::LoginView(QWidget* parent)
-    : QWidget(parent),
-      surface_(new tk::qt6::Surface(tk::Theme::light(), this))
+    : QWidget(parent), surface_(new tk::qt6::Surface(tk::Theme::light(), this))
 {
     // Build the shared widget tree and mount it as Surface's root.
     auto shared_view = std::make_unique<tesseract::views::LoginView>();
     shared_ = shared_view.get();
-    shared_->on_sign_in = [this] { on_sign_in(); };
-    shared_->on_cancel  = [this] { on_cancel();  };
+    shared_->on_sign_in = [this]
+    {
+        on_sign_in();
+    };
+    shared_->on_cancel = [this]
+    {
+        on_cancel();
+    };
     surface_->set_root(std::move(shared_view));
 
     // Native QLineEdit overlay for the homeserver input. The shared
@@ -27,10 +33,16 @@ LoginView::LoginView(QWidget* parent)
     hs_field_ = surface_->host().make_text_field();
     hs_field_->set_placeholder("matrix.org or @user:matrix.org");
     hs_field_->set_text("matrix.org");
-    hs_field_->set_on_submit([this] { on_sign_in(); });
-    hs_field_->set_on_changed([this](const std::string& text) {
-        on_hs_text_changed(text);
-    });
+    hs_field_->set_on_submit(
+        [this]
+        {
+            on_sign_in();
+        });
+    hs_field_->set_on_changed(
+        [this](const std::string& text)
+        {
+            on_hs_text_changed(text);
+        });
 }
 
 LoginView::~LoginView()
@@ -51,7 +63,10 @@ void LoginView::set_client(tesseract::Client* client)
 
 void LoginView::set_theme(const tk::Theme& t)
 {
-    if (surface_) surface_->set_theme(t);
+    if (surface_)
+    {
+        surface_->set_theme(t);
+    }
 }
 
 void LoginView::set_mode(tesseract::views::LoginView::Mode m)
@@ -86,7 +101,7 @@ void LoginView::layout_overlays()
 
 void LoginView::reset()
 {
-    ++discovery_gen_;  // invalidate any in-flight discovery callback
+    ++discovery_gen_; // invalidate any in-flight discovery callback
     cancelled_.store(true);
     if (client_)
     {
@@ -96,7 +111,8 @@ void LoginView::reset()
     cancelled_.store(false);
 
     shared_->set_status("");
-    shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
+    shared_->set_discovery_state(
+        tesseract::views::LoginView::DiscoveryState::Idle);
     shared_->set_state(tesseract::views::LoginView::State::Form);
     hs_field_->set_enabled(true);
     hs_field_->set_visible(true);
@@ -114,15 +130,17 @@ void LoginView::on_hs_text_changed(const std::string& text)
     uint32_t gen = ++discovery_gen_;
     if (text.empty())
     {
-        shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Idle);
+        shared_->set_discovery_state(
+            tesseract::views::LoginView::DiscoveryState::Idle);
         surface_->relayout();
-        layout_overlays();   // discovery label hidden → field box moves
+        layout_overlays(); // discovery label hidden → field box moves
         return;
     }
-    shared_->set_discovery_state(tesseract::views::LoginView::DiscoveryState::Discovering);
+    shared_->set_discovery_state(
+        tesseract::views::LoginView::DiscoveryState::Discovering);
     surface_->relayout();
-    layout_overlays();       // discovery label shown → field box moves;
-                             // keep the native QLineEdit aligned with it
+    layout_overlays(); // discovery label shown → field box moves;
+                       // keep the native QLineEdit aligned with it
 
     auto* snap = client_;
     if (!snap)
@@ -130,44 +148,54 @@ void LoginView::on_hs_text_changed(const std::string& text)
         return;
     }
 
-    std::thread([this, gen, snap, text] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
-        if (gen != discovery_gen_.load())
+    std::thread(
+        [this, gen, snap, text]
         {
-            return;
-        }
-        auto result = snap->discover_homeserver(text);
-        surface_->host().post_to_ui([this, gen, result = std::move(result)] {
-            if (gen != discovery_gen_.load() || !shared_)
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if (gen != discovery_gen_.load())
             {
                 return;
             }
-            if (result)
-                shared_->set_discovery_state(
-                    tesseract::views::LoginView::DiscoveryState::Resolved,
-                    result.base_url);
-            else
-                shared_->set_discovery_state(
-                    tesseract::views::LoginView::DiscoveryState::Failed,
-                    result.error);
-            surface_->relayout();
-            layout_overlays();   // Resolved/Failed label height differs from
-                                 // "Checking…" → realign the native field
-        });
-    }).detach();
+            auto result = snap->discover_homeserver(text);
+            surface_->host().post_to_ui(
+                [this, gen, result = std::move(result)]
+                {
+                    if (gen != discovery_gen_.load() || !shared_)
+                    {
+                        return;
+                    }
+                    if (result)
+                    {
+                        shared_->set_discovery_state(
+                            tesseract::views::LoginView::DiscoveryState::
+                                Resolved,
+                            result.base_url);
+                    }
+                    else
+                    {
+                        shared_->set_discovery_state(
+                            tesseract::views::LoginView::DiscoveryState::Failed,
+                            result.error);
+                    }
+                    surface_->relayout();
+                    layout_overlays(); // Resolved/Failed label height differs from
+                                       // "Checking…" → realign the native field
+                });
+        })
+        .detach();
 }
 
 void LoginView::on_sign_in()
 {
     if (!client_)
     {
-        return;   // set_client() must be called before showing
+        return; // set_client() must be called before showing
     }
     std::string hs_raw = trim(hs_field_->text());
     if (hs_raw.empty())
     {
         shared_->set_status("Please enter a homeserver.",
-                             tk::Color::rgb(0xB00020));
+                            tk::Color::rgb(0xB00020));
         surface_->update();
         return;
     }
@@ -204,19 +232,22 @@ void LoginView::on_sign_in()
     // beginAddAccount) can rebind it concurrently with this worker, which
     // would be a data race on the raw pointer.
     auto* c = client_;
-    worker_ = std::thread([this, hs, c] {
-        auto flow = c->begin_oauth(hs);
-        if (cancelled_.load())
+    worker_ = std::thread(
+        [this, hs, c]
         {
-            return;
-        }
-        bool        ok      = static_cast<bool>(flow);
-        std::string payload = ok ? flow.auth_url : flow.message;
-        surface_->host().post_to_ui(
-            [this, ok, payload = std::move(payload)] {
-                on_begin_completed(ok, payload);
-            });
-    });
+            auto flow = c->begin_oauth(hs);
+            if (cancelled_.load())
+            {
+                return;
+            }
+            bool ok = static_cast<bool>(flow);
+            std::string payload = ok ? flow.auth_url : flow.message;
+            surface_->host().post_to_ui(
+                [this, ok, payload = std::move(payload)]
+                {
+                    on_begin_completed(ok, payload);
+                });
+        });
 }
 
 void LoginView::on_begin_completed(bool ok, std::string err_or_url)
@@ -225,7 +256,7 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url)
     if (!ok)
     {
         shared_->set_status("Sign-in failed: " + err_or_url,
-                             tk::Color::rgb(0xB00020));
+                            tk::Color::rgb(0xB00020));
         shared_->set_state(tesseract::views::LoginView::State::Form);
         hs_field_->set_enabled(true);
         layout_overlays();
@@ -240,19 +271,22 @@ void LoginView::on_begin_completed(bool ok, std::string err_or_url)
 
     cancelled_.store(false);
     auto* c = client_;
-    worker_ = std::thread([this, c] {
-        auto res = c->await_oauth();
-        if (cancelled_.load())
+    worker_ = std::thread(
+        [this, c]
         {
-            return;
-        }
-        bool        ok  = static_cast<bool>(res);
-        std::string msg = res.message;
-        surface_->host().post_to_ui(
-            [this, ok, msg = std::move(msg)] {
-                on_await_completed(ok, msg);
-            });
-    });
+            auto res = c->await_oauth();
+            if (cancelled_.load())
+            {
+                return;
+            }
+            bool ok = static_cast<bool>(res);
+            std::string msg = res.message;
+            surface_->host().post_to_ui(
+                [this, ok, msg = std::move(msg)]
+                {
+                    on_await_completed(ok, msg);
+                });
+        });
 }
 
 void LoginView::on_await_completed(bool ok, std::string err)
@@ -263,8 +297,7 @@ void LoginView::on_await_completed(bool ok, std::string err)
         emit loginSucceeded();
         return;
     }
-    shared_->set_status("Sign-in failed: " + err,
-                         tk::Color::rgb(0xB00020));
+    shared_->set_status("Sign-in failed: " + err, tk::Color::rgb(0xB00020));
     shared_->set_state(tesseract::views::LoginView::State::Form);
     hs_field_->set_enabled(true);
     surface_->relayout();
@@ -303,7 +336,7 @@ void LoginView::join_worker()
 std::string LoginView::trim(std::string s)
 {
     auto a = s.find_first_not_of(" \t\n\r");
-    auto b = s.find_last_not_of (" \t\n\r");
+    auto b = s.find_last_not_of(" \t\n\r");
     if (a == std::string::npos)
     {
         return {};

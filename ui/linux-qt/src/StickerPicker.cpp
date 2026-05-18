@@ -13,7 +13,8 @@
 #include <memory>
 #include <utility>
 
-namespace {
+namespace
+{
 
 constexpr int kPickerW = 360;
 constexpr int kPickerH = 420;
@@ -36,7 +37,8 @@ StickerPicker::StickerPicker(QWidget* parent)
 
     auto shared_owner = std::make_unique<tesseract::views::StickerPicker>();
     shared_ = shared_owner.get();
-    shared_->on_selected = [this](const tesseract::ImagePackImage& img) {
+    shared_->on_selected = [this](const tesseract::ImagePackImage& img)
+    {
         if (onSelected)
         {
             onSelected(img);
@@ -49,7 +51,8 @@ StickerPicker::StickerPicker(QWidget* parent)
     search_field_ = surface_->host().make_text_field();
     search_field_->set_placeholder("Search stickers");
     search_field_->set_on_changed(
-        [this](const std::string& q) {
+        [this](const std::string& q)
+        {
             shared_->set_search_query(q);
             surface_->relayout();
         });
@@ -68,12 +71,19 @@ void StickerPicker::setClient(tesseract::Client* c)
 
 void StickerPicker::set_theme(const tk::Theme& t)
 {
-    if (surface_) surface_->set_theme(t);
+    if (surface_)
+    {
+        surface_->set_theme(t);
+    }
 }
 
 void StickerPicker::setImageProvider(
-        tesseract::views::StickerPicker::ImageProvider p) {
-    if (shared_) shared_->set_image_provider(std::move(p));
+    tesseract::views::StickerPicker::ImageProvider p)
+{
+    if (shared_)
+    {
+        shared_->set_image_provider(std::move(p));
+    }
 }
 
 void StickerPicker::refreshPacks()
@@ -94,7 +104,10 @@ void StickerPicker::invalidateImages()
     {
         shared_->invalidate_image_cache();
     }
-    if (surface_) surface_->relayout();
+    if (surface_)
+    {
+        surface_->relayout();
+    }
 }
 
 void StickerPicker::popupAt(QWidget* anchor)
@@ -171,8 +184,8 @@ void StickerPicker::popupAtRect(QWidget* anchor, const tk::Rect& localRect)
     }
     QRect screen = scr->availableGeometry();
 
-    int x = topLeftGlobal.x() + rectW / 2 - width() / 2;   // centered over button
-    int y = topLeftGlobal.y() - height() - 4;               // above button
+    int x = topLeftGlobal.x() + rectW / 2 - width() / 2; // centered over button
+    int y = topLeftGlobal.y() - height() - 4;            // above button
     if (y < screen.top())
     {
         y = topLeftGlobal.y() + rectH + 4;

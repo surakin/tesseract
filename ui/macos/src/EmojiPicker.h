@@ -7,7 +7,10 @@
 #include <functional>
 #include <string>
 
-namespace tesseract { class Client; }
+namespace tesseract
+{
+class Client;
+}
 
 /// Floating emoji picker presented as a utility panel. The panel hosts a
 /// tk::macos::Surface that paints the shared
@@ -18,17 +21,18 @@ namespace tesseract { class Client; }
 @interface EmojiPickerPanel : NSPanel
 
 /// Fired when the user picks an emoji; the NSString is the UTF-8 glyph.
-@property (nonatomic, copy) void (^onSelect)(NSString* glyph);
+@property(nonatomic, copy) void (^onSelect)(NSString* glyph);
 
 /// Borrowed SDK client; must outlive the panel's lifetime. The shared
 /// picker reads recent_emoji_top + writes recent_emoji_bump.
-@property (nonatomic, assign) tesseract::Client* client;
+@property(nonatomic, assign) tesseract::Client* client;
 
 + (instancetype)sharedPanel;
 
 /// Wire async image loading for custom emoticon tabs.
-- (void)setImageProvider:(std::function<const tk::Image*(const std::string&,
-                                                          const std::string&)>)provider;
+- (void)setImageProvider:
+    (std::function<const tk::Image*(const std::string&, const std::string&)>)
+        provider;
 
 /// Invalidate the image cache and relayout after new bitmaps land.
 - (void)invalidateImageCache;

@@ -10,13 +10,16 @@
 // menu-item actions back to the C++ std::function callbacks.
 @class TesseractTrayBridge;
 
-class MacOSTrayIcon final : public tesseract::ITrayIcon {
+class MacOSTrayIcon final : public tesseract::ITrayIcon
+{
 public:
-    MacOSTrayIcon(std::function<void()> on_show,
-                  std::function<void()> on_quit);
+    MacOSTrayIcon(std::function<void()> on_show, std::function<void()> on_quit);
     ~MacOSTrayIcon() override;
 
-    bool is_available() const override { return bridge_ != nil; }
+    bool is_available() const override
+    {
+        return bridge_ != nil;
+    }
     void set_tooltip(const std::string& text) override;
 
 private:

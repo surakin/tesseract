@@ -4,15 +4,19 @@
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
-namespace {
+namespace
+{
 // XDG portal notification ids must match [a-zA-Z0-9_-]+; Matrix room ids
 // contain '!', ':' and '.'.
-std::string sanitize_portal_id(const std::string& s) {
+std::string sanitize_portal_id(const std::string& s)
+{
     std::string out;
     out.reserve(s.size());
     for (unsigned char c : s)
-        out += (std::isalnum(c) || c == '_' || c == '-')
-                   ? static_cast<char>(c) : '_';
+    {
+        out += (std::isalnum(c) || c == '_' || c == '-') ? static_cast<char>(c)
+                                                         : '_';
+    }
     return out.empty() ? std::string("_") : out;
 }
 } // namespace
@@ -22,59 +26,66 @@ LinuxNotifierGtk::LinuxNotifierGtk(
     : on_activate_(std::move(on_activate))
 {
     bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
-    if (!bus_) return;
+    if (!bus_)
+    {
+        return;
+    }
 
     // Freedesktop notification signals (no activation token available here).
     action_sub_ = g_dbus_connection_signal_subscribe(
-        bus_,
-        "org.freedesktop.Notifications",
-        "org.freedesktop.Notifications",
-        "ActionInvoked",
-        "/org/freedesktop/Notifications",
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_action_invoked_cb, this, nullptr);
+        bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
+        "ActionInvoked", "/org/freedesktop/Notifications", nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE, on_action_invoked_cb, this, nullptr);
 
     closed_sub_ = g_dbus_connection_signal_subscribe(
-        bus_,
-        "org.freedesktop.Notifications",
-        "org.freedesktop.Notifications",
-        "NotificationClosed",
-        "/org/freedesktop/Notifications",
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_notification_closed_cb, this, nullptr);
+        bus_, "org.freedesktop.Notifications", "org.freedesktop.Notifications",
+        "NotificationClosed", "/org/freedesktop/Notifications", nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE, on_notification_closed_cb, this, nullptr);
 
     // XDG Desktop Portal notification signal — provides an xdg_activation_v1
     // token on Wayland, enabling reliable window focus after notification click.
     portal_action_sub_ = g_dbus_connection_signal_subscribe(
-        bus_,
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Notification",
-        "ActionInvoked",
-        "/org/freedesktop/portal/desktop",
-        nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE,
+        bus_, "org.freedesktop.portal.Desktop",
+        "org.freedesktop.portal.Notification", "ActionInvoked",
+        "/org/freedesktop/portal/desktop", nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
         on_portal_action_invoked_cb, this, nullptr);
 }
 
-LinuxNotifierGtk::~LinuxNotifierGtk() {
-    if (!bus_) return;
-    if (action_sub_)        g_dbus_connection_signal_unsubscribe(bus_, action_sub_);
-    if (closed_sub_)        g_dbus_connection_signal_unsubscribe(bus_, closed_sub_);
-    if (portal_action_sub_) g_dbus_connection_signal_unsubscribe(bus_, portal_action_sub_);
+LinuxNotifierGtk::~LinuxNotifierGtk()
+{
+    if (!bus_)
+    {
+        return;
+    }
+    if (action_sub_)
+    {
+        g_dbus_connection_signal_unsubscribe(bus_, action_sub_);
+    }
+    if (closed_sub_)
+    {
+        g_dbus_connection_signal_unsubscribe(bus_, closed_sub_);
+    }
+    if (portal_action_sub_)
+    {
+        g_dbus_connection_signal_unsubscribe(bus_, portal_action_sub_);
+    }
     g_object_unref(bus_);
 }
 
-bool LinuxNotifierGtk::use_portal() const {
+bool LinuxNotifierGtk::use_portal() const
+{
     // Use the portal on Wayland for activation-token support, or inside Flatpak
     // where direct D-Bus calls to the notification daemon are blocked.
     return g_getenv("FLATPAK_ID") != nullptr ||
            g_getenv("WAYLAND_DISPLAY") != nullptr;
 }
 
-void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
-    if (!bus_) return;
+void LinuxNotifierGtk::notify(const tesseract::Notification& n)
+{
+    if (!bus_)
+    {
+        return;
+    }
 
     // freedesktop notifications have a single image slot: prefer the
     // message image / sticker (already privacy-gated upstream), fall back
@@ -85,22 +96,28 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
     // Decode pic bytes to a GdkPixbuf (kept alive through the D-Bus call so
     // that the pixel pointer in the image-data variant stays valid).
     GdkPixbufLoader* loader = nullptr;
-    GdkPixbuf*       rgba   = nullptr;
-    if (!pic.empty()) {
+    GdkPixbuf* rgba = nullptr;
+    if (!pic.empty())
+    {
         loader = gdk_pixbuf_loader_new();
         gdk_pixbuf_loader_write(loader,
-            reinterpret_cast<const guchar*>(pic.data()),
-            static_cast<gsize>(pic.size()), nullptr);
+                                reinterpret_cast<const guchar*>(pic.data()),
+                                static_cast<gsize>(pic.size()), nullptr);
         gdk_pixbuf_loader_close(loader, nullptr);
         GdkPixbuf* pb = gdk_pixbuf_loader_get_pixbuf(loader);
-        if (pb) {
-            GdkPixbuf* scaled = gdk_pixbuf_scale_simple(
-                pb, 64, 64, GDK_INTERP_BILINEAR);
+        if (pb)
+        {
+            GdkPixbuf* scaled =
+                gdk_pixbuf_scale_simple(pb, 64, 64, GDK_INTERP_BILINEAR);
             // scale_simple returns NULL on allocation failure / bad dims.
-            if (scaled) {
-                if (gdk_pixbuf_get_has_alpha(scaled)) {
+            if (scaled)
+            {
+                if (gdk_pixbuf_get_has_alpha(scaled))
+                {
                     rgba = scaled;
-                } else {
+                }
+                else
+                {
                     rgba = gdk_pixbuf_add_alpha(scaled, FALSE, 0, 0, 0);
                     g_object_unref(scaled);
                 }
@@ -108,40 +125,47 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
         }
     }
 
-    if (use_portal()) {
+    if (use_portal())
+    {
         const std::string pid = sanitize_portal_id(n.room_id);
         // Record mapping so on_portal_action_invoked_cb can look up the room.
         portal_id_to_room_[pid] = n.room_id;
         GVariantBuilder notif_b;
         g_variant_builder_init(&notif_b, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&notif_b, "{sv}", "title",
-            g_variant_new_string(n.sender.c_str()));
+                              g_variant_new_string(n.sender.c_str()));
         g_variant_builder_add(&notif_b, "{sv}", "body",
-            g_variant_new_string(n.body.c_str()));
-        if (!pic.empty()) {
+                              g_variant_new_string(n.body.c_str()));
+        if (!pic.empty())
+        {
             // Pass raw encoded bytes as a bytes-icon GIcon — the portal daemon
             // handles decode. g_bytes_new copies so the GVariant owns the data.
-            GBytes*   gb  = g_bytes_new(pic.data(), pic.size());
-            GVariant* icv = g_variant_new_from_bytes(G_VARIANT_TYPE("ay"), gb, TRUE);
+            GBytes* gb = g_bytes_new(pic.data(), pic.size());
+            GVariant* icv =
+                g_variant_new_from_bytes(G_VARIANT_TYPE("ay"), gb, TRUE);
             g_bytes_unref(gb);
             g_variant_builder_add(&notif_b, "{sv}", "icon",
-                g_variant_new("(sv)", "bytes-icon", icv));
+                                  g_variant_new("(sv)", "bytes-icon", icv));
         }
         g_dbus_connection_call(
-            bus_,
-            "org.freedesktop.portal.Desktop",
+            bus_, "org.freedesktop.portal.Desktop",
             "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Notification",
-            "AddNotification",
-            g_variant_new("(sa{sv})", pid.c_str(), &notif_b),
-            nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
-        if (rgba)   g_object_unref(rgba);
-        if (loader) g_object_unref(loader);
+            "org.freedesktop.portal.Notification", "AddNotification",
+            g_variant_new("(sa{sv})", pid.c_str(), &notif_b), nullptr,
+            G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
+        if (rgba)
+        {
+            g_object_unref(rgba);
+        }
+        if (loader)
+        {
+            g_object_unref(loader);
+        }
         return;
     }
 
-    const uint32_t replaces = room_to_id_.count(n.room_id)
-                              ? room_to_id_.at(n.room_id) : 0u;
+    const uint32_t replaces =
+        room_to_id_.count(n.room_id) ? room_to_id_.at(n.room_id) : 0u;
 
     GVariantBuilder actions_b;
     g_variant_builder_init(&actions_b, G_VARIANT_TYPE("as"));
@@ -150,19 +174,21 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
 
     GVariantBuilder hints_b;
     g_variant_builder_init(&hints_b, G_VARIANT_TYPE("a{sv}"));
-    if (rgba) {
+    if (rgba)
+    {
         // image-data hint: (iiibiiay) — width, height, rowstride, has_alpha,
         // bits_per_sample, channels, pixel_data.  The pixel pointer is owned by
         // rgba which outlives the synchronous g_dbus_connection_call_sync below.
-        const int    w  = gdk_pixbuf_get_width(rgba);
-        const int    h  = gdk_pixbuf_get_height(rgba);
-        const int    rs = gdk_pixbuf_get_rowstride(rgba);
-        const int    ch = gdk_pixbuf_get_n_channels(rgba);
+        const int w = gdk_pixbuf_get_width(rgba);
+        const int h = gdk_pixbuf_get_height(rgba);
+        const int rs = gdk_pixbuf_get_rowstride(rgba);
+        const int ch = gdk_pixbuf_get_n_channels(rgba);
         const gboolean ha = gdk_pixbuf_get_has_alpha(rgba);
-        const guchar*  px = gdk_pixbuf_get_pixels(rgba);
+        const guchar* px = gdk_pixbuf_get_pixels(rgba);
         GVariant* data_v = g_variant_new_fixed_array(
             G_VARIANT_TYPE_BYTE, px, static_cast<gsize>(rs) * h, 1);
-        g_variant_builder_add(&hints_b, "{sv}", "image-data",
+        g_variant_builder_add(
+            &hints_b, "{sv}", "image-data",
             g_variant_new("(iiibii@ay)", w, h, rs, ha, 8, ch, data_v));
     }
 
@@ -170,46 +196,42 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n) {
     // legacy Notify body; escape server-supplied text so it can't inject
     // markup. g_variant_new("s", ...) copies, so free right after.
     gchar* esc_sender = g_markup_escape_text(n.sender.c_str(), -1);
-    gchar* esc_body   = g_markup_escape_text(n.body.c_str(), -1);
-    GVariant* params = g_variant_new(
-        "(susssasa{sv}i)",
-        "Tesseract",
-        replaces,
-        "tesseract",
-        esc_sender,
-        esc_body,
-        &actions_b,
-        &hints_b,
-        5000);
+    gchar* esc_body = g_markup_escape_text(n.body.c_str(), -1);
+    GVariant* params =
+        g_variant_new("(susssasa{sv}i)", "Tesseract", replaces, "tesseract",
+                      esc_sender, esc_body, &actions_b, &hints_b, 5000);
     g_free(esc_sender);
     g_free(esc_body);
 
     GVariant* result = g_dbus_connection_call_sync(
-        bus_,
-        "org.freedesktop.Notifications",
-        "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications",
-        "Notify",
-        params,
-        G_VARIANT_TYPE("(u)"),
-        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+        bus_, "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications", "Notify", params,
+        G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
 
     // Safe to release avatar resources now that the sync call has serialised params.
-    if (rgba)   g_object_unref(rgba);
-    if (loader) g_object_unref(loader);
+    if (rgba)
+    {
+        g_object_unref(rgba);
+    }
+    if (loader)
+    {
+        g_object_unref(loader);
+    }
 
-    if (result) {
+    if (result)
+    {
         uint32_t id = 0;
         g_variant_get(result, "(u)", &id);
         g_variant_unref(result);
-        id_to_room_[id]        = n.room_id;
+        id_to_room_[id] = n.room_id;
         room_to_id_[n.room_id] = id;
     }
 }
 
-void LinuxNotifierGtk::on_action_invoked_cb(
-    GDBusConnection*, const char*, const char*,
-    const char*, const char*, GVariant* parameters, gpointer user_data)
+void LinuxNotifierGtk::on_action_invoked_cb(GDBusConnection*, const char*,
+                                            const char*, const char*,
+                                            const char*, GVariant* parameters,
+                                            gpointer user_data)
 {
     auto* self = static_cast<LinuxNotifierGtk*>(user_data);
     uint32_t id = 0;
@@ -217,41 +239,57 @@ void LinuxNotifierGtk::on_action_invoked_cb(
     g_variant_get(parameters, "(u&s)", &id, &action);
     auto it = self->id_to_room_.find(id);
     if (it != self->id_to_room_.end())
-        self->on_activate_(it->second, "");  // no activation token via legacy D-Bus
+    {
+        self->on_activate_(it->second,
+                           ""); // no activation token via legacy D-Bus
+    }
 }
 
-void LinuxNotifierGtk::on_notification_closed_cb(
-    GDBusConnection*, const char*, const char*,
-    const char*, const char*, GVariant* parameters, gpointer user_data)
+void LinuxNotifierGtk::on_notification_closed_cb(GDBusConnection*, const char*,
+                                                 const char*, const char*,
+                                                 const char*,
+                                                 GVariant* parameters,
+                                                 gpointer user_data)
 {
     auto* self = static_cast<LinuxNotifierGtk*>(user_data);
     uint32_t id = 0, reason = 0;
     g_variant_get(parameters, "(uu)", &id, &reason);
     auto it = self->id_to_room_.find(id);
-    if (it != self->id_to_room_.end()) {
+    if (it != self->id_to_room_.end())
+    {
         self->room_to_id_.erase(it->second);
         self->id_to_room_.erase(it);
     }
 }
 
-void LinuxNotifierGtk::on_portal_action_invoked_cb(
-    GDBusConnection*, const char*, const char*,
-    const char*, const char*, GVariant* parameters, gpointer user_data)
+void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
+                                                   const char*, const char*,
+                                                   const char*, const char*,
+                                                   GVariant* parameters,
+                                                   gpointer user_data)
 {
     auto* self = static_cast<LinuxNotifierGtk*>(user_data);
     const char* notif_id = nullptr;
-    const char* action   = nullptr;
-    GVariant*   platform = nullptr;
+    const char* action = nullptr;
+    GVariant* platform = nullptr;
     // Portal ActionInvoked format: (ssa{sv})
     g_variant_get(parameters, "(&s&s@a{sv})", &notif_id, &action, &platform);
 
-    if (!notif_id) {
-        if (platform) g_variant_unref(platform);
+    if (!notif_id)
+    {
+        if (platform)
+        {
+            g_variant_unref(platform);
+        }
         return;
     }
     auto it = self->portal_id_to_room_.find(notif_id);
-    if (it == self->portal_id_to_room_.end()) {
-        if (platform) g_variant_unref(platform);
+    if (it == self->portal_id_to_room_.end())
+    {
+        if (platform)
+        {
+            g_variant_unref(platform);
+        }
         return;
     }
 
@@ -259,10 +297,12 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(
     // platform_data["activation-token"] on Wayland. Pass it so the shell can
     // call gtk_window_set_startup_id() before gtk_window_present().
     std::string token;
-    if (platform) {
-        GVariant* tv = g_variant_lookup_value(
-            platform, "activation-token", G_VARIANT_TYPE_STRING);
-        if (tv) {
+    if (platform)
+    {
+        GVariant* tv = g_variant_lookup_value(platform, "activation-token",
+                                              G_VARIANT_TYPE_STRING);
+        if (tv)
+        {
             token = g_variant_get_string(tv, nullptr);
             g_variant_unref(tv);
         }

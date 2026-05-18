@@ -31,10 +31,13 @@
 #ifndef _EXPERIMENTAL_COROUTINE_
 #define _EXPERIMENTAL_COROUTINE_
 
-namespace std::experimental {
+namespace std::experimental
+{
 
 template <typename Ret, typename... Args>
-struct coroutine_traits : std::coroutine_traits<Ret, Args...> {};
+struct coroutine_traits : std::coroutine_traits<Ret, Args...>
+{
+};
 
 template <typename Promise = void>
 using coroutine_handle = std::coroutine_handle<Promise>;

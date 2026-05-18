@@ -15,36 +15,41 @@
 using namespace tk;
 using tesseract::views::LoginView;
 
-namespace {
+namespace
+{
 
 // One-shot helper to run measure → arrange → paint against a TestSurface.
-struct Stage {
+struct Stage
+{
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
 
-    LayoutCtx layout_ctx() {
-        return LayoutCtx{ surface->factory(), Theme::light() };
+    LayoutCtx layout_ctx()
+    {
+        return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx() {
-        return PaintCtx{ surface->canvas(), surface->factory(),
-                          Theme::light() };
+    PaintCtx paint_ctx()
+    {
+        return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
 
-    void run(Widget& root, Rect bounds) {
+    void run(Widget& root, Rect bounds)
+    {
         auto lc = layout_ctx();
-        root.measure(lc, { bounds.w, bounds.h });
+        root.measure(lc, {bounds.w, bounds.h});
         root.arrange(lc, bounds);
         auto pc = paint_ctx();
         root.paint(pc);
     }
 };
 
-bool nearly(Color a, Color b, int tol = 12) {
-    auto delta = [](int x, int y) {
+bool nearly(Color a, Color b, int tol = 12)
+{
+    auto delta = [](int x, int y)
+    {
         return x > y ? x - y : y - x;
     };
-    return delta(a.r, b.r) <= tol
-        && delta(a.g, b.g) <= tol
-        && delta(a.b, b.b) <= tol;
+    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol &&
+           delta(a.b, b.b) <= tol;
 }
 
 } // namespace
@@ -53,18 +58,21 @@ bool nearly(Color a, Color b, int tol = 12) {
 //  Layout: VBox
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]") {
+TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]")
+{
     Stage st;
     VBox box;
     box.set_spacing(8).set_padding(Edges::all(10)).set_cross(Cross::Stretch);
 
-    auto* a = box.add_child(std::make_unique<Separator>(Separator::Orientation::Horizontal));
+    auto* a = box.add_child(
+        std::make_unique<Separator>(Separator::Orientation::Horizontal));
     a->set_thickness(20);
-    auto* b = box.add_child(std::make_unique<Separator>(Separator::Orientation::Horizontal));
+    auto* b = box.add_child(
+        std::make_unique<Separator>(Separator::Orientation::Horizontal));
     b->set_thickness(30);
 
     auto lc = st.layout_ctx();
-    box.arrange(lc, { 0, 0, 200, 100 });
+    box.arrange(lc, {0, 0, 200, 100});
 
     Rect ra = a->bounds();
     Rect rb = b->bounds();
@@ -84,7 +92,8 @@ TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]") {
 }
 
 TEST_CASE("VBox Main::Center centres children with leftover space",
-          "[tk][widget][layout]") {
+          "[tk][widget][layout]")
+{
     Stage st;
     VBox box;
     box.set_main(Main::Center).set_cross(Cross::Stretch);
@@ -93,28 +102,31 @@ TEST_CASE("VBox Main::Center centres children with leftover space",
     a->set_thickness(40);
 
     auto lc = st.layout_ctx();
-    box.arrange(lc, { 0, 0, 100, 100 });
+    box.arrange(lc, {0, 0, 100, 100});
     Rect ra = a->bounds();
     // 100 - 40 = 60 leftover, halved = 30 above.
     CHECK(ra.y == 30.0f);
     CHECK(ra.h == 40.0f);
 }
 
-TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]") {
+TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
+{
     Stage st;
     HBox row;
     row.set_spacing(4).set_cross(Cross::Stretch);
-    auto* a = row.add_child(std::make_unique<Separator>(Separator::Orientation::Vertical));
+    auto* a = row.add_child(
+        std::make_unique<Separator>(Separator::Orientation::Vertical));
     a->set_thickness(10);
-    auto* b = row.add_child(std::make_unique<Separator>(Separator::Orientation::Vertical));
+    auto* b = row.add_child(
+        std::make_unique<Separator>(Separator::Orientation::Vertical));
     b->set_thickness(20);
 
     auto lc = st.layout_ctx();
-    row.arrange(lc, { 0, 0, 100, 50 });
+    row.arrange(lc, {0, 0, 100, 50});
 
     CHECK(a->bounds().x == 0.0f);
     CHECK(a->bounds().w == 10.0f);
-    CHECK(b->bounds().x == 14.0f);    // 0 + 10 + 4 spacing
+    CHECK(b->bounds().x == 14.0f); // 0 + 10 + 4 spacing
     CHECK(b->bounds().w == 20.0f);
     // Cross stretch on row's cross axis (height) → both fill 50.
     CHECK(a->bounds().h == 50.0f);
@@ -126,61 +138,67 @@ TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]") {
 // ─────────────────────────────────────────────────────────────────────────
 
 TEST_CASE("Label::measure returns a non-zero size for non-empty text",
-          "[tk][widget][label]") {
+          "[tk][widget][label]")
+{
     Stage st;
     Label lbl("Hello, world", FontRole::Body);
     auto lc = st.layout_ctx();
-    Size s = lbl.measure(lc, { -1, -1 });
+    Size s = lbl.measure(lc, {-1, -1});
     CHECK(s.w > 0.0f);
     CHECK(s.h > 0.0f);
 }
 
-TEST_CASE("Button::click invokes the on-click callback",
-          "[tk][widget][button]") {
+TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
+{
     int n_calls = 0;
-    Button btn("OK", [&] { ++n_calls; });
+    Button btn("OK",
+               [&]
+               {
+                   ++n_calls;
+               });
     btn.click();
     CHECK(n_calls == 1);
 
     btn.set_enabled(false);
     btn.click();
-    CHECK(n_calls == 1);   // disabled buttons swallow clicks
+    CHECK(n_calls == 1); // disabled buttons swallow clicks
 }
 
-TEST_CASE("Button paints a coloured rect at its bounds",
-          "[tk][widget][button]") {
+TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
+{
     Stage st;
     auto btn = std::make_unique<Button>("Sign in");
 
-    st.run(*btn, { 10, 10, 120, 36 });
+    st.run(*btn, {10, 10, 120, 36});
 
     // A pixel inside the rounded rect but clear of the centred glyph
     // should be the accent fill (default Primary). Sample near the
     // right edge, vertically centred — well past the end of "Sign in".
     auto accent = Theme::light().palette.accent;
-    auto px     = st.surface->read_pixel(120, 28);
+    auto px = st.surface->read_pixel(120, 28);
     CHECK(nearly(px, accent, /*tol=*/20));
 }
 
-TEST_CASE("Separator paints a 1 px line by default",
-          "[tk][widget][separator]") {
+TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
+{
     Stage st;
     Separator sep;
     sep.set_thickness(1);
     st.surface->canvas().clear(Color::rgb(0xffffff));
-    st.run(sep, { 0, 50, 200, 1 });
+    st.run(sep, {0, 50, 200, 1});
     // Sample inside the line — should be the theme separator colour.
     auto px = st.surface->read_pixel(50, 50);
     CHECK(nearly(px, Theme::light().palette.separator, /*tol=*/30));
 }
 
 TEST_CASE("Avatar paints initials disc when no image is set",
-          "[tk][widget][avatar]") {
+          "[tk][widget][avatar]")
+{
     Stage st;
     Avatar a("Alice Anders");
     a.set_diameter(48);
     st.surface->canvas().clear(Color::rgb(0xffffff));
-    st.run(a, { 100, 100, 48, 48 });
+    st.run(a, {100, 100, 48, 48});
     // Sample to the right of the centred glyph — still well inside the
     // 24 px-radius disc but far enough out to avoid letter strokes.
     auto bg = Theme::light().palette.avatar_initials_bg;
@@ -188,8 +206,8 @@ TEST_CASE("Avatar paints initials disc when no image is set",
     CHECK(nearly(px, bg, /*tol=*/30));
 }
 
-TEST_CASE("Widget::hit_test descends into children",
-          "[tk][widget][hittest]") {
+TEST_CASE("Widget::hit_test descends into children", "[tk][widget][hittest]")
+{
     Stage st;
     VBox box;
     box.set_cross(Cross::Stretch);
@@ -199,25 +217,26 @@ TEST_CASE("Widget::hit_test descends into children",
     b->set_thickness(20);
 
     auto lc = st.layout_ctx();
-    box.arrange(lc, { 0, 0, 100, 100 });
+    box.arrange(lc, {0, 0, 100, 100});
 
     // hit_test takes world coords. (5, 5) is inside child a.
-    Widget* hit = box.hit_test({ 5, 5 });
+    Widget* hit = box.hit_test({5, 5});
     CHECK(hit == a);
     // (5, 25) is inside child b (b->y == 20).
-    hit = box.hit_test({ 5, 25 });
+    hit = box.hit_test({5, 25});
     CHECK(hit == b);
     // Below all children → no child hit, falls back to the box itself.
-    hit = box.hit_test({ 5, 60 });
+    hit = box.hit_test({5, 60});
     CHECK(hit == &box);
     // Outside box entirely.
-    hit = box.hit_test({ 5, -1 });
+    hit = box.hit_test({5, -1});
     CHECK(hit == nullptr);
 }
 
 TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
           "container",
-          "[tk][widget][dispatch]") {
+          "[tk][widget][dispatch]")
+{
     // Regression: previously the recursive subtraction of bounds_.x in
     // dispatch_pointer_down over-corrected once it descended past a
     // parent that was itself laid out at a non-zero world origin — which
@@ -231,13 +250,18 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
 
     bool clicked = false;
     auto* btn = card.add_child(std::make_unique<Button>(
-        "Sign in", [&] { clicked = true; }, Button::Variant::Primary));
-    btn->set_min_size({ 0, 36 });
+        "Sign in",
+        [&]
+        {
+            clicked = true;
+        },
+        Button::Variant::Primary));
+    btn->set_min_size({0, 36});
 
     auto lc = st.layout_ctx();
     // Place the card well away from (0, 0) so the bug would manifest.
-    Rect card_bounds{ 20, 250, 360, 100 };
-    card.measure(lc, { card_bounds.w, card_bounds.h });
+    Rect card_bounds{20, 250, 360, 100};
+    card.measure(lc, {card_bounds.w, card_bounds.h});
     card.arrange(lc, card_bounds);
 
     Rect bb = btn->bounds();
@@ -245,7 +269,7 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     REQUIRE(bb.h > 0);
 
     // Click in the geometric centre of the button (world coords).
-    Point centre{ bb.x + bb.w * 0.5f, bb.y + bb.h * 0.5f };
+    Point centre{bb.x + bb.w * 0.5f, bb.y + bb.h * 0.5f};
 
     Widget* hit = card.hit_test(centre);
     CHECK(hit == btn);
@@ -258,17 +282,17 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     Point local = btn->world_to_local(centre);
     CHECK(local.x >= 0);
     CHECK(local.y >= 0);
-    CHECK(local.x <  bb.w);
-    CHECK(local.y <  bb.h);
+    CHECK(local.x < bb.w);
+    CHECK(local.y < bb.h);
     btn->on_pointer_up(local,
-                        /*inside_self=*/local.x >= 0 && local.y >= 0 &&
-                                         local.x <  bb.w && local.y <  bb.h);
+                       /*inside_self=*/local.x >= 0 && local.y >= 0 &&
+                           local.x < bb.w && local.y < bb.h);
     CHECK(clicked);
 
     // And a click clearly outside the button should miss it.
     clicked = false;
-    Widget* miss = card.dispatch_pointer_down({ card_bounds.x + 2,
-                                                 card_bounds.y + 2 });
+    Widget* miss =
+        card.dispatch_pointer_down({card_bounds.x + 2, card_bounds.y + 2});
     CHECK(miss != btn);
 }
 
@@ -277,20 +301,24 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
 // ─────────────────────────────────────────────────────────────────────────
 
 TEST_CASE("LoginView lays out + paints onto the offscreen surface",
-          "[tk][view][login]") {
+          "[tk][view][login]")
+{
     Stage st;
     LoginView view;
     view.set_homeserver_label("matrix.org");
 
     bool clicked = false;
-    view.on_sign_in = [&] { clicked = true; };
+    view.on_sign_in = [&]
+    {
+        clicked = true;
+    };
 
-    st.run(view, { 0, 0, 400, 600 });
+    st.run(view, {0, 0, 400, 600});
 
     // The card should have positioned the homeserver field somewhere
     // inside the view bounds.
     Rect hr = view.homeserver_field_rect();
-    CHECK(hr.w  >  0.0f);
+    CHECK(hr.w > 0.0f);
     CHECK(hr.h >= 30.0f);
 
     // Pretend a button click. Even without real pointer wiring the
@@ -301,9 +329,12 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     Widget* card = children[0].get();
     REQUIRE(card);
     Button* signin = nullptr;
-    for (auto& ch : card->children()) {
-        if (auto* b = dynamic_cast<Button*>(ch.get())) {
-            if (b->visible()) {
+    for (auto& ch : card->children())
+    {
+        if (auto* b = dynamic_cast<Button*>(ch.get()))
+        {
+            if (b->visible())
+            {
                 signin = b;
                 break;
             }
@@ -317,37 +348,44 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     // on Mode (added for multi-account): Initial keeps Cancel hidden,
     // AddAccount surfaces it.
     view.set_state(LoginView::State::Waiting);
-    auto count_visible_buttons = [&]() {
+    auto count_visible_buttons = [&]()
+    {
         int n = 0;
-        for (auto& ch : card->children()) {
-            if (auto* b = dynamic_cast<Button*>(ch.get())) {
-                if (b->visible()) ++n;
+        for (auto& ch : card->children())
+        {
+            if (auto* b = dynamic_cast<Button*>(ch.get()))
+            {
+                if (b->visible())
+                {
+                    ++n;
+                }
             }
         }
         return n;
     };
-    CHECK(count_visible_buttons() == 0);  // Initial + Waiting → both hidden
+    CHECK(count_visible_buttons() == 0); // Initial + Waiting → both hidden
 
     view.set_mode(LoginView::Mode::AddAccount);
-    CHECK(count_visible_buttons() == 1);  // AddAccount + Waiting → Cancel only
+    CHECK(count_visible_buttons() == 1); // AddAccount + Waiting → Cancel only
     CHECK(view.cancel_visible());
 }
 
-TEST_CASE("Settings has expected defaults", "[settings]") {
+TEST_CASE("Settings has expected defaults", "[settings]")
+{
     const auto& s = tesseract::Settings::instance();
 
     // Font sizes — one per tk::FontRole.
-    CHECK(s.font_small           ==  8);
-    CHECK(s.font_body            == 12);
-    CHECK(s.font_sender_name     == 11);
-    CHECK(s.font_timestamp       ==  9);
-    CHECK(s.font_sidebar_name    == 12);
+    CHECK(s.font_small == 8);
+    CHECK(s.font_body == 12);
+    CHECK(s.font_sender_name == 11);
+    CHECK(s.font_timestamp == 9);
+    CHECK(s.font_sidebar_name == 12);
     CHECK(s.font_sidebar_preview == 10);
-    CHECK(s.font_unread_badge    == 10);
-    CHECK(s.font_title           == 14);
-    CHECK(s.font_ui_semibold     == 10);
+    CHECK(s.font_unread_badge == 10);
+    CHECK(s.font_title == 14);
+    CHECK(s.font_ui_semibold == 10);
 
     // Reaction chip.
     CHECK(s.reaction_chip_height == 28);
-    CHECK(s.reaction_chip_gap    ==  6);
+    CHECK(s.reaction_chip_gap == 6);
 }

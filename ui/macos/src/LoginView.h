@@ -25,7 +25,7 @@
 
 /// Called on the main thread just before the OAuth worker thread starts.
 /// Set by MainWindow to lazily create the pending directory on first sign-in.
-@property (nonatomic, copy) void (^onBeginOAuth)(void);
+@property(nonatomic, copy) void (^onBeginOAuth)(void);
 
 /// Initial = no cancel button; AddAccount = cancel visible in Form + Waiting.
 - (void)setMode:(tesseract::views::LoginView::Mode)mode;
@@ -33,7 +33,7 @@
 /// Re-skin the login surface when the theme preference changes.
 - (void)setTheme:(const tk::Theme&)t;
 
-@property (nonatomic, weak) id<LoginViewDelegate> delegate;
+@property(nonatomic, weak) id<LoginViewDelegate> delegate;
 
 /// Return the view to its initial "form" state.
 - (void)reset;

@@ -36,7 +36,7 @@
 #define kCGImagePropertyWebPDictionary CFSTR("{WebP}")
 #endif
 #ifndef kCGImagePropertyWebPDelayTime
-#define kCGImagePropertyWebPDelayTime  CFSTR("DelayTime")
+#define kCGImagePropertyWebPDelayTime CFSTR("DelayTime")
 #endif
 
 #include <tesseract/account_session.h>
@@ -70,171 +70,187 @@
 //  MainWindowController holds a std::unique_ptr<MacShell>.
 // ─────────────────────────────────────────────────────────────────────────
 
-namespace {
+namespace
+{
 
-class MacShell final : public tesseract::ShellBase {
+class MacShell final : public tesseract::ShellBase
+{
 public:
     // ctrl_ is non-owning: MacShell is owned by MainWindowController itself
     // (via _shell), so ctrl_ is always valid for MacShell's lifetime.
-    explicit MacShell(MainWindowController* ctrl) : ctrl_(ctrl) {}
+    explicit MacShell(MainWindowController* ctrl) : ctrl_(ctrl)
+    {
+    }
 
 protected:
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
     void on_media_bytes_ready_(const std::string& key,
-                                ShellBase::MediaKind kind,
-                                std::vector<uint8_t> bytes) override;
+                               ShellBase::MediaKind kind,
+                               std::vector<uint8_t> bytes) override;
     void generate_video_thumbnail_(const std::string& event_id,
-                                    const std::string& video_url) override;
+                                   const std::string& video_url) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
-                               int max_w, int max_h) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                               int max_h) override;
     std::int64_t monotonic_ms_() override;
-    void         start_anim_tick_() override;
-    void         repaint_pickers_() override;
+    void start_anim_tick_() override;
+    void repaint_pickers_() override;
 
-    void handle_timeline_reset_ui_(std::string room_id,
+    void handle_timeline_reset_ui_(
+        std::string room_id,
         std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
-    void handle_message_inserted_ui_(std::string room_id, std::size_t index,
-        std::unique_ptr<tesseract::Event> ev) override;
-    void handle_message_updated_ui_(std::string room_id, std::size_t index,
-        std::unique_ptr<tesseract::Event> ev) override;
+    void
+    handle_message_inserted_ui_(std::string room_id, std::size_t index,
+                                std::unique_ptr<tesseract::Event> ev) override;
+    void
+    handle_message_updated_ui_(std::string room_id, std::size_t index,
+                               std::unique_ptr<tesseract::Event> ev) override;
     void handle_message_removed_ui_(std::string room_id,
-        std::size_t index) override;
+                                    std::size_t index) override;
     void handle_sync_error_ui_(std::string context, std::string user_id,
-        std::string description, bool soft_logout) override;
-    void handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
+                               std::string description,
+                               bool soft_logout) override;
+    void
+    handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void handle_image_packs_updated_ui_() override;
-    void handle_verification_request_ui_(
-        std::string flow_id, std::string user_id,
-        std::string device_id, bool incoming) override;
+    void handle_verification_request_ui_(std::string flow_id,
+                                         std::string user_id,
+                                         std::string device_id,
+                                         bool incoming) override;
     void handle_sas_ready_ui_(
         std::string flow_id,
         std::vector<tesseract::VerificationEmoji> emojis) override;
     void handle_verification_done_ui_(std::string flow_id) override;
-    void handle_verification_cancelled_ui_(
-        std::string flow_id, std::string reason) override;
+    void handle_verification_cancelled_ui_(std::string flow_id,
+                                           std::string reason) override;
     void handle_verification_state_ui_(bool is_verified) override;
     void handle_account_prefs_updated_ui_(std::string user_id,
-        std::string json) override;
+                                          std::string json) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
-        std::string room_name, std::string sender, std::string body,
-        bool is_mention, std::vector<uint8_t> avatar_bytes,
-        std::vector<uint8_t> image_bytes) override;
+                                 std::string room_name, std::string sender,
+                                 std::string body, bool is_mention,
+                                 std::vector<uint8_t> avatar_bytes,
+                                 std::vector<uint8_t> image_bytes) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
-    void on_url_preview_ready_(const std::string& url,
-                                const tesseract::Client::UrlPreview& preview) override;
+    void on_url_preview_ready_(
+        const std::string& url,
+        const tesseract::Client::UrlPreview& preview) override;
     void on_url_preview_failed_(const std::string& url) override;
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
-    tesseract::RoomWindowBase* create_secondary_room_window_(
-        const std::string& room_id) override;
+    tesseract::RoomWindowBase*
+    create_secondary_room_window_(const std::string& room_id) override;
 
     // Tab management hooks.
-    void        on_tab_state_changed_ui_()             override;
-    float       get_message_scroll_fraction_()         override;
-    void        set_message_scroll_fraction_(float t)  override;
-    std::string get_compose_draft_()                   override;
-    void        set_compose_draft_(const std::string&) override;
+    void on_tab_state_changed_ui_() override;
+    float get_message_scroll_fraction_() override;
+    void set_message_scroll_fraction_(float t) override;
+    std::string get_compose_draft_() override;
+    void set_compose_draft_(const std::string&) override;
 
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
 public:
-    using ShellBase::client_;
-    using ShellBase::compose_typing_active_;
-    using ShellBase::handle_compose_text_changed_;
-    using ShellBase::handle_compose_room_leaving_;
-    using ShellBase::event_handler_;
-    using ShellBase::current_room_id_;
-    using ShellBase::view_displayed_room_id_;
-    using ShellBase::space_stack_;
-    using ShellBase::tk_avatars_;
-    using ShellBase::tk_images_;
-    using ShellBase::anim_cache_;
-    using ShellBase::voice_prefetched_;
-    using ShellBase::video_thumb_in_flight_;
-    using ShellBase::reply_details_requested_;
-    using ShellBase::media_fetches_in_flight_;
-    using ShellBase::sticker_fetches_in_flight_;
-    using ShellBase::emoji_fetches_in_flight_;
-    using ShellBase::recovery_banner_dismissed_;
-    using ShellBase::verification_banner_dismissed_;
-    using ShellBase::active_verification_flow_id_;
-    using ShellBase::pagination_;
-    using ShellBase::room_subscription_refs_;
-    using ShellBase::last_room_list_state_;
-    using ShellBase::last_backup_state_;
-    using ShellBase::last_imported_keys_;
-    using ShellBase::sync_progress_shown_;
-    using ShellBase::shutting_down_;
-    using ShellBase::pending_restore_room_;
     using ShellBase::accounts_;
     using ShellBase::active_account_index_;
-    using ShellBase::per_account_rooms_;
-    using ShellBase::pending_login_client_;
-    using ShellBase::pending_login_temp_dir_;
-    using ShellBase::pending_login_is_add_account_;
+    using ShellBase::active_tab_idx_;
+    using ShellBase::active_verification_flow_id_;
     using ShellBase::add_account_return_idx_;
-    using ShellBase::my_user_id_;
-    using ShellBase::my_display_name_;
-    using ShellBase::my_avatar_url_;
-    using ShellBase::rooms_;
-    using ShellBase::workers_mu_;
-    using ShellBase::workers_cv_;
-    using ShellBase::workers_in_flight_;
-    using ShellBase::run_async_;
-    using ShellBase::ensure_room_avatar_;
-    using ShellBase::ensure_user_avatar_;
-    using ShellBase::ensure_media_image_;
-    using ShellBase::ensure_reply_details_;
-    using ShellBase::ensure_row_media_;
-    using ShellBase::ensure_picker_image_;
-    using ShellBase::decode_image_;
-    using ShellBase::push_rooms_;
-    using ShellBase::push_paginate_result_;
-    using ShellBase::push_room_list_state_;
-    using ShellBase::maybe_send_read_receipt_;
-    using ShellBase::mark_room_read_;
+    using ShellBase::anim_cache_;
+    using ShellBase::apply_current_theme_;
     using ShellBase::begin_focused_subscription_;
     using ShellBase::clear_focused_state_;
+    using ShellBase::client_;
+    using ShellBase::compose_typing_active_;
+    using ShellBase::current_room_id_;
+    using ShellBase::decode_image_;
+    using ShellBase::emoji_fetches_in_flight_;
+    using ShellBase::ensure_media_image_;
+    using ShellBase::ensure_picker_image_;
+    using ShellBase::ensure_reply_details_;
+    using ShellBase::ensure_room_avatar_;
+    using ShellBase::ensure_row_media_;
+    using ShellBase::ensure_user_avatar_;
+    using ShellBase::event_handler_;
+    using ShellBase::handle_compose_room_leaving_;
+    using ShellBase::handle_compose_text_changed_;
+    using ShellBase::last_backup_state_;
+    using ShellBase::last_imported_keys_;
+    using ShellBase::last_room_list_state_;
+    using ShellBase::mark_room_read_;
+    using ShellBase::maybe_send_read_receipt_;
+    using ShellBase::media_fetches_in_flight_;
+    using ShellBase::my_avatar_url_;
+    using ShellBase::my_display_name_;
+    using ShellBase::my_user_id_;
+    using ShellBase::pagination_;
+    using ShellBase::pending_login_client_;
+    using ShellBase::pending_login_is_add_account_;
+    using ShellBase::pending_login_temp_dir_;
+    using ShellBase::pending_restore_room_;
+    using ShellBase::per_account_rooms_;
+    using ShellBase::push_paginate_result_;
+    using ShellBase::push_room_list_state_;
+    using ShellBase::push_rooms_;
+    using ShellBase::recovery_banner_dismissed_;
+    using ShellBase::reply_details_requested_;
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
-    using ShellBase::apply_current_theme_;
-    using ShellBase::set_theme_preference_;
+    using ShellBase::room_subscription_refs_;
+    using ShellBase::rooms_;
+    using ShellBase::run_async_;
     using ShellBase::set_screen_lock_;
-    using ShellBase::tabs_;
-    using ShellBase::active_tab_idx_;
+    using ShellBase::set_theme_preference_;
+    using ShellBase::shutting_down_;
+    using ShellBase::space_stack_;
+    using ShellBase::sticker_fetches_in_flight_;
+    using ShellBase::sync_progress_shown_;
+    using ShellBase::tab_close;
+    using ShellBase::tab_navigate_room;
     using ShellBase::tab_open_room;
     using ShellBase::tab_select_room;
-    using ShellBase::tab_navigate_room;
-    using ShellBase::tab_close;
+    using ShellBase::tabs_;
+    using ShellBase::tk_avatars_;
+    using ShellBase::tk_images_;
+    using ShellBase::verification_banner_dismissed_;
+    using ShellBase::video_thumb_in_flight_;
+    using ShellBase::view_displayed_room_id_;
+    using ShellBase::voice_prefetched_;
+    using ShellBase::workers_cv_;
+    using ShellBase::workers_in_flight_;
+    using ShellBase::workers_mu_;
 
     // Public method to call the protected update_typing_bar_ method
-    void update_typing_bar(const std::string& text, bool visible) {
+    void update_typing_bar(const std::string& text, bool visible)
+    {
         update_typing_bar_(text, visible);
     }
 
     // Borrowed pointers set by ObjC side after building the chat surface.
     // Exposed here so MacShell C++ methods can call them without crossing
     // the ObjC ivar boundary (which is private to @implementation).
-    tesseract::views::RoomView*      room_view_    = nullptr;
-    tesseract::views::MainAppWidget* main_app_     = nullptr;
-    tk::macos::Surface*              app_surface_  = nullptr;
+    tesseract::views::RoomView* room_view_ = nullptr;
+    tesseract::views::MainAppWidget* main_app_ = nullptr;
+    tk::macos::Surface* app_surface_ = nullptr;
 
     // Shortcode engine + transient state (owned here, accessed via _shell->).
-    tesseract::views::ShortcodeEngine       shortcode_engine_;
-    tesseract::views::ShortcodeMatch        shortcode_active_match_{};
-    std::vector<tesseract::ImagePackImage>  cached_emoticons_;
-    std::vector<tesseract::views::ShortcodeSuggestion> shortcode_current_suggestions_;
+    tesseract::views::ShortcodeEngine shortcode_engine_;
+    tesseract::views::ShortcodeMatch shortcode_active_match_{};
+    std::vector<tesseract::ImagePackImage> cached_emoticons_;
+    std::vector<tesseract::views::ShortcodeSuggestion>
+        shortcode_current_suggestions_;
 
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
+        url_preview_data_;
 
 private:
-    MainWindowController* ctrl_;  // non-owning, always valid (owner holds _shell)
+    MainWindowController*
+        ctrl_; // non-owning, always valid (owner holds _shell)
 };
 
 using tesseract::macos::trim;
@@ -249,24 +265,24 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 //  Internal IBO that the C++ EventBridge calls back into.
 // ─────────────────────────────────────────────────────────────────────────
 
-@interface MainWindowController () <LoginViewDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate>
+@interface MainWindowController () <
+    LoginViewDelegate, UNUserNotificationCenterDelegate, NSWindowDelegate>
 - (void)handleTimelineReset:(NSString*)roomId
-                    snapshot:(std::vector<tesseract::Event*>)snapshot;
+                   snapshot:(std::vector<tesseract::Event*>)snapshot;
 - (void)handleMessageInserted:(NSString*)roomId
-                         index:(std::size_t)index
-                         event:(tesseract::Event*)event;
-- (void)handleMessageUpdated:(NSString*)roomId
                         index:(std::size_t)index
                         event:(tesseract::Event*)event;
-- (void)handleMessageRemoved:(NSString*)roomId
-                        index:(std::size_t)index;
+- (void)handleMessageUpdated:(NSString*)roomId
+                       index:(std::size_t)index
+                       event:(tesseract::Event*)event;
+- (void)handleMessageRemoved:(NSString*)roomId index:(std::size_t)index;
 - (void)handlePaginateResultForRoom:(std::string)roomId
                       reached_start:(BOOL)reached;
 - (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached;
 - (void)requestMoreHistoryForRoom:(std::string)roomId;
 - (void)openJumpToDateDialog;
 - (void)handleSyncErrorContext:(NSString*)ctx
-                    description:(NSString*)desc
+                   description:(NSString*)desc
                     softLogout:(BOOL)soft;
 - (void)_switchActiveAccount:(int)idx;
 - (void)_beginAddAccount;
@@ -287,20 +303,21 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onRecoveryDismiss;
 - (void)_maybeShowRecoveryBanner;
 - (void)showShortcodePopupWithSuggestions:
-    (const std::vector<tesseract::views::ShortcodeSuggestion>&)suggestions
-    cursorRect:(tk::Rect)cursor;
+            (const std::vector<tesseract::views::ShortcodeSuggestion>&)
+                suggestions
+                               cursorRect:(tk::Rect)cursor;
 - (void)hideShortcodePopup;
 - (BOOL)shortcodePopupVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
-                       mime:(std::string)mime
-                   filename:(std::string)filename
-                    caption:(std::string)caption
-               replyEventId:(std::string)reply_event_id;
-- (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
                       mime:(std::string)mime
                   filename:(std::string)filename
                    caption:(std::string)caption
+              replyEventId:(std::string)reply_event_id;
+- (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
+                     mime:(std::string)mime
+                 filename:(std::string)filename
+                  caption:(std::string)caption
              replyEventId:(std::string)reply_event_id;
 
 // Notifications.
@@ -337,11 +354,13 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutShortcodePopupIfVisible;
 @end
 
-namespace {
+namespace
+{
 
 // ── MacShell method implementations ──────────────────────────────────────
 
-void MacShell::post_to_ui_(std::function<void()> fn) {
+void MacShell::post_to_ui_(std::function<void()> fn)
+{
     auto* heap = new std::function<void()>(std::move(fn));
     dispatch_async(dispatch_get_main_queue(), ^{
         (*heap)();
@@ -349,21 +368,36 @@ void MacShell::post_to_ui_(std::function<void()> fn) {
     });
 }
 
-void MacShell::on_rooms_updated_() {
+void MacShell::on_rooms_updated_()
+{
     MainWindowController* c = ctrl_;
-    if (!c) return;
+    if (!c)
+    {
+        return;
+    }
     [c _refreshRoomList];
-    if (!current_room_id_.empty()) {
-        for (const auto& r : rooms_) {
-            if (r.id == current_room_id_) {
-                if (room_view_) { room_view_->set_room(r); [c _relayoutChatSurface]; }
+    if (!current_room_id_.empty())
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == current_room_id_)
+            {
+                if (room_view_)
+                {
+                    room_view_->set_room(r);
+                    [c _relayoutChatSurface];
+                }
                 break;
             }
         }
-    } else if (!pending_restore_room_.empty()
-               && last_room_list_state_ == tesseract::RoomListState::Running) {
-        for (const auto& r : rooms_) {
-            if (r.id == pending_restore_room_ && !r.is_space) {
+    }
+    else if (!pending_restore_room_.empty() &&
+             last_room_list_state_ == tesseract::RoomListState::Running)
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == pending_restore_room_ && !r.is_space)
+            {
                 std::string target = std::move(pending_restore_room_);
                 pending_restore_room_.clear();
                 [c onRoomSelected:target];
@@ -372,117 +406,197 @@ void MacShell::on_rooms_updated_() {
         }
     }
 
-    for (const auto& [room_id, w] : secondary_windows_) {
-        for (const auto& r : rooms_) {
-            if (r.id == room_id) { w->on_room_info_updated(r); break; }
+    for (const auto& [room_id, w] : secondary_windows_)
+    {
+        for (const auto& r : rooms_)
+        {
+            if (r.id == room_id)
+            {
+                w->on_room_info_updated(r);
+                break;
+            }
         }
     }
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
-                                      ShellBase::MediaKind kind,
-                                      std::vector<uint8_t> bytes) {
+                                     ShellBase::MediaKind kind,
+                                     std::vector<uint8_t> bytes)
+{
     MainWindowController* c = ctrl_;
-    if (!c) return;
-    if (bytes.empty()) return;
-    if (kind == MediaKind::MediaImage) {
+    if (!c)
+    {
+        return;
+    }
+    if (bytes.empty())
+    {
+        return;
+    }
+    if (kind == MediaKind::MediaImage)
+    {
         [c _decodeMediaBytes:bytes forKey:key];
         [c _relayoutChatSurface];
         [c _relayoutShortcodePopupIfVisible];
         return;
     }
-    if (kind == MediaKind::Tile) {
-        if (tk_images_.count(key)) return;
-        CFDataRef data = CFDataCreate(kCFAllocatorDefault,
-                                       bytes.data(),
-                                       static_cast<CFIndex>(bytes.size()));
-        if (!data) return;
+    if (kind == MediaKind::Tile)
+    {
+        if (tk_images_.count(key))
+        {
+            return;
+        }
+        CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                      static_cast<CFIndex>(bytes.size()));
+        if (!data)
+        {
+            return;
+        }
         CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
         CFRelease(data);
-        if (!src) return;
+        if (!src)
+        {
+            return;
+        }
         CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
         CFRelease(src);
-        if (!img) return;
+        if (!img)
+        {
+            return;
+        }
         tk_images_.emplace(key, tk::cg::make_image(img));
         CGImageRelease(img);
-        if (room_view_) room_view_->message_list()->invalidate_data();
+        if (room_view_)
+        {
+            room_view_->message_list()->invalidate_data();
+        }
         [c _relayoutChatSurface];
         return;
     }
-    if (bytes.empty() || tk_avatars_.count(key)) return;
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault,
-                                   bytes.data(),
-                                   static_cast<CFIndex>(bytes.size()));
-    if (!data) return;
+    if (bytes.empty() || tk_avatars_.count(key))
+    {
+        return;
+    }
+    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                                  static_cast<CFIndex>(bytes.size()));
+    if (!data)
+    {
+        return;
+    }
     CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
     CFRelease(data);
-    if (!src) return;
+    if (!src)
+    {
+        return;
+    }
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
     CFRelease(src);
-    if (!img) return;
+    if (!img)
+    {
+        return;
+    }
     tk_avatars_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
     if (kind == MediaKind::RoomAvatar)
+    {
         [c _relayoutRoomSurface];
+    }
     else if (kind == MediaKind::UserAvatar)
+    {
         [c _relayoutChatSurface];
+    }
 }
 
 void MacShell::generate_video_thumbnail_(const std::string& event_id,
-                                          const std::string& video_url) {
+                                         const std::string& video_url)
+{
     MainWindowController* c = ctrl_;
-    if (!c) return;
+    if (!c)
+    {
+        return;
+    }
     std::string src = video_url;
     std::string eid = event_id;
     auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-    run_async_([this, src, eid, bytes_holder]() mutable {
-        *bytes_holder = client_->fetch_source_bytes(src);
-        if (bytes_holder->empty()) return;
-        NSString* tmpDir  = NSTemporaryDirectory();
-        NSString* eidNS   = [NSString stringWithUTF8String:eid.c_str()];
-        NSString* tmpPath = [tmpDir stringByAppendingPathComponent:
-                              [NSString stringWithFormat:@"vtmp_%@.mp4", eidNS]];
-        NSData* data = [NSData dataWithBytes:bytes_holder->data()
-                                      length:bytes_holder->size()];
-        [data writeToFile:tmpPath atomically:YES];
-        NSURL* url   = [NSURL fileURLWithPath:tmpPath];
-        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        AVAssetImageGenerator* gen =
-            [[AVAssetImageGenerator alloc] initWithAsset:asset];
-        gen.appliesPreferredTrackTransform = YES;
-        CMTime t = CMTimeMake(0, 1);
-        NSError* err = nil;
-        CGImageRef frame = [gen copyCGImageAtTime:t actualTime:nil error:&err];
-        [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
-        if (!frame) return;
-        auto img_holder = std::make_shared<std::unique_ptr<tk::Image>>(
-            tk::cg::make_image(frame));
-        CGImageRelease(frame);
-        std::string key = "thumb::" + eid;
-        post_to_ui_([this, key, img_holder]() mutable {
-            if (tk_images_.count(key)) return;
-            tk_images_.emplace(key, std::move(*img_holder));
-            MainWindowController* c2 = ctrl_;
-            if (c2) [c2 _relayoutChatSurface];
+    run_async_(
+        [this, src, eid, bytes_holder]() mutable
+        {
+            *bytes_holder = client_->fetch_source_bytes(src);
+            if (bytes_holder->empty())
+            {
+                return;
+            }
+            NSString* tmpDir = NSTemporaryDirectory();
+            NSString* eidNS = [NSString stringWithUTF8String:eid.c_str()];
+            NSString* tmpPath =
+                [tmpDir stringByAppendingPathComponent:
+                            [NSString stringWithFormat:@"vtmp_%@.mp4", eidNS]];
+            NSData* data = [NSData dataWithBytes:bytes_holder->data()
+                                          length:bytes_holder->size()];
+            [data writeToFile:tmpPath atomically:YES];
+            NSURL* url = [NSURL fileURLWithPath:tmpPath];
+            AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+            AVAssetImageGenerator* gen =
+                [[AVAssetImageGenerator alloc] initWithAsset:asset];
+            gen.appliesPreferredTrackTransform = YES;
+            CMTime t = CMTimeMake(0, 1);
+            NSError* err = nil;
+            CGImageRef frame = [gen copyCGImageAtTime:t
+                                           actualTime:nil
+                                                error:&err];
+            [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+            if (!frame)
+            {
+                return;
+            }
+            auto img_holder = std::make_shared<std::unique_ptr<tk::Image>>(
+                tk::cg::make_image(frame));
+            CGImageRelease(frame);
+            std::string key = "thumb::" + eid;
+            post_to_ui_(
+                [this, key, img_holder]() mutable
+                {
+                    if (tk_images_.count(key))
+                    {
+                        return;
+                    }
+                    tk_images_.emplace(key, std::move(*img_holder));
+                    MainWindowController* c2 = ctrl_;
+                    if (c2)
+                    {
+                        [c2 _relayoutChatSurface];
+                    }
+                });
         });
-    });
 }
 
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
-                                  std::vector<uint8_t> rgba) {
-    if (tk_images_.count(key)) return;
+                                 std::vector<uint8_t> rgba)
+{
+    if (tk_images_.count(key))
+    {
+        return;
+    }
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(rgba.data(), w, h, 8, w * 4,
-                                              cs, kCGImageAlphaPremultipliedLast);
+    CGContextRef ctx = CGBitmapContextCreate(rgba.data(), w, h, 8, w * 4, cs,
+                                             kCGImageAlphaPremultipliedLast);
     CGColorSpaceRelease(cs);
-    if (!ctx) return;
+    if (!ctx)
+    {
+        return;
+    }
     CGImageRef img = CGBitmapContextCreateImage(ctx);
     CGContextRelease(ctx);
-    if (!img) return;
+    if (!img)
+    {
+        return;
+    }
     tk_images_.emplace(key, tk::cg::make_image(img));
     CGImageRelease(img);
     MainWindowController* c = ctrl_;
-    if (c) [c _relayoutChatSurface];
+    if (c)
+    {
+        [c _relayoutChatSurface];
+    }
 }
 
 // Pure decode — no cache mutation. Safe OFF the main queue: CGImageSource
@@ -490,38 +604,67 @@ void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
 // _decodeMediaBytes CGImageSource logic, returning a DecodedImage so the
 // shared ensure_picker_image_/finalize_picker_image_ path can route it.
 ShellBase::DecodedImage
-MacShell::decode_image_(const std::vector<uint8_t>& bytes,
-                        int /*max_w*/, int /*max_h*/) {
+MacShell::decode_image_(const std::vector<uint8_t>& bytes, int /*max_w*/,
+                        int /*max_h*/)
+{
     DecodedImage d;
-    if (bytes.empty()) return d;
+    if (bytes.empty())
+    {
+        return d;
+    }
     CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
                                   static_cast<CFIndex>(bytes.size()));
-    if (!data) return d;
+    if (!data)
+    {
+        return d;
+    }
     CGImageSourceRef src = CGImageSourceCreateWithData(data, nullptr);
     CFRelease(data);
-    if (!src) return d;
+    if (!src)
+    {
+        return d;
+    }
 
     std::size_t count = CGImageSourceGetCount(src);
-    if (count > 1) {
-        for (std::size_t i = 0; i < count; ++i) {
+    if (count > 1)
+    {
+        for (std::size_t i = 0; i < count; ++i)
+        {
             CGImageRef frame = CGImageSourceCreateImageAtIndex(src, i, nullptr);
-            if (!frame) continue;
+            if (!frame)
+            {
+                continue;
+            }
             d.frames.push_back(tk::cg::make_image(frame));
             CGImageRelease(frame);
             int delay_ms = 100;
             CFDictionaryRef props =
                 CGImageSourceCopyPropertiesAtIndex(src, i, nullptr);
-            if (props) {
-                auto try_delay = [&](CFStringRef dk, CFStringRef uk,
-                                     CFStringRef ck) {
+            if (props)
+            {
+                auto try_delay =
+                    [&](CFStringRef dk, CFStringRef uk, CFStringRef ck)
+                {
                     auto* dd = (CFDictionaryRef)CFDictionaryGetValue(props, dk);
-                    if (!dd) return;
+                    if (!dd)
+                    {
+                        return;
+                    }
                     auto* v = (CFNumberRef)CFDictionaryGetValue(dd, uk);
-                    if (!v) v = (CFNumberRef)CFDictionaryGetValue(dd, ck);
-                    if (!v) return;
+                    if (!v)
+                    {
+                        v = (CFNumberRef)CFDictionaryGetValue(dd, ck);
+                    }
+                    if (!v)
+                    {
+                        return;
+                    }
                     double secs = 0;
                     CFNumberGetValue(v, kCFNumberDoubleType, &secs);
-                    if (secs > 0) delay_ms = static_cast<int>(secs * 1000.0);
+                    if (secs > 0)
+                    {
+                        delay_ms = static_cast<int>(secs * 1000.0);
+                    }
                 };
                 try_delay(kCGImagePropertyGIFDictionary,
                           kCGImagePropertyGIFUnclampedDelayTime,
@@ -529,7 +672,8 @@ MacShell::decode_image_(const std::vector<uint8_t>& bytes,
                 try_delay(kCGImagePropertyPNGDictionary,
                           kCGImagePropertyAPNGUnclampedDelayTime,
                           kCGImagePropertyAPNGDelayTime);
-                if (@available(macOS 11.0, *)) {
+                if (@available(macOS 11.0, *))
+                {
                     try_delay(kCGImagePropertyWebPDictionary,
                               kCGImagePropertyWebPDelayTime,
                               kCGImagePropertyWebPDelayTime);
@@ -538,244 +682,404 @@ MacShell::decode_image_(const std::vector<uint8_t>& bytes,
             }
             d.delays_ms.push_back(std::max(delay_ms, 20));
         }
-        if (!d.frames.empty()) { CFRelease(src); return d; }
+        if (!d.frames.empty())
+        {
+            CFRelease(src);
+            return d;
+        }
         d.delays_ms.clear();
         CFRelease(src);
         CFDataRef data2 = CFDataCreate(kCFAllocatorDefault, bytes.data(),
                                        static_cast<CFIndex>(bytes.size()));
-        if (!data2) return d;
+        if (!data2)
+        {
+            return d;
+        }
         src = CGImageSourceCreateWithData(data2, nullptr);
         CFRelease(data2);
-        if (!src) return d;
+        if (!src)
+        {
+            return d;
+        }
     }
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
     CFRelease(src);
-    if (!img) return d;
+    if (!img)
+    {
+        return d;
+    }
     d.still = tk::cg::make_image(img);
     CGImageRelease(img);
     return d;
 }
 
-std::int64_t MacShell::monotonic_ms_() {
-    return static_cast<std::int64_t>(
-        [[NSDate date] timeIntervalSince1970] * 1000.0);
+std::int64_t MacShell::monotonic_ms_()
+{
+    return static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] *
+                                     1000.0);
 }
 
-void MacShell::start_anim_tick_() {
-    if (ctrl_) [ctrl_ _startAnimTickIfNeeded];
+void MacShell::start_anim_tick_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _startAnimTickIfNeeded];
+    }
 }
 
-void MacShell::repaint_pickers_() {
-    if (ctrl_) [ctrl_ _relayoutChatSurface];
+void MacShell::repaint_pickers_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _relayoutChatSurface];
+    }
     EmojiPickerPanel* ep = [EmojiPickerPanel sharedPanel];
-    if (ep.isVisible) [ep invalidateImageCache];
+    if (ep.isVisible)
+    {
+        [ep invalidateImageCache];
+    }
     StickerPickerPanel* sp = [StickerPickerPanel sharedPanel];
-    if (sp.isVisible) [sp invalidateImageCache];
+    if (sp.isVisible)
+    {
+        [sp invalidateImageCache];
+    }
 }
 
 void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
     std::vector<std::unique_ptr<tesseract::Event>> snapshot)
 {
-    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
-        std::vector<tesseract::views::MessageRowData> rows;
-        rows.reserve(snapshot.size());
-        for (auto& p : snapshot) {
-            if (!p) continue;
-            ensure_row_media_(*p);
-            if (!p->in_reply_to_id.empty()) ensure_reply_details_(p->event_id);
-            rows.push_back(tesseract::views::make_row_data(*p, my_user_id_));
-        }
-        w->on_timeline_reset(std::move(rows));
-    });
+    dispatch_to_secondary_windows_(
+        room_id,
+        [&](tesseract::RoomWindowBase* w)
+        {
+            std::vector<tesseract::views::MessageRowData> rows;
+            rows.reserve(snapshot.size());
+            for (auto& p : snapshot)
+            {
+                if (!p)
+                {
+                    continue;
+                }
+                ensure_row_media_(*p);
+                if (!p->in_reply_to_id.empty())
+                {
+                    ensure_reply_details_(p->event_id);
+                }
+                rows.push_back(
+                    tesseract::views::make_row_data(*p, my_user_id_));
+            }
+            w->on_timeline_reset(std::move(rows));
+        });
 
     MainWindowController* c = ctrl_;
-    if (!c) return;
+    if (!c)
+    {
+        return;
+    }
     std::vector<tesseract::Event*> raw;
     raw.reserve(snapshot.size());
-    for (auto& p : snapshot) raw.push_back(p.release());
+    for (auto& p : snapshot)
+    {
+        raw.push_back(p.release());
+    }
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [c handleTimelineReset:rid snapshot:raw];
 }
 
-void MacShell::handle_message_inserted_ui_(
-    std::string room_id, std::size_t index,
-    std::unique_ptr<tesseract::Event> ev)
+void MacShell::handle_message_inserted_ui_(std::string room_id,
+                                           std::size_t index,
+                                           std::unique_ptr<tesseract::Event> ev)
 {
-    if (ev && ev->type != tesseract::EventType::Unhandled) {
-        dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
-            w->on_message_inserted(index, tesseract::views::make_row_data(*ev, my_user_id_));
-        });
+    if (ev && ev->type != tesseract::EventType::Unhandled)
+    {
+        dispatch_to_secondary_windows_(
+            room_id,
+            [&](tesseract::RoomWindowBase* w)
+            {
+                ensure_row_media_(*ev);
+                if (!ev->in_reply_to_id.empty())
+                {
+                    ensure_reply_details_(ev->event_id);
+                }
+                w->on_message_inserted(
+                    index, tesseract::views::make_row_data(*ev, my_user_id_));
+            });
     }
     MainWindowController* c = ctrl_;
-    if (!c || !ev) return;
+    if (!c || !ev)
+    {
+        return;
+    }
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [c handleMessageInserted:rid index:index event:ev.release()];
 }
 
-void MacShell::handle_message_updated_ui_(
-    std::string room_id, std::size_t index,
-    std::unique_ptr<tesseract::Event> ev)
+void MacShell::handle_message_updated_ui_(std::string room_id,
+                                          std::size_t index,
+                                          std::unique_ptr<tesseract::Event> ev)
 {
-    if (ev && ev->type != tesseract::EventType::Unhandled) {
-        dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
-            ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty()) ensure_reply_details_(ev->event_id);
-            w->on_message_updated(index, tesseract::views::make_row_data(*ev, my_user_id_));
-        });
+    if (ev && ev->type != tesseract::EventType::Unhandled)
+    {
+        dispatch_to_secondary_windows_(
+            room_id,
+            [&](tesseract::RoomWindowBase* w)
+            {
+                ensure_row_media_(*ev);
+                if (!ev->in_reply_to_id.empty())
+                {
+                    ensure_reply_details_(ev->event_id);
+                }
+                w->on_message_updated(
+                    index, tesseract::views::make_row_data(*ev, my_user_id_));
+            });
     }
     MainWindowController* c = ctrl_;
-    if (!c || !ev) return;
+    if (!c || !ev)
+    {
+        return;
+    }
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [c handleMessageUpdated:rid index:index event:ev.release()];
 }
 
-void MacShell::handle_message_removed_ui_(std::string room_id, std::size_t index) {
-    dispatch_to_secondary_windows_(room_id, [&](tesseract::RoomWindowBase* w) {
-        w->on_message_removed(index);
-    });
+void MacShell::handle_message_removed_ui_(std::string room_id,
+                                          std::size_t index)
+{
+    dispatch_to_secondary_windows_(room_id,
+                                   [&](tesseract::RoomWindowBase* w)
+                                   {
+                                       w->on_message_removed(index);
+                                   });
     MainWindowController* c = ctrl_;
-    if (!c) return;
+    if (!c)
+    {
+        return;
+    }
     NSString* rid = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [c handleMessageRemoved:rid index:index];
 }
 
-void MacShell::handle_sync_error_ui_(std::string context, std::string /*user_id*/,
-                                      std::string description, bool soft_logout) {
+void MacShell::handle_sync_error_ui_(std::string context,
+                                     std::string /*user_id*/,
+                                     std::string description, bool soft_logout)
+{
     MainWindowController* c = ctrl_;
-    if (!c) return;
-    NSString* ctx  = [NSString stringWithUTF8String:context.c_str()]     ?: @"";
+    if (!c)
+    {
+        return;
+    }
+    NSString* ctx = [NSString stringWithUTF8String:context.c_str()] ?: @"";
     NSString* desc = [NSString stringWithUTF8String:description.c_str()] ?: @"";
     [c handleSyncErrorContext:ctx description:desc softLogout:soft_logout];
 }
 
-void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress) {
+void MacShell::handle_backup_progress_ui_(tesseract::BackupProgress progress)
+{
     MainWindowController* c = ctrl_;
-    if (c) [c handleBackupProgress:progress];
+    if (c)
+    {
+        [c handleBackupProgress:progress];
+    }
 }
 
-void MacShell::handle_image_packs_updated_ui_() {
+void MacShell::handle_image_packs_updated_ui_()
+{
     MainWindowController* c = ctrl_;
-    if (c) [c handleImagePacksUpdated];
+    if (c)
+    {
+        [c handleImagePacksUpdated];
+    }
 }
 
-void MacShell::handle_verification_state_ui_(bool is_verified) {
+void MacShell::handle_verification_state_ui_(bool is_verified)
+{
     MainWindowController* c = ctrl_;
-    if (c) [c handleVerificationState:is_verified ? YES : NO];
+    if (c)
+    {
+        [c handleVerificationState:is_verified ? YES : NO];
+    }
 }
 
-void MacShell::handle_verification_request_ui_(
-    std::string flow_id, std::string /*user_id*/,
-    std::string /*device_id*/, bool incoming)
+void MacShell::handle_verification_request_ui_(std::string flow_id,
+                                               std::string /*user_id*/,
+                                               std::string /*device_id*/,
+                                               bool incoming)
 {
     active_verification_flow_id_ = std::move(flow_id);
     MainWindowController* c = ctrl_;
-    if (c) [c handleVerificationRequest:active_verification_flow_id_
-                                incoming:incoming ? YES : NO];
+    if (c)
+    {
+        [c handleVerificationRequest:active_verification_flow_id_
+                            incoming:incoming ? YES : NO];
+    }
 }
 
 void MacShell::handle_sas_ready_ui_(
     std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
 {
     MainWindowController* c = ctrl_;
-    if (c) [c handleSasReady:std::move(emojis)];
+    if (c)
+    {
+        [c handleSasReady:std::move(emojis)];
+    }
 }
 
-void MacShell::handle_verification_done_ui_(std::string /*flow_id*/) {
-    MainWindowController* c = ctrl_;
-    if (c) [c handleVerificationDone];
-}
-
-void MacShell::handle_verification_cancelled_ui_(
-    std::string /*flow_id*/, std::string reason)
+void MacShell::handle_verification_done_ui_(std::string /*flow_id*/)
 {
     MainWindowController* c = ctrl_;
-    if (c) [c handleVerificationCancelled:std::move(reason)];
+    if (c)
+    {
+        [c handleVerificationDone];
+    }
+}
+
+void MacShell::handle_verification_cancelled_ui_(std::string /*flow_id*/,
+                                                 std::string reason)
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+    {
+        [c handleVerificationCancelled:std::move(reason)];
+    }
 }
 
 void MacShell::handle_account_prefs_updated_ui_(std::string /*user_id*/,
-                                                  std::string json) {
+                                                std::string json)
+{
     MainWindowController* c = ctrl_;
-    if (!c) return;
+    if (!c)
+    {
+        return;
+    }
     NSString* ns = [NSString stringWithUTF8String:json.c_str()];
     [c handleAccountPrefsUpdated:ns];
 }
 
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
-                                        std::string room_name, std::string sender,
-                                        std::string body, bool is_mention,
-                                        std::vector<uint8_t> avatar_bytes,
-                                        std::vector<uint8_t> image_bytes) {
+                                       std::string room_name,
+                                       std::string sender, std::string body,
+                                       bool is_mention,
+                                       std::vector<uint8_t> avatar_bytes,
+                                       std::vector<uint8_t> image_bytes)
+{
     if (!tesseract::Settings::instance().notifications_enabled)
+    {
         return;
+    }
     if (!notification_image_allowed_())
+    {
         image_bytes.clear();
+    }
     MainWindowController* c = ctrl_;
-    if (c) [c handleNotification:room_id roomName:room_name sender:sender
-                            body:body userId:user_id isMention:is_mention
-                     avatarBytes:avatar_bytes imageBytes:image_bytes];
+    if (c)
+    {
+        [c handleNotification:room_id
+                     roomName:room_name
+                       sender:sender
+                         body:body
+                       userId:user_id
+                    isMention:is_mention
+                  avatarBytes:avatar_bytes
+                   imageBytes:image_bytes];
+    }
 }
 
-void MacShell::on_room_list_state_ui_() {
+void MacShell::on_room_list_state_ui_()
+{
     MainWindowController* c = ctrl_;
-    if (c) [c _onRoomListStateChanged];
+    if (c)
+    {
+        [c _onRoomListStateChanged];
+    }
 }
 
-void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/) {
+void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/)
+{
     // Typing-indicator visibility is driven by set_typing_text content inside
     // MessageListView — the visible param is intentionally unused.
     MainWindowController* c = ctrl_;
-    if (!c) return;
-    if (room_view_) room_view_->set_typing_text(text);
+    if (!c)
+    {
+        return;
+    }
+    if (room_view_)
+    {
+        room_view_->set_typing_text(text);
+    }
 }
 
-void MacShell::on_url_preview_ready_(const std::string& url,
-                                      const tesseract::Client::UrlPreview& preview) {
+void MacShell::on_url_preview_ready_(
+    const std::string& url, const tesseract::Client::UrlPreview& preview)
+{
     tesseract::views::UrlPreviewData d;
-    d.title       = preview.title;
+    d.title = preview.title;
     d.description = preview.description;
-    d.image_mxc   = preview.image_mxc;
-    d.image_w     = preview.image_w;
-    d.image_h     = preview.image_h;
+    d.image_mxc = preview.image_mxc;
+    d.image_w = preview.image_w;
+    d.image_h = preview.image_h;
     url_preview_data_.emplace(url, std::move(d));
 
     if (!preview.image_mxc.empty())
+    {
         ensure_media_image_(preview.image_mxc, 64, 64);
+    }
 
-    if (room_view_) room_view_->notify_url_preview_ready(url);
-    if (ctrl_) [ctrl_ _relayoutChatSurface];
+    if (room_view_)
+    {
+        room_view_->notify_url_preview_ready(url);
+    }
+    if (ctrl_)
+    {
+        [ctrl_ _relayoutChatSurface];
+    }
 
-    for (const auto& [rid, w] : secondary_windows_) {
-        if (w->room_view()) {
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w->room_view())
+        {
             w->room_view()->notify_url_preview_ready(url);
             w->request_relayout();
         }
     }
 }
 
-void MacShell::on_url_preview_failed_(const std::string& url) {
+void MacShell::on_url_preview_failed_(const std::string& url)
+{
     // No card to show (height unchanged) — just release the room-switch
     // gate so it doesn't wait the full timeout on a dead link.
-    if (room_view_) room_view_->notify_url_preview_ready(url);
+    if (room_view_)
+    {
+        room_view_->notify_url_preview_ready(url);
+    }
     for (const auto& [rid, w] : secondary_windows_)
-        if (w->room_view()) w->room_view()->notify_url_preview_ready(url);
+    {
+        if (w->room_view())
+        {
+            w->room_view()->notify_url_preview_ready(url);
+        }
+    }
 }
 
-tesseract::RoomWindowBase* MacShell::create_secondary_room_window_(
-    const std::string& room_id)
+tesseract::RoomWindowBase*
+MacShell::create_secondary_room_window_(const std::string& room_id)
 {
     return tesseract::make_mac_room_window(this, room_id, &url_preview_data_);
 }
 
-tk::ThemeMode MacShell::os_color_scheme_() const {
+tk::ThemeMode MacShell::os_color_scheme_() const
+{
     NSAppearanceName name = NSApp.effectiveAppearance.name;
-    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
+    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark
+                                         : tk::ThemeMode::Light;
 }
 
-void MacShell::apply_theme_ui_(const tk::Theme& t) {
-    if (ctrl_) [ctrl_ _applyTheme:t];
+void MacShell::apply_theme_ui_(const tk::Theme& t)
+{
+    if (ctrl_)
+    {
+        [ctrl_ _applyTheme:t];
+    }
     apply_theme_to_secondary_windows_(t);
 }
 
@@ -783,7 +1087,10 @@ void MacShell::apply_theme_ui_(const tk::Theme& t) {
 
 void MacShell::on_tab_state_changed_ui_()
 {
-    if (!main_app_) return;
+    if (!main_app_)
+    {
+        return;
+    }
 
     auto* tb = main_app_->tab_bar();
     const bool show_bar = tabs_.size() > 1;
@@ -796,15 +1103,21 @@ void MacShell::on_tab_state_changed_ui_()
         for (const auto& t : tabs_)
         {
             const tk::Image* avatar = nullptr;
-            std::string      name;
+            std::string name;
             for (const auto& r : rooms_)
             {
-                if (r.id != t.room_id) continue;
+                if (r.id != t.room_id)
+                {
+                    continue;
+                }
                 name = r.name;
                 if (!r.avatar_url.empty())
                 {
                     auto it = tk_avatars_.find(r.avatar_url);
-                    if (it != tk_avatars_.end()) avatar = it->second.get();
+                    if (it != tk_avatars_.end())
+                    {
+                        avatar = it->second.get();
+                    }
                 }
                 break;
             }
@@ -812,7 +1125,9 @@ void MacShell::on_tab_state_changed_ui_()
         }
 
         if (active_tab_idx_ < tabs_.size())
+        {
             tb->set_active(tabs_[active_tab_idx_].room_id);
+        }
     }
 
     if (ctrl_ && active_tab_idx_ < tabs_.size())
@@ -820,33 +1135,50 @@ void MacShell::on_tab_state_changed_ui_()
         const auto& active = tabs_[active_tab_idx_];
         [ctrl_ onRoomSelected:active.room_id];
         if (!active.compose_draft.empty())
+        {
             [ctrl_ _setComposeDraft:active.compose_draft];
+        }
     }
 
-    if (app_surface_) app_surface_->relayout();
+    if (app_surface_)
+    {
+        app_surface_->relayout();
+    }
 }
 
 float MacShell::get_message_scroll_fraction_()
 {
-    if (!room_view_ || !room_view_->message_list()) return 0.f;
+    if (!room_view_ || !room_view_->message_list())
+    {
+        return 0.f;
+    }
     return room_view_->message_list()->scroll_fraction();
 }
 
 void MacShell::set_message_scroll_fraction_(float t)
 {
-    if (!room_view_ || !room_view_->message_list()) return;
+    if (!room_view_ || !room_view_->message_list())
+    {
+        return;
+    }
     room_view_->message_list()->scroll_to_offset(t);
 }
 
 std::string MacShell::get_compose_draft_()
 {
-    if (!room_view_ || !room_view_->compose_bar()) return {};
+    if (!room_view_ || !room_view_->compose_bar())
+    {
+        return {};
+    }
     return room_view_->compose_bar()->current_text();
 }
 
 void MacShell::set_compose_draft_(const std::string& draft)
 {
-    if (ctrl_) [ctrl_ _setComposeDraft:draft];
+    if (ctrl_)
+    {
+        [ctrl_ _setComposeDraft:draft];
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -855,91 +1187,97 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
 // ─────────────────────────────────────────────────────────────────────────
 
-@implementation MainWindowController {
+@implementation MainWindowController
+{
     // MacShell owns all multi-account state, image caches, worker threads,
     // and the EventHandlerBase bridges. It is created before _buildChrome.
-    std::unique_ptr<MacShell>                        _shell;
+    std::unique_ptr<MacShell> _shell;
 
     // When non-empty, the next emoji selection routes through
     // send_reaction for this event id (set by the "+" reaction chip).
-    std::string                      _pendingReactionEventId;
+    std::string _pendingReactionEventId;
 
     // Single surface hosting the full main-app widget tree.
-    std::unique_ptr<tk::macos::Surface>             _mainAppSurface;
-    tesseract::views::MainAppWidget*                _mainApp;          // borrowed from root
-    std::string                                     _pendingSearchText;
+    std::unique_ptr<tk::macos::Surface> _mainAppSurface;
+    tesseract::views::MainAppWidget* _mainApp; // borrowed from root
+    std::string _pendingSearchText;
 
     // Settings surface — full-window sibling of mainAppView and _loginView.
-    std::unique_ptr<tk::macos::Surface>  _settingsSurface;
-    tesseract::views::SettingsView*      _settingsView;  // borrowed from _settingsSurface root
+    std::unique_ptr<tk::macos::Surface> _settingsSurface;
+    tesseract::views::SettingsView*
+        _settingsView; // borrowed from _settingsSurface root
 
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
-    std::unique_ptr<tk::NativeTextField>            _roomSearchField;
-    std::unique_ptr<tk::NativeTextArea>             _roomTextArea;
-    std::unique_ptr<tk::NativeTextField>            _recoveryKeyField;
+    std::unique_ptr<tk::NativeTextField> _roomSearchField;
+    std::unique_ptr<tk::NativeTextArea> _roomTextArea;
+    std::unique_ptr<tk::NativeTextField> _recoveryKeyField;
 
     // Borrowed sub-view aliases (set after building _mainAppSurface).
-    tesseract::views::RoomListView*                 _roomListView;   // via _mainApp
-    tesseract::views::RoomView*                     _roomView;       // via _mainApp
-    tesseract::views::RecoveryBanner*               _recoveryShared; // via _mainApp
-    tesseract::views::VerificationBanner*           _verifShared;    // via _mainApp
-    tesseract::views::ImageViewerOverlay*           _imgViewer;      // via _mainApp
-    tesseract::views::VideoViewerOverlay*           _vidViewer;      // via _mainApp
+    tesseract::views::RoomListView* _roomListView;      // via _mainApp
+    tesseract::views::RoomView* _roomView;              // via _mainApp
+    tesseract::views::RecoveryBanner* _recoveryShared;  // via _mainApp
+    tesseract::views::VerificationBanner* _verifShared; // via _mainApp
+    tesseract::views::ImageViewerOverlay* _imgViewer;   // via _mainApp
+    tesseract::views::VideoViewerOverlay* _vidViewer;   // via _mainApp
 
     // Shortcode suggestion popup — NSPanel hosting a tk::macos::Surface.
-    NSPanel*                                          _shortcodePanel;
-    std::unique_ptr<tk::macos::Surface>               _shortcodePopupSurface;
-    tesseract::views::ShortcodePopup*                 _shortcodePopupWidget; // borrowed from root
+    NSPanel* _shortcodePanel;
+    std::unique_ptr<tk::macos::Surface> _shortcodePopupSurface;
+    tesseract::views::ShortcodePopup*
+        _shortcodePopupWidget; // borrowed from root
 
     // AppKit chrome.
-    LoginView*     _loginView;
+    LoginView* _loginView;
 
-    NSTimer*                                         _animTimer;
-    NSTimer*                                         _markReadTimer;
+    NSTimer* _animTimer;
+    NSTimer* _markReadTimer;
 
     // System-tray icon (menu-bar status item). Created after login; nil
     // until then. When non-nil and `is_available()`, closing the window
     // hides it instead of terminating the app.
-    std::unique_ptr<MacOSTrayIcon>                    _tray;
+    std::unique_ptr<MacOSTrayIcon> _tray;
 
-    id                                               _escapeMonitor;
+    id _escapeMonitor;
 
     // Right-click context menu sticker state.
-    std::string                                      _ctxStickerEventId;
-    std::string                                      _ctxStickerMxcUrl;
-    std::string                                      _ctxStickerBody;
-    std::string                                      _ctxStickerInfoJson;
+    std::string _ctxStickerEventId;
+    std::string _ctxStickerMxcUrl;
+    std::string _ctxStickerBody;
+    std::string _ctxStickerInfoJson;
 
     // Account picker popover (left-click on user strip).
-    NSPopover*                                        _accountPickerPopover;
-    std::unique_ptr<tk::macos::Surface>               _accountPickerSurface;
-    tesseract::views::AccountPicker*                  _accountPickerShared;  // borrowed
+    NSPopover* _accountPickerPopover;
+    std::unique_ptr<tk::macos::Surface> _accountPickerSurface;
+    tesseract::views::AccountPicker* _accountPickerShared; // borrowed
 
     // Floating tooltip popover for truncated room topics.
-    NSPopover*   _topicTooltipPopover;
+    NSPopover* _topicTooltipPopover;
 
     // Dock-bounce token; 0 = no request in flight.
     NSInteger _attentionRequestToken;
 }
 
-- (instancetype)init {
+- (instancetype)init
+{
     NSRect frame = NSMakeRect(0, 0, 1100, 768);
-    NSWindowStyleMask mask = NSWindowStyleMaskTitled
-                              | NSWindowStyleMaskClosable
-                              | NSWindowStyleMaskMiniaturizable
-                              | NSWindowStyleMaskResizable;
-    NSWindow* window = [[NSWindow alloc]
-                          initWithContentRect:frame
-                                     styleMask:mask
-                                       backing:NSBackingStoreBuffered
-                                         defer:NO];
-    window.title           = @"Tesseract";
-    window.minSize         = NSMakeSize(720, 480);
+    NSWindowStyleMask mask =
+        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    NSWindow* window =
+        [[NSWindow alloc] initWithContentRect:frame
+                                    styleMask:mask
+                                      backing:NSBackingStoreBuffered
+                                        defer:NO];
+    window.title = @"Tesseract";
+    window.minSize = NSMakeSize(720, 480);
     window.titlebarAppearsTransparent = NO;
     window.releasedWhenClosed = NO;
 
     self = [super initWithWindow:window];
-    if (!self) return nil;
+    if (!self)
+    {
+        return nil;
+    }
 
     _shell = std::make_unique<MacShell>(self);
     _shell->set_screen_lock_(std::make_unique<mac::MacScreenLock>());
@@ -963,176 +1301,278 @@ void MacShell::set_compose_draft_(const std::string& draft)
 // Intercept the red traffic-light / Cmd-W. If the tray icon is up, hide the
 // window instead of closing it; the user can bring it back via the menu-bar
 // item. Returns NO to swallow the close.
-- (BOOL)windowShouldClose:(NSWindow*)sender {
-    if (_tray && _tray->is_available()) {
+- (BOOL)windowShouldClose:(NSWindow*)sender
+{
+    if (_tray && _tray->is_available())
+    {
         [sender orderOut:nil];
         return NO;
     }
     return YES;
 }
 
-- (void)_buildChrome {
+- (void)_buildChrome
+{
     NSView* content = self.window.contentView;
     content.wantsLayer = YES;
 
     // ── Single surface hosting the full main-app widget tree ──────────
     _mainAppSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
     {
-        auto main_app_owner = std::make_unique<tesseract::views::MainAppWidget>();
+        auto main_app_owner =
+            std::make_unique<tesseract::views::MainAppWidget>();
         _mainApp = main_app_owner.get();
 
         // Wire borrowed sub-view aliases.
-        _roomListView   = _mainApp->room_list_view();
-        _roomView       = _mainApp->room_view();
+        _roomListView = _mainApp->room_list_view();
+        _roomView = _mainApp->room_view();
         _recoveryShared = _mainApp->recovery_banner();
-        _verifShared    = _mainApp->verif_banner();
-        _imgViewer      = _mainApp->image_viewer();
-        _vidViewer      = _mainApp->video_viewer();
-        _shell->room_view_   = _roomView;
-        _shell->main_app_    = _mainApp;
+        _verifShared = _mainApp->verif_banner();
+        _imgViewer = _mainApp->image_viewer();
+        _vidViewer = _mainApp->video_viewer();
+        _shell->room_view_ = _roomView;
+        _shell->main_app_ = _mainApp;
         _shell->app_surface_ = _mainAppSurface.get();
 
         // Space nav callback.
-        _mainApp->on_space_back = [self] { [self _onSpaceBack]; };
+        _mainApp->on_space_back = [self]
+        {
+            [self _onSpaceBack];
+        };
 
         // UserInfo callbacks: left-click → account picker, right-click → context menu.
         __weak MainWindowController* weakSelf = self;
         _mainApp->user_info()->set_image_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image* {
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                          : it->second.get();
             });
-        _mainApp->user_info()->on_primary = [weakSelf](tk::Point /*p*/) {
+        _mainApp->user_info()->on_primary = [weakSelf](tk::Point /*p*/)
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s _openAccountPicker];
+            if (s)
+            {
+                [s _openAccountPicker];
+            }
         };
-        _mainApp->user_info()->on_secondary = [weakSelf](tk::Point p) {
+        _mainApp->user_info()->on_secondary = [weakSelf](tk::Point p)
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            NSString* logoutTitle = [NSString stringWithFormat:@"Log Out %@",
-                s->_shell->my_display_name_.empty()
-                    ? [NSString stringWithUTF8String:s->_shell->my_user_id_.c_str()]
-                    : [NSString stringWithUTF8String:s->_shell->my_display_name_.c_str()]];
+            if (!s)
+            {
+                return;
+            }
+            NSString* logoutTitle = [NSString
+                stringWithFormat:
+                    @"Log Out %@",
+                    s->_shell->my_display_name_.empty()
+                        ? [NSString stringWithUTF8String:s->_shell->my_user_id_
+                                                             .c_str()]
+                        : [NSString
+                              stringWithUTF8String:s->_shell->my_display_name_
+                                                       .c_str()]];
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             [menu addItemWithTitle:@"Settings…"
-                           action:@selector(_openSettings)
-                    keyEquivalent:@""];
+                            action:@selector(_openSettings)
+                     keyEquivalent:@""];
             [menu addItemWithTitle:@"Add Account…"
-                           action:@selector(_beginAddAccount)
-                    keyEquivalent:@""];
+                            action:@selector(_beginAddAccount)
+                     keyEquivalent:@""];
             [menu addItemWithTitle:logoutTitle
-                           action:@selector(_logoutActiveAccount)
-                    keyEquivalent:@""];
+                            action:@selector(_logoutActiveAccount)
+                     keyEquivalent:@""];
             [menu addItem:[NSMenuItem separatorItem]];
             [menu addItemWithTitle:@"Quit"
-                           action:@selector(terminate:)
-                    keyEquivalent:@""];
+                            action:@selector(terminate:)
+                     keyEquivalent:@""];
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
-            NSPoint screen = [view.window convertPointToScreen:
-                               [view convertPoint:local toView:nil]];
+            NSPoint screen = [view.window
+                convertPointToScreen:[view convertPoint:local toView:nil]];
             [menu popUpMenuPositioningItem:nil atLocation:screen inView:nil];
         };
 
         // TabBar callbacks.
         _mainApp->tab_bar()->on_tab_selected =
-            [weakSelf](const std::string& room_id) {
-                MainWindowController* s = weakSelf;
-                if (s) s->_shell->tab_select_room(room_id);
-            };
+            [weakSelf](const std::string& room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->tab_select_room(room_id);
+            }
+        };
         _mainApp->tab_bar()->on_tab_closed =
-            [weakSelf](const std::string& room_id) {
-                MainWindowController* s = weakSelf;
-                if (s) s->_shell->tab_close(room_id);
-            };
+            [weakSelf](const std::string& room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->tab_close(room_id);
+            }
+        };
 
         // RoomListView callbacks.
         _mainApp->room_list_view()->set_avatar_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image* {
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                          : it->second.get();
             });
         _mainApp->room_list_view()->on_room_selected =
-            [weakSelf](const std::string& room_id) {
-                MainWindowController* s = weakSelf;
-                if (!s) return;
-                NSEventModifierFlags mods = [NSEvent modifierFlags];
-                if (mods & NSEventModifierFlagCommand)
-                    s->_shell->tab_open_room(room_id);
-                else
-                    s->_shell->tab_select_room(room_id);
-            };
-        _mainApp->room_list_view()->on_scroll = [weakSelf] {
+            [weakSelf](const std::string& room_id)
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            [NSObject cancelPreviousPerformRequestsWithTarget:s
-                      selector:@selector(_onRoomScrollDebounce)
-                      object:nil];
+            if (!s)
+            {
+                return;
+            }
+            NSEventModifierFlags mods = [NSEvent modifierFlags];
+            if (mods & NSEventModifierFlagCommand)
+            {
+                s->_shell->tab_open_room(room_id);
+            }
+            else
+            {
+                s->_shell->tab_select_room(room_id);
+            }
+        };
+        _mainApp->room_list_view()->on_scroll = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            [NSObject
+                cancelPreviousPerformRequestsWithTarget:s
+                                               selector:
+                                                   @selector(
+                                                       _onRoomScrollDebounce)
+                                                 object:nil];
             [s performSelector:@selector(_onRoomScrollDebounce)
                     withObject:nil
                     afterDelay:0.3];
         };
 
         // RecoveryBanner callbacks.
-        _mainApp->recovery_banner()->on_verify = [weakSelf](const std::string& /*key*/) {
+        _mainApp->recovery_banner()->on_verify =
+            [weakSelf](const std::string& /*key*/)
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s _onRecoveryVerify];
+            if (s)
+            {
+                [s _onRecoveryVerify];
+            }
         };
-        _mainApp->recovery_banner()->on_dismiss = [weakSelf] {
+        _mainApp->recovery_banner()->on_dismiss = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s _onRecoveryDismiss];
+            if (s)
+            {
+                [s _onRecoveryDismiss];
+            }
         };
 
         // VerificationBanner callbacks.
-        _mainApp->verif_banner()->on_verify = [weakSelf] {
+        _mainApp->verif_banner()->on_verify = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
             if (s && s->_shell->client_)
+            {
                 s->_shell->client_->request_self_verification();
+            }
         };
-        _mainApp->verif_banner()->on_accept = [weakSelf] {
+        _mainApp->verif_banner()->on_accept = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_) return;
-            s->_shell->client_->accept_verification(s->_shell->active_verification_flow_id_);
-            s->_shell->client_->start_sas(s->_shell->active_verification_flow_id_);
+            if (!s || !s->_shell->client_)
+            {
+                return;
+            }
+            s->_shell->client_->accept_verification(
+                s->_shell->active_verification_flow_id_);
+            s->_shell->client_->start_sas(
+                s->_shell->active_verification_flow_id_);
         };
-        _mainApp->verif_banner()->on_match = [weakSelf] {
+        _mainApp->verif_banner()->on_match = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_) return;
-            s->_shell->client_->confirm_sas(s->_shell->active_verification_flow_id_);
-            if (s->_verifShared) s->_verifShared->set_state(
-                tesseract::views::VerificationBanner::State::Confirming);
-            if (s->_mainAppSurface) s->_mainAppSurface->relayout();
+            if (!s || !s->_shell->client_)
+            {
+                return;
+            }
+            s->_shell->client_->confirm_sas(
+                s->_shell->active_verification_flow_id_);
+            if (s->_verifShared)
+            {
+                s->_verifShared->set_state(
+                    tesseract::views::VerificationBanner::State::Confirming);
+            }
+            if (s->_mainAppSurface)
+            {
+                s->_mainAppSurface->relayout();
+            }
         };
-        _mainApp->verif_banner()->on_mismatch = [weakSelf] {
+        _mainApp->verif_banner()->on_mismatch = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
             if (s && s->_shell->client_)
-                s->_shell->client_->cancel_verification(s->_shell->active_verification_flow_id_);
+            {
+                s->_shell->client_->cancel_verification(
+                    s->_shell->active_verification_flow_id_);
+            }
         };
-        _mainApp->verif_banner()->on_cancel = [weakSelf] {
+        _mainApp->verif_banner()->on_cancel = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
             if (s && s->_shell->client_)
-                s->_shell->client_->cancel_verification(s->_shell->active_verification_flow_id_);
+            {
+                s->_shell->client_->cancel_verification(
+                    s->_shell->active_verification_flow_id_);
+            }
         };
-        _mainApp->verif_banner()->on_dismiss = [weakSelf] {
+        _mainApp->verif_banner()->on_dismiss = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             s->_shell->verification_banner_dismissed_ = true;
             s->_mainApp->show_verif_banner(false);
             s->_mainAppSurface->relayout();
         };
-        _mainApp->verif_banner()->on_done = [weakSelf] {
+        _mainApp->verif_banner()->on_done = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             s->_mainApp->show_verif_banner(false);
             s->_mainAppSurface->relayout();
         };
-        _mainApp->verif_banner()->on_use_recovery_key = [weakSelf] {
+        _mainApp->verif_banner()->on_use_recovery_key = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             s->_mainApp->show_verif_banner(false);
             s->_mainAppSurface->relayout();
             [s _maybeShowRecoveryBanner];
@@ -1140,237 +1580,394 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         // ImageViewerOverlay callbacks.
         _mainApp->image_viewer()->set_image_provider(
-            [weakSelf](const std::string& url) -> const tk::Image* {
+            [weakSelf](const std::string& url) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
-                if (auto* f = s->_shell->anim_cache_.current_frame(url)) return f;
+                if (!s)
+                {
+                    return nullptr;
+                }
+                if (auto* f = s->_shell->anim_cache_.current_frame(url))
+                {
+                    return f;
+                }
                 auto it = s->_shell->tk_images_.find(url);
-                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_images_.end() ? nullptr
+                                                         : it->second.get();
             });
-        _mainApp->image_viewer()->on_close = [weakSelf] {
+        _mainApp->image_viewer()->on_close = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             s->_mainApp->show_image_viewer(false);
             s->_mainAppSurface->relayout();
         };
 
         // VideoViewerOverlay callbacks.
         _mainApp->video_viewer()->set_image_provider(
-            [weakSelf](const std::string& url) -> const tk::Image* {
+            [weakSelf](const std::string& url) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->tk_images_.find(url);
-                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_images_.end() ? nullptr
+                                                         : it->second.get();
             });
         _mainApp->video_viewer()->set_video_player(
             _mainAppSurface->host().make_video_player());
-        _mainApp->video_viewer()->set_repaint_requester([weakSelf] {
+        _mainApp->video_viewer()->set_repaint_requester(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                {
+                    s->_mainAppSurface->relayout();
+                }
+            });
+        _mainApp->video_viewer()->on_close = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (s && s->_mainAppSurface) s->_mainAppSurface->relayout();
-        });
-        _mainApp->video_viewer()->on_close = [weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             s->_mainApp->show_video_viewer(false);
             s->_mainAppSurface->relayout();
         };
 
         // RoomView callbacks.
         _mainApp->room_view()->set_avatar_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image* {
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                          : it->second.get();
             });
         _mainApp->room_view()->set_image_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image* {
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
-                if (auto* f = s->_shell->anim_cache_.current_frame(mxc)) return f;
+                if (!s)
+                {
+                    return nullptr;
+                }
+                if (auto* f = s->_shell->anim_cache_.current_frame(mxc))
+                {
+                    return f;
+                }
                 auto it = s->_shell->tk_images_.find(mxc);
-                return it == s->_shell->tk_images_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_images_.end() ? nullptr
+                                                         : it->second.get();
             });
         _mainApp->room_view()->set_preview_provider(
-            [weakSelf](const std::string& url) -> const tesseract::views::UrlPreviewData* {
+            [weakSelf](const std::string& url)
+                -> const tesseract::views::UrlPreviewData*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->url_preview_data_.find(url);
-                if (it == s->_shell->url_preview_data_.end()) return nullptr;
-                if (!it->second.image_mxc.empty()
-                    && !s->_shell->tk_images_.count(it->second.image_mxc)
-                    && !s->_shell->anim_cache_.has(it->second.image_mxc))
-                    s->_shell->ensure_media_image_(it->second.image_mxc, 64, 64);
+                if (it == s->_shell->url_preview_data_.end())
+                {
+                    return nullptr;
+                }
+                if (!it->second.image_mxc.empty() &&
+                    !s->_shell->tk_images_.count(it->second.image_mxc) &&
+                    !s->_shell->anim_cache_.has(it->second.image_mxc))
+                {
+                    s->_shell->ensure_media_image_(it->second.image_mxc, 64,
+                                                   64);
+                }
                 return &it->second;
             });
         _mainApp->room_view()->set_voice_bytes_provider(
-            [weakSelf](const std::string& source_json) -> std::vector<std::uint8_t> {
+            [weakSelf](
+                const std::string& source_json) -> std::vector<std::uint8_t>
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return {};
+                if (!s)
+                {
+                    return {};
+                }
                 return s->_shell->client_->fetch_source_bytes(source_json);
             });
         _mainApp->room_view()->set_video_player_factory(
-            [weakSelf]() -> std::unique_ptr<tk::VideoPlayer> {
+            [weakSelf]() -> std::unique_ptr<tk::VideoPlayer>
+            {
                 MainWindowController* s = weakSelf;
-                if (!s || !s->_mainAppSurface) return nullptr;
+                if (!s || !s->_mainAppSurface)
+                {
+                    return nullptr;
+                }
                 return s->_mainAppSurface->host().make_video_player();
             });
         _mainApp->room_view()->set_video_fetch_provider(
             [weakSelf](const std::string& src,
-                       std::function<void(std::vector<std::uint8_t>)> on_ready) {
+                       std::function<void(std::vector<std::uint8_t>)> on_ready)
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return;
+                if (!s)
+                {
+                    return;
+                }
                 auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-                s->_shell->run_async_([weakSelf, src, bytes_holder,
-                                       on_ready = std::move(on_ready),
-                                       clientPtr = s->_shell->client_]() mutable {
-                    *bytes_holder = clientPtr->fetch_source_bytes(src);
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        on_ready(std::move(*bytes_holder));
+                s->_shell->run_async_(
+                    [weakSelf, src, bytes_holder,
+                     on_ready = std::move(on_ready),
+                     clientPtr = s->_shell->client_]() mutable
+                    {
+                        *bytes_holder = clientPtr->fetch_source_bytes(src);
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            on_ready(std::move(*bytes_holder));
+                        });
                     });
-                });
             });
         if (auto player = _mainAppSurface->host().make_audio_player())
+        {
             _mainApp->room_view()->set_audio_player(std::move(player));
+        }
 
-        _mainApp->room_view()->on_send = [weakSelf](const std::string& body) {
+        _mainApp->room_view()->on_send = [weakSelf](const std::string& body)
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
             std::string trimmed = trim(body);
-            if (trimmed.empty()) return;
-            if (s->_shell->client_->send_message(s->_shell->current_room_id_, trimmed)) {
-                if (s->_roomTextArea) s->_roomTextArea->set_text("");
-                if (s->_roomView)     s->_roomView->set_current_text({});
+            if (trimmed.empty())
+            {
+                return;
+            }
+            if (s->_shell->client_->send_message(s->_shell->current_room_id_,
+                                                 trimmed))
+            {
+                if (s->_roomTextArea)
+                {
+                    s->_roomTextArea->set_text("");
+                }
+                if (s->_roomView)
+                {
+                    s->_roomView->set_current_text({});
+                }
             }
         };
         _mainApp->room_view()->on_send_reply =
-            [weakSelf](const std::string& reply_event_id, const std::string& body) {
-                MainWindowController* s = weakSelf;
-                if (!s || body.empty() || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->send_reply(s->_shell->current_room_id_, reply_event_id, body);
-                if (s->_roomTextArea) s->_roomTextArea->set_text("");
-                if (s->_roomView)     s->_roomView->set_current_text({});
-            };
-        _mainApp->room_view()->on_send_edit =
-            [weakSelf](const std::string& event_id, const std::string& new_body) {
-                MainWindowController* s = weakSelf;
-                if (!s || new_body.empty() || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id, new_body);
-                if (s->_roomTextArea) s->_roomTextArea->set_text("");
-                if (s->_roomView)     s->_roomView->set_current_text({});
-            };
-        _mainApp->room_view()->on_send_image =
-            [weakSelf](std::vector<std::uint8_t> bytes,
-                       std::string mime,
-                       std::string filename,
-                       std::string caption,
-                       std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
-                       std::string reply_event_id) {
-                MainWindowController* s = weakSelf;
-                if (!s) return;
-                [s _sendComposedImage:std::move(bytes)
-                                  mime:std::move(mime)
-                              filename:std::move(filename)
-                               caption:std::move(caption)
-                          replyEventId:std::move(reply_event_id)];
-            };
-        _mainApp->room_view()->on_send_file =
-            [weakSelf](std::vector<std::uint8_t> bytes,
-                       std::string mime,
-                       std::string filename,
-                       std::string caption,
-                       std::string reply_event_id) {
-                MainWindowController* s = weakSelf;
-                if (!s) return;
-                [s _sendComposedFile:std::move(bytes)
-                                  mime:std::move(mime)
-                              filename:std::move(filename)
-                               caption:std::move(caption)
-                          replyEventId:std::move(reply_event_id)];
-            };
-        _mainApp->room_view()->on_delete_requested = [weakSelf](const std::string& event_id) {
+            [weakSelf](const std::string& reply_event_id,
+                       const std::string& body)
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
-            s->_shell->client_->redact_event(s->_shell->current_room_id_, event_id);
+            if (!s || body.empty() || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            s->_shell->client_->send_reply(s->_shell->current_room_id_,
+                                           reply_event_id, body);
+            if (s->_roomTextArea)
+            {
+                s->_roomTextArea->set_text("");
+            }
+            if (s->_roomView)
+            {
+                s->_roomView->set_current_text({});
+            }
+        };
+        _mainApp->room_view()->on_send_edit =
+            [weakSelf](const std::string& event_id, const std::string& new_body)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || new_body.empty() || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            s->_shell->client_->send_edit(s->_shell->current_room_id_, event_id,
+                                          new_body);
+            if (s->_roomTextArea)
+            {
+                s->_roomTextArea->set_text("");
+            }
+            if (s->_roomView)
+            {
+                s->_roomView->set_current_text({});
+            }
+        };
+        _mainApp->room_view()->on_send_image =
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
+                       std::string reply_event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            [s _sendComposedImage:std::move(bytes)
+                             mime:std::move(mime)
+                         filename:std::move(filename)
+                          caption:std::move(caption)
+                     replyEventId:std::move(reply_event_id)];
+        };
+        _mainApp->room_view()->on_send_file =
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::string reply_event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            [s _sendComposedFile:std::move(bytes)
+                            mime:std::move(mime)
+                        filename:std::move(filename)
+                         caption:std::move(caption)
+                    replyEventId:std::move(reply_event_id)];
+        };
+        _mainApp->room_view()->on_delete_requested =
+            [weakSelf](const std::string& event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            s->_shell->client_->redact_event(s->_shell->current_room_id_,
+                                             event_id);
         };
         _mainApp->room_view()->on_reaction_toggled =
-            [weakSelf](const std::string& event_id, const std::string& key) {
-                MainWindowController* s = weakSelf;
-                if (!s || s->_shell->current_room_id_.empty()) return;
-                s->_shell->client_->send_reaction(s->_shell->current_room_id_, event_id, key);
-            };
-        _mainApp->room_view()->on_add_reaction_requested =
-            [weakSelf](const std::string& event_id, tk::Rect anchor) {
-                MainWindowController* s = weakSelf;
-                if (!s || s->_shell->current_room_id_.empty()) return;
-                s->_pendingReactionEventId = event_id;
-                [s showEmojiPickerAtRect:anchor];
-            };
-        _mainApp->room_view()->on_receipt_needed = [weakSelf](const std::string& eid) {
+            [weakSelf](const std::string& event_id, const std::string& key)
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_, eid);
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            s->_shell->client_->send_reaction(s->_shell->current_room_id_,
+                                              event_id, key);
+        };
+        _mainApp->room_view()->on_add_reaction_requested =
+            [weakSelf](const std::string& event_id, tk::Rect anchor)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
+            s->_pendingReactionEventId = event_id;
+            [s showEmojiPickerAtRect:anchor];
+        };
+        _mainApp->room_view()->on_receipt_needed =
+            [weakSelf](const std::string& eid)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            s->_shell->maybe_send_read_receipt_(s->_shell->current_room_id_,
+                                                eid);
         };
         _mainApp->room_view()->message_list()->on_tile_needed =
-            [weakSelf](int z, int x, int y) {
-                MainWindowController* s = weakSelf;
-                if (s) s->_shell->ensure_tile_async(z, x, y);
-            };
+            [weakSelf](int z, int x, int y)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->ensure_tile_async(z, x, y);
+            }
+        };
         _mainApp->room_view()->on_image_clicked =
-            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit) {
-                MainWindowController* s = weakSelf;
-                if (!s || !s->_mainApp || !s->_mainAppSurface) return;
-                s->_imgViewer->open(hit.media_url, hit.body,
-                                    hit.natural_w, hit.natural_h);
-                s->_mainApp->show_image_viewer(true);
-                s->_mainAppSurface->relayout();
-                NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-                [view.window makeFirstResponder:view];
-            };
+            [weakSelf](const tesseract::views::MessageListView::ImageHit& hit)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+            {
+                return;
+            }
+            s->_imgViewer->open(hit.media_url, hit.body, hit.natural_w,
+                                hit.natural_h);
+            s->_mainApp->show_image_viewer(true);
+            s->_mainAppSurface->relayout();
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+        };
         _mainApp->room_view()->on_video_clicked =
-            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit) {
-                MainWindowController* s = weakSelf;
-                if (!s || !s->_mainApp || !s->_mainAppSurface) return;
-                s->_vidViewer->open(hit.source_json, hit.thumbnail_url,
-                                    hit.mime_type, hit.duration_ms,
-                                    hit.natural_w, hit.natural_h,
-                                    hit.autoplay, hit.loop,
-                                    hit.no_audio, hit.hide_controls);
-                s->_mainApp->show_video_viewer(true);
-                s->_mainAppSurface->relayout();
-                NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-                [view.window makeFirstResponder:view];
-                auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-                std::string src = hit.source_json;
-                s->_shell->run_async_([weakSelf, src, bytes_holder,
-                                       clientPtr = s->_shell->client_]() {
+            [weakSelf](const tesseract::views::MessageListView::VideoHit& hit)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+            {
+                return;
+            }
+            s->_vidViewer->open(hit.source_json, hit.thumbnail_url,
+                                hit.mime_type, hit.duration_ms, hit.natural_w,
+                                hit.natural_h, hit.autoplay, hit.loop,
+                                hit.no_audio, hit.hide_controls);
+            s->_mainApp->show_video_viewer(true);
+            s->_mainAppSurface->relayout();
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+            auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+            std::string src = hit.source_json;
+            s->_shell->run_async_(
+                [weakSelf, src, bytes_holder, clientPtr = s->_shell->client_]()
+                {
                     *bytes_holder = clientPtr->fetch_source_bytes(src);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         MainWindowController* s2 = weakSelf;
-                        if (!s2 || !s2->_vidViewer) return;
+                        if (!s2 || !s2->_vidViewer)
+                        {
+                            return;
+                        }
                         s2->_vidViewer->load_bytes(bytes_holder->data(),
-                                                    bytes_holder->size());
+                                                   bytes_holder->size());
                     });
                 });
-            };
-        _mainApp->room_view()->on_link_clicked = [](const std::string& url) {
+        };
+        _mainApp->room_view()->on_link_clicked = [](const std::string& url)
+        {
             tesseract::Client::open_in_browser(url);
         };
-        _mainApp->room_view()->on_show_tooltip = [weakSelf](std::string text, tk::Rect anchor) {
+        _mainApp->room_view()->on_show_tooltip =
+            [weakSelf](std::string text, tk::Rect anchor)
+        {
             MainWindowController* s = weakSelf;
-            if (!s || !s->_mainAppSurface) return;
-            if (!s->_topicTooltipPopover) {
+            if (!s || !s->_mainAppSurface)
+            {
+                return;
+            }
+            if (!s->_topicTooltipPopover)
+            {
                 NSTextField* lbl = [NSTextField wrappingLabelWithString:@""];
                 lbl.translatesAutoresizingMaskIntoConstraints = NO;
                 NSView* cv = [[NSView alloc] init];
                 cv.translatesAutoresizingMaskIntoConstraints = NO;
                 [cv addSubview:lbl];
                 [NSLayoutConstraint activateConstraints:@[
-                    [lbl.leadingAnchor  constraintEqualToAnchor:cv.leadingAnchor  constant:8],
-                    [lbl.trailingAnchor constraintEqualToAnchor:cv.trailingAnchor constant:-8],
-                    [lbl.topAnchor      constraintEqualToAnchor:cv.topAnchor      constant:6],
-                    [lbl.bottomAnchor   constraintEqualToAnchor:cv.bottomAnchor   constant:-6],
-                    [cv.widthAnchor     constraintLessThanOrEqualToConstant:360],
+                    [lbl.leadingAnchor constraintEqualToAnchor:cv.leadingAnchor
+                                                      constant:8],
+                    [lbl.trailingAnchor
+                        constraintEqualToAnchor:cv.trailingAnchor
+                                       constant:-8],
+                    [lbl.topAnchor constraintEqualToAnchor:cv.topAnchor
+                                                  constant:6],
+                    [lbl.bottomAnchor constraintEqualToAnchor:cv.bottomAnchor
+                                                     constant:-6],
+                    [cv.widthAnchor constraintLessThanOrEqualToConstant:360],
                 ]];
                 NSViewController* vc = [[NSViewController alloc] init];
                 vc.view = cv;
@@ -1380,173 +1977,311 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 pop.animates = NO;
                 s->_topicTooltipPopover = pop;
             }
-            NSTextField* lbl = (NSTextField*)
-                s->_topicTooltipPopover.contentViewController.view.subviews.firstObject;
+            NSTextField* lbl =
+                (NSTextField*)s->_topicTooltipPopover.contentViewController.view
+                    .subviews.firstObject;
             lbl.stringValue = [NSString stringWithUTF8String:text.c_str()];
-            [s->_topicTooltipPopover.contentViewController.view layoutSubtreeIfNeeded];
+            [s->_topicTooltipPopover.contentViewController
+                    .view layoutSubtreeIfNeeded];
             s->_topicTooltipPopover.contentSize =
-                [s->_topicTooltipPopover.contentViewController.view fittingSize];
+                [s->_topicTooltipPopover.contentViewController
+                        .view fittingSize];
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             CGFloat viewH = view.bounds.size.height;
-            NSRect anchorRect = NSMakeRect(anchor.x, viewH - anchor.y - anchor.h,
-                                           anchor.w, anchor.h);
+            NSRect anchorRect = NSMakeRect(
+                anchor.x, viewH - anchor.y - anchor.h, anchor.w, anchor.h);
             [s->_topicTooltipPopover showRelativeToRect:anchorRect
                                                  ofView:view
                                           preferredEdge:NSRectEdgeMinY];
         };
-        _mainApp->room_view()->on_hide_tooltip = [weakSelf] {
+        _mainApp->room_view()->on_hide_tooltip = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
             if (s && s->_topicTooltipPopover && s->_topicTooltipPopover.shown)
+            {
                 [s->_topicTooltipPopover close];
+            }
         };
-        _mainApp->room_view()->on_near_top = [weakSelf] {
+        _mainApp->room_view()->on_near_top = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
             [s requestMoreHistoryForRoom:s->_shell->current_room_id_];
         };
-        _mainApp->room_view()->on_near_bottom = [weakSelf] {
+        _mainApp->room_view()->on_near_bottom = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
             s->_shell->request_forward_history_(s->_shell->current_room_id_);
         };
-        _mainApp->room_view()->on_return_to_live = [weakSelf] {
+        _mainApp->room_view()->on_return_to_live = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
             s->_shell->return_to_live_(s->_shell->current_room_id_);
         };
-        _mainApp->room_view()->on_scroll_to_original = [weakSelf](const std::string& event_id) {
+        _mainApp->room_view()->on_scroll_to_original =
+            [weakSelf](const std::string& event_id)
+        {
             MainWindowController* s = weakSelf;
-            if (!s || s->_shell->current_room_id_.empty()) return;
+            if (!s || s->_shell->current_room_id_.empty())
+            {
+                return;
+            }
             std::string room = s->_shell->current_room_id_;
             s->_shell->begin_focused_subscription_(room, event_id);
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                MainWindowController* s2 = weakSelf;
-                if (s2) s2->_shell->client_->subscribe_room_at(room, event_id);
-            });
+            dispatch_async(
+                dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                    MainWindowController* s2 = weakSelf;
+                    if (s2)
+                    {
+                        s2->_shell->client_->subscribe_room_at(room, event_id);
+                    }
+                });
         };
-        _mainApp->room_view()->on_jump_to_date_requested = [weakSelf] {
+        _mainApp->room_view()->on_jump_to_date_requested = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s openJumpToDateDialog];
+            if (s)
+            {
+                [s openJumpToDateDialog];
+            }
         };
-        _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn) {
+        _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn)
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s showEmojiPickerAtRect:btn];
+            if (s)
+            {
+                [s showEmojiPickerAtRect:btn];
+            }
         };
-        _mainApp->room_view()->on_sticker = [weakSelf](tk::Rect btn) {
+        _mainApp->room_view()->on_sticker = [weakSelf](tk::Rect btn)
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s _showStickerPickerAtRect:btn];
+            if (s)
+            {
+                [s _showStickerPickerAtRect:btn];
+            }
         };
-        _mainApp->room_view()->on_edit_cancelled = [weakSelf] {
+        _mainApp->room_view()->on_edit_cancelled = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            if (s->_roomTextArea) s->_roomTextArea->set_text("");
-            if (s->_roomView)     s->_roomView->set_current_text({});
+            if (!s)
+            {
+                return;
+            }
+            if (s->_roomTextArea)
+            {
+                s->_roomTextArea->set_text("");
+            }
+            if (s->_roomView)
+            {
+                s->_roomView->set_current_text({});
+            }
         };
-        _mainApp->room_view()->on_edit_prefill = [weakSelf](const std::string& body) {
+        _mainApp->room_view()->on_edit_prefill =
+            [weakSelf](const std::string& body)
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            if (s->_roomTextArea) s->_roomTextArea->set_text(body);
-            if (s->_roomView)     s->_roomView->set_current_text(body);
-            if (s->_roomTextArea) s->_roomTextArea->set_focused(true);
+            if (!s)
+            {
+                return;
+            }
+            if (s->_roomTextArea)
+            {
+                s->_roomTextArea->set_text(body);
+            }
+            if (s->_roomView)
+            {
+                s->_roomView->set_current_text(body);
+            }
+            if (s->_roomTextArea)
+            {
+                s->_roomTextArea->set_focused(true);
+            }
         };
-        _mainApp->room_view()->on_reply_focus = [weakSelf] {
+        _mainApp->room_view()->on_reply_focus = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (s && s->_roomTextArea) s->_roomTextArea->set_focused(true);
+            if (s && s->_roomTextArea)
+            {
+                s->_roomTextArea->set_focused(true);
+            }
         };
-        _mainApp->room_view()->set_repaint_requester([weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (s && s->_mainAppSurface) s->_mainAppSurface->relayout();
-        });
-        _mainApp->room_view()->set_post_delayed(
-            [weakSelf](int ms, std::function<void()> fn) {
+        _mainApp->room_view()->set_repaint_requester(
+            [weakSelf]
+            {
                 MainWindowController* s = weakSelf;
                 if (s && s->_mainAppSurface)
-                    s->_mainAppSurface->host().post_delayed(ms, std::move(fn));
+                {
+                    s->_mainAppSurface->relayout();
+                }
             });
-        _mainApp->room_view()->on_layout_changed = [weakSelf] {
+        _mainApp->room_view()->set_post_delayed(
+            [weakSelf](int ms, std::function<void()> fn)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                {
+                    s->_mainAppSurface->host().post_delayed(ms, std::move(fn));
+                }
+            });
+        _mainApp->room_view()->on_layout_changed = [weakSelf]
+        {
             MainWindowController* s = weakSelf;
-            if (s) [s _relayoutChatSurface];
+            if (s)
+            {
+                [s _relayoutChatSurface];
+            }
         };
 
-        _mainAppSurface->set_on_right_click([weakSelf](tk::Point p) {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_roomView) return;
-            auto hit = s->_roomView->message_list()->sticker_hit_at(p);
-            if (!hit) return;
-            s->_ctxStickerEventId  = hit->event_id;
-            s->_ctxStickerMxcUrl   = hit->mxc_url;
-            s->_ctxStickerBody     = hit->body;
-            s->_ctxStickerInfoJson = hit->info_json;
-            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            NSPoint local = NSMakePoint(p.x, p.y);
-            NSPoint screen = [view.window convertPointToScreen:
-                               [view convertPoint:local toView:nil]];
-            [s _showStickerContextMenuAt:screen];
-        });
+        _mainAppSurface->set_on_right_click(
+            [weakSelf](tk::Point p)
+            {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_roomView)
+                {
+                    return;
+                }
+                auto hit = s->_roomView->message_list()->sticker_hit_at(p);
+                if (!hit)
+                {
+                    return;
+                }
+                s->_ctxStickerEventId = hit->event_id;
+                s->_ctxStickerMxcUrl = hit->mxc_url;
+                s->_ctxStickerBody = hit->body;
+                s->_ctxStickerInfoJson = hit->info_json;
+                NSView* view =
+                    (__bridge NSView*)s->_mainAppSurface->view_handle();
+                NSPoint local = NSMakePoint(p.x, p.y);
+                NSPoint screen = [view.window
+                    convertPointToScreen:[view convertPoint:local toView:nil]];
+                [s _showStickerContextMenuAt:screen];
+            });
 
         _mainAppSurface->set_root(std::move(main_app_owner));
 
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
         _roomTextArea->set_placeholder("Message…");
-        _roomTextArea->set_on_changed([weakSelf](const std::string& s) {
-            MainWindowController* c = weakSelf;
-            if (!c) return;
-            c->_shell->handle_compose_text_changed_(s);
-            if (c->_roomView) c->_roomView->set_current_text(s);
+        _roomTextArea->set_on_changed(
+            [weakSelf](const std::string& s)
+            {
+                MainWindowController* c = weakSelf;
+                if (!c)
+                {
+                    return;
+                }
+                c->_shell->handle_compose_text_changed_(s);
+                if (c->_roomView)
+                {
+                    c->_roomView->set_current_text(s);
+                }
 
-            // ── Shortcode detection ─────────────────────────────────────────
-            int cursor = (int)s.size();
+                // ── Shortcode detection ─────────────────────────────────────────
+                int cursor = (int)s.size();
 
-            auto complete = c->_shell->shortcode_engine_.find_complete(s, cursor);
-            if (complete) {
-                auto hits = c->_shell->shortcode_engine_.lookup(
-                    complete->prefix, c->_shell->cached_emoticons_, 1);
-                std::string r = (!hits.empty() && !hits.front().glyph.empty())
-                    ? hits.front().glyph
-                    : ":" + complete->prefix + ":";
-                c->_roomTextArea->replace_range(complete->start, complete->end, r);
-                [c hideShortcodePopup];
-                return;
-            }
+                auto complete =
+                    c->_shell->shortcode_engine_.find_complete(s, cursor);
+                if (complete)
+                {
+                    auto hits = c->_shell->shortcode_engine_.lookup(
+                        complete->prefix, c->_shell->cached_emoticons_, 1);
+                    std::string r =
+                        (!hits.empty() && !hits.front().glyph.empty())
+                            ? hits.front().glyph
+                            : ":" + complete->prefix + ":";
+                    c->_roomTextArea->replace_range(complete->start,
+                                                    complete->end, r);
+                    [c hideShortcodePopup];
+                    return;
+                }
 
-            auto prefix_match = c->_shell->shortcode_engine_.find_prefix(s, cursor);
-            if (prefix_match && prefix_match->prefix.size() >= 2) {
-                c->_shell->shortcode_current_suggestions_ =
-                    c->_shell->shortcode_engine_.lookup(
-                        prefix_match->prefix, c->_shell->cached_emoticons_);
-                if (!c->_shell->shortcode_current_suggestions_.empty()) {
-                    c->_shell->shortcode_active_match_ = *prefix_match;
-                    for (const auto& sugg : c->_shell->shortcode_current_suggestions_)
-                        if (!sugg.emoticon.url.empty())
-                            c->_shell->ensure_media_image_(sugg.emoticon.url, 28, 28);
-                    bool was_visible = [c shortcodePopupVisible];
-                    [c showShortcodePopupWithSuggestions:
-                            c->_shell->shortcode_current_suggestions_
-                        cursorRect:c->_roomTextArea->cursor_rect()];
-                    if (!was_visible)
-                        c->_roomTextArea->set_on_popup_nav(
-                            [weakSelf](tk::NativeTextArea::NavKey nk) -> bool {
-                                MainWindowController* c2 = weakSelf;
-                                if (!c2 || ![c2 shortcodePopupVisible]) return false;
-                                int cur = c2->_shortcodePopupWidget->selected_index();
-                                int n   = c2->_shortcodePopupWidget->visible_rows();
-                                if (n <= 0) return true;
-                                int next = cur;
-                                switch (nk) {
+                auto prefix_match =
+                    c->_shell->shortcode_engine_.find_prefix(s, cursor);
+                if (prefix_match && prefix_match->prefix.size() >= 2)
+                {
+                    c->_shell->shortcode_current_suggestions_ =
+                        c->_shell->shortcode_engine_.lookup(
+                            prefix_match->prefix, c->_shell->cached_emoticons_);
+                    if (!c->_shell->shortcode_current_suggestions_.empty())
+                    {
+                        c->_shell->shortcode_active_match_ = *prefix_match;
+                        for (const auto& sugg :
+                             c->_shell->shortcode_current_suggestions_)
+                        {
+                            if (!sugg.emoticon.url.empty())
+                            {
+                                c->_shell->ensure_media_image_(
+                                    sugg.emoticon.url, 28, 28);
+                            }
+                        }
+                        bool was_visible = [c shortcodePopupVisible];
+                        [c showShortcodePopupWithSuggestions:
+                                c->_shell->shortcode_current_suggestions_
+                                                  cursorRect:
+                                                      c->_roomTextArea
+                                                          ->cursor_rect()];
+                        if (!was_visible)
+                        {
+                            c->_roomTextArea->set_on_popup_nav(
+                                [weakSelf](
+                                    tk::NativeTextArea::NavKey nk) -> bool
+                                {
+                                    MainWindowController* c2 = weakSelf;
+                                    if (!c2 || ![c2 shortcodePopupVisible])
+                                    {
+                                        return false;
+                                    }
+                                    int cur = c2->_shortcodePopupWidget
+                                                  ->selected_index();
+                                    int n = c2->_shortcodePopupWidget
+                                                ->visible_rows();
+                                    if (n <= 0)
+                                    {
+                                        return true;
+                                    }
+                                    int next = cur;
+                                    switch (nk)
+                                    {
                                     case tk::NativeTextArea::NavKey::Up:
-                                        next = std::max(0, cur - 1); break;
+                                        next = std::max(0, cur - 1);
+                                        break;
                                     case tk::NativeTextArea::NavKey::Down:
-                                        next = std::min(n - 1, cur + 1); break;
-                                    case tk::NativeTextArea::NavKey::Tab: {
-                                        int sel = c2->_shortcodePopupWidget->selected_index();
-                                        auto& suggs = c2->_shell->shortcode_current_suggestions_;
-                                        if (sel >= 0 && sel < (int)suggs.size()) {
+                                        next = std::min(n - 1, cur + 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                    {
+                                        int sel = c2->_shortcodePopupWidget
+                                                      ->selected_index();
+                                        auto& suggs =
+                                            c2->_shell
+                                                ->shortcode_current_suggestions_;
+                                        if (sel >= 0 && sel < (int)suggs.size())
+                                        {
                                             auto& s = suggs[sel];
-                                            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+                                            std::string r =
+                                                s.glyph.empty()
+                                                    ? ":" + s.shortcode + ":"
+                                                    : s.glyph;
                                             c2->_roomTextArea->replace_range(
-                                                c2->_shell->shortcode_active_match_.start,
-                                                c2->_shell->shortcode_active_match_.end, r);
+                                                c2->_shell
+                                                    ->shortcode_active_match_
+                                                    .start,
+                                                c2->_shell
+                                                    ->shortcode_active_match_
+                                                    .end,
+                                                r);
                                         }
                                         [c2 hideShortcodePopup];
                                         return true;
@@ -1556,141 +2291,212 @@ void MacShell::set_compose_draft_(const std::string& draft)
                                     case tk::NativeTextArea::NavKey::Escape:
                                         [c2 hideShortcodePopup];
                                         return true;
-                                }
-                                c2->_shortcodePopupWidget->set_selected_index(next);
-                                c2->_shortcodePopupSurface->host().request_repaint();
-                                return true;
-                            });
-                    return;
-                }
-            }
-            [c hideShortcodePopup];
-            // ── End shortcode detection ─────────────────────────────────────
-        });
-        _roomTextArea->set_on_submit([weakSelf] {
-            MainWindowController* c = weakSelf;
-            if (!c) return;
-            if ([c shortcodePopupVisible]) {
-                int sel = c->_shortcodePopupWidget->selected_index();
-                if (sel >= 0 && sel < (int)c->_shell->shortcode_current_suggestions_.size()) {
-                    auto& sugg = c->_shell->shortcode_current_suggestions_[sel];
-                    std::string r = sugg.glyph.empty()
-                        ? ":" + sugg.shortcode + ":"
-                        : sugg.glyph;
-                    c->_roomTextArea->replace_range(
-                        c->_shell->shortcode_active_match_.start,
-                        c->_shell->shortcode_active_match_.end, r);
-                    [c hideShortcodePopup];
-                    return;
+                                    }
+                                    c2->_shortcodePopupWidget
+                                        ->set_selected_index(next);
+                                    c2->_shortcodePopupSurface->host()
+                                        .request_repaint();
+                                    return true;
+                                });
+                        }
+                        return;
+                    }
                 }
                 [c hideShortcodePopup];
-            }
-            [c _onComposeSend];
-        });
-        _roomTextArea->set_on_edit_last([weakSelf]() -> bool {
-            MainWindowController* c = weakSelf;
-            return c && c->_roomView && c->_roomView->edit_last_own();
-        });
-        _roomTextArea->set_on_height_changed([weakSelf](float h) {
-            MainWindowController* c = weakSelf;
-            if (!c || !c->_roomView) return;
-            c->_roomView->set_text_area_natural_height(h);
-            [c _relayoutChatSurface];
-        });
+                // ── End shortcode detection ─────────────────────────────────────
+            });
+        _roomTextArea->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* c = weakSelf;
+                if (!c)
+                {
+                    return;
+                }
+                if ([c shortcodePopupVisible])
+                {
+                    int sel = c->_shortcodePopupWidget->selected_index();
+                    if (sel >= 0 &&
+                        sel < (int)c->_shell->shortcode_current_suggestions_
+                                  .size())
+                    {
+                        auto& sugg =
+                            c->_shell->shortcode_current_suggestions_[sel];
+                        std::string r = sugg.glyph.empty()
+                                            ? ":" + sugg.shortcode + ":"
+                                            : sugg.glyph;
+                        c->_roomTextArea->replace_range(
+                            c->_shell->shortcode_active_match_.start,
+                            c->_shell->shortcode_active_match_.end, r);
+                        [c hideShortcodePopup];
+                        return;
+                    }
+                    [c hideShortcodePopup];
+                }
+                [c _onComposeSend];
+            });
+        _roomTextArea->set_on_edit_last(
+            [weakSelf]() -> bool
+            {
+                MainWindowController* c = weakSelf;
+                return c && c->_roomView && c->_roomView->edit_last_own();
+            });
+        _roomTextArea->set_on_height_changed(
+            [weakSelf](float h)
+            {
+                MainWindowController* c = weakSelf;
+                if (!c || !c->_roomView)
+                {
+                    return;
+                }
+                c->_roomView->set_text_area_natural_height(h);
+                [c _relayoutChatSurface];
+            });
         _roomTextArea->set_on_image_paste(
-            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime) {
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime)
+            {
                 MainWindowController* c = weakSelf;
                 if (c && c->_roomView)
-                    c->_roomView->compose_bar()->set_pending_image(std::move(bytes),
-                                                                    std::move(mime));
+                {
+                    c->_roomView->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime));
+                }
             });
 
         _mainAppSurface->set_on_file_drop(
-            [weakSelf](std::vector<std::uint8_t> bytes,
-                       std::string mime,
-                       std::string filename) {
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename)
+            {
                 MainWindowController* c = weakSelf;
-                if (!c || !c->_roomView) return;
+                if (!c || !c->_roomView)
+                {
+                    return;
+                }
                 const auto limit = c->_shell->client_->media_upload_limit();
-                if (limit > 0 && bytes.size() > limit) return;
-                if (mime.rfind("image/", 0) == 0) {
-                    c->_roomView->compose_bar()->set_pending_image(std::move(bytes),
-                                                                   std::move(mime),
-                                                                   std::move(filename));
-                } else {
-                    c->_roomView->compose_bar()->set_pending_file(std::move(bytes),
-                                                                  std::move(mime),
-                                                                  std::move(filename));
+                if (limit > 0 && bytes.size() > limit)
+                {
+                    return;
+                }
+                if (mime.rfind("image/", 0) == 0)
+                {
+                    c->_roomView->compose_bar()->set_pending_image(
+                        std::move(bytes), std::move(mime), std::move(filename));
+                }
+                else
+                {
+                    c->_roomView->compose_bar()->set_pending_file(
+                        std::move(bytes), std::move(mime), std::move(filename));
                 }
             });
 
         _roomSearchField = _mainAppSurface->host().make_text_field();
         _roomSearchField->set_placeholder("Search");
         _roomSearchField->set_visible(false);
-        _roomSearchField->set_on_changed([weakSelf](const std::string& q) {
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            s->_pendingSearchText = q;
-            [NSObject cancelPreviousPerformRequestsWithTarget:s
-                      selector:@selector(_applySearchFilter)
-                      object:nil];
-            [s performSelector:@selector(_applySearchFilter)
-                    withObject:nil
-                    afterDelay:0.5];
-        });
+        _roomSearchField->set_on_changed(
+            [weakSelf](const std::string& q)
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return;
+                }
+                s->_pendingSearchText = q;
+                [NSObject
+                    cancelPreviousPerformRequestsWithTarget:s
+                                                   selector:
+                                                       @selector(
+                                                           _applySearchFilter)
+                                                     object:nil];
+                [s performSelector:@selector(_applySearchFilter)
+                        withObject:nil
+                        afterDelay:0.5];
+            });
 
         _recoveryKeyField = _mainAppSurface->host().make_text_field();
         _recoveryKeyField->set_placeholder("Recovery key or passphrase");
         _recoveryKeyField->set_password(true);
-        _recoveryKeyField->set_on_changed([weakSelf](const std::string& k) {
-            MainWindowController* s = weakSelf;
-            if (s && s->_recoveryShared) s->_recoveryShared->set_current_key(k);
-        });
-        _recoveryKeyField->set_on_submit([weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (s) [s _onRecoveryVerify];
-        });
+        _recoveryKeyField->set_on_changed(
+            [weakSelf](const std::string& k)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_recoveryShared)
+                {
+                    s->_recoveryShared->set_current_key(k);
+                }
+            });
+        _recoveryKeyField->set_on_submit(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s)
+                {
+                    [s _onRecoveryVerify];
+                }
+            });
 
-        _mainAppSurface->set_on_layout([weakSelf] {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_mainApp) return;
-            auto* app  = s->_mainApp;
-            auto* surf = s->_mainAppSurface.get();
-            // Compose text area.
-            s->_roomTextArea->set_rect(app->compose_text_area_rect());
-            // Room search field.
-            bool searchVisible = app->room_search_field_visible();
-            s->_roomSearchField->set_visible(searchVisible);
-            if (searchVisible)
-                s->_roomSearchField->set_rect(app->room_search_field_rect());
-            // Recovery key field.
-            bool recoveryVisible = app->recovery_key_field_visible();
-            s->_recoveryKeyField->set_visible(recoveryVisible);
-            if (recoveryVisible)
-                s->_recoveryKeyField->set_rect(app->recovery_key_field_rect());
-            (void)surf;
-        });
+        _mainAppSurface->set_on_layout(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (!s || !s->_mainApp)
+                {
+                    return;
+                }
+                auto* app = s->_mainApp;
+                auto* surf = s->_mainAppSurface.get();
+                // Compose text area.
+                s->_roomTextArea->set_rect(app->compose_text_area_rect());
+                // Room search field.
+                bool searchVisible = app->room_search_field_visible();
+                s->_roomSearchField->set_visible(searchVisible);
+                if (searchVisible)
+                {
+                    s->_roomSearchField->set_rect(
+                        app->room_search_field_rect());
+                }
+                // Recovery key field.
+                bool recoveryVisible = app->recovery_key_field_visible();
+                s->_recoveryKeyField->set_visible(recoveryVisible);
+                if (recoveryVisible)
+                {
+                    s->_recoveryKeyField->set_rect(
+                        app->recovery_key_field_rect());
+                }
+                (void)surf;
+            });
 
         // Escape key monitor: close lightbox overlays when open.
-        _escapeMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
-                                                               handler:^(NSEvent* event) {
-            MainWindowController* s = weakSelf;
-            if (s && event.keyCode == 53) {  // Escape
-                if (s->_vidViewer && s->_vidViewer->is_open()) {
-                    s->_vidViewer->close();
-                    s->_mainApp->show_video_viewer(false);
-                    s->_mainAppSurface->relayout();
-                    return (NSEvent*)nil;
-                }
-                if (s->_imgViewer && s->_imgViewer->is_open()) {
-                    s->_imgViewer->close();
-                    s->_mainApp->show_image_viewer(false);
-                    s->_mainAppSurface->relayout();
-                    return (NSEvent*)nil;
-                }
-            }
-            return event;
-        }];
+        _escapeMonitor = [NSEvent
+            addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                         handler:^(NSEvent* event) {
+                                             MainWindowController* s = weakSelf;
+                                             if (s && event.keyCode == 53)
+                                             { // Escape
+                                                 if (s->_vidViewer &&
+                                                     s->_vidViewer->is_open())
+                                                 {
+                                                     s->_vidViewer->close();
+                                                     s->_mainApp
+                                                         ->show_video_viewer(
+                                                             false);
+                                                     s->_mainAppSurface
+                                                         ->relayout();
+                                                     return (NSEvent*)nil;
+                                                 }
+                                                 if (s->_imgViewer &&
+                                                     s->_imgViewer->is_open())
+                                                 {
+                                                     s->_imgViewer->close();
+                                                     s->_mainApp
+                                                         ->show_image_viewer(
+                                                             false);
+                                                     s->_mainAppSurface
+                                                         ->relayout();
+                                                     return (NSEvent*)nil;
+                                                 }
+                                             }
+                                             return event;
+                                         }];
     }
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -1705,36 +2511,54 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     // ── Settings overlay ──────────────────────────────────────────────
     {
-        _settingsSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        _settingsSurface =
+            std::make_unique<tk::macos::Surface>(tk::Theme::light());
         auto view = std::make_unique<tesseract::views::SettingsView>();
         _settingsView = view.get();
         __weak MainWindowController* ws = self;
         _settingsView->on_close = [ws]
         {
             MainWindowController* s = ws;
-            if (!s) return;
-            NSView* mainAppView = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            if (!s)
+            {
+                return;
+            }
+            NSView* mainAppView =
+                (__bridge NSView*)s->_mainAppSurface->view_handle();
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
         };
-        _settingsView->on_theme_changed = [ws](tesseract::Settings::ThemePreference pref)
+        _settingsView->on_theme_changed =
+            [ws](tesseract::Settings::ThemePreference pref)
         {
             MainWindowController* s = ws;
-            if (s) s->_shell->set_theme_preference_(pref);
+            if (s)
+            {
+                s->_shell->set_theme_preference_(pref);
+            }
         };
         _settingsView->on_notifications_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
-            if (!s) return;
+            if (!s)
+            {
+                return;
+            }
             tesseract::Settings::instance().notifications_enabled = enabled;
-            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
         };
         _settingsView->on_image_previews_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
-            if (!s) return;
-            tesseract::Settings::instance().notification_image_previews = enabled;
-            tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().notification_image_previews =
+                enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
         };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
@@ -1747,25 +2571,34 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [content addSubview:_loginView];
     [content addSubview:settingsView];
     [NSLayoutConstraint activateConstraints:@[
-        [mainAppView.topAnchor      constraintEqualToAnchor:content.topAnchor],
-        [mainAppView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [mainAppView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [mainAppView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
-        [_loginView.topAnchor      constraintEqualToAnchor:content.topAnchor],
-        [_loginView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [_loginView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [_loginView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
-        [settingsView.topAnchor      constraintEqualToAnchor:content.topAnchor],
-        [settingsView.leadingAnchor  constraintEqualToAnchor:content.leadingAnchor],
-        [settingsView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
-        [settingsView.bottomAnchor   constraintEqualToAnchor:content.bottomAnchor],
+        [mainAppView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [mainAppView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [mainAppView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [mainAppView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [_loginView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [_loginView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [_loginView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [_loginView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [settingsView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [settingsView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [settingsView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [settingsView.bottomAnchor
+            constraintEqualToAnchor:content.bottomAnchor],
     ]];
 }
 
-- (void)dealloc {
+- (void)dealloc
+{
     [NSApp removeObserver:self forKeyPath:@"effectiveAppearance"];
     [self stopSync];
-    if (_escapeMonitor) {
+    if (_escapeMonitor)
+    {
         [NSEvent removeMonitor:_escapeMonitor];
         _escapeMonitor = nil;
     }
@@ -1774,35 +2607,62 @@ void MacShell::set_compose_draft_(const std::string& draft)
 - (void)observeValueForKeyPath:(NSString*)keyPath
                       ofObject:(id)object
                         change:(NSDictionary*)change
-                       context:(void*)context {
-    if ([keyPath isEqualToString:@"effectiveAppearance"] && object == NSApp) {
+                       context:(void*)context
+{
+    if ([keyPath isEqualToString:@"effectiveAppearance"] && object == NSApp)
+    {
         if (_shell && tesseract::Settings::instance().theme_pref ==
                           tesseract::Settings::ThemePreference::System)
+        {
             _shell->apply_current_theme_();
-    } else {
-        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        }
+    }
+    else
+    {
+        [super observeValueForKeyPath:keyPath
+                             ofObject:object
+                               change:change
+                              context:context];
     }
 }
 
-- (void)_applyTheme:(const tk::Theme&)t {
-    if (_mainAppSurface)         _mainAppSurface->set_theme(t);
-    if (_accountPickerSurface)   _accountPickerSurface->set_theme(t);
-    if (_settingsSurface)        _settingsSurface->set_theme(t);
-    if (_shortcodePopupSurface)  _shortcodePopupSurface->set_theme(t);
-    if (_loginView)              [_loginView setTheme:t];
+- (void)_applyTheme:(const tk::Theme&)t
+{
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->set_theme(t);
+    }
+    if (_accountPickerSurface)
+    {
+        _accountPickerSurface->set_theme(t);
+    }
+    if (_settingsSurface)
+    {
+        _settingsSurface->set_theme(t);
+    }
+    if (_shortcodePopupSurface)
+    {
+        _shortcodePopupSurface->set_theme(t);
+    }
+    if (_loginView)
+    {
+        [_loginView setTheme:t];
+    }
 
     // Re-theme the singleton pickers only if they were ever shown
     // (existingPanel returns nil otherwise; messaging nil is a no-op so
     // we don't force-create a panel just to theme it).
-    [[EmojiPickerPanel   existingPanel] setTheme:t];
+    [[EmojiPickerPanel existingPanel] setTheme:t];
     [[StickerPickerPanel existingPanel] setTheme:t];
 
     NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-        ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+                                ? NSAppearanceNameDarkAqua
+                                : NSAppearanceNameAqua;
     NSApp.appearance = [NSAppearance appearanceNamed:name];
 }
 
-- (void)stopSync {
+- (void)stopSync
+{
     // Drain background workers BEFORE tearing the client down.  Each
     // worker calls `client_.fetch_*` (which takes `&mut self` on the
     // Rust side); racing one against `~ClientFfi` is a data race that
@@ -1810,48 +2670,84 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _shell->shutting_down_.store(true, std::memory_order_release);
     {
         std::unique_lock<std::mutex> lk(_shell->workers_mu_);
-        _shell->workers_cv_.wait_for(lk, std::chrono::seconds(5),
-            [self]{ return self->_shell->workers_in_flight_ == 0; });
+        _shell->workers_cv_.wait_for(
+            lk, std::chrono::seconds(5),
+            [self]
+            {
+                return self->_shell->workers_in_flight_ == 0;
+            });
     }
-    for (auto& acc : _shell->accounts_) {
-        if (acc->sync_started) acc->client->stop_sync();
+    for (auto& acc : _shell->accounts_)
+    {
+        if (acc->sync_started)
+        {
+            acc->client->stop_sync();
+        }
     }
 }
 
-- (void)showEmojiPicker:(id)sender {
-    if (!_mainAppSurface) return;
+- (void)showEmojiPicker:(id)sender
+{
+    if (!_mainAppSurface)
+    {
+        return;
+    }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
-    [panel setImageProvider:
-        [weakSelf](const std::string& cache_key,
-                   const std::string& /*source_token*/) -> const tk::Image* {
-            MainWindowController* s = weakSelf;
-            if (!s) return nullptr;
-            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
-            auto it = s->_shell->tk_images_.find(cache_key);
-            if (it != s->_shell->tk_images_.end()) return it->second.get();
-            [s _ensureEmojiImageAsync:cache_key];
-            return nullptr;
-        }];
+    [panel
+        setImageProvider:[weakSelf](const std::string& cache_key,
+                                    const std::string& /*source_token*/)
+                             -> const tk::Image*
+                         {
+                             MainWindowController* s = weakSelf;
+                             if (!s)
+                             {
+                                 return nullptr;
+                             }
+                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                                     cache_key))
+                             {
+                                 return f;
+                             }
+                             auto it = s->_shell->tk_images_.find(cache_key);
+                             if (it != s->_shell->tk_images_.end())
+                             {
+                                 return it->second.get();
+                             }
+                             [s _ensureEmojiImageAsync:cache_key];
+                             return nullptr;
+                         }];
     __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
-        if (!s || glyph.length == 0) return;
+        if (!s || glyph.length == 0)
+        {
+            return;
+        }
         // Reaction mode — "+" chip set _pendingReactionEventId.
-        if (!s->_pendingReactionEventId.empty()) {
+        if (!s->_pendingReactionEventId.empty())
+        {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty()) {
-                s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
-                                          std::string(glyph.UTF8String ?: ""));
+            if (!s->_shell->current_room_id_.empty())
+            {
+                s->_shell->client_->send_reaction(
+                    s->_shell->current_room_id_, ev,
+                    std::string(glyph.UTF8String ?: ""));
             }
             [weakPanel close];
             return;
         }
-        if (!s->_roomTextArea) return;
+        if (!s->_roomTextArea)
+        {
+            return;
+        }
         s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_roomView) s->_roomView->set_current_text(s->_roomTextArea->text());
+        if (s->_roomView)
+        {
+            s->_roomView->set_current_text(s->_roomTextArea->text());
+        }
         s->_roomTextArea->set_focused(true);
     };
     NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -1862,32 +2758,39 @@ void MacShell::set_compose_draft_(const std::string& draft)
 // Shortcode suggestion popup
 // ---------------------------------------------------------------------------
 
-- (BOOL)shortcodePopupVisible {
+- (BOOL)shortcodePopupVisible
+{
     return _shortcodePanel && _shortcodePanel.isVisible;
 }
 
-- (void)_relayoutShortcodePopupIfVisible {
+- (void)_relayoutShortcodePopupIfVisible
+{
     if ([self shortcodePopupVisible] && _shortcodePopupSurface)
+    {
         _shortcodePopupSurface->relayout();
+    }
 }
 
 - (void)showShortcodePopupWithSuggestions:
-        (const std::vector<tesseract::views::ShortcodeSuggestion>&)suggestions
-        cursorRect:(tk::Rect)cursor
+            (const std::vector<tesseract::views::ShortcodeSuggestion>&)
+                suggestions
+                               cursorRect:(tk::Rect)cursor
 {
     int rows = std::min((int)suggestions.size(),
                         int(tesseract::views::ShortcodePopup::kMaxRows));
-    NSSize size = NSMakeSize(tesseract::views::ShortcodePopup::kWidth,
-                             rows * tesseract::views::ShortcodePopup::kRowHeight);
+    NSSize size =
+        NSMakeSize(tesseract::views::ShortcodePopup::kWidth,
+                   rows * tesseract::views::ShortcodePopup::kRowHeight);
 
-    if (!_shortcodePanel) {
+    if (!_shortcodePanel)
+    {
         NSRect frame = NSMakeRect(0, 0, size.width, size.height);
         _shortcodePanel = [[NSPanel alloc]
             initWithContentRect:frame
-            styleMask:NSWindowStyleMaskNonactivatingPanel
-                       | NSWindowStyleMaskBorderless
-            backing:NSBackingStoreBuffered
-            defer:NO];
+                      styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                NSWindowStyleMaskBorderless
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
         _shortcodePanel.floatingPanel = YES;
         _shortcodePanel.hidesOnDeactivate = NO;
         _shortcodePanel.becomesKeyOnlyIfNeeded = YES;
@@ -1900,28 +2803,38 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
         __weak MainWindowController* weakSelf = self;
         _shortcodePopupWidget->on_accepted =
-            [weakSelf](tesseract::views::ShortcodeSuggestion s) {
-                MainWindowController* c = weakSelf;
-                if (!c || !c->_roomTextArea) return;
-                std::string r = s.glyph.empty()
-                    ? ":" + s.shortcode + ":"
-                    : s.glyph;
-                c->_roomTextArea->replace_range(
-                    c->_shell->shortcode_active_match_.start,
-                    c->_shell->shortcode_active_match_.end,
-                    std::move(r));
+            [weakSelf](tesseract::views::ShortcodeSuggestion s)
+        {
+            MainWindowController* c = weakSelf;
+            if (!c || !c->_roomTextArea)
+            {
+                return;
+            }
+            std::string r = s.glyph.empty() ? ":" + s.shortcode + ":" : s.glyph;
+            c->_roomTextArea->replace_range(
+                c->_shell->shortcode_active_match_.start,
+                c->_shell->shortcode_active_match_.end, std::move(r));
+            [c hideShortcodePopup];
+        };
+        _shortcodePopupWidget->on_dismissed = [weakSelf]
+        {
+            if (MainWindowController* c = weakSelf)
+            {
                 [c hideShortcodePopup];
-            };
-        _shortcodePopupWidget->on_dismissed = [weakSelf] {
-            if (MainWindowController* c = weakSelf) [c hideShortcodePopup];
+            }
         };
         __weak MainWindowController* weakSelf2 = self;
         _shortcodePopupWidget->set_image_provider(
-            [weakSelf2](const std::string& url) -> const tk::Image* {
+            [weakSelf2](const std::string& url) -> const tk::Image*
+            {
                 MainWindowController* c = weakSelf2;
-                if (!c || !c->_shell) return nullptr;
+                if (!c || !c->_shell)
+                {
+                    return nullptr;
+                }
                 auto it = c->_shell->tk_images_.find(url);
-                return it == c->_shell->tk_images_.end() ? nullptr : it->second.get();
+                return it == c->_shell->tk_images_.end() ? nullptr
+                                                         : it->second.get();
             });
 
         NSView* popupView =
@@ -1936,121 +2849,187 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Map cursor_local (TKSurfaceView y-down) → screen coords (y-up).
     // cursor.y is the cursor's top edge in TKSurfaceView local coordinates.
     NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
-    NSPoint localPt  = NSMakePoint(cursor.x, cursor.y);
+    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
     NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
     NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
     // After the conversion screenPt.y is the cursor's top edge in screen y-up.
 
     NSRect screenFrame = _shortcodePanel.screen
-        ? _shortcodePanel.screen.visibleFrame
-        : [NSScreen mainScreen].visibleFrame;
+                             ? _shortcodePanel.screen.visibleFrame
+                             : [NSScreen mainScreen].visibleFrame;
 
     // Prefer above the cursor; fall back to below when the panel would be
     // clipped at the top of the screen (mirrors Qt6 / Win32 behaviour).
-    CGFloat panelH  = size.height;
+    CGFloat panelH = size.height;
     CGFloat y_above = screenPt.y + 4;
     CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
-    CGFloat x       = screenPt.x;
-    CGFloat y       = (y_above + panelH <= screenFrame.origin.y + screenFrame.size.height)
-                    ? y_above : y_below;
+    CGFloat x = screenPt.x;
+    CGFloat y =
+        (y_above + panelH <= screenFrame.origin.y + screenFrame.size.height)
+            ? y_above
+            : y_below;
     x = std::clamp(x, screenFrame.origin.x,
-                   screenFrame.origin.x + screenFrame.size.width  - size.width);
+                   screenFrame.origin.x + screenFrame.size.width - size.width);
     y = std::clamp(y, screenFrame.origin.y,
-                   screenFrame.origin.y + screenFrame.size.height - size.height);
+                   screenFrame.origin.y + screenFrame.size.height -
+                       size.height);
 
     [_shortcodePanel setFrameOrigin:NSMakePoint(x, y)];
     [_shortcodePanel orderFront:nil];
 }
 
-- (void)hideShortcodePopup {
+- (void)hideShortcodePopup
+{
     [_shortcodePanel orderOut:nil];
-    if (_roomTextArea) _roomTextArea->set_on_popup_nav(nullptr);
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_on_popup_nav(nullptr);
+    }
 }
 
 // ---------------------------------------------------------------------------
 
-- (void)showEmojiPickerAtRect:(tk::Rect)anchor {
-    if (!_mainAppSurface) return;
+- (void)showEmojiPickerAtRect:(tk::Rect)anchor
+{
+    if (!_mainAppSurface)
+    {
+        return;
+    }
     EmojiPickerPanel* panel = [EmojiPickerPanel sharedPanel];
     panel.client = _shell->client_;
     __weak MainWindowController* weakSelf = self;
-    [panel setImageProvider:
-        [weakSelf](const std::string& cache_key,
-                   const std::string& /*source_token*/) -> const tk::Image* {
-            MainWindowController* s = weakSelf;
-            if (!s) return nullptr;
-            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
-            auto it = s->_shell->tk_images_.find(cache_key);
-            if (it != s->_shell->tk_images_.end()) return it->second.get();
-            [s _ensureEmojiImageAsync:cache_key];
-            return nullptr;
-        }];
+    [panel
+        setImageProvider:[weakSelf](const std::string& cache_key,
+                                    const std::string& /*source_token*/)
+                             -> const tk::Image*
+                         {
+                             MainWindowController* s = weakSelf;
+                             if (!s)
+                             {
+                                 return nullptr;
+                             }
+                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                                     cache_key))
+                             {
+                                 return f;
+                             }
+                             auto it = s->_shell->tk_images_.find(cache_key);
+                             if (it != s->_shell->tk_images_.end())
+                             {
+                                 return it->second.get();
+                             }
+                             [s _ensureEmojiImageAsync:cache_key];
+                             return nullptr;
+                         }];
     __weak EmojiPickerPanel* weakPanel = panel;
     panel.onSelect = ^(NSString* glyph) {
         MainWindowController* s = weakSelf;
-        if (!s || glyph.length == 0) return;
-        if (!s->_pendingReactionEventId.empty()) {
+        if (!s || glyph.length == 0)
+        {
+            return;
+        }
+        if (!s->_pendingReactionEventId.empty())
+        {
             std::string ev = std::move(s->_pendingReactionEventId);
             s->_pendingReactionEventId.clear();
-            if (!s->_shell->current_room_id_.empty()) {
-                s->_shell->client_->send_reaction(s->_shell->current_room_id_, ev,
-                                          std::string(glyph.UTF8String ?: ""));
+            if (!s->_shell->current_room_id_.empty())
+            {
+                s->_shell->client_->send_reaction(
+                    s->_shell->current_room_id_, ev,
+                    std::string(glyph.UTF8String ?: ""));
             }
             [weakPanel close];
             return;
         }
-        if (!s->_roomTextArea) return;
+        if (!s->_roomTextArea)
+        {
+            return;
+        }
         s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
-        if (s->_roomView) s->_roomView->set_current_text(s->_roomTextArea->text());
+        if (s->_roomView)
+        {
+            s->_roomView->set_current_text(s->_roomTextArea->text());
+        }
         s->_roomTextArea->set_focused(true);
     };
     NSView* anchorView = (__bridge NSView*)_mainAppSurface->view_handle();
     [panel popupAtRect:anchor inView:anchorView];
 }
 
-- (void)_onComposeSend {
-    if (_roomView) _roomView->compose_bar()->trigger_send();
+- (void)_onComposeSend
+{
+    if (_roomView)
+    {
+        _roomView->compose_bar()->trigger_send();
+    }
 }
 
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
-                       mime:(std::string)mime
-                   filename:(std::string)filename
-                    caption:(std::string)caption
-               replyEventId:(std::string)reply_event_id {
-    if (_shell->current_room_id_.empty() || !_mainAppSurface) return;
-    const bool compress =
-        tesseract::Settings::instance().image_quality
-        == tesseract::Settings::ImageQuality::Compressed;
-    auto enc = _mainAppSurface->host().encode_for_send(
-        bytes.data(), bytes.size(), compress);
-    if (enc.bytes.empty()) return;
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption
+              replyEventId:(std::string)reply_event_id
+{
+    if (_shell->current_room_id_.empty() || !_mainAppSurface)
+    {
+        return;
+    }
+    const bool compress = tesseract::Settings::instance().image_quality ==
+                          tesseract::Settings::ImageQuality::Compressed;
+    auto enc = _mainAppSurface->host().encode_for_send(bytes.data(),
+                                                       bytes.size(), compress);
+    if (enc.bytes.empty())
+    {
+        return;
+    }
     std::string out_name = filename;
-    if (enc.mime == "image/jpeg") {
+    if (enc.mime == "image/jpeg")
+    {
         auto dot = out_name.find_last_of('.');
-        if (dot != std::string::npos) out_name = out_name.substr(0, dot);
+        if (dot != std::string::npos)
+        {
+            out_name = out_name.substr(0, dot);
+        }
         out_name += ".jpg";
     }
-    auto res = _shell->client_->send_image(_shell->current_room_id_, enc.bytes, enc.mime,
-                                    out_name, caption,
-                                    enc.width, enc.height,
-                                    reply_event_id);
-    if (res) {
-        if (_roomTextArea) _roomTextArea->set_text("");
-        if (_roomView)     _roomView->set_current_text({});
+    auto res = _shell->client_->send_image(
+        _shell->current_room_id_, enc.bytes, enc.mime, out_name, caption,
+        enc.width, enc.height, reply_event_id);
+    if (res)
+    {
+        if (_roomTextArea)
+        {
+            _roomTextArea->set_text("");
+        }
+        if (_roomView)
+        {
+            _roomView->set_current_text({});
+        }
     }
 }
 
 - (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
-                      mime:(std::string)mime
-                  filename:(std::string)filename
-                   caption:(std::string)caption
-             replyEventId:(std::string)reply_event_id {
-    if (_shell->current_room_id_.empty()) return;
+                     mime:(std::string)mime
+                 filename:(std::string)filename
+                  caption:(std::string)caption
+             replyEventId:(std::string)reply_event_id
+{
+    if (_shell->current_room_id_.empty())
+    {
+        return;
+    }
     auto res = _shell->client_->send_file(_shell->current_room_id_, bytes, mime,
-                                  filename, caption, reply_event_id);
-    if (res) {
-        if (_roomTextArea) _roomTextArea->set_text("");
-        if (_roomView)     _roomView->set_current_text({});
+                                          filename, caption, reply_event_id);
+    if (res)
+    {
+        if (_roomTextArea)
+        {
+            _roomTextArea->set_text("");
+        }
+        if (_roomView)
+        {
+            _roomView->set_current_text({});
+        }
     }
 }
 
@@ -2058,45 +3037,60 @@ void MacShell::set_compose_draft_(const std::string& draft)
 //  Login flow
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)beginLogin {
+- (void)beginLogin
+{
     tesseract::SessionStore::migrate_legacy_layout();
 
     auto index = tesseract::SessionStore::load_index();
-    for (const auto& uid : index.user_ids) {
+    for (const auto& uid : index.user_ids)
+    {
         auto session_json = tesseract::SessionStore::load_account(uid);
-        if (!session_json) continue;
+        if (!session_json)
+        {
+            continue;
+        }
 
         auto session = std::make_unique<tesseract::AccountSession>();
         session->client = std::make_unique<tesseract::Client>();
         session->client->set_data_dir(
             tesseract::SessionStore::sdk_store_dir(uid).string());
-        if (!session->client->restore_session(*session_json)) continue;
+        if (!session->client->restore_session(*session_json))
+        {
+            continue;
+        }
 
         auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
         bridge_ptr->set_user_id(uid);
         session->bridge.reset(bridge_ptr);
 
-        session->user_id      = session->client->get_user_id();
+        session->user_id = session->client->get_user_id();
         session->display_name = session->client->get_display_name();
-        session->avatar_url   = session->client->get_avatar_url();
-        session->last_room    = tesseract::Prefs::parse(
-            session->client->load_prefs_json()).last_room;
+        session->avatar_url = session->client->get_avatar_url();
+        session->last_room =
+            tesseract::Prefs::parse(session->client->load_prefs_json())
+                .last_room;
         session->sync_started = true;
         session->client->start_sync(session->bridge.get());
 
         _shell->accounts_.push_back(std::move(session));
     }
 
-    if (_shell->accounts_.empty()) {
+    if (_shell->accounts_.empty())
+    {
         _shell->pending_login_temp_dir_ = {};
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         [_loginView setClient:_shell->pending_login_client_.get()];
         __weak MainWindowController* weakSelf = self;
         _loginView.onBeginOAuth = ^{
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
-            auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (!s || !s->_shell->pending_login_temp_dir_.empty())
+            {
+                return;
+            }
+            auto ms = std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
             s->_shell->pending_login_temp_dir_ =
                 tesseract::SessionStore::account_dir("pending-" + ms);
             s->_shell->pending_login_client_->set_data_dir(
@@ -2110,8 +3104,10 @@ void MacShell::set_compose_draft_(const std::string& draft)
     }
 
     int firstActive = 0;
-    for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
-        if (_shell->accounts_[i]->user_id == index.active_user_id) {
+    for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
+    {
+        if (_shell->accounts_[i]->user_id == index.active_user_id)
+        {
             firstActive = i;
             break;
         }
@@ -2119,14 +3115,20 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [self _switchActiveAccount:firstActive];
 }
 
-- (void)loginViewDidSucceed:(LoginView*)view {
-    if (!_shell->pending_login_client_) return;
+- (void)loginViewDidSucceed:(LoginView*)view
+{
+    if (!_shell->pending_login_client_)
+    {
+        return;
+    }
 
-    std::string newUserId   = _shell->pending_login_client_->get_user_id();
+    std::string newUserId = _shell->pending_login_client_->get_user_id();
 
     // Reject if this account is already signed in.
-    for (const auto& a : _shell->accounts_) {
-        if (a->user_id == newUserId) {
+    for (const auto& a : _shell->accounts_)
+    {
+        if (a->user_id == newUserId)
+        {
             _shell->pending_login_client_.reset();
             std::error_code ec;
             std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
@@ -2135,7 +3137,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
             int returnIdx = _shell->add_account_return_idx_;
             _shell->add_account_return_idx_ = -1;
             if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
+            {
                 [self _switchActiveAccount:returnIdx];
+            }
             return;
         }
     }
@@ -2146,25 +3150,32 @@ void MacShell::set_compose_draft_(const std::string& draft)
     std::error_code ec;
     std::filesystem::create_directories(finalDir.parent_path(), ec);
     std::filesystem::rename(_shell->pending_login_temp_dir_, finalDir, ec);
-    if (ec) finalDir = _shell->pending_login_temp_dir_;  // EXDEV fallback: keep as-is
-    _shell->pending_login_client_.reset();  // close SQLite handles before reopen
+    if (ec)
+    {
+        finalDir =
+            _shell->pending_login_temp_dir_; // EXDEV fallback: keep as-is
+    }
+    _shell->pending_login_client_.reset(); // close SQLite handles before reopen
     _shell->pending_login_temp_dir_ = {};
 
     auto session = std::make_unique<tesseract::AccountSession>();
     session->client = std::make_unique<tesseract::Client>();
     session->client->set_data_dir(
         tesseract::SessionStore::sdk_store_dir(newUserId).string());
-    if (!session->client->restore_session(sessionJson)) return;
+    if (!session->client->restore_session(sessionJson))
+    {
+        return;
+    }
 
     auto* bridge_ptr = new tesseract::EventHandlerBase(_shell.get());
     bridge_ptr->set_user_id(newUserId);
     session->bridge.reset(bridge_ptr);
 
-    session->user_id      = newUserId;
+    session->user_id = newUserId;
     session->display_name = session->client->get_display_name();
-    session->avatar_url   = session->client->get_avatar_url();
-    session->last_room    = tesseract::Prefs::parse(
-        session->client->load_prefs_json()).last_room;
+    session->avatar_url = session->client->get_avatar_url();
+    session->last_room =
+        tesseract::Prefs::parse(session->client->load_prefs_json()).last_room;
     session->sync_started = true;
     session->client->start_sync(session->bridge.get());
 
@@ -2172,7 +3183,9 @@ void MacShell::set_compose_draft_(const std::string& draft)
     auto idxData = tesseract::SessionStore::load_index();
     auto& ids = idxData.user_ids;
     if (std::find(ids.begin(), ids.end(), newUserId) == ids.end())
+    {
         ids.push_back(newUserId);
+    }
     idxData.active_user_id = newUserId;
     tesseract::SessionStore::save_index(idxData);
 
@@ -2184,9 +3197,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [self _switchActiveAccount:newIdx];
 }
 
-- (void)loginViewDidCancel:(LoginView*)view {
+- (void)loginViewDidCancel:(LoginView*)view
+{
     _shell->pending_login_client_.reset();
-    if (_shell->pending_login_temp_dir_ != std::filesystem::path()) {
+    if (_shell->pending_login_temp_dir_ != std::filesystem::path())
+    {
         std::error_code ec;
         std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
         _shell->pending_login_temp_dir_ = {};
@@ -2195,18 +3210,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
     int returnIdx = _shell->add_account_return_idx_;
     _shell->add_account_return_idx_ = -1;
     if (returnIdx >= 0 && returnIdx < (int)_shell->accounts_.size())
+    {
         [self _switchActiveAccount:returnIdx];
+    }
 }
 
-- (void)_switchActiveAccount:(int)idx {
+- (void)_switchActiveAccount:(int)idx
+{
     _shell->active_account_index_ = idx;
     auto* session = _shell->accounts_[idx].get();
     _shell->client_ = session->client.get();
     _shell->event_handler_ = session->bridge.get();
 
-    _shell->my_user_id_      = session->user_id;
+    _shell->my_user_id_ = session->user_id;
     _shell->my_display_name_ = session->display_name;
-    _shell->my_avatar_url_   = session->avatar_url;
+    _shell->my_avatar_url_ = session->avatar_url;
     _shell->pending_restore_room_ = session->last_room;
 
     auto idxData = tesseract::SessionStore::load_index();
@@ -2218,9 +3236,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
     _shell->rooms_ = (it != _shell->per_account_rooms_.end())
-        ? it->second : std::vector<tesseract::RoomInfo>{};
+                         ? it->second
+                         : std::vector<tesseract::RoomInfo>{};
     [self _refreshRoomList];
-    if (_roomView) { _roomView->clear_room(); _roomView->set_messages({}); }
+    if (_roomView)
+    {
+        _roomView->clear_room();
+        _roomView->set_messages({});
+    }
     [self _relayoutChatSurface];
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
@@ -2230,9 +3253,12 @@ void MacShell::set_compose_draft_(const std::string& draft)
     [self _populateUserStrip];
     [self _maybeShowRecoveryBanner];
 
-    if (!_shell->pending_restore_room_.empty()) {
-        for (const auto& r : _shell->rooms_) {
-            if (r.id == _shell->pending_restore_room_ && !r.is_space) {
+    if (!_shell->pending_restore_room_.empty())
+    {
+        for (const auto& r : _shell->rooms_)
+        {
+            if (r.id == _shell->pending_restore_room_ && !r.is_space)
+            {
                 std::string target = std::move(_shell->pending_restore_room_);
                 _shell->pending_restore_room_.clear();
                 [self onRoomSelected:target];
@@ -2241,36 +3267,45 @@ void MacShell::set_compose_draft_(const std::string& draft)
         }
     }
 
-    if (!_tray) {
+    if (!_tray)
+    {
         __weak MainWindowController* weakSelf = self;
         _tray = std::make_unique<MacOSTrayIcon>(
-            [weakSelf]{
+            [weakSelf]
+            {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     MainWindowController* strong = weakSelf;
-                    if (!strong) return;
+                    if (!strong)
+                    {
+                        return;
+                    }
                     [strong.window makeKeyAndOrderFront:nil];
                     [NSApp activateIgnoringOtherApps:YES];
                 });
             },
-            []{
+            []
+            {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [NSApp terminate:nil];
                 });
             });
     }
 
-    UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
+    UNUserNotificationCenter* center =
+        [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
-    UNAuthorizationOptions opts = UNAuthorizationOptionAlert
-                                | UNAuthorizationOptionSound
-                                | UNAuthorizationOptionBadge;
+    UNAuthorizationOptions opts = UNAuthorizationOptionAlert |
+                                  UNAuthorizationOptionSound |
+                                  UNAuthorizationOptionBadge;
     [center requestAuthorizationWithOptions:opts
                           completionHandler:^(BOOL granted, NSError* err) {
-        (void)granted; (void)err;
-    }];
+                              (void)granted;
+                              (void)err;
+                          }];
 }
 
-- (void)_beginAddAccount {
+- (void)_beginAddAccount
+{
     _shell->pending_login_is_add_account_ = true;
     _shell->add_account_return_idx_ = _shell->active_account_index_;
     _shell->pending_login_temp_dir_ = {};
@@ -2279,9 +3314,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
     __weak MainWindowController* weakSelf = self;
     _loginView.onBeginOAuth = ^{
         MainWindowController* s = weakSelf;
-        if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
-        auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (!s || !s->_shell->pending_login_temp_dir_.empty())
+        {
+            return;
+        }
+        auto ms = std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
         s->_shell->pending_login_temp_dir_ =
             tesseract::SessionStore::account_dir("pending-" + ms);
         s->_shell->pending_login_client_->set_data_dir(
@@ -2293,20 +3333,30 @@ void MacShell::set_compose_draft_(const std::string& draft)
     _loginView.hidden = NO;
 }
 
-- (void)_openSettings {
-    if (!_settingsView || !_settingsSurface) return;
+- (void)_openSettings
+{
+    if (!_settingsView || !_settingsSurface)
+    {
+        return;
+    }
     __weak MainWindowController* ws = self;
-    _settingsView->set_account_info(_shell->my_display_name_,
-                                    _shell->my_user_id_,
-                                    _shell->my_avatar_url_);
-    _settingsView->set_image_provider([ws](const std::string& mxc) -> const tk::Image* {
-        MainWindowController* s = ws;
-        if (!s) return nullptr;
-        auto it = s->_shell->tk_avatars_.find(mxc);
-        return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
-    });
+    _settingsView->set_account_info(
+        _shell->my_display_name_, _shell->my_user_id_, _shell->my_avatar_url_);
+    _settingsView->set_image_provider(
+        [ws](const std::string& mxc) -> const tk::Image*
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return nullptr;
+            }
+            auto it = s->_shell->tk_avatars_.find(mxc);
+            return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                      : it->second.get();
+        });
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
-    _settingsView->set_notifications_enabled(tesseract::Settings::instance().notifications_enabled);
+    _settingsView->set_notifications_enabled(
+        tesseract::Settings::instance().notifications_enabled);
     _settingsView->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
     _settingsSurface->relayout();
@@ -2316,50 +3366,81 @@ void MacShell::set_compose_draft_(const std::string& draft)
     ((__bridge NSView*)_settingsSurface->view_handle()).hidden = NO;
 }
 
-- (void)_populateUserStrip {
-    if (!_mainApp) return;
+- (void)_populateUserStrip
+{
+    if (!_mainApp)
+    {
+        return;
+    }
     _mainApp->user_info()->set_display_name(_shell->my_display_name_);
     _mainApp->user_info()->set_user_id(_shell->my_user_id_);
     _mainApp->user_info()->set_avatar_url(_shell->my_avatar_url_);
     if (!_shell->my_avatar_url_.empty())
+    {
         _shell->ensure_user_avatar_(_shell->my_avatar_url_);
-    if (_mainAppSurface) _mainAppSurface->relayout();
+    }
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
 }
 
-- (void)_applySearchFilter {
-    if (_roomListView) _roomListView->set_search_text(_pendingSearchText);
+- (void)_applySearchFilter
+{
+    if (_roomListView)
+    {
+        _roomListView->set_search_text(_pendingSearchText);
+    }
 }
 
-- (void)_onRoomScrollDebounce {
-    if (!_roomListView || !_shell->client_) return;
+- (void)_onRoomScrollDebounce
+{
+    if (!_roomListView || !_shell->client_)
+    {
+        return;
+    }
     auto ids = _roomListView->visible_room_ids();
     _shell->client_->stop_background_backfill();
     _shell->client_->start_background_backfill(ids);
 }
 
-- (void)_onSpaceBack {
-    if (!_shell->space_stack_.empty()) _shell->space_stack_.pop_back();
+- (void)_onSpaceBack
+{
+    if (!_shell->space_stack_.empty())
+    {
+        _shell->space_stack_.pop_back();
+    }
     [self _refreshRoomList];
 }
 
-- (void)_openAccountPicker {
-    if (!_accountPickerPopover) {
+- (void)_openAccountPicker
+{
+    if (!_accountPickerPopover)
+    {
         _accountPickerPopover = [[NSPopover alloc] init];
         _accountPickerPopover.behavior = NSPopoverBehaviorTransient;
         NSViewController* vc = [[NSViewController alloc] init];
-        NSView* container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 220, 48)];
+        NSView* container =
+            [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 220, 48)];
         vc.view = container;
         _accountPickerPopover.contentViewController = vc;
 
-        _accountPickerSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+        _accountPickerSurface =
+            std::make_unique<tk::macos::Surface>(tk::Theme::light());
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         _accountPickerShared = picker.get();
         __weak MainWindowController* weakSelf = self;
-        _accountPickerShared->on_select = [weakSelf](const std::string& uid) {
+        _accountPickerShared->on_select = [weakSelf](const std::string& uid)
+        {
             MainWindowController* s = weakSelf;
-            if (!s) return;
-            for (int i = 0; i < (int)s->_shell->accounts_.size(); ++i) {
-                if (s->_shell->accounts_[i]->user_id == uid) {
+            if (!s)
+            {
+                return;
+            }
+            for (int i = 0; i < (int)s->_shell->accounts_.size(); ++i)
+            {
+                if (s->_shell->accounts_[i]->user_id == uid)
+                {
                     [s->_accountPickerPopover close];
                     [s _switchActiveAccount:i];
                     break;
@@ -2367,35 +3448,48 @@ void MacShell::set_compose_draft_(const std::string& draft)
             }
         };
         _accountPickerShared->set_image_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image* {
+            [weakSelf](const std::string& mxc) -> const tk::Image*
+            {
                 MainWindowController* s = weakSelf;
-                if (!s) return nullptr;
+                if (!s)
+                {
+                    return nullptr;
+                }
                 auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr : it->second.get();
+                return it == s->_shell->tk_avatars_.end() ? nullptr
+                                                          : it->second.get();
             });
         _accountPickerSurface->set_root(std::move(picker));
 
-        NSView* surfaceView = (__bridge NSView*)_accountPickerSurface->view_handle();
+        NSView* surfaceView =
+            (__bridge NSView*)_accountPickerSurface->view_handle();
         surfaceView.translatesAutoresizingMaskIntoConstraints = NO;
         [container addSubview:surfaceView];
         [NSLayoutConstraint activateConstraints:@[
-            [surfaceView.topAnchor      constraintEqualToAnchor:container.topAnchor],
-            [surfaceView.leadingAnchor  constraintEqualToAnchor:container.leadingAnchor],
-            [surfaceView.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
-            [surfaceView.bottomAnchor   constraintEqualToAnchor:container.bottomAnchor],
+            [surfaceView.topAnchor constraintEqualToAnchor:container.topAnchor],
+            [surfaceView.leadingAnchor
+                constraintEqualToAnchor:container.leadingAnchor],
+            [surfaceView.trailingAnchor
+                constraintEqualToAnchor:container.trailingAnchor],
+            [surfaceView.bottomAnchor
+                constraintEqualToAnchor:container.bottomAnchor],
         ]];
     }
 
     std::vector<tesseract::views::AccountEntry> entries;
-    for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
+    for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
+    {
         auto& acc = *_shell->accounts_[i];
         tesseract::views::AccountEntry e;
-        e.user_id      = acc.user_id;
+        e.user_id = acc.user_id;
         e.display_name = acc.display_name;
-        e.avatar_url   = acc.avatar_url;
-        e.active       = (i == _shell->active_account_index_);
+        e.avatar_url = acc.avatar_url;
+        e.active = (i == _shell->active_account_index_);
         entries.push_back(std::move(e));
-        if (!acc.avatar_url.empty()) _shell->ensure_user_avatar_(acc.avatar_url);
+        if (!acc.avatar_url.empty())
+        {
+            _shell->ensure_user_avatar_(acc.avatar_url);
+        }
     }
     _accountPickerShared->set_entries(std::move(entries));
 
@@ -2407,23 +3501,30 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // Anchor the popover above the bottom-left of the main app surface (user strip area).
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     CGFloat stripH = static_cast<CGFloat>(tesseract::visual::kUserStripHeight);
-    NSRect stripRect = NSMakeRect(0, 0,
-                                  static_cast<CGFloat>(tesseract::visual::kSidebarWidth),
-                                  stripH);
+    NSRect stripRect = NSMakeRect(
+        0, 0, static_cast<CGFloat>(tesseract::visual::kSidebarWidth), stripH);
     [_accountPickerPopover showRelativeToRect:stripRect
                                        ofView:mainAppView
                                 preferredEdge:NSRectEdgeMaxY];
 }
 
-- (void)_logoutActiveAccount {
+- (void)_logoutActiveAccount
+{
     if (_shell->active_account_index_ < 0 ||
-        _shell->active_account_index_ >= (int)_shell->accounts_.size()) return;
+        _shell->active_account_index_ >= (int)_shell->accounts_.size())
+    {
+        return;
+    }
     auto* session = _shell->accounts_[_shell->active_account_index_].get();
     std::string uid = session->user_id;
 
-    if (!_shell->current_room_id_.empty()) {
-        if (_shell->room_subscription_refs_.count(_shell->current_room_id_) == 0)
+    if (!_shell->current_room_id_.empty())
+    {
+        if (_shell->room_subscription_refs_.count(_shell->current_room_id_) ==
+            0)
+        {
             _shell->client_->unsubscribe_room(_shell->current_room_id_);
+        }
         _shell->current_room_id_.clear();
     }
     session->client->logout();
@@ -2432,13 +3533,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
 
     tesseract::SessionStore::clear_account(uid);
     _shell->per_account_rooms_.erase(uid);
-    _shell->accounts_.erase(_shell->accounts_.begin() + _shell->active_account_index_);
+    _shell->accounts_.erase(_shell->accounts_.begin() +
+                            _shell->active_account_index_);
 
     auto idxData = tesseract::SessionStore::load_index();
     auto& ids = idxData.user_ids;
     ids.erase(std::remove(ids.begin(), ids.end(), uid), ids.end());
 
-    if (_shell->accounts_.empty()) {
+    if (_shell->accounts_.empty())
+    {
         _shell->active_account_index_ = -1;
         _shell->client_ = nullptr;
         _shell->event_handler_ = nullptr;
@@ -2450,7 +3553,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [self _refreshRoomList];
         _shell->handle_compose_room_leaving_(_shell->current_room_id_);
         _shell->current_room_id_.clear();
-        if (_roomView) { _roomView->clear_room(); _roomView->set_messages({}); }
+        if (_roomView)
+        {
+            _roomView->clear_room();
+            _roomView->set_messages({});
+        }
         [self _relayoutChatSurface];
 
         _shell->pending_login_temp_dir_ = {};
@@ -2459,9 +3566,14 @@ void MacShell::set_compose_draft_(const std::string& draft)
         __weak MainWindowController* weakSelf = self;
         _loginView.onBeginOAuth = ^{
             MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->pending_login_temp_dir_.empty()) return;
-            auto ms = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (!s || !s->_shell->pending_login_temp_dir_.empty())
+            {
+                return;
+            }
+            auto ms = std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
             s->_shell->pending_login_temp_dir_ =
                 tesseract::SessionStore::account_dir("pending-" + ms);
             s->_shell->pending_login_client_->set_data_dir(
@@ -2471,8 +3583,11 @@ void MacShell::set_compose_draft_(const std::string& draft)
         [_loginView reset];
         ((__bridge NSView*)_mainAppSurface->view_handle()).hidden = YES;
         _loginView.hidden = NO;
-    } else {
-        int newIdx = std::min(_shell->active_account_index_, (int)_shell->accounts_.size() - 1);
+    }
+    else
+    {
+        int newIdx = std::min(_shell->active_account_index_,
+                              (int)_shell->accounts_.size() - 1);
         idxData.active_user_id = _shell->accounts_[newIdx]->user_id;
         tesseract::SessionStore::save_index(idxData);
         [self _switchActiveAccount:newIdx];
@@ -2483,14 +3598,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
 //  Notifications (UNUserNotificationCenter)
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)_requestUserAttention {
-    if (_attentionRequestToken != 0) return;
-    _attentionRequestToken = [NSApp requestUserAttention:NSInformationalRequest];
+- (void)_requestUserAttention
+{
+    if (_attentionRequestToken != 0)
+    {
+        return;
+    }
+    _attentionRequestToken =
+        [NSApp requestUserAttention:NSInformationalRequest];
 }
 
-- (void)windowDidBecomeKey:(NSNotification*)notification {
+- (void)windowDidBecomeKey:(NSNotification*)notification
+{
     (void)notification;
-    if (_attentionRequestToken != 0) {
+    if (_attentionRequestToken != 0)
+    {
         [NSApp cancelUserAttentionRequest:_attentionRequestToken];
         _attentionRequestToken = 0;
     }
@@ -2503,39 +3625,48 @@ void MacShell::set_compose_draft_(const std::string& draft)
                     userId:(std::string)userId
                  isMention:(BOOL)isMention
                avatarBytes:(const std::vector<std::uint8_t>&)avatarBytes
-                imageBytes:(const std::vector<std::uint8_t>&)imageBytes {
+                imageBytes:(const std::vector<std::uint8_t>&)imageBytes
+{
     (void)isMention;
     BOOL winVisible = self.window.isVisible && !self.window.isMiniaturized;
     BOOL winFocused = self.window.isKeyWindow;
 
     // Already watching this exact room — suppress silently.
-    if (winFocused
-            && _shell->active_account_index_ >= 0
-            && (int)_shell->accounts_.size() > _shell->active_account_index_
-            && _shell->accounts_[_shell->active_account_index_]->user_id == userId
-            && _shell->current_room_id_ == roomId) return;
+    if (winFocused && _shell->active_account_index_ >= 0 &&
+        (int)_shell->accounts_.size() > _shell->active_account_index_ &&
+        _shell->accounts_[_shell->active_account_index_]->user_id == userId &&
+        _shell->current_room_id_ == roomId)
+    {
+        return;
+    }
 
     // Window on screen: no popup. Bounce dock if not focused.
-    if (winVisible) {
-        if (!winFocused) [self _requestUserAttention];
+    if (winVisible)
+    {
+        if (!winFocused)
+        {
+            [self _requestUserAttention];
+        }
         return;
     }
 
     UNMutableNotificationContent* content =
         [[UNMutableNotificationContent alloc] init];
     content.title = [NSString stringWithUTF8String:sender.c_str()] ?: @"";
-    if (roomName != sender) {
-        content.subtitle = [NSString stringWithUTF8String:roomName.c_str()] ?: @"";
+    if (roomName != sender)
+    {
+        content.subtitle =
+            [NSString stringWithUTF8String:roomName.c_str()] ?: @"";
     }
-    std::string preview = body.size() > 120
-        ? body.substr(0, 120) + "\xe2\x80\xa6"
-        : body;
-    content.body             = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
-    content.sound            = [UNNotificationSound defaultSound];
-    content.threadIdentifier = [NSString stringWithUTF8String:roomId.c_str()] ?: @"";
+    std::string preview =
+        body.size() > 120 ? body.substr(0, 120) + "\xe2\x80\xa6" : body;
+    content.body = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
+    content.sound = [UNNotificationSound defaultSound];
+    content.threadIdentifier =
+        [NSString stringWithUTF8String:roomId.c_str()] ?: @"";
     NSString* nsRoomId = content.threadIdentifier;
     NSString* nsUserId = [NSString stringWithUTF8String:userId.c_str()] ?: @"";
-    content.userInfo = @{ @"room_id": nsRoomId, @"user_id": nsUserId };
+    content.userInfo = @{@"room_id" : nsRoomId, @"user_id" : nsUserId};
 
     // Notification picture: prefer the message image/sticker (already
     // privacy-gated upstream), fall back to the room avatar. UNNotification
@@ -2544,105 +3675,124 @@ void MacShell::set_compose_draft_(const std::string& draft)
     // temp dir, and UN moves the file into its own store on success).
     const std::vector<std::uint8_t>& pic =
         !imageBytes.empty() ? imageBytes : avatarBytes;
-    if (!pic.empty()) {
+    if (!pic.empty())
+    {
         NSString* ext = @"png";
-        if (pic.size() >= 3 && pic[0] == 0xFF &&
-            pic[1] == 0xD8 && pic[2] == 0xFF) {
+        if (pic.size() >= 3 && pic[0] == 0xFF && pic[1] == 0xD8 &&
+            pic[2] == 0xFF)
+        {
             ext = @"jpg";
-        } else if (pic.size() >= 4 && pic[0] == 'G' &&
-                   pic[1] == 'I' && pic[2] == 'F' &&
-                   pic[3] == '8') {
+        }
+        else if (pic.size() >= 4 && pic[0] == 'G' && pic[1] == 'I' &&
+                 pic[2] == 'F' && pic[3] == '8')
+        {
             ext = @"gif";
-        } else if (pic.size() >= 12 && pic[0] == 'R' &&
-                   pic[1] == 'I' && pic[2] == 'F' &&
-                   pic[3] == 'F' && pic[8] == 'W' &&
-                   pic[9] == 'E' && pic[10] == 'B' &&
-                   pic[11] == 'P') {
+        }
+        else if (pic.size() >= 12 && pic[0] == 'R' && pic[1] == 'I' &&
+                 pic[2] == 'F' && pic[3] == 'F' && pic[8] == 'W' &&
+                 pic[9] == 'E' && pic[10] == 'B' && pic[11] == 'P')
+        {
             ext = @"webp";
         }
-        NSData* data = [NSData dataWithBytes:pic.data()
-                                      length:pic.size()];
+        NSData* data = [NSData dataWithBytes:pic.data() length:pic.size()];
         NSString* dir = [NSTemporaryDirectory()
             stringByAppendingPathComponent:@"Tesseract/notif"];
         [[NSFileManager defaultManager] createDirectoryAtPath:dir
                                   withIntermediateDirectories:YES
                                                    attributes:nil
                                                         error:nil];
-        NSString* file = [NSString stringWithFormat:@"%zu.%@",
-            std::hash<std::string>{}(roomId), ext];
-        NSURL* url = [NSURL fileURLWithPath:
-            [dir stringByAppendingPathComponent:file]];
-        if ([data writeToURL:url atomically:YES]) {
+        NSString* file = [NSString
+            stringWithFormat:@"%zu.%@", std::hash<std::string>{}(roomId), ext];
+        NSURL* url =
+            [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:file]];
+        if ([data writeToURL:url atomically:YES])
+        {
             NSError* attErr = nil;
             UNNotificationAttachment* att =
                 [UNNotificationAttachment attachmentWithIdentifier:@"avatar"
                                                                URL:url
                                                            options:nil
                                                              error:&attErr];
-            if (att) content.attachments = @[ att ];
+            if (att)
+            {
+                content.attachments = @[ att ];
+            }
         }
     }
 
     UNNotificationRequest* req =
-        [UNNotificationRequest requestWithIdentifier:
-            [NSUUID UUID].UUIDString
+        [UNNotificationRequest requestWithIdentifier:[NSUUID UUID].UUIDString
                                              content:content
                                              trigger:nil];
     [[UNUserNotificationCenter currentNotificationCenter]
-        addNotificationRequest:req withCompletionHandler:nil];
+        addNotificationRequest:req
+         withCompletionHandler:nil];
 }
 
 // Suppress banner when the app is in the foreground and the relevant room
 // is already open.
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center
        willPresentNotification:(UNNotification*)notification
-         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+         withCompletionHandler:
+             (void (^)(UNNotificationPresentationOptions))completionHandler
+{
     (void)center;
     NSDictionary* info = notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
-    BOOL activeAccount = uid && _shell->active_account_index_ >= 0
-        && (int)_shell->accounts_.size() > _shell->active_account_index_
-        && _shell->accounts_[_shell->active_account_index_]->user_id == std::string(uid.UTF8String ?: "");
-    if (self.window.isKeyWindow && activeAccount
-            && rid && _shell->current_room_id_ == std::string(rid.UTF8String ?: "")) {
+    BOOL activeAccount =
+        uid && _shell->active_account_index_ >= 0 &&
+        (int)_shell->accounts_.size() > _shell->active_account_index_ &&
+        _shell->accounts_[_shell->active_account_index_]->user_id ==
+            std::string(uid.UTF8String ?: "");
+    if (self.window.isKeyWindow && activeAccount && rid &&
+        _shell->current_room_id_ == std::string(rid.UTF8String ?: ""))
+    {
         completionHandler(UNNotificationPresentationOptionNone);
-    } else {
+    }
+    else
+    {
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
-        completionHandler(UNNotificationPresentationOptionBanner
-                        | UNNotificationPresentationOptionSound);
+        completionHandler(UNNotificationPresentationOptionBanner |
+                          UNNotificationPresentationOptionSound);
 #else
-        completionHandler(UNNotificationPresentationOptionAlert
-                        | UNNotificationPresentationOptionSound);
+        completionHandler(UNNotificationPresentationOptionAlert |
+                          UNNotificationPresentationOptionSound);
 #endif
     }
 }
 
 // Navigate to the room when the user taps/clicks the notification.
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center
-didReceiveNotificationResponse:(UNNotificationResponse*)response
-         withCompletionHandler:(void (^)(void))completionHandler {
+    didReceiveNotificationResponse:(UNNotificationResponse*)response
+             withCompletionHandler:(void (^)(void))completionHandler
+{
     (void)center;
     NSDictionary* info = response.notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
     // Switch to the account that owns this notification before navigating.
-    if (uid) {
+    if (uid)
+    {
         std::string target_uid(uid.UTF8String ?: "");
-        for (int i = 0; i < (int)_shell->accounts_.size(); ++i) {
-            if (_shell->accounts_[i]->user_id == target_uid) {
+        for (int i = 0; i < (int)_shell->accounts_.size(); ++i)
+        {
+            if (_shell->accounts_[i]->user_id == target_uid)
+            {
                 [self _switchActiveAccount:i];
                 break;
             }
         }
     }
-    if (rid) {
+    if (rid)
+    {
         [self _navigateToRoom:std::string(rid.UTF8String ?: "")];
     }
     completionHandler();
 }
 
-- (void)_navigateToRoom:(std::string)roomId {
+- (void)_navigateToRoom:(std::string)roomId
+{
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     _shell->tab_navigate_room(roomId);
@@ -2653,38 +3803,75 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 // ─────────────────────────────────────────────────────────────────────────
 
 - (void)handleMessageInserted:(NSString*)roomId
-                         index:(std::size_t)index
-                         event:(tesseract::Event*)event
-{
-    std::unique_ptr<tesseract::Event> guard(event);
-    if (!event) return;
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
-    if (event->type == tesseract::EventType::Unhandled) return;
-    _shell->ensure_row_media_(*event);
-    if (!event->in_reply_to_id.empty()) _shell->ensure_reply_details_(event->event_id);
-    if (_roomView) _roomView->insert_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
-    [self _relayoutChatSurface];
-}
-
-- (void)handleMessageUpdated:(NSString*)roomId
                         index:(std::size_t)index
                         event:(tesseract::Event*)event
 {
     std::unique_ptr<tesseract::Event> guard(event);
-    if (!event) return;
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
-    if (event->type == tesseract::EventType::Unhandled) return;
+    if (!event)
+    {
+        return;
+    }
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
+    {
+        return;
+    }
+    if (event->type == tesseract::EventType::Unhandled)
+    {
+        return;
+    }
     _shell->ensure_row_media_(*event);
-    if (!event->in_reply_to_id.empty()) _shell->ensure_reply_details_(event->event_id);
-    if (_roomView) _roomView->update_message(index, tesseract::views::make_row_data(*event, _shell->my_user_id_));
+    if (!event->in_reply_to_id.empty())
+    {
+        _shell->ensure_reply_details_(event->event_id);
+    }
+    if (_roomView)
+    {
+        _roomView->insert_message(index, tesseract::views::make_row_data(
+                                             *event, _shell->my_user_id_));
+    }
     [self _relayoutChatSurface];
 }
 
-- (void)handleMessageRemoved:(NSString*)roomId
-                        index:(std::size_t)index
+- (void)handleMessageUpdated:(NSString*)roomId
+                       index:(std::size_t)index
+                       event:(tesseract::Event*)event
 {
-    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_) return;
-    if (_roomView) _roomView->remove_message(index);
+    std::unique_ptr<tesseract::Event> guard(event);
+    if (!event)
+    {
+        return;
+    }
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
+    {
+        return;
+    }
+    if (event->type == tesseract::EventType::Unhandled)
+    {
+        return;
+    }
+    _shell->ensure_row_media_(*event);
+    if (!event->in_reply_to_id.empty())
+    {
+        _shell->ensure_reply_details_(event->event_id);
+    }
+    if (_roomView)
+    {
+        _roomView->update_message(index, tesseract::views::make_row_data(
+                                             *event, _shell->my_user_id_));
+    }
+    [self _relayoutChatSurface];
+}
+
+- (void)handleMessageRemoved:(NSString*)roomId index:(std::size_t)index
+{
+    if (std::string(roomId.UTF8String ?: "") != _shell->current_room_id_)
+    {
+        return;
+    }
+    if (_roomView)
+    {
+        _roomView->remove_message(index);
+    }
     [self _relayoutChatSurface];
 }
 
@@ -2693,13 +3880,19 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 // → _refreshRoomList + restore-room logic. No ObjC forwarding needed.
 
 - (void)handleSyncErrorContext:(NSString*)ctx
-                    description:(NSString*)desc
-                    softLogout:(BOOL)soft {
-    if ([ctx isEqualToString:@"sync_auth_error"]) {
-        if (soft && _shell->client_ && _shell->active_account_index_ >= 0) {
-            std::string uid = _shell->accounts_[_shell->active_account_index_]->user_id;
-            if (auto saved = tesseract::SessionStore::load_account(uid)) {
-                if (_shell->client_->restore_session(*saved)) {
+                   description:(NSString*)desc
+                    softLogout:(BOOL)soft
+{
+    if ([ctx isEqualToString:@"sync_auth_error"])
+    {
+        if (soft && _shell->client_ && _shell->active_account_index_ >= 0)
+        {
+            std::string uid =
+                _shell->accounts_[_shell->active_account_index_]->user_id;
+            if (auto saved = tesseract::SessionStore::load_account(uid))
+            {
+                if (_shell->client_->restore_session(*saved))
+                {
                     _shell->client_->start_sync(_shell->event_handler_);
                     return;
                 }
@@ -2711,107 +3904,163 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 }
 
 - (void)handleTimelineReset:(NSString*)roomId
-                    snapshot:(std::vector<tesseract::Event*>)snapshot
+                   snapshot:(std::vector<tesseract::Event*>)snapshot
 {
-    const bool current =
-        roomId.UTF8String && std::string(roomId.UTF8String) == _shell->current_room_id_;
-    if (current) {
+    const bool current = roomId.UTF8String && std::string(roomId.UTF8String) ==
+                                                  _shell->current_room_id_;
+    if (current)
+    {
         std::vector<tesseract::views::MessageRowData> rows;
         rows.reserve(snapshot.size());
-        for (auto* ev : snapshot) {
-            if (!ev) continue;
+        for (auto* ev : snapshot)
+        {
+            if (!ev)
+            {
+                continue;
+            }
             _shell->ensure_row_media_(*ev);
-            if (!ev->in_reply_to_id.empty()) _shell->ensure_reply_details_(ev->event_id);
-            rows.push_back(tesseract::views::make_row_data(*ev, _shell->my_user_id_));
+            if (!ev->in_reply_to_id.empty())
+            {
+                _shell->ensure_reply_details_(ev->event_id);
+            }
+            rows.push_back(
+                tesseract::views::make_row_data(*ev, _shell->my_user_id_));
         }
         const std::string rid = roomId.UTF8String ? roomId.UTF8String : "";
         // A genuine switch, OR a re-population of an emptied view (e.g.
         // logout → login → same room): both warrant the display gate.
         const auto* ml = _roomView ? _roomView->message_list() : nullptr;
-        const bool room_switch =
-            _shell->view_displayed_room_id_ != rid ||
-            (ml && ml->messages().empty());
+        const bool room_switch = _shell->view_displayed_room_id_ != rid ||
+                                 (ml && ml->messages().empty());
         _shell->view_displayed_room_id_ = rid;
-        if (_roomView) _roomView->set_messages(std::move(rows), room_switch);
+        if (_roomView)
+        {
+            _roomView->set_messages(std::move(rows), room_switch);
+        }
         [self _relayoutChatSurface];
-        if (_roomView && _roomView->message_list()) {
+        if (_roomView && _roomView->message_list())
+        {
             const auto& pstate = _shell->pagination_[rid];
             if (room_switch && pstate.is_focused)
+            {
                 _roomView->message_list()->begin_focused_gate(
                     pstate.focus_event_id);
+            }
             _roomView->message_list()->set_historical_mode(pstate.is_focused);
             if (pstate.is_focused)
+            {
                 _roomView->message_list()->scroll_to_event_id(
                     pstate.focus_event_id);
+            }
         }
     }
-    for (auto* ev : snapshot) delete ev;
+    for (auto* ev : snapshot)
+    {
+        delete ev;
+    }
 }
 
-- (void)handleVerificationState:(BOOL)isVerified {
-    if (!_mainApp || !_mainAppSurface) return;
-    if (!isVerified && !_shell->verification_banner_dismissed_) {
-        if (!_verifShared->visible()) {
+- (void)handleVerificationState:(BOOL)isVerified
+{
+    if (!_mainApp || !_mainAppSurface)
+    {
+        return;
+    }
+    if (!isVerified && !_shell->verification_banner_dismissed_)
+    {
+        if (!_verifShared->visible())
+        {
             _verifShared->set_state(
                 tesseract::views::VerificationBanner::State::Prompt);
             // Verification takes priority — hide recovery banner if it appeared
             // before the verification state callback arrived (race on first sync).
             // But if recovery is actively in progress (Verifying/Importing), let
             // it finish rather than interrupting with the verification banner.
-            if (_recoveryShared && _recoveryShared->visible()) {
+            if (_recoveryShared && _recoveryShared->visible())
+            {
                 auto rs = _recoveryShared->state();
-                if (rs == tesseract::views::RecoveryBanner::State::Form
-                 || rs == tesseract::views::RecoveryBanner::State::Failed)
+                if (rs == tesseract::views::RecoveryBanner::State::Form ||
+                    rs == tesseract::views::RecoveryBanner::State::Failed)
+                {
                     _mainApp->show_recovery_banner(false);
+                }
                 else
+                {
                     return;
+                }
             }
             _mainApp->show_verif_banner(true);
             _mainAppSurface->relayout();
         }
-    } else if (_verifShared->visible()) {
+    }
+    else if (_verifShared->visible())
+    {
         _mainApp->show_verif_banner(false);
         _mainAppSurface->relayout();
     }
 }
 
-- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming {
-    if (!_verifShared || !_mainAppSurface) return;
-    if (incoming) {
+- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming
+{
+    if (!_verifShared || !_mainAppSurface)
+    {
+        return;
+    }
+    if (incoming)
+    {
         _verifShared->set_state(
             tesseract::views::VerificationBanner::State::IncomingRequest);
-    } else {
+    }
+    else
+    {
         _verifShared->set_state(
             tesseract::views::VerificationBanner::State::Waiting);
         if (_shell->client_)
+        {
             _shell->client_->start_sas(_shell->active_verification_flow_id_);
+        }
     }
     _mainApp->show_verif_banner(true);
     _mainAppSurface->relayout();
 }
 
-- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis {
-    if (!_verifShared || !_mainAppSurface) return;
+- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis
+{
+    if (!_verifShared || !_mainAppSurface)
+    {
+        return;
+    }
     _verifShared->set_emojis(emojis);
     _mainApp->show_verif_banner(true);
     _mainAppSurface->relayout();
 }
 
-- (void)handleVerificationDone {
-    if (!_verifShared || !_mainAppSurface) return;
+- (void)handleVerificationDone
+{
+    if (!_verifShared || !_mainAppSurface)
+    {
+        return;
+    }
     _verifShared->set_state(tesseract::views::VerificationBanner::State::Done);
     _mainAppSurface->relayout();
     __weak MainWindowController* weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        MainWindowController* s = weakSelf;
-        if (s && s->_verifShared && s->_verifShared->on_done)
-            s->_verifShared->on_done();
-    });
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            MainWindowController* s = weakSelf;
+            if (s && s->_verifShared && s->_verifShared->on_done)
+            {
+                s->_verifShared->on_done();
+            }
+        });
 }
 
-- (void)handleVerificationCancelled:(std::string)reason {
-    if (!_verifShared || !_mainAppSurface) return;
+- (void)handleVerificationCancelled:(std::string)reason
+{
+    if (!_verifShared || !_mainAppSurface)
+    {
+        return;
+    }
     _verifShared->set_state(
         tesseract::views::VerificationBanner::State::Cancelled);
     _verifShared->set_cancel_reason(std::move(reason));
@@ -2819,64 +4068,88 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     _mainAppSurface->relayout();
 }
 
-- (void)handleBackupProgress:(tesseract::BackupProgress)progress {
+- (void)handleBackupProgress:(tesseract::BackupProgress)progress
+{
     [self _maybeShowRecoveryBanner];
 
-    if (_mainApp && _recoveryShared
-        && _recoveryShared->visible()
-        && _recoveryShared->state()
-            == tesseract::views::RecoveryBanner::State::Importing
-        && progress.state == tesseract::BackupState::Downloading
-        && progress.imported_keys > 0)
+    if (_mainApp && _recoveryShared && _recoveryShared->visible() &&
+        _recoveryShared->state() ==
+            tesseract::views::RecoveryBanner::State::Importing &&
+        progress.state == tesseract::BackupState::Downloading &&
+        progress.imported_keys > 0)
     {
         _recoveryShared->set_import_progress(progress.imported_keys);
-        if (_mainAppSurface) _mainAppSurface->relayout();
+        if (_mainAppSurface)
+        {
+            _mainAppSurface->relayout();
+        }
     }
-    if (progress.state == tesseract::BackupState::Enabled
-        && _shell->client_ && !_shell->client_->needs_recovery()
-        && _mainApp)
+    if (progress.state == tesseract::BackupState::Enabled && _shell->client_ &&
+        !_shell->client_->needs_recovery() && _mainApp)
     {
         _mainApp->show_recovery_banner(false);
-        if (_mainAppSurface) _mainAppSurface->relayout();
+        if (_mainAppSurface)
+        {
+            _mainAppSurface->relayout();
+        }
     }
 }
 
-- (void)_relayoutRoomSurface {
-    if (_mainAppSurface) _mainAppSurface->relayout();
+- (void)_relayoutRoomSurface
+{
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
 }
 
-- (void)_relayoutChatSurface {
-    if (_mainAppSurface) _mainAppSurface->relayout();
+- (void)_relayoutChatSurface
+{
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
 }
 
-- (void)_onRoomListStateChanged {
+- (void)_onRoomListStateChanged
+{
     // Update window title with sync progress (no status bar on macOS).
     // Priority: Init/SettingUp → "Syncing rooms…",
     //           Recovering     → "Reconnecting…",
     //           keys busy      → "Downloading encryption keys (N)…",
     //           else           → clear progress suffix.
     using RLS = tesseract::RoomListState;
-    using BS  = tesseract::BackupState;
+    using BS = tesseract::BackupState;
 
-    const bool room_busy    = (_shell->last_room_list_state_ == RLS::Init
-                            || _shell->last_room_list_state_ == RLS::SettingUp);
-    const bool reconnecting = (_shell->last_room_list_state_ == RLS::Recovering);
-    const bool keys_busy    = (_shell->last_backup_state_ == BS::Downloading);
+    const bool room_busy = (_shell->last_room_list_state_ == RLS::Init ||
+                            _shell->last_room_list_state_ == RLS::SettingUp);
+    const bool reconnecting =
+        (_shell->last_room_list_state_ == RLS::Recovering);
+    const bool keys_busy = (_shell->last_backup_state_ == BS::Downloading);
 
     NSString* suffix = nil;
-    if (room_busy) {
+    if (room_busy)
+    {
         suffix = @" — Syncing rooms…";
-    } else if (reconnecting) {
+    }
+    else if (reconnecting)
+    {
         suffix = @" — Reconnecting…";
-    } else if (keys_busy) {
-        suffix = [NSString stringWithFormat:@" — Downloading encryption keys (%llu)…",
-                  (unsigned long long)_shell->last_imported_keys_];
+    }
+    else if (keys_busy)
+    {
+        suffix = [NSString
+            stringWithFormat:@" — Downloading encryption keys (%llu)…",
+                             (unsigned long long)_shell->last_imported_keys_];
     }
 
-    if (suffix) {
+    if (suffix)
+    {
         _shell->sync_progress_shown_ = true;
         self.window.title = [@"Tesseract" stringByAppendingString:suffix];
-    } else if (_shell->sync_progress_shown_) {
+    }
+    else if (_shell->sync_progress_shown_)
+    {
         _shell->sync_progress_shown_ = false;
         self.window.title = @"Tesseract";
     }
@@ -2884,12 +4157,14 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     // Once Running, attempt the deferred room restore (we waited for Running
     // to avoid subscribing to a room during initial sync, which triggers the
     // imbl promote_front data race in matrix-sdk-ui).
-    if (_shell->last_room_list_state_ == RLS::Running
-        && _shell->current_room_id_.empty()
-        && !_shell->pending_restore_room_.empty())
+    if (_shell->last_room_list_state_ == RLS::Running &&
+        _shell->current_room_id_.empty() &&
+        !_shell->pending_restore_room_.empty())
     {
-        for (const auto& r : _shell->rooms_) {
-            if (r.id == _shell->pending_restore_room_ && !r.is_space) {
+        for (const auto& r : _shell->rooms_)
+        {
+            if (r.id == _shell->pending_restore_room_ && !r.is_space)
+            {
                 std::string target = std::move(_shell->pending_restore_room_);
                 _shell->pending_restore_room_.clear();
                 [self onRoomSelected:target];
@@ -2899,20 +4174,35 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     }
 }
 
-- (void)_maybeShowRecoveryBanner {
-    if (_shell->recovery_banner_dismissed_)           return;
-    if (!_shell->client_ || !_shell->client_->needs_recovery()) return;
-    if (!_mainApp || !_mainAppSurface)                return;
+- (void)_maybeShowRecoveryBanner
+{
+    if (_shell->recovery_banner_dismissed_)
+    {
+        return;
+    }
+    if (!_shell->client_ || !_shell->client_->needs_recovery())
+    {
+        return;
+    }
+    if (!_mainApp || !_mainAppSurface)
+    {
+        return;
+    }
     // Verification takes priority — don't show recovery banner while the
     // verification banner is active. The "Use recovery key" link hands off.
-    if (_verifShared && _verifShared->visible()) return;
-    if (_recoveryShared && !_recoveryShared->visible()) {
+    if (_verifShared && _verifShared->visible())
+    {
+        return;
+    }
+    if (_recoveryShared && !_recoveryShared->visible())
+    {
         {
             _recoveryShared->set_state(
                 tesseract::views::RecoveryBanner::State::Form);
             _recoveryShared->set_current_key("");
         }
-        if (_recoveryKeyField) {
+        if (_recoveryKeyField)
+        {
             _recoveryKeyField->set_text("");
             _recoveryKeyField->set_enabled(true);
         }
@@ -2921,124 +4211,212 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     }
 }
 
-- (void)_onRecoveryVerify {
+- (void)_onRecoveryVerify
+{
     std::string key;
-    if (_recoveryKeyField) key = _recoveryKeyField->text();
+    if (_recoveryKeyField)
+    {
+        key = _recoveryKeyField->text();
+    }
     auto a = key.find_first_not_of(" \t\r\n");
-    auto b = key.find_last_not_of (" \t\r\n");
-    if (a == std::string::npos) {
-        if (_recoveryShared) {
+    auto b = key.find_last_not_of(" \t\r\n");
+    if (a == std::string::npos)
+    {
+        if (_recoveryShared)
+        {
             _recoveryShared->set_state(
                 tesseract::views::RecoveryBanner::State::Failed);
             _recoveryShared->set_failure_message(
                 "Please enter a recovery key or passphrase.");
-            if (_mainAppSurface) _mainAppSurface->relayout();
+            if (_mainAppSurface)
+            {
+                _mainAppSurface->relayout();
+            }
         }
         return;
     }
     key = key.substr(a, b - a + 1);
 
     if (_recoveryShared)
+    {
         _recoveryShared->set_state(
             tesseract::views::RecoveryBanner::State::Verifying);
-    if (_recoveryKeyField) _recoveryKeyField->set_enabled(false);
-    if (_mainAppSurface)   _mainAppSurface->relayout();
+    }
+    if (_recoveryKeyField)
+    {
+        _recoveryKeyField->set_enabled(false);
+    }
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
 
     __weak MainWindowController* weakSelf = self;
-    _shell->run_async_([weakSelf, key, clientPtr = _shell->client_]() {
-        auto res = clientPtr->recover(key);
-        bool        ok  = res.ok;
-        std::string msg = res.message;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (!s) return;
-            if (ok) {
-                if (s->_recoveryShared)
-                    s->_recoveryShared->set_state(
-                        tesseract::views::RecoveryBanner::State::Importing);
-            } else {
-                if (s->_recoveryShared) {
-                    s->_recoveryShared->set_state(
-                        tesseract::views::RecoveryBanner::State::Failed);
-                    s->_recoveryShared->set_failure_message(msg);
+    _shell->run_async_(
+        [weakSelf, key, clientPtr = _shell->client_]()
+        {
+            auto res = clientPtr->recover(key);
+            bool ok = res.ok;
+            std::string msg = res.message;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return;
                 }
-                if (s->_recoveryKeyField) {
-                    s->_recoveryKeyField->set_enabled(true);
-                    s->_recoveryKeyField->set_focused(true);
+                if (ok)
+                {
+                    if (s->_recoveryShared)
+                    {
+                        s->_recoveryShared->set_state(
+                            tesseract::views::RecoveryBanner::State::Importing);
+                    }
                 }
-            }
-            if (s->_mainAppSurface) s->_mainAppSurface->relayout();
+                else
+                {
+                    if (s->_recoveryShared)
+                    {
+                        s->_recoveryShared->set_state(
+                            tesseract::views::RecoveryBanner::State::Failed);
+                        s->_recoveryShared->set_failure_message(msg);
+                    }
+                    if (s->_recoveryKeyField)
+                    {
+                        s->_recoveryKeyField->set_enabled(true);
+                        s->_recoveryKeyField->set_focused(true);
+                    }
+                }
+                if (s->_mainAppSurface)
+                {
+                    s->_mainAppSurface->relayout();
+                }
+            });
         });
-    });
 }
 
-- (void)_onRecoveryDismiss {
+- (void)_onRecoveryDismiss
+{
     _shell->recovery_banner_dismissed_ = true;
-    if (_mainApp) {
+    if (_mainApp)
+    {
         _mainApp->show_recovery_banner(false);
-        if (_mainAppSurface) _mainAppSurface->relayout();
+        if (_mainAppSurface)
+        {
+            _mainAppSurface->relayout();
+        }
     }
 }
 
-- (void)_refreshRoomList {
+- (void)_refreshRoomList
+{
     std::vector<tesseract::RoomInfo> filtered;
-    if (_shell->space_stack_.empty()) {
+    if (_shell->space_stack_.empty())
+    {
         std::unordered_set<std::string> in_space;
-        if (_shell->client_) {
-            for (const auto& r : _shell->rooms_) {
-                if (!r.is_space) continue;
+        if (_shell->client_)
+        {
+            for (const auto& r : _shell->rooms_)
+            {
+                if (!r.is_space)
+                {
+                    continue;
+                }
                 for (const auto& id : _shell->client_->space_children(r.id))
+                {
                     in_space.insert(id);
+                }
             }
         }
         filtered.reserve(_shell->rooms_.size());
         for (const auto& r : _shell->rooms_)
-            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite)) filtered.push_back(r);
+        {
+            if (!r.is_space && (!in_space.count(r.id) || r.is_favorite))
+            {
+                filtered.push_back(r);
+            }
+        }
         for (const auto& r : _shell->rooms_)
-            if ( r.is_space) filtered.push_back(r);
-        if (_mainApp) _mainApp->set_space_nav(false);
-    } else {
-        auto child_ids = _shell->client_
-            ? _shell->client_->space_children(_shell->space_stack_.back())
-            : std::vector<std::string>{};
-        for (const auto& r : _shell->rooms_) {
-            if (std::find(child_ids.begin(), child_ids.end(), r.id)
-                != child_ids.end()) {
+        {
+            if (r.is_space)
+            {
+                filtered.push_back(r);
+            }
+        }
+        if (_mainApp)
+        {
+            _mainApp->set_space_nav(false);
+        }
+    }
+    else
+    {
+        auto child_ids =
+            _shell->client_
+                ? _shell->client_->space_children(_shell->space_stack_.back())
+                : std::vector<std::string>{};
+        for (const auto& r : _shell->rooms_)
+        {
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) !=
+                child_ids.end())
+            {
                 filtered.push_back(r);
             }
         }
         std::string space_name;
-        for (const auto& r : _shell->rooms_) {
-            if (r.id == _shell->space_stack_.back()) {
+        for (const auto& r : _shell->rooms_)
+        {
+            if (r.id == _shell->space_stack_.back())
+            {
                 space_name = r.name;
                 break;
             }
         }
-        if (_mainApp) _mainApp->set_space_nav(true, space_name);
+        if (_mainApp)
+        {
+            _mainApp->set_space_nav(true, space_name);
+        }
     }
-    for (const auto& r : filtered) _shell->ensure_room_avatar_(r);
+    for (const auto& r : filtered)
+    {
+        _shell->ensure_room_avatar_(r);
+    }
 
     _roomListView->set_rooms(filtered);
-    if (!_shell->current_room_id_.empty()) {
+    if (!_shell->current_room_id_.empty())
+    {
         _roomListView->set_selected_room(_shell->current_room_id_);
     }
-    if (_mainAppSurface) _mainAppSurface->relayout();
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Room + message handling
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)_setComposeDraft:(const std::string&)draft {
-    if (_roomTextArea) _roomTextArea->set_text(draft);
-    if (_roomView)     _roomView->set_current_text(draft);
+- (void)_setComposeDraft:(const std::string&)draft
+{
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_text(draft);
+    }
+    if (_roomView)
+    {
+        _roomView->set_current_text(draft);
+    }
 }
 
-- (void)onRoomSelected:(std::string)roomId {
-    if (roomId.empty()) return;
-    for (const auto& r : _shell->rooms_) {
-        if (r.id == roomId && r.is_space) {
+- (void)onRoomSelected:(std::string)roomId
+{
+    if (roomId.empty())
+    {
+        return;
+    }
+    for (const auto& r : _shell->rooms_)
+    {
+        if (r.id == roomId && r.is_space)
+        {
             _shell->space_stack_.push_back(roomId);
             [self _refreshRoomList];
             return;
@@ -3046,36 +4424,58 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     }
     [self hideShortcodePopup];
     _shell->handle_compose_room_leaving_(_shell->current_room_id_);
-    if (!_shell->current_room_id_.empty() && _shell->current_room_id_ != roomId
-            && _shell->room_subscription_refs_.count(_shell->current_room_id_) == 0) {
+    if (!_shell->current_room_id_.empty() &&
+        _shell->current_room_id_ != roomId &&
+        _shell->room_subscription_refs_.count(_shell->current_room_id_) == 0)
+    {
         _shell->client_->unsubscribe_room(_shell->current_room_id_);
     }
     _shell->current_room_id_ = roomId;
     _shell->clear_focused_state_(roomId);
     [_markReadTimer invalidate];
-    double delayS = tesseract::Settings::instance().mark_as_read_delay_ms / 1000.0;
+    double delayS =
+        tesseract::Settings::instance().mark_as_read_delay_ms / 1000.0;
     __weak MainWindowController* weakSelf = self;
-    _markReadTimer = [NSTimer scheduledTimerWithTimeInterval:delayS
-                                                     repeats:NO
-                                                       block:^(NSTimer*) {
-        MainWindowController* c = weakSelf;
-        if (c) c->_shell->mark_room_read_(c->_shell->current_room_id_);
-    }];
+    _markReadTimer = [NSTimer
+        scheduledTimerWithTimeInterval:delayS
+                               repeats:NO
+                                 block:^(NSTimer*) {
+                                     MainWindowController* c = weakSelf;
+                                     if (c)
+                                     {
+                                         c->_shell->mark_room_read_(
+                                             c->_shell->current_room_id_);
+                                     }
+                                 }];
     _shell->reply_details_requested_.clear();
     {
-        auto prefs = tesseract::Prefs::parse(_shell->client_->load_prefs_json());
+        auto prefs =
+            tesseract::Prefs::parse(_shell->client_->load_prefs_json());
         prefs.last_room = roomId;
         _shell->client_->save_prefs_json(tesseract::Prefs::serialize(prefs));
     }
-    if (_roomView) {
+    if (_roomView)
+    {
         _roomView->compose_bar()->clear_reply();
         _roomView->compose_bar()->clear_editing();
     }
-    if (_roomView) _roomView->set_typing_text({});
-    if (_roomTextArea) _roomTextArea->set_focused(true);
-    for (const auto& r : _shell->rooms_) {
-        if (r.id == _shell->current_room_id_) {
-            if (_roomView) { _roomView->set_room(r); [self _relayoutChatSurface]; }
+    if (_roomView)
+    {
+        _roomView->set_typing_text({});
+    }
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_focused(true);
+    }
+    for (const auto& r : _shell->rooms_)
+    {
+        if (r.id == _shell->current_room_id_)
+        {
+            if (_roomView)
+            {
+                _roomView->set_room(r);
+                [self _relayoutChatSurface];
+            }
             break;
         }
     }
@@ -3089,8 +4489,10 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         auto res = self->_shell->client_->subscribe_room(subRoom);
         BOOL reached = NO;
-        if (res) {
-            auto pr = self->_shell->client_->paginate_back_with_status(subRoom, 50);
+        if (res)
+        {
+            auto pr =
+                self->_shell->client_->paginate_back_with_status(subRoom, 50);
             reached = pr.ok && pr.reached_start;
             self->_shell->client_->start_background_backfill(visibleIds);
         }
@@ -3100,10 +4502,17 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     });
 }
 
-- (void)requestMoreHistoryForRoom:(std::string)roomId {
-    if (roomId.empty()) return;
+- (void)requestMoreHistoryForRoom:(std::string)roomId
+{
+    if (roomId.empty())
+    {
+        return;
+    }
     auto& state = _shell->pagination_[roomId];
-    if (state.in_flight || state.reached_start) return;
+    if (state.in_flight || state.reached_start)
+    {
+        return;
+    }
     state.in_flight = true;
 
     // Run the blocking paginate call on a background queue; marshal the
@@ -3117,85 +4526,126 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     });
 }
 
-- (void)openJumpToDateDialog {
-    if (_shell->current_room_id_.empty()) return;
+- (void)openJumpToDateDialog
+{
+    if (_shell->current_room_id_.empty())
+    {
+        return;
+    }
 
     // Build an NSDatePicker in graphical calendar mode.
-    NSDatePicker* picker = [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 148)];
-    picker.datePickerStyle    = NSDatePickerStyleClockAndCalendar;
+    NSDatePicker* picker =
+        [[NSDatePicker alloc] initWithFrame:NSMakeRect(0, 0, 228, 148)];
+    picker.datePickerStyle = NSDatePickerStyleClockAndCalendar;
     picker.datePickerElements = NSDatePickerElementFlagYearMonthDay;
-    picker.timeZone           = [NSTimeZone timeZoneWithName:@"UTC"];
+    picker.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
 
     // Clamp selection to [1970-01-01, today].
-    NSCalendar* utcCal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    NSCalendar* utcCal =
+        [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
     utcCal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
     NSDateComponents* epochComps = [[NSDateComponents alloc] init];
-    epochComps.year = 1970; epochComps.month = 1; epochComps.day = 1;
+    epochComps.year = 1970;
+    epochComps.month = 1;
+    epochComps.day = 1;
     picker.minDate = [utcCal dateFromComponents:epochComps];
     picker.maxDate = [NSDate date];
 
     NSAlert* alert = [[NSAlert alloc] init];
-    alert.messageText     = @"Jump to Date";
+    alert.messageText = @"Jump to Date";
     alert.informativeText = @"Navigate to messages from the selected day.";
     [alert addButtonWithTitle:@"Jump"];
     [alert addButtonWithTitle:@"Cancel"];
     alert.accessoryView = picker;
 
-    [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse r) {
-        if (r != NSAlertFirstButtonReturn) return;
+    [alert
+        beginSheetModalForWindow:self.window
+               completionHandler:^(NSModalResponse r) {
+                   if (r != NSAlertFirstButtonReturn)
+                   {
+                       return;
+                   }
 
-        // Extract midnight UTC from the selected date.
-        NSDate* selected = picker.dateValue;
-        NSDateComponents* comps = [utcCal components:(NSCalendarUnitYear |
-                                                       NSCalendarUnitMonth |
-                                                       NSCalendarUnitDay)
-                                           fromDate:selected];
-        comps.hour = 0; comps.minute = 0; comps.second = 0;
-        NSDate* midnight = [utcCal dateFromComponents:comps];
-        const uint64_t ts_ms =
-            static_cast<uint64_t>([midnight timeIntervalSince1970] * 1000.0);
+                   // Extract midnight UTC from the selected date.
+                   NSDate* selected = picker.dateValue;
+                   NSDateComponents* comps = [utcCal
+                       components:(NSCalendarUnitYear | NSCalendarUnitMonth |
+                                   NSCalendarUnitDay)
+                         fromDate:selected];
+                   comps.hour = 0;
+                   comps.minute = 0;
+                   comps.second = 0;
+                   NSDate* midnight = [utcCal dateFromComponents:comps];
+                   const uint64_t ts_ms = static_cast<uint64_t>(
+                       [midnight timeIntervalSince1970] * 1000.0);
 
-        const std::string room_id = self->_shell->current_room_id_;
-        if (room_id.empty()) return;
+                   const std::string room_id = self->_shell->current_room_id_;
+                   if (room_id.empty())
+                   {
+                       return;
+                   }
 
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            auto res = self->_shell->client_->timestamp_to_event(room_id, ts_ms, "f");
-            if (!res.ok) {
-                NSString* msg = [NSString stringWithUTF8String:res.message.c_str()] ?: @"Unknown error";
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    NSAlert* err = [[NSAlert alloc] init];
-                    err.alertStyle      = NSAlertStyleWarning;
-                    err.messageText     = @"Jump to Date Failed";
-                    err.informativeText = msg;
-                    [err beginSheetModalForWindow:self.window completionHandler:nil];
-                });
-                return;
-            }
-            const std::string event_id = res.message;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self->_shell->begin_focused_subscription_(room_id, event_id);
-                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                    self->_shell->client_->subscribe_room_at(room_id, event_id);
-                });
-            });
-        });
-    }];
+                   dispatch_async(
+                       dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                       ^{
+                           auto res = self->_shell->client_->timestamp_to_event(
+                               room_id, ts_ms, "f");
+                           if (!res.ok)
+                           {
+                               NSString* msg =
+                                   [NSString
+                                       stringWithUTF8String:res.message.c_str()]
+                                       ?: @"Unknown error";
+                               dispatch_async(dispatch_get_main_queue(), ^{
+                                   NSAlert* err = [[NSAlert alloc] init];
+                                   err.alertStyle = NSAlertStyleWarning;
+                                   err.messageText = @"Jump to Date Failed";
+                                   err.informativeText = msg;
+                                   [err beginSheetModalForWindow:self.window
+                                               completionHandler:nil];
+                               });
+                               return;
+                           }
+                           const std::string event_id = res.message;
+                           dispatch_async(dispatch_get_main_queue(), ^{
+                               self->_shell->begin_focused_subscription_(
+                                   room_id, event_id);
+                               dispatch_async(
+                                   dispatch_get_global_queue(
+                                       QOS_CLASS_USER_INITIATED, 0),
+                                   ^{
+                                       self->_shell->client_->subscribe_room_at(
+                                           room_id, event_id);
+                                   });
+                           });
+                       });
+               }];
 }
 
 - (void)handlePaginateResultForRoom:(std::string)roomId
-                      reached_start:(BOOL)reached {
+                      reached_start:(BOOL)reached
+{
     auto it = _shell->pagination_.find(roomId);
-    if (it == _shell->pagination_.end()) return;
-    it->second.in_flight     = false;
+    if (it == _shell->pagination_.end())
+    {
+        return;
+    }
+    it->second.in_flight = false;
     it->second.reached_start = reached;
     if (roomId == _shell->current_room_id_ && _roomView)
+    {
         _roomView->message_list()->reset_near_top_latch();
+    }
 }
 
-- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached {
-    if (roomId != _shell->current_room_id_) return;
+- (void)handleSubscribeResultForRoom:(std::string)roomId reached:(BOOL)reached
+{
+    if (roomId != _shell->current_room_id_)
+    {
+        return;
+    }
     auto& state = _shell->pagination_[roomId];
-    state.in_flight     = false;
+    state.in_flight = false;
     state.reached_start = reached;
 }
 
@@ -3208,53 +4658,72 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 // ─────────────────────────────────────────────────────────────────────────
 
 - (void)_decodeMediaBytes:(const std::vector<uint8_t>&)bytes
-                   forKey:(const std::string&)key {
-    if (bytes.empty() || _shell->tk_images_.count(key)
-        || _shell->anim_cache_.has(key)) return;
+                   forKey:(const std::string&)key
+{
+    if (bytes.empty() || _shell->tk_images_.count(key) ||
+        _shell->anim_cache_.has(key))
+    {
+        return;
+    }
     auto d = _shell->decode_image_(bytes, 0, 0);
-    if (!d.frames.empty()) {
+    if (!d.frames.empty())
+    {
         const std::int64_t now = static_cast<std::int64_t>(
             [[NSDate date] timeIntervalSince1970] * 1000.0);
         _shell->anim_cache_.store(key, std::move(d.frames),
                                   std::move(d.delays_ms), now);
         [self _startAnimTickIfNeeded];
-    } else if (d.still) {
+    }
+    else if (d.still)
+    {
         _shell->tk_images_.emplace(key, std::move(d.still));
     }
 }
 
-- (void)_startAnimTickIfNeeded {
-    if (_animTimer || _shell->anim_cache_.empty()) return;
+- (void)_startAnimTickIfNeeded
+{
+    if (_animTimer || _shell->anim_cache_.empty())
+    {
+        return;
+    }
     __weak MainWindowController* weakSelf = self;
     _animTimer = [NSTimer scheduledTimerWithTimeInterval:0.016
                                                  repeats:YES
                                                    block:^(NSTimer* t) {
-        [weakSelf _animTick:t];
-    }];
+                                                       [weakSelf _animTick:t];
+                                                   }];
     [[NSRunLoop currentRunLoop] addTimer:_animTimer
                                  forMode:NSRunLoopCommonModes];
 }
 
-- (void)_animTick:(NSTimer*)timer {
-    if (_shell->anim_cache_.empty()) {
+- (void)_animTick:(NSTimer*)timer
+{
+    if (_shell->anim_cache_.empty())
+    {
         [_animTimer invalidate];
         _animTimer = nil;
         return;
     }
-    const std::int64_t now =
-        static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] * 1000.0);
-    if (_shell->anim_cache_.advance(now)) {
+    const std::int64_t now = static_cast<std::int64_t>(
+        [[NSDate date] timeIntervalSince1970] * 1000.0);
+    if (_shell->anim_cache_.advance(now))
+    {
         [self _relayoutChatSurface];
         StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-        if (panel.isVisible) [panel invalidateImageCache];
+        if (panel.isVisible)
+        {
+            [panel invalidateImageCache];
+        }
     }
 }
 
-- (void)_ensureStickerImageAsync:(std::string)url {
+- (void)_ensureStickerImageAsync:(std::string)url
+{
     _shell->ensure_picker_image_(url, /*is_sticker=*/true);
 }
 
-- (void)_ensureEmojiImageAsync:(std::string)url {
+- (void)_ensureEmojiImageAsync:(std::string)url
+{
     _shell->ensure_picker_image_(url, /*is_sticker=*/false);
 }
 
@@ -3262,54 +4731,79 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
 //  Sticker picker
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)handleImagePacksUpdated {
+- (void)handleImagePacksUpdated
+{
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
     [panel refreshPacks];
     _shell->cached_emoticons_.clear();
-    if (_shell->client_) {
-        for (auto& pack : _shell->client_->list_image_packs()) {
+    if (_shell->client_)
+    {
+        for (auto& pack : _shell->client_->list_image_packs())
+        {
             for (auto& img : _shell->client_->list_pack_images(
-                     pack.id, tesseract::PackUsageFilter::Emoticon)) {
+                     pack.id, tesseract::PackUsageFilter::Emoticon))
+            {
                 _shell->cached_emoticons_.push_back(std::move(img));
             }
         }
     }
 }
 
-- (void)handleAccountPrefsUpdated:(NSString*)json {
+- (void)handleAccountPrefsUpdated:(NSString*)json
+{
     auto prefs = tesseract::Prefs::parse(json.UTF8String);
-    if (!prefs.last_room.empty()
-        && _shell->pending_restore_room_.empty()
-        && _shell->current_room_id_.empty())
+    if (!prefs.last_room.empty() && _shell->pending_restore_room_.empty() &&
+        _shell->current_room_id_.empty())
+    {
         _shell->pending_restore_room_ = prefs.last_room;
+    }
 }
 
-- (void)_showStickerPicker {
-    if (!_mainAppSurface || _shell->current_room_id_.empty()) return;
+- (void)_showStickerPicker
+{
+    if (!_mainAppSurface || _shell->current_room_id_.empty())
+    {
+        return;
+    }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;
 
-    [panel setImageProvider:
-        [weakSelf](const std::string& cache_key,
-                   const std::string& /*source_token*/) -> const tk::Image* {
-            MainWindowController* s = weakSelf;
-            if (!s) return nullptr;
-            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
-            auto it = s->_shell->tk_images_.find(cache_key);
-            if (it != s->_shell->tk_images_.end()) return it->second.get();
-            [s _ensureStickerImageAsync:cache_key];
-            return nullptr;
-        }];
+    [panel
+        setImageProvider:[weakSelf](const std::string& cache_key,
+                                    const std::string& /*source_token*/)
+                             -> const tk::Image*
+                         {
+                             MainWindowController* s = weakSelf;
+                             if (!s)
+                             {
+                                 return nullptr;
+                             }
+                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                                     cache_key))
+                             {
+                                 return f;
+                             }
+                             auto it = s->_shell->tk_images_.find(cache_key);
+                             if (it != s->_shell->tk_images_.end())
+                             {
+                                 return it->second.get();
+                             }
+                             [s _ensureStickerImageAsync:cache_key];
+                             return nullptr;
+                         }];
 
     __weak StickerPickerPanel* weakPanel = panel;
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
-        if (!s || s->_shell->current_room_id_.empty()) return;
-        std::string u = url.UTF8String      ?: "";
-        std::string b = body.UTF8String     ?: "";
+        if (!s || s->_shell->current_room_id_.empty())
+        {
+            return;
+        }
+        std::string u = url.UTF8String ?: "";
+        std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
         s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
         [weakPanel orderOut:nil];
@@ -3319,31 +4813,50 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     [panel popupAboveView:anchor];
 }
 
-- (void)_showStickerPickerAtRect:(tk::Rect)btn {
-    if (!_mainAppSurface || _shell->current_room_id_.empty()) return;
+- (void)_showStickerPickerAtRect:(tk::Rect)btn
+{
+    if (!_mainAppSurface || _shell->current_room_id_.empty())
+    {
+        return;
+    }
     StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
     panel.client = _shell->client_;
 
     __weak MainWindowController* weakSelf = self;
 
-    [panel setImageProvider:
-        [weakSelf](const std::string& cache_key,
-                   const std::string& /*source_token*/) -> const tk::Image* {
-            MainWindowController* s = weakSelf;
-            if (!s) return nullptr;
-            if (auto* f = s->_shell->anim_cache_.current_frame(cache_key)) return f;
-            auto it = s->_shell->tk_images_.find(cache_key);
-            if (it != s->_shell->tk_images_.end()) return it->second.get();
-            [s _ensureStickerImageAsync:cache_key];
-            return nullptr;
-        }];
+    [panel
+        setImageProvider:[weakSelf](const std::string& cache_key,
+                                    const std::string& /*source_token*/)
+                             -> const tk::Image*
+                         {
+                             MainWindowController* s = weakSelf;
+                             if (!s)
+                             {
+                                 return nullptr;
+                             }
+                             if (auto* f = s->_shell->anim_cache_.current_frame(
+                                     cache_key))
+                             {
+                                 return f;
+                             }
+                             auto it = s->_shell->tk_images_.find(cache_key);
+                             if (it != s->_shell->tk_images_.end())
+                             {
+                                 return it->second.get();
+                             }
+                             [s _ensureStickerImageAsync:cache_key];
+                             return nullptr;
+                         }];
 
     __weak StickerPickerPanel* weakPanel = panel;
     panel.onSelected = ^(NSString* url, NSString* body, NSString* infoJson) {
         MainWindowController* s = weakSelf;
-        if (!s || s->_shell->current_room_id_.empty()) return;
-        std::string u = url.UTF8String      ?: "";
-        std::string b = body.UTF8String     ?: "";
+        if (!s || s->_shell->current_room_id_.empty())
+        {
+            return;
+        }
+        std::string u = url.UTF8String ?: "";
+        std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
         s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
         [weakPanel orderOut:nil];
@@ -3353,36 +4866,45 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     [panel popupAtRect:btn inView:anchor];
 }
 
-- (void)_showStickerContextMenuAt:(NSPoint)screenPt {
-    if (_ctxStickerMxcUrl.empty()) return;
-    BOOL alreadySaved = _shell->client_->user_pack_has_sticker(_ctxStickerMxcUrl);
+- (void)_showStickerContextMenuAt:(NSPoint)screenPt
+{
+    if (_ctxStickerMxcUrl.empty())
+    {
+        return;
+    }
+    BOOL alreadySaved =
+        _shell->client_->user_pack_has_sticker(_ctxStickerMxcUrl);
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Sticker"];
     NSMenuItem* item = [[NSMenuItem alloc]
-        initWithTitle: alreadySaved ? @"Already in Saved Stickers"
-                                    : @"Add to Saved Stickers"
-               action: alreadySaved ? nil : @selector(_onStickerSave:)
+        initWithTitle:alreadySaved ? @"Already in Saved Stickers"
+                                   : @"Add to Saved Stickers"
+               action:alreadySaved ? nil : @selector(_onStickerSave:)
         keyEquivalent:@""];
     item.target = self;
     [menu addItem:item];
     [menu popUpMenuPositioningItem:nil atLocation:screenPt inView:nil];
 }
 
-- (void)_onStickerSave:(id)sender {
-    if (_ctxStickerMxcUrl.empty()) return;
+- (void)_onStickerSave:(id)sender
+{
+    if (_ctxStickerMxcUrl.empty())
+    {
+        return;
+    }
     auto res = _shell->client_->save_sticker_to_user_pack(
-        _ctxStickerBody,
-        _ctxStickerBody,
-        _ctxStickerMxcUrl,
+        _ctxStickerBody, _ctxStickerBody, _ctxStickerMxcUrl,
         _ctxStickerInfoJson);
     _ctxStickerEventId.clear();
     _ctxStickerMxcUrl.clear();
     _ctxStickerBody.clear();
     _ctxStickerInfoJson.clear();
-    if (!res.ok) {
+    if (!res.ok)
+    {
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.alertStyle  = NSAlertStyleWarning;
+        alert.alertStyle = NSAlertStyleWarning;
         alert.messageText = @"Could Not Save Sticker";
-        alert.informativeText = [NSString stringWithUTF8String:res.message.c_str()] ?: @"";
+        alert.informativeText =
+            [NSString stringWithUTF8String:res.message.c_str()] ?: @"";
         [alert beginSheetModalForWindow:self.window completionHandler:nil];
     }
 }

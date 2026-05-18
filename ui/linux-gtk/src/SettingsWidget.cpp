@@ -4,7 +4,8 @@
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
-namespace gtk4 {
+namespace gtk4
+{
 
 SettingsWidget::SettingsWidget()
     : surface_(std::make_unique<tk::gtk4::Surface>(tk::Theme::light()))
@@ -14,15 +15,24 @@ SettingsWidget::SettingsWidget()
 
     settings_view_->on_close = [this]
     {
-        if (on_close) on_close();
+        if (on_close)
+        {
+            on_close();
+        }
     };
     settings_view_->on_theme_changed = [this](auto p)
     {
-        if (on_theme_changed) on_theme_changed(p);
+        if (on_theme_changed)
+        {
+            on_theme_changed(p);
+        }
     };
     settings_view_->on_notifications_changed = [this](bool e)
     {
-        if (on_notifications_changed) on_notifications_changed(e);
+        if (on_notifications_changed)
+        {
+            on_notifications_changed(e);
+        }
     };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
@@ -47,16 +57,13 @@ void SettingsWidget::set_theme(const tk::Theme& t)
     surface_->relayout();
 }
 
-void SettingsWidget::populate(std::string display_name,
-                               std::string user_id,
-                               std::string avatar_mxc,
-                               tesseract::views::AccountSection::ImageProvider provider,
-                               tesseract::Settings::ThemePreference theme_pref,
-                               bool notifications_enabled)
+void SettingsWidget::populate(
+    std::string display_name, std::string user_id, std::string avatar_mxc,
+    tesseract::views::AccountSection::ImageProvider provider,
+    tesseract::Settings::ThemePreference theme_pref, bool notifications_enabled)
 {
     settings_view_->set_account_info(std::move(display_name),
-                                     std::move(user_id),
-                                     std::move(avatar_mxc));
+                                     std::move(user_id), std::move(avatar_mxc));
     settings_view_->set_image_provider(std::move(provider));
     settings_view_->set_theme_pref(theme_pref);
     settings_view_->set_notifications_enabled(notifications_enabled);

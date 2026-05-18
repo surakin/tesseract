@@ -6,17 +6,19 @@
 // tesseract::Result
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Result bool operator reflects ok field", "[types]") {
-    tesseract::Result ok{.ok = true,  .message = "all good"};
+TEST_CASE("Result bool operator reflects ok field", "[types]")
+{
+    tesseract::Result ok{.ok = true, .message = "all good"};
     tesseract::Result fail{.ok = false, .message = "oops"};
 
     CHECK(static_cast<bool>(ok));
     CHECK_FALSE(static_cast<bool>(fail));
-    CHECK(ok.message   == "all good");
+    CHECK(ok.message == "all good");
     CHECK(fail.message == "oops");
 }
 
-TEST_CASE("Result default-constructs to not-ok", "[types]") {
+TEST_CASE("Result default-constructs to not-ok", "[types]")
+{
     tesseract::Result r{};
     CHECK_FALSE(static_cast<bool>(r));
     CHECK(r.message.empty());
@@ -26,23 +28,25 @@ TEST_CASE("Result default-constructs to not-ok", "[types]") {
 // tesseract::Client::OAuthFlow
 // ---------------------------------------------------------------------------
 
-TEST_CASE("OAuthFlow bool operator reflects ok field", "[types]") {
+TEST_CASE("OAuthFlow bool operator reflects ok field", "[types]")
+{
     tesseract::Client::OAuthFlow success{
-        .ok       = true,
+        .ok = true,
         .auth_url = "https://auth.example/oauth",
     };
     tesseract::Client::OAuthFlow failure{
-        .ok      = false,
+        .ok = false,
         .message = "discovery failed",
     };
 
     CHECK(static_cast<bool>(success));
     CHECK_FALSE(static_cast<bool>(failure));
     CHECK(success.auth_url == "https://auth.example/oauth");
-    CHECK(failure.message  == "discovery failed");
+    CHECK(failure.message == "discovery failed");
 }
 
-TEST_CASE("OAuthFlow default-constructs to not-ok with empty URLs", "[types]") {
+TEST_CASE("OAuthFlow default-constructs to not-ok with empty URLs", "[types]")
+{
     tesseract::Client::OAuthFlow f{};
     CHECK_FALSE(static_cast<bool>(f));
     CHECK(f.auth_url.empty());
@@ -53,7 +57,8 @@ TEST_CASE("OAuthFlow default-constructs to not-ok with empty URLs", "[types]") {
 // tesseract::RoomInfo
 // ---------------------------------------------------------------------------
 
-TEST_CASE("RoomInfo default-initialised fields", "[types]") {
+TEST_CASE("RoomInfo default-initialised fields", "[types]")
+{
     tesseract::RoomInfo r{};
     CHECK(r.id.empty());
     CHECK(r.name.empty());
@@ -67,7 +72,8 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]") {
 // tesseract::Event (base)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Event default-initialised fields", "[types]") {
+TEST_CASE("Event default-initialised fields", "[types]")
+{
     tesseract::Event ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -81,7 +87,8 @@ TEST_CASE("Event default-initialised fields", "[types]") {
 // tesseract::TextEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("TextEvent default-initialised fields", "[types]") {
+TEST_CASE("TextEvent default-initialised fields", "[types]")
+{
     tesseract::TextEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -95,7 +102,8 @@ TEST_CASE("TextEvent default-initialised fields", "[types]") {
 // tesseract::ImageEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("ImageEvent default-initialised fields", "[types]") {
+TEST_CASE("ImageEvent default-initialised fields", "[types]")
+{
     tesseract::ImageEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -109,7 +117,8 @@ TEST_CASE("ImageEvent default-initialised fields", "[types]") {
     CHECK(ev.filename.empty());
 }
 
-TEST_CASE("ImageEvent fields are settable", "[types]") {
+TEST_CASE("ImageEvent fields are settable", "[types]")
+{
     tesseract::ImageEvent ev{};
     ev.event_id = "evt123";
     ev.room_id = "!room:example.org";
@@ -119,7 +128,7 @@ TEST_CASE("ImageEvent fields are settable", "[types]") {
     ev.image_url = "mxc://example.org/image";
     ev.width = 1920;
     ev.height = 1080;
-    ev.filename = "";  // no MSC2530 filename → body is not a caption
+    ev.filename = ""; // no MSC2530 filename → body is not a caption
 
     CHECK(ev.event_id == "evt123");
     CHECK(ev.room_id == "!room:example.org");
@@ -132,11 +141,12 @@ TEST_CASE("ImageEvent fields are settable", "[types]") {
     CHECK(ev.filename.empty());
 }
 
-TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]") {
+TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]")
+{
     tesseract::ImageEvent ev{};
     ev.image_url = "mxc://example.org/photo.jpg";
     ev.body = "My holiday photo";
-    ev.filename = "photo.jpg";  // distinct filename → body is a caption
+    ev.filename = "photo.jpg"; // distinct filename → body is a caption
 
     CHECK_FALSE(ev.filename.empty());
     CHECK(ev.body == "My holiday photo");
@@ -147,7 +157,8 @@ TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]") {
 // tesseract::FileEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("FileEvent default-initialised fields", "[types]") {
+TEST_CASE("FileEvent default-initialised fields", "[types]")
+{
     tesseract::FileEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -160,7 +171,8 @@ TEST_CASE("FileEvent default-initialised fields", "[types]") {
     CHECK(ev.file_size == 0u);
 }
 
-TEST_CASE("FileEvent fields are settable", "[types]") {
+TEST_CASE("FileEvent fields are settable", "[types]")
+{
     tesseract::FileEvent ev{};
     ev.event_id = "evt456";
     ev.room_id = "!room:example.org";
@@ -185,7 +197,8 @@ TEST_CASE("FileEvent fields are settable", "[types]") {
 // tesseract::UnhandledEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("UnhandledEvent default-initialised fields", "[types]") {
+TEST_CASE("UnhandledEvent default-initialised fields", "[types]")
+{
     tesseract::UnhandledEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -196,7 +209,8 @@ TEST_CASE("UnhandledEvent default-initialised fields", "[types]") {
     CHECK(ev.msg_type.empty());
 }
 
-TEST_CASE("UnhandledEvent constructed with msg_type", "[types]") {
+TEST_CASE("UnhandledEvent constructed with msg_type", "[types]")
+{
     tesseract::UnhandledEvent ev("m.unknown");
     CHECK(ev.type == tesseract::EventType::Unhandled);
     CHECK(ev.msg_type == "m.unknown");
@@ -206,7 +220,8 @@ TEST_CASE("UnhandledEvent constructed with msg_type", "[types]") {
 // tesseract::StickerEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("StickerEvent default-initialised fields", "[types]") {
+TEST_CASE("StickerEvent default-initialised fields", "[types]")
+{
     tesseract::StickerEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -219,7 +234,8 @@ TEST_CASE("StickerEvent default-initialised fields", "[types]") {
     CHECK(ev.height == 0u);
 }
 
-TEST_CASE("StickerEvent fields are settable", "[types]") {
+TEST_CASE("StickerEvent fields are settable", "[types]")
+{
     tesseract::StickerEvent ev{};
     ev.event_id = "sticker1";
     ev.room_id = "!room:example.org";
@@ -245,7 +261,8 @@ TEST_CASE("StickerEvent fields are settable", "[types]") {
 // tesseract::VoiceEvent (MSC3245)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("VoiceEvent default-initialised fields", "[types][voice]") {
+TEST_CASE("VoiceEvent default-initialised fields", "[types][voice]")
+{
     tesseract::VoiceEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -259,30 +276,33 @@ TEST_CASE("VoiceEvent default-initialised fields", "[types][voice]") {
     CHECK(ev.waveform.empty());
 }
 
-TEST_CASE("VoiceEvent fields round-trip", "[types][voice]") {
+TEST_CASE("VoiceEvent fields round-trip", "[types][voice]")
+{
     tesseract::VoiceEvent ev{};
-    ev.event_id     = "$voice-evt:example.org";
-    ev.room_id      = "!room:example.org";
-    ev.sender       = "@alice:example.org";
-    ev.body         = "Voice message";
-    ev.timestamp    = 1700000000000ull;
+    ev.event_id = "$voice-evt:example.org";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@alice:example.org";
+    ev.body = "Voice message";
+    ev.timestamp = 1700000000000ull;
     ev.audio_source = "mxc://example.org/voice.ogg";
-    ev.mime_type    = "audio/ogg";
-    ev.duration_ms  = 4200;
-    ev.waveform     = {0, 256, 512, 1024, 512, 256, 0};
+    ev.mime_type = "audio/ogg";
+    ev.duration_ms = 4200;
+    ev.waveform = {0, 256, 512, 1024, 512, 256, 0};
 
-    CHECK(ev.event_id     == "$voice-evt:example.org");
-    CHECK(ev.body         == "Voice message");
+    CHECK(ev.event_id == "$voice-evt:example.org");
+    CHECK(ev.body == "Voice message");
     CHECK(ev.audio_source == "mxc://example.org/voice.ogg");
-    CHECK(ev.mime_type    == "audio/ogg");
-    CHECK(ev.duration_ms  == 4200u);
+    CHECK(ev.mime_type == "audio/ogg");
+    CHECK(ev.duration_ms == 4200u);
     REQUIRE(ev.waveform.size() == 7);
     CHECK(ev.waveform.front() == 0);
-    CHECK(ev.waveform[3]      == 1024);
+    CHECK(ev.waveform[3] == 1024);
     CHECK(ev.type == tesseract::EventType::Voice);
 }
 
-TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)", "[types][voice]") {
+TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)",
+          "[types][voice]")
+{
     // Missing MSC1767 waveform → empty vector; the UI renders flat bars.
     tesseract::VoiceEvent ev{};
     ev.duration_ms = 3000;
@@ -291,7 +311,9 @@ TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)", "[types][voic
     CHECK(ev.duration_ms == 3000u);
 }
 
-TEST_CASE("VoiceEvent carries reactions like other Event subtypes", "[types][voice][reactions]") {
+TEST_CASE("VoiceEvent carries reactions like other Event subtypes",
+          "[types][voice][reactions]")
+{
     tesseract::VoiceEvent ev{};
     ev.reactions.push_back({"🔥", 2, true, "", {"@alice", "@bob"}});
     REQUIRE(ev.reactions.size() == 1);
@@ -307,7 +329,8 @@ TEST_CASE("VoiceEvent carries reactions like other Event subtypes", "[types][voi
 // tesseract::Reaction
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Reaction default-initialised fields", "[types][reactions]") {
+TEST_CASE("Reaction default-initialised fields", "[types][reactions]")
+{
     tesseract::Reaction r{};
     CHECK(r.key.empty());
     CHECK(r.count == 0u);
@@ -316,13 +339,14 @@ TEST_CASE("Reaction default-initialised fields", "[types][reactions]") {
     CHECK(r.senders.empty());
 }
 
-TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]") {
+TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]")
+{
     tesseract::Reaction r{
-        .key           = "👍",
-        .count         = 3,
+        .key = "👍",
+        .count = 3,
         .reacted_by_me = true,
-        .source_json   = "",
-        .senders       = {"@alice:example.org", "@bob:example.org", "Carol"},
+        .source_json = "",
+        .senders = {"@alice:example.org", "@bob:example.org", "Carol"},
     };
     CHECK(r.key == "👍");
     CHECK(r.count == 3u);
@@ -334,13 +358,15 @@ TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]") 
     CHECK(r.senders.size() == static_cast<size_t>(r.count));
 }
 
-TEST_CASE("MSC 4027 custom reaction preserves source_json", "[types][reactions]") {
+TEST_CASE("MSC 4027 custom reaction preserves source_json",
+          "[types][reactions]")
+{
     tesseract::Reaction r{
-        .key           = ":partyparrot:",
-        .count         = 2,
+        .key = ":partyparrot:",
+        .count = 2,
         .reacted_by_me = false,
-        .source_json   = R"({"url":"mxc://example.org/abc123"})",
-        .senders       = {"@alice:example.org", "@bob:example.org"},
+        .source_json = R"({"url":"mxc://example.org/abc123"})",
+        .senders = {"@alice:example.org", "@bob:example.org"},
     };
     CHECK_FALSE(r.source_json.empty());
     CHECK(r.source_json.find("mxc://example.org/abc123") != std::string::npos);
@@ -351,13 +377,14 @@ TEST_CASE("MSC 4027 custom reaction preserves source_json", "[types][reactions]"
     CHECK(copy.source_json == r.source_json);
 }
 
-TEST_CASE("Event base type carries reactions", "[types][reactions]") {
+TEST_CASE("Event base type carries reactions", "[types][reactions]")
+{
     tesseract::TextEvent ev;
     ev.event_id = "$abc:example.org";
-    ev.body     = "hello";
+    ev.body = "hello";
     ev.reactions = {
-        {"👍", 2, true,  "", {"@alice:example.org", "@bob:example.org"}},
-        {"❤",  1, false, "", {"@bob:example.org"}},
+        {"👍", 2, true, "", {"@alice:example.org", "@bob:example.org"}},
+        {"❤", 1, false, "", {"@bob:example.org"}},
     };
 
     CHECK(ev.reactions.size() == 2);
@@ -366,20 +393,27 @@ TEST_CASE("Event base type carries reactions", "[types][reactions]") {
     CHECK(ev.reactions[1].senders.front() == "@bob:example.org");
 }
 
-TEST_CASE("Reactions live on every Event subtype (base field)", "[types][reactions]") {
+TEST_CASE("Reactions live on every Event subtype (base field)",
+          "[types][reactions]")
+{
     // Each subtype should carry its own reaction list since the field is on
     // the base. Sanity-check that subtype-specific fields don't shadow it.
-    tesseract::TextEvent   t;   t.reactions.push_back({"👍", 1, true, "", {"@a"}});
-    tesseract::ImageEvent  img; img.reactions.push_back({"❤", 2, false, "", {"@a", "@b"}});
-    tesseract::StickerEvent st; st.reactions.push_back({"😂", 3, false, "", {"@a","@b","@c"}});
-    tesseract::FileEvent   f;   f.reactions.push_back({"🔥", 4, true, "", {"@a","@b","@c","@d"}});
-    tesseract::UnhandledEvent u;u.reactions.push_back({"👀", 0, false, "", {}});
+    tesseract::TextEvent t;
+    t.reactions.push_back({"👍", 1, true, "", {"@a"}});
+    tesseract::ImageEvent img;
+    img.reactions.push_back({"❤", 2, false, "", {"@a", "@b"}});
+    tesseract::StickerEvent st;
+    st.reactions.push_back({"😂", 3, false, "", {"@a", "@b", "@c"}});
+    tesseract::FileEvent f;
+    f.reactions.push_back({"🔥", 4, true, "", {"@a", "@b", "@c", "@d"}});
+    tesseract::UnhandledEvent u;
+    u.reactions.push_back({"👀", 0, false, "", {}});
 
-    CHECK(t.reactions.size()   == 1);
+    CHECK(t.reactions.size() == 1);
     CHECK(img.reactions.size() == 1);
-    CHECK(st.reactions.size()  == 1);
-    CHECK(f.reactions.size()   == 1);
-    CHECK(u.reactions.size()   == 1);
+    CHECK(st.reactions.size() == 1);
+    CHECK(f.reactions.size() == 1);
+    CHECK(u.reactions.size() == 1);
     CHECK(t.reactions[0].reacted_by_me);
     CHECK(f.reactions[0].senders.size() == 4);
 }
@@ -388,16 +422,17 @@ TEST_CASE("Reactions live on every Event subtype (base field)", "[types][reactio
 // tesseract::EventType enum
 // ---------------------------------------------------------------------------
 
-TEST_CASE("EventType enum values are correct", "[types]") {
-    CHECK(static_cast<int>(tesseract::EventType::Text)      == 0);
-    CHECK(static_cast<int>(tesseract::EventType::Image)     == 1);
-    CHECK(static_cast<int>(tesseract::EventType::File)      == 2);
-    CHECK(static_cast<int>(tesseract::EventType::Sticker)   == 3);
-    CHECK(static_cast<int>(tesseract::EventType::Voice)     == 4);
-    CHECK(static_cast<int>(tesseract::EventType::Video)     == 5);
-    CHECK(static_cast<int>(tesseract::EventType::Redacted)  == 6);
-    CHECK(static_cast<int>(tesseract::EventType::Notice)    == 7);
-    CHECK(static_cast<int>(tesseract::EventType::Emote)     == 8);
+TEST_CASE("EventType enum values are correct", "[types]")
+{
+    CHECK(static_cast<int>(tesseract::EventType::Text) == 0);
+    CHECK(static_cast<int>(tesseract::EventType::Image) == 1);
+    CHECK(static_cast<int>(tesseract::EventType::File) == 2);
+    CHECK(static_cast<int>(tesseract::EventType::Sticker) == 3);
+    CHECK(static_cast<int>(tesseract::EventType::Voice) == 4);
+    CHECK(static_cast<int>(tesseract::EventType::Video) == 5);
+    CHECK(static_cast<int>(tesseract::EventType::Redacted) == 6);
+    CHECK(static_cast<int>(tesseract::EventType::Notice) == 7);
+    CHECK(static_cast<int>(tesseract::EventType::Emote) == 8);
     CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 9);
 }
 
@@ -405,7 +440,8 @@ TEST_CASE("EventType enum values are correct", "[types]") {
 // tesseract::RedactedEvent
 // ---------------------------------------------------------------------------
 
-TEST_CASE("RedactedEvent default-initialised fields", "[types]") {
+TEST_CASE("RedactedEvent default-initialised fields", "[types]")
+{
     tesseract::RedactedEvent ev{};
     CHECK(ev.event_id.empty());
     CHECK(ev.room_id.empty());
@@ -416,21 +452,22 @@ TEST_CASE("RedactedEvent default-initialised fields", "[types]") {
     CHECK(ev.reactions.empty());
 }
 
-TEST_CASE("RedactedEvent carries sender identity", "[types]") {
+TEST_CASE("RedactedEvent carries sender identity", "[types]")
+{
     // The UI surfaces the redacted-event sender so users can tell which
     // peer's message was deleted; verify the base Event fields round-trip.
     tesseract::RedactedEvent ev{};
     ev.event_id = "$redacted-evt";
-    ev.room_id  = "!room:example.org";
-    ev.sender   = "@alice:example.org";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@alice:example.org";
     ev.sender_name = "Alice";
-    ev.timestamp   = 1700000000000ull;
+    ev.timestamp = 1700000000000ull;
 
-    CHECK(ev.event_id    == "$redacted-evt");
-    CHECK(ev.sender      == "@alice:example.org");
+    CHECK(ev.event_id == "$redacted-evt");
+    CHECK(ev.sender == "@alice:example.org");
     CHECK(ev.sender_name == "Alice");
-    CHECK(ev.timestamp   == 1700000000000ull);
-    CHECK(ev.type        == tesseract::EventType::Redacted);
+    CHECK(ev.timestamp == 1700000000000ull);
+    CHECK(ev.type == tesseract::EventType::Redacted);
 }
 
 // ---------------------------------------------------------------------------
@@ -440,30 +477,34 @@ TEST_CASE("RedactedEvent carries sender identity", "[types]") {
 // The wire-level u8 codes must stay in sync with `BACKUP_STATE_*` in
 // sdk/src/client.rs and the conversion in client/src/ffi_convert.h.
 
-TEST_CASE("BackupState enum values match the FFI wire encoding", "[types][recovery]") {
-    CHECK(static_cast<uint8_t>(tesseract::BackupState::Unknown)     == 0);
-    CHECK(static_cast<uint8_t>(tesseract::BackupState::Disabled)    == 1);
-    CHECK(static_cast<uint8_t>(tesseract::BackupState::Enabled)     == 2);
+TEST_CASE("BackupState enum values match the FFI wire encoding",
+          "[types][recovery]")
+{
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Unknown) == 0);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Disabled) == 1);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Enabled) == 2);
     CHECK(static_cast<uint8_t>(tesseract::BackupState::Downloading) == 3);
-    CHECK(static_cast<uint8_t>(tesseract::BackupState::Creating)    == 4);
+    CHECK(static_cast<uint8_t>(tesseract::BackupState::Creating) == 4);
 }
 
-TEST_CASE("BackupProgress default-initialised fields", "[types][recovery]") {
+TEST_CASE("BackupProgress default-initialised fields", "[types][recovery]")
+{
     tesseract::BackupProgress p{};
-    CHECK(p.state         == tesseract::BackupState::Unknown);
+    CHECK(p.state == tesseract::BackupState::Unknown);
     CHECK(p.imported_keys == 0u);
-    CHECK(p.total_keys    == 0u);
+    CHECK(p.total_keys == 0u);
 }
 
-TEST_CASE("BackupProgress fields are settable", "[types][recovery]") {
+TEST_CASE("BackupProgress fields are settable", "[types][recovery]")
+{
     tesseract::BackupProgress p{
-        .state         = tesseract::BackupState::Downloading,
+        .state = tesseract::BackupState::Downloading,
         .imported_keys = 234,
-        .total_keys    = 1200,
+        .total_keys = 1200,
     };
-    CHECK(p.state         == tesseract::BackupState::Downloading);
+    CHECK(p.state == tesseract::BackupState::Downloading);
     CHECK(p.imported_keys == 234u);
-    CHECK(p.total_keys    == 1200u);
+    CHECK(p.total_keys == 1200u);
 }
 
 // ---------------------------------------------------------------------------
@@ -475,49 +516,59 @@ TEST_CASE("BackupProgress fields are settable", "[types][recovery]") {
 // `client/src/event_handler_bridge.cpp`. Any drift means
 // `on_room_list_state` would silently misclassify states.
 
-TEST_CASE("RoomListState enum values match the FFI wire encoding", "[types][sync]") {
-    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Init)       == 0);
-    CHECK(static_cast<uint8_t>(tesseract::RoomListState::SettingUp)  == 1);
+TEST_CASE("RoomListState enum values match the FFI wire encoding",
+          "[types][sync]")
+{
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Init) == 0);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::SettingUp) == 1);
     CHECK(static_cast<uint8_t>(tesseract::RoomListState::Recovering) == 2);
-    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Running)    == 3);
-    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Error)      == 4);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Running) == 3);
+    CHECK(static_cast<uint8_t>(tesseract::RoomListState::Error) == 4);
     CHECK(static_cast<uint8_t>(tesseract::RoomListState::Terminated) == 5);
 }
 
-TEST_CASE("RoomListState bridge clamps unknown codes back to Init", "[types][sync]") {
+TEST_CASE("RoomListState bridge clamps unknown codes back to Init",
+          "[types][sync]")
+{
     // The bridge in event_handler_bridge.cpp clamps out-of-range codes
     // back to Init so the C++ side never sees an invalid enum even if a
     // future Rust protocol adds states we don't know yet. Lock this
     // behaviour in by exercising the same cast the bridge performs.
-    auto clamp = [](uint8_t code) {
-        return (code <= static_cast<uint8_t>(tesseract::RoomListState::Terminated))
-            ? static_cast<tesseract::RoomListState>(code)
-            : tesseract::RoomListState::Init;
+    auto clamp = [](uint8_t code)
+    {
+        return (code <=
+                static_cast<uint8_t>(tesseract::RoomListState::Terminated))
+                   ? static_cast<tesseract::RoomListState>(code)
+                   : tesseract::RoomListState::Init;
     };
-    CHECK(clamp(0)   == tesseract::RoomListState::Init);
-    CHECK(clamp(5)   == tesseract::RoomListState::Terminated);
-    CHECK(clamp(6)   == tesseract::RoomListState::Init);   // unknown
-    CHECK(clamp(99)  == tesseract::RoomListState::Init);   // unknown
-    CHECK(clamp(255) == tesseract::RoomListState::Init);   // unknown
+    CHECK(clamp(0) == tesseract::RoomListState::Init);
+    CHECK(clamp(5) == tesseract::RoomListState::Terminated);
+    CHECK(clamp(6) == tesseract::RoomListState::Init);   // unknown
+    CHECK(clamp(99) == tesseract::RoomListState::Init);  // unknown
+    CHECK(clamp(255) == tesseract::RoomListState::Init); // unknown
 }
 
 // ---------------------------------------------------------------------------
 // tesseract::Client recovery surface (Step 6)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("needs_recovery is false when not logged in", "[client][recovery]") {
+TEST_CASE("needs_recovery is false when not logged in", "[client][recovery]")
+{
     tesseract::Client c;
     CHECK_FALSE(c.needs_recovery());
 }
 
-TEST_CASE("recover fails with 'not logged in' before login", "[client][recovery]") {
+TEST_CASE("recover fails with 'not logged in' before login",
+          "[client][recovery]")
+{
     tesseract::Client c;
     auto r = c.recover("some-key");
     CHECK_FALSE(static_cast<bool>(r));
     CHECK(r.message == "not logged in");
 }
 
-TEST_CASE("recover rejects empty key before login", "[client][recovery]") {
+TEST_CASE("recover rejects empty key before login", "[client][recovery]")
+{
     tesseract::Client c;
     // Empty input is rejected at the FFI boundary; "not logged in" wins first
     // because we never reach the empty-string check without a Client.
@@ -525,29 +576,34 @@ TEST_CASE("recover rejects empty key before login", "[client][recovery]") {
     CHECK_FALSE(static_cast<bool>(r));
 }
 
-TEST_CASE("backup_state starts in Unknown with zero counters", "[client][recovery]") {
+TEST_CASE("backup_state starts in Unknown with zero counters",
+          "[client][recovery]")
+{
     tesseract::Client c;
     auto p = c.backup_state();
-    CHECK(p.state         == tesseract::BackupState::Unknown);
+    CHECK(p.state == tesseract::BackupState::Unknown);
     CHECK(p.imported_keys == 0u);
-    CHECK(p.total_keys    == 0u);
+    CHECK(p.total_keys == 0u);
 }
 
 // ---------------------------------------------------------------------------
 // tesseract::Client identity getters (sidebar user strip)
 // ---------------------------------------------------------------------------
 
-TEST_CASE("get_user_id is empty when not logged in", "[client][identity]") {
+TEST_CASE("get_user_id is empty when not logged in", "[client][identity]")
+{
     tesseract::Client c;
     CHECK(c.get_user_id().empty());
 }
 
-TEST_CASE("get_display_name is empty when not logged in", "[client][identity]") {
+TEST_CASE("get_display_name is empty when not logged in", "[client][identity]")
+{
     tesseract::Client c;
     CHECK(c.get_display_name().empty());
 }
 
-TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]") {
+TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]")
+{
     tesseract::Client c;
     CHECK(c.get_avatar_url().empty());
 }

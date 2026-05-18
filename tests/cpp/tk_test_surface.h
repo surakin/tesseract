@@ -10,10 +10,11 @@
 
 #include <memory>
 
-struct TestSurface {
+struct TestSurface
+{
     virtual ~TestSurface() = default;
 
-    virtual tk::Canvas&        canvas()  = 0;
+    virtual tk::Canvas& canvas() = 0;
     virtual tk::CanvasFactory& factory() = 0;
 
     // Sample a pixel in the offscreen target after all queued paint ops
@@ -21,7 +22,7 @@ struct TestSurface {
     // non-premultiplied 8-bit.
     virtual tk::Color read_pixel(int x, int y) = 0;
 
-    virtual int width()  const = 0;
+    virtual int width() const = 0;
     virtual int height() const = 0;
 
     static std::unique_ptr<TestSurface> create(int width, int height);

@@ -9,7 +9,8 @@
 #include "views/settings/AccountSection.h"
 #include "views/SettingsView.h"
 
-namespace qt6 {
+namespace qt6
+{
 
 /// Full-window settings screen shown inside the main-window content stack.
 /// Hosts the shared `tesseract::views::SettingsView` inside a
@@ -25,8 +26,7 @@ public:
 
     /// Push current account info and settings into the shared view before
     /// making this widget the visible content-stack page.
-    void populate(std::string display_name,
-                  std::string user_id,
+    void populate(std::string display_name, std::string user_id,
                   std::string avatar_mxc,
                   tesseract::views::AccountSection::ImageProvider provider,
                   tesseract::Settings::ThemePreference theme_pref,
@@ -41,8 +41,8 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
-    tk::qt6::Surface*                surface_       = nullptr;
-    tesseract::views::SettingsView*  settings_view_ = nullptr;  // borrowed
+    tk::qt6::Surface* surface_ = nullptr;
+    tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
 };
 
 } // namespace qt6

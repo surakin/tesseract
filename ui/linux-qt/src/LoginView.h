@@ -12,7 +12,8 @@
 #include "tk/host_qt.h"
 #include "views/LoginView.h"
 
-namespace qt6 {
+namespace qt6
+{
 
 /// Sign-in view shown inside the main window when the user is not logged
 /// in. The OAuth state machine + worker threads live in this shell; the
@@ -46,7 +47,10 @@ public:
     /// Called on the UI thread just before the OAuth worker thread starts.
     /// Used by MainWindow to lazily create the pending account directory and
     /// call set_data_dir() only when the user actually initiates login.
-    void set_on_begin_oauth(std::function<void()> cb) { on_begin_oauth_ = std::move(cb); }
+    void set_on_begin_oauth(std::function<void()> cb)
+    {
+        on_begin_oauth_ = std::move(cb);
+    }
 
     /// Return the view to its initial "form" state. Call before showing
     /// the view again after a successful sign-in or logout.
@@ -54,7 +58,8 @@ public:
 
 signals:
     void loginSucceeded();
-    void loginCancelled();   // emitted when the user clicks Cancel in AddAccount mode
+    void
+    loginCancelled(); // emitted when the user clicks Cancel in AddAccount mode
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -70,16 +75,17 @@ private:
 
     static std::string trim(std::string s);
 
-    tesseract::Client* client_ = nullptr;   // non-owning; rebound per login attempt by `set_client`
-    std::function<void()>                    on_begin_oauth_;
+    tesseract::Client* client_ =
+        nullptr; // non-owning; rebound per login attempt by `set_client`
+    std::function<void()> on_begin_oauth_;
 
-    tk::qt6::Surface*                       surface_  = nullptr;
-    tesseract::views::LoginView*            shared_   = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField>    hs_field_;
+    tk::qt6::Surface* surface_ = nullptr;
+    tesseract::views::LoginView* shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> hs_field_;
 
-    std::thread                 worker_;
-    std::atomic<bool>           cancelled_{ false };
-    std::atomic<uint32_t>       discovery_gen_{ 0 };
+    std::thread worker_;
+    std::atomic<bool> cancelled_{false};
+    std::atomic<uint32_t> discovery_gen_{0};
 };
 
 } // namespace qt6

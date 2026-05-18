@@ -11,7 +11,10 @@
 
 #include <tesseract/image_pack.h>
 
-namespace tesseract { class Client; }
+namespace tesseract
+{
+class Client;
+}
 
 /// Floating emoji picker. Hosts the shared tesseract::views::EmojiPicker
 /// inside a tk::qt6::Surface, with a native QLineEdit overlaid on the
@@ -66,8 +69,8 @@ protected:
 private:
     void layout_overlay();
 
-    tesseract::Client*                      client_       = nullptr;
-    tk::qt6::Surface*                       surface_      = nullptr;
-    tesseract::views::EmojiPicker*          shared_       = nullptr;  // borrowed
-    std::unique_ptr<tk::NativeTextField>    search_field_;
+    tesseract::Client* client_ = nullptr;
+    tk::qt6::Surface* surface_ = nullptr;
+    tesseract::views::EmojiPicker* shared_ = nullptr; // borrowed
+    std::unique_ptr<tk::NativeTextField> search_field_;
 };

@@ -1,9 +1,9 @@
 #pragma once
 #ifndef WIN32_LEAN_AND_MEAN
-#  define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 
@@ -21,38 +21,74 @@
 // is created with D2D1_FACTORY_TYPE_SINGLE_THREADED.
 struct IDWriteFontFallback;
 
-namespace win32::text {
+namespace win32::text
+{
 
-enum class Weight { Regular, Semibold, Bold };
-enum class Slant  { Roman, Italic };
-enum class HAlign { Leading, Center, Trailing };
-enum class VAlign { Top, Center, Bottom };
-enum class Trim   { None, EllipsisChar };
-enum class Wrap   { NoWrap, Word };
-enum class SizeUnit { Point, Pixel };
-
-struct Style {
-    const wchar_t* family   = L"Segoe UI";
-    float    size           = 10.0f;
-    SizeUnit unit           = SizeUnit::Point;
-    Weight   weight         = Weight::Regular;
-    Slant    slant          = Slant::Roman;
-    COLORREF color          = 0;
-    BYTE     alpha          = 255;
-    HAlign   halign         = HAlign::Leading;
-    VAlign   valign         = VAlign::Top;
-    Trim     trim           = Trim::None;
-    Wrap     wrap           = Wrap::NoWrap;
+enum class Weight
+{
+    Regular,
+    Semibold,
+    Bold
+};
+enum class Slant
+{
+    Roman,
+    Italic
+};
+enum class HAlign
+{
+    Leading,
+    Center,
+    Trailing
+};
+enum class VAlign
+{
+    Top,
+    Center,
+    Bottom
+};
+enum class Trim
+{
+    None,
+    EllipsisChar
+};
+enum class Wrap
+{
+    NoWrap,
+    Word
+};
+enum class SizeUnit
+{
+    Point,
+    Pixel
 };
 
-void draw(HDC hdc, const RECT& bounds,
-          const wchar_t* text, int len,
+struct Style
+{
+    const wchar_t* family = L"Segoe UI";
+    float size = 10.0f;
+    SizeUnit unit = SizeUnit::Point;
+    Weight weight = Weight::Regular;
+    Slant slant = Slant::Roman;
+    COLORREF color = 0;
+    BYTE alpha = 255;
+    HAlign halign = HAlign::Leading;
+    VAlign valign = VAlign::Top;
+    Trim trim = Trim::None;
+    Wrap wrap = Wrap::NoWrap;
+};
+
+void draw(HDC hdc, const RECT& bounds, const wchar_t* text, int len,
           const Style& s);
 
-struct Metrics { int width; int height; int line_count; };
+struct Metrics
+{
+    int width;
+    int height;
+    int line_count;
+};
 
-Metrics measure(const wchar_t* text, int len,
-                const Style& s,
+Metrics measure(const wchar_t* text, int len, const Style& s,
                 int max_width = -1);
 
 bool init();

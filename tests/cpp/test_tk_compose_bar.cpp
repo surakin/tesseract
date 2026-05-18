@@ -12,29 +12,40 @@
 using namespace tk;
 using tesseract::views::ComposeBar;
 
-namespace {
+namespace
+{
 
-struct Stage {
+struct Stage
+{
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 200);
-    LayoutCtx layout_ctx() {
-        return LayoutCtx{ surface->factory(), Theme::light() };
+    LayoutCtx layout_ctx()
+    {
+        return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx() {
-        return PaintCtx{ surface->canvas(), surface->factory(), Theme::light() };
+    PaintCtx paint_ctx()
+    {
+        return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds) {
+    void run(Widget& root, Rect bounds)
+    {
         auto lc = layout_ctx();
-        root.measure(lc, { bounds.w, bounds.h });
+        root.measure(lc, {bounds.w, bounds.h});
         root.arrange(lc, bounds);
         auto pc = paint_ctx();
         root.paint(pc);
     }
 };
 
-Button* find_button(Widget& w, const std::string& label) {
-    for (auto& ch : w.children()) {
-        if (auto* b = dynamic_cast<Button*>(ch.get())) {
-            if (b->label() == label) return b;
+Button* find_button(Widget& w, const std::string& label)
+{
+    for (auto& ch : w.children())
+    {
+        if (auto* b = dynamic_cast<Button*>(ch.get()))
+        {
+            if (b->label() == label)
+            {
+                return b;
+            }
         }
     }
     return nullptr;
@@ -42,11 +53,13 @@ Button* find_button(Widget& w, const std::string& label) {
 
 } // namespace
 
-TEST_CASE("ComposeBar reserves a text-area rect between the emoji and send buttons",
-          "[tk][view][compose]") {
+TEST_CASE(
+    "ComposeBar reserves a text-area rect between the emoji and send buttons",
+    "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
-    st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
     Rect r = bar.text_area_rect();
     CHECK(r.w > 100.0f);
     CHECK(r.h > 0.0f);
@@ -58,10 +71,11 @@ TEST_CASE("ComposeBar reserves a text-area rect between the emoji and send butto
 }
 
 TEST_CASE("ComposeBar starts with the send button disabled until text appears",
-          "[tk][view][compose]") {
+          "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
-    st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
@@ -76,13 +90,17 @@ TEST_CASE("ComposeBar starts with the send button disabled until text appears",
 }
 
 TEST_CASE("ComposeBar send-button click fires on_send with the current text",
-          "[tk][view][compose]") {
+          "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
     std::string got;
-    bar.on_send = [&](const std::string& t) { got = t; };
+    bar.on_send = [&](const std::string& t)
+    {
+        got = t;
+    };
     bar.set_current_text("hi there");
-    st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
@@ -91,18 +109,27 @@ TEST_CASE("ComposeBar send-button click fires on_send with the current text",
     CHECK(got == "hi there");
 }
 
-TEST_CASE("ComposeBar emoji-button click fires on_emoji",
-          "[tk][view][compose]") {
+TEST_CASE("ComposeBar emoji-button click fires on_emoji", "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
     int hits = 0;
-    bar.on_emoji = [&](tk::Rect) { ++hits; };
-    st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
+    bar.on_emoji = [&](tk::Rect)
+    {
+        ++hits;
+    };
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     Button* emoji = nullptr;
-    for (auto& ch : bar.children()) {
-        if (auto* b = dynamic_cast<Button*>(ch.get())) {
-            if (b != find_button(bar, "Send")) { emoji = b; break; }
+    for (auto& ch : bar.children())
+    {
+        if (auto* b = dynamic_cast<Button*>(ch.get()))
+        {
+            if (b != find_button(bar, "Send"))
+            {
+                emoji = b;
+                break;
+            }
         }
     }
     REQUIRE(emoji);
@@ -111,7 +138,8 @@ TEST_CASE("ComposeBar emoji-button click fires on_emoji",
 }
 
 TEST_CASE("ComposeBar natural_height grows with the text-area content height",
-          "[tk][view][compose]") {
+          "[tk][view][compose]")
+{
     ComposeBar bar;
     CHECK(bar.natural_height() == ComposeBar::kMinHeight);
 
@@ -123,25 +151,29 @@ TEST_CASE("ComposeBar natural_height grows with the text-area content height",
     CHECK(bar.natural_height() == ComposeBar::kMinHeight);
 }
 
-TEST_CASE("ComposeBar pending image grows natural_height and enables send without text",
-          "[tk][view][compose]") {
+TEST_CASE("ComposeBar pending image grows natural_height and enables send "
+          "without text",
+          "[tk][view][compose]")
+{
     ComposeBar bar;
     const float baseline = bar.natural_height();
     CHECK_FALSE(bar.has_pending_image());
 
     int size_changes = 0;
-    bar.on_size_changed = [&] { ++size_changes; };
+    bar.on_size_changed = [&]
+    {
+        ++size_changes;
+    };
 
     // Tiny 1×1 PNG generated by hand (deflate level 0). Decoder-agnostic
     // enough for QImage / GdkPixbufLoader / WIC / ImageIO.
     static const unsigned char kPng1x1[] = {
-        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, 0x00,0x00,0x00,0x0D,
-        0x49,0x48,0x44,0x52, 0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x01,
-        0x08,0x06,0x00,0x00,0x00, 0x1F,0x15,0xC4,0x89,
-        0x00,0x00,0x00,0x0D, 0x49,0x44,0x41,0x54,
-        0x78,0x9C,0x62,0x00,0x01,0x00,0x00,0x05,0x00,0x01,
-        0x0D,0x0A,0x2D,0xB4,
-        0x00,0x00,0x00,0x00, 0x49,0x45,0x4E,0x44, 0xAE,0x42,0x60,0x82,
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     };
     bar.set_pending_image(
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
@@ -162,42 +194,45 @@ TEST_CASE("ComposeBar pending image grows natural_height and enables send withou
     CHECK_FALSE(send->enabled());
 }
 
-TEST_CASE("ComposeBar send with pending image fires on_send_image and clears the attachment",
-          "[tk][view][compose]") {
+TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
+          "the attachment",
+          "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
 
     bool image_fired = false;
     std::string got_mime, got_caption, got_filename;
-    bar.on_send_image = [&](std::vector<std::uint8_t> bytes,
-                             std::string mime,
-                             std::string filename,
-                             std::string caption,
-                             std::uint32_t, std::uint32_t, std::string) {
+    bar.on_send_image = [&](std::vector<std::uint8_t> bytes, std::string mime,
+                            std::string filename, std::string caption,
+                            std::uint32_t, std::uint32_t, std::string)
+    {
         image_fired = true;
-        got_mime    = std::move(mime);
+        got_mime = std::move(mime);
         got_caption = std::move(caption);
         got_filename = std::move(filename);
         (void)bytes;
     };
     int plain_send = 0;
-    bar.on_send = [&](const std::string&) { ++plain_send; };
+    bar.on_send = [&](const std::string&)
+    {
+        ++plain_send;
+    };
 
     static const unsigned char kPng1x1[] = {
-        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, 0x00,0x00,0x00,0x0D,
-        0x49,0x48,0x44,0x52, 0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x01,
-        0x08,0x06,0x00,0x00,0x00, 0x1F,0x15,0xC4,0x89,
-        0x00,0x00,0x00,0x0D, 0x49,0x44,0x41,0x54,
-        0x78,0x9C,0x62,0x00,0x01,0x00,0x00,0x05,0x00,0x01,
-        0x0D,0x0A,0x2D,0xB4,
-        0x00,0x00,0x00,0x00, 0x49,0x45,0x4E,0x44, 0xAE,0x42,0x60,0x82,
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     };
     bar.set_pending_image(
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
         "image/png");
     bar.set_current_text("look at this");
 
-    st.run(bar, { 0, 0, 640, bar.natural_height() });
+    st.run(bar, {0, 0, 640, bar.natural_height()});
 
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
@@ -213,16 +248,17 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears the
 }
 
 TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
-          "[tk][view][compose]") {
+          "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
 
     std::string got_filename;
     bar.on_send_image = [&](std::vector<std::uint8_t> bytes,
-                             std::string /*mime*/,
-                             std::string filename,
-                             std::string /*caption*/,
-                             std::uint32_t, std::uint32_t, std::string) {
+                            std::string /*mime*/, std::string filename,
+                            std::string /*caption*/, std::uint32_t,
+                            std::uint32_t, std::string)
+    {
         got_filename = std::move(filename);
         (void)bytes;
     };
@@ -230,10 +266,9 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
     // Drop path: caller passes the original filename. The widget must
     // forward it verbatim instead of synthesising a "clipboard-…" name.
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
-                          "image/png",
-                          "my-cat.png");
+                          "image/png", "my-cat.png");
 
-    st.run(bar, { 0, 0, 640, bar.natural_height() });
+    st.run(bar, {0, 0, 640, bar.natural_height()});
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
     send->click();
@@ -242,35 +277,42 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
 }
 
 TEST_CASE("ComposeBar second pending image replaces the first",
-          "[tk][view][compose]") {
+          "[tk][view][compose]")
+{
     ComposeBar bar;
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
-                           "image/png");
+                          "image/png");
     REQUIRE(bar.has_pending_image());
     int changes = 0;
-    bar.on_size_changed = [&] { ++changes; };
+    bar.on_size_changed = [&]
+    {
+        ++changes;
+    };
     bar.set_pending_image(std::vector<std::uint8_t>{0xFF, 0xD8, 0xFF, 0xE0},
-                           "image/jpeg");
+                          "image/jpeg");
     CHECK(bar.has_pending_image());
     // Replacement still fires on_size_changed even though height bucket
     // stays the same, so the host can refresh its envelope.
     CHECK(changes == 1);
 }
 
-TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send without text",
-          "[tk][view][compose][file]") {
+TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
+          "without text",
+          "[tk][view][compose][file]")
+{
     Stage st;
     ComposeBar bar;
     const float baseline = bar.natural_height();
     CHECK_FALSE(bar.has_pending());
 
     int size_changes = 0;
-    bar.on_size_changed = [&] { ++size_changes; };
+    bar.on_size_changed = [&]
+    {
+        ++size_changes;
+    };
 
     std::vector<std::uint8_t> payload(128, 0xAB);
-    bar.set_pending_file(std::move(payload),
-                         "application/pdf",
-                         "report.pdf");
+    bar.set_pending_file(std::move(payload), "application/pdf", "report.pdf");
     CHECK(bar.has_pending());
     // File band is shorter than the image band, but still grows past baseline.
     CHECK(bar.natural_height() > baseline);
@@ -283,22 +325,22 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send with
 
     // The chip layout is built lazily in arrange(); ensure that path runs
     // without crashing the test surface.
-    st.run(bar, { 0, 0, 640, bar.natural_height() });
+    st.run(bar, {0, 0, 640, bar.natural_height()});
 }
 
 TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
-          "[tk][view][compose][file]") {
+          "[tk][view][compose][file]")
+{
     Stage st;
     ComposeBar bar;
 
     bool fired = false;
     std::string got_mime, got_filename, got_caption;
     std::size_t got_size = 0;
-    bar.on_send_file = [&](std::vector<std::uint8_t> bytes,
-                            std::string mime,
-                            std::string filename,
-                            std::string caption,
-                            std::string) {
+    bar.on_send_file = [&](std::vector<std::uint8_t> bytes, std::string mime,
+                           std::string filename, std::string caption,
+                           std::string)
+    {
         fired = true;
         got_size = bytes.size();
         got_mime = std::move(mime);
@@ -306,18 +348,23 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
         got_caption = std::move(caption);
     };
     int image_fires = 0;
-    bar.on_send_image = [&](std::vector<std::uint8_t>, std::string,
-                              std::string, std::string,
-                              std::uint32_t, std::uint32_t, std::string) { ++image_fires; };
+    bar.on_send_image = [&](std::vector<std::uint8_t>, std::string, std::string,
+                            std::string, std::uint32_t, std::uint32_t,
+                            std::string)
+    {
+        ++image_fires;
+    };
     int plain_send = 0;
-    bar.on_send = [&](const std::string&) { ++plain_send; };
+    bar.on_send = [&](const std::string&)
+    {
+        ++plain_send;
+    };
 
     std::vector<std::uint8_t> payload(2048, 0x42);
-    bar.set_pending_file(std::move(payload),
-                         "application/octet-stream",
+    bar.set_pending_file(std::move(payload), "application/octet-stream",
                          "blob.bin");
     bar.set_current_text("here you go");
-    st.run(bar, { 0, 0, 640, bar.natural_height() });
+    st.run(bar, {0, 0, 640, bar.natural_height()});
 
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
@@ -334,24 +381,27 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
     CHECK_FALSE(bar.has_pending());
 }
 
-TEST_CASE("ComposeBar pending image followed by pending file replaces the attachment",
-          "[tk][view][compose][file]") {
+TEST_CASE(
+    "ComposeBar pending image followed by pending file replaces the attachment",
+    "[tk][view][compose][file]")
+{
     ComposeBar bar;
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
-                           "image/png");
+                          "image/png");
     REQUIRE(bar.has_pending());
     // image band heights to compare deltas against
     const float h_with_image = bar.natural_height();
 
-    bar.set_pending_file(std::vector<std::uint8_t>(64, 0x11),
-                         "application/zip", "archive.zip");
+    bar.set_pending_file(std::vector<std::uint8_t>(64, 0x11), "application/zip",
+                         "archive.zip");
     REQUIRE(bar.has_pending());
     // File band is strictly smaller than image band, so the bar shrinks.
     CHECK(bar.natural_height() < h_with_image);
 }
 
 TEST_CASE("ComposeBar clear_pending discards a pending file too",
-          "[tk][view][compose][file]") {
+          "[tk][view][compose][file]")
+{
     ComposeBar bar;
     const float baseline = bar.natural_height();
     bar.set_pending_file(std::vector<std::uint8_t>(16, 0x00),
@@ -362,13 +412,15 @@ TEST_CASE("ComposeBar clear_pending discards a pending file too",
     CHECK(bar.natural_height() == baseline);
 }
 
-TEST_CASE("ComposeBar set_enabled(false) gates the send button regardless of text",
-          "[tk][view][compose]") {
+TEST_CASE(
+    "ComposeBar set_enabled(false) gates the send button regardless of text",
+    "[tk][view][compose]")
+{
     Stage st;
     ComposeBar bar;
     bar.set_current_text("ready");
     bar.set_enabled(false);
-    st.run(bar, { 0, 0, 640, ComposeBar::kMinHeight });
+    st.run(bar, {0, 0, 640, ComposeBar::kMinHeight});
 
     Button* send = find_button(bar, "Send");
     REQUIRE(send);
