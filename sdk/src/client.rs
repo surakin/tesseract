@@ -139,6 +139,19 @@ fn default_data_dir() -> PathBuf {
     dir
 }
 
+/// Write `json` to `path` atomically via a temp-file rename so a crash
+/// mid-write never leaves a partial session file on disk.
+fn atomic_save_session(
+    path: &std::path::Path,
+    json: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let parent = path.parent().unwrap_or(path);
+    let tmp = parent.join(".session-new.json");
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 fn dirs_like_home() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -694,6 +707,34 @@ impl ClientFfi {
                 .restore_session(session, RoomLoadSettings::default())
                 .await
                 .context("restore oauth session")?;
+
+            // Install a synchronous save_session_callback so that any token
+            // refresh that completes — even if the tokio runtime is being torn
+            // down and our async TokensRefreshed watcher is aborted mid-flight
+            // — immediately persists the new tokens to disk.  Without this,
+            // servers that rotate refresh tokens (e.g. MAS on matrix.org) can
+            // mark RT_n as used before the app receives the response, leaving a
+            // stale RT_n in session.json and causing invalid_grant on the next
+            // launch.  session.json sits one directory above the sqlite store.
+            let session_file = path.join("..").join("session.json");
+            let session_file = session_file.canonicalize().unwrap_or(session_file);
+            let _ = client.set_session_callbacks(
+                Box::new(move |c: Client| {
+                    c.session_tokens().ok_or_else(|| "no session tokens".into())
+                }),
+                Box::new(move |c: Client| {
+                    let Some(full) = c.oauth().full_session() else {
+                        return Ok(());
+                    };
+                    let persisted = PersistedSession {
+                        client_id: full.client_id,
+                        user: full.user,
+                    };
+                    let json = serde_json::to_string(&persisted)
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                    atomic_save_session(&session_file, &json)
+                }),
+            );
 
             anyhow::Ok(client)
         });
