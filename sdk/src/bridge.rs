@@ -159,6 +159,9 @@ pub mod ffi {
         /// Thumbnail MediaSource JSON for `m.video` events (plain mxc:// or
         /// encrypted JSON). Empty when the server omits a thumbnail.
         video_thumbnail_json: String,
+        /// Thumbnail MediaSource JSON for `m.image` (and sticker) events (plain
+        /// mxc:// or encrypted JSON). Empty when the server omits a thumbnail.
+        image_thumbnail_json: String,
         /// Duration of the video in milliseconds. 0 when not provided.
         video_duration_ms: u64,
         /// MIME type of the video (e.g. "video/mp4"). May be empty.

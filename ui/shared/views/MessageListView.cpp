@@ -72,6 +72,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::Image;
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
         row.media_url = img.image_url;
+        row.thumbnail_url = img.thumbnail_url;
         row.media_w = static_cast<int>(img.width);
         row.media_h = static_cast<int>(img.height);
         row.has_filename_caption = !img.filename.empty();
@@ -84,6 +85,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::Sticker;
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
         row.media_url = s.image_url;
+        row.thumbnail_url = s.thumbnail_url;
         row.media_w = static_cast<int>(s.width);
         row.media_h = static_cast<int>(s.height);
         row.blurhash = s.blurhash;
@@ -1460,9 +1462,11 @@ private:
         case MessageRowData::Kind::Image:
         {
             float max_w = std::min(col_w, kImageMaxW);
+            const std::string& img_key =
+                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
             const tk::Image* img =
-                (owner_.image_provider_ && !m.media_url.empty())
-                    ? owner_.image_provider_(m.media_url)
+                (owner_.image_provider_ && !img_key.empty())
+                    ? owner_.image_provider_(img_key)
                     : nullptr;
             tk::Size sz =
                 (img && img->width() > 0 && img->height() > 0)
@@ -1478,9 +1482,11 @@ private:
         case MessageRowData::Kind::Sticker:
         {
             float max_side = std::min(col_w, kStickerSize);
+            const std::string& sticker_key =
+                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
             const tk::Image* sticker_img =
-                (owner_.image_provider_ && !m.media_url.empty())
-                    ? owner_.image_provider_(m.media_url)
+                (owner_.image_provider_ && !sticker_key.empty())
+                    ? owner_.image_provider_(sticker_key)
                     : nullptr;
             tk::Size sz;
             if (sticker_img && sticker_img->width() > 0 &&
@@ -1695,9 +1701,11 @@ private:
         case MessageRowData::Kind::Image:
         {
             float max_w = std::min(col_w, kImageMaxW);
+            const std::string& img_key =
+                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
             const tk::Image* img =
-                (owner_.image_provider_ && !m.media_url.empty())
-                    ? owner_.image_provider_(m.media_url)
+                (owner_.image_provider_ && !img_key.empty())
+                    ? owner_.image_provider_(img_key)
                     : nullptr;
             tk::Size sz =
                 (img && img->width() > 0 && img->height() > 0)
@@ -1751,9 +1759,11 @@ private:
         case MessageRowData::Kind::Sticker:
         {
             float max_side = std::min(col_w, kStickerSize);
+            const std::string& sticker_key =
+                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
             const tk::Image* sticker_img =
-                (owner_.image_provider_ && !m.media_url.empty())
-                    ? owner_.image_provider_(m.media_url)
+                (owner_.image_provider_ && !sticker_key.empty())
+                    ? owner_.image_provider_(sticker_key)
                     : nullptr;
             tk::Size sz;
             if (sticker_img && sticker_img->width() > 0 &&
@@ -2318,10 +2328,12 @@ private:
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,
                             tk::Rect dst) const
     {
+        const std::string& display_key =
+            m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
         const tk::Image* img = nullptr;
-        if (owner_.image_provider_ && !m.media_url.empty())
+        if (owner_.image_provider_ && !display_key.empty())
         {
-            img = owner_.image_provider_(m.media_url);
+            img = owner_.image_provider_(display_key);
         }
         if (img)
         {
@@ -3107,15 +3119,19 @@ bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const
     {
     case K::Image:
     case K::Sticker:
-        if (m.media_url.empty() || !image_provider_)
+    {
+        const std::string& wait_key =
+            m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+        if (wait_key.empty() || !image_provider_)
         {
             return true;
         }
-        if (const tk::Image* im = image_provider_(m.media_url))
+        if (const tk::Image* im = image_provider_(wait_key))
         {
             return im->width() > 0 && im->height() > 0;
         }
         return false;
+    }
     case K::Video:
         // Only a server-provided thumbnail is worth waiting for. When the
         // server omits one the row falls back to a client-generated frame
@@ -3173,7 +3189,8 @@ void MessageListView::collect_gate_deps_()
         using K = MessageRowData::Kind;
         if (m.kind == K::Image || m.kind == K::Sticker)
         {
-            g.pending.insert(m.media_url);
+            g.pending.insert(
+                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url);
         }
         else if (m.kind == K::Video)
         {

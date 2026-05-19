@@ -5313,6 +5313,7 @@ async fn timeline_item_to_ffi(
                 audio_waveform: Vec::new(),
                 audio_mime: String::new(),
                 video_thumbnail_json: String::new(),
+                image_thumbnail_json: String::new(),
                 video_duration_ms: 0,
                 video_mime: String::new(),
                 video_autoplay: false,
@@ -5407,6 +5408,7 @@ async fn timeline_item_to_ffi(
             audio_waveform: Vec::new(),
             audio_mime: String::new(),
             video_thumbnail_json: String::new(),
+            image_thumbnail_json: String::new(),
             video_duration_ms: 0u64,
             video_mime: String::new(),
             video_autoplay: false,
@@ -5496,6 +5498,17 @@ async fn timeline_item_to_ffi(
             audio_waveform: Vec::new(),
             audio_mime: String::new(),
             video_thumbnail_json: String::new(),
+            image_thumbnail_json: c
+                .info
+                .thumbnail_source
+                .as_ref()
+                .map(|ts| match ts {
+                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                        serde_json::to_string(ts).unwrap_or_default()
+                    }
+                })
+                .unwrap_or_default(),
             video_duration_ms: 0u64,
             video_mime: String::new(),
             video_autoplay: false,
@@ -6060,6 +6073,21 @@ async fn timeline_item_to_ffi(
             }
         };
 
+    let image_thumbnail_json: String = match msg_content.msgtype() {
+        MessageType::Image(i) => i
+            .info
+            .as_ref()
+            .and_then(|info| info.thumbnail_source.as_ref())
+            .map(|ts| match ts {
+                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
+                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
+                    serde_json::to_string(ts).unwrap_or_default()
+                }
+            })
+            .unwrap_or_default(),
+        _ => String::new(),
+    };
+
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
 
@@ -6087,6 +6115,7 @@ async fn timeline_item_to_ffi(
         audio_waveform,
         audio_mime,
         video_thumbnail_json,
+        image_thumbnail_json,
         video_duration_ms,
         video_mime,
         video_autoplay,
@@ -7266,5 +7295,51 @@ mod location_tests {
         assert_eq!(parse_geo_uri("not-a-geo-uri"), None);
         assert_eq!(parse_geo_uri("geo:"), None);
         assert_eq!(parse_geo_uri("geo:abc,def"), None);
+    }
+
+    #[test]
+    fn image_info_thumbnail_source_round_trips_plain_uri() {
+        use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
+        let json = serde_json::json!({
+            "body": "photo.jpg",
+            "msgtype": "m.image",
+            "url": "mxc://example.org/full",
+            "info": {
+                "w": 1920, "h": 1080, "mimetype": "image/jpeg",
+                "thumbnail_url": "mxc://example.org/thumb",
+                "thumbnail_info": { "w": 320, "h": 200, "mimetype": "image/jpeg" }
+            }
+        });
+        let content: ImageMessageEventContent =
+            serde_json::from_value(json).expect("deserialises");
+        let thumb_src = content
+            .info
+            .as_ref()
+            .and_then(|info| info.thumbnail_source.as_ref());
+        assert!(thumb_src.is_some(), "thumbnail_source must be populated from thumbnail_url");
+        match thumb_src.unwrap() {
+            matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => {
+                assert_eq!(uri.to_string(), "mxc://example.org/thumb");
+            }
+            _ => panic!("expected Plain MediaSource"),
+        }
+    }
+
+    #[test]
+    fn image_info_without_thumbnail_has_none_thumbnail_source() {
+        use matrix_sdk::ruma::events::room::message::ImageMessageEventContent;
+        let json = serde_json::json!({
+            "body": "photo.jpg",
+            "msgtype": "m.image",
+            "url": "mxc://example.org/full",
+            "info": { "w": 800, "h": 600, "mimetype": "image/png" }
+        });
+        let content: ImageMessageEventContent =
+            serde_json::from_value(json).expect("deserialises");
+        let thumb_src = content
+            .info
+            .as_ref()
+            .and_then(|info| info.thumbnail_source.as_ref());
+        assert!(thumb_src.is_none(), "no thumbnail → None");
     }
 }

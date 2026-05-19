@@ -61,7 +61,8 @@ struct MessageRowData
     bool is_own = false;
 
     // Image / Sticker
-    std::string media_url; // mxc
+    std::string media_url;     // mxc:// URI — full resolution (used by ImageViewerOverlay)
+    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when server omits one
     int media_w = 0;
     int media_h = 0;
     // MSC2530 caption — non-empty for `m.image` events whose sender

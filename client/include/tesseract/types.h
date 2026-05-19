@@ -114,7 +114,8 @@ struct EmoteEvent : public Event
 
 struct ImageEvent : public Event
 {
-    std::string image_url; // mxc:// URI
+    std::string image_url;     // mxc:// URI (full resolution)
+    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when absent
     uint64_t width = 0;
     uint64_t height = 0;
     /// Non-empty only when the sender supplied an MSC2530 `filename` field.
@@ -131,7 +132,8 @@ struct ImageEvent : public Event
 
 struct StickerEvent : public Event
 {
-    std::string image_url; // mxc:// URI
+    std::string image_url;     // mxc:// URI (full resolution)
+    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when absent
     uint64_t width = 0;
     uint64_t height = 0;
     std::string blurhash;  // MSC2448: xyz.amorgan.blurhash; empty when absent

@@ -75,6 +75,7 @@ pub mod ffi {
         pub audio_waveform: Vec<u16>,
         pub audio_mime: String,
         pub video_thumbnail_json: String,
+        pub image_thumbnail_json: String,
         pub video_duration_ms: u64,
         pub video_mime: String,
         pub video_autoplay: bool,

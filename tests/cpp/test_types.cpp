@@ -153,6 +153,22 @@ TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]")
     CHECK(ev.filename == "photo.jpg");
 }
 
+TEST_CASE("ImageEvent thumbnail_url defaults empty", "[types]")
+{
+    tesseract::ImageEvent ev{};
+    CHECK(ev.thumbnail_url.empty());
+}
+
+TEST_CASE("ImageEvent thumbnail_url is settable independently of image_url", "[types]")
+{
+    tesseract::ImageEvent ev{};
+    ev.image_url = "mxc://example.org/full";
+    ev.thumbnail_url = "mxc://example.org/thumb";
+
+    CHECK(ev.image_url == "mxc://example.org/full");
+    CHECK(ev.thumbnail_url == "mxc://example.org/thumb");
+}
+
 // ---------------------------------------------------------------------------
 // tesseract::FileEvent
 // ---------------------------------------------------------------------------
@@ -255,6 +271,22 @@ TEST_CASE("StickerEvent fields are settable", "[types]")
     CHECK(ev.width == 512);
     CHECK(ev.height == 512);
     CHECK(ev.type == tesseract::EventType::Sticker);
+}
+
+TEST_CASE("StickerEvent thumbnail_url defaults empty", "[types]")
+{
+    tesseract::StickerEvent ev{};
+    CHECK(ev.thumbnail_url.empty());
+}
+
+TEST_CASE("StickerEvent thumbnail_url is settable independently of image_url", "[types]")
+{
+    tesseract::StickerEvent ev{};
+    ev.image_url = "mxc://example.org/sticker-full";
+    ev.thumbnail_url = "mxc://example.org/sticker-thumb";
+
+    CHECK(ev.image_url == "mxc://example.org/sticker-full");
+    CHECK(ev.thumbnail_url == "mxc://example.org/sticker-thumb");
 }
 
 // ---------------------------------------------------------------------------

@@ -183,6 +183,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         auto ev = std::make_unique<ImageEvent>();
         assign_base(*ev, e);
         ev->image_url = std::string(e.source_json);
+        ev->thumbnail_url = std::string(e.image_thumbnail_json);
         ev->width = e.width;
         ev->height = e.height;
         ev->filename = std::string(e.image_filename);
@@ -196,6 +197,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         auto ev = std::make_unique<StickerEvent>();
         assign_base(*ev, e);
         ev->image_url = std::string(e.source_json);
+        ev->thumbnail_url = std::string(e.image_thumbnail_json);
         ev->width = e.width;
         ev->height = e.height;
         ev->blurhash = std::string(e.blurhash);

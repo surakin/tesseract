@@ -383,12 +383,24 @@ void ShellBase::ensure_row_media_(const Event& ev)
     if (ev.type == EventType::Image)
     {
         const auto& img = static_cast<const ImageEvent&>(ev);
+        if (!img.thumbnail_url.empty())
+        {
+            ensure_media_image_(img.thumbnail_url, visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight);
+        }
+        // Pre-fetch the full image so ImageViewerOverlay opens instantly.
         ensure_media_image_(img.image_url, visual::kMaxInlineImageWidth,
                             visual::kMaxInlineImageHeight);
     }
     else if (ev.type == EventType::Sticker)
     {
         const auto& s = static_cast<const StickerEvent&>(ev);
+        if (!s.thumbnail_url.empty())
+        {
+            ensure_media_image_(s.thumbnail_url, visual::kStickerSize,
+                                visual::kStickerSize);
+        }
+        // Pre-fetch the full sticker so ImageViewerOverlay opens instantly.
         ensure_media_image_(s.image_url, visual::kStickerSize,
                             visual::kStickerSize);
     }
