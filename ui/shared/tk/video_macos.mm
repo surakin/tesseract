@@ -5,7 +5,7 @@
 // CGBitmapContext to a CGImage wrapped as a tk::cg::Image.
 //
 // Thread model: everything runs on the main thread — AVPlayer, NSTimer, and
-// all tk::VideoPlayer public methods. No extra mutex needed for current_frame_.
+// all tk::VideoPlayer public methods including the destructor.
 
 #include "video.h"
 #include "canvas_cg.h"
@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <unistd.h>
 #include <vector>
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -115,16 +116,17 @@ public:
         // Write bytes to a temp file so AVPlayer can open it.
         NSString* tmp_dir = NSTemporaryDirectory();
         NSString* uuid = [[NSUUID UUID] UUIDString];
-        tmp_path_ = [[[tmp_dir stringByAppendingPathComponent:uuid]
-            stringByAppendingPathExtension:@"mp4"] retain];
-        BOOL ok = [ns_data writeToFile:tmp_path_ atomically:NO];
+        NSString* tmp_path_ns = [[tmp_dir stringByAppendingPathComponent:uuid]
+            stringByAppendingPathExtension:@"mp4"];
+        tmp_path_ = [tmp_path_ns UTF8String];
+        BOOL ok = [ns_data writeToFile:tmp_path_ns atomically:NO];
         if (!ok)
         {
-            tmp_path_ = nil;
+            tmp_path_.clear();
             return;
         }
 
-        NSURL* url = [NSURL fileURLWithPath:tmp_path_];
+        NSURL* url = [NSURL fileURLWithPath:tmp_path_ns];
         AVAsset* va = [AVURLAsset URLAssetWithURL:url options:nil];
         AVPlayerItem* item = [AVPlayerItem playerItemWithAsset:va];
 
@@ -287,19 +289,21 @@ private:
         if (delegate_)
         {
             [delegate_ stopObserving];
+            [delegate_ release];
+            delegate_ = nil;
         }
         if (player_)
         {
             [player_ pause];
+            [player_ release];
             player_ = nil;
         }
+        [video_output_ release];
         video_output_ = nil;
-        if (tmp_path_)
+        if (!tmp_path_.empty())
         {
-            [[NSFileManager defaultManager] removeItemAtPath:tmp_path_
-                                                       error:nil];
-            [tmp_path_ release];
-            tmp_path_ = nil;
+            ::unlink(tmp_path_.c_str());
+            tmp_path_.clear();
         }
         {
             std::lock_guard lk(frame_mutex_);
@@ -418,7 +422,7 @@ private:
     AVPlayerItemVideoOutput* video_output_ = nil;
     TkVideoDelegate* delegate_ = nil;
     NSTimer* timer_ = nil;
-    NSString* tmp_path_ = nil;
+    std::string tmp_path_;
     float rate_ = 1.0f;
     std::vector<uint8_t> bytes_;
 
