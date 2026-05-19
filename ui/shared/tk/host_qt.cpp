@@ -233,7 +233,14 @@ protected:
             {
                 is_nav = false;
             }
-            if (is_nav && popup_nav_(nk))
+            // Copy before calling: Tab calls replace_range() → on_changed_()
+            // → hide_shortcode_popup_() → set_on_popup_nav(nullptr), which
+            // overwrites popup_nav_._M_functor (the live closure) with zeros.
+            // The Tab lambda then calls hide again, reads a null `this` from
+            // the zeroed closure storage, and segfaults.  A local copy keeps
+            // the closure alive independently of popup_nav_.
+            auto nav = popup_nav_;
+            if (is_nav && nav && nav(nk))
             {
                 e->accept();
                 return;
