@@ -275,10 +275,12 @@ void ComposeBar::recompute_height()
     {
         const auto k = pending_->kind;
         if (k == PendingAttachment::Kind::File ||
-            k == PendingAttachment::Kind::Video ||
-            k == PendingAttachment::Kind::Audio)
+            k == PendingAttachment::Kind::Audio ||
+            (k == PendingAttachment::Kind::Video &&
+             !pending_->preview && pending_->thumb_bytes_raw.empty()))
         {
-            // Image previews float above the bar; chips push it up.
+            // Image/video-with-thumbnail float above the bar (no extra height).
+            // Chips (file, audio, loading video) push the bar up instead.
             band_h = kFileBandH + kPreviewBandGap;
         }
     }
