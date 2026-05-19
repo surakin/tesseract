@@ -388,7 +388,8 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_media_image_(img.thumbnail_url, visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight);
         }
-        if (tesseract::Settings::instance().prefetch_full_media)
+        if (img.thumbnail_url.empty() ||
+            tesseract::Settings::instance().prefetch_full_media)
         {
             ensure_media_image_(img.image_url, visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight);
@@ -402,7 +403,8 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_media_image_(s.thumbnail_url, visual::kStickerSize,
                                 visual::kStickerSize);
         }
-        if (tesseract::Settings::instance().prefetch_full_media)
+        if (s.thumbnail_url.empty() ||
+            tesseract::Settings::instance().prefetch_full_media)
         {
             ensure_media_image_(s.image_url, visual::kStickerSize,
                                 visual::kStickerSize);
