@@ -4818,11 +4818,14 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
 /// `kind`: "text" | "image" | "video" | "file" | "audio" | "sticker" | ""
 /// (empty = nothing to preview). `text` is the first plain line (text-like
 /// kinds only). `sticker_url` is the mxc URI for "sticker".
+/// `thumbnail_url` is the mxc URI used for the room-list thumbnail chip:
+/// populated for "image" (the image's own mxc) and "sticker" (same as sticker_url).
 #[derive(Debug, Default, PartialEq)]
 struct LatestPreview {
     kind: String,
     text: String,
     sticker_url: String,
+    thumbnail_url: String,
 }
 
 /// First non-empty line of `s`, trimmed. Splits on the first '\n'.
@@ -4892,8 +4895,8 @@ fn html_first_line(html: &str) -> String {
 fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> LatestPreview {
     use matrix_sdk::latest_events::LatestEventValue;
     use matrix_sdk::ruma::events::{
-        room::message::MessageType, sticker::StickerMediaSource, AnySyncMessageLikeEvent,
-        AnySyncTimelineEvent,
+        room::message::MessageType, room::MediaSource, sticker::StickerMediaSource,
+        AnySyncMessageLikeEvent, AnySyncTimelineEvent,
     };
 
     let text_kind = |body: &str, formatted: Option<&str>| -> LatestPreview {
@@ -4913,6 +4916,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                 kind: "text".to_owned(),
                 text: line,
                 sticker_url: String::new(),
+                thumbnail_url: String::new(),
             }
         }
     };
@@ -4920,6 +4924,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
         kind: k.to_owned(),
         text: String::new(),
         sticker_url: String::new(),
+        thumbnail_url: String::new(),
     };
 
     match value {
@@ -4942,7 +4947,19 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                         MessageType::Emote(e) => {
                             text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
                         }
-                        MessageType::Image(_) => media_kind("image"),
+                        MessageType::Image(img) => {
+                            let url = match &img.source {
+                                MediaSource::Plain(uri) => uri.to_string(),
+                                MediaSource::Encrypted(f) => f.url.to_string(),
+                                _ => String::new(),
+                            };
+                            LatestPreview {
+                                kind: "image".to_owned(),
+                                text: String::new(),
+                                sticker_url: String::new(),
+                                thumbnail_url: url,
+                            }
+                        }
                         MessageType::Video(_) => media_kind("video"),
                         MessageType::File(_) => media_kind("file"),
                         MessageType::Audio(_) => media_kind("audio"),
@@ -4961,7 +4978,8 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                     LatestPreview {
                         kind: "sticker".to_owned(),
                         text: String::new(),
-                        sticker_url: url,
+                        sticker_url: url.clone(),
+                        thumbnail_url: url,
                     }
                 }
                 _ => LatestPreview::default(),
@@ -5026,6 +5044,7 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
                 kind: "text".to_owned(),
                 text: line,
                 sticker_url: String::new(),
+                thumbnail_url: String::new(),
             }
         }
     };
@@ -5033,6 +5052,7 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
         kind: k.to_owned(),
         text: String::new(),
         sticker_url: String::new(),
+        thumbnail_url: String::new(),
     };
     match msgtype {
         MessageType::Text(t) => text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str())),
@@ -5098,6 +5118,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             kind: last_message_kind,
             text: last_message_body,
             sticker_url: last_message_sticker_url,
+            thumbnail_url: last_message_thumbnail_url,
         } = latest_event_preview(&lev);
         let last_message_sender_name = if last_message_kind.is_empty() {
             String::new()
@@ -5127,6 +5148,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             last_message_sender_name,
             last_message_kind,
             last_message_sticker_url,
+            last_message_thumbnail_url,
             last_activity_ts,
             is_space,
             is_favorite,
@@ -6998,6 +7020,7 @@ mod tests_latest_event_body {
             kind: "text".into(),
             text: t.into(),
             sticker_url: String::new(),
+            thumbnail_url: String::new(),
         }
     }
     fn media(k: &str) -> LatestPreview {
@@ -7005,6 +7028,7 @@ mod tests_latest_event_body {
             kind: k.into(),
             text: String::new(),
             sticker_url: String::new(),
+            thumbnail_url: String::new(),
         }
     }
 
@@ -7092,14 +7116,26 @@ mod tests_latest_event_body {
     }
 
     #[test]
-    fn remote_image_video_file_audio_kinds() {
-        let cases = [
-            ("m.image", "image"),
-            ("m.video", "video"),
-            ("m.file", "file"),
-            ("m.audio", "audio"),
-        ];
-        for (mt, kind) in cases {
+    fn remote_image_kind_carries_thumbnail_url() {
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 1,
+            "content": { "msgtype": "m.image", "body": "f.png", "url": "mxc://e.com/x" }
+        }));
+        assert_eq!(
+            latest_event_preview(&v),
+            LatestPreview {
+                kind: "image".into(),
+                text: String::new(),
+                sticker_url: String::new(),
+                thumbnail_url: "mxc://e.com/x".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn remote_video_file_audio_kinds() {
+        for (mt, kind) in [("m.video", "video"), ("m.file", "file"), ("m.audio", "audio")] {
             let v = remote(serde_json::json!({
                 "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
                 "sender": "@a:e.com", "origin_server_ts": 1,
@@ -7126,6 +7162,7 @@ mod tests_latest_event_body {
                 kind: "sticker".into(),
                 text: String::new(),
                 sticker_url: "mxc://e.com/stick1".into(),
+                thumbnail_url: "mxc://e.com/stick1".into(),
             }
         );
     }

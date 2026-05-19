@@ -32,6 +32,10 @@ pub mod ffi {
         /// mxc:// URI of the sticker image when last_message_kind == "sticker";
         /// empty otherwise.
         last_message_sticker_url: String,
+        /// mxc:// URI used for the room-list thumbnail chip:
+        /// populated for "image" (the image mxc) and "sticker" (same as sticker_url);
+        /// empty for all other kinds.
+        last_message_thumbnail_url: String,
         /// Unix timestamp in milliseconds of the most recent activity, or 0.
         last_activity_ts: u64,
         /// True when this room's type is "m.space".

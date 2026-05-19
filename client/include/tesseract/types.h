@@ -285,6 +285,9 @@ struct RoomInfo
     std::string last_message_kind;
     /// mxc:// URI of the sticker image when last_message_kind == "sticker".
     std::string last_message_sticker_url;
+    /// mxc:// URI for the room-list thumbnail chip: set for "image" (the image
+    /// mxc) and "sticker" (same as last_message_sticker_url); empty otherwise.
+    std::string last_message_thumbnail_url;
     uint64_t last_activity_ts = 0;
     bool is_space = false;
     bool is_favorite = false;

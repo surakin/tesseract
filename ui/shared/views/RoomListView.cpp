@@ -24,6 +24,10 @@ constexpr float kBadgeH = tesseract::visual::kUnreadBadgeHeight;      // 18
 constexpr float kBadgePadX = 6.0f;
 constexpr float kBadgeRadius = kBadgeH * 0.5f;
 
+// Thumbnail chip painted on the right side of image/sticker rows.
+constexpr float kThumb = kRowH - kPadY * 2.0f; // 40 px — full usable row height
+constexpr float kThumbGap = 4.0f;
+
 // Section header row dimensions.
 constexpr float kHeaderH = 28.0f;
 constexpr float kHeaderPadX = 10.0f;
@@ -266,6 +270,34 @@ private:
         }
 
         bool has_preview = !room.last_message_kind.empty();
+
+        // Check if we have a thumbnail to show on the right side.
+        // "image" uses last_message_thumbnail_url; "sticker" uses sticker_url.
+        const tk::Image* thumb = nullptr;
+        if (has_preview && owner_.sticker_provider_)
+        {
+            const std::string& kind = room.last_message_kind;
+            const std::string& thumb_url =
+                kind == "sticker" ? room.last_message_sticker_url
+                                  : (kind == "image"
+                                         ? room.last_message_thumbnail_url
+                                         : std::string{});
+            if (!thumb_url.empty())
+            {
+                thumb = owner_.sticker_provider_(thumb_url);
+            }
+        }
+
+        // When a thumbnail is ready, shrink the text column to leave room for it.
+        if (thumb)
+        {
+            text_w -= (kThumb + kThumbGap);
+            if (text_w < 0)
+            {
+                text_w = 0;
+            }
+        }
+
         tk::TextStyle name_style{};
         name_style.role = tk::FontRole::Body;
         name_style.trim = tk::TextTrim::Ellipsis;
@@ -289,57 +321,34 @@ private:
                                            ? std::string("You")
                                            : room.last_message_sender_name;
 
-            bool sticker_thumb_drawn = false;
-            if (kind == "sticker")
+            std::string preview;
+            if (kind == "text")
             {
-                const tk::Image* thumb = nullptr;
-                if (owner_.sticker_provider_ &&
-                    !room.last_message_sticker_url.empty())
+                preview = room.last_message_body;
+                if (!room.is_direct)
                 {
-                    thumb =
-                        owner_.sticker_provider_(room.last_message_sticker_url);
-                }
-                if (thumb)
-                {
-                    constexpr float kThumb = 28.0f;
-                    tk::Rect dst{text_x, bounds.y + bounds.h - kPadY - kThumb,
-                                 kThumb, kThumb};
-                    ctx.canvas.draw_image(*thumb, dst);
-                    sticker_thumb_drawn = true;
+                    preview = sender + ": " + preview;
                 }
             }
-
-            std::string preview;
-            if (!sticker_thumb_drawn)
+            else if (kind == "image")
             {
-                if (kind == "text")
-                {
-                    preview = room.last_message_body;
-                    if (!room.is_direct)
-                    {
-                        preview = sender + ": " + preview;
-                    }
-                }
-                else if (kind == "image")
-                {
-                    preview = sender + " sent an image";
-                }
-                else if (kind == "video")
-                {
-                    preview = sender + " sent a video";
-                }
-                else if (kind == "file")
-                {
-                    preview = sender + " sent a file";
-                }
-                else if (kind == "audio")
-                {
-                    preview = sender + " sent a voice message";
-                }
-                else if (kind == "sticker")
-                {
-                    preview = sender + " sent a sticker";
-                }
+                preview = sender + " sent an image";
+            }
+            else if (kind == "video")
+            {
+                preview = sender + " sent a video";
+            }
+            else if (kind == "file")
+            {
+                preview = sender + " sent a file";
+            }
+            else if (kind == "audio")
+            {
+                preview = sender + " sent a voice message";
+            }
+            else if (kind == "sticker")
+            {
+                preview = sender + " sent a sticker";
             }
 
             if (!preview.empty())
@@ -356,6 +365,16 @@ private:
                     ctx.canvas.draw_text(*prev_layout, {text_x, prev_y},
                                          ctx.theme.palette.text_secondary);
                 }
+            }
+
+            if (thumb)
+            {
+                float thumb_right = bounds.x + bounds.w - kPadX -
+                                    (badge_width > 0 ? badge_width + kPadX : 0.0f);
+                tk::Rect dst{thumb_right - kThumb,
+                             bounds.y + (bounds.h - kThumb) * 0.5f, kThumb,
+                             kThumb};
+                ctx.canvas.draw_image(*thumb, dst);
             }
         }
 
