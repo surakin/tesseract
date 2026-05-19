@@ -429,7 +429,10 @@ public:
     }
     float ascent() const override
     {
-        return static_cast<float>(font_ascent());
+        // Apple Color Emoji fills the full line box (ascent + descent), unlike
+        // Noto Color Emoji on Linux which leaves the descent area empty. Return
+        // the full measured height so centering formulas in views land correctly.
+        return static_cast<float>(measured_.h);
     }
 
     std::string link_at(tk::Point local) const override
@@ -572,26 +575,6 @@ public:
                 CGContextStrokePath(ctx);
             }
         }
-    }
-
-    CGFloat font_ascent() const
-    {
-        if (!attr_ || CFAttributedStringGetLength(attr_) == 0)
-        {
-            return measured_.h * 0.78f;
-        }
-        CFDictionaryRef d = CFAttributedStringGetAttributes(attr_, 0, nullptr);
-        if (!d)
-        {
-            return measured_.h * 0.78f;
-        }
-        CTFontRef f = static_cast<CTFontRef>(
-            CFDictionaryGetValue(d, kCTFontAttributeName));
-        if (!f)
-        {
-            return measured_.h * 0.78f;
-        }
-        return CTFontGetAscent(f);
     }
 
     CGFloat font_line_height() const
