@@ -149,3 +149,7 @@ See [ROADMAP.md](ROADMAP.md) for pending work, known gaps, and open design decis
 ## Code Style
 
 See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across all C++ and Rust code in this repo.
+
+## Shared vs Platform Code
+
+Always implement new functionality in `ui/shared/` (`tk/` or `views/`) rather than duplicating it across platform shells. Platform shells (`ui/windows/`, `ui/linux-qt/`, `ui/linux-gtk/`, `ui/macos/`) should contain only what is genuinely platform-specific: native window/menu management, OS API calls, and thin wiring to the shared layer. If you find yourself writing the same logic in two or more shells, that logic belongs in `ui/shared/`.
