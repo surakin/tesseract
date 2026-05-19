@@ -459,6 +459,17 @@ void ShellBase::ensure_row_media_(const Event& ev)
             }
         }
     }
+    else if (ev.type == EventType::Audio)
+    {
+        const auto& a = static_cast<const AudioEvent&>(ev);
+        if (!a.audio_source.empty() &&
+            tesseract::Settings::instance().prefetch_full_media &&
+            voice_prefetched_.insert(a.audio_source).second)
+        {
+            run_async_([this, src = a.audio_source]()
+                       { client_->fetch_source_bytes(src); });
+        }
+    }
     else if (ev.type == EventType::Video)
     {
         const auto& vid = static_cast<const VideoEvent&>(ev);

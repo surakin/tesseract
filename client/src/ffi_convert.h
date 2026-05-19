@@ -223,6 +223,18 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.audio")
+    {
+        auto ev = std::make_unique<AudioEvent>();
+        assign_base(*ev, e);
+        ev->audio_source = std::string(e.audio_source_json);
+        ev->mime_type    = std::string(e.audio_mime);
+        ev->duration_ms  = e.audio_duration_ms;
+        ev->filename     = std::string(e.file_name);
+        ev->file_size    = e.file_size;
+        return ev;
+    }
+
     if (msg_type == "m.voice")
     {
         auto ev = std::make_unique<VoiceEvent>();

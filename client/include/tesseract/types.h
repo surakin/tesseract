@@ -12,6 +12,7 @@ enum class EventType
     Image,
     File,
     Sticker,
+    Audio,
     Voice,
     Video,
     Redacted,
@@ -74,7 +75,7 @@ struct Event
     /// Resolved display name of the replied-to sender (bare Matrix ID as fallback).
     std::string in_reply_to_sender_name;
     /// Short body snippet of the replied-to message. "(image)" / "(file)" /
-    /// "(voice)" / "(sticker)" / "(deleted)" for non-text / redacted originals.
+    /// "(audio)" / "(voice)" / "(sticker)" / "(deleted)" for non-text / redacted originals.
     std::string in_reply_to_body;
     /// True when the body has been superseded by an m.replace edit.
     /// Only set for TextEvent; always false for other types.
@@ -168,12 +169,29 @@ struct FileEvent : public Event
     }
 };
 
+/// Plain `m.audio` event (no MSC3245 voice marker). `audio_source` carries
+/// the full JSON-serialised `MediaSource`, suitable for
+/// `Client::fetch_source_bytes`. Rendered as an inline audio player card
+/// (play/pause + linear scrub track) rather than a download file card.
+struct AudioEvent : public Event
+{
+    std::string audio_source; // JSON MediaSource for fetch_source_bytes
+    std::string mime_type;    // e.g. "audio/mpeg"; may be empty
+    uint64_t duration_ms = 0;
+    std::string filename;  // from m.audio body / filename field
+    uint64_t file_size = 0;
+
+    AudioEvent()
+    {
+        type = EventType::Audio;
+    }
+};
+
 /// MSC3245 voice message. `audio_source` carries the full JSON-serialised
 /// `MediaSource` (plain mxc:// or encrypted), suitable for
 /// `Client::fetch_source_bytes`. `waveform` holds the sender-supplied
 /// MSC1767 samples (each clamped to 0..=1024); when empty the UI renders
-/// flat placeholder bars. Plain `m.audio` events (without the voice marker)
-/// surface as `FileEvent`, not `VoiceEvent`.
+/// flat placeholder bars.
 struct VoiceEvent : public Event
 {
     std::string audio_source; // JSON MediaSource for fetch_source_bytes

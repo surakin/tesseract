@@ -354,6 +354,71 @@ TEST_CASE("VoiceEvent carries reactions like other Event subtypes",
 }
 
 // ---------------------------------------------------------------------------
+// tesseract::AudioEvent (plain m.audio, no voice marker)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("AudioEvent default-initialised fields", "[types][audio]")
+{
+    tesseract::AudioEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    CHECK(ev.body.empty());
+    CHECK(ev.timestamp == 0u);
+    CHECK(ev.type == tesseract::EventType::Audio);
+    CHECK(ev.audio_source.empty());
+    CHECK(ev.mime_type.empty());
+    CHECK(ev.duration_ms == 0u);
+    CHECK(ev.filename.empty());
+    CHECK(ev.file_size == 0u);
+}
+
+TEST_CASE("AudioEvent fields round-trip", "[types][audio]")
+{
+    tesseract::AudioEvent ev{};
+    ev.event_id    = "$audio-evt:example.org";
+    ev.room_id     = "!room:example.org";
+    ev.sender      = "@alice:example.org";
+    ev.body        = "song.mp3";
+    ev.timestamp   = 1700000001000ull;
+    ev.audio_source = R"({"url":"mxc://example.org/abc123"})";
+    ev.mime_type   = "audio/mpeg";
+    ev.duration_ms = 183000;
+    ev.filename    = "song.mp3";
+    ev.file_size   = 4567890;
+
+    CHECK(ev.type == tesseract::EventType::Audio);
+    CHECK(ev.audio_source == R"({"url":"mxc://example.org/abc123"})");
+    CHECK(ev.mime_type == "audio/mpeg");
+    CHECK(ev.duration_ms == 183000u);
+    CHECK(ev.filename == "song.mp3");
+    CHECK(ev.file_size == 4567890u);
+}
+
+TEST_CASE("AudioEvent with zero duration is valid (unknown length)",
+          "[types][audio]")
+{
+    // Senders may omit duration from m.audio info; the player queries the
+    // backend after loading.
+    tesseract::AudioEvent ev{};
+    ev.audio_source = R"({"url":"mxc://example.org/x"})";
+    ev.filename     = "clip.aac";
+    CHECK(ev.duration_ms == 0u);
+    CHECK(ev.type == tesseract::EventType::Audio);
+}
+
+TEST_CASE("AudioEvent carries reactions like other Event subtypes",
+          "[types][audio][reactions]")
+{
+    tesseract::AudioEvent ev{};
+    ev.reactions.push_back({"🎵", 3, false, "", {"@alice", "@bob", "@carol"}});
+    REQUIRE(ev.reactions.size() == 1);
+    CHECK(ev.reactions[0].key == "🎵");
+    CHECK(ev.reactions[0].count == 3);
+    CHECK(!ev.reactions[0].reacted_by_me);
+}
+
+// ---------------------------------------------------------------------------
 // tesseract::EventType enum
 // ---------------------------------------------------------------------------
 
@@ -460,12 +525,13 @@ TEST_CASE("EventType enum values are correct", "[types]")
     CHECK(static_cast<int>(tesseract::EventType::Image) == 1);
     CHECK(static_cast<int>(tesseract::EventType::File) == 2);
     CHECK(static_cast<int>(tesseract::EventType::Sticker) == 3);
-    CHECK(static_cast<int>(tesseract::EventType::Voice) == 4);
-    CHECK(static_cast<int>(tesseract::EventType::Video) == 5);
-    CHECK(static_cast<int>(tesseract::EventType::Redacted) == 6);
-    CHECK(static_cast<int>(tesseract::EventType::Notice) == 7);
-    CHECK(static_cast<int>(tesseract::EventType::Emote) == 8);
-    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 9);
+    CHECK(static_cast<int>(tesseract::EventType::Audio) == 4);
+    CHECK(static_cast<int>(tesseract::EventType::Voice) == 5);
+    CHECK(static_cast<int>(tesseract::EventType::Video) == 6);
+    CHECK(static_cast<int>(tesseract::EventType::Redacted) == 7);
+    CHECK(static_cast<int>(tesseract::EventType::Notice) == 8);
+    CHECK(static_cast<int>(tesseract::EventType::Emote) == 9);
+    CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 10);
 }
 
 // ---------------------------------------------------------------------------

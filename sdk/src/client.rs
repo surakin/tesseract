@@ -6101,18 +6101,18 @@ async fn timeline_item_to_ffi(
                 (
                     a.body.clone(),
                     String::new(),
-                    "m.file".to_owned(),
+                    "m.audio".to_owned(),
                     String::new(),
                     0u64,
                     0u64,
-                    source_str,
+                    String::new(),
                     name,
                     size,
                     String::new(),
-                    String::new(),
-                    0u64,
+                    source_str,
+                    info_duration_ms,
                     Vec::new(),
-                    String::new(),
+                    info_mime,
                     String::new(),
                     0u64,
                     String::new(),
@@ -6380,7 +6380,13 @@ async fn timeline_item_to_ffi(
                                     MessageType::Text(t) => t.body.clone(),
                                     MessageType::Image(_) => "(image)".to_owned(),
                                     MessageType::File(_) => "(file)".to_owned(),
-                                    MessageType::Audio(_) => "(voice)".to_owned(),
+                                    MessageType::Audio(a) => {
+                                        if a.voice.is_some() {
+                                            "(voice)".to_owned()
+                                        } else {
+                                            "(audio)".to_owned()
+                                        }
+                                    }
                                     MessageType::Video(_) => "(video)".to_owned(),
                                     _ => "(message)".to_owned(),
                                 }

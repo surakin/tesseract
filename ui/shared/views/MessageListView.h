@@ -38,6 +38,7 @@ struct MessageRowData
         Image,
         Sticker,
         File,
+        Audio,
         Voice,
         Video,
         Redacted,
@@ -78,10 +79,11 @@ struct MessageRowData
     std::string file_name;
     std::uint64_t file_size = 0;
 
-    // Voice (MSC3245). `audio_source` is the JSON-serialised MediaSource
-    // passed straight to `Client::fetch_source_bytes`. `waveform` is the
-    // MSC1767 amplitude list (each 0..=1024); when empty the view paints
-    // flat placeholder bars.
+    // Voice (MSC3245) and Audio (plain m.audio). `audio_source` is the
+    // JSON-serialised MediaSource passed to `Client::fetch_source_bytes`.
+    // `waveform` is the MSC1767 amplitude list (each 0..=1024); empty for
+    // Kind::Audio (no waveform) and for voice messages that omitted it
+    // (view paints flat placeholder bars in that case).
     std::string audio_source;
     std::string audio_mime;
     std::uint64_t duration_ms = 0;
@@ -700,6 +702,15 @@ private:
     };
     mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
 
+    struct AudioCardGeom
+    {
+        std::string event_id;
+        tk::Rect play_button{};    // play/pause hit rect
+        tk::Rect progress_track{}; // linear scrub hit rect
+        tk::Rect card_bounds{};
+    };
+    mutable std::unordered_map<std::string, AudioCardGeom> audio_card_geom_;
+
     std::unique_ptr<tk::AudioPlayer> audio_player_;
     VoiceBytesProvider voice_bytes_provider_;
     std::function<void()> request_repaint_;
@@ -736,6 +747,18 @@ private:
     void handle_voice_scrub_at(const MessageRowData& row, float local_x);
     void handle_voice_speed_click();
     void on_audio_progress();
+
+    enum class AudioPressKind
+    {
+        None,
+        PlayButton,
+        ProgressTrack,
+    };
+    AudioPressKind press_audio_kind_ = AudioPressKind::None;
+    std::string press_audio_event_id_;
+
+    void handle_audio_play_click(const MessageRowData& row);
+    void handle_audio_scrub_at(const MessageRowData& row, float world_x);
 
     // Inline video playback — at most kMaxInlinePlayers active simultaneously.
     static constexpr int kMaxInlinePlayers = 10;
