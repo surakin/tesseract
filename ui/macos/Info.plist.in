@@ -23,7 +23,7 @@
     <!-- Display niceties. -->
     <key>NSHighResolutionCapable</key>  <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
-    <key>NSHumanReadableCopyright</key> <string>Copyright © 2025 Marco Alvarez</string>
+    <key>NSHumanReadableCopyright</key> <string>Copyright © 2026 Marco Alvarez</string>
 
     <!-- Prevent LaunchServices from opening a second instance via Finder/Dock. -->
     <key>LSMultipleInstancesProhibited</key><true/>
