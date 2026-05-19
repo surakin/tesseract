@@ -25,9 +25,28 @@ struct Stage
         root.measure(lc, {bounds.w, bounds.h});
         root.arrange(lc, bounds);
     }
+    tk::PaintCtx paint_ctx()
+    {
+        return tk::PaintCtx{surface->canvas(), surface->factory(),
+                            tk::Theme::light()};
+    }
 };
 
 } // namespace
+
+// 2-frame 1×1 GIF89a — 100 ms per frame.
+static constexpr std::uint8_t kMinAnimGif[] = {
+    0x47, 0x49, 0x46, 0x38, 0x39, 0x61,
+    0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,
+    0xFF, 0x00, 0x00,  0x00, 0x00, 0xFF,
+    0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00,
+    0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+    0x02, 0x02, 0x44, 0x01, 0x00,
+    0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00,
+    0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+    0x02, 0x02, 0x4C, 0x01, 0x00,
+    0x3B
+};
 
 TEST_CASE("ComposeBar set_pending_video sets Video kind and loading flag",
           "[tk][view][compose][media]")
@@ -214,4 +233,37 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
 
     CHECK(sent_mime == "audio/ogg");
     CHECK(sent_dur == 30500);
+}
+
+TEST_CASE("AnimatedImage reports correct frame_count and dimensions",
+          "[tk][anim]")
+{
+    Stage st;
+    const std::uint8_t px[4] = {255, 0, 0, 255};
+    auto f0 = st.surface->factory().create_image_rgba(px, 3, 5);
+    auto f1 = st.surface->factory().create_image_rgba(px, 3, 5);
+    if (!f0 || !f1)
+        return; // skip: backend does not implement create_image_rgba
+
+    std::vector<std::unique_ptr<tk::Image>> frames;
+    frames.push_back(std::move(f0));
+    frames.push_back(std::move(f1));
+
+    tk::AnimatedImage anim(std::move(frames), {100, 200});
+    CHECK(anim.frame_count() == 2);
+    CHECK(anim.width() == 3);
+    CHECK(anim.height() == 5);
+    CHECK(anim.ms_until_next_frame() > 0);
+    CHECK(anim.ms_until_next_frame() <= 100);
+    const tk::Image* f = &anim.current_frame();
+    CHECK(f != nullptr);
+}
+
+TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr",
+          "[tk][anim]")
+{
+    Stage st;
+    auto anim = st.surface->factory().decode_animated_image(
+        std::span<const std::uint8_t>{}, 384);
+    CHECK(anim == nullptr);
 }

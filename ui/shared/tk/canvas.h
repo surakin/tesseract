@@ -5,11 +5,15 @@
 // CoreText, QPainter, Cairo + Pango). The shared widget tree paints into
 // this interface and never sees a platform handle.
 
+#include <algorithm>
+#include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace tk
 {
@@ -126,6 +130,55 @@ public:
     virtual int height() const = 0;
 };
 
+// Animated image: holds pre-decoded, pre-scaled frames with per-frame delays.
+// current_frame() advances internally using steady_clock — call it every
+// paint and schedule a repaint via ms_until_next_frame() to animate.
+class AnimatedImage
+{
+public:
+    AnimatedImage(std::vector<std::unique_ptr<Image>> frames,
+                  std::vector<int> delays_ms)
+        : frames_(std::move(frames))
+        , delays_ms_(std::move(delays_ms))
+        , next_tp_(std::chrono::steady_clock::now() +
+                   std::chrono::milliseconds(delays_ms_[0]))
+    {
+        assert(!frames_.empty());
+        assert(frames_.size() == delays_ms_.size());
+    }
+
+    const Image& current_frame() const
+    {
+        const auto now = std::chrono::steady_clock::now();
+        while (now >= next_tp_)
+        {
+            cur_idx_ = (cur_idx_ + 1) % frames_.size();
+            next_tp_ +=
+                std::chrono::milliseconds(delays_ms_[cur_idx_]);
+        }
+        return *frames_[cur_idx_];
+    }
+
+    int ms_until_next_frame() const
+    {
+        using ms = std::chrono::milliseconds;
+        const auto rem = std::chrono::duration_cast<ms>(
+                             next_tp_ - std::chrono::steady_clock::now())
+                             .count();
+        return static_cast<int>(std::max(ms::rep{1}, rem));
+    }
+
+    int width() const { return frames_[0]->width(); }
+    int height() const { return frames_[0]->height(); }
+    int frame_count() const { return static_cast<int>(frames_.size()); }
+
+private:
+    std::vector<std::unique_ptr<Image>> frames_;
+    std::vector<int> delays_ms_;
+    mutable std::size_t cur_idx_ = 0;
+    mutable std::chrono::steady_clock::time_point next_tp_;
+};
+
 // Opaque platform-laid-out text run. Owns the shaped glyphs; cheap to
 // redraw across paints, expensive to construct.
 class TextLayout
@@ -191,6 +244,17 @@ public:
     // (caller should keep the original in that case).
     virtual std::unique_ptr<Image>
     scale_image(const Image& /*src*/, int /*max_w*/, int /*max_h*/)
+    {
+        return nullptr;
+    }
+
+    // Decode all frames of an animated GIF or WebP from `bytes`, pre-scaling
+    // each frame to fit within max_px × max_px (aspect-ratio-preserving).
+    // Returns nullptr for static (single-frame) images, on decode failure,
+    // or when the backend does not override this method.
+    virtual std::unique_ptr<AnimatedImage>
+    decode_animated_image(std::span<const std::uint8_t> /*bytes*/,
+                          int /*max_px*/)
     {
         return nullptr;
     }
