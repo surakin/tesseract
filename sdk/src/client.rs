@@ -4951,7 +4951,6 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                             let url = match &img.source {
                                 MediaSource::Plain(uri) => uri.to_string(),
                                 MediaSource::Encrypted(f) => f.url.to_string(),
-                                _ => String::new(),
                             };
                             LatestPreview {
                                 kind: "image".to_owned(),
