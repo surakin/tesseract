@@ -20,7 +20,7 @@ sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake sqlite3 libsq
 #                               libayatana-appindicator3-dev
 # (gst-plugins-base provides the opus decoder voice messages use.)
 # (libayatana-appindicator3-dev powers the system tray; it transitively
-#  pulls GTK3 into the process — see the system-tray status block below.)
+#  pulls GTK3 into the process.)
 ```
 
 **Prerequisites (macOS / AppKit):**
@@ -48,7 +48,7 @@ cmake --build build/macos-appkit-arm64-debug
 open build/macos-appkit-arm64-debug/ui/macos/Tesseract.app
 ```
 
-**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-gtk-release`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
+**Available presets** (in `CMakePresets.json`): `windows-debug`, `windows-release`, `linux-gtk-debug`, `linux-gtk-release`, `linux-qt6-debug`, `linux-qt6-release`, `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`, `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
 **Override UI selection:** `-DTESSERACT_UI=gtk|qt6|win32|macos` (otherwise auto-detected from platform).
 
@@ -62,9 +62,14 @@ client/      ← C++ static library: high-level C++ API over the Rust FFI
 ui/
   shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
     tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
-    views/     ← LoginView, RoomListView, MessageListView, EmojiPicker,
-                  RecoveryBanner, VerificationBanner, ComposeBar,
-                  markdown (Markdown→HTML), html_spans (HTML→TextSpan)
+    views/     ← MainAppWidget (root widget tree); LoginView, BrandView;
+                  RoomListView, RoomView, MessageListView, ComposeBar;
+                  EmojiPicker, StickerPicker, AccountPicker;
+                  ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
+                  SettingsView, JoinRoomView, UserInfo;
+                  RecoveryBanner, VerificationBanner;
+                  markdown (Markdown→HTML), html_spans (HTML→TextSpan),
+                  map_tiles, media_utils
   windows/   ← Win32 executable (thin shell)
   macos/     ← AppKit executable (.app bundle, thin shell)
   linux-qt/  ← Qt6 Widgets executable (thin shell)
@@ -77,7 +82,7 @@ ui/
 
 **`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON (`%APPDATA%/Tesseract/` on Windows, `~/.config/tesseract/` on Linux).
 
-**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views (LoginView, RoomListView, MessageListView, EmojiPicker, RecoveryBanner, ComposeBar) live under `views/`. Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
+**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views live under `views/` (see architecture diagram above for the full list). Text input stays native via `tk::NativeTextField` / `tk::NativeTextArea` overlays so IME and selection behave correctly per-OS.
 
 **`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`.
 
@@ -131,7 +136,10 @@ Catch2 is fetched automatically. Each `TEST_CASE` is registered as a separate ct
 | `ui/shared/views/*.h` | Cross-platform views mounted by every native shell |
 | `ui/shared/app/ShellBase.h` | Platform-agnostic shell state + pure-virtual hooks shared by all four shells |
 | `ui/shared/app/EventHandlerBase.h` | `IEventHandler` adapter: marshals SDK callbacks → UI thread → `handle_*_ui_()` virtuals |
-| `ui/linux-qt/src/MainWindow.h` | Qt6 shell with `EventBridge` for thread marshaling |
+| `ui/shared/app/RoomWindowBase.h` | Base for secondary (popout) room windows; each platform shell provides a concrete subclass |
+| `ui/linux-qt/src/MainWindow.h` | Qt6 shell; `EventBridge` wraps `EventHandlerBase` as a `QObject` for thread marshaling |
+| `ui/linux-gtk/src/MainWindow.h` | GTK4 shell; uses `g_idle_add` for UI-thread dispatch |
+| `ui/windows/src/MainWindow.h` | Win32 shell; uses `PostMessage` for UI-thread dispatch |
 | `ui/macos/src/MainWindowController.mm` | AppKit shell (`NSWindowController` + `NSSplitView`); uses `MacShell : ShellBase` composition |
 
 ## Roadmap
