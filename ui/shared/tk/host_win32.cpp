@@ -874,7 +874,11 @@ private:
             {
                 is_nav = false;
             }
-            if (is_nav && self->popup_nav_(nk))
+            // Same re-entrancy hazard as Qt6: Tab calls replace_range()
+            // → on_changed_() → set_on_popup_nav(nullptr), which zeros the
+            // closure storage in-place.  Copy to keep it alive.
+            auto nav = self->popup_nav_;
+            if (is_nav && nav && nav(nk))
             {
                 return 0;
             }
