@@ -1633,10 +1633,14 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return TRUE;
     }
     case WM_MOUSEACTIVATE:
-        // Prevent the Surface from stealing keyboard focus from native
-        // overlays (NativeTextArea, NativeTextField) when buttons are
-        // clicked. All input handling is mouse-driven; no WM_KEYDOWN
-        // handling lives in this proc.
+        // Bring the top-level window to the foreground when clicked while
+        // the app is inactive, but don't let the Surface steal keyboard
+        // focus from native overlays (NativeTextArea, NativeTextField).
+        // Without the SetForegroundWindow call the MA_NOACTIVATE return
+        // suppresses the normal parent-activation that DefWindowProc would
+        // perform, so the window never comes to front.
+        if (HWND root = GetAncestor(hwnd, GA_ROOT))
+            SetForegroundWindow(root);
         return MA_NOACTIVATE;
     case WM_ERASEBKGND:
         return 1; // we paint the full client area in WM_PAINT
