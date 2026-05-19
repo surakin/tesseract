@@ -1367,8 +1367,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
 
                 if (room_text_area_)
                 {
-                    room_text_area_->set_rect(
-                        main_app_->compose_text_area_rect());
+                    const tk::Rect ta = main_app_->compose_text_area_rect();
+                    room_text_area_->set_visible(!ta.empty());
+                    if (!ta.empty())
+                        room_text_area_->set_rect(ta);
                 }
 
                 if (recovery_key_field_)

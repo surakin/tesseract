@@ -1011,7 +1011,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (mainApp_ && roomTextArea_)
             {
-                roomTextArea_->set_rect(mainApp_->compose_text_area_rect());
+                const tk::Rect ta = mainApp_->compose_text_area_rect();
+                roomTextArea_->set_visible(!ta.empty());
+                if (!ta.empty())
+                    roomTextArea_->set_rect(ta);
             }
             if (mainApp_ && roomSearchField_)
             {

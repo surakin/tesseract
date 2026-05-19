@@ -48,7 +48,7 @@ public:
     /// NativeTextArea. Empty when the widget hasn't been arranged yet.
     tk::Rect text_area_rect() const
     {
-        return text_area_rect_;
+        return recording_ ? tk::Rect{} : text_area_rect_;
     }
 
     /// Host bridge: integration code pushes the latest natural height of
@@ -329,7 +329,7 @@ private:
 
     // Voice recording state.
     bool recording_ = false;
-    static constexpr std::size_t kMaxWaveformSamples = 48;
+    static constexpr std::size_t kMaxWaveformSamples = 80;
     std::vector<std::uint16_t> waveform_samples_;
     tk::Rect mic_btn_rect_{};
     tk::Rect waveform_strip_rect_{};

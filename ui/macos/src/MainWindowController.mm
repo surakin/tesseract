@@ -2497,8 +2497,12 @@ void MacShell::apply_cached_messages_(
                     return;
                 }
                 // Compose text area.
-                s->_roomTextArea->set_visible(true);
-                s->_roomTextArea->set_rect(app->compose_text_area_rect());
+                {
+                    const tk::Rect ta = app->compose_text_area_rect();
+                    s->_roomTextArea->set_visible(!ta.empty());
+                    if (!ta.empty())
+                        s->_roomTextArea->set_rect(ta);
+                }
                 // Room search field.
                 bool searchVisible = app->room_search_field_visible();
                 s->_roomSearchField->set_visible(searchVisible);

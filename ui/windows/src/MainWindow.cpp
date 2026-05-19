@@ -2084,15 +2084,15 @@ void MainWindow::on_create(HWND hwnd)
                 const bool hide = (img_viewer_ && img_viewer_->is_open()) ||
                                   (vid_viewer_ && vid_viewer_->is_open());
 
-                // Compose text area.
+                // Compose text area. Hidden while a viewer is open or while
+                // voice recording is active (rect is empty in that case).
                 if (room_text_area_)
                 {
-                    room_text_area_->set_visible(!hide);
-                    if (!hide)
-                    {
-                        room_text_area_->set_rect(
-                            main_app_->compose_text_area_rect());
-                    }
+                    const tk::Rect ta = main_app_->compose_text_area_rect();
+                    const bool show_ta = !hide && !ta.empty();
+                    room_text_area_->set_visible(show_ta);
+                    if (show_ta)
+                        room_text_area_->set_rect(ta);
                 }
 
                 // Room search field.

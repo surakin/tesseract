@@ -371,7 +371,11 @@ void ComposeBar::set_recording(bool recording)
                 std::chrono::steady_clock::now().time_since_epoch()).count());
     }
     elapsed_layout_.reset();
-    // Visual-only change: no height change, host will repaint on next cycle.
+    mic_layout_.reset(); // glyph switches between 🎙️ and ⏹ on state change
+    // Fire on_size_changed so the host relayouts and updates the NativeTextArea
+    // visibility (hidden while recording, restored when done).
+    if (on_size_changed)
+        on_size_changed();
 }
 
 void ComposeBar::push_amplitude(std::uint16_t amplitude)
@@ -660,24 +664,29 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         std::max(0.0f, emoji_rect_.x - kGap - (card_left + kPadX)),
         std::max(0.0f, text_strip_h - kPadY * 2)};
 
-    // Waveform strip occupies the same space as the text area + card buttons.
-    // The cancel button is a small square to the left of the compose card.
+    // Waveform strip occupies the card between the × cancel button (left) and
+    // the ⏹ stop button (right). Emoji/sticker buttons are hidden while recording.
     constexpr float kVoiceCancelSide = 28.0f;
     voice_cancel_rect_ = {card_left,
                           text_top + (text_strip_h - kVoiceCancelSide) * 0.5f,
                           kVoiceCancelSide, kVoiceCancelSide};
+    const float wave_right = (mic_available_ && !mic_btn_rect_.empty())
+                                 ? mic_btn_rect_.x - kGap
+                                 : card_right;
     waveform_strip_rect_ = {
         card_left + kVoiceCancelSide + kGap, text_top + kPadY,
-        std::max(0.0f, card_right - card_left - kVoiceCancelSide - kGap),
+        std::max(0.0f, wave_right - card_left - kVoiceCancelSide - kGap),
         std::max(0.0f, text_strip_h - kPadY * 2)};
 
     if (emoji_btn_)
     {
-        emoji_btn_->arrange(ctx, emoji_rect_);
+        emoji_btn_->set_visible(!recording_);
+        emoji_btn_->arrange(ctx, recording_ ? tk::Rect{} : emoji_rect_);
     }
     if (sticker_btn_)
     {
-        sticker_btn_->arrange(ctx, sticker_rect_);
+        sticker_btn_->set_visible(!recording_);
+        sticker_btn_->arrange(ctx, recording_ ? tk::Rect{} : sticker_rect_);
     }
     if (mic_btn_)
     {
@@ -875,11 +884,11 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                                        ctx.theme.palette.border, 1.0f);
     }
 
-    if (emoji_btn_)
+    if (emoji_btn_ && !recording_)
     {
         emoji_btn_->paint(ctx);
     }
-    if (sticker_btn_)
+    if (sticker_btn_ && !recording_)
     {
         sticker_btn_->paint(ctx);
     }
@@ -1025,18 +1034,20 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         ctx.canvas.draw_text(*cache, {x, y}, ctx.theme.palette.text_primary);
     };
 
-    if (emoji_btn_)
+    if (emoji_btn_ && !recording_)
     {
         paint_glyph_over(emoji_rect_, emoji_layout_, "\xF0\x9F\x98\x80");
     }
-    if (sticker_btn_)
+    if (sticker_btn_ && !recording_)
     {
         paint_glyph_over(sticker_rect_, sticker_layout_,
                          "\xF0\x9F\x96\xBC\xEF\xB8\x8F");
     }
     if (mic_btn_ && mic_available_)
     {
-        paint_glyph_over(mic_btn_rect_, mic_layout_, "\xF0\x9F\x8E\x99");
+        // ⏹ U+23F9 while recording, 🎙️ U+1F399 otherwise.
+        paint_glyph_over(mic_btn_rect_, mic_layout_,
+                         recording_ ? "\xE2\x8F\xB9" : "\xF0\x9F\x8E\x99");
     }
 }
 
