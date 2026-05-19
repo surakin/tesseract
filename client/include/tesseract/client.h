@@ -225,11 +225,47 @@ public:
     /// `width`/`height` populate `info.{w,h}`; pass 0 when unknown. The
     /// SDK uploads the bytes via the homeserver media repository (transparent
     /// encryption in E2EE rooms) before posting the event.
+    ///
+    /// When `is_animated` is true the image is sent as a raw `m.image` event
+    /// carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and the
+    /// `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay and
+    /// loop on capable clients (the standard upload path strips these fields).
     Result send_image(const std::string& room_id,
                       const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
                       const std::string& caption, std::uint32_t width,
                       std::uint32_t height,
+                      bool is_animated,
+                      const std::string& reply_event_id = "");
+
+    /// Send a video to `room_id` as an `m.video` event. `width`/`height` are
+    /// the video source dimensions; `thumb_bytes` is a JPEG first-frame
+    /// thumbnail (pass an empty vector when unavailable) with dimensions
+    /// `thumb_width`/`thumb_height`; `duration_ms` populates `info.duration`
+    /// (pass 0 when unknown). `caption`/`reply_event_id` follow the same
+    /// MSC2530 / m.in_reply_to framing as send_image(). The SDK uploads the
+    /// thumbnail as a separate media item and sets `info.thumbnail_url`.
+    /// E2EE rooms are handled transparently.
+    Result send_video(const std::string& room_id,
+                      const std::vector<uint8_t>& bytes,
+                      const std::string& mime_type, const std::string& filename,
+                      const std::string& caption,
+                      std::uint32_t width, std::uint32_t height,
+                      const std::vector<uint8_t>& thumb_bytes,
+                      std::uint32_t thumb_width, std::uint32_t thumb_height,
+                      std::uint64_t duration_ms,
+                      const std::string& reply_event_id = "");
+
+    /// Send an audio file to `room_id` as a plain `m.audio` event (not an
+    /// MSC3245 voice message). `duration_ms` populates `info.duration` (pass
+    /// 0 when unknown). `caption`/`reply_event_id` follow the same MSC2530 /
+    /// m.in_reply_to framing as send_image(). E2EE rooms are handled
+    /// transparently.
+    Result send_audio(const std::string& room_id,
+                      const std::vector<uint8_t>& bytes,
+                      const std::string& mime_type, const std::string& filename,
+                      const std::string& caption,
+                      std::uint64_t duration_ms,
                       const std::string& reply_event_id = "");
 
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is

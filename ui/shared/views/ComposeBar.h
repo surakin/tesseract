@@ -27,6 +27,22 @@
 namespace tesseract::views
 {
 
+/// Metadata extracted from a dropped video or audio file on a background
+/// thread. Passed to ComposeBar::update_pending_attachment() on the UI thread
+/// once extraction completes.
+struct MediaInfo
+{
+    std::vector<std::uint8_t> thumb_bytes; // JPEG first frame; empty for audio/gif
+    std::uint32_t thumb_w = 0, thumb_h = 0;
+    std::uint32_t video_w = 0, video_h = 0;
+    std::uint64_t duration_ms = 0;
+    bool is_animated = false;   // gif/webp animation flag
+    // Generation token: set to ComposeBar::pending_gen() immediately after
+    // set_pending_*() and checked in update_pending_attachment() to discard
+    // results that arrive after the user replaced or removed the attachment.
+    std::uint32_t pending_gen = 0;
+};
+
 class ComposeBar : public tk::Widget
 {
 public:
@@ -93,8 +109,14 @@ public:
     /// for clipboard pastes (the widget synthesises
     /// `clipboard-YYYYMMDD-HHMMSS.ext`); pass the original filename for
     /// file drops so the recipient sees the real name.
+    ///
+    /// `is_animated` marks the payload as an animated GIF/WebP: it is
+    /// forwarded verbatim through `on_send_image` so the host sends it via
+    /// the MSC4230 raw path (skipping the re-encode that would flatten the
+    /// animation).
     void set_pending_image(std::vector<std::uint8_t> bytes, std::string mime,
-                           std::string filename = {});
+                           std::string filename = {},
+                           bool is_animated = false);
 
     /// Attach a non-image file as a pending payload. Renders as a single-
     /// line chip (paperclip + filename + size) above the input. Replaces
@@ -104,6 +126,23 @@ public:
     void set_pending_file(std::vector<std::uint8_t> bytes, std::string mime,
                           std::string filename);
 
+    /// Attach a video as a pending payload with `loading = true`. Renders as a
+    /// film-icon chip until `update_pending_attachment()` fills in the thumbnail
+    /// and metadata, at which point it switches to the thumbnail-band view.
+    void set_pending_video(std::vector<std::uint8_t> bytes, std::string mime,
+                           std::string filename);
+
+    /// Attach an audio file as a pending payload with `loading = true`. Renders
+    /// as an audio-icon chip; duration text is filled in by
+    /// `update_pending_attachment()` once background extraction completes.
+    void set_pending_audio(std::vector<std::uint8_t> bytes, std::string mime,
+                           std::string filename);
+
+    /// Called on the UI thread after background media extraction completes.
+    /// Fills in thumbnail/dimensions/duration/is_animated from `info` and
+    /// clears the `loading` flag so the preview updates immediately.
+    void update_pending_attachment(const MediaInfo& info);
+
     /// Drop any attached payload (image or file). No-op when none.
     void clear_pending();
     /// Back-compat alias — same as `clear_pending()`.
@@ -112,15 +151,61 @@ public:
         clear_pending();
     }
 
-    /// True while any attachment (image or file) is queued for send.
+    /// True while any attachment (image, video, audio, or file) is queued.
     bool has_pending() const
     {
         return pending_.has_value();
     }
+
+    /// Current pending-attachment generation counter. Increment on every
+    /// set_pending_* / clear_pending call. Shells capture this immediately
+    /// after set_pending_* and embed it in the MediaInfo they pass to
+    /// the background extractor so update_pending_attachment() can discard
+    /// results that arrive after the user replaced or removed the attachment.
+    std::uint32_t pending_gen() const { return pending_gen_; }
     /// Back-compat alias — same as `has_pending()`.
     bool has_pending_image() const
     {
         return pending_.has_value();
+    }
+
+    // Attachment kinds — public so pending_for_test() callers can inspect them.
+    struct PendingAttachment
+    {
+        enum class Kind
+        {
+            Image,
+            Video,
+            Audio,
+            File
+        };
+        Kind kind = Kind::Image;
+        bool loading = false; // true while background extraction is in progress
+
+        std::vector<std::uint8_t> bytes;
+        std::string mime;
+        std::string filename;
+
+        // Image / Video: decoded preview thumbnail (lazy, from arrange()).
+        std::unique_ptr<tk::Image> preview;
+        std::uint32_t width = 0, height = 0;
+
+        // Image kind: true for animated GIF/WebP.
+        bool is_animated = false;
+
+        // Video kind: raw JPEG first-frame bytes passed to on_send_video.
+        std::vector<std::uint8_t> thumb_bytes_raw;
+        std::uint32_t thumb_width = 0, thumb_height = 0;
+
+        // Video + Audio kinds: duration in milliseconds (0 = unknown).
+        std::uint64_t duration_ms = 0;
+    };
+
+    /// Test accessor: returns a pointer to the current PendingAttachment, or
+    /// nullptr when none is queued. For unit tests only.
+    const PendingAttachment* pending_for_test() const
+    {
+        return pending_.has_value() ? &*pending_ : nullptr;
     }
 
     /// Execute the same dispatch as the send button: pending attachment →
@@ -138,13 +223,15 @@ public:
     /// Fires when send runs with a pending image attached. The host
     /// receives the raw clipboard bytes, the source mime, the generated
     /// filename, the trimmed caption (may be empty), the source dimensions,
-    /// and the reply_event_id (empty when no reply is pending). The host
-    /// re-encodes per `Settings::image_quality`, uploads, and posts the
+    /// the `is_animated` flag (true for animated GIF/WebP — the host must
+    /// skip re-encoding and send via the MSC4230 raw path), and the
+    /// reply_event_id (empty when no reply is pending). For still images the
+    /// host re-encodes per `Settings::image_quality`, uploads, and posts the
     /// `m.image` event.
     std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
                        std::string filename, std::string caption,
                        std::uint32_t width, std::uint32_t height,
-                       std::string reply_event_id)>
+                       bool is_animated, std::string reply_event_id)>
         on_send_image;
 
     /// Fires when send runs with a pending non-image file attached. The
@@ -156,6 +243,29 @@ public:
                        std::string filename, std::string caption,
                        std::string reply_event_id)>
         on_send_file;
+
+    /// Fires when send runs with a pending video attached. `width`/`height`
+    /// are the video source dimensions; `thumb_bytes` is a JPEG first-frame
+    /// thumbnail (empty when unavailable); `thumb_width`/`thumb_height` are
+    /// its dimensions; `duration_ms` populates `info.duration` (0 when
+    /// unknown). The host uploads via `client::send_video` and posts an
+    /// `m.video` event.
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::uint32_t width, std::uint32_t height,
+                       std::vector<std::uint8_t> thumb_bytes,
+                       std::uint32_t thumb_width, std::uint32_t thumb_height,
+                       std::uint64_t duration_ms, std::string reply_event_id)>
+        on_send_video;
+
+    /// Fires when send runs with a pending audio file attached. `duration_ms`
+    /// populates `info.duration` (0 when unknown). Sends a plain `m.audio`
+    /// event — NOT the MSC3245 voice extension (that is for voice recordings
+    /// only). The host uploads via `client::send_audio`.
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::uint64_t duration_ms, std::string reply_event_id)>
+        on_send_audio;
 
     /// Fires when the emoji button is clicked. The rect is the button's
     /// bounding box in surface-local (world) coordinates, for precise
@@ -251,33 +361,18 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
 private:
-    struct PendingAttachment
-    {
-        enum class Kind
-        {
-            Image,
-            File
-        };
-        Kind kind = Kind::Image;
-        std::vector<std::uint8_t> bytes;
-        std::string mime;
-        std::string filename;
-        // Image-only fields. For Kind::File these stay 0/null.
-        std::unique_ptr<tk::Image> preview;
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-    };
-
     void refresh_send_enabled();
     void recompute_height();
     bool point_in_remove_btn(tk::Point world) const;
     static std::string make_filename(const std::string& mime);
-    // Cached layout used to paint the filename (and a second line for size)
-    // inside the file chip. Rebuilt lazily on first paint after a file is
-    // attached or replaced.
+    // Cached layout used to paint the filename (and a second line for size or
+    // duration) inside file/video/audio chips. Rebuilt lazily in arrange().
     std::unique_ptr<tk::TextLayout> file_name_layout_;
     std::unique_ptr<tk::TextLayout> file_size_layout_;
-    std::string file_layout_key_; // mime+name+size cache key
+    std::string file_layout_key_; // cache key to detect staleness
+
+    // ▶ badge painted over the video thumbnail in the preview band.
+    std::unique_ptr<tk::TextLayout> video_badge_layout_;
 
     tk::Button* emoji_btn_ = nullptr;   // borrowed (owned by Widget tree)
     tk::Button* sticker_btn_ = nullptr; // borrowed
@@ -311,6 +406,10 @@ private:
     bool mic_available_ = true;
 
     std::optional<PendingAttachment> pending_;
+    // Monotonically increasing counter, incremented by every set_pending_*()
+    // and clear_pending(). Stored in MediaInfo.pending_gen at drop time and
+    // checked in update_pending_attachment() to discard stale results.
+    std::uint32_t pending_gen_ = 0;
 
     // Reply state. reply_event_id_ is empty when not in reply mode.
     std::string reply_event_id_;

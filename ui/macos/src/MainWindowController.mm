@@ -244,6 +244,12 @@ public:
         update_typing_bar_(text, visible);
     }
 
+    // Extract thumbnail, dimensions, and duration from raw bytes on a
+    // background thread; posts result back via post_to_ui_.
+    void extract_media_info_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes,
+                             std::string mime);
+
     // Borrowed pointers set by ObjC side after building the chat surface.
     // Exposed here so MacShell C++ methods can call them without crossing
     // the ObjC ivar boundary (which is private to @implementation).
@@ -325,6 +331,26 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                       mime:(std::string)mime
                   filename:(std::string)filename
                    caption:(std::string)caption
+                     width:(std::uint32_t)width
+                    height:(std::uint32_t)height
+                isAnimated:(bool)is_animated
+              replyEventId:(std::string)reply_event_id;
+- (void)_sendComposedVideo:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption
+                     width:(std::uint32_t)width
+                    height:(std::uint32_t)height
+                thumbBytes:(std::vector<std::uint8_t>)thumb_bytes
+                thumbWidth:(std::uint32_t)thumb_width
+               thumbHeight:(std::uint32_t)thumb_height
+                durationMs:(std::uint64_t)duration_ms
+              replyEventId:(std::string)reply_event_id;
+- (void)_sendComposedAudio:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption
+                durationMs:(std::uint64_t)duration_ms
               replyEventId:(std::string)reply_event_id;
 - (void)_sendComposedFile:(std::vector<std::uint8_t>)bytes
                      mime:(std::string)mime
@@ -568,6 +594,130 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
                     }
                 });
         });
+}
+
+void MacShell::extract_media_info_(std::uint32_t pending_gen,
+                                   std::vector<std::uint8_t> bytes,
+                                   std::string mime)
+{
+    run_async_([this, pending_gen, bytes = std::move(bytes), mime = std::move(mime)]() mutable
+    {
+        tesseract::views::MediaInfo info;
+        info.pending_gen = pending_gen;
+
+        // ── Animated image detection (gif / webp) ──────────────────────────
+        if (mime == "image/gif" || mime == "image/webp")
+        {
+            NSData* nsdata = [NSData dataWithBytes:bytes.data()
+                                            length:bytes.size()];
+            CGImageSourceRef src = CGImageSourceCreateWithData(
+                (__bridge CFDataRef)nsdata, nullptr);
+            if (src)
+            {
+                info.is_animated = CGImageSourceGetCount(src) > 1;
+                CFRelease(src);
+            }
+        }
+        // ── Video: thumbnail + dimensions + duration via AVFoundation ──────
+        else if (mime.rfind("video/", 0) == 0)
+        {
+            NSString* tmpPath =
+                [NSTemporaryDirectory() stringByAppendingPathComponent:
+                    [NSString stringWithFormat:@"tesseract_drop_%@",
+                        [[NSUUID UUID] UUIDString]]];
+            NSData* nsdata = [NSData dataWithBytes:bytes.data()
+                                            length:bytes.size()];
+            [nsdata writeToFile:tmpPath atomically:NO];
+            NSURL* url = [NSURL fileURLWithPath:tmpPath];
+
+            AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+
+            // Duration
+            CMTime dur = asset.duration;
+            if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+            {
+                double secs = CMTimeGetSeconds(dur);
+                if (secs > 0.0)
+                    info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
+            }
+
+            // Video dimensions (apply preferred transform to handle rotation)
+            NSArray<AVAssetTrack*>* vTracks =
+                [asset tracksWithMediaType:AVMediaTypeVideo];
+            if (vTracks.count > 0)
+            {
+                AVAssetTrack* track = vTracks[0];
+                CGAffineTransform t = track.preferredTransform;
+                CGSize natural = track.naturalSize;
+                CGSize sz = CGSizeApplyAffineTransform(natural, t);
+                info.video_w =
+                    static_cast<std::uint32_t>(std::abs(sz.width));
+                info.video_h =
+                    static_cast<std::uint32_t>(std::abs(sz.height));
+            }
+
+            // First-frame thumbnail → JPEG bytes
+            AVAssetImageGenerator* gen =
+                [[AVAssetImageGenerator alloc] initWithAsset:asset];
+            gen.appliesPreferredTrackTransform = YES;
+            NSError* err = nil;
+            CGImageRef frame = [gen copyCGImageAtTime:kCMTimeZero
+                                           actualTime:nil
+                                                error:&err];
+            if (frame)
+            {
+                NSBitmapImageRep* rep =
+                    [[NSBitmapImageRep alloc] initWithCGImage:frame];
+                CGImageRelease(frame);
+                NSData* jpeg = [rep
+                    representationUsingType:NSBitmapImageFileTypeJPEG
+                                 properties:@{
+                                     NSImageCompressionFactor : @0.85
+                                 }];
+                if (jpeg)
+                {
+                    const auto* p =
+                        static_cast<const std::uint8_t*>(jpeg.bytes);
+                    info.thumb_bytes.assign(p, p + jpeg.length);
+                    info.thumb_w = static_cast<std::uint32_t>(rep.pixelsWide);
+                    info.thumb_h = static_cast<std::uint32_t>(rep.pixelsHigh);
+                }
+            }
+
+            [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+        }
+        // ── Audio: duration only via AVFoundation ──────────────────────────
+        else if (mime.rfind("audio/", 0) == 0)
+        {
+            NSString* tmpPath =
+                [NSTemporaryDirectory() stringByAppendingPathComponent:
+                    [NSString stringWithFormat:@"tesseract_drop_%@",
+                        [[NSUUID UUID] UUIDString]]];
+            NSData* nsdata = [NSData dataWithBytes:bytes.data()
+                                            length:bytes.size()];
+            [nsdata writeToFile:tmpPath atomically:NO];
+            NSURL* url = [NSURL fileURLWithPath:tmpPath];
+
+            AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+            CMTime dur = asset.duration;
+            if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+            {
+                double secs = CMTimeGetSeconds(dur);
+                if (secs > 0.0)
+                    info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
+            }
+
+            [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+        }
+
+        // Post result back to the UI thread; resolve compose_bar() at call
+        // time to avoid dangling pointer if the view was freed.
+        post_to_ui_([this, info = std::move(info)]() mutable
+        {
+            if (room_view_)
+                room_view_->compose_bar()->update_pending_attachment(info);
+        });
+    });
 }
 
 void MacShell::cache_rgba_image_(const std::string& key, int w, int h,
@@ -1902,9 +2052,8 @@ void MacShell::apply_cached_messages_(
         };
         _mainApp->room_view()->on_send_image =
             [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint32_t /*src_w*/, std::uint32_t /*src_h*/,
-                       std::string reply_event_id)
+                       std::string filename, std::string caption, int src_w,
+                       int src_h, bool is_animated, std::string reply_event_id)
         {
             MainWindowController* s = weakSelf;
             if (!s)
@@ -1915,6 +2064,54 @@ void MacShell::apply_cached_messages_(
                              mime:std::move(mime)
                          filename:std::move(filename)
                           caption:std::move(caption)
+                            width:static_cast<std::uint32_t>(
+                                      src_w < 0 ? 0 : src_w)
+                           height:static_cast<std::uint32_t>(
+                                      src_h < 0 ? 0 : src_h)
+                       isAnimated:is_animated
+                     replyEventId:std::move(reply_event_id)];
+        };
+        _mainApp->room_view()->on_send_video =
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption, int w, int h,
+                       std::vector<std::uint8_t> thumb_bytes, int thumb_w,
+                       int thumb_h, std::uint64_t duration_ms,
+                       std::string reply_event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            [s _sendComposedVideo:std::move(bytes)
+                             mime:std::move(mime)
+                         filename:std::move(filename)
+                          caption:std::move(caption)
+                            width:static_cast<std::uint32_t>(w < 0 ? 0 : w)
+                           height:static_cast<std::uint32_t>(h < 0 ? 0 : h)
+                       thumbBytes:std::move(thumb_bytes)
+                       thumbWidth:static_cast<std::uint32_t>(
+                                      thumb_w < 0 ? 0 : thumb_w)
+                      thumbHeight:static_cast<std::uint32_t>(
+                                      thumb_h < 0 ? 0 : thumb_h)
+                       durationMs:duration_ms
+                     replyEventId:std::move(reply_event_id)];
+        };
+        _mainApp->room_view()->on_send_audio =
+            [weakSelf](std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::uint64_t duration_ms, std::string reply_event_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            [s _sendComposedAudio:std::move(bytes)
+                             mime:std::move(mime)
+                         filename:std::move(filename)
+                          caption:std::move(caption)
+                       durationMs:duration_ms
                      replyEventId:std::move(reply_event_id)];
         };
         _mainApp->room_view()->on_send_file =
@@ -2534,15 +2731,40 @@ void MacShell::apply_cached_messages_(
                 {
                     return;
                 }
-                if (mime.rfind("image/", 0) == 0)
+                if (bytes.empty()) return;
+                auto* cb = c->_roomView->compose_bar();
+                if (mime == "image/gif" || mime == "image/webp")
                 {
-                    c->_roomView->compose_bar()->set_pending_image(
-                        std::move(bytes), std::move(mime), std::move(filename));
+                    // Show first frame immediately; detect animation in background.
+                    cb->set_pending_image(bytes, mime, filename,
+                                         /*is_animated=*/false);
+                    auto gen = cb->pending_gen();
+                    c->_shell->extract_media_info_(gen, std::move(bytes),
+                                                   std::move(mime));
+                }
+                else if (mime.rfind("image/", 0) == 0)
+                {
+                    cb->set_pending_image(std::move(bytes), std::move(mime),
+                                         std::move(filename), /*is_animated=*/false);
+                }
+                else if (mime.rfind("video/", 0) == 0)
+                {
+                    cb->set_pending_video(bytes, mime, filename);
+                    auto gen = cb->pending_gen();
+                    c->_shell->extract_media_info_(gen, std::move(bytes),
+                                                   std::move(mime));
+                }
+                else if (mime.rfind("audio/", 0) == 0)
+                {
+                    cb->set_pending_audio(bytes, mime, filename);
+                    auto gen = cb->pending_gen();
+                    c->_shell->extract_media_info_(gen, std::move(bytes),
+                                                   std::move(mime));
                 }
                 else
                 {
-                    c->_roomView->compose_bar()->set_pending_file(
-                        std::move(bytes), std::move(mime), std::move(filename));
+                    cb->set_pending_file(std::move(bytes), std::move(mime),
+                                         std::move(filename));
                 }
             });
 
@@ -3173,33 +3395,108 @@ void MacShell::apply_cached_messages_(
                       mime:(std::string)mime
                   filename:(std::string)filename
                    caption:(std::string)caption
+                     width:(std::uint32_t)width
+                    height:(std::uint32_t)height
+                isAnimated:(bool)is_animated
               replyEventId:(std::string)reply_event_id
 {
     if (_shell->current_room_id_.empty() || !_mainAppSurface)
     {
         return;
     }
-    const bool compress = tesseract::Settings::instance().image_quality ==
-                          tesseract::Settings::ImageQuality::Compressed;
-    auto enc = _mainAppSurface->host().encode_for_send(bytes.data(),
-                                                       bytes.size(), compress);
-    if (enc.bytes.empty())
+    tesseract::Result res;
+    if (is_animated)
+    {
+        // Animated GIF/WebP: send the original bytes verbatim via the
+        // MSC4230 raw path. Re-encoding would flatten the animation to a
+        // single frame.
+        res = _shell->client_->send_image(
+            _shell->current_room_id_, bytes, mime, filename, caption, width,
+            height, /*is_animated=*/true, reply_event_id);
+    }
+    else
+    {
+        const bool compress = tesseract::Settings::instance().image_quality ==
+                              tesseract::Settings::ImageQuality::Compressed;
+        auto enc = _mainAppSurface->host().encode_for_send(
+            bytes.data(), bytes.size(), compress);
+        if (enc.bytes.empty())
+        {
+            return;
+        }
+        std::string out_name = filename;
+        if (enc.mime == "image/jpeg")
+        {
+            auto dot = out_name.find_last_of('.');
+            if (dot != std::string::npos)
+            {
+                out_name = out_name.substr(0, dot);
+            }
+            out_name += ".jpg";
+        }
+        res = _shell->client_->send_image(
+            _shell->current_room_id_, enc.bytes, enc.mime, out_name, caption,
+            enc.width, enc.height, /*is_animated=*/false, reply_event_id);
+    }
+    if (res)
+    {
+        if (_roomTextArea)
+        {
+            _roomTextArea->set_text("");
+        }
+        if (_roomView)
+        {
+            _roomView->set_current_text({});
+        }
+    }
+}
+
+- (void)_sendComposedVideo:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption
+                     width:(std::uint32_t)width
+                    height:(std::uint32_t)height
+                thumbBytes:(std::vector<std::uint8_t>)thumb_bytes
+                thumbWidth:(std::uint32_t)thumb_width
+               thumbHeight:(std::uint32_t)thumb_height
+                durationMs:(std::uint64_t)duration_ms
+              replyEventId:(std::string)reply_event_id
+{
+    if (_shell->current_room_id_.empty())
     {
         return;
     }
-    std::string out_name = filename;
-    if (enc.mime == "image/jpeg")
+    auto res = _shell->client_->send_video(
+        _shell->current_room_id_, bytes, mime, filename, caption, width, height,
+        thumb_bytes, thumb_width, thumb_height, duration_ms, reply_event_id);
+    if (res)
     {
-        auto dot = out_name.find_last_of('.');
-        if (dot != std::string::npos)
+        if (_roomTextArea)
         {
-            out_name = out_name.substr(0, dot);
+            _roomTextArea->set_text("");
         }
-        out_name += ".jpg";
+        if (_roomView)
+        {
+            _roomView->set_current_text({});
+        }
     }
-    auto res = _shell->client_->send_image(
-        _shell->current_room_id_, enc.bytes, enc.mime, out_name, caption,
-        enc.width, enc.height, reply_event_id);
+}
+
+- (void)_sendComposedAudio:(std::vector<std::uint8_t>)bytes
+                      mime:(std::string)mime
+                  filename:(std::string)filename
+                   caption:(std::string)caption
+                durationMs:(std::uint64_t)duration_ms
+              replyEventId:(std::string)reply_event_id
+{
+    if (_shell->current_room_id_.empty())
+    {
+        return;
+    }
+    auto res = _shell->client_->send_audio(_shell->current_room_id_, bytes,
+                                           mime, filename, caption, duration_ms,
+                                           reply_event_id);
     if (res)
     {
         if (_roomTextArea)

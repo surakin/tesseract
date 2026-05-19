@@ -83,15 +83,16 @@ void RoomView::wire_internal_callbacks()
             on_send_edit(event_id, new_body);
         }
     };
-    compose_bar_->on_send_image = [this](std::vector<std::uint8_t> bytes,
-                                         std::string mime, std::string filename,
-                                         std::string caption, int w, int h,
-                                         std::string reply_id)
+    compose_bar_->on_send_image =
+        [this](std::vector<std::uint8_t> bytes, std::string mime,
+               std::string filename, std::string caption, std::uint32_t w,
+               std::uint32_t h, bool is_animated, std::string reply_id)
     {
         if (on_send_image)
         {
             on_send_image(std::move(bytes), std::move(mime),
-                          std::move(filename), std::move(caption), w, h,
+                          std::move(filename), std::move(caption),
+                          static_cast<int>(w), static_cast<int>(h), is_animated,
                           std::move(reply_id));
         }
     };
@@ -103,6 +104,36 @@ void RoomView::wire_internal_callbacks()
         {
             on_send_file(std::move(bytes), std::move(mime), std::move(filename),
                          std::move(caption), std::move(reply_id));
+        }
+    };
+    compose_bar_->on_send_video =
+        [this](std::vector<std::uint8_t> bytes, std::string mime,
+               std::string filename, std::string caption,
+               std::uint32_t w, std::uint32_t h,
+               std::vector<std::uint8_t> thumb_bytes,
+               std::uint32_t tw, std::uint32_t th,
+               std::uint64_t duration_ms, std::string reply_id)
+    {
+        if (on_send_video)
+        {
+            on_send_video(std::move(bytes), std::move(mime),
+                          std::move(filename), std::move(caption),
+                          static_cast<int>(w), static_cast<int>(h),
+                          std::move(thumb_bytes),
+                          static_cast<int>(tw), static_cast<int>(th),
+                          duration_ms, std::move(reply_id));
+        }
+    };
+    compose_bar_->on_send_audio =
+        [this](std::vector<std::uint8_t> bytes, std::string mime,
+               std::string filename, std::string caption,
+               std::uint64_t duration_ms, std::string reply_id)
+    {
+        if (on_send_audio)
+        {
+            on_send_audio(std::move(bytes), std::move(mime),
+                          std::move(filename), std::move(caption),
+                          duration_ms, std::move(reply_id));
         }
     };
     compose_bar_->on_mic_clicked = [this]

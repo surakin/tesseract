@@ -142,11 +142,29 @@ public:
     std::function<void(std::string event_id, std::string new_body)>
         on_send_edit;
 
-    // Image send.
+    // Image send. `is_animated` is true for animated GIF/WebP — the host
+    // sends via the MSC4230 raw path instead of re-encoding.
     std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
                        std::string filename, std::string caption, int w, int h,
-                       std::string reply_event_id)>
+                       bool is_animated, std::string reply_event_id)>
         on_send_image;
+
+    // Video send. `thumb_bytes` is a JPEG first-frame thumbnail (empty when
+    // unavailable) with dimensions `thumb_w`/`thumb_h`; `duration_ms`
+    // populates `info.duration`. Wired to real routing in a later task.
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption, int w, int h,
+                       std::vector<std::uint8_t> thumb_bytes, int thumb_w,
+                       int thumb_h, std::uint64_t duration_ms,
+                       std::string reply_event_id)>
+        on_send_video;
+
+    // Audio send (plain m.audio, not MSC3245 voice). `duration_ms`
+    // populates `info.duration`. Wired to real routing in a later task.
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
+                       std::string filename, std::string caption,
+                       std::uint64_t duration_ms, std::string reply_event_id)>
+        on_send_audio;
 
     // File send.
     std::function<void(std::vector<std::uint8_t> bytes, std::string mime,

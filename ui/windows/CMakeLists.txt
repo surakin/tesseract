@@ -124,6 +124,13 @@ target_link_libraries(tesseract_win32 PRIVATE
     dwrite
     windowsapp
     wtsapi32
+    mf
+    mfplat
+    mfreadwrite
+    mfuuid
+    shlwapi
+    windowscodecs
+    propsys
 )
 
 target_compile_definitions(tesseract_win32 PRIVATE

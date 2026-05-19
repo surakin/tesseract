@@ -225,6 +225,20 @@ private:
         const std::vector<tesseract::views::MessageRowData>& msgs) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
+
+    // Called from set_on_file_drop when a video is dropped. Creates a
+    // QMediaPlayer on the UI thread (Qt Multimedia constraint), extracts
+    // the first frame as a JPEG thumbnail and the media duration, then
+    // calls update_pending_attachment on the current compose_bar().
+    void extract_drop_video_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes);
+
+    // Called from set_on_file_drop when an audio file is dropped. Creates
+    // a QMediaPlayer on the UI thread, waits for LoadedMedia status to read
+    // the duration, then calls update_pending_attachment on the current
+    // compose_bar().
+    void extract_drop_audio_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes);
     void on_url_preview_ready_(
         const std::string& url,
         const tesseract::Client::UrlPreview& preview) override;

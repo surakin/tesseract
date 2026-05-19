@@ -263,11 +263,46 @@ Result Client::send_image(const std::string& room_id,
                           const std::string& filename,
                           const std::string& caption, std::uint32_t width,
                           std::uint32_t height,
+                          bool is_animated,
                           const std::string& reply_event_id)
 {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_image(room_id, slice, mime_type, filename,
-                                           caption, width, height,
+                                           caption, width, height, is_animated,
+                                           reply_event_id));
+}
+
+Result Client::send_video(const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint32_t width, std::uint32_t height,
+                          const std::vector<uint8_t>& thumb_bytes,
+                          std::uint32_t thumb_width, std::uint32_t thumb_height,
+                          std::uint64_t duration_ms,
+                          const std::string& reply_event_id)
+{
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
+                                                thumb_bytes.size()};
+    return from_ffi(impl_->ffi->send_video(room_id, slice, mime_type, filename,
+                                           caption, width, height, thumb_slice,
+                                           thumb_width, thumb_height,
+                                           duration_ms, reply_event_id));
+}
+
+Result Client::send_audio(const std::string& room_id,
+                          const std::vector<uint8_t>& bytes,
+                          const std::string& mime_type,
+                          const std::string& filename,
+                          const std::string& caption,
+                          std::uint64_t duration_ms,
+                          const std::string& reply_event_id)
+{
+    rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
+    return from_ffi(impl_->ffi->send_audio(room_id, slice, mime_type, filename,
+                                           caption, duration_ms,
                                            reply_event_id));
 }
 

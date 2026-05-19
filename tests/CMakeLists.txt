@@ -41,6 +41,7 @@ add_executable(tesseract_tests
     cpp/test_prefs.cpp
     cpp/test_settings.cpp
     cpp/test_pending_send.cpp
+    cpp/test_compose_bar_media.cpp
     cpp/test_map_tiles.cpp
     cpp/test_location_events.cpp
     cpp/test_markdown.cpp

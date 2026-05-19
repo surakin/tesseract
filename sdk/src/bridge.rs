@@ -622,7 +622,12 @@ pub mod ffi {
         /// the dedicated `filename` field carries the file name. When
         /// `caption` is empty, `body` is set to the filename and the
         /// MSC2530 `filename` field is omitted (legacy fallback). `width`
-        /// and `height` populate `info.{w,h}`; pass 0 when unknown.
+        /// and `height` populate `info.{w,h}`; pass 0 when unknown. When
+        /// `is_animated` is true the image is sent as a raw `m.image` event
+        /// carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and the
+        /// `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay and
+        /// loop on capable clients (the standard `send_attachment` path
+        /// strips these fields).
         fn send_image(
             self: &mut ClientFfi,
             room_id: &str,
@@ -632,6 +637,7 @@ pub mod ffi {
             caption: &str,
             width: u32,
             height: u32,
+            is_animated: bool,
             /// When non-empty, adds an `m.in_reply_to` relation.
             reply_event_id: &str,
         ) -> OpResult;

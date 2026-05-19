@@ -783,9 +783,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                                    std::string mime, std::string filename)
         {
             if (!room_view_)
-            {
                 return;
-            }
             const auto limit = client_->media_upload_limit();
             if (limit > 0 && bytes.size() > limit)
             {
@@ -798,15 +796,35 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 }
                 return;
             }
-            if (mime.rfind("image/", 0) == 0)
+            if (bytes.empty()) return;
+            auto* cb = room_view_->compose_bar();
+            if (mime == "image/gif" || mime == "image/webp")
             {
-                room_view_->compose_bar()->set_pending_image(
-                    std::move(bytes), std::move(mime), std::move(filename));
+                cb->set_pending_image(bytes, mime, filename, false);
+                auto gen = cb->pending_gen();
+                extract_media_info_(gen, std::move(bytes), std::move(mime));
+            }
+            else if (mime.rfind("image/", 0) == 0)
+            {
+                cb->set_pending_image(std::move(bytes), std::move(mime),
+                                      std::move(filename), false);
+            }
+            else if (mime.rfind("video/", 0) == 0)
+            {
+                cb->set_pending_video(bytes, mime, filename);
+                auto gen = cb->pending_gen();
+                extract_media_info_(gen, std::move(bytes), std::move(mime));
+            }
+            else if (mime.rfind("audio/", 0) == 0)
+            {
+                cb->set_pending_audio(bytes, mime, filename);
+                auto gen = cb->pending_gen();
+                extract_media_info_(gen, std::move(bytes), std::move(mime));
             }
             else
             {
-                room_view_->compose_bar()->set_pending_file(
-                    std::move(bytes), std::move(mime), std::move(filename));
+                cb->set_pending_file(std::move(bytes), std::move(mime),
+                                     std::move(filename));
             }
         };
         main_app_surface_->set_on_file_drop(on_file_drop);
@@ -885,35 +903,51 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         };
         room_view_->on_send_image =
             [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption, int /*src_w*/,
-                   int /*src_h*/, std::string reply_event_id)
+                   std::string filename, std::string caption, int src_w,
+                   int src_h, bool is_animated, std::string reply_event_id)
         {
             if (current_room_id_.empty())
             {
                 return;
             }
-            const bool compress =
-                tesseract::Settings::instance().image_quality ==
-                tesseract::Settings::ImageQuality::Compressed;
-            auto enc = main_app_surface_->host().encode_for_send(
-                bytes.data(), bytes.size(), compress);
-            if (enc.bytes.empty())
+            tesseract::Result res;
+            if (is_animated)
             {
-                return;
+                // Animated GIF/WebP: send the original bytes verbatim via
+                // the MSC4230 raw path. Re-encoding would flatten the
+                // animation to a single frame.
+                res = client_->send_image(
+                    current_room_id_, bytes, mime, filename, caption,
+                    static_cast<std::uint32_t>(src_w < 0 ? 0 : src_w),
+                    static_cast<std::uint32_t>(src_h < 0 ? 0 : src_h),
+                    /*is_animated=*/true, reply_event_id);
             }
-            std::string out_name = filename;
-            if (enc.mime == "image/jpeg")
+            else
             {
-                auto dot = out_name.find_last_of('.');
-                if (dot != std::string::npos)
+                const bool compress =
+                    tesseract::Settings::instance().image_quality ==
+                    tesseract::Settings::ImageQuality::Compressed;
+                auto enc = main_app_surface_->host().encode_for_send(
+                    bytes.data(), bytes.size(), compress);
+                if (enc.bytes.empty())
                 {
-                    out_name = out_name.substr(0, dot);
+                    return;
                 }
-                out_name += ".jpg";
+                std::string out_name = filename;
+                if (enc.mime == "image/jpeg")
+                {
+                    auto dot = out_name.find_last_of('.');
+                    if (dot != std::string::npos)
+                    {
+                        out_name = out_name.substr(0, dot);
+                    }
+                    out_name += ".jpg";
+                }
+                res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                          out_name, caption, enc.width,
+                                          enc.height, /*is_animated=*/false,
+                                          reply_event_id);
             }
-            auto res = client_->send_image(
-                current_room_id_, enc.bytes, enc.mime, out_name, caption,
-                enc.width, enc.height, reply_event_id);
             if (res)
             {
                 if (room_text_area_)
@@ -921,6 +955,72 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     room_text_area_->set_text("");
                 }
                 room_view_->clear_compose_text();
+            }
+            else if (status_bar_)
+            {
+                std::string msg =
+                    std::string(_("Send image failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+        };
+        room_view_->on_send_video =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption, int w, int h,
+                   std::vector<std::uint8_t> thumb_bytes, int thumb_w,
+                   int thumb_h, std::uint64_t duration_ms,
+                   std::string reply_event_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            auto res = client_->send_video(
+                current_room_id_, bytes, mime, filename, caption,
+                static_cast<std::uint32_t>(w < 0 ? 0 : w),
+                static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
+                static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
+                static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h),
+                duration_ms, reply_event_id);
+            if (res)
+            {
+                if (room_text_area_)
+                {
+                    room_text_area_->set_text("");
+                }
+                room_view_->clear_compose_text();
+            }
+            else if (status_bar_)
+            {
+                std::string msg =
+                    std::string(_("Send video failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
+            }
+        };
+        room_view_->on_send_audio =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption,
+                   std::uint64_t duration_ms, std::string reply_event_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            auto res =
+                client_->send_audio(current_room_id_, bytes, mime, filename,
+                                     caption, duration_ms, reply_event_id);
+            if (res)
+            {
+                if (room_text_area_)
+                {
+                    room_text_area_->set_text("");
+                }
+                room_view_->clear_compose_text();
+            }
+            else if (status_bar_)
+            {
+                std::string msg =
+                    std::string(_("Send audio failed: ")) + res.message;
+                gtk_label_set_text(GTK_LABEL(status_bar_), msg.c_str());
             }
         };
         room_view_->on_send_file =
@@ -3329,6 +3429,257 @@ void MainWindow::repaint_pickers_()
         sticker_picker_surface_->relayout();
     }
     invalidate_anim_consumers_();
+}
+
+void MainWindow::extract_media_info_(std::uint32_t pending_gen,
+                                     std::vector<std::uint8_t> bytes,
+                                     std::string mime)
+{
+    run_async_(
+        [this, pending_gen, bytes = std::move(bytes),
+         mime = std::move(mime)]() mutable
+        {
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+
+            // ── Animated image detection ────────────────────────────────────
+            if (mime == "image/gif" || mime == "image/webp")
+            {
+                GInputStream* stream = g_memory_input_stream_new_from_data(
+                    bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+                GError* gerr = nullptr;
+                GdkPixbufAnimation* anim =
+                    gdk_pixbuf_animation_new_from_stream(stream, nullptr, &gerr);
+                g_object_unref(stream);
+                if (anim)
+                {
+                    info.is_animated = !gdk_pixbuf_animation_is_static_image(anim);
+                    g_object_unref(anim);
+                }
+                if (gerr)
+                    g_error_free(gerr);
+            }
+            // ── Video: thumbnail + duration via GStreamer ────────────────────
+            else if (mime.starts_with("video/"))
+            {
+                GstElement* pipe = gst_pipeline_new(nullptr);
+                GstElement* gsrc =
+                    gst_element_factory_make("giostreamsrc", nullptr);
+                GstElement* dec = gst_element_factory_make("decodebin", nullptr);
+                GstElement* vconv =
+                    gst_element_factory_make("videoconvert", nullptr);
+                GstElement* vsink =
+                    gst_element_factory_make("appsink", nullptr);
+                if (!pipe || !gsrc || !dec || !vconv || !vsink)
+                {
+                    if (pipe) gst_object_unref(pipe);
+                    if (gsrc) gst_object_unref(gsrc);
+                    if (dec)  gst_object_unref(dec);
+                    if (vconv) gst_object_unref(vconv);
+                    if (vsink) gst_object_unref(vsink);
+                }
+                else
+                {
+                    GstCaps* caps =
+                        gst_caps_from_string("video/x-raw,format=BGRA");
+                    gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
+                    gst_caps_unref(caps);
+                    gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
+                    gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
+
+                    GInputStream* mem_stream =
+                        g_memory_input_stream_new_from_data(
+                            bytes.data(),
+                            static_cast<gssize>(bytes.size()), nullptr);
+                    g_object_set(gsrc, "stream", mem_stream, nullptr);
+                    g_object_unref(mem_stream);
+
+                    gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink,
+                                     nullptr);
+                    gst_element_link(gsrc, dec);
+                    gst_element_link(vconv, vsink);
+                    struct PadCtx { GstElement* vconv; };
+                    auto* pad_ctx = new PadCtx{vconv};
+                    g_signal_connect(
+                        dec, "pad-added",
+                        G_CALLBACK(
+                            +[](GstElement*, GstPad* pad, gpointer ud)
+                            {
+                                auto* pc = static_cast<PadCtx*>(ud);
+                                GstCaps* c2 = gst_pad_get_current_caps(pad);
+                                if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
+                                GstStructure* st =
+                                    gst_caps_get_structure(c2, 0);
+                                if (g_str_has_prefix(
+                                        gst_structure_get_name(st), "video"))
+                                {
+                                    GstPad* sp = gst_element_get_static_pad(
+                                        pc->vconv, "sink");
+                                    if (sp && !gst_pad_is_linked(sp))
+                                        gst_pad_link(pad, sp);
+                                    if (sp) gst_object_unref(sp);
+                                }
+                                gst_caps_unref(c2);
+                            }),
+                        pad_ctx);
+
+                    gst_element_set_state(pipe, GST_STATE_PAUSED);
+                    gst_element_get_state(pipe, nullptr, nullptr,
+                                          5 * GST_SECOND);
+                    GstSample* sample = gst_app_sink_try_pull_preroll(
+                        GST_APP_SINK(vsink), 0);
+
+                    // Duration query after pipeline reaches PAUSED.
+                    gint64 dur_ns = 0;
+                    if (gst_element_query_duration(pipe, GST_FORMAT_TIME,
+                                                   &dur_ns) &&
+                        dur_ns > 0)
+                    {
+                        info.duration_ms =
+                            static_cast<std::uint64_t>(dur_ns / 1000000);
+                    }
+                    gst_element_set_state(pipe, GST_STATE_NULL);
+                    delete pad_ctx;
+                    gst_object_unref(pipe);
+
+                    if (sample)
+                    {
+                        GstBuffer* buf = gst_sample_get_buffer(sample);
+                        GstCaps* scaps = gst_sample_get_caps(sample);
+                        int w = 0, h = 0;
+                        if (scaps)
+                        {
+                            GstStructure* st =
+                                gst_caps_get_structure(scaps, 0);
+                            gst_structure_get_int(st, "width", &w);
+                            gst_structure_get_int(st, "height", &h);
+                        }
+                        if (buf && w > 0 && h > 0)
+                        {
+                            GstMapInfo map;
+                            if (gst_buffer_map(buf, &map, GST_MAP_READ))
+                            {
+                                // BGRA pixels → PNG via GdkPixbuf → JPEG
+                                GdkPixbuf* pb = gdk_pixbuf_new_from_data(
+                                    map.data, GDK_COLORSPACE_RGB, TRUE, 8,
+                                    w, h, w * 4, nullptr, nullptr);
+                                if (pb)
+                                {
+                                    GError* gerr = nullptr;
+                                    gchar* data = nullptr;
+                                    gsize  sz = 0;
+                                    if (gdk_pixbuf_save_to_buffer(
+                                            pb, &data, &sz, "jpeg", &gerr,
+                                            "quality", "85", nullptr))
+                                    {
+                                        info.thumb_bytes.assign(
+                                            reinterpret_cast<const std::uint8_t*>(data),
+                                            reinterpret_cast<const std::uint8_t*>(data) + sz);
+                                        g_free(data);
+                                    }
+                                    if (gerr) g_error_free(gerr);
+                                    info.video_w = static_cast<std::uint32_t>(w);
+                                    info.video_h = static_cast<std::uint32_t>(h);
+                                    info.thumb_w  = info.video_w;
+                                    info.thumb_h  = info.video_h;
+                                    g_object_unref(pb);
+                                }
+                                gst_buffer_unmap(buf, &map);
+                            }
+                        }
+                        gst_sample_unref(sample);
+                    }
+                }
+            }
+            // ── Audio: duration via GStreamer ───────────────────────────────
+            else if (mime.starts_with("audio/"))
+            {
+                GstElement* pipe = gst_pipeline_new(nullptr);
+                GstElement* gsrc =
+                    gst_element_factory_make("giostreamsrc", nullptr);
+                GstElement* dec = gst_element_factory_make("decodebin", nullptr);
+                GstElement* fsink =
+                    gst_element_factory_make("fakesink", nullptr);
+                if (!pipe || !gsrc || !dec || !fsink)
+                {
+                    if (pipe)  gst_object_unref(pipe);
+                    if (gsrc)  gst_object_unref(gsrc);
+                    if (dec)   gst_object_unref(dec);
+                    if (fsink) gst_object_unref(fsink);
+                }
+                else
+                {
+                    GInputStream* mem_stream =
+                        g_memory_input_stream_new_from_data(
+                            bytes.data(),
+                            static_cast<gssize>(bytes.size()), nullptr);
+                    g_object_set(gsrc, "stream", mem_stream, nullptr);
+                    g_object_unref(mem_stream);
+
+                    gst_bin_add_many(GST_BIN(pipe), gsrc, dec, fsink, nullptr);
+                    gst_element_link(gsrc, dec);
+                    struct PadCtx { GstElement* fsink; };
+                    auto* pad_ctx = new PadCtx{fsink};
+                    g_signal_connect(
+                        dec, "pad-added",
+                        G_CALLBACK(
+                            +[](GstElement*, GstPad* pad, gpointer ud)
+                            {
+                                auto* pc = static_cast<PadCtx*>(ud);
+                                GstCaps* c2 = gst_pad_get_current_caps(pad);
+                                if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
+                                GstStructure* st =
+                                    gst_caps_get_structure(c2, 0);
+                                if (!g_str_has_prefix(
+                                        gst_structure_get_name(st), "video"))
+                                {
+                                    GstPad* sp = gst_element_get_static_pad(
+                                        pc->fsink, "sink");
+                                    if (sp && !gst_pad_is_linked(sp))
+                                        gst_pad_link(pad, sp);
+                                    if (sp) gst_object_unref(sp);
+                                }
+                                gst_caps_unref(c2);
+                            }),
+                        pad_ctx);
+
+                    gst_element_set_state(pipe, GST_STATE_PAUSED);
+                    gst_element_get_state(pipe, nullptr, nullptr,
+                                          5 * GST_SECOND);
+                    gint64 dur_ns = 0;
+                    if (gst_element_query_duration(pipe, GST_FORMAT_TIME,
+                                                   &dur_ns) &&
+                        dur_ns > 0)
+                    {
+                        info.duration_ms =
+                            static_cast<std::uint64_t>(dur_ns / 1000000);
+                    }
+                    gst_element_set_state(pipe, GST_STATE_NULL);
+                    delete pad_ctx;
+                    gst_object_unref(pipe);
+                }
+            }
+
+            // Post result to UI thread — resolve compose_bar() at call time
+            // to avoid any raw-pointer lifetime hazard with the captured cb.
+            struct Ctx
+            {
+                MainWindow* mw;
+                tesseract::views::MediaInfo info;
+            };
+            auto* ctx = new Ctx{this, std::move(info)};
+            g_idle_add(
+                [](gpointer p) -> gboolean
+                {
+                    auto* c = static_cast<Ctx*>(p);
+                    if (c->mw->room_view_)
+                        c->mw->room_view_->compose_bar()
+                            ->update_pending_attachment(c->info);
+                    delete c;
+                    return G_SOURCE_REMOVE;
+                },
+                ctx);
+        });
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,

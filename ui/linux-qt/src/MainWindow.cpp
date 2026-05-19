@@ -640,40 +640,113 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         };
         mainApp_->room_view()->on_send_image =
             [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption, int /*src_w*/,
-                   int /*src_h*/, std::string reply_id)
+                   std::string filename, std::string caption, int src_w,
+                   int src_h, bool is_animated, std::string reply_id)
         {
             if (current_room_id_.empty())
             {
                 return;
             }
-            const bool compress =
-                tesseract::Settings::instance().image_quality ==
-                tesseract::Settings::ImageQuality::Compressed;
-            auto enc = mainAppSurface_->host().encode_for_send(
-                bytes.data(), bytes.size(), compress);
-            if (enc.bytes.empty())
+            tesseract::Result res;
+            if (is_animated)
             {
-                statusBar()->showMessage(tr("Image decode failed"), 4000);
-                return;
+                // Animated GIF/WebP: send the original bytes verbatim via
+                // the MSC4230 raw path. Re-encoding would flatten the
+                // animation to a single frame.
+                res = client_->send_image(
+                    current_room_id_, bytes, mime, filename, caption,
+                    static_cast<std::uint32_t>(src_w < 0 ? 0 : src_w),
+                    static_cast<std::uint32_t>(src_h < 0 ? 0 : src_h),
+                    /*is_animated=*/true, reply_id);
             }
-            std::string out_name = filename;
-            if (enc.mime == "image/jpeg")
+            else
             {
-                auto dot = out_name.find_last_of('.');
-                if (dot != std::string::npos)
+                const bool compress =
+                    tesseract::Settings::instance().image_quality ==
+                    tesseract::Settings::ImageQuality::Compressed;
+                auto enc = mainAppSurface_->host().encode_for_send(
+                    bytes.data(), bytes.size(), compress);
+                if (enc.bytes.empty())
                 {
-                    out_name = out_name.substr(0, dot);
+                    statusBar()->showMessage(tr("Image decode failed"), 4000);
+                    return;
                 }
-                out_name += ".jpg";
+                std::string out_name = filename;
+                if (enc.mime == "image/jpeg")
+                {
+                    auto dot = out_name.find_last_of('.');
+                    if (dot != std::string::npos)
+                    {
+                        out_name = out_name.substr(0, dot);
+                    }
+                    out_name += ".jpg";
+                }
+                res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                          out_name, caption, enc.width,
+                                          enc.height, /*is_animated=*/false,
+                                          reply_id);
             }
-            auto res = client_->send_image(current_room_id_, enc.bytes,
-                                           enc.mime, out_name, caption,
-                                           enc.width, enc.height, reply_id);
             if (!res)
             {
                 statusBar()->showMessage(
                     tr("Send image failed: %1")
+                        .arg(QString::fromStdString(res.message)),
+                    4000);
+                return;
+            }
+            if (roomTextArea_)
+            {
+                roomTextArea_->set_text("");
+            }
+            mainApp_->room_view()->clear_compose_text();
+        };
+        mainApp_->room_view()->on_send_video =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption, int w, int h,
+                   std::vector<std::uint8_t> thumb_bytes, int thumb_w,
+                   int thumb_h, std::uint64_t duration_ms, std::string reply_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            auto res = client_->send_video(
+                current_room_id_, bytes, mime, filename, caption,
+                static_cast<std::uint32_t>(w < 0 ? 0 : w),
+                static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
+                static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
+                static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h),
+                duration_ms, reply_id);
+            if (!res)
+            {
+                statusBar()->showMessage(
+                    tr("Send video failed: %1")
+                        .arg(QString::fromStdString(res.message)),
+                    4000);
+                return;
+            }
+            if (roomTextArea_)
+            {
+                roomTextArea_->set_text("");
+            }
+            mainApp_->room_view()->clear_compose_text();
+        };
+        mainApp_->room_view()->on_send_audio =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption,
+                   std::uint64_t duration_ms, std::string reply_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            auto res = client_->send_audio(current_room_id_, bytes, mime,
+                                           filename, caption, duration_ms,
+                                           reply_id);
+            if (!res)
+            {
+                statusBar()->showMessage(
+                    tr("Send audio failed: %1")
                         .arg(QString::fromStdString(res.message)),
                     4000);
                 return;
@@ -1143,18 +1216,61 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                std::string filename)
         {
             if (!mainApp_)
-            {
                 return;
-            }
-            if (mime.starts_with("image/"))
+            if (bytes.empty())
+                return;
+            auto* cb = mainApp_->room_view()->compose_bar();
+
+            if (mime == "image/gif" || mime == "image/webp")
             {
-                mainApp_->room_view()->compose_bar()->set_pending_image(
-                    std::move(bytes), std::move(mime), std::move(filename));
+                // Show first frame immediately; detect animation on a bg thread.
+                cb->set_pending_image(bytes, mime, filename, false);
+                auto gen = cb->pending_gen();
+                run_async_([this, gen, bytes = std::move(bytes),
+                             mime = std::move(mime)]() mutable
+                {
+                    QByteArray ba(
+                        reinterpret_cast<const char*>(bytes.data()),
+                        static_cast<qsizetype>(bytes.size()));
+                    QBuffer buf;
+                    buf.setData(ba);
+                    buf.open(QIODevice::ReadOnly);
+                    QImageReader reader(&buf);
+                    tesseract::views::MediaInfo info;
+                    info.is_animated = reader.imageCount() > 1;
+                    info.pending_gen = gen;
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, info]() mutable
+                        {
+                            if (mainApp_)
+                                mainApp_->room_view()->compose_bar()
+                                    ->update_pending_attachment(info);
+                        },
+                        Qt::QueuedConnection);
+                });
+            }
+            else if (mime.starts_with("image/"))
+            {
+                cb->set_pending_image(std::move(bytes), std::move(mime),
+                                      std::move(filename), false);
+            }
+            else if (mime.starts_with("video/"))
+            {
+                cb->set_pending_video(bytes, mime, filename);
+                auto gen = cb->pending_gen();
+                extract_drop_video_(gen, std::move(bytes));
+            }
+            else if (mime.starts_with("audio/"))
+            {
+                cb->set_pending_audio(bytes, mime, filename);
+                auto gen = cb->pending_gen();
+                extract_drop_audio_(gen, std::move(bytes));
             }
             else
             {
-                mainApp_->room_view()->compose_bar()->set_pending_file(
-                    std::move(bytes), std::move(mime), std::move(filename));
+                cb->set_pending_file(std::move(bytes), std::move(mime),
+                                     std::move(filename));
             }
         });
 
@@ -2452,6 +2568,121 @@ void MainWindow::repaint_pickers_()
     {
         shortcode_popup_surface_->update();
     }
+}
+
+void MainWindow::extract_drop_video_(std::uint32_t pending_gen,
+                                     std::vector<std::uint8_t> bytes)
+{
+    auto* player = new QMediaPlayer(this);
+    auto* sink = new QVideoSink(player);
+    player->setVideoSink(sink);
+    auto* buf = new QBuffer(player);
+    QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<qsizetype>(bytes.size()));
+    buf->setData(ba);
+    buf->open(QIODevice::ReadOnly);
+    player->setSourceDevice(buf);
+
+    struct State
+    {
+        bool done = false;
+        tesseract::views::MediaInfo info;
+    };
+    auto state = std::make_shared<State>();
+    state->info.pending_gen = pending_gen;
+
+    QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
+        [this, player, state](const QVideoFrame& frame)
+        {
+            if (state->done || !frame.isValid())
+                return;
+            state->done = true;
+            state->info.duration_ms = static_cast<std::uint64_t>(
+                std::max(qint64(0), player->duration()));
+            player->stop();
+            player->deleteLater();
+            QImage img = frame.toImage();
+            if (!img.isNull())
+            {
+                state->info.video_w = static_cast<std::uint32_t>(img.width());
+                state->info.video_h = static_cast<std::uint32_t>(img.height());
+                state->info.thumb_w = state->info.video_w;
+                state->info.thumb_h = state->info.video_h;
+                QByteArray enc;
+                QBuffer encbuf(&enc);
+                encbuf.open(QIODevice::WriteOnly);
+                img.save(&encbuf, "JPEG", 85);
+                state->info.thumb_bytes.assign(
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()) +
+                        enc.size());
+            }
+            if (mainApp_)
+                mainApp_->room_view()->compose_bar()
+                    ->update_pending_attachment(state->info);
+        });
+    QObject::connect(player,
+        qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
+        player,
+        [this, player, state](QMediaPlayer::Error, const QString&)
+        {
+            if (state->done) return;
+            state->done = true;
+            player->deleteLater();
+            if (mainApp_)
+                mainApp_->room_view()->compose_bar()
+                    ->update_pending_attachment(state->info);
+        });
+    player->play();
+}
+
+void MainWindow::extract_drop_audio_(std::uint32_t pending_gen,
+                                     std::vector<std::uint8_t> bytes)
+{
+    auto* player = new QMediaPlayer(this);
+    auto* buf = new QBuffer(player);
+    QByteArray ba(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<qsizetype>(bytes.size()));
+    buf->setData(ba);
+    buf->open(QIODevice::ReadOnly);
+    player->setSourceDevice(buf);
+
+    auto done = std::make_shared<bool>(false);
+
+    QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
+        [this, player, pending_gen, done](QMediaPlayer::MediaStatus status)
+        {
+            if (*done) return;
+            if (status != QMediaPlayer::LoadedMedia &&
+                status != QMediaPlayer::BufferedMedia &&
+                status != QMediaPlayer::EndOfMedia)
+                return;
+            *done = true;
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            info.duration_ms = static_cast<std::uint64_t>(
+                std::max(qint64(0), player->duration()));
+            player->stop();
+            player->deleteLater();
+            if (mainApp_)
+                mainApp_->room_view()->compose_bar()
+                    ->update_pending_attachment(info);
+        });
+    QObject::connect(player,
+        qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
+        player,
+        [this, player, pending_gen, done](QMediaPlayer::Error, const QString&)
+        {
+            if (*done) return;
+            *done = true;
+            player->deleteLater();
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            if (mainApp_)
+                mainApp_->room_view()->compose_bar()
+                    ->update_pending_attachment(info);
+        });
+    player->play();
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,

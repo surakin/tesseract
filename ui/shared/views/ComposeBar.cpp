@@ -159,10 +159,41 @@ void ComposeBar::trigger_send()
         {
             if (on_send_image)
             {
+                // Snapshot scalar fields before moves (evaluation order unspecified).
+                std::uint32_t w = pending_->width;
+                std::uint32_t h = pending_->height;
+                bool anim = pending_->is_animated;
                 on_send_image(
                     std::move(pending_->bytes), std::move(pending_->mime),
-                    std::move(pending_->filename), current_text_,
-                    pending_->width, pending_->height, std::move(reply_id));
+                    std::move(pending_->filename), current_text_, w, h, anim,
+                    std::move(reply_id));
+            }
+        }
+        else if (pending_->kind == PendingAttachment::Kind::Video)
+        {
+            if (on_send_video)
+            {
+                std::uint32_t w = pending_->width;
+                std::uint32_t h = pending_->height;
+                std::uint32_t tw = pending_->thumb_width;
+                std::uint32_t th = pending_->thumb_height;
+                std::uint64_t dur = pending_->duration_ms;
+                on_send_video(
+                    std::move(pending_->bytes), std::move(pending_->mime),
+                    std::move(pending_->filename), current_text_, w, h,
+                    std::move(pending_->thumb_bytes_raw), tw, th, dur,
+                    std::move(reply_id));
+            }
+        }
+        else if (pending_->kind == PendingAttachment::Kind::Audio)
+        {
+            if (on_send_audio)
+            {
+                std::uint64_t dur = pending_->duration_ms;
+                on_send_audio(
+                    std::move(pending_->bytes), std::move(pending_->mime),
+                    std::move(pending_->filename), current_text_, dur,
+                    std::move(reply_id));
             }
         }
         else
@@ -240,11 +271,16 @@ void ComposeBar::recompute_height()
         top_h = kReplyBandH + kReplyBandGap;
     }
     float band_h = 0.0f;
-    if (pending_.has_value() &&
-        pending_->kind == PendingAttachment::Kind::File)
+    if (pending_.has_value())
     {
-        // Image previews float above the bar — only file chips push it up.
-        band_h = kFileBandH + kPreviewBandGap;
+        const auto k = pending_->kind;
+        if (k == PendingAttachment::Kind::File ||
+            k == PendingAttachment::Kind::Video ||
+            k == PendingAttachment::Kind::Audio)
+        {
+            // Image previews float above the bar; chips push it up.
+            band_h = kFileBandH + kPreviewBandGap;
+        }
     }
     // arrange() insets the first band kPadY from the bar's top edge; add
     // that offset once when any band is present so natural_height_ matches
@@ -389,14 +425,17 @@ void ComposeBar::push_amplitude(std::uint16_t amplitude)
 }
 
 void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename)
+                                   std::string mime, std::string filename,
+                                   bool is_animated)
 {
+    ++pending_gen_;
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::Image;
     pa.bytes = std::move(bytes);
     pa.mime = std::move(mime);
     pa.filename =
         filename.empty() ? make_filename(pa.mime) : std::move(filename);
+    pa.is_animated = is_animated;
     pending_ = std::move(pa);
     file_name_layout_.reset();
     file_size_layout_.reset();
@@ -418,6 +457,7 @@ void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
 void ComposeBar::set_pending_file(std::vector<std::uint8_t> bytes,
                                   std::string mime, std::string filename)
 {
+    ++pending_gen_;
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::File;
     pa.bytes = std::move(bytes);
@@ -439,12 +479,93 @@ void ComposeBar::set_pending_file(std::vector<std::uint8_t> bytes,
     }
 }
 
+void ComposeBar::set_pending_video(std::vector<std::uint8_t> bytes,
+                                   std::string mime, std::string filename)
+{
+    ++pending_gen_;
+    PendingAttachment pa;
+    pa.kind = PendingAttachment::Kind::Video;
+    pa.loading = true;
+    pa.bytes = std::move(bytes);
+    pa.mime = std::move(mime);
+    pa.filename = std::move(filename);
+    pending_ = std::move(pa);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    video_badge_layout_.reset();
+    recompute_height();
+    if (remove_btn_)
+        remove_btn_->set_visible(true);
+    refresh_send_enabled();
+    if (on_size_changed)
+        on_size_changed();
+}
+
+void ComposeBar::set_pending_audio(std::vector<std::uint8_t> bytes,
+                                   std::string mime, std::string filename)
+{
+    ++pending_gen_;
+    PendingAttachment pa;
+    pa.kind = PendingAttachment::Kind::Audio;
+    pa.loading = true;
+    pa.bytes = std::move(bytes);
+    pa.mime = std::move(mime);
+    pa.filename = std::move(filename);
+    pending_ = std::move(pa);
+    file_name_layout_.reset();
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    recompute_height();
+    if (remove_btn_)
+        remove_btn_->set_visible(true);
+    refresh_send_enabled();
+    if (on_size_changed)
+        on_size_changed();
+}
+
+void ComposeBar::update_pending_attachment(const MediaInfo& info)
+{
+    if (!pending_.has_value())
+        return;
+    if (info.pending_gen != pending_gen_)
+        return; // stale result — user replaced or removed the attachment
+    switch (pending_->kind)
+    {
+    case PendingAttachment::Kind::Video:
+        pending_->width = info.video_w;
+        pending_->height = info.video_h;
+        pending_->thumb_bytes_raw = info.thumb_bytes;
+        pending_->thumb_width = info.thumb_w;
+        pending_->thumb_height = info.thumb_h;
+        pending_->duration_ms = info.duration_ms;
+        pending_->preview.reset(); // decoded lazily from thumb_bytes_raw in arrange()
+        break;
+    case PendingAttachment::Kind::Audio:
+        pending_->duration_ms = info.duration_ms;
+        break;
+    case PendingAttachment::Kind::Image:
+        pending_->is_animated = info.is_animated;
+        break;
+    default:
+        break;
+    }
+    pending_->loading = false;
+    file_name_layout_.reset(); // force duration text re-layout
+    file_size_layout_.reset();
+    file_layout_key_.clear();
+    recompute_height();
+    if (on_size_changed)
+        on_size_changed();
+}
+
 void ComposeBar::clear_pending()
 {
     if (!pending_.has_value())
     {
         return;
     }
+    ++pending_gen_;
     pending_.reset();
     file_name_layout_.reset();
     file_size_layout_.reset();
@@ -506,7 +627,27 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
     }
 
-    // ── Build (or refresh) cached text layouts for the file chip ──────
+    // ── Decode video thumbnail lazily once extraction fills thumb_bytes_raw ──
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Video &&
+        !pending_->preview && !pending_->thumb_bytes_raw.empty())
+    {
+        auto img = ctx.factory.decode_image(std::span<const std::uint8_t>(
+            pending_->thumb_bytes_raw.data(),
+            pending_->thumb_bytes_raw.size()));
+        if (img)
+        {
+            pending_->thumb_width = static_cast<std::uint32_t>(img->width());
+            pending_->thumb_height = static_cast<std::uint32_t>(img->height());
+            constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
+            if (auto scaled = ctx.factory.scale_image(*img, kMaxPx, kMaxPx))
+                pending_->preview = std::move(scaled);
+            else
+                pending_->preview = std::move(img);
+        }
+    }
+
+    // ── Build (or refresh) cached text layouts for file/video/audio chips ──
     if (pending_.has_value() && pending_->kind == PendingAttachment::Kind::File)
     {
         std::string key =
@@ -524,6 +665,64 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             tk::TextStyle size_style{};
             size_style.role = tk::FontRole::Small;
             file_size_layout_ = ctx.factory.build_text(size_str, size_style);
+            file_layout_key_ = std::move(key);
+        }
+    }
+
+    // Video chip: filename + size (no thumbnail yet) or thumbnail (no chip).
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Video &&
+        !pending_->preview)
+    {
+        std::string key =
+            pending_->filename + "|" + std::to_string(pending_->bytes.size());
+        if (file_layout_key_ != key)
+        {
+            tk::TextStyle name_style{};
+            name_style.role = tk::FontRole::Body;
+            file_name_layout_ =
+                ctx.factory.build_text(pending_->filename, name_style);
+            std::string size_str =
+                format_size(static_cast<std::uint64_t>(pending_->bytes.size()));
+            tk::TextStyle size_style{};
+            size_style.role = tk::FontRole::Small;
+            file_size_layout_ = ctx.factory.build_text(
+                pending_->loading ? "…" : size_str, size_style);
+            file_layout_key_ = std::move(key);
+        }
+    }
+
+    // Audio chip: filename + duration (or "…" while loading).
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Audio)
+    {
+        std::string key =
+            pending_->filename + "|" + std::to_string(pending_->duration_ms) +
+            (pending_->loading ? "L" : "");
+        if (file_layout_key_ != key)
+        {
+            tk::TextStyle name_style{};
+            name_style.role = tk::FontRole::Body;
+            file_name_layout_ =
+                ctx.factory.build_text(pending_->filename, name_style);
+
+            std::string dur_str;
+            if (pending_->loading)
+            {
+                dur_str = "…";
+            }
+            else if (pending_->duration_ms > 0)
+            {
+                std::uint64_t secs = pending_->duration_ms / 1000;
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "%llu:%02llu",
+                              static_cast<unsigned long long>(secs / 60),
+                              static_cast<unsigned long long>(secs % 60));
+                dur_str = buf;
+            }
+            tk::TextStyle size_style{};
+            size_style.role = tk::FontRole::Small;
+            file_size_layout_ = ctx.factory.build_text(dur_str, size_style);
             file_layout_key_ = std::move(key);
         }
     }
@@ -570,14 +769,23 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // ── Attachment band ───────────────────────────────────────────────
     if (pending_.has_value())
     {
-        if (pending_->kind == PendingAttachment::Kind::Image)
+        const bool is_floating =
+            pending_->kind == PendingAttachment::Kind::Image ||
+            (pending_->kind == PendingAttachment::Kind::Video &&
+             pending_->preview);
+
+        if (is_floating)
         {
-            // Image preview floats ABOVE the bar (does not push bar up).
-            // Display at 25 % larger than the standard band height, fitted
-            // to the image's own aspect ratio so the band wraps the image.
+            // Image / video-with-thumbnail: preview floats ABOVE the bar.
             constexpr float kDisplayH = kPreviewBandH * 1.25f;
-            float img_w = static_cast<float>(pending_->width);
-            float img_h = static_cast<float>(pending_->height);
+            float img_w = static_cast<float>(
+                pending_->kind == PendingAttachment::Kind::Video
+                    ? pending_->thumb_width
+                    : pending_->width);
+            float img_h = static_cast<float>(
+                pending_->kind == PendingAttachment::Kind::Video
+                    ? pending_->thumb_height
+                    : pending_->height);
             float max_w = std::max(0.0f, bounds.w - kPadX * 2);
             float dw, dh;
             if (img_w <= 0 || img_h <= 0)
@@ -603,8 +811,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
         else
         {
-            // File chip stays inside the bar and pushes it up.
-            float band_y = has_reply() ? text_top : bounds.y + kPadY;
+            // File / video-loading / audio chip stays inside the bar.
+            float band_y = (has_reply() || has_editing()) ? text_top
+                                                          : bounds.y + kPadY;
             preview_band_rect_ = {bounds.x + kPadX, band_y,
                                   std::max(0.0f, bounds.w - kPadX * 2),
                                   kFileBandH};
@@ -722,7 +931,6 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         {
             if (pending_->preview)
             {
-                // Inset the image by 1 px so it sits inside the border.
                 constexpr float kImgInset = 1.0f;
                 tk::Rect img_rect{
                     preview_image_rect_.x + kImgInset,
@@ -732,10 +940,88 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                 ctx.canvas.draw_image(*pending_->preview, img_rect);
             }
         }
+        else if (pending_->kind == PendingAttachment::Kind::Video)
+        {
+            if (pending_->preview)
+            {
+                // Video thumbnail band (same layout as image).
+                constexpr float kImgInset = 1.0f;
+                tk::Rect img_rect{
+                    preview_image_rect_.x + kImgInset,
+                    preview_image_rect_.y + kImgInset,
+                    std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
+                    std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+                ctx.canvas.draw_image(*pending_->preview, img_rect);
+
+                // ▶ badge: dark rounded rect in bottom-right corner.
+                constexpr float kBadgeSize = 20.0f;
+                constexpr float kBadgePad = 4.0f;
+                tk::Rect badge{
+                    img_rect.x + img_rect.w - kBadgeSize - kBadgePad,
+                    img_rect.y + img_rect.h - kBadgeSize - kBadgePad,
+                    kBadgeSize, kBadgeSize};
+                ctx.canvas.fill_rounded_rect(badge, 4.0f,
+                                             tk::Color::rgba(0, 0, 0, 160));
+                if (!video_badge_layout_)
+                {
+                    tk::TextStyle ts{};
+                    ts.role = tk::FontRole::Small;
+                    // U+25B6 BLACK RIGHT-POINTING TRIANGLE
+                    video_badge_layout_ =
+                        ctx.factory.build_text("\xe2\x96\xb6", ts);
+                }
+                if (video_badge_layout_)
+                {
+                    tk::Size gs = video_badge_layout_->measure();
+                    ctx.canvas.draw_text(
+                        *video_badge_layout_,
+                        {badge.x + (badge.w - gs.w) * 0.5f,
+                         badge.y + (badge.h - gs.h) * 0.5f},
+                        tk::Color::rgba(255, 255, 255, 220));
+                }
+            }
+            else
+            {
+                // Loading chip: filename + size/ellipsis.
+                constexpr float kChipPadX = 12.0f;
+                float text_x = preview_band_rect_.x + kChipPadX;
+                if (file_name_layout_ && file_size_layout_)
+                {
+                    tk::Size name_sz = file_name_layout_->measure();
+                    tk::Size size_sz = file_size_layout_->measure();
+                    float total_h = name_sz.h + size_sz.h;
+                    float ty = preview_band_rect_.y +
+                               (preview_band_rect_.h - total_h) * 0.5f;
+                    ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
+                                         ctx.theme.palette.text_primary);
+                    ctx.canvas.draw_text(*file_size_layout_,
+                                         {text_x, ty + name_sz.h},
+                                         ctx.theme.palette.text_secondary);
+                }
+            }
+        }
+        else if (pending_->kind == PendingAttachment::Kind::Audio)
+        {
+            // Audio chip: filename + duration (or "…" while loading).
+            constexpr float kChipPadX = 12.0f;
+            float text_x = preview_band_rect_.x + kChipPadX;
+            if (file_name_layout_ && file_size_layout_)
+            {
+                tk::Size name_sz = file_name_layout_->measure();
+                tk::Size size_sz = file_size_layout_->measure();
+                float total_h = name_sz.h + size_sz.h;
+                float ty = preview_band_rect_.y +
+                           (preview_band_rect_.h - total_h) * 0.5f;
+                ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
+                                     ctx.theme.palette.text_primary);
+                ctx.canvas.draw_text(*file_size_layout_,
+                                     {text_x, ty + name_sz.h},
+                                     ctx.theme.palette.text_secondary);
+            }
+        }
         else
         {
-            // File chip: paperclip glyph + filename (top line) + size
-            // (caption line). Layout was prepared in arrange().
+            // File chip: paperclip glyph + filename + size. Layout in arrange().
             constexpr float kChipPadX = 12.0f;
             float text_x = preview_band_rect_.x + kChipPadX;
             float text_right =
@@ -756,7 +1042,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                 ctx.canvas.draw_text(*file_size_layout_,
                                      {text_x, ty + name_sz.h},
                                      ctx.theme.palette.text_secondary);
-                (void)avail_w; // truncation handled by layout backend
+                (void)avail_w;
             }
         }
     }
@@ -971,7 +1257,9 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     if (remove_btn_ && pending_.has_value() && !remove_btn_rect_.empty())
     {
         const bool on_image =
-            pending_->kind == PendingAttachment::Kind::Image;
+            pending_->kind == PendingAttachment::Kind::Image ||
+            (pending_->kind == PendingAttachment::Kind::Video &&
+             pending_->preview);
         if (on_image)
         {
             // Dark semi-transparent badge so the × is legible on any image.
@@ -1055,10 +1343,14 @@ bool ComposeBar::contains_world(tk::Point world) const
 {
     if (tk::Widget::contains_world(world))
         return true;
-    // Also claim the floating image preview panel above the bar.
-    return pending_.has_value() &&
-           pending_->kind == PendingAttachment::Kind::Image &&
-           !preview_band_rect_.empty() &&
+    // Also claim the floating preview panel (image or video thumbnail) above the bar.
+    if (!pending_.has_value() || preview_band_rect_.empty())
+        return false;
+    const auto k = pending_->kind;
+    const bool is_floating =
+        k == PendingAttachment::Kind::Image ||
+        (k == PendingAttachment::Kind::Video && pending_->preview);
+    return is_floating &&
            world.x >= preview_band_rect_.x &&
            world.x < preview_band_rect_.x + preview_band_rect_.w &&
            world.y >= preview_band_rect_.y &&
@@ -1067,21 +1359,22 @@ bool ComposeBar::contains_world(tk::Point world) const
 
 tk::Widget* ComposeBar::hit_test(tk::Point world)
 {
-    // Normal hit-test covers the bar's own bounds and all child buttons.
     if (tk::Widget* w = tk::Widget::hit_test(world))
         return w;
 
-    // Extend to the floating image preview panel (above bounds_).
-    if (pending_.has_value() &&
-        pending_->kind == PendingAttachment::Kind::Image &&
-        !preview_band_rect_.empty() &&
+    // Extend to the floating preview panel (image or video thumbnail).
+    if (!pending_.has_value() || preview_band_rect_.empty())
+        return nullptr;
+    const auto k = pending_->kind;
+    const bool is_floating =
+        k == PendingAttachment::Kind::Image ||
+        (k == PendingAttachment::Kind::Video && pending_->preview);
+    if (is_floating &&
         world.x >= preview_band_rect_.x &&
         world.x < preview_band_rect_.x + preview_band_rect_.w &&
         world.y >= preview_band_rect_.y &&
         world.y < preview_band_rect_.y + preview_band_rect_.h)
     {
-        // Route remove-button clicks straight to the button widget so its
-        // own hover/press state and on_click handler fire correctly.
         if (remove_btn_ && !remove_btn_rect_.empty() &&
             world.x >= remove_btn_rect_.x &&
             world.x < remove_btn_rect_.x + remove_btn_rect_.w &&
@@ -1134,18 +1427,21 @@ bool ComposeBar::on_pointer_down(tk::Point local)
             return true;
         }
     }
-    // Absorb clicks on the floating image preview so they don't fall through
-    // to the message list beneath it. (The remove button is routed via
-    // hit_test directly to the Button child, so it never reaches here.)
-    if (pending_.has_value() &&
-        pending_->kind == PendingAttachment::Kind::Image &&
-        !preview_band_rect_.empty() &&
-        world.x >= preview_band_rect_.x &&
-        world.x < preview_band_rect_.x + preview_band_rect_.w &&
-        world.y >= preview_band_rect_.y &&
-        world.y < preview_band_rect_.y + preview_band_rect_.h)
+    // Absorb clicks on the floating preview (image or video thumbnail).
+    if (pending_.has_value() && !preview_band_rect_.empty())
     {
-        return true;
+        const auto k = pending_->kind;
+        const bool is_floating =
+            k == PendingAttachment::Kind::Image ||
+            (k == PendingAttachment::Kind::Video && pending_->preview);
+        if (is_floating &&
+            world.x >= preview_band_rect_.x &&
+            world.x < preview_band_rect_.x + preview_band_rect_.w &&
+            world.y >= preview_band_rect_.y &&
+            world.y < preview_band_rect_.y + preview_band_rect_.h)
+        {
+            return true;
+        }
     }
     return tk::Widget::on_pointer_down(local);
 }

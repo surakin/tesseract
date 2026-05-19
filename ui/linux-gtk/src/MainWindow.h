@@ -228,6 +228,12 @@ private:
         const std::vector<tesseract::views::MessageRowData>& msgs) override;
     void generate_video_thumbnail_(const std::string& event_id,
                                    const std::string& video_url) override;
+
+    // Called from the file-drop callback to extract media metadata from raw
+    // bytes on a background thread. Posts the result via g_idle_add.
+    void extract_media_info_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes,
+                             std::string mime);
     void on_url_preview_ready_(
         const std::string& url,
         const tesseract::Client::UrlPreview& preview) override;

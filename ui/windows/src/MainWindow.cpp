@@ -25,6 +25,13 @@
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <windowsx.h>
+#include <wincodec.h>
+#include <shlwapi.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+#include <mfobjects.h>
+#include <propvarutil.h>
 
 #include <algorithm>
 #include <chrono>
@@ -1333,39 +1340,119 @@ void MainWindow::on_create(HWND hwnd)
         };
         room_view_->on_send_image =
             [this](std::vector<std::uint8_t> bytes, std::string mime,
-                   std::string filename, std::string caption, int /*src_w*/,
-                   int /*src_h*/, std::string reply_event_id)
+                   std::string filename, std::string caption, int src_w,
+                   int src_h, bool is_animated, std::string reply_event_id)
         {
             if (current_room_id_.empty() || !main_app_surface_)
             {
                 return;
             }
-            const bool compress =
-                tesseract::Settings::instance().image_quality ==
-                tesseract::Settings::ImageQuality::Compressed;
-            auto enc = main_app_surface_->host().encode_for_send(
-                bytes.data(), bytes.size(), compress);
-            if (enc.bytes.empty())
+            tesseract::Result res;
+            if (is_animated)
+            {
+                // Animated GIF/WebP: send the original bytes verbatim via
+                // the MSC4230 raw path. Re-encoding would flatten the
+                // animation to a single frame.
+                res = client_->send_image(
+                    current_room_id_, bytes, mime, filename, caption,
+                    static_cast<std::uint32_t>(src_w < 0 ? 0 : src_w),
+                    static_cast<std::uint32_t>(src_h < 0 ? 0 : src_h),
+                    /*is_animated=*/true, reply_event_id);
+            }
+            else
+            {
+                const bool compress =
+                    tesseract::Settings::instance().image_quality ==
+                    tesseract::Settings::ImageQuality::Compressed;
+                auto enc = main_app_surface_->host().encode_for_send(
+                    bytes.data(), bytes.size(), compress);
+                if (enc.bytes.empty())
+                {
+                    return;
+                }
+                std::string out_name = filename;
+                if (enc.mime == "image/jpeg")
+                {
+                    auto dot = out_name.find_last_of('.');
+                    if (dot != std::string::npos)
+                    {
+                        out_name = out_name.substr(0, dot);
+                    }
+                    out_name += ".jpg";
+                }
+                res = client_->send_image(current_room_id_, enc.bytes, enc.mime,
+                                          out_name, caption, enc.width,
+                                          enc.height, /*is_animated=*/false,
+                                          reply_event_id);
+            }
+            if (res)
+            {
+                if (room_text_area_)
+                {
+                    room_text_area_->set_text("");
+                }
+                room_view_->set_current_text({});
+            }
+            else if (hStatus_)
+            {
+                SetWindowTextW(hStatus_, L"Send image failed");
+            }
+        };
+        room_view_->on_send_video =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption, int w, int h,
+                   std::vector<std::uint8_t> thumb_bytes, int thumb_w,
+                   int thumb_h, std::uint64_t duration_ms,
+                   std::string reply_event_id)
+        {
+            if (current_room_id_.empty())
             {
                 return;
             }
-            std::string out_name = filename;
-            if (enc.mime == "image/jpeg")
+            auto res = client_->send_video(
+                current_room_id_, bytes, mime, filename, caption,
+                static_cast<std::uint32_t>(w < 0 ? 0 : w),
+                static_cast<std::uint32_t>(h < 0 ? 0 : h), thumb_bytes,
+                static_cast<std::uint32_t>(thumb_w < 0 ? 0 : thumb_w),
+                static_cast<std::uint32_t>(thumb_h < 0 ? 0 : thumb_h),
+                duration_ms, reply_event_id);
+            if (res)
             {
-                auto dot = out_name.find_last_of('.');
-                if (dot != std::string::npos)
+                if (room_text_area_)
                 {
-                    out_name = out_name.substr(0, dot);
+                    room_text_area_->set_text("");
                 }
-                out_name += ".jpg";
+                room_view_->set_current_text({});
             }
-            client_->send_image(current_room_id_, enc.bytes, enc.mime, out_name,
-                                caption, enc.width, enc.height, reply_event_id);
-            if (room_text_area_)
+            else if (hStatus_)
             {
-                room_text_area_->set_text("");
+                SetWindowTextW(hStatus_, L"Send video failed");
             }
-            room_view_->set_current_text({});
+        };
+        room_view_->on_send_audio =
+            [this](std::vector<std::uint8_t> bytes, std::string mime,
+                   std::string filename, std::string caption,
+                   std::uint64_t duration_ms, std::string reply_event_id)
+        {
+            if (current_room_id_.empty())
+            {
+                return;
+            }
+            auto res =
+                client_->send_audio(current_room_id_, bytes, mime, filename,
+                                     caption, duration_ms, reply_event_id);
+            if (res)
+            {
+                if (room_text_area_)
+                {
+                    room_text_area_->set_text("");
+                }
+                room_view_->set_current_text({});
+            }
+            else if (hStatus_)
+            {
+                SetWindowTextW(hStatus_, L"Send audio failed");
+            }
         };
         room_view_->on_send_file =
             [this](std::vector<std::uint8_t> bytes, std::string mime,
@@ -1675,15 +1762,37 @@ void MainWindow::on_create(HWND hwnd)
                     }
                     return;
                 }
-                if (mime.rfind("image/", 0) == 0)
+                if (bytes.empty()) return;
+                auto* cb = room_view_->compose_bar();
+                if (mime == "image/gif" || mime == "image/webp")
                 {
-                    room_view_->compose_bar()->set_pending_image(
-                        std::move(bytes), std::move(mime), std::move(filename));
+                    // Show first frame immediately; detect animation in background.
+                    cb->set_pending_image(bytes, mime, filename,
+                                         /*is_animated=*/false);
+                    auto gen = cb->pending_gen();
+                    extract_media_info_(gen, std::move(bytes), std::move(mime));
+                }
+                else if (mime.rfind("image/", 0) == 0)
+                {
+                    cb->set_pending_image(std::move(bytes), std::move(mime),
+                                         std::move(filename), /*is_animated=*/false);
+                }
+                else if (mime.rfind("video/", 0) == 0)
+                {
+                    cb->set_pending_video(bytes, mime, filename);
+                    auto gen = cb->pending_gen();
+                    extract_media_info_(gen, std::move(bytes), std::move(mime));
+                }
+                else if (mime.rfind("audio/", 0) == 0)
+                {
+                    cb->set_pending_audio(bytes, mime, filename);
+                    auto gen = cb->pending_gen();
+                    extract_media_info_(gen, std::move(bytes), std::move(mime));
                 }
                 else
                 {
-                    room_view_->compose_bar()->set_pending_file(
-                        std::move(bytes), std::move(mime), std::move(filename));
+                    cb->set_pending_file(std::move(bytes), std::move(mime),
+                                         std::move(filename));
                 }
             });
 
@@ -3851,6 +3960,255 @@ void MainWindow::repaint_pickers_()
     {
         InvalidateRect(sticker_picker_surface_->hwnd(), nullptr, FALSE);
     }
+}
+
+void MainWindow::extract_media_info_(std::uint32_t pending_gen,
+                                     std::vector<std::uint8_t> bytes,
+                                     std::string mime)
+{
+    run_async_([this, pending_gen, bytes = std::move(bytes), mime = std::move(mime)]() mutable
+    {
+        tesseract::views::MediaInfo info;
+        info.pending_gen = pending_gen;
+
+        // COM must be initialized on each background thread.
+        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+        // ── Animated image detection (gif / webp) ──────────────────────────
+        if (mime == "image/gif" || mime == "image/webp")
+        {
+            IWICImagingFactory* factory = nullptr;
+            if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                           CLSCTX_INPROC_SERVER,
+                                           IID_PPV_ARGS(&factory))))
+            {
+                IStream* stream = SHCreateMemStream(
+                    reinterpret_cast<const BYTE*>(bytes.data()),
+                    static_cast<UINT>(bytes.size()));
+                if (stream)
+                {
+                    IWICBitmapDecoder* decoder = nullptr;
+                    if (SUCCEEDED(factory->CreateDecoderFromStream(
+                            stream, nullptr, WICDecodeMetadataCacheOnDemand,
+                            &decoder)))
+                    {
+                        UINT count = 0;
+                        decoder->GetFrameCount(&count);
+                        info.is_animated = count > 1;
+                        decoder->Release();
+                    }
+                    stream->Release();
+                }
+                factory->Release();
+            }
+        }
+        // ── Video: first-frame thumbnail + duration via Media Foundation ───
+        else if (mime.rfind("video/", 0) == 0)
+        {
+            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+            IStream* com_stream = SHCreateMemStream(
+                reinterpret_cast<const BYTE*>(bytes.data()),
+                static_cast<UINT>(bytes.size()));
+            if (com_stream)
+            {
+                IMFByteStream* mf_stream = nullptr;
+                if (SUCCEEDED(MFCreateMFByteStreamOnStream(com_stream, &mf_stream)))
+                {
+                    IMFSourceReader* reader = nullptr;
+                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(
+                            mf_stream, nullptr, &reader)))
+                    {
+                        // Duration (in 100-nanosecond units)
+                        PROPVARIANT pv;
+                        PropVariantInit(&pv);
+                        if (SUCCEEDED(reader->GetPresentationAttribute(
+                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE),
+                                MF_PD_DURATION, &pv)) &&
+                            pv.vt == VT_UI8)
+                        {
+                            info.duration_ms = pv.uhVal.QuadPart / 10000ULL;
+                        }
+                        PropVariantClear(&pv);
+
+                        // Request RGB32 output for the first video frame
+                        IMFMediaType* out_type = nullptr;
+                        if (SUCCEEDED(MFCreateMediaType(&out_type)))
+                        {
+                            out_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+                            out_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+                            reader->SetCurrentMediaType(
+                                static_cast<DWORD>(
+                                    MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                nullptr, out_type);
+                            out_type->Release();
+                        }
+
+                        DWORD stream_index = 0, flags = 0;
+                        LONGLONG timestamp = 0;
+                        IMFSample* sample = nullptr;
+                        reader->ReadSample(
+                            static_cast<DWORD>(
+                                MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                            0, &stream_index, &flags, &timestamp, &sample);
+
+                        if (sample)
+                        {
+                            IMFMediaBuffer* buf = nullptr;
+                            sample->ConvertToContiguousBuffer(&buf);
+                            if (buf)
+                            {
+                                IMFMediaType* cur_type = nullptr;
+                                UINT32 vw = 0, vh = 0;
+                                if (SUCCEEDED(reader->GetCurrentMediaType(
+                                        static_cast<DWORD>(
+                                            MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                        &cur_type)))
+                                {
+                                    MFGetAttributeSize(cur_type,
+                                                       MF_MT_FRAME_SIZE, &vw, &vh);
+                                    cur_type->Release();
+                                }
+                                info.video_w = vw;
+                                info.video_h = vh;
+
+                                BYTE* data = nullptr;
+                                DWORD len = 0;
+                                buf->Lock(&data, nullptr, &len);
+
+                                if (data && len && vw > 0 && vh > 0)
+                                {
+                                    // MF may produce bottom-up (negative stride) RGB32;
+                                    // flip rows to top-down before handing to WIC.
+                                    LONG stride_val =
+                                        static_cast<LONG>(vw * 4);
+                                    cur_type->GetUINT32(
+                                        MF_MT_DEFAULT_STRIDE,
+                                        reinterpret_cast<UINT32*>(&stride_val));
+                                    UINT abs_stride = stride_val < 0
+                                        ? static_cast<UINT>(-stride_val)
+                                        : static_cast<UINT>(stride_val);
+                                    std::vector<BYTE> flipped;
+                                    BYTE* pixel_data = data;
+                                    if (stride_val < 0)
+                                    {
+                                        flipped.resize(vh * abs_stride);
+                                        for (UINT row = 0; row < vh; ++row)
+                                            memcpy(flipped.data() + row * abs_stride,
+                                                   data + (vh - 1 - row) * abs_stride,
+                                                   abs_stride);
+                                        pixel_data = flipped.data();
+                                    }
+
+                                    IWICImagingFactory* wic = nullptr;
+                                    if (SUCCEEDED(CoCreateInstance(
+                                            CLSID_WICImagingFactory, nullptr,
+                                            CLSCTX_INPROC_SERVER,
+                                            IID_PPV_ARGS(&wic))))
+                                    {
+                                        IStream* out = nullptr;
+                                        CreateStreamOnHGlobal(nullptr, TRUE, &out);
+                                        IWICBitmapEncoder* enc = nullptr;
+                                        if (SUCCEEDED(wic->CreateEncoder(
+                                                GUID_ContainerFormatJpeg, nullptr,
+                                                &enc)) && out)
+                                        {
+                                            enc->Initialize(out,
+                                                            WICBitmapEncoderNoCache);
+                                            IWICBitmapFrameEncode* frame = nullptr;
+                                            if (SUCCEEDED(
+                                                    enc->CreateNewFrame(&frame, nullptr)))
+                                            {
+                                                frame->Initialize(nullptr);
+                                                frame->SetSize(vw, vh);
+                                                WICPixelFormatGUID fmt =
+                                                    GUID_WICPixelFormat32bppBGR;
+                                                frame->SetPixelFormat(&fmt);
+                                                frame->WritePixels(
+                                                    vh, abs_stride,
+                                                    vh * abs_stride, pixel_data);
+                                                frame->Commit();
+                                                frame->Release();
+                                            }
+                                            enc->Commit();
+                                            enc->Release();
+                                            // Read JPEG bytes from stream
+                                            LARGE_INTEGER seek{};
+                                            out->Seek(seek, STREAM_SEEK_SET, nullptr);
+                                            STATSTG stat{};
+                                            out->Stat(&stat, STATFLAG_NONAME);
+                                            std::vector<std::uint8_t> jpeg(
+                                                static_cast<std::size_t>(
+                                                    stat.cbSize.QuadPart));
+                                            ULONG nread = 0;
+                                            out->Read(jpeg.data(),
+                                                      static_cast<ULONG>(jpeg.size()),
+                                                      &nread);
+                                            info.thumb_bytes = std::move(jpeg);
+                                            info.thumb_w = vw;
+                                            info.thumb_h = vh;
+                                        }
+                                        if (out) out->Release();
+                                        wic->Release();
+                                    }
+                                }
+                                buf->Unlock();
+                                buf->Release();
+                            }
+                            sample->Release();
+                        }
+                        reader->Release();
+                    }
+                    mf_stream->Release();
+                }
+                com_stream->Release();
+            }
+            MFShutdown();
+        }
+        // ── Audio: duration only via Media Foundation ──────────────────────
+        else if (mime.rfind("audio/", 0) == 0)
+        {
+            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+            IStream* com_stream = SHCreateMemStream(
+                reinterpret_cast<const BYTE*>(bytes.data()),
+                static_cast<UINT>(bytes.size()));
+            if (com_stream)
+            {
+                IMFByteStream* mf_stream = nullptr;
+                if (SUCCEEDED(MFCreateMFByteStreamOnStream(com_stream, &mf_stream)))
+                {
+                    IMFSourceReader* reader = nullptr;
+                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(
+                            mf_stream, nullptr, &reader)))
+                    {
+                        PROPVARIANT pv;
+                        PropVariantInit(&pv);
+                        if (SUCCEEDED(reader->GetPresentationAttribute(
+                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE),
+                                MF_PD_DURATION, &pv)) &&
+                            pv.vt == VT_UI8)
+                        {
+                            info.duration_ms = pv.uhVal.QuadPart / 10000ULL;
+                        }
+                        PropVariantClear(&pv);
+                        reader->Release();
+                    }
+                    mf_stream->Release();
+                }
+                com_stream->Release();
+            }
+            MFShutdown();
+        }
+
+        CoUninitialize();
+
+        // Post result back to the UI thread; resolve compose_bar() at call
+        // time to avoid dangling pointer if the view was freed.
+        post_to_ui_([this, info = std::move(info)]() mutable
+        {
+            if (room_view_)
+                room_view_->compose_bar()->update_pending_attachment(info);
+        });
+    });
 }
 
 void MainWindow::generate_video_thumbnail_(const std::string& event_id,

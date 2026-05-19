@@ -475,6 +475,54 @@ pub(crate) fn encode_voice_ogg(
     Ok(ogg_bytes)
 }
 
+/// Build the raw `m.room.message` content object for an animated image
+/// (GIF/WebP). Carries the MSC4230 `org.matrix.msc4230.is_animated` flag and
+/// the `fi.mau.video.gif` vendor hint so capable clients autoplay/loop the
+/// animation. `body` is the caption when one is supplied, otherwise the
+/// filename; the dedicated MSC2530 `filename` field is only added when a
+/// caption is present (matching the rest of the send path). `width`/`height`
+/// of 0 are omitted from `info`. A non-empty `reply_event_id` adds an
+/// `m.in_reply_to` relation.
+fn build_animated_image_content(
+    mxc_uri: &str,
+    filename: &str,
+    caption: &str,
+    mime_type: &str,
+    width: u32,
+    height: u32,
+    size: usize,
+    reply_event_id: &str,
+) -> serde_json::Value {
+    let body = if caption.is_empty() { filename } else { caption };
+    let mut info = serde_json::json!({
+        "mimetype": mime_type,
+        "size": size,
+        "fi.mau.video.gif": true,
+    });
+    if width != 0 {
+        info["w"] = serde_json::json!(width);
+    }
+    if height != 0 {
+        info["h"] = serde_json::json!(height);
+    }
+    let mut content = serde_json::json!({
+        "msgtype": "m.image",
+        "body": body,
+        "url": mxc_uri,
+        "info": info,
+        "org.matrix.msc4230.is_animated": true,
+    });
+    if !caption.is_empty() {
+        content["filename"] = serde_json::json!(filename);
+    }
+    if !reply_event_id.is_empty() {
+        content["m.relates_to"] = serde_json::json!({
+            "m.in_reply_to": { "event_id": reply_event_id }
+        });
+    }
+    content
+}
+
 impl ClientFfi {
     pub fn new() -> Self {
         let _ = tracing_subscriber::fmt()
@@ -2418,6 +2466,11 @@ impl ClientFfi {
     /// comment in `bridge.rs`. Returns `OpResult` with `ok=false` for
     /// invalid IDs, unknown rooms, bad mime strings, upload failures, or
     /// send failures. `width`/`height` of 0 are passed through unset.
+    /// When `is_animated` is true the image is sent as a raw `m.image`
+    /// event carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and
+    /// the `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay
+    /// and loop on capable clients (the standard `send_attachment` path
+    /// strips these fields).
     #[cfg(not(test))]
     pub fn send_image(
         &mut self,
@@ -2428,6 +2481,7 @@ impl ClientFfi {
         caption: &str,
         width: u32,
         height: u32,
+        is_animated: bool,
         reply_event_id: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
@@ -2450,6 +2504,41 @@ impl ClientFfi {
             Ok(m) => m,
             Err(e) => return err(format!("invalid mime: {e}")),
         };
+
+        // Animated GIF/WebP path: `send_attachment` strips the MSC4230
+        // `is_animated` flag and the `fi.mau.video.gif` vendor hint, so we
+        // upload the media ourselves and post a raw `m.image` event whose
+        // `info` carries those fields.
+        if is_animated {
+            let mime_owned = mime.clone();
+            let mime_str = mime_type.to_owned();
+            let filename = filename.to_owned();
+            let caption = caption.to_owned();
+            let reply_event_id = reply_event_id.to_owned();
+            let size = bytes.len();
+            let bytes_owned = bytes.to_vec();
+            return match self.rt.block_on(async move {
+                let uploaded = client
+                    .media()
+                    .upload(&mime_owned, bytes_owned, None)
+                    .await?;
+                let mxc_uri = uploaded.content_uri.to_string();
+                let content = build_animated_image_content(
+                    &mxc_uri,
+                    &filename,
+                    &caption,
+                    &mime_str,
+                    width,
+                    height,
+                    size,
+                    &reply_event_id,
+                );
+                room.send_raw("m.room.message", content).await
+            }) {
+                Ok(_) => ok(""),
+                Err(e) => err(e.to_string()),
+            };
+        }
 
         let info = BaseImageInfo {
             width: if width != 0 {
@@ -2504,6 +2593,7 @@ impl ClientFfi {
         _caption: &str,
         _width: u32,
         _height: u32,
+        _is_animated: bool,
         _reply_event_id: &str,
     ) -> OpResult {
         err("not logged in")
@@ -7219,6 +7309,48 @@ mod tests {
         );
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
+    }
+
+    #[test]
+    fn animated_image_content_sets_flags() {
+        let val = build_animated_image_content(
+            "mxc://server/abc123",
+            "anim.gif",
+            "", // no caption
+            "image/gif",
+            320,
+            240,
+            2048,
+            "", // no reply
+        );
+        assert_eq!(val["msgtype"], "m.image");
+        assert_eq!(val["body"], "anim.gif");
+        assert_eq!(val["url"], "mxc://server/abc123");
+        assert_eq!(val["org.matrix.msc4230.is_animated"], true);
+        assert_eq!(val["info"]["fi.mau.video.gif"], true);
+        assert_eq!(val["info"]["mimetype"], "image/gif");
+        assert!(
+            val.get("filename").is_none(),
+            "no MSC2530 filename when no caption"
+        );
+        assert!(val.get("m.relates_to").is_none());
+    }
+
+    #[test]
+    fn animated_image_content_with_caption_and_reply() {
+        let val = build_animated_image_content(
+            "mxc://server/xyz",
+            "cat.gif",
+            "Look at this",
+            "image/gif",
+            0,
+            0,
+            512,
+            "$reply:server",
+        );
+        assert_eq!(val["body"], "Look at this");
+        assert_eq!(val["filename"], "cat.gif");
+        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$reply:server");
     }
 
     #[test]

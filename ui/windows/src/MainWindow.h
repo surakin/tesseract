@@ -469,6 +469,12 @@ private:
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
+    // Extract thumbnail, dimensions, and duration from raw bytes on a
+    // background thread; posts result back via post_to_ui_.
+    void extract_media_info_(std::uint32_t pending_gen,
+                             std::vector<std::uint8_t> bytes,
+                             std::string mime);
+
     static constexpr const wchar_t* CLASS_NAME = L"TesseractMainWnd";
     static constexpr int IDM_LOGOUT = 120;
     static constexpr int IDM_ADD_ACCOUNT = 121;
