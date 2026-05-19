@@ -61,6 +61,9 @@ public:
     {
         ticker_.stop();
         player_.stop();
+        // Detach from buffer_ before buffer_/bytes_ are freed.
+        // player_ is declared last so ~QMediaPlayer() runs before ~QBuffer().
+        player_.setSourceDevice(nullptr);
     }
 
     void play(const std::uint8_t* data, std::size_t size,
@@ -155,12 +158,14 @@ private:
         }
     }
 
-    QMediaPlayer player_;
+    // player_ declared last so it is destroyed first (reverse declaration order).
+    // ~QMediaPlayer() must complete before ~QBuffer() frees the backing memory.
     QAudioOutput output_;
     QByteArray bytes_;
     QBuffer buffer_;
     QTimer ticker_;
     float rate_ = 1.0f;
+    QMediaPlayer player_;
 };
 
 std::unique_ptr<tk::AudioPlayer> make_audio_player_qt()
