@@ -146,6 +146,19 @@ public:
                                         : QLineEdit::Normal);
         }
     }
+    void set_text_color(Color c) override
+    {
+        if (!edit_)
+            return;
+        QPalette pal = edit_->palette();
+        QColor qc(c.r, c.g, c.b, c.a);
+        pal.setColor(QPalette::Text, qc);
+        pal.setColor(QPalette::WindowText, qc);
+        QColor ph = qc;
+        ph.setAlpha(128);
+        pal.setColor(QPalette::PlaceholderText, ph);
+        edit_->setPalette(pal);
+    }
     void set_on_changed(std::function<void(const std::string&)> cb) override
     {
         on_changed_ = std::move(cb);

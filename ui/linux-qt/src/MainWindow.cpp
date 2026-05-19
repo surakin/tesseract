@@ -4034,9 +4034,11 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     }
     apply_theme_to_secondary_windows_(t);
     if (roomTextArea_)
-    {
         roomTextArea_->set_text_color(t.palette.text_primary);
-    }
+    if (roomSearchField_)
+        roomSearchField_->set_text_color(t.palette.text_primary);
+    if (recoveryKeyField_)
+        recoveryKeyField_->set_text_color(t.palette.text_primary);
     {
         const auto& p = t.palette;
         QPalette pal = statusBar()->palette();
