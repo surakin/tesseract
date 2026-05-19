@@ -89,6 +89,8 @@ set(_tk_sources
     views/settings/AppearanceSection.cpp
     views/settings/NotificationsSection.h
     views/settings/NotificationsSection.cpp
+    views/settings/MediaSection.h
+    views/settings/MediaSection.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")

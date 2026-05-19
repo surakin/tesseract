@@ -315,6 +315,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             mainApp_->show_image_viewer(false);
             mainAppSurface_->relayout();
         };
+        mainApp_->image_viewer()->set_repaint_requester(
+            [this]
+            {
+                if (mainAppSurface_)
+                {
+                    mainAppSurface_->relayout();
+                }
+            });
 
         // ---- Video viewer ----
         mainApp_->video_viewer()->set_image_provider(

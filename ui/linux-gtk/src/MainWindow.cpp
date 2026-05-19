@@ -1144,6 +1144,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gtk_widget_grab_focus(main_app_surface_->widget());
         };
 
+        img_viewer_->set_repaint_requester(
+            [this]
+            {
+                if (main_app_surface_)
+                {
+                    main_app_surface_->relayout();
+                }
+            });
         img_viewer_->on_save =
             [this](std::string source_url, std::string filename_hint)
         {

@@ -58,8 +58,9 @@ void VideoViewerOverlay::open(std::string source_json, std::string thumb_url,
     loop_ = loop;
     no_audio_ = no_audio;
     hide_controls_ = hide_controls;
-    is_loading_ = true;
-    is_open_ = true;
+    is_loading_    = true;
+    loading_start_ = std::chrono::steady_clock::now();
+    is_open_       = true;
 
     if (video_player_)
     {
@@ -232,20 +233,33 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
                                1.0f);
     }
 
-    // "Loading…" label while bytes are in flight
+    // Spinning-dots loading indicator while bytes are in flight
     if (is_loading_)
     {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Body;
-        auto lo = ctx.factory.build_text("Loading\xe2\x80\xa6", st); // UTF-8 …
-        if (lo)
+        const float cx = video_rect_.x + video_rect_.w * 0.5f;
+        const float cy = video_rect_.y + video_rect_.h * 0.5f;
+        constexpr float kRadius = 14.0f;
+        constexpr float kDotR   = 3.0f;
+        constexpr int   kN      = 8;
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - loading_start_)
+                .count();
+        const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+        for (int i = 0; i < kN; ++i)
         {
-            tk::Size sz = lo->measure();
-            cv.draw_text(*lo,
-                         {video_rect_.x + (video_rect_.w - sz.w) * 0.5f,
-                          video_rect_.y + (video_rect_.h - sz.h) * 0.5f},
-                         tk::Color::rgba(255, 255, 255, 180));
+            const float angle =
+                (static_cast<float>(i) / kN + phase) * 2.0f * 3.14159265f;
+            const float dx    = std::cos(angle) * kRadius;
+            const float dy    = std::sin(angle) * kRadius;
+            const float t     = static_cast<float>(i) / kN;
+            const auto  alpha = static_cast<uint8_t>(40.0f + 215.0f * t);
+            cv.fill_rounded_rect({cx + dx - kDotR, cy + dy - kDotR,
+                                   kDotR * 2.0f, kDotR * 2.0f},
+                                 kDotR, tk::Color{220, 220, 220, alpha});
         }
+        if (request_repaint_)
+            request_repaint_();
     }
 
     // ── Controls bar ── (hidden when hide_controls_ is set) ─────────────

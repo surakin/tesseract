@@ -1609,6 +1609,15 @@ void MacShell::apply_cached_messages_(
             s->_mainApp->show_image_viewer(false);
             s->_mainAppSurface->relayout();
         };
+        _mainApp->image_viewer()->set_repaint_requester(
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                {
+                    s->_mainAppSurface->relayout();
+                }
+            });
         _mainApp->image_viewer()->on_save =
             [weakSelf](std::string source_url, std::string filename_hint)
         {
@@ -2723,6 +2732,17 @@ void MacShell::apply_cached_messages_(
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        _settingsView->on_prefetch_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().prefetch_full_media = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+        };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
     }
@@ -3524,6 +3544,8 @@ void MacShell::apply_cached_messages_(
         tesseract::Settings::instance().notifications_enabled);
     _settingsView->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
+    _settingsView->set_prefetch_enabled(
+        tesseract::Settings::instance().prefetch_full_media);
     _settingsSurface->relayout();
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();

@@ -614,7 +614,8 @@ public:
         }
         if (m.kind == Kind::ReadMarker)
         {
-            return owner_.suppress_read_marker_ ? 0.0f : kReadMarkerH;
+            return (owner_.suppress_read_marker_ || !has_content_after(index))
+                       ? 0.0f : kReadMarkerH;
         }
         if (m.kind == Kind::TimelineStart)
         {
@@ -664,7 +665,7 @@ public:
         }
         if (m.kind == Kind::ReadMarker)
         {
-            if (!owner_.suppress_read_marker_)
+            if (!owner_.suppress_read_marker_ && has_content_after(index))
             {
                 paint_read_marker(ctx, bounds);
             }

@@ -1983,6 +1983,14 @@ void MainWindow::on_create(HWND hwnd)
                 main_app_surface_->relayout();
             }
         };
+        img_viewer_->set_repaint_requester(
+            [this]
+            {
+                if (main_app_surface_)
+                {
+                    main_app_surface_->relayout();
+                }
+            });
         img_viewer_->on_save =
             [this](std::string source_url, std::string filename_hint)
         {
@@ -2282,6 +2290,12 @@ void MainWindow::on_create(HWND hwnd)
         {
             tesseract::Settings::instance().notification_image_previews =
                 enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+        };
+        settings_view_->on_prefetch_changed = [this](bool enabled)
+        {
+            tesseract::Settings::instance().prefetch_full_media = enabled;
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
@@ -2613,6 +2627,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().notifications_enabled);
     settings_view_->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
+    settings_view_->set_prefetch_enabled(
+        tesseract::Settings::instance().prefetch_full_media);
     settings_surface_->relayout();
 
     settings_visible_ = true;

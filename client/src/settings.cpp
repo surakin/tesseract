@@ -100,6 +100,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     notifications_enabled = extract_bool(json, "notifications_enabled", true);
     notification_image_previews =
         extract_bool(json, "notification_image_previews", true);
+    prefetch_full_media = extract_bool(json, "prefetch_full_media", false);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -128,7 +129,9 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
       << ",\"notifications_enabled\":"
       << (notifications_enabled ? "true" : "false")
       << ",\"notification_image_previews\":"
-      << (notification_image_previews ? "true" : "false") << "}";
+      << (notification_image_previews ? "true" : "false")
+      << ",\"prefetch_full_media\":"
+      << (prefetch_full_media ? "true" : "false") << "}";
 }
 
 } // namespace tesseract

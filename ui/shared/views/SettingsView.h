@@ -2,18 +2,21 @@
 
 // Full-window settings screen. Composes:
 //   • A fixed-height top bar with a "← Back" button.
-//   • A tk::SideTabView below it with three sections:
+//   • A tk::SideTabView below it with four sections:
 //       – Account (avatar, display name, Matrix ID)
 //       – Appearance (theme selection)
 //       – Notifications (enable/disable toggle)
+//       – Media (full-media prefetch toggle)
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
-// showing, call set_account_info(), set_notifications_enabled(), and
-// set_theme_pref() to sync state with persisted settings.
+// showing, call set_account_info(), set_theme_pref(),
+// set_notifications_enabled(), set_image_previews_enabled(), and
+// set_prefetch_enabled() to sync state with persisted settings.
 
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
+#include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
 
 #include "tk/controls.h"
@@ -56,6 +59,11 @@ public:
     // Silently initialise the image-preview checkbox from persisted settings.
     void set_image_previews_enabled(bool enabled);
 
+    // ----- Media section ----------------------------------------------------
+
+    // Silently initialise the prefetch checkbox from persisted settings.
+    void set_prefetch_enabled(bool enabled);
+
     // ----- Callbacks wired by the shell -------------------------------------
 
     // Fired when the user clicks "← Back".
@@ -69,6 +77,9 @@ public:
 
     // Fired when the user toggles image/sticker notification previews.
     std::function<void(bool)> on_image_previews_changed;
+
+    // Fired when the user toggles full-media pre-fetch.
+    std::function<void(bool)> on_prefetch_changed;
 
     // ----- tk::Widget overrides ---------------------------------------------
 
@@ -86,6 +97,7 @@ private:
     AccountSection* account_ = nullptr;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
+    MediaSection* media_ = nullptr;
 };
 
 } // namespace tesseract::views

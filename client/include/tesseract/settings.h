@@ -88,6 +88,12 @@ public:
     // regardless of this setting.
     bool notification_image_previews = true;
 
+    // ── Media loading ────────────────────────────────────────────────
+    // When true, full-resolution images and stickers are pre-fetched as rows
+    // scroll into view so ImageViewerOverlay opens instantly. When false (the
+    // default), full media is fetched on demand when the viewer is opened.
+    bool prefetch_full_media = false;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

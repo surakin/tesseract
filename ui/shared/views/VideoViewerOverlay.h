@@ -4,6 +4,7 @@
 #include "tk/video.h"
 #include "tk/widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -80,6 +81,7 @@ private:
 
     bool is_open_ = false;
     bool is_loading_ = false;
+    std::chrono::steady_clock::time_point loading_start_{};
     std::string source_json_;
     std::string thumb_url_;
     std::string mime_type_;

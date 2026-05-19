@@ -388,9 +388,11 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_media_image_(img.thumbnail_url, visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight);
         }
-        // Pre-fetch the full image so ImageViewerOverlay opens instantly.
-        ensure_media_image_(img.image_url, visual::kMaxInlineImageWidth,
-                            visual::kMaxInlineImageHeight);
+        if (tesseract::Settings::instance().prefetch_full_media)
+        {
+            ensure_media_image_(img.image_url, visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight);
+        }
     }
     else if (ev.type == EventType::Sticker)
     {
@@ -400,9 +402,11 @@ void ShellBase::ensure_row_media_(const Event& ev)
             ensure_media_image_(s.thumbnail_url, visual::kStickerSize,
                                 visual::kStickerSize);
         }
-        // Pre-fetch the full sticker so ImageViewerOverlay opens instantly.
-        ensure_media_image_(s.image_url, visual::kStickerSize,
-                            visual::kStickerSize);
+        if (tesseract::Settings::instance().prefetch_full_media)
+        {
+            ensure_media_image_(s.image_url, visual::kStickerSize,
+                                visual::kStickerSize);
+        }
     }
     else if (ev.type == EventType::Voice)
     {

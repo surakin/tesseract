@@ -42,6 +42,12 @@ SettingsWidget::SettingsWidget()
         s.notification_image_previews = e;
         s.save_to_disk(tesseract::config_dir());
     };
+    settings_view_->on_prefetch_changed = [](bool e)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.prefetch_full_media = e;
+        s.save_to_disk(tesseract::config_dir());
+    };
 
     surface_->set_root(std::move(view));
 }
@@ -69,6 +75,8 @@ void SettingsWidget::populate(
     settings_view_->set_notifications_enabled(notifications_enabled);
     settings_view_->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
+    settings_view_->set_prefetch_enabled(
+        tesseract::Settings::instance().prefetch_full_media);
     surface_->relayout();
 }
 

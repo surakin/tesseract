@@ -61,11 +61,23 @@ SettingsView::SettingsView()
     };
     notifications_ = notifications.get();
 
-    // SideTabView — owns the three section widgets.
+    // Media section.
+    auto media = std::make_unique<MediaSection>();
+    media->on_prefetch_changed = [this](bool enabled)
+    {
+        if (on_prefetch_changed)
+        {
+            on_prefetch_changed(enabled);
+        }
+    };
+    media_ = media.get();
+
+    // SideTabView — owns the four section widgets.
     auto tabs = std::make_unique<tk::SideTabView>();
     tabs->add_tab("Account", std::move(account));
     tabs->add_tab("Appearance", std::move(appearance));
     tabs->add_tab("Notifications", std::move(notifications));
+    tabs->add_tab("Media", std::move(media));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs_ = add_child(std::move(tabs));
 }
@@ -115,6 +127,14 @@ void SettingsView::set_image_previews_enabled(bool enabled)
     if (notifications_)
     {
         notifications_->set_image_previews_checked(enabled);
+    }
+}
+
+void SettingsView::set_prefetch_enabled(bool enabled)
+{
+    if (media_)
+    {
+        media_->set_prefetch_checked(enabled);
     }
 }
 

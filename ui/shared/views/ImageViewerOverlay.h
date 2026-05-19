@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 #include "tk/widget.h"
 
+#include <chrono>
 #include <functional>
 #include <string>
 
@@ -49,6 +50,11 @@ public:
     void
     set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
 
+    // Must be set by the shell so the loading spinner can trigger repaints of
+    // the hosting surface while bytes are in flight. Typically:
+    //   [this]{ mainAppSurface_->relayout(); }
+    void set_repaint_requester(std::function<void()> fn);
+
     // Fires when the overlay should be dismissed (× button, outside click).
     // The shell responds by hiding the host surface/window.
     std::function<void()> on_close;
@@ -84,6 +90,11 @@ private:
     int natural_h_ = 0;
 
     std::function<const tk::Image*(const std::string&)> image_provider_;
+    std::function<void()> request_repaint_;
+
+    // Loading state: set on open(), cleared once image_provider_ returns non-null.
+    bool is_loading_ = false;
+    std::chrono::steady_clock::time_point loading_start_{};
 
     // Native image size (zoom 1.0 = 1:1 pixels). Set in arrange/paint and
     // reused in on_wheel. base_ * zoom_ is the on-screen image size.
