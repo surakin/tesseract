@@ -29,6 +29,7 @@ use matrix_sdk::{
         registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType},
         ClientRegistrationData,
     },
+    encryption::{BackupDownloadStrategy, EncryptionSettings},
     utils::UrlOrQuery,
     Client,
 };
@@ -94,6 +95,10 @@ pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::R
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(sqlite_path, None)
         .handle_refresh_tokens()
+        .with_encryption_settings(EncryptionSettings {
+            backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+            ..Default::default()
+        })
         .build()
         .await
         .context("build matrix-sdk Client")?;

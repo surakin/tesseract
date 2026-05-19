@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Context as _;
 use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
+    encryption::{BackupDownloadStrategy, EncryptionSettings},
     ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId},
     store::RoomLoadSettings,
     Client,
@@ -628,6 +629,10 @@ impl ClientFfi {
                 .server_name_or_homeserver_url(homeserver)
                 .sqlite_store(&path, None)
                 .handle_refresh_tokens()
+                .with_encryption_settings(EncryptionSettings {
+                    backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+                    ..Default::default()
+                })
                 .build()
                 .await
                 .context("build client")?;
