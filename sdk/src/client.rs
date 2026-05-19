@@ -405,7 +405,7 @@ pub(crate) fn encode_voice_ogg(
         return Err("empty PCM".to_owned());
     }
 
-    let mut enc = Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip)
+    let enc = Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip)
         .map_err(|e| e.to_string())?;
 
     const FRAME: usize = 960;
