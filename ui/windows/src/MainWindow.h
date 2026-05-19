@@ -79,6 +79,7 @@ constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
 constexpr UINT WM_TESSERACT_JUMP_DONE = WM_APP + 23;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE = WM_APP + 25;
 constexpr UINT WM_TESSERACT_JOIN_ROOM_DONE = WM_APP + 26;
+constexpr UINT WM_TESSERACT_FILE_BYTES = WM_APP + 27;
 
 namespace win32
 {
@@ -280,6 +281,10 @@ private:
     // When non-empty, the next emoji selection routes through
     // `Client::send_reaction` for this event_id rather than into compose.
     std::string pending_reaction_event_id_;
+
+    // Returns the user-chosen path, or L"" if cancelled.
+    std::wstring show_save_dialog_(const std::wstring& suggested,
+                                   const wchar_t* filter);
 
     void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
     void on_system_theme_changed();               // re-apply DWM + invalidate

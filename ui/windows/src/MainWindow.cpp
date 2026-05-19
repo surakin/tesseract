@@ -29,6 +29,7 @@
 #include <ctime>
 #include <cwchar>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace
@@ -94,6 +95,11 @@ struct VideoBytesPayload
 {
     std::string source_json; // original request key
     std::vector<std::uint8_t> bytes;
+};
+struct FileBytesPayload
+{
+    std::string dest_path;
+    std::vector<uint8_t> bytes;
 };
 } // namespace
 
@@ -816,6 +822,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (self->vid_viewer_ && !p->bytes.empty())
         {
             self->vid_viewer_->load_bytes(p->bytes.data(), p->bytes.size());
+        }
+        delete p;
+        return 0;
+    }
+    case WM_TESSERACT_FILE_BYTES:
+    {
+        auto* p = reinterpret_cast<FileBytesPayload*>(lParam);
+        if (p && !p->bytes.empty())
+        {
+            std::ofstream f(p->dest_path, std::ios::binary);
+            f.write(reinterpret_cast<const char*>(p->bytes.data()),
+                    static_cast<std::streamsize>(p->bytes.size()));
         }
         delete p;
         return 0;
@@ -1955,6 +1973,29 @@ void MainWindow::on_create(HWND hwnd)
                 main_app_surface_->relayout();
             }
         };
+        img_viewer_->on_save =
+            [this](std::string source_url, std::string filename_hint)
+        {
+            std::wstring suggested(filename_hint.begin(), filename_hint.end());
+            if (suggested.empty())
+                suggested = L"image";
+            std::wstring path = show_save_dialog_(
+                suggested,
+                L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
+            if (path.empty())
+                return;
+            HWND target = hwnd_;
+            run_async_(
+                [this, target, source_url = std::move(source_url), path]()
+                {
+                    auto bytes = client_->fetch_source_bytes(source_url);
+                    auto* p = new FileBytesPayload{
+                        std::string(path.begin(), path.end()), std::move(bytes)};
+                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
+                                      reinterpret_cast<LPARAM>(p)))
+                        delete p;
+                });
+        };
 
         room_view_->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
@@ -2009,6 +2050,32 @@ void MainWindow::on_create(HWND hwnd)
                 main_app_surface_->relayout();
             }
         };
+        vid_viewer_->on_save =
+            [this](std::string source_json, std::string mime_type)
+        {
+            std::string ext = ".mp4";
+            auto slash = mime_type.find('/');
+            if (slash != std::string::npos)
+                ext = "." + mime_type.substr(slash + 1);
+            std::wstring suggested(("video" + ext).begin(),
+                                   ("video" + ext).end());
+            std::wstring path = show_save_dialog_(
+                suggested,
+                L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
+            if (path.empty())
+                return;
+            HWND target = hwnd_;
+            run_async_(
+                [this, target, source_json = std::move(source_json), path]()
+                {
+                    auto bytes = client_->fetch_source_bytes(source_json);
+                    auto* p = new FileBytesPayload{
+                        std::string(path.begin(), path.end()), std::move(bytes)};
+                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
+                                      reinterpret_cast<LPARAM>(p)))
+                        delete p;
+                });
+        };
 
         room_view_->on_video_clicked =
             [this](const tesseract::views::MessageListView::VideoHit& hit)
@@ -2045,6 +2112,30 @@ void MainWindow::on_create(HWND hwnd)
                     {
                         delete p;
                     }
+                });
+        };
+
+        room_view_->on_file_clicked =
+            [this](const tesseract::views::MessageListView::FileHit& hit)
+        {
+            std::wstring suggested(hit.file_name.begin(), hit.file_name.end());
+            if (suggested.empty())
+                suggested = L"download";
+            std::wstring path = show_save_dialog_(suggested,
+                                                  L"All files\0*.*\0\0");
+            if (path.empty())
+                return;
+            HWND target = hwnd_;
+            std::string url = hit.media_url;
+            run_async_(
+                [this, target, url, path]()
+                {
+                    auto bytes = client_->fetch_media_bytes(url);
+                    auto* p = new FileBytesPayload{
+                        std::string(path.begin(), path.end()), std::move(bytes)};
+                    if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
+                                      reinterpret_cast<LPARAM>(p)))
+                        delete p;
                 });
         };
 
@@ -5494,5 +5585,23 @@ void MainWindow::apply_cached_messages_(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,
+                                           const wchar_t* filter)
+{
+    wchar_t buf[MAX_PATH]{};
+    if (!suggested.empty())
+        wcsncpy_s(buf, suggested.c_str(), MAX_PATH - 1);
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = hwnd_;
+    ofn.lpstrFile   = buf;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrFilter = filter;
+    ofn.Flags       = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (GetSaveFileNameW(&ofn))
+        return buf;
+    return {};
+}
 
 } // namespace win32

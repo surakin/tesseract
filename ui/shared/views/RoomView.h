@@ -167,6 +167,7 @@ public:
     std::function<void(std::string event_id)> on_receipt_needed;
     std::function<void(MessageListView::ImageHit)> on_image_clicked;
     std::function<void(MessageListView::VideoHit)> on_video_clicked;
+    std::function<void(MessageListView::FileHit)> on_file_clicked;
     std::function<void()> on_near_top;
     std::function<void()> on_near_bottom;
     std::function<void()> on_return_to_live;

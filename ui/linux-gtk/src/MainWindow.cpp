@@ -20,6 +20,7 @@
 #include <cctype>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -1133,6 +1134,72 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             gtk_widget_grab_focus(main_app_surface_->widget());
         };
 
+        img_viewer_->on_save =
+            [this](std::string source_url, std::string filename_hint)
+        {
+            std::string suggested = filename_hint.empty() ? "image" : filename_hint;
+            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+                "Save image",
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
+            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg), suggested.c_str());
+            struct ImgSaveCtx
+            {
+                MainWindow* self;
+                std::string source_url;
+            };
+            auto* ctx = new ImgSaveCtx{this, std::move(source_url)};
+            g_signal_connect(
+                dlg, "response",
+                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+                {
+                    auto* c = static_cast<ImgSaveCtx*>(p);
+                    if (response == GTK_RESPONSE_ACCEPT)
+                    {
+                        GFile* gf =
+                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                        char* cpath = g_file_get_path(gf);
+                        std::string dest(cpath);
+                        g_free(cpath);
+                        g_object_unref(gf);
+                        std::string url = std::move(c->source_url);
+                        c->self->run_async_(
+                            [self = c->self, url = std::move(url), dest]()
+                            {
+                                auto bytes = self->client_->fetch_source_bytes(url);
+                                struct WriteCtx
+                                {
+                                    std::string dest;
+                                    std::vector<uint8_t> bytes;
+                                };
+                                auto* wc = new WriteCtx{dest, std::move(bytes)};
+                                g_idle_add(
+                                    [](gpointer wp) -> gboolean
+                                    {
+                                        auto* w = static_cast<WriteCtx*>(wp);
+                                        if (!w->bytes.empty())
+                                        {
+                                            std::ofstream f(w->dest,
+                                                            std::ios::binary);
+                                            f.write(
+                                                reinterpret_cast<const char*>(
+                                                    w->bytes.data()),
+                                                static_cast<std::streamsize>(
+                                                    w->bytes.size()));
+                                        }
+                                        delete w;
+                                        return G_SOURCE_REMOVE;
+                                    },
+                                    wc);
+                            });
+                    }
+                    delete c;
+                    gtk_native_dialog_destroy(d);
+                }),
+                ctx);
+            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+        };
+
         // Video viewer.
         vid_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
@@ -1191,6 +1258,144 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         },
                         ctx);
                 });
+        };
+
+        vid_viewer_->on_save =
+            [this](std::string source_json, std::string mime_type)
+        {
+            std::string ext = ".mp4";
+            auto slash = mime_type.find('/');
+            if (slash != std::string::npos)
+                ext = "." + mime_type.substr(slash + 1);
+            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+                "Save video",
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
+            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
+                                              ("video" + ext).c_str());
+            struct VidSaveCtx
+            {
+                MainWindow* self;
+                std::string source_json;
+            };
+            auto* ctx = new VidSaveCtx{this, std::move(source_json)};
+            g_signal_connect(
+                dlg, "response",
+                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+                {
+                    auto* c = static_cast<VidSaveCtx*>(p);
+                    if (response == GTK_RESPONSE_ACCEPT)
+                    {
+                        GFile* gf =
+                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                        char* cpath = g_file_get_path(gf);
+                        std::string dest(cpath);
+                        g_free(cpath);
+                        g_object_unref(gf);
+                        std::string src = std::move(c->source_json);
+                        c->self->run_async_(
+                            [self = c->self, src = std::move(src), dest]()
+                            {
+                                auto bytes = self->client_->fetch_source_bytes(src);
+                                struct WriteCtx
+                                {
+                                    std::string dest;
+                                    std::vector<uint8_t> bytes;
+                                };
+                                auto* wc = new WriteCtx{dest, std::move(bytes)};
+                                g_idle_add(
+                                    [](gpointer wp) -> gboolean
+                                    {
+                                        auto* w = static_cast<WriteCtx*>(wp);
+                                        if (!w->bytes.empty())
+                                        {
+                                            std::ofstream f(w->dest,
+                                                            std::ios::binary);
+                                            f.write(
+                                                reinterpret_cast<const char*>(
+                                                    w->bytes.data()),
+                                                static_cast<std::streamsize>(
+                                                    w->bytes.size()));
+                                        }
+                                        delete w;
+                                        return G_SOURCE_REMOVE;
+                                    },
+                                    wc);
+                            });
+                    }
+                    delete c;
+                    gtk_native_dialog_destroy(d);
+                }),
+                ctx);
+            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+        };
+
+        room_view_->on_file_clicked =
+            [this](const tesseract::views::MessageListView::FileHit& hit)
+        {
+            std::string suggested =
+                hit.file_name.empty() ? "download" : hit.file_name;
+            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+                "Save file",
+                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                GTK_FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel");
+            gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
+                                              suggested.c_str());
+            struct FileSaveCtx
+            {
+                MainWindow* self;
+                std::string media_url;
+            };
+            auto* ctx = new FileSaveCtx{this, hit.media_url};
+            g_signal_connect(
+                dlg, "response",
+                G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
+                {
+                    auto* c = static_cast<FileSaveCtx*>(p);
+                    if (response == GTK_RESPONSE_ACCEPT)
+                    {
+                        GFile* gf =
+                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                        char* cpath = g_file_get_path(gf);
+                        std::string dest(cpath);
+                        g_free(cpath);
+                        g_object_unref(gf);
+                        std::string url = std::move(c->media_url);
+                        c->self->run_async_(
+                            [self = c->self, url = std::move(url), dest]()
+                            {
+                                auto bytes = self->client_->fetch_media_bytes(url);
+                                struct WriteCtx
+                                {
+                                    std::string dest;
+                                    std::vector<uint8_t> bytes;
+                                };
+                                auto* wc = new WriteCtx{dest, std::move(bytes)};
+                                g_idle_add(
+                                    [](gpointer wp) -> gboolean
+                                    {
+                                        auto* w = static_cast<WriteCtx*>(wp);
+                                        if (!w->bytes.empty())
+                                        {
+                                            std::ofstream f(w->dest,
+                                                            std::ios::binary);
+                                            f.write(
+                                                reinterpret_cast<const char*>(
+                                                    w->bytes.data()),
+                                                static_cast<std::streamsize>(
+                                                    w->bytes.size()));
+                                        }
+                                        delete w;
+                                        return G_SOURCE_REMOVE;
+                                    },
+                                    wc);
+                            });
+                    }
+                    delete c;
+                    gtk_native_dialog_destroy(d);
+                }),
+                ctx);
+            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
         };
 
         room_view_->set_video_player_factory(
@@ -4981,14 +5186,14 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     }
 }
 
-const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+const std::vector<tesseract::views::MessageRowData>* MainWindow::get_current_messages_()
 {
     auto* ml = room_view_ ? room_view_->message_list() : nullptr;
     return ml ? &ml->messages() : nullptr;
 }
 
 void MainWindow::apply_cached_messages_(
-    const std::vector<views::MessageRowData>& msgs)
+    const std::vector<tesseract::views::MessageRowData>& msgs)
 {
     if (room_view_)
     {

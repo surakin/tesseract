@@ -53,6 +53,12 @@ public:
     // The shell responds by hiding the host surface/window.
     std::function<void()> on_close;
 
+    /// Fires when the user clicks the ⬇ save button.
+    /// `source_url` is the media_url_ (mxc:// or source JSON).
+    /// `filename_hint` is the body_ (MSC2530 filename caption, or empty).
+    std::function<void(std::string source_url, std::string filename_hint)>
+        on_save;
+
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -100,8 +106,10 @@ private:
 
     tk::Rect image_rect_{}; // world-space image bounds (zoom + pan applied)
     tk::Rect close_btn_{};  // × button in top-right corner
+    tk::Rect save_btn_{};   // ⬇ button left of close button
 
     bool press_close_ = false;
+    bool press_save_ = false;
     bool press_outside_ = false;
     bool press_drag_ = false;
     tk::Point drag_last_{};

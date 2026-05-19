@@ -189,6 +189,8 @@ void VideoViewerOverlay::recompute_layout()
 
     close_btn_ = {b.x + b.w - (kCloseBtnS + 8.0f), b.y + 8.0f, kCloseBtnS,
                   kCloseBtnS};
+    save_btn_ = {close_btn_.x - kCloseBtnS - 4.0f, b.y + 8.0f, kCloseBtnS,
+                 kCloseBtnS};
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -379,6 +381,23 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
                          tk::Color::rgba(255, 255, 255, 220));
         }
     }
+
+    // ⬇ save button
+    cv.fill_rounded_rect(save_btn_, kCloseBtnS * 0.5f,
+                         tk::Color{0, 0, 0, 160});
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Title;
+        st.max_width = kCloseBtnS;
+        auto lo = ctx.factory.build_text("\xe2\xac\x87", st); // UTF-8 ⬇
+        if (lo)
+        {
+            auto sz = lo->measure();
+            float tx = save_btn_.x + (save_btn_.w - sz.w) * 0.5f;
+            float ty = save_btn_.y + (save_btn_.h - sz.h) * 0.5f;
+            cv.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 220));
+        }
+    }
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
@@ -395,6 +414,11 @@ bool VideoViewerOverlay::on_pointer_down(tk::Point local)
     if (rect_contains(close_btn_, w))
     {
         press_close_ = true;
+        return true;
+    }
+    if (rect_contains(save_btn_, w))
+    {
+        press_save_ = true;
         return true;
     }
     if (!hide_controls_)
@@ -447,6 +471,19 @@ void VideoViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
         if (inside_self && rect_contains(close_btn_, w))
         {
             close();
+        }
+        return;
+    }
+    if (press_save_)
+    {
+        press_save_ = false;
+        if (inside_self && on_save)
+        {
+            tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (rect_contains(save_btn_, w))
+            {
+                on_save(source_json_, mime_type_);
+            }
         }
         return;
     }

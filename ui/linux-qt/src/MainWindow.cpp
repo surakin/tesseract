@@ -58,7 +58,10 @@
 #include <QDBusReply>
 #include <QDBusVariant>
 #include <QWindow>
+#include <QFileDialog>
+
 #include <algorithm>
+#include <fstream>
 #include <thread>
 #include <unordered_set>
 
@@ -793,6 +796,34 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     });
             }
         };
+        mainApp_->image_viewer()->on_save =
+            [this](std::string source_url, std::string filename_hint)
+        {
+            std::string suggested = filename_hint.empty() ? "image" : filename_hint;
+            QString path = QFileDialog::getSaveFileName(
+                this, tr("Save image"),
+                QString::fromStdString(suggested),
+                tr("Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"));
+            if (path.isEmpty())
+                return;
+            std::string dest = path.toStdString();
+            runOnPool_(
+                [this, source_url = std::move(source_url), dest]()
+                {
+                    auto bytes = client_->fetch_source_bytes(source_url);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [dest, bytes = std::move(bytes)]() mutable
+                        {
+                            if (bytes.empty())
+                                return;
+                            std::ofstream f(dest, std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
         mainApp_->room_view()->on_video_clicked =
             [this](const tesseract::views::MessageListView::VideoHit& hit)
         {
@@ -817,6 +848,66 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                 mainApp_->video_viewer()->load_bytes(
                                     bytes.data(), bytes.size());
                             }
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->room_view()->on_file_clicked =
+            [this](const tesseract::views::MessageListView::FileHit& hit)
+        {
+            std::string suggested = hit.file_name.empty() ? "download" : hit.file_name;
+            QString path = QFileDialog::getSaveFileName(
+                this, tr("Save file"),
+                QString::fromStdString(suggested),
+                tr("All files (*.*)"));
+            if (path.isEmpty())
+                return;
+            std::string url  = hit.media_url;
+            std::string dest = path.toStdString();
+            runOnPool_(
+                [this, url, dest]()
+                {
+                    auto bytes = client_->fetch_media_bytes(url);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [dest, bytes = std::move(bytes)]() mutable
+                        {
+                            if (bytes.empty())
+                                return;
+                            std::ofstream f(dest, std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->video_viewer()->on_save =
+            [this](std::string source_json, std::string mime_type)
+        {
+            std::string ext = ".mp4";
+            auto slash = mime_type.find('/');
+            if (slash != std::string::npos)
+                ext = "." + mime_type.substr(slash + 1);
+            QString path = QFileDialog::getSaveFileName(
+                this, tr("Save video"),
+                QString::fromStdString("video" + ext),
+                tr("Videos (*.mp4 *.webm *.mkv);;All files (*.*)"));
+            if (path.isEmpty())
+                return;
+            std::string dest = path.toStdString();
+            runOnPool_(
+                [this, source_json = std::move(source_json), dest]()
+                {
+                    auto bytes = client_->fetch_source_bytes(source_json);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [dest, bytes = std::move(bytes)]() mutable
+                        {
+                            if (bytes.empty())
+                                return;
+                            std::ofstream f(dest, std::ios::binary);
+                            f.write(reinterpret_cast<const char*>(bytes.data()),
+                                    static_cast<std::streamsize>(bytes.size()));
                         },
                         Qt::QueuedConnection);
                 });

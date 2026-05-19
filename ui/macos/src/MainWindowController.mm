@@ -52,6 +52,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -1595,6 +1596,36 @@ void MacShell::apply_cached_messages_(
             s->_mainApp->show_image_viewer(false);
             s->_mainAppSurface->relayout();
         };
+        _mainApp->image_viewer()->on_save =
+            [weakSelf](std::string source_url, std::string filename_hint)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            NSSavePanel* panel = [NSSavePanel savePanel];
+            NSString* suggested = filename_hint.empty()
+                ? @"image"
+                : [NSString stringWithUTF8String:filename_hint.c_str()];
+            panel.nameFieldStringValue = suggested;
+            NSModalResponse resp = [panel runModal];
+            if (resp != NSModalResponseOK || !panel.URL)
+                return;
+            std::string dest = panel.URL.path.UTF8String;
+            auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+            s->_shell->run_async_(
+                [weakSelf, source_url = std::move(source_url), dest,
+                 bytes_holder, clientPtr = s->_shell->client_]()
+                {
+                    *bytes_holder = clientPtr->fetch_source_bytes(source_url);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (bytes_holder->empty())
+                            return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes_holder->data()),
+                                static_cast<std::streamsize>(bytes_holder->size()));
+                    });
+                });
+        };
 
         // VideoViewerOverlay callbacks.
         _mainApp->video_viewer()->set_image_provider(
@@ -1629,6 +1660,38 @@ void MacShell::apply_cached_messages_(
             }
             s->_mainApp->show_video_viewer(false);
             s->_mainAppSurface->relayout();
+        };
+        _mainApp->video_viewer()->on_save =
+            [weakSelf](std::string source_json, std::string mime_type)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s)
+                return;
+            std::string ext = ".mp4";
+            auto slash = mime_type.find('/');
+            if (slash != std::string::npos)
+                ext = "." + mime_type.substr(slash + 1);
+            NSSavePanel* panel = [NSSavePanel savePanel];
+            panel.nameFieldStringValue =
+                [NSString stringWithUTF8String:("video" + ext).c_str()];
+            NSModalResponse resp = [panel runModal];
+            if (resp != NSModalResponseOK || !panel.URL)
+                return;
+            std::string dest = panel.URL.path.UTF8String;
+            auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+            s->_shell->run_async_(
+                [weakSelf, source_json = std::move(source_json), dest,
+                 bytes_holder, clientPtr = s->_shell->client_]()
+                {
+                    *bytes_holder = clientPtr->fetch_source_bytes(source_json);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (bytes_holder->empty())
+                            return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes_holder->data()),
+                                static_cast<std::streamsize>(bytes_holder->size()));
+                    });
+                });
         };
 
         // RoomView callbacks.
@@ -1942,6 +2005,36 @@ void MacShell::apply_cached_messages_(
                         }
                         s2->_vidViewer->load_bytes(bytes_holder->data(),
                                                    bytes_holder->size());
+                    });
+                });
+        };
+        _mainApp->room_view()->on_file_clicked =
+            [weakSelf](const tesseract::views::MessageListView::FileHit& hit)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+                return;
+            NSSavePanel* panel = [NSSavePanel savePanel];
+            NSString* suggested = hit.file_name.empty()
+                ? @"download"
+                : [NSString stringWithUTF8String:hit.file_name.c_str()];
+            panel.nameFieldStringValue = suggested;
+            NSModalResponse resp = [panel runModal];
+            if (resp != NSModalResponseOK || !panel.URL)
+                return;
+            std::string dest = panel.URL.path.UTF8String;
+            std::string url  = hit.media_url;
+            auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
+            s->_shell->run_async_(
+                [weakSelf, url, dest, bytes_holder, clientPtr = s->_shell->client_]()
+                {
+                    *bytes_holder = clientPtr->fetch_media_bytes(url);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (bytes_holder->empty())
+                            return;
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(reinterpret_cast<const char*>(bytes_holder->data()),
+                                static_cast<std::streamsize>(bytes_holder->size()));
                     });
                 });
         };

@@ -60,6 +60,11 @@ public:
     // Fires when the overlay should be dismissed (× button, outside click).
     std::function<void()> on_close;
 
+    /// Fires when the user clicks the ⬇ save button.
+    /// `source_json` is either a plain mxc:// URI or a JSON MediaSource blob;
+    /// pass to `Client::fetch_source_bytes`. `mime_type` is e.g. "video/mp4".
+    std::function<void(std::string source_json, std::string mime_type)> on_save;
+
     // Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -98,11 +103,13 @@ private:
     tk::Rect scrub_bar_{};
     tk::Rect speed_pill_{};
     tk::Rect close_btn_{};
+    tk::Rect save_btn_{};
 
     bool press_play_ = false;
     bool press_scrub_ = false;
     bool press_speed_ = false;
     bool press_close_ = false;
+    bool press_save_ = false;
     bool press_outside_ = false;
 };
 

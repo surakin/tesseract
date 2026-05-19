@@ -219,6 +219,14 @@ void RoomView::wire_internal_callbacks()
             on_video_clicked(hit);
         }
     };
+    message_list_->on_file_clicked =
+        [this](const MessageListView::FileHit& hit)
+    {
+        if (on_file_clicked)
+        {
+            on_file_clicked(hit);
+        }
+    };
     message_list_->on_near_top = [this]
     {
         if (on_near_top)
