@@ -811,7 +811,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     : superview_(superview)
 {
     scroll_ = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    scroll_.borderType = NSBezelBorder;
+    scroll_.borderType = NSNoBorder;
     scroll_.hasVerticalScroller = YES;
     scroll_.hasHorizontalScroller = NO;
     scroll_.autohidesScrollers = YES;
@@ -885,11 +885,10 @@ void NSTextViewNative::set_rect(Rect r)
     scroll_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
     if (placeholder_)
     {
-        // 6px x-offset = ~2px bezel + 4px textContainerInset.width
-        // 8px y-offset = ~2px bezel + 6px textContainerInset.height
+        // Offsets match textContainerInset (width=4, height=6); no bezel.
         placeholder_.frame = NSMakeRect(
-            scroll_.frame.origin.x + 6,
-            scroll_.frame.origin.y + 8,
+            scroll_.frame.origin.x + 4,
+            scroll_.frame.origin.y + 6,
             std::max(0.0, scroll_.frame.size.width - 12),
             20);
     }

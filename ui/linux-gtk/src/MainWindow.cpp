@@ -1644,14 +1644,18 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
                  "gtk-application-prefer-dark-theme", dark ? TRUE : FALSE,
                  nullptr);
 
-    // Rebuild the two dynamic CSS rules for the sidebar and separator.
+    // Rebuild dynamic CSS rules. The compose-area rule is static but lives
+    // here because load_from_string replaces all prior content in the provider.
     if (theme_css_provider_)
     {
-        char css[256];
+        char css[512];
         std::snprintf(css, sizeof(css),
                       ".sidebar { background-color: #%02x%02x%02x; }\n"
                       ".sidebar-separator { background-color: #%02x%02x%02x; "
-                      "min-width: 1px; }\n",
+                      "min-width: 1px; }\n"
+                      "textview.compose-area,"
+                      "textview.compose-area text {"
+                      " background: transparent; }\n",
                       t.palette.sidebar_bg.r, t.palette.sidebar_bg.g,
                       t.palette.sidebar_bg.b, t.palette.separator.r,
                       t.palette.separator.g, t.palette.separator.b);

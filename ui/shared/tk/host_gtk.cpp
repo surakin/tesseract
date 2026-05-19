@@ -204,6 +204,9 @@ public:
         gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view_), 8);
         gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll_),
                                        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+        // "compose-area" triggers the transparent-background rule in
+        // theme_css_provider_ so the canvas-painted card fill shows through.
+        gtk_widget_add_css_class(view_, "compose-area");
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll_), view_);
         gtk_widget_set_halign(scroll_, GTK_ALIGN_START);
         gtk_widget_set_valign(scroll_, GTK_ALIGN_START);
