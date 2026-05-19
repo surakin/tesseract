@@ -24,6 +24,9 @@ public:
     // Writes bytes atomically. No-op if bytes is empty.
     void store(const std::string& key, const std::vector<uint8_t>& bytes) const;
 
+    // Removes the cached entry for key. No-op on miss. Thread-safe.
+    void evict(const std::string& key) const;
+
     // Deletes oldest entries (by mtime) until total size ≤ max_bytes.
     // Intended to be called once per session from a background thread.
     void prune(std::uintmax_t max_bytes = 256ULL * 1024 * 1024) const;

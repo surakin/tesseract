@@ -87,6 +87,12 @@ void MediaDiskCache::store(const std::string& key,
     }
 }
 
+void MediaDiskCache::evict(const std::string& key) const
+{
+    std::error_code ec;
+    fs::remove(path_for(key), ec);
+}
+
 void MediaDiskCache::prune(std::uintmax_t max_bytes) const
 {
     struct Entry

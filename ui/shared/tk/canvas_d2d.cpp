@@ -500,10 +500,11 @@ public:
         size_ = Size{m.widthIncludingTrailingWhitespace, m.height};
         line_count_ = static_cast<int>(m.lineCount);
 
-        DWRITE_LINE_METRICS lm{};
-        UINT32 actual = 0;
-        layout_->GetLineMetrics(&lm, 1, &actual);
-        ascent_ = (actual > 0) ? lm.baseline : size_.h * 0.78f;
+        // Segoe UI Emoji fills the full DirectWrite line-box (ascent +
+        // descent), matching Apple Color Emoji on macOS.  Return the full
+        // measured height so centering formulas (reaction chips, icon
+        // buttons) land correctly, identical to the CoreGraphics backend.
+        ascent_ = size_.h;
     }
 
     Size measure() const override
@@ -1427,6 +1428,186 @@ std::unique_ptr<Image> decode_image(Backend& b,
                                       static_cast<int>(h));
 }
 
+// GIF compositor: each WIC GIF frame is a delta region (sub-rect of the
+// canvas).  We blit each frame onto a persistent PBGRA canvas buffer,
+// snapshot the composited result, then apply the disposal method before
+// moving to the next frame.  This produces full-canvas bitmaps that the
+// animation cache can display directly without any additional compositing.
+static std::vector<AnimatedFrame> decode_gif_animation(Backend::Impl& impl,
+                                                       IWICBitmapDecoder* decoder,
+                                                       UINT frame_count)
+{
+    std::vector<AnimatedFrame> result;
+
+    // Read canvas dimensions from the GIF logical screen descriptor.
+    UINT canvas_w = 0, canvas_h = 0;
+    {
+        ComPtr<IWICMetadataQueryReader> dmeta;
+        if (SUCCEEDED(decoder->GetMetadataQueryReader(dmeta.GetAddressOf())))
+        {
+            auto read_ui = [&](const wchar_t* path) -> UINT
+            {
+                PROPVARIANT pv;
+                PropVariantInit(&pv);
+                UINT val = 0;
+                if (SUCCEEDED(dmeta->GetMetadataByName(path, &pv)))
+                {
+                    if (pv.vt == VT_UI2) val = pv.uiVal;
+                    else if (pv.vt == VT_UI4) val = pv.uintVal;
+                }
+                PropVariantClear(&pv);
+                return val;
+            };
+            canvas_w = read_ui(L"/logscrdesc/Width");
+            canvas_h = read_ui(L"/logscrdesc/Height");
+        }
+    }
+
+    // Fallback: decode frame 0 to get the canvas size from its bitmap.
+    if (canvas_w == 0 || canvas_h == 0)
+    {
+        ComPtr<IWICBitmapFrameDecode> f0;
+        if (FAILED(decoder->GetFrame(0, f0.GetAddressOf())))
+            return result;
+        f0->GetSize(&canvas_w, &canvas_h);
+    }
+    if (canvas_w == 0 || canvas_h == 0)
+        return result;
+
+    // Compositing canvas: PBGRA, initially fully transparent.
+    const UINT stride = canvas_w * 4;
+    std::vector<std::uint8_t> canvas(stride * canvas_h, 0);
+
+    result.reserve(frame_count);
+
+    for (UINT i = 0; i < frame_count; ++i)
+    {
+        ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+            continue;
+
+        // Read per-frame rect and disposal method from GIF metadata.
+        UINT left = 0, top = 0, disposal = 0;
+        {
+            ComPtr<IWICMetadataQueryReader> fmeta;
+            if (SUCCEEDED(frame->GetMetadataQueryReader(fmeta.GetAddressOf())))
+            {
+                auto read_ui = [&](const wchar_t* path) -> UINT
+                {
+                    PROPVARIANT pv;
+                    PropVariantInit(&pv);
+                    UINT val = 0;
+                    if (SUCCEEDED(fmeta->GetMetadataByName(path, &pv)))
+                    {
+                        if (pv.vt == VT_UI1) val = pv.bVal;
+                        else if (pv.vt == VT_UI2) val = pv.uiVal;
+                        else if (pv.vt == VT_UI4) val = pv.uintVal;
+                    }
+                    PropVariantClear(&pv);
+                    return val;
+                };
+                left     = read_ui(L"/imgdesc/Left");
+                top      = read_ui(L"/imgdesc/Top");
+                disposal = read_ui(L"/grctlext/Disposal");
+            }
+        }
+
+        // Decode the frame's sub-region to PBGRA pixels.
+        ComPtr<IWICFormatConverter> converter;
+        if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+            continue;
+        if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                         WICBitmapDitherTypeNone, nullptr, 0.0f,
+                                         WICBitmapPaletteTypeMedianCut)))
+            continue;
+
+        UINT fw = 0, fh = 0;
+        frame->GetSize(&fw, &fh);
+        if (fw == 0 || fh == 0)
+            continue;
+
+        // Clamp frame rect to canvas bounds.
+        if (left >= canvas_w || top >= canvas_h)
+            continue;
+        fw = std::min(fw, canvas_w - left);
+        fh = std::min(fh, canvas_h - top);
+
+        const UINT fstride = fw * 4;
+        std::vector<std::uint8_t> frame_px(fstride * fh);
+        if (FAILED(converter->CopyPixels(nullptr, fstride,
+                                         static_cast<UINT>(frame_px.size()),
+                                         frame_px.data())))
+            continue;
+
+        // For RESTORE_PREVIOUS (disposal==3): snapshot the region before we
+        // write to it so we can put it back after this frame is stored.
+        std::vector<std::uint8_t> saved;
+        if (disposal == 3)
+        {
+            saved.resize(fstride * fh);
+            for (UINT y = 0; y < fh; ++y)
+                std::memcpy(saved.data() + y * fstride,
+                            canvas.data() + (top + y) * stride + left * 4,
+                            fstride);
+        }
+
+        // Blit frame onto canvas.  PBGRA: alpha==0 means transparent; any
+        // non-zero alpha replaces (GIF pixels are either opaque or absent).
+        for (UINT y = 0; y < fh; ++y)
+        {
+            const auto* src =
+                reinterpret_cast<const std::uint32_t*>(frame_px.data() + y * fstride);
+            auto* dst = reinterpret_cast<std::uint32_t*>(
+                canvas.data() + (top + y) * stride + left * 4);
+            for (UINT x = 0; x < fw; ++x)
+                if (src[x] >> 24)
+                    dst[x] = src[x];
+        }
+
+        // Snapshot the composited canvas into an independent IWICBitmap.
+        // CreateBitmapFromMemory wraps (aliases) the buffer, so we
+        // immediately copy it via CreateBitmapFromSource+CacheOnLoad.
+        ComPtr<IWICBitmap> alias;
+        if (FAILED(impl.wic->CreateBitmapFromMemory(
+                canvas_w, canvas_h, GUID_WICPixelFormat32bppPBGRA,
+                stride, static_cast<UINT>(canvas.size()), canvas.data(),
+                alias.GetAddressOf())))
+            continue;
+        ComPtr<IWICBitmap> snap;
+        if (FAILED(impl.wic->CreateBitmapFromSource(
+                alias.Get(), WICBitmapCacheOnLoad, snap.GetAddressOf())))
+            continue;
+
+        AnimatedFrame af;
+        af.image = std::make_unique<D2DImage>(std::move(snap),
+                                              static_cast<int>(canvas_w),
+                                              static_cast<int>(canvas_h));
+        af.delay_ms = read_frame_delay_ms(frame.Get());
+        result.push_back(std::move(af));
+
+        // Apply disposal method for the next frame.
+        if (disposal == 2) // restore to background (transparent)
+        {
+            for (UINT y = 0; y < fh; ++y)
+                std::memset(canvas.data() + (top + y) * stride + left * 4, 0,
+                            fstride);
+        }
+        else if (disposal == 3) // restore to previous state
+        {
+            for (UINT y = 0; y < fh; ++y)
+                std::memcpy(canvas.data() + (top + y) * stride + left * 4,
+                            saved.data() + y * fstride,
+                            fstride);
+        }
+        // disposal 0/1: leave canvas as-is
+    }
+
+    if (result.size() < 2)
+        result.clear();
+
+    return result;
+}
+
 std::vector<AnimatedFrame> decode_animation(Backend& b,
                                             std::span<const std::uint8_t> bytes)
 {
@@ -1457,49 +1638,51 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
         return result;
     }
 
+    GUID container = {};
+    decoder->GetContainerFormat(&container);
+
+    // PNG: WIC on Windows 11 exposes APNG as multi-frame but returns
+    // un-composited delta frames.  Skip the animation path entirely;
+    // decode_image() fetches frame 0 (the IDAT default) correctly.
+    if (container == GUID_ContainerFormatPng)
+        return result;
+
     UINT frame_count = 0;
     if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
-    {
-        return result; // single-frame; caller falls back to decode_image
-    }
+        return result;
 
+    // GIF: delta frames require full compositing — delegate to the
+    // dedicated compositor that handles offsets and disposal methods.
+    if (container == GUID_ContainerFormatGif)
+        return decode_gif_animation(impl, decoder.Get(), frame_count);
+
+    // Other animated formats (WebP, etc.): each WIC frame is already a
+    // full-canvas bitmap; store them directly.
     result.reserve(frame_count);
     for (UINT i = 0; i < frame_count; ++i)
     {
         ComPtr<IWICBitmapFrameDecode> frame;
         if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
-        {
             continue;
-        }
 
         ComPtr<IWICFormatConverter> converter;
         if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
-        {
             continue;
-        }
         if (FAILED(converter->Initialize(frame.Get(),
                                          GUID_WICPixelFormat32bppPBGRA,
                                          WICBitmapDitherTypeNone, nullptr, 0.0f,
                                          WICBitmapPaletteTypeMedianCut)))
-        {
             continue;
-        }
 
-        // Eager decode into an in-memory bitmap so each frame survives
-        // the caller-owned byte span (same lifetime fix as decode_image).
         ComPtr<IWICBitmap> cached;
         if (FAILED(impl.wic->CreateBitmapFromSource(
                 converter.Get(), WICBitmapCacheOnLoad, cached.GetAddressOf())))
-        {
             continue;
-        }
 
         UINT w = 0, h = 0;
         cached->GetSize(&w, &h);
         if (w == 0 || h == 0)
-        {
             continue;
-        }
 
         AnimatedFrame af;
         af.image = std::make_unique<D2DImage>(
@@ -1508,12 +1691,9 @@ std::vector<AnimatedFrame> decode_animation(Backend& b,
         result.push_back(std::move(af));
     }
 
-    // If every frame decode failed, treat as single-frame so the caller
-    // falls back to the static path.
     if (result.size() < 2)
-    {
         result.clear();
-    }
+
     return result;
 }
 

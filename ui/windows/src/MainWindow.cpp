@@ -3600,6 +3600,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
             {
                 tk_images_.emplace(cache_key, std::move(img));
             }
+            else
+            {
+                media_disk_cache_.evict(cache_key);
+            }
         }
         if (room_view_)
         {

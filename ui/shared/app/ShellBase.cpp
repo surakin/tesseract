@@ -186,6 +186,10 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
             auto d = std::make_shared<DecodedImage>(
                 decode_image_(bytes, visual::kMaxInlineImageWidth,
                               visual::kMaxInlineImageHeight));
+            if (d->empty())
+            {
+                media_disk_cache_.evict(url);
+            }
             post_to_ui_(
                 [this, url, is_sticker, d]() mutable
                 {
