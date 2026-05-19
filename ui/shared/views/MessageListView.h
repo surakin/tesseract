@@ -729,6 +729,10 @@ private:
     // back into the player.
     std::uint64_t playing_position_ms_ = 0;
     bool playing_is_active_ = false;
+    // Set to true once on_audio_progress() first observes is_playing()==true
+    // for the current clip.  Guards against clearing playing_event_id_ during
+    // the async-load window when Qt reports is_playing()==false at position 0.
+    bool playing_ever_active_ = false;
     // Global playback rate. Cycles 1.0 → 1.5 → 2.0 → 1.0 via the per-row
     // speed pill. Applied to every play()/resume()/seek().
     float playback_rate_ = 1.0f;

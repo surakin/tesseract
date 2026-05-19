@@ -3927,10 +3927,14 @@ void MessageListView::handle_voice_scrub_at(const MessageRowData& row,
         playing_event_id_ = row.event_id;
         playing_position_ms_ = target_ms;
         playing_is_active_ = true;
+        playing_ever_active_ = false;
         audio_player_->set_playback_rate(playback_rate_);
         audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
         audio_player_->seek(target_ms);
-        on_audio_progress();
+        if (request_repaint_)
+        {
+            request_repaint_();
+        }
         return;
     }
 
@@ -3973,11 +3977,19 @@ void MessageListView::on_audio_progress()
     {
         playing_position_ms_ = audio_player_->position_ms();
         playing_is_active_ = audio_player_->is_playing();
-        if (!playing_is_active_ && playing_position_ms_ == 0)
+        if (playing_is_active_)
         {
-            // Treat the post-stop tick as "clip ended"; let the row fall
-            // back to its idle play-button state.
+            playing_ever_active_ = true;
+        }
+        // Only treat position-0 + not-playing as "clip ended" once the clip
+        // was confirmed to have started.  Without this guard the same condition
+        // fires during Qt's async-load window (is_playing()==false while the
+        // FFmpeg probe is in flight), clearing playing_event_id_ before the
+        // first repaint so the play button never flips to active.
+        if (!playing_is_active_ && playing_position_ms_ == 0 && playing_ever_active_)
+        {
             playing_event_id_.clear();
+            playing_ever_active_ = false;
         }
     }
     if (request_repaint_)
@@ -4023,6 +4035,7 @@ void MessageListView::handle_voice_play_click(const MessageRowData& row)
         // again once bytes arrive.
         playing_event_id_.clear();
         playing_is_active_ = false;
+        playing_ever_active_ = false;
         playing_position_ms_ = 0;
         if (request_repaint_)
         {
@@ -4033,9 +4046,13 @@ void MessageListView::handle_voice_play_click(const MessageRowData& row)
     playing_event_id_ = row.event_id;
     playing_position_ms_ = 0;
     playing_is_active_ = true;
+    playing_ever_active_ = false;
     audio_player_->set_playback_rate(playback_rate_);
     audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-    on_audio_progress();
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
 }
 
 void MessageListView::handle_audio_play_click(const MessageRowData& row)
@@ -4066,6 +4083,7 @@ void MessageListView::handle_audio_play_click(const MessageRowData& row)
     {
         playing_event_id_.clear();
         playing_is_active_ = false;
+        playing_ever_active_ = false;
         playing_position_ms_ = 0;
         if (request_repaint_)
         {
@@ -4076,9 +4094,13 @@ void MessageListView::handle_audio_play_click(const MessageRowData& row)
     playing_event_id_ = row.event_id;
     playing_position_ms_ = 0;
     playing_is_active_ = true;
+    playing_ever_active_ = false;
     audio_player_->set_playback_rate(1.0f);
     audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
-    on_audio_progress();
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
 }
 
 void MessageListView::handle_audio_scrub_at(const MessageRowData& row,
@@ -4132,10 +4154,14 @@ void MessageListView::handle_audio_scrub_at(const MessageRowData& row,
         playing_event_id_ = row.event_id;
         playing_position_ms_ = target_ms;
         playing_is_active_ = true;
+        playing_ever_active_ = false;
         audio_player_->set_playback_rate(1.0f);
         audio_player_->play(bytes.data(), bytes.size(), row.audio_mime);
         audio_player_->seek(target_ms);
-        on_audio_progress();
+        if (request_repaint_)
+        {
+            request_repaint_();
+        }
         return;
     }
     audio_player_->seek(target_ms);
