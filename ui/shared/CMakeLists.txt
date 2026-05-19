@@ -81,6 +81,8 @@ set(_tk_sources
     views/JoinRoomView.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
+    views/PopoutRoomWidget.h
+    views/PopoutRoomWidget.cpp
     views/SettingsView.h
     views/SettingsView.cpp
     views/settings/AccountSection.h

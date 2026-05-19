@@ -2,7 +2,9 @@
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include "tk/host_macos.h"
-#include "views/RoomView.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/PopoutRoomWidget.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +42,26 @@ public:
     {
         window_closed_ = true;
         schedule_self_close_();
+    }
+
+    // Called by -keyDown: when Escape is pressed.
+    bool on_escape_key()
+    {
+        if (vid_viewer_ && vid_viewer_->is_open())
+        {
+            vid_viewer_->close();
+            vid_viewer_->set_visible(false);
+            if (surface_) surface_->relayout();
+            return true;
+        }
+        if (img_viewer_ && img_viewer_->is_open())
+        {
+            img_viewer_->close();
+            img_viewer_->set_visible(false);
+            if (surface_) surface_->relayout();
+            return true;
+        }
+        return false;
     }
 
 protected:
@@ -86,12 +108,52 @@ MacRoomWindow::MacRoomWindow(
     NSView* surfaceView = (__bridge NSView*)surface_->view_handle();
     [win setContentView:surfaceView];
 
-    auto room_root = std::make_unique<tesseract::views::RoomView>();
-    room_view_ = room_root.get();
-    surface_->set_root(std::move(room_root));
+    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
+    room_view_  = room_widget->room_view();
+    img_viewer_ = room_widget->image_viewer();
+    vid_viewer_ = room_widget->video_viewer();
+    surface_->set_root(std::move(room_widget));
 
-    // ── Shared RoomView wiring (providers + compose callbacks) ───────────────
+    // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
     wire_room_view_(room_view_);
+
+    // ── Video player for this window's VideoViewerOverlay ────────────────────
+    if (auto player = surface_->host().make_video_player())
+    {
+        vid_viewer_->set_video_player(std::move(player));
+    }
+
+    // ── Image / video save dialogs ────────────────────────────────────────────
+    img_viewer_->on_save =
+        [this](std::string source_url, std::string filename_hint)
+    {
+        NSSavePanel* panel = [NSSavePanel savePanel];
+        NSString* suggested = filename_hint.empty()
+            ? @"image"
+            : [NSString stringWithUTF8String:filename_hint.c_str()];
+        panel.nameFieldStringValue = suggested;
+        NSModalResponse resp = [panel runModal];
+        if (resp != NSModalResponseOK || !panel.URL)
+            return;
+        save_source_to_file_(std::move(source_url),
+                              std::string(panel.URL.path.UTF8String));
+    };
+    vid_viewer_->on_save =
+        [this](std::string source_json, std::string mime_type)
+    {
+        NSString* suggested = @"video";
+        if (mime_type == "video/mp4")
+            suggested = @"video.mp4";
+        else if (mime_type == "video/webm")
+            suggested = @"video.webm";
+        NSSavePanel* panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = suggested;
+        NSModalResponse resp = [panel runModal];
+        if (resp != NSModalResponseOK || !panel.URL)
+            return;
+        save_source_to_file_(std::move(source_json),
+                              std::string(panel.URL.path.UTF8String));
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────────
     if (auto player = surface_->host().make_audio_player())
@@ -262,6 +324,16 @@ MacRoomWindow::preview_lookup_(const std::string& url)
         _cppWindow->on_window_will_close();
         _cppWindow = nullptr; // prevent any further calls into the C++ object
     }
+}
+
+- (void)keyDown:(NSEvent*)event
+{
+    if (event.keyCode == 53 /* kVK_Escape */ && _cppWindow)
+    {
+        if (_cppWindow->on_escape_key())
+            return;
+    }
+    [super keyDown:event];
 }
 
 @end

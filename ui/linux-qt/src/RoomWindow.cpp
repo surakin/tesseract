@@ -1,9 +1,13 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
 
-#include "views/RoomView.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/PopoutRoomWidget.h"
+#include "views/VideoViewerOverlay.h"
 
 #include <QCloseEvent>
+#include <QFileDialog>
+#include <QKeyEvent>
 #include <QResizeEvent>
 #include <QVBoxLayout>
 
@@ -24,12 +28,46 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(surface_);
 
-    auto room_root = std::make_unique<tesseract::views::RoomView>();
-    room_view_ = room_root.get();
-    surface_->set_root(std::move(room_root));
+    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
+    room_view_  = room_widget->room_view();
+    img_viewer_ = room_widget->image_viewer();
+    vid_viewer_ = room_widget->video_viewer();
+    surface_->set_root(std::move(room_widget));
 
-    // ── Shared RoomView wiring (providers + compose callbacks) ───────────
+    // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
     wire_room_view_(room_view_);
+
+    // ── Video player for this window's VideoViewerOverlay ─────────────────
+    if (auto player = surface_->host().make_video_player())
+    {
+        vid_viewer_->set_video_player(std::move(player));
+    }
+
+    // ── Image / video save dialogs ────────────────────────────────────────
+    img_viewer_->on_save =
+        [this](std::string source_url, std::string filename_hint)
+    {
+        std::string suggested = filename_hint.empty() ? "image" : filename_hint;
+        QString path = QFileDialog::getSaveFileName(
+            this, tr("Save image"), QString::fromStdString(suggested),
+            tr("Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"));
+        if (!path.isEmpty())
+            save_source_to_file_(std::move(source_url), path.toStdString());
+    };
+    vid_viewer_->on_save =
+        [this](std::string source_json, std::string mime_type)
+    {
+        std::string suggested = "video";
+        if (mime_type == "video/mp4")
+            suggested = "video.mp4";
+        else if (mime_type == "video/webm")
+            suggested = "video.webm";
+        QString path = QFileDialog::getSaveFileName(
+            this, tr("Save video"), QString::fromStdString(suggested),
+            tr("Videos (*.mp4 *.webm *.mkv);;All files (*.*)"));
+        if (!path.isEmpty())
+            save_source_to_file_(std::move(source_json), path.toStdString());
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())
@@ -125,6 +163,30 @@ void RoomWindow::closeEvent(QCloseEvent* ev)
 {
     schedule_self_close_();
     ev->accept();
+}
+
+void RoomWindow::keyPressEvent(QKeyEvent* ev)
+{
+    if (ev->key() == Qt::Key_Escape)
+    {
+        if (vid_viewer_ && vid_viewer_->is_open())
+        {
+            vid_viewer_->close();
+            vid_viewer_->set_visible(false);
+            if (surface_)
+                surface_->relayout();
+            return;
+        }
+        if (img_viewer_ && img_viewer_->is_open())
+        {
+            img_viewer_->close();
+            img_viewer_->set_visible(false);
+            if (surface_)
+                surface_->relayout();
+            return;
+        }
+    }
+    QWidget::keyPressEvent(ev);
 }
 
 // ---------------------------------------------------------------------------

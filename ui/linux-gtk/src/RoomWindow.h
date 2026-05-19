@@ -32,6 +32,8 @@ protected:
 
 private:
     static void on_destroy_(GtkWidget* widget, gpointer self);
+    static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
+                                    guint, GdkModifierType, gpointer self);
 
     MainWindow* parent_shell_;
     GtkWindow* window_ = nullptr;

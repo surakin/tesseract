@@ -3,7 +3,7 @@
 #include "TextRenderer.h"
 #include "Theme.h"
 
-#include "views/RoomView.h"
+#include "views/PopoutRoomWidget.h"
 
 #include <string>
 
@@ -66,12 +66,50 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     surface_ =
         std::make_unique<tk::win32::Surface>(hInst, hwnd_, tk::Theme::light());
 
-    auto room_root = std::make_unique<tesseract::views::RoomView>();
-    room_view_ = room_root.get();
-    surface_->set_root(std::move(room_root));
+    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
+    room_view_  = room_widget->room_view();
+    img_viewer_ = room_widget->image_viewer();
+    vid_viewer_ = room_widget->video_viewer();
+    surface_->set_root(std::move(room_widget));
 
-    // ── Shared RoomView wiring (providers + compose callbacks) ───────────
+    // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
     wire_room_view_(room_view_);
+
+    // ── Video player for this window's VideoViewerOverlay ─────────────────
+    if (auto player = surface_->host().make_video_player())
+    {
+        vid_viewer_->set_video_player(std::move(player));
+    }
+
+    // ── Image / video save dialogs ────────────────────────────────────────
+    img_viewer_->on_save =
+        [this](std::string source_url, std::string filename_hint)
+    {
+        std::wstring suggested(filename_hint.begin(), filename_hint.end());
+        if (suggested.empty())
+            suggested = L"image";
+        std::wstring path = parent_->show_save_dialog_(
+            suggested,
+            L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
+        if (!path.empty())
+            save_source_to_file_(std::move(source_url),
+                                  std::string(path.begin(), path.end()));
+    };
+    vid_viewer_->on_save =
+        [this](std::string source_json, std::string mime_type)
+    {
+        std::wstring suggested = L"video";
+        if (mime_type == "video/mp4")
+            suggested = L"video.mp4";
+        else if (mime_type == "video/webm")
+            suggested = L"video.webm";
+        std::wstring path = parent_->show_save_dialog_(
+            suggested,
+            L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
+        if (!path.empty())
+            save_source_to_file_(std::move(source_json),
+                                  std::string(path.begin(), path.end()));
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())
@@ -286,6 +324,28 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_ERASEBKGND:
         return 1; // surface child covers the entire client area
 
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE)
+        {
+            if (vid_viewer_ && vid_viewer_->is_open())
+            {
+                vid_viewer_->close();
+                vid_viewer_->set_visible(false);
+                if (surface_)
+                    surface_->relayout();
+                return 0;
+            }
+            if (img_viewer_ && img_viewer_->is_open())
+            {
+                img_viewer_->close();
+                img_viewer_->set_visible(false);
+                if (surface_)
+                    surface_->relayout();
+                return 0;
+            }
+        }
+        break;
+
     case WM_CLOSE:
         DestroyWindow(hwnd);
         return 0;
@@ -296,8 +356,9 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
 
     default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
+        break;
     }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 } // namespace win32

@@ -1,7 +1,12 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
+#include "views/ImageViewerOverlay.h"
+#include "views/VideoViewerOverlay.h"
 #include "views/text_util.h"
 #include <tesseract/client.h>
+#include <tesseract/visual.h>
+
+#include <fstream>
 
 namespace tesseract
 {
@@ -13,6 +18,7 @@ RoomWindowBase::RoomWindowBase(ShellBase* shell, std::string room_id)
 
 RoomWindowBase::~RoomWindowBase()
 {
+    *alive_ = false; // signal any in-flight background lambdas to abort
     if (shell_)
     {
         shell_->unregister_room_window_(this);
@@ -181,6 +187,106 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     // voice recording — the main window owns that interaction. Hide the mic
     // button so pop-outs present a clean compose bar.
     rv->compose_bar()->set_mic_available(false);
+
+    // ── Local image / video overlays ─────────────────────────────────────
+    // img_viewer_ / vid_viewer_ are set by the subclass before this call
+    // (via PopoutRoomWidget) when the subclass wants local media playback.
+    if (img_viewer_)
+    {
+        img_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
+            {
+                return shell_image_(url);
+            });
+        img_viewer_->set_repaint_requester(
+            [this]
+            {
+                surface_repaint_();
+            });
+        // Do NOT call close() here — close() fires on_close(), causing recursion.
+        // The overlay has already done its close work before calling on_close.
+        img_viewer_->on_close = [this]
+        {
+            if (img_viewer_)
+            {
+                img_viewer_->set_visible(false);
+            }
+            request_relayout();
+        };
+
+        rv->on_image_clicked =
+            [this](const views::MessageListView::ImageHit& hit)
+        {
+            if (!img_viewer_)
+            {
+                return;
+            }
+            img_viewer_->open(hit.media_url, hit.body, hit.natural_w,
+                              hit.natural_h);
+            img_viewer_->set_visible(true);
+            request_relayout();
+            ensure_viewer_image_(hit.media_url);
+        };
+    }
+
+    if (vid_viewer_)
+    {
+        vid_viewer_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
+            {
+                return shell_image_(url);
+            });
+        vid_viewer_->set_repaint_requester(
+            [this]
+            {
+                surface_repaint_();
+            });
+        // Do NOT call close() here — close() fires on_close(), causing recursion.
+        vid_viewer_->on_close = [this]
+        {
+            if (vid_viewer_)
+            {
+                vid_viewer_->set_visible(false);
+            }
+            request_relayout();
+        };
+
+        rv->on_video_clicked =
+            [this](const views::MessageListView::VideoHit& hit)
+        {
+            if (!vid_viewer_)
+            {
+                return;
+            }
+            vid_viewer_->open(hit.source_json, hit.thumbnail_url,
+                              hit.mime_type, hit.duration_ms, hit.natural_w,
+                              hit.natural_h, hit.autoplay, hit.loop,
+                              hit.no_audio, hit.hide_controls);
+            vid_viewer_->set_visible(true);
+            request_relayout();
+            std::string src = hit.source_json;
+            std::weak_ptr<bool> alive_weak = alive_;
+            run_async_(
+                [this, src = std::move(src),
+                 alive_weak = std::move(alive_weak)]()
+                {
+                    auto bytes = fetch_source_bytes_(src);
+                    shell_->post_to_ui_(
+                        [this, alive_weak, bytes = std::move(bytes)]() mutable
+                        {
+                            auto alive = alive_weak.lock();
+                            if (!alive || !*alive)
+                                return;
+                            if (vid_viewer_)
+                            {
+                                vid_viewer_->load_bytes(bytes.data(),
+                                                        bytes.size());
+                            }
+                            request_relayout();
+                        });
+                });
+        };
+    }
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)
@@ -385,6 +491,58 @@ void RoomWindowBase::request_pagination_back_()
                     shell->push_paginate_result_(room_id, pr.reached_start);
                 });
         });
+}
+
+void RoomWindowBase::run_async_(std::function<void()> fn)
+{
+    if (shell_)
+    {
+        shell_->run_async_(std::move(fn));
+    }
+}
+
+void RoomWindowBase::post_to_ui_(std::function<void()> fn)
+{
+    if (shell_)
+    {
+        shell_->post_to_ui_(std::move(fn));
+    }
+}
+
+void RoomWindowBase::save_source_to_file_(std::string source_json,
+                                           std::string dest_path)
+{
+    std::weak_ptr<bool> alive_weak = alive_;
+    run_async_(
+        [this, src = std::move(source_json), dest = std::move(dest_path),
+         alive_weak = std::move(alive_weak)]()
+        {
+            auto bytes = fetch_source_bytes_(src);
+            // Inner lambda: file write only — no this capture needed.
+            shell_->post_to_ui_(
+                [alive_weak, dest, bytes = std::move(bytes)]() mutable
+                {
+                    auto alive = alive_weak.lock();
+                    if (!alive || !*alive)
+                        return;
+                    if (!bytes.empty())
+                    {
+                        std::ofstream f(dest, std::ios::binary);
+                        f.write(
+                            reinterpret_cast<const char*>(bytes.data()),
+                            static_cast<std::streamsize>(bytes.size()));
+                    }
+                });
+        });
+}
+
+void RoomWindowBase::ensure_viewer_image_(const std::string& url)
+{
+    if (shell_ && !url.empty())
+    {
+        shell_->ensure_media_image_(url, visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight);
+    }
 }
 
 } // namespace tesseract

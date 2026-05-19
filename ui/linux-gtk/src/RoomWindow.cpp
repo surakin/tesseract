@@ -1,6 +1,6 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
-#include "views/RoomView.h"
+#include "views/PopoutRoomWidget.h"
 
 namespace gtk4
 {
@@ -16,12 +16,88 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     gtk_window_set_child(window_, surface_->widget());
 
-    auto room_root = std::make_unique<tesseract::views::RoomView>();
-    room_view_ = room_root.get();
-    surface_->set_root(std::move(room_root));
+    auto room_widget = std::make_unique<tesseract::views::PopoutRoomWidget>();
+    room_view_  = room_widget->room_view();
+    img_viewer_ = room_widget->image_viewer();
+    vid_viewer_ = room_widget->video_viewer();
+    surface_->set_root(std::move(room_widget));
 
-    // ── Shared RoomView wiring (providers + compose callbacks) ───────────
+    // ── Shared RoomView wiring (providers + compose callbacks + overlays) ─
     wire_room_view_(room_view_);
+
+    // ── Video player for this window's VideoViewerOverlay ─────────────────
+    if (auto player = surface_->host().make_video_player())
+    {
+        vid_viewer_->set_video_player(std::move(player));
+    }
+
+    // ── Image / video save dialogs ────────────────────────────────────────
+    img_viewer_->on_save =
+        [this](std::string source_url, std::string filename_hint)
+    {
+        std::string suggested = filename_hint.empty() ? "image" : filename_hint;
+        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+            "Save image", window_, GTK_FILE_CHOOSER_ACTION_SAVE,
+            "Save", "Cancel");
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
+                                          suggested.c_str());
+        struct Ctx { RoomWindow* self; std::string src; };
+        auto* ctx = new Ctx{this, std::move(source_url)};
+        g_signal_connect(
+            dlg, "response",
+            G_CALLBACK(+[](GtkNativeDialog* d, gint resp, gpointer p)
+            {
+                auto* c = static_cast<Ctx*>(p);
+                if (resp == GTK_RESPONSE_ACCEPT)
+                {
+                    GFile* gf = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                    char* cpath = g_file_get_path(gf);
+                    std::string dest(cpath);
+                    g_free(cpath);
+                    g_object_unref(gf);
+                    c->self->save_source_to_file_(std::move(c->src), dest);
+                }
+                delete c;
+                gtk_native_dialog_destroy(d);
+            }),
+            ctx);
+        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+    };
+    vid_viewer_->on_save =
+        [this](std::string source_json, std::string mime_type)
+    {
+        std::string suggested = "video";
+        if (mime_type == "video/mp4")
+            suggested = "video.mp4";
+        else if (mime_type == "video/webm")
+            suggested = "video.webm";
+        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+            "Save video", window_, GTK_FILE_CHOOSER_ACTION_SAVE,
+            "Save", "Cancel");
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
+                                          suggested.c_str());
+        struct Ctx { RoomWindow* self; std::string src; };
+        auto* ctx = new Ctx{this, std::move(source_json)};
+        g_signal_connect(
+            dlg, "response",
+            G_CALLBACK(+[](GtkNativeDialog* d, gint resp, gpointer p)
+            {
+                auto* c = static_cast<Ctx*>(p);
+                if (resp == GTK_RESPONSE_ACCEPT)
+                {
+                    GFile* gf = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                    char* cpath = g_file_get_path(gf);
+                    std::string dest(cpath);
+                    g_free(cpath);
+                    g_object_unref(gf);
+                    c->self->save_source_to_file_(std::move(c->src), dest);
+                }
+                delete c;
+                gtk_native_dialog_destroy(d);
+            }),
+            ctx);
+        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+    };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
     if (auto player = surface_->host().make_audio_player())
@@ -49,6 +125,14 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // already gone; schedule the C++ object deletion for next idle.
     g_signal_connect(window_, "destroy", G_CALLBACK(on_destroy_), this);
 
+    // Escape key: close open viewer overlays regardless of focused widget.
+    {
+        GtkEventController* key_ctl = gtk_event_controller_key_new();
+        g_signal_connect(key_ctl, "key-pressed",
+                         G_CALLBACK(on_key_pressed_), this);
+        gtk_widget_add_controller(GTK_WIDGET(window_), key_ctl);
+    }
+
     gtk_window_present(window_);
     finish_init_();
 }
@@ -69,6 +153,31 @@ void RoomWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
     auto* w = static_cast<RoomWindow*>(self);
     w->window_ = nullptr; // already destroyed; prevent double-destroy in dtor
     w->schedule_self_close_();
+}
+
+// static
+gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
+                                      guint, GdkModifierType, gpointer self)
+{
+    auto* w = static_cast<RoomWindow*>(self);
+    if (keyval == GDK_KEY_Escape)
+    {
+        if (w->vid_viewer_ && w->vid_viewer_->is_open())
+        {
+            w->vid_viewer_->close();
+            w->vid_viewer_->set_visible(false);
+            w->request_relayout();
+            return TRUE;
+        }
+        if (w->img_viewer_ && w->img_viewer_->is_open())
+        {
+            w->img_viewer_->close();
+            w->img_viewer_->set_visible(false);
+            w->request_relayout();
+            return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 void RoomWindow::bring_to_front()

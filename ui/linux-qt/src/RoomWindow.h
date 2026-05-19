@@ -28,6 +28,7 @@ public:
 protected:
     void resizeEvent(QResizeEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
+    void keyPressEvent(QKeyEvent* ev) override;
 
     void surface_repaint_() override;
     const tesseract::views::UrlPreviewData*

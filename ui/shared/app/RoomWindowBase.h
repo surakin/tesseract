@@ -5,8 +5,16 @@
 #include "tk/theme.h"
 #include <tesseract/types.h>
 
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
+
+namespace tesseract::views
+{
+class ImageViewerOverlay;
+class VideoViewerOverlay;
+} // namespace tesseract::views
 
 namespace tesseract
 {
@@ -69,6 +77,9 @@ protected:
     // preview_lookup_(). Surface-bound providers that need the subclass's
     // own surface_ (set_audio_player / set_post_delayed / on_layout_changed)
     // stay in the subclass ctor.
+    //
+    // If img_viewer_ and vid_viewer_ are non-null (set before this call),
+    // on_image_clicked and on_video_clicked are wired to open them locally.
     void wire_room_view_(views::RoomView* rv);
 
     // The single per-shell repaint primitive (surface->update() /
@@ -116,10 +127,33 @@ protected:
     std::vector<std::uint8_t>
     fetch_source_bytes_(const std::string& source_json);
 
+    // Kick off an async task on the shell's worker-thread pool. Safe to call
+    // from the UI thread; fn runs on a background thread with no UI access.
+    void run_async_(std::function<void()> fn);
+
+    // Post a callback to the UI thread (from any thread).
+    void post_to_ui_(std::function<void()> fn);
+
+    // Fetch source_json bytes on a background thread and write them to
+    // dest_path on the UI thread. No-op if bytes are empty (fetch failed).
+    void save_source_to_file_(std::string source_json,
+                               std::string dest_path);
+
+    // Trigger fetch of a full-res image into the shared tk_images_ cache.
+    // Idempotent: no-op if already cached or in-flight.
+    void ensure_viewer_image_(const std::string& url);
+
     ShellBase* shell_;
     std::string room_id_;
     views::RoomView* room_view_ =
         nullptr; // borrowed; owned by surface widget tree
+    // Media overlays — set by the subclass ctor before wire_room_view_().
+    // When non-null, image/video click callbacks are wired to open them.
+    views::ImageViewerOverlay* img_viewer_ = nullptr; // borrowed
+    views::VideoViewerOverlay* vid_viewer_ = nullptr; // borrowed
+    // Shared liveness token: set to false in destructor so background-thread
+    // lambdas can detect that this object is gone before posting to UI.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     bool compose_typing_active_ = false;
     bool typing_bar_visible_ = false;
     // First timeline reset = initial fill of this pop-out (gate the display
