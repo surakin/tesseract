@@ -2141,7 +2141,21 @@ void MacShell::apply_cached_messages_(
             [weakSelf](tk::Point p)
             {
                 MainWindowController* s = weakSelf;
-                if (!s || !s->_roomView)
+                if (!s || !s->_mainApp)
+                {
+                    return;
+                }
+                // Dispatch to user info widget if the click lands there.
+                if (s->_mainApp->hit_test(p) == s->_mainApp->user_info())
+                {
+                    if (s->_mainApp->user_info()->on_secondary)
+                    {
+                        s->_mainApp->user_info()->on_secondary(p);
+                    }
+                    return;
+                }
+                // Sticker context menu.
+                if (!s->_roomView)
                 {
                     return;
                 }
@@ -2437,7 +2451,22 @@ void MacShell::apply_cached_messages_(
                 }
                 auto* app = s->_mainApp;
                 auto* surf = s->_mainAppSurface.get();
+                // Hide all native overlays while a fullscreen viewer is open —
+                // the viewer is a canvas widget so it paints above the C++
+                // widget tree, but native NSView overlays always sit above the
+                // canvas in AppKit's view hierarchy.
+                bool viewerOpen = (s->_imgViewer && s->_imgViewer->is_open()) ||
+                                  (s->_vidViewer && s->_vidViewer->is_open());
+                if (viewerOpen)
+                {
+                    s->_roomTextArea->set_visible(false);
+                    s->_roomSearchField->set_visible(false);
+                    s->_recoveryKeyField->set_visible(false);
+                    (void)surf;
+                    return;
+                }
                 // Compose text area.
+                s->_roomTextArea->set_visible(true);
                 s->_roomTextArea->set_rect(app->compose_text_area_rect());
                 // Room search field.
                 bool searchVisible = app->room_search_field_visible();
