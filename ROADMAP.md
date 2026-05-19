@@ -10,7 +10,7 @@ Done: inline images, stickers, reply-to, message editing, voice messages, Compos
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Threaded reply panel** — slide-in sidebar (deferred from reply-to landing).
 - **Sidebar polish** — DM rooms show the other user's avatar.
-- **ComposeBar gaps** — `/` command hints; `NativeTextArea` placeholder on macOS (GTK4 fixed; see Known gaps).
+- **ComposeBar gaps** — `/` command hints.
 
 ## Step 8 — MSC2545 phase A: remaining items
 
@@ -44,12 +44,9 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 ## Known gaps
 
 - **`m.location` send not yet implemented** — receive + display is done (see CHANGES.md 2026-05-17); composing and sending location messages is out of scope for this iteration.
-- **`NativeTextArea` placeholder is a no-op on macOS** — `NSTextView` lacks a built-in placeholder. Fix: paint a `current_text().empty()`-gated label in the shared widget. (GTK4 is fixed: `dim-label` overlay label.)
-- **`set_password` is a no-op on macOS** — toggling password mode on `NSTextField` requires swapping for `NSSecureTextField`; recovery-key field still shows plaintext.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
 - **Picker image cache consolidation** — GTK4 now has per-picker async fetch for both `StickerPicker` and `EmojiPicker`; a shared `tk::AsyncImageCache` to unify the four platform paths is still pending.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
-- **URL preview + hyperlink rendering on macOS** — `get_url_preview` FFI and `MessageListView` preview card are wired on Qt6, GTK4, and Win32; macOS `MainWindowController` still needs `on_url_preview_ready_` and `on_link_clicked` wiring.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
 - **Notification preview image is fetched as a full file, not a thumbnail** — image/sticker notification previews now work (incl. a lock-screen privacy gate via `IScreenLock`), but the SDK downloads the full media (≤ 2 MiB cap) on the sync handler regardless of whether the C++ layer will display it (it can't see window-focus / lock state). Fix: use `MediaFormat::Thumbnail` and skip the fetch when the notification won't be shown. The macOS + Linux (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need on-device smoke tests (built only on Win32 here).
 - **GTK4 message-list CSS not theme-aware** — every `tk` surface and pop-out window now follows the theme setting, but `apply_theme_ui_()` only rebuilds the `.sidebar` / `.sidebar-separator` CSS rules. `.sender-name` / `.timestamp` / `.room-header` / `.room-header-topic` and the `status_bar_` / `topic_tooltip_label_` `GtkLabel`s keep hardcoded light colours. Fix: rebuild all theme CSS rules from `t.palette` and give the status / tooltip labels palette-driven CSS classes.

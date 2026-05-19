@@ -687,7 +687,9 @@ private:
     NSScrollView* scroll_ = nil;
     NSTextView* view_ = nil;
     TKTextViewBridge* bridge_ = nil;
+    NSTextField* placeholder_ = nil;
     float last_height_ = 0.f;
+    std::string placeholder_text_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
@@ -836,6 +838,15 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     scroll_.documentView = view_;
     [superview_ addSubview:scroll_];
 
+    // Placeholder overlay — shown when text is empty and a placeholder string
+    // is set. Positioned as a sibling of scroll_ above it in z-order so it
+    // appears inside the text area at the first-line origin.
+    placeholder_ = [NSTextField labelWithString:@""];
+    placeholder_.font = view_.font;
+    placeholder_.textColor = NSColor.placeholderTextColor;
+    placeholder_.hidden = YES;
+    [superview_ addSubview:placeholder_];
+
     bridge_ = [[TKTextViewBridge alloc] init];
     bridge_.owner = this;
     view_.delegate = bridge_;
@@ -853,9 +864,11 @@ NSTextViewNative::~NSTextViewNative()
         static_cast<TKComposeTextView*>(view_).owner = nullptr;
     }
     [scroll_ removeFromSuperview];
+    [placeholder_ removeFromSuperview];
     scroll_ = nil;
     view_ = nil;
     bridge_ = nil;
+    placeholder_ = nil;
 }
 
 void NSTextViewNative::set_rect(Rect r)
@@ -870,12 +883,24 @@ void NSTextViewNative::set_rect(Rect r)
     CGFloat h = (nh > 0 && nh < rh) ? nh : rh;
     CGFloat y = std::floor(r.y) + (rh - h) / 2.0;
     scroll_.frame = NSMakeRect(std::floor(r.x), y, std::round(r.w), h);
+    if (placeholder_)
+    {
+        // 6px x-offset = ~2px bezel + 4px textContainerInset.width
+        // 8px y-offset = ~2px bezel + 6px textContainerInset.height
+        placeholder_.frame = NSMakeRect(
+            scroll_.frame.origin.x + 6,
+            scroll_.frame.origin.y + 8,
+            std::max(0.0, scroll_.frame.size.width - 12),
+            20);
+    }
 }
 
 void NSTextViewNative::set_text(std::string t)
 {
     NSString* s = [NSString stringWithUTF8String:t.c_str()];
     [view_.textStorage.mutableString setString:(s ?: @"")];
+    if (placeholder_)
+        placeholder_.hidden = !t.empty() || placeholder_text_.empty();
 }
 
 std::string NSTextViewNative::text() const
@@ -884,10 +909,12 @@ std::string NSTextViewNative::text() const
     return [s UTF8String] ? std::string([s UTF8String]) : std::string{};
 }
 
-void NSTextViewNative::set_placeholder(std::string /*text*/)
+void NSTextViewNative::set_placeholder(std::string ph)
 {
-    // NSTextView has no built-in placeholder; shared ComposeBar paints
-    // its own placeholder underneath when text() is empty.
+    placeholder_text_ = ph;
+    NSString* s = [NSString stringWithUTF8String:ph.c_str()];
+    placeholder_.stringValue = s ?: @"";
+    placeholder_.hidden = scroll_.hidden || !text().empty() || ph.empty();
 }
 
 void NSTextViewNative::set_focused(bool focused)
@@ -900,6 +927,8 @@ void NSTextViewNative::set_focused(bool focused)
 void NSTextViewNative::set_visible(bool visible)
 {
     scroll_.hidden = !visible;
+    if (placeholder_)
+        placeholder_.hidden = !visible || !text().empty() || placeholder_text_.empty();
 }
 void NSTextViewNative::set_enabled(bool enabled)
 {
@@ -926,6 +955,8 @@ void NSTextViewNative::notify_changed()
     {
         on_changed_(text());
     }
+    if (placeholder_)
+        placeholder_.hidden = scroll_.hidden || !text().empty() || placeholder_text_.empty();
     float h = natural_height();
     if (h != last_height_ && on_height_changed_)
     {
