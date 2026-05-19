@@ -1188,39 +1188,60 @@ void ShellBase::wire_voice_capture_(
     // target room so a mid-recording room switch doesn't mis-deliver the
     // voice message. Assign on_stopped fresh each start so it carries the
     // correct room_id.
-    rv->on_mic_clicked = [this, rv, get_room_id, clear_text_fn]() mutable
+    rv->on_mic_clicked =
+        [this, rv, get_room_id, clear_text_fn, request_repaint]() mutable
     {
         auto* cb = rv->compose_bar();
         if (!capture_->is_recording())
         {
             const std::string rid = get_room_id();
-            capture_->start();
-            cb->set_recording(true);
+            // Assign on_stopped before start() so WASAPI init failures that
+            // call fire_error_() synchronously see a valid callback and can
+            // reset the UI rather than being silently dropped.
             capture_->on_stopped =
-                [this, rv, rid, clear_text_fn](
+                [this, rv, rid, clear_text_fn, request_repaint](
                     std::vector<std::uint8_t>  pcm,
                     std::vector<std::uint16_t> waveform,
                     std::uint64_t              duration_ms) mutable
             {
                 auto* cb2 = rv->compose_bar();
                 cb2->set_recording(false);
-                if (pcm.empty())
+                request_repaint();
+                if (pcm.empty() || duration_ms < 500)
                     return;
-                if (duration_ms < 500)
-                    return;
-                const std::uint64_t est   = duration_ms * 3;
-                const std::uint64_t limit = client_->media_upload_limit();
-                if (limit > 0 && est > limit)
-                    return;
-                auto res = client_->send_voice(
-                    rid, pcm.data(), pcm.size(),
-                    duration_ms, waveform,
-                    cb2->current_text(),
-                    cb2->reply_event_id());
+
+                // Capture UI state and clear compose bar before going async,
+                // so the user can start a new recording immediately.
+                std::string caption  = cb2->current_text();
+                std::string reply_id = cb2->reply_event_id();
                 cb2->clear_reply();
                 clear_text_fn();
-                (void)res;
+
+                // Encoding (Opus) and upload both block; run off the UI thread.
+                run_async_(
+                    [this, rid,
+                     pcm      = std::move(pcm),
+                     waveform  = std::move(waveform),
+                     duration_ms, caption, reply_id]() mutable
+                    {
+                        const std::uint64_t est   = duration_ms * 3;
+                        const std::uint64_t limit = client_->media_upload_limit();
+                        if (limit > 0 && est > limit)
+                            return;
+                        auto res = client_->send_voice(
+                            rid, pcm.data(), pcm.size(),
+                            duration_ms, waveform,
+                            caption, reply_id);
+                        if (!res.ok)
+                            std::fprintf(stderr, "[voice] send failed: %s\n",
+                                         res.message.c_str());
+                    });
             };
+            capture_->start();
+            if (!capture_->is_recording())
+                return; // WASAPI init failed; fire_error_ queued on_stopped({},{},0)
+            cb->set_recording(true);
+            request_repaint();
         }
         else
         {
@@ -1228,12 +1249,13 @@ void ShellBase::wire_voice_capture_(
         }
     };
 
-    rv->on_cancel_voice = [this, rv]()
+    rv->on_cancel_voice = [this, rv, request_repaint]()
     {
         if (!capture_)
             return;
         capture_->cancel();
         rv->compose_bar()->set_recording(false);
+        request_repaint();
     };
 
     capture_->on_amplitude = [rv, request_repaint](std::uint16_t amp) mutable

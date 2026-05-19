@@ -40,16 +40,16 @@ public:
             return;
 
         IMMDeviceEnumerator* enumerator = nullptr;
-        if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
-                                   CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+        HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+                                      CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
+        if (FAILED(hr))
         {
             fire_error_();
             return;
         }
 
         IMMDevice* device = nullptr;
-        HRESULT hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole,
-                                                         &device);
+        hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
         enumerator->Release();
         if (FAILED(hr))
         {
@@ -75,8 +75,13 @@ public:
         wfx.nBlockAlign     = 2;
         wfx.nAvgBytesPerSec = 96000;
 
+        // AUTOCONVERTPCM lets WASAPI's audio engine resample/downmix from the
+        // device's native mix format (often float32 stereo) to our 48 kHz
+        // mono int16 format. SRC_DEFAULT_QUALITY picks a medium-quality SRC.
         hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                0, kBufferDuration, 0, &wfx, nullptr);
+                                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+                                    AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+                                kBufferDuration, 0, &wfx, nullptr);
         if (FAILED(hr))
         {
             client->Release();
