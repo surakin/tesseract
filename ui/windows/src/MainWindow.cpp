@@ -21,6 +21,7 @@
 #include "views/AccountPicker.h"
 #include "views/text_util.h"
 
+#include <commdlg.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <windowsx.h>
@@ -3087,6 +3088,9 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
                                  (ml && ml->messages().empty());
         view_displayed_room_id_ = payload->room_id;
         room_view_->set_messages(std::move(rows), room_switch);
+        // Keep the cache current so the next visit to this room bypasses
+        // the gate even if the user switched away before this reset fired.
+        save_tab_message_cache_();
         if (main_app_surface_)
         {
             main_app_surface_->relayout();
