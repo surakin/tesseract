@@ -57,12 +57,15 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusVariant>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QWindow>
 #include <QFileDialog>
 
 #include <algorithm>
 #include <fstream>
 #include <thread>
+#include <unistd.h>
 #include <unordered_set>
 
 Q_DECLARE_METATYPE(std::vector<tesseract::RoomInfo>)
@@ -1351,6 +1354,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             &MainWindow::onMessageAnimTick_);
 
     QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
+    setupLocalServer_();
 }
 
 MainWindow::~MainWindow()
@@ -1409,6 +1413,37 @@ MainWindow::~MainWindow()
     // bound client. Tear it down here while everything is still alive.
     delete loginView_;
     loginView_ = nullptr;
+}
+
+void MainWindow::setupLocalServer_()
+{
+    const QString name = QStringLiteral("tesseract-activate-")
+                         + QString::number(getuid());
+    QLocalServer::removeServer(name);
+    localServer_ = new QLocalServer(this);
+    localServer_->listen(name);
+    connect(localServer_, &QLocalServer::newConnection, this,
+            &MainWindow::onActivateRequested);
+}
+
+void MainWindow::onActivateRequested()
+{
+    QLocalSocket* sock = localServer_->nextPendingConnection();
+    connect(sock, &QLocalSocket::readyRead, this,
+            [this, sock]()
+            {
+                const QString token =
+                    QString::fromUtf8(sock->readAll()).trimmed();
+                if (!token.isEmpty() && windowHandle())
+                {
+                    windowHandle()->setProperty("_q_waylandActivationToken",
+                                                token);
+                }
+                show();
+                raise();
+                activateWindow();
+                sock->deleteLater();
+            });
 }
 
 void MainWindow::runOnPool_(std::function<void()> fn)

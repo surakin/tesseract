@@ -37,6 +37,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <QLocalServer>
 #include <QThreadPool>
 
 class EmojiPicker;
@@ -98,6 +99,7 @@ private slots:
 
     void on_portal_setting_changed_(const QString& ns, const QString& key,
                                     const QDBusVariant& value);
+    void onActivateRequested();
 
 signals:
     void recoverFinished(bool ok, QString error);
@@ -106,6 +108,7 @@ private:
     void doLogin();
     void doLogout();
     void openSettings();
+    void setupLocalServer_();
 
     // ── EventHandlerBase UI-thread hook overrides (Qt6) ──────────────────────
     void handle_timeline_reset_ui_(
@@ -299,6 +302,8 @@ private:
     // clears it.
     std::string pendingReactionEventId_;
     std::string roomSearchPendingText_;
+
+    QLocalServer* localServer_ = nullptr;
 
     QStackedWidget* contentStack_ = nullptr;
     LoginView* loginView_ = nullptr;

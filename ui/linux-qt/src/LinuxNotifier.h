@@ -23,7 +23,7 @@ private slots:
     void onNotificationClosed(uint id, uint reason);
     void onPortalActionInvoked(const QString& notification_id,
                                const QString& action,
-                               const QVariantMap& platform_data);
+                               const QVariantList& parameter);
 
 private:
     bool use_portal() const;

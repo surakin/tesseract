@@ -136,6 +136,8 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
                               g_variant_new_string(n.sender.c_str()));
         g_variant_builder_add(&notif_b, "{sv}", "body",
                               g_variant_new_string(n.body.c_str()));
+        g_variant_builder_add(&notif_b, "{sv}", "default-action",
+                              g_variant_new_string("default"));
         if (!pic.empty())
         {
             // Pass raw encoded bytes as a bytes-icon GIcon — the portal daemon
@@ -271,42 +273,53 @@ void LinuxNotifierGtk::on_portal_action_invoked_cb(GDBusConnection*,
     auto* self = static_cast<LinuxNotifierGtk*>(user_data);
     const char* notif_id = nullptr;
     const char* action = nullptr;
-    GVariant* platform = nullptr;
-    // Portal ActionInvoked format: (ssa{sv})
-    g_variant_get(parameters, "(&s&s@a{sv})", &notif_id, &action, &platform);
+    GVariant* param_av = nullptr;
+    // Portal ActionInvoked format: (s s av)
+    // The av elements are, in order: optional target, platform-data a{sv}
+    // (portal >= 1.16, contains "activation-token" on Wayland), optional response.
+    g_variant_get(parameters, "(&s&s@av)", &notif_id, &action, &param_av);
 
     if (!notif_id)
     {
-        if (platform)
-        {
-            g_variant_unref(platform);
-        }
+        if (param_av)
+            g_variant_unref(param_av);
         return;
     }
     auto it = self->portal_id_to_room_.find(notif_id);
     if (it == self->portal_id_to_room_.end())
     {
-        if (platform)
-        {
-            g_variant_unref(platform);
-        }
+        if (param_av)
+            g_variant_unref(param_av);
         return;
     }
 
-    // xdg-desktop-portal 1.16+ includes an xdg_activation_v1 token in
-    // platform_data["activation-token"] on Wayland. Pass it so the shell can
-    // call gtk_window_set_startup_id() before gtk_window_present().
+    // Search the av for the a{sv} element that carries "activation-token".
     std::string token;
-    if (platform)
+    if (param_av)
     {
-        GVariant* tv = g_variant_lookup_value(platform, "activation-token",
-                                              G_VARIANT_TYPE_STRING);
-        if (tv)
+        GVariantIter iter;
+        g_variant_iter_init(&iter, param_av);
+        GVariant* elem;
+        while ((elem = g_variant_iter_next_value(&iter)))
         {
-            token = g_variant_get_string(tv, nullptr);
-            g_variant_unref(tv);
+            // Each element in av has type v; unwrap to get the inner value.
+            GVariant* inner = g_variant_get_variant(elem);
+            if (g_variant_is_of_type(inner, G_VARIANT_TYPE_VARDICT))
+            {
+                GVariant* tv = g_variant_lookup_value(
+                    inner, "activation-token", G_VARIANT_TYPE_STRING);
+                if (tv)
+                {
+                    token = g_variant_get_string(tv, nullptr);
+                    g_variant_unref(tv);
+                }
+            }
+            g_variant_unref(inner);
+            g_variant_unref(elem);
+            if (!token.empty())
+                break;
         }
-        g_variant_unref(platform);
+        g_variant_unref(param_av);
     }
 
     self->on_activate_(it->second, std::move(token));

@@ -1,7 +1,10 @@
 #include <QApplication>
+#include <QCoreApplication>
 #include <QIcon>
+#include <QLocalSocket>
 #include <QTranslator>
 #include <QLocale>
+#include <cstdlib>
 #include <fcntl.h>
 #include <string>
 #include <sys/file.h>
@@ -17,8 +20,22 @@ int main(int argc, char* argv[])
     int lock_fd = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
     if (lock_fd >= 0 && flock(lock_fd, LOCK_EX | LOCK_NB) != 0)
     {
-        // Another instance holds the lock — exit silently.
+        // Another instance holds the lock.  Forward any compositor-issued
+        // XDG_ACTIVATION_TOKEN so the existing window can raise itself on
+        // Wayland, then exit.
         close(lock_fd);
+        QCoreApplication app(argc, argv);
+        const QString act_name = QStringLiteral("tesseract-activate-")
+                                 + QString::number(getuid());
+        QLocalSocket sock;
+        sock.connectToServer(act_name);
+        if (sock.waitForConnected(200))
+        {
+            const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
+            sock.write(QByteArray(tok ? tok : "").append('\n'));
+            sock.flush();
+            sock.waitForBytesWritten(200);
+        }
         return 0;
     }
 

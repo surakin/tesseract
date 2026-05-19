@@ -85,7 +85,7 @@ LinuxNotifierQt::LinuxNotifierQt(
     QDBusConnection::sessionBus().connect(
         "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.Notification", "ActionInvoked", this,
-        SLOT(onPortalActionInvoked(QString, QString, QVariantMap)));
+        SLOT(onPortalActionInvoked(QString, QString, QVariantList)));
 }
 
 bool LinuxNotifierQt::use_portal() const
@@ -108,7 +108,8 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         // Record mapping so onPortalActionInvoked can look up the room.
         portal_id_to_room_[pid.toStdString()] = n.room_id;
         QVariantMap portalMap{{"title", escape_markup(n.sender)},
-                              {"body", escape_markup(n.body)}};
+                              {"body", escape_markup(n.body)},
+                              {"default-action", QStringLiteral("default")}};
         // Portal "icon" uses (sv); themed icons are simplest to marshal.
         // Avatar bytes require GIcon serialisation which is not straightforward
         // over Qt D-Bus, so skip for now — the app icon fallback is fine.
@@ -158,7 +159,7 @@ void LinuxNotifierQt::onNotificationClosed(uint id, uint /*reason*/)
 
 void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
                                             const QString& /*action*/,
-                                            const QVariantMap& platform_data)
+                                            const QVariantList& parameter)
 {
     auto it = portal_id_to_room_.find(notification_id.toStdString());
     if (it == portal_id_to_room_.end())
@@ -166,14 +167,20 @@ void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
         return;
     }
 
-    // xdg-desktop-portal 1.16+ includes an xdg_activation_v1 token in
-    // platform_data["activation-token"] on Wayland. Use it to let the
-    // compositor grant window focus without requiring a user-input serial.
+    // The portal sends ActionInvoked with an av (array of variants) whose
+    // elements are, in order: optional target, platform-data a{sv} (portal
+    // >= 1.16, contains "activation-token" on Wayland), optional response.
+    // Search for the first a{sv} element that carries the token.
     std::string token;
     const auto key = QStringLiteral("activation-token");
-    if (platform_data.contains(key))
+    for (const QVariant& v : parameter)
     {
-        token = platform_data.value(key).toString().toStdString();
+        const QVariantMap m = qdbus_cast<QVariantMap>(v);
+        if (m.contains(key))
+        {
+            token = m.value(key).toString().toStdString();
+            break;
+        }
     }
 
     on_activate_(it->second, std::move(token));
