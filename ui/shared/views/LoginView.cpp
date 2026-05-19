@@ -1,6 +1,12 @@
 #include "LoginView.h"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
+
+#include <tesseract/client.h>
+
+#include "views/text_util.h"
 
 namespace tesseract::views
 {
@@ -8,16 +14,11 @@ namespace tesseract::views
 namespace
 {
 
-// Visual constants. Card width is fixed; the surrounding fill_main of
-// the outer VBox centres the card vertically + horizontally inside the
-// window. Numbers are deliberately concrete so the layout reads at a
-// glance; they can be folded into tesseract::visual once the screen
-// settles.
-constexpr float kCardWidth = 360.0f;
-constexpr float kCardPadding = 24.0f;
-constexpr float kCardSpacing = 12.0f;
+constexpr float kCardWidth    = 360.0f;
+constexpr float kCardPadding  = 24.0f;
+constexpr float kCardSpacing  = 12.0f;
 constexpr float kHSFieldHeight = 36.0f;
-constexpr float kButtonHeight = 36.0f;
+constexpr float kButtonHeight  = 36.0f;
 
 } // namespace
 
@@ -49,15 +50,11 @@ void LoginView::rebuild_tree()
 
     // Homeserver field — layout spacer only. The host overlays a native
     // edit control on top of homeserver_field_rect(); this widget holds
-    // the space and drives the rect calculation but must not draw text
-    // (the native control is the sole visible display of the value).
+    // the space and drives the rect calculation but must not draw text.
     auto hs_field = std::make_unique<tk::Label>("", tk::FontRole::Body);
     hs_field->set_halign(tk::TextHAlign::Leading);
     hs_field->set_min_size({0.0f, kHSFieldHeight});
 
-    // Discovery result label — shown below the homeserver field once the
-    // shell has resolved (or failed to reach) the server. Invisible by
-    // default; collapses to zero height in the VBox when not visible.
     auto discovery = std::make_unique<tk::Label>("", tk::FontRole::Small);
     discovery->set_halign(tk::TextHAlign::Leading);
     discovery->set_visible(false);
@@ -65,26 +62,12 @@ void LoginView::rebuild_tree()
     auto sign_in = std::make_unique<tk::Button>(
         "Sign in", std::function<void()>{}, tk::Button::Variant::Primary);
     sign_in->set_min_size({0, kButtonHeight});
-    sign_in->set_on_click(
-        [this]
-        {
-            if (on_sign_in)
-            {
-                on_sign_in();
-            }
-        });
+    sign_in->set_on_click([this] { sign_in_(); });
 
     auto cancel = std::make_unique<tk::Button>(
         "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
     cancel->set_min_size({0, kButtonHeight});
-    cancel->set_on_click(
-        [this]
-        {
-            if (on_cancel)
-            {
-                on_cancel();
-            }
-        });
+    cancel->set_on_click([this] { cancel_(); });
     cancel->set_visible(false);
 
     auto status = std::make_unique<tk::Label>("", tk::FontRole::Small);
@@ -92,30 +75,28 @@ void LoginView::rebuild_tree()
     status->set_wrap(true);
     status->set_visible(false);
 
-    title_lbl_ = card->add_child(std::move(title));
-    caption_lbl_ = card->add_child(std::move(caption));
+    title_lbl_      = card->add_child(std::move(title));
+    caption_lbl_    = card->add_child(std::move(caption));
     hs_input_label_ = card->add_child(std::move(hs_input_label));
-    hs_field_lbl_ = card->add_child(std::move(hs_field));
-    discovery_lbl_ = card->add_child(std::move(discovery));
-    sign_in_btn_ = card->add_child(std::move(sign_in));
-    cancel_btn_ = card->add_child(std::move(cancel));
-    status_lbl_ = card->add_child(std::move(status));
+    hs_field_lbl_   = card->add_child(std::move(hs_field));
+    discovery_lbl_  = card->add_child(std::move(discovery));
+    sign_in_btn_    = card->add_child(std::move(sign_in));
+    cancel_btn_     = card->add_child(std::move(cancel));
+    status_lbl_     = card->add_child(std::move(status));
 
     card_ = add_child(std::move(card));
 }
+
+// ---------------------------------------------------------------------------
+// Visual state
+// ---------------------------------------------------------------------------
 
 void LoginView::set_state(State s)
 {
     state_ = s;
     if (!sign_in_btn_ || !cancel_btn_)
-    {
         return;
-    }
     sign_in_btn_->set_visible(s == State::Form);
-    // Cancel button visibility is owned by `mode_`, not `state_`: in
-    // Initial mode it stays hidden in both Form and Waiting (the user has
-    // no previous account to fall back to); in AddAccount it stays visible
-    // so the user can back out of an in-progress login round-trip.
     cancel_btn_->set_visible(mode_ == Mode::AddAccount);
 }
 
@@ -123,9 +104,9 @@ void LoginView::set_mode(Mode m)
 {
     mode_ = m;
     if (cancel_btn_)
-    {
         cancel_btn_->set_visible(m == Mode::AddAccount);
-    }
+    if (relayout_)
+        relayout_();
 }
 
 bool LoginView::cancel_visible() const
@@ -136,9 +117,7 @@ bool LoginView::cancel_visible() const
 void LoginView::set_status(std::string message, std::optional<tk::Color> colour)
 {
     if (!status_lbl_)
-    {
         return;
-    }
     if (message.empty())
     {
         status_lbl_->set_visible(false);
@@ -160,18 +139,12 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 {
     discovery_state_ = s;
     if (s == DiscoveryState::Resolved)
-    {
         resolved_base_url_ = detail;
-    }
     else if (s == DiscoveryState::Idle)
-    {
         resolved_base_url_.clear();
-    }
 
     if (!discovery_lbl_)
-    {
         return;
-    }
 
     switch (s)
     {
@@ -191,20 +164,259 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
         break;
     case DiscoveryState::Failed:
         discovery_lbl_->set_text(
-            "\xe2\x9c\x97 " + (detail.empty()
-                                   ? std::string("Could not reach this server")
-                                   : detail));
+            "\xe2\x9c\x97 " + (detail.empty() ? std::string("Could not reach this server")
+                                              : detail));
         discovery_lbl_->set_colour(tk::Color::rgb(0xCC2200));
         discovery_lbl_->set_visible(true);
         break;
     }
-    // No invalidate() call — the shell calls surface_->relayout() after
-    // set_discovery_state() returns, which triggers a repaint.
 }
+
+// ---------------------------------------------------------------------------
+// Controller wiring
+// ---------------------------------------------------------------------------
+
+void LoginView::init_with_field(std::unique_ptr<tk::NativeTextField> field)
+{
+    hs_field_ = std::move(field);
+    hs_field_->set_placeholder("matrix.org or @user:matrix.org");
+    hs_field_->set_text("matrix.org");
+    hs_field_->set_on_submit([this] { sign_in_(); });
+    hs_field_->set_on_changed(
+        [this](const std::string& text) { hs_changed_(text); });
+}
+
+void LoginView::position_overlay()
+{
+    if (!hs_field_)
+        return;
+    auto r    = homeserver_field_rect_;
+    r.x      += overlay_inset_;
+    r.y      += overlay_inset_;
+    r.w      -= overlay_inset_ * 2.0f;
+    r.h      -= overlay_inset_ * 2.0f;
+    hs_field_->set_rect(r);
+}
+
+void LoginView::set_status_message(const std::string& msg)
+{
+    set_status(msg);
+    if (relayout_)
+        relayout_();
+}
+
+void LoginView::shutdown()
+{
+    ++discovery_gen_;
+    cancelled_.store(true);
+    if (client_)
+        client_->cancel_oauth();
+    join_worker_();
+}
+
+void LoginView::reset()
+{
+    ++discovery_gen_;
+    cancelled_.store(true);
+    if (client_)
+        client_->cancel_oauth();
+    join_worker_();
+    cancelled_.store(false);
+
+    set_status("");
+    set_discovery_state(DiscoveryState::Idle);
+    set_state(State::Form);
+    if (hs_field_)
+    {
+        hs_field_->set_enabled(true);
+        hs_field_->set_visible(true);
+        hs_field_->set_focused(true);
+    }
+    if (relayout_)
+        relayout_();
+}
+
+// ---------------------------------------------------------------------------
+// Controller implementations
+// ---------------------------------------------------------------------------
+
+void LoginView::sign_in_()
+{
+    if (!client_)
+        return;
+    std::string hs_raw = tesseract::text::trim(hs_field_->text());
+    if (hs_raw.empty())
+    {
+        set_status("Please enter a homeserver.", tk::Color::rgb(0xB00020));
+        relayout_();
+        return;
+    }
+
+    // Use the pre-resolved URL when available; extract server name from a
+    // raw MXID so begin_oauth() doesn't receive "@user:server".
+    std::string hs;
+    if (discovery_state_ == DiscoveryState::Resolved)
+    {
+        hs = resolved_base_url_;
+    }
+    else if (!hs_raw.empty() && hs_raw.front() == '@')
+    {
+        auto colon = hs_raw.find(':');
+        hs = (colon != std::string::npos) ? hs_raw.substr(colon + 1) : hs_raw;
+    }
+    else
+    {
+        hs = hs_raw;
+    }
+
+    set_status("");
+    hs_field_->set_enabled(false);
+    set_state(State::Waiting);
+    relayout_();
+
+    join_worker_();
+    cancelled_.store(false);
+    if (on_begin_oauth_)
+        on_begin_oauth_();
+
+    auto* c = client_; // snapshot: set_client() may race with this worker
+    worker_ = std::thread(
+        [this, hs, c]
+        {
+            auto flow = c->begin_oauth(hs);
+            if (cancelled_.load())
+                return;
+            bool        ok      = static_cast<bool>(flow);
+            std::string payload = ok ? flow.auth_url : flow.message;
+            post_to_ui_(
+                [this, ok, payload = std::move(payload)]
+                {
+                    begin_completed_(ok, payload);
+                });
+        });
+}
+
+void LoginView::hs_changed_(const std::string& text)
+{
+    uint32_t gen = ++discovery_gen_;
+    if (text.empty())
+    {
+        set_discovery_state(DiscoveryState::Idle);
+        relayout_();
+        return;
+    }
+    set_discovery_state(DiscoveryState::Discovering);
+    relayout_();
+
+    auto* snap = client_;
+    if (!snap)
+        return;
+
+    std::thread(
+        [this, gen, snap, text]
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if (gen != discovery_gen_.load())
+                return;
+            auto result = snap->discover_homeserver(text);
+            post_to_ui_(
+                [this, gen, result = std::move(result)]
+                {
+                    if (gen != discovery_gen_.load())
+                        return;
+                    if (result)
+                        set_discovery_state(DiscoveryState::Resolved,
+                                            result.base_url);
+                    else
+                        set_discovery_state(DiscoveryState::Failed,
+                                            result.error);
+                    relayout_();
+                });
+        })
+        .detach();
+}
+
+void LoginView::begin_completed_(bool ok, std::string url)
+{
+    join_worker_();
+    if (!ok)
+    {
+        set_status("Sign-in failed: " + url, tk::Color::rgb(0xB00020));
+        set_state(State::Form);
+        if (hs_field_)
+            hs_field_->set_enabled(true);
+        relayout_();
+        return;
+    }
+
+    if (open_browser_)
+        open_browser_(url);
+    else
+        tesseract::Client::open_in_browser(url);
+
+    cancelled_.store(false);
+    auto* c = client_;
+    worker_ = std::thread(
+        [this, c]
+        {
+            auto        res = c->await_oauth();
+            if (cancelled_.load())
+                return;
+            bool        ok  = static_cast<bool>(res);
+            std::string msg = res.message;
+            post_to_ui_(
+                [this, ok, msg = std::move(msg)]
+                {
+                    await_completed_(ok, msg);
+                });
+        });
+}
+
+void LoginView::await_completed_(bool ok, std::string err)
+{
+    join_worker_();
+    if (ok)
+    {
+        if (on_success_)
+            on_success_();
+        return;
+    }
+    set_status("Sign-in failed: " + err, tk::Color::rgb(0xB00020));
+    set_state(State::Form);
+    if (hs_field_)
+        hs_field_->set_enabled(true);
+    relayout_();
+}
+
+void LoginView::cancel_()
+{
+    cancelled_.store(true);
+    if (client_)
+        client_->cancel_oauth();
+    set_status("Cancelling\xe2\x80\xa6");
+    relayout_();
+    join_worker_();
+    set_status("");
+    set_state(State::Form);
+    if (hs_field_)
+        hs_field_->set_enabled(true);
+    relayout_();
+    if (on_cancel_done_)
+        on_cancel_done_();
+}
+
+void LoginView::join_worker_()
+{
+    if (worker_.joinable())
+        worker_.join();
+}
+
+// ---------------------------------------------------------------------------
+// Widget tree
+// ---------------------------------------------------------------------------
 
 tk::Size LoginView::measure(tk::LayoutCtx&, tk::Size constraints)
 {
-    // Take everything we're given so we can centre the card inside.
     return constraints;
 }
 
@@ -212,26 +424,19 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     if (!card_)
-    {
         return;
-    }
 
-    // Measure the card at its target width to find its natural height.
     tk::Size card_size = card_->measure(ctx, {kCardWidth, bounds.h});
-    float card_w = std::min(kCardWidth, bounds.w);
-    float card_h = std::min(card_size.h, bounds.h);
-    float card_x = bounds.x + (bounds.w - card_w) * 0.5f;
-    float card_y = bounds.y + (bounds.h - card_h) * 0.5f;
+    float    card_w    = std::min(kCardWidth, bounds.w);
+    float    card_h    = std::min(card_size.h, bounds.h);
+    float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
+    float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
 
-    // Cache the homeserver-field placeholder rect in widget-local coords
-    // so the host can overlay a native control on it without re-walking
-    // the tree.
     if (hs_field_lbl_)
     {
         tk::Rect fr = hs_field_lbl_->bounds();
-        // Expand to a touch-friendly height regardless of label measure.
-        float h = std::max(fr.h, kHSFieldHeight);
+        float    h  = std::max(fr.h, kHSFieldHeight);
         homeserver_field_rect_ = {fr.x - bounds.x,
                                   fr.y - bounds.y - (h - fr.h) * 0.5f, fr.w, h};
     }
@@ -239,35 +444,24 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
 void LoginView::paint(tk::PaintCtx& ctx)
 {
-    // Background.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
     if (!card_)
-    {
         return;
-    }
 
-    // Card surface — soft rounded rect behind the form, with a 1 px
-    // separator-tinted border so it reads as a distinct affordance even
-    // on chrome_bg backgrounds.
     tk::Rect cb = card_->bounds();
-    cb = {cb.x - 0, cb.y - 0, cb.w, cb.h}; // copy; no inset yet
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
     ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
 
-    // Host overlay rect for the homeserver field — drawn as a subtle
-    // input affordance even when no native control is overlaid yet.
     if (hs_field_lbl_)
     {
         tk::Rect fr{homeserver_field_rect_.x + bounds_.x,
                     homeserver_field_rect_.y + bounds_.y,
                     homeserver_field_rect_.w, homeserver_field_rect_.h};
         ctx.canvas.fill_rounded_rect(fr, 6.0f, ctx.theme.palette.bg);
-        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border,
-                                       1.0f);
+        ctx.canvas.stroke_rounded_rect(fr, 6.0f, ctx.theme.palette.border, 1.0f);
     }
 
-    // Children draw on top.
     card_->paint(ctx);
 }
 

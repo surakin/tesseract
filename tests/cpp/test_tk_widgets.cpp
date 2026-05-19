@@ -307,12 +307,6 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     LoginView view;
     view.set_homeserver_label("matrix.org");
 
-    bool clicked = false;
-    view.on_sign_in = [&]
-    {
-        clicked = true;
-    };
-
     st.run(view, {0, 0, 400, 600});
 
     // The card should have positioned the homeserver field somewhere
@@ -321,8 +315,9 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     CHECK(hr.w > 0.0f);
     CHECK(hr.h >= 30.0f);
 
-    // Pretend a button click. Even without real pointer wiring the
-    // callback is reachable via Button::click() through the widget tree.
+    // Verify the Sign In button exists and is clickable (no-ops without a
+    // client, but must not crash). Controller logic lives in LoginView itself
+    // now so there is no external callback to hook at this layer.
     auto& children = view.children();
     REQUIRE_FALSE(children.empty());
     // The card is the first (and only) direct child of LoginView.
@@ -341,8 +336,7 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
         }
     }
     REQUIRE(signin);
-    signin->click();
-    CHECK(clicked);
+    signin->click(); // no-op: client_ is null, sign_in_() returns immediately
 
     // Switching to Waiting hides Sign in. Cancel visibility is now gated
     // on Mode (added for multi-account): Initial keeps Cancel hidden,

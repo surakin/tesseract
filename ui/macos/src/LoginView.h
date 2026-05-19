@@ -14,8 +14,8 @@
 
 /// Inline sign-in view shown inside the main window when the user is not
 /// logged in. Visuals come from the shared `tesseract::views::LoginView`
-/// rendered through a `tk::macos::Surface` NSView; the OAuth state
-/// machine + worker thread + native NSTextField overlay live here.
+/// rendered through a `tk::macos::Surface` NSView; controller logic lives in
+/// the shared view. This shell wires platform-specific hooks.
 @interface LoginView : NSView
 
 - (instancetype)init;

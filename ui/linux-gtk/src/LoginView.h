@@ -3,13 +3,8 @@
 
 #include <tesseract/client.h>
 
-#include <atomic>
 #include <functional>
-#include <memory>
-#include <string>
-#include <thread>
 
-#include "tk/host.h"
 #include "tk/host_gtk.h"
 #include "views/LoginView.h"
 
@@ -18,10 +13,9 @@ namespace gtk4
 
 /// Inline sign-in view shown inside the main window when the user is not
 /// logged in. Visuals come from the shared `tesseract::views::LoginView`
-/// rendered through a `tk::gtk4::Surface`; the OAuth state machine +
-/// worker threads + native GtkEntry overlay live in this shell. The
-/// homeserver field stays native until tk::TextField + IME passthrough
-/// lands.
+/// rendered through a `tk::gtk4::Surface`; controller logic lives in the
+/// shared view. This shell wires platform-specific hooks and exposes a
+/// thin public API for the main window.
 class LoginView
 {
 public:
@@ -34,73 +28,18 @@ public:
     /// Root widget — add to a container / GtkStack.
     GtkWidget* widget() const;
 
-    /// Rebind the target Client before each login attempt (set before showing).
-    void set_client(tesseract::Client* c)
-    {
-        client_ = c;
-    }
-
-    /// Toggle between initial-login (no Cancel button) and add-account
-    /// (Cancel visible in both Form and Waiting states) presentation.
+    void set_client(tesseract::Client* c);
     void set_mode(tesseract::views::LoginView::Mode m);
-
-    /// Re-skin the login surface when the theme preference changes.
     void set_theme(const tk::Theme& t);
-
-    /// Called on the UI thread just before the OAuth worker thread starts.
-    /// Used by MainWindow to lazily create the pending account directory and
-    /// call set_data_dir() only when the user actually initiates login.
-    void set_on_begin_oauth(std::function<void()> cb)
-    {
-        on_begin_oauth_ = std::move(cb);
-    }
-
-    /// Called on the main thread when the OAuth flow completes successfully.
-    void set_on_success(std::function<void()> cb)
-    {
-        on_success_ = std::move(cb);
-    }
-
-    /// Called on the main thread when the user clicks Cancel in AddAccount mode.
-    void set_on_cancel(std::function<void()> cb)
-    {
-        on_cancel_fn_ = std::move(cb);
-    }
-
-    /// Return the view to its initial "form" state.
+    void set_on_begin_oauth(std::function<void()> cb);
+    void set_on_success(std::function<void()> cb);
+    void set_on_cancel(std::function<void()> cb);
     void reset();
-
-    /// Show a message above the form (e.g. "Saved session expired").
     void set_status_message(const std::string& msg);
 
 private:
-    void on_sign_in();
-    void on_cancel();
-    void on_begin_completed(bool ok, std::string err_or_url);
-    void on_await_completed(bool ok, std::string err);
-    void on_hs_text_changed(const std::string& text);
-    void position_overlay();
-    void join_worker();
-
-    static std::string trim(std::string s);
-
-    tesseract::Client* client_ = nullptr; // non-owning
-    std::function<void()> on_begin_oauth_;
-    std::function<void()> on_success_;
-    std::function<void()> on_cancel_fn_;
-
     std::unique_ptr<tk::gtk4::Surface> surface_;
-    tesseract::views::LoginView* shared_ = nullptr; // borrowed
-    std::unique_ptr<tk::NativeTextField> hs_field_;
-
-    std::thread worker_;
-    std::atomic<bool> cancelled_{false};
-    std::atomic<uint32_t> discovery_gen_{0};
-    // Liveness sentinel: GTK post_to_ui (g_idle_add) is not auto-cancelled
-    // on destruction (unlike Qt's QObject queue), so a worker that posts its
-    // completion just before ~LoginView's join returns would fire the idle
-    // on a freed `this`. The posted lambda holds a weak_ptr and bails.
-    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+    tesseract::views::LoginView*       shared_ = nullptr; // borrowed from surface
 };
 
 } // namespace gtk4
