@@ -91,6 +91,11 @@ public:
     {
         ticker_.stop();
         player_.stop();
+        // Detach from buffer_ before buffer_/bytes_ are freed.
+        // player_ is declared last so ~QMediaPlayer() runs before ~QBuffer(),
+        // but the explicit disconnect gives Qt a chance to cancel any in-flight
+        // FFmpeg probe that was started by the most recent setSourceDevice call.
+        player_.setSourceDevice(nullptr);
     }
 
     void play(const std::uint8_t* data, std::size_t size,
@@ -209,7 +214,10 @@ private:
         }
     }
 
-    QMediaPlayer player_;
+    // Declare player_ last so it is destroyed first (C++ destroys members in
+    // reverse declaration order).  player_ holds a raw QIODevice* to buffer_;
+    // ~QMediaPlayer() must complete (joining the FFmpeg probe thread) before
+    // ~QBuffer() / ~QByteArray() free the backing memory.
     QAudioOutput audio_out_;
     QVideoSink sink_;
     QByteArray bytes_;
@@ -221,6 +229,7 @@ private:
     std::unique_ptr<tk::Image> current_frame_;
     bool loop_ = false;
     bool muted_ = false;
+    QMediaPlayer player_;
 };
 
 std::unique_ptr<tk::VideoPlayer> make_video_player_qt()
