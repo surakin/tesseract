@@ -115,8 +115,8 @@ public:
         // Write bytes to a temp file so AVPlayer can open it.
         NSString* tmp_dir = NSTemporaryDirectory();
         NSString* uuid = [[NSUUID UUID] UUIDString];
-        tmp_path_ = [[tmp_dir stringByAppendingPathComponent:uuid]
-            stringByAppendingPathExtension:@"mp4"];
+        tmp_path_ = [[[tmp_dir stringByAppendingPathComponent:uuid]
+            stringByAppendingPathExtension:@"mp4"] retain];
         BOOL ok = [ns_data writeToFile:tmp_path_ atomically:NO];
         if (!ok)
         {
@@ -298,6 +298,7 @@ private:
         {
             [[NSFileManager defaultManager] removeItemAtPath:tmp_path_
                                                        error:nil];
+            [tmp_path_ release];
             tmp_path_ = nil;
         }
         {
