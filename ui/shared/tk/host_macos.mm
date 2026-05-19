@@ -45,6 +45,7 @@ public:
     std::unique_ptr<NativeTextField> make_text_field() override;
     std::unique_ptr<NativeTextArea> make_text_area() override;
     std::unique_ptr<AudioPlayer> make_audio_player() override;
+    std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override;
@@ -1153,6 +1154,16 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_macos();
 std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
 {
     return make_audio_player_macos();
+}
+
+// Defined in audio_capture_macos.mm.
+std::unique_ptr<tk::AudioCapture>
+make_audio_capture_macos(tk::AudioCapturePostFn post);
+
+std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
+{
+    return make_audio_capture_macos(
+        [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
 }
 
 // Defined in video_macos.mm.

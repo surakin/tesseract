@@ -966,6 +966,10 @@ private:
 std::unique_ptr<tk::AudioPlayer>
 make_audio_player_win32(std::function<void(std::function<void()>)> post);
 
+// Defined in audio_capture_win32.cpp.
+std::unique_ptr<tk::AudioCapture>
+make_audio_capture_win32(tk::AudioCapturePostFn post);
+
 // Defined in video_win32.cpp.
 std::unique_ptr<tk::VideoPlayer>
 make_video_player_win32(std::function<void(std::function<void()>)> post,
@@ -1056,6 +1060,14 @@ public:
     std::unique_ptr<AudioPlayer> make_audio_player() override
     {
         return make_audio_player_win32(
+            [this](std::function<void()> fn)
+            {
+                post_to_ui(std::move(fn));
+            });
+    }
+    std::unique_ptr<AudioCapture> make_audio_capture() override
+    {
+        return make_audio_capture_win32(
             [this](std::function<void()> fn)
             {
                 post_to_ui(std::move(fn));

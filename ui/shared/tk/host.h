@@ -12,6 +12,7 @@
 //     native until tk::TextField + the IME-passthrough hybrid lands
 
 #include "audio.h"
+#include "audio_capture.h"
 #include "canvas.h"
 #include "video.h"
 
@@ -220,6 +221,11 @@ public:
     // return `nullptr` on platforms that do not yet ship a backend; callers
     // must check before invoking.
     virtual std::unique_ptr<AudioPlayer> make_audio_player() = 0;
+
+    /// Create an AudioCapture backed by the platform's native capture stack.
+    /// Returns nullptr when no audio input device is present — callers must
+    /// check for null before use.
+    virtual std::unique_ptr<AudioCapture> make_audio_capture() = 0;
 
     // Create a `VideoPlayer` backed by the platform's native media stack.
     // Returns `nullptr` on platforms without a video backend; callers must

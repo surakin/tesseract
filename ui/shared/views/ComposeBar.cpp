@@ -123,6 +123,15 @@ ComposeBar::ComposeBar()
     send->set_min_size({kSendWidth, kButtonSide});
     send_btn_ = add_child(std::move(send));
 
+    {
+        auto b = std::make_unique<tk::Button>(
+            std::string("\xF0\x9F\x8E\x99"), std::function<void()>{},
+            tk::Button::Variant::Icon);
+        b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
+        b->set_min_size({kButtonSide, kButtonSide});
+        mic_btn_ = add_child(std::move(b));
+    }
+
     auto remove = std::make_unique<tk::Button>(
         // ✕ small (U+2715)
         std::string("\xE2\x9C\x95"), std::function<void()>{},
@@ -141,6 +150,8 @@ ComposeBar::ComposeBar()
 
 void ComposeBar::trigger_send()
 {
+    if (recording_)
+        return;
     if (pending_.has_value())
     {
         std::string reply_id = reply_event_id_;
@@ -333,6 +344,44 @@ void ComposeBar::set_enabled(bool e)
         remove_btn_->set_enabled(e);
     }
     refresh_send_enabled();
+}
+
+void ComposeBar::set_mic_available(bool available)
+{
+    if (mic_available_ == available)
+        return;
+    mic_available_ = available;
+    if (mic_btn_)
+        mic_btn_->set_visible(available);
+    recompute_height();
+    if (on_size_changed)
+        on_size_changed();
+}
+
+void ComposeBar::set_recording(bool recording)
+{
+    if (recording_ == recording)
+        return;
+    recording_ = recording;
+    if (recording)
+    {
+        waveform_samples_.clear();
+        recording_start_ms_ = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+    elapsed_layout_.reset();
+    // Visual-only change: no height change, host will repaint on next cycle.
+}
+
+void ComposeBar::push_amplitude(std::uint16_t amplitude)
+{
+    if (!recording_)
+        return;
+    if (waveform_samples_.size() >= kMaxWaveformSamples)
+        waveform_samples_.erase(waveform_samples_.begin());
+    waveform_samples_.push_back(amplitude);
+    // Visual-only change: host repaints on next cycle.
 }
 
 void ComposeBar::set_pending_image(std::vector<std::uint8_t> bytes,
@@ -580,16 +629,27 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                   text_top + (text_strip_h - kButtonSide) * 0.5f, kSendWidth,
                   kButtonSide};
 
-    // The compose card spans from the left edge to just before the send button.
-    // Emoji and sticker buttons live inside the card on the right; the text
-    // area fills the left portion of the card.
+    // Mic button sits between send and the card, when available.
+    const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
+    if (mic_available_)
+    {
+        mic_btn_rect_ = {send_rect_.x - kGap - kButtonSide, btn_y, kButtonSide,
+                         kButtonSide};
+    }
+    else
+    {
+        mic_btn_rect_ = {};
+    }
+
+    // The compose card spans from the left edge to just before the mic/send
+    // cluster. When mic is unavailable it abuts the send button directly.
     const float card_left = bounds.x + kPadX;
-    const float card_right = send_rect_.x - kGap;
+    const float card_right =
+        mic_available_ ? mic_btn_rect_.x - kGap : send_rect_.x - kGap;
     compose_card_rect_ = {card_left, text_top + kPadY,
                           std::max(0.0f, card_right - card_left),
                           std::max(0.0f, text_strip_h - kPadY * 2)};
 
-    const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
     sticker_rect_ = {card_right - kButtonSide, btn_y, kButtonSide, kButtonSide};
     emoji_rect_ = {sticker_rect_.x - kGap - kButtonSide, btn_y, kButtonSide,
                    kButtonSide};
@@ -601,6 +661,17 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         std::max(0.0f, emoji_rect_.x - kGap - (card_left + kPadX)),
         std::max(0.0f, text_strip_h - kPadY * 2)};
 
+    // Waveform strip occupies the same space as the text area + card buttons.
+    // The cancel button is a small square to the left of the compose card.
+    constexpr float kVoiceCancelSide = 28.0f;
+    voice_cancel_rect_ = {card_left,
+                          text_top + (text_strip_h - kVoiceCancelSide) * 0.5f,
+                          kVoiceCancelSide, kVoiceCancelSide};
+    waveform_strip_rect_ = {
+        card_left + kVoiceCancelSide + kGap, text_top + kPadY,
+        std::max(0.0f, card_right - card_left - kVoiceCancelSide - kGap),
+        std::max(0.0f, text_strip_h - kPadY * 2)};
+
     if (emoji_btn_)
     {
         emoji_btn_->arrange(ctx, emoji_rect_);
@@ -608,6 +679,11 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (sticker_btn_)
     {
         sticker_btn_->arrange(ctx, sticker_rect_);
+    }
+    if (mic_btn_)
+    {
+        mic_btn_->set_visible(mic_available_);
+        mic_btn_->arrange(ctx, mic_btn_rect_.empty() ? tk::Rect{} : mic_btn_rect_);
     }
     if (send_btn_)
     {
@@ -808,9 +884,81 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     {
         sticker_btn_->paint(ctx);
     }
+    if (mic_btn_ && mic_available_ && !mic_btn_rect_.empty())
+    {
+        mic_btn_->paint(ctx);
+    }
     if (send_btn_)
     {
         send_btn_->paint(ctx);
+    }
+
+    // ── Voice recording waveform strip ──────────────────────────────────
+    if (recording_ && !waveform_strip_rect_.empty())
+    {
+        // Cancel × button
+        if (!voice_cancel_rect_.empty())
+        {
+            tk::TextStyle x_style{};
+            x_style.role = tk::FontRole::Body;
+            auto x_layout =
+                ctx.factory.build_text(std::string("\xC3\x97"), x_style);
+            if (x_layout)
+            {
+                tk::Size sz = x_layout->measure();
+                ctx.canvas.draw_text(
+                    *x_layout,
+                    {voice_cancel_rect_.x +
+                         (voice_cancel_rect_.w - sz.w) * 0.5f,
+                     voice_cancel_rect_.y +
+                         (voice_cancel_rect_.h - sz.h) * 0.5f},
+                    press_voice_cancel_ ? ctx.theme.palette.text_primary
+                                        : ctx.theme.palette.text_muted);
+            }
+        }
+
+        // Amplitude bars
+        const float center_y =
+            waveform_strip_rect_.y + waveform_strip_rect_.h / 2.0f;
+        const float max_h = waveform_strip_rect_.h * 0.8f;
+        constexpr float kBarW = 3.0f;
+        constexpr float kBarGap = 2.0f;
+        float x = waveform_strip_rect_.x;
+        for (std::uint16_t amp : waveform_samples_)
+        {
+            float h = std::max(2.0f, (amp / 1000.0f) * max_h);
+            ctx.canvas.fill_rect({x, center_y - h / 2.0f, kBarW, h},
+                                 ctx.theme.palette.accent);
+            x += kBarW + kBarGap;
+            if (x > waveform_strip_rect_.right())
+                break;
+        }
+
+        // Elapsed timer label
+        using namespace std::chrono;
+        auto now_ms = static_cast<std::uint64_t>(
+            duration_cast<milliseconds>(
+                steady_clock::now().time_since_epoch())
+                .count());
+        std::uint64_t elapsed_s =
+            (now_ms > recording_start_ms_)
+                ? (now_ms - recording_start_ms_) / 1000
+                : 0;
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "\xe2\x97\x8f %llu:%02llu",
+                      static_cast<unsigned long long>(elapsed_s / 60),
+                      static_cast<unsigned long long>(elapsed_s % 60));
+        tk::TextStyle timer_style{};
+        timer_style.role = tk::FontRole::Body;
+        elapsed_layout_ = ctx.factory.build_text(buf, timer_style);
+        if (elapsed_layout_)
+        {
+            float lx = waveform_strip_rect_.right() -
+                       elapsed_layout_->measure().w - 4.0f;
+            float ly = center_y - elapsed_layout_->ascent() / 2.0f;
+            ctx.canvas.draw_text(*elapsed_layout_, {lx, ly},
+                                 ctx.theme.palette.text_secondary);
+        }
     }
     if (remove_btn_ && pending_.has_value() && !remove_btn_rect_.empty())
     {
@@ -938,6 +1086,18 @@ bool ComposeBar::on_pointer_down(tk::Point local)
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
     press_reply_cancel_ = false;
     press_edit_cancel_ = false;
+    press_voice_cancel_ = false;
+    if (recording_ && !voice_cancel_rect_.empty())
+    {
+        if (world.x >= voice_cancel_rect_.x &&
+            world.x < voice_cancel_rect_.x + voice_cancel_rect_.w &&
+            world.y >= voice_cancel_rect_.y &&
+            world.y < voice_cancel_rect_.y + voice_cancel_rect_.h)
+        {
+            press_voice_cancel_ = true;
+            return true;
+        }
+    }
     if (has_editing() && !edit_cancel_rect_.empty())
     {
         if (world.x >= edit_cancel_rect_.x &&
@@ -979,6 +1139,19 @@ bool ComposeBar::on_pointer_down(tk::Point local)
 void ComposeBar::on_pointer_up(tk::Point local, bool inside_self)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    if (press_voice_cancel_)
+    {
+        press_voice_cancel_ = false;
+        if (inside_self && world.x >= voice_cancel_rect_.x &&
+            world.x < voice_cancel_rect_.x + voice_cancel_rect_.w &&
+            world.y >= voice_cancel_rect_.y &&
+            world.y < voice_cancel_rect_.y + voice_cancel_rect_.h)
+        {
+            if (on_cancel_voice)
+                on_cancel_voice();
+        }
+        return;
+    }
     if (press_edit_cancel_)
     {
         press_edit_cancel_ = false;

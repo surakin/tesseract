@@ -281,6 +281,20 @@ Client::send_file(const std::string& room_id, const std::vector<uint8_t>& bytes,
                                           caption, reply_event_id));
 }
 
+Result Client::send_voice(const std::string& room_id,
+                          const std::uint8_t* pcm, std::size_t pcm_size,
+                          std::uint64_t duration_ms,
+                          const std::vector<std::uint16_t>& waveform,
+                          const std::string& caption,
+                          const std::string& reply_event_id)
+{
+    rust::Slice<const std::uint8_t> pcm_slice{pcm, pcm_size};
+    rust::Slice<const std::uint16_t> wf_slice{waveform.data(), waveform.size()};
+    return from_ffi(impl_->ffi->send_voice(room_id, pcm_slice, duration_ms,
+                                            wf_slice, caption,
+                                            reply_event_id));
+}
+
 std::uint64_t Client::media_upload_limit()
 {
     return impl_->ffi->media_upload_limit();

@@ -1170,4 +1170,73 @@ void ShellBase::tab_close(const std::string& room_id)
     on_tab_state_changed_ui_();
 }
 
+void ShellBase::wire_voice_capture_(
+    views::RoomView*             rv,
+    std::function<void()>        request_repaint,
+    std::function<std::string()> get_room_id,
+    std::function<void()>        clear_text_fn)
+{
+    rv->compose_bar()->set_mic_available(capture_ != nullptr);
+    if (!capture_)
+        return;
+
+    // on_mic_clicked: start or stop recording. When starting, snapshot the
+    // target room so a mid-recording room switch doesn't mis-deliver the
+    // voice message. Assign on_stopped fresh each start so it carries the
+    // correct room_id.
+    rv->on_mic_clicked = [this, rv, get_room_id, clear_text_fn]() mutable
+    {
+        auto* cb = rv->compose_bar();
+        if (!capture_->is_recording())
+        {
+            const std::string rid = get_room_id();
+            capture_->start();
+            cb->set_recording(true);
+            capture_->on_stopped =
+                [this, rv, rid, clear_text_fn](
+                    std::vector<std::uint8_t>  pcm,
+                    std::vector<std::uint16_t> waveform,
+                    std::uint64_t              duration_ms) mutable
+            {
+                auto* cb2 = rv->compose_bar();
+                cb2->set_recording(false);
+                if (pcm.empty())
+                    return;
+                if (duration_ms < 500)
+                    return;
+                const std::uint64_t est   = duration_ms * 3;
+                const std::uint64_t limit = client_->media_upload_limit();
+                if (limit > 0 && est > limit)
+                    return;
+                auto res = client_->send_voice(
+                    rid, pcm.data(), pcm.size(),
+                    duration_ms, waveform,
+                    cb2->current_text(),
+                    cb2->reply_event_id());
+                cb2->clear_reply();
+                clear_text_fn();
+                (void)res;
+            };
+        }
+        else
+        {
+            capture_->stop();
+        }
+    };
+
+    rv->on_cancel_voice = [this, rv]()
+    {
+        if (!capture_)
+            return;
+        capture_->cancel();
+        rv->compose_bar()->set_recording(false);
+    };
+
+    capture_->on_amplitude = [rv, request_repaint](std::uint16_t amp) mutable
+    {
+        rv->compose_bar()->push_amplitude(amp);
+        request_repaint();
+    };
+}
+
 } // namespace tesseract

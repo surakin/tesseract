@@ -660,6 +660,7 @@ public:
     }
 
     std::unique_ptr<AudioPlayer> make_audio_player() override;
+    std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
 
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
@@ -1305,6 +1306,16 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_qt();
 std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
 {
     return make_audio_player_qt();
+}
+
+// Defined in audio_capture_qt.cpp.
+std::unique_ptr<tk::AudioCapture>
+make_audio_capture_qt(tk::AudioCapturePostFn post);
+
+std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
+{
+    return make_audio_capture_qt(
+        [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
 }
 
 // Defined in video_qt.cpp.

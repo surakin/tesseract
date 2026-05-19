@@ -26,3 +26,5 @@ reqwest    = { version = "0.12", default-features = false, features = ["rustls-t
 tiny_http     = "0.12"
 hostname      = "0.4"
 mime          = "0.3"
+audiopus      = "0.2"
+ogg           = "0.9"

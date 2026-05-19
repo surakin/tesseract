@@ -15,6 +15,7 @@ set(_tk_sources
     app/RoomWindowBase.h
     app/RoomWindowBase.cpp
     tk/audio.h
+    tk/audio_capture.h
     tk/video.h
     tk/canvas.h
     tk/host.h
@@ -97,6 +98,7 @@ if(TESSERACT_UI STREQUAL "win32")
         tk/host_win32.h
         tk/host_win32.cpp
         tk/audio_win32.cpp
+        tk/audio_capture_win32.cpp
         tk/video_win32.cpp
     )
 elseif(TESSERACT_UI STREQUAL "qt6")
@@ -106,6 +108,7 @@ elseif(TESSERACT_UI STREQUAL "qt6")
         tk/host_qt.h
         tk/host_qt.cpp
         tk/audio_qt.cpp
+        tk/audio_capture_qt.cpp
         tk/video_qt.cpp
     )
 elseif(TESSERACT_UI STREQUAL "gtk")
@@ -115,6 +118,7 @@ elseif(TESSERACT_UI STREQUAL "gtk")
         tk/host_gtk.h
         tk/host_gtk.cpp
         tk/audio_gtk.cpp
+        tk/audio_capture_gtk.cpp
         tk/video_gtk.cpp
     )
 elseif(TESSERACT_UI STREQUAL "macos")
@@ -124,6 +128,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
         tk/host_macos.h
         tk/host_macos.mm
         tk/audio_macos.mm
+        tk/audio_capture_macos.mm
         tk/video_macos.mm
     )
 endif()

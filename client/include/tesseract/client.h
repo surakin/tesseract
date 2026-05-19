@@ -244,6 +244,17 @@ public:
                      const std::string& caption,
                      const std::string& reply_event_id = "");
 
+    /// Encode `pcm_size` bytes of 48kHz/16-bit/mono PCM as an Opus/OGG voice
+    /// message and send it to `room_id` as an MSC3245 m.audio event.
+    /// `waveform` provides MSC1767 amplitude samples (clamped to 256 server-side).
+    /// `caption` and `reply_event_id` follow the same semantics as send_image().
+    Result send_voice(const std::string& room_id,
+                      const std::uint8_t* pcm, std::size_t pcm_size,
+                      std::uint64_t duration_ms,
+                      const std::vector<std::uint16_t>& waveform,
+                      const std::string& caption,
+                      const std::string& reply_event_id);
+
     /// Homeserver-reported maximum upload size, in bytes. Cached after the
     /// first successful call. Returns 0 when not yet fetched, the server
     /// doesn't advertise a limit, or the client is not logged in. UIs use

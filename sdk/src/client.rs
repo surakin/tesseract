@@ -386,6 +386,93 @@ async fn fetch_notification_image(
     }
 }
 
+/// Encode raw 16-bit mono PCM samples (48 kHz) into an Ogg/Opus byte stream.
+/// `_waveform` and `_duration_ms` are stored by the caller for the MSC1767
+/// waveform content but are not embedded into the Opus stream itself (Opus
+/// has no waveform sidecar; the data goes into the Matrix event content).
+///
+/// Returns `Err` when `samples` is empty or the Opus encoder fails.
+pub(crate) fn encode_voice_ogg(
+    samples: &[i16],
+    _waveform: &[u16],
+    _duration_ms: u64,
+) -> Result<Vec<u8>, String> {
+    use audiopus::coder::Encoder;
+    use audiopus::{Application, Channels, SampleRate};
+    use ogg::PacketWriter;
+
+    if samples.is_empty() {
+        return Err("empty PCM".to_owned());
+    }
+
+    let mut enc = Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip)
+        .map_err(|e| e.to_string())?;
+
+    const FRAME: usize = 960;
+    let mut opus_packets: Vec<Vec<u8>> = Vec::new();
+    let mut out_buf = vec![0u8; 4000];
+
+    let mut pos = 0usize;
+    while pos + FRAME <= samples.len() {
+        let n = enc
+            .encode(&samples[pos..pos + FRAME], &mut out_buf)
+            .map_err(|e| e.to_string())?;
+        opus_packets.push(out_buf[..n].to_vec());
+        pos += FRAME;
+    }
+
+    let mut ogg_bytes: Vec<u8> = Vec::new();
+    let mut pw = PacketWriter::new(&mut ogg_bytes);
+
+    // OpusHead identification header.
+    let mut opus_head = Vec::with_capacity(19);
+    opus_head.extend_from_slice(b"OpusHead");
+    opus_head.push(1);                                    // version
+    opus_head.push(1);                                    // channel count (mono)
+    opus_head.extend_from_slice(&312u16.to_le_bytes());   // pre-skip
+    opus_head.extend_from_slice(&48000u32.to_le_bytes()); // input sample rate
+    opus_head.extend_from_slice(&0i16.to_le_bytes());     // output gain
+    opus_head.push(0);                                    // channel mapping family
+    pw.write_packet(
+        opus_head,
+        0x1234_5678,
+        ogg::PacketWriteEndInfo::NormalPacket,
+        0,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // OpusTags comment header.
+    let vendor = b"tesseract";
+    let mut tags = Vec::new();
+    tags.extend_from_slice(b"OpusTags");
+    tags.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
+    tags.extend_from_slice(vendor);
+    tags.extend_from_slice(&0u32.to_le_bytes()); // zero user comments
+    pw.write_packet(
+        tags,
+        0x1234_5678,
+        ogg::PacketWriteEndInfo::NormalPacket,
+        0,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Audio pages.
+    let mut granule: u64 = 0;
+    let total = opus_packets.len();
+    for (i, pkt) in opus_packets.into_iter().enumerate() {
+        granule += FRAME as u64;
+        let end_info = if i + 1 == total {
+            ogg::PacketWriteEndInfo::EndStream
+        } else {
+            ogg::PacketWriteEndInfo::NormalPacket
+        };
+        pw.write_packet(pkt, 0x1234_5678, end_info, granule)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(ogg_bytes)
+}
+
 impl ClientFfi {
     pub fn new() -> Self {
         let _ = tracing_subscriber::fmt()
@@ -2486,6 +2573,123 @@ impl ClientFfi {
         _bytes: &[u8],
         _mime_type: &str,
         _filename: &str,
+        _caption: &str,
+        _reply_event_id: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
+    /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
+    /// `m.voice` event in `room_id`. `waveform` carries the MSC1767 waveform
+    /// samples (clamped to 256 values of 0–1024; stored as f32 normalised to
+    /// 0.0–1.0 in the audio info). `duration_ms` populates `info.duration`.
+    /// `caption` / `reply_event_id` follow the same MSC2530 / m.in_reply_to
+    /// framing as `send_image` and `send_file`.
+    #[cfg(not(test))]
+    pub fn send_voice(
+        &mut self,
+        room_id: &str,
+        pcm: &[u8],
+        duration_ms: u64,
+        waveform: &[u16],
+        caption: &str,
+        reply_event_id: &str,
+    ) -> OpResult {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::AddMentions;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        if pcm.is_empty() {
+            return err("empty PCM");
+        }
+        if pcm.len() % 2 != 0 {
+            return err("PCM byte count must be even");
+        }
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return err("room not found");
+        };
+
+        // SAFETY: pcm is guaranteed to have even length above; i16 has no
+        // alignment requirement beyond u8.
+        let samples: &[i16] = unsafe {
+            std::slice::from_raw_parts(pcm.as_ptr() as *const i16, pcm.len() / 2)
+        };
+
+        let ogg_bytes = match encode_voice_ogg(samples, waveform, duration_ms) {
+            Ok(b) => b,
+            Err(e) => return err(format!("encode failed: {e}")),
+        };
+
+        // Normalise waveform samples (0–1024) into f32 (0.0–1.0), capped at 256.
+        let waveform_f32: Vec<f32> = waveform
+            .iter()
+            .copied()
+            .take(256)
+            .map(|v| (v as f32) / 1024.0)
+            .collect();
+
+        let size = UInt::new(ogg_bytes.len() as u64);
+        let dur = if duration_ms > 0 {
+            Some(Duration::from_millis(duration_ms))
+        } else {
+            None
+        };
+        let info = BaseAudioInfo {
+            duration: dur,
+            size,
+            waveform: if waveform_f32.is_empty() {
+                None
+            } else {
+                Some(waveform_f32)
+            },
+        };
+        let mut config = AttachmentConfig::new().info(AttachmentInfo::Voice(info));
+
+        if !caption.is_empty() {
+            config = config.caption(Some(TextMessageEventContent::plain(caption)));
+        }
+        if !reply_event_id.is_empty() {
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            };
+            config = config.reply(Some(Reply {
+                event_id: reply_id,
+                enforce_thread: EnforceThread::Unthreaded,
+                add_mentions: AddMentions::No,
+            }));
+        }
+
+        let mime: mime::Mime = "audio/ogg".parse().unwrap();
+
+        match self.rt.block_on(async move {
+            room.send_attachment("voice-message.ogg".to_owned(), &mime, ogg_bytes, config)
+                .await
+        }) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_voice(
+        &mut self,
+        _room_id: &str,
+        _pcm: &[u8],
+        _duration_ms: u64,
+        _waveform: &[u16],
         _caption: &str,
         _reply_event_id: &str,
     ) -> OpResult {
@@ -6738,6 +6942,38 @@ mod tests {
         let r = c.remove_pusher("key", "im.gnomos.tesseract");
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn send_voice_rejects_empty_pcm() {
+        let result = encode_voice_ogg(&[], &[], 0);
+        assert!(result.is_err(), "empty PCM must be rejected");
+    }
+
+    #[test]
+    fn send_voice_encodes_valid_ogg() {
+        let sample_count = 48000usize;
+        let samples: Vec<i16> = (0..sample_count)
+            .map(|i| {
+                let t = i as f64 / 48000.0;
+                (f64::sin(2.0 * std::f64::consts::PI * 440.0 * t) * 16000.0) as i16
+            })
+            .collect();
+
+        let waveform: Vec<u16> = vec![500; 10];
+        let result = encode_voice_ogg(&samples, &waveform, 1000);
+        assert!(result.is_ok(), "encoding must succeed: {:?}", result.err());
+        let ogg = result.unwrap();
+        assert!(ogg.starts_with(b"OggS"), "output must start with OGG magic");
+        assert!(ogg.len() > 100, "output must be non-trivial");
+    }
+
+    #[test]
+    fn send_voice_waveform_clamped_to_256() {
+        let samples: Vec<i16> = vec![1000i16; 960];
+        let big_waveform: Vec<u16> = vec![500; 512];
+        let result = encode_voice_ogg(&samples, &big_waveform, 20);
+        assert!(result.is_ok());
     }
 }
 

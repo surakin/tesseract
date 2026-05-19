@@ -25,6 +25,9 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSHumanReadableCopyright</key> <string>Copyright © 2026 Marco Alvarez</string>
 
+    <!-- Microphone permission for voice messages. -->
+    <key>NSMicrophoneUsageDescription</key><string>Tesseract needs microphone access to record voice messages.</string>
+
     <!-- Prevent LaunchServices from opening a second instance via Finder/Dock. -->
     <key>LSMultipleInstancesProhibited</key><true/>
 </dict>

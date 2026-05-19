@@ -1226,6 +1226,21 @@ void MainWindow::on_create(HWND hwnd)
         {
             room_view_->set_audio_player(std::move(player));
         }
+        capture_ = main_app_surface_->host().make_audio_capture();
+        wire_voice_capture_(
+            room_view_,
+            [this]()
+            {
+                if (main_app_surface_ && main_app_surface_->hwnd())
+                    InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
+            },
+            [this]() { return current_room_id_; },
+            [this]()
+            {
+                if (room_text_area_)
+                    room_text_area_->set_text("");
+                room_view_->set_current_text({});
+            });
         room_view_->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t>
             {

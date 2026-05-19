@@ -9,6 +9,7 @@
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
 #include "tk/anim_image_cache.h"
+#include "tk/audio_capture.h"
 #include "tk/canvas.h"
 #include "tk/media_disk_cache.h"
 #include "tk/theme.h"
@@ -250,6 +251,23 @@ protected:
     // created lazily (e.g. a pop-out room window opened while in dark mode,
     // with no subsequent theme change) start out correctly themed.
     tk::Theme current_theme_ = tk::Theme::light();
+
+    // Per-shell microphone capture backend. Null when unavailable or
+    // unsupported on the current platform. Initialised in each shell
+    // constructor immediately after make_audio_player().
+    std::unique_ptr<tk::AudioCapture> capture_;
+
+    // Wire voice-capture callbacks onto rv. Call once per shell after capture_
+    // is initialised (not from RoomWindowBase::wire_room_view_() — pop-out
+    // windows hide the mic button instead). `request_repaint` is called each
+    // time an amplitude sample arrives. `get_room_id` is invoked when the user
+    // starts recording so the message targets the room active at that moment,
+    // not when the callback was registered. `clear_text_fn` clears the compose
+    // field (and any native text widget) after a successful voice send.
+    void wire_voice_capture_(views::RoomView*             rv,
+                             std::function<void()>        request_repaint,
+                             std::function<std::string()> get_room_id,
+                             std::function<void()>        clear_text_fn);
 
     // Platform screen-lock probe for the notification-image privacy gate.
     // Defaults to the fail-safe Null impl until the concrete shell installs

@@ -73,6 +73,7 @@ target_link_libraries(tesseract_tests PRIVATE
     tesseract_sdk_ffi-static
     tesseract_tk
     Catch2::Catch2WithMain
+    opus
 )
 
 # Register each Catch2 TEST_CASE as an individual ctest test.

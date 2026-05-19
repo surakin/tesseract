@@ -75,6 +75,12 @@ public:
         return enabled_;
     }
 
+    /// Hide or show the mic button. Pass false when no audio input device is
+    /// detected at startup (capture_ == nullptr after make_audio_capture()).
+    /// Defaults to true.
+    void set_mic_available(bool available);
+    bool mic_available() const { return mic_available_; }
+
     /// Attach an image as a pending payload. The shared widget stores
     /// the raw bytes + mime, decodes a thumbnail lazily on the next
     /// layout pass, and grows `natural_height()` to make room for the
@@ -218,6 +224,24 @@ public:
     /// compose field and call `clear_editing()`.
     std::function<void()> on_edit_cancelled;
 
+    // ── Voice recording state ────────────────────────────────────────────────
+
+    /// Switch between idle and recording visual state.
+    /// Transitioning idle → recording clears the amplitude history.
+    void set_recording(bool recording);
+    bool is_recording() const { return recording_; }
+
+    /// Push a live amplitude sample [0, 1000] from the capture backend.
+    /// No-op when not recording.
+    void push_amplitude(std::uint16_t amplitude);
+
+    /// Fires when the mic button is clicked (idle) or the stop button
+    /// is clicked (recording). The shell distinguishes via AudioCapture::is_recording().
+    std::function<void()> on_mic_clicked;
+
+    /// Fires when the × cancel button is clicked during recording.
+    std::function<void()> on_cancel_voice;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -257,6 +281,7 @@ private:
 
     tk::Button* emoji_btn_ = nullptr;   // borrowed (owned by Widget tree)
     tk::Button* sticker_btn_ = nullptr; // borrowed
+    tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
     // Cached layouts for glyphs painted *over* the Icon-variant emoji and
@@ -282,6 +307,7 @@ private:
     float natural_height_ = kMinHeight; // total (incl. preview)
     std::string current_text_;
     bool enabled_ = true;
+    bool mic_available_ = true;
 
     std::optional<PendingAttachment> pending_;
 
@@ -299,6 +325,17 @@ private:
     tk::Rect edit_band_rect_{};
     tk::Rect edit_cancel_rect_{};
     bool press_edit_cancel_ = false;
+
+    // Voice recording state.
+    bool recording_ = false;
+    static constexpr std::size_t kMaxWaveformSamples = 48;
+    std::vector<std::uint16_t> waveform_samples_;
+    tk::Rect mic_btn_rect_{};
+    tk::Rect waveform_strip_rect_{};
+    tk::Rect voice_cancel_rect_{};
+    std::unique_ptr<tk::TextLayout> elapsed_layout_;
+    std::uint64_t recording_start_ms_ = 0;
+    bool press_voice_cancel_ = false;
 };
 
 } // namespace tesseract::views

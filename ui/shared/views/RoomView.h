@@ -154,6 +154,9 @@ public:
                        std::string reply_event_id)>
         on_send_file;
 
+    std::function<void()> on_mic_clicked;
+    std::function<void()> on_cancel_voice;
+
     std::function<void(std::string event_id)> on_delete_requested;
     std::function<void(std::string event_id, std::string emoji)>
         on_reaction_toggled;

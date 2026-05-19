@@ -371,6 +371,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             mainApp_->room_view()->set_audio_player(std::move(player));
         }
+        capture_ = mainAppSurface_->host().make_audio_capture();
+        {
+            QPointer<tk::qt6::Surface> sfp = mainAppSurface_;
+            wire_voice_capture_(
+                mainApp_->room_view(),
+                [sfp]() { if (sfp) sfp->update(); },
+                [this]() { return current_room_id_; },
+                [this]() { mainApp_->room_view()->set_current_text({}); });
+        }
         mainApp_->room_view()->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t>
             {

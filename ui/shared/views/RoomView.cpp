@@ -105,6 +105,16 @@ void RoomView::wire_internal_callbacks()
                          std::move(caption), std::move(reply_id));
         }
     };
+    compose_bar_->on_mic_clicked = [this]
+    {
+        if (on_mic_clicked)
+            on_mic_clicked();
+    };
+    compose_bar_->on_cancel_voice = [this]
+    {
+        if (on_cancel_voice)
+            on_cancel_voice();
+    };
     compose_bar_->on_edit_cancelled = [this]
     {
         if (on_edit_cancelled)

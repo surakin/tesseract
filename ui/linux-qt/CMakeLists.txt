@@ -43,6 +43,7 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Multimedia
     Qt6::DBus
     Qt6::Concurrent
+    opus
 )
 
 set_target_properties(tesseract_qt PROPERTIES

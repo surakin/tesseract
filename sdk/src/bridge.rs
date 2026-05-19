@@ -609,6 +609,23 @@ pub mod ffi {
             reply_event_id: &str,
         ) -> OpResult;
 
+        /// Encode raw signed 16-bit mono 48 kHz PCM (`pcm` byte slice,
+        /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
+        /// `m.voice` event in `room_id`. `waveform` carries up to 256 MSC1767
+        /// amplitude samples (0–1024); `duration_ms` populates
+        /// `info.duration`. `caption` / `reply_event_id` follow the same
+        /// MSC2530 / m.in_reply_to framing as `send_image` and `send_file`.
+        fn send_voice(
+            self: &mut ClientFfi,
+            room_id: &str,
+            pcm: &[u8],
+            duration_ms: u64,
+            waveform: &[u16],
+            caption: &str,
+            /// When non-empty, adds an `m.in_reply_to` relation.
+            reply_event_id: &str,
+        ) -> OpResult;
+
         /// Edit `event_id` in `room_id` replacing its body with `new_body`.
         /// Uses `Room::make_edit_event` + `RoomSendQueue::send` so the edit
         /// is correctly formatted (Replacement relation + fallback body). Only

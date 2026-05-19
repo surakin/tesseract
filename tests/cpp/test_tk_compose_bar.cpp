@@ -429,3 +429,61 @@ TEST_CASE(
     bar.set_enabled(true);
     CHECK(send->enabled());
 }
+
+TEST_CASE("ComposeBar mic unavailable: natural_height unchanged, mic_btn hidden",
+          "[tk][view][compose][voice]")
+{
+    Stage st;
+    auto cb = std::make_unique<ComposeBar>();
+    float baseline = cb->natural_height();
+    cb->set_mic_available(false);
+    st.run(*cb, {0, 0, 640, 200});
+    REQUIRE(!cb->mic_available());
+    // Height must not change just because the mic button is hidden.
+    REQUIRE(cb->natural_height() == baseline);
+}
+
+TEST_CASE("ComposeBar recording: natural_height unchanged on set_recording",
+          "[tk][view][compose][voice]")
+{
+    Stage st;
+    auto cb = std::make_unique<ComposeBar>();
+    float idle_height = cb->natural_height();
+    cb->set_recording(true);
+    st.run(*cb, {0, 0, 640, 200});
+    REQUIRE(cb->natural_height() == idle_height);
+}
+
+TEST_CASE("ComposeBar recording: push_amplitude no-op before set_recording",
+          "[tk][view][compose][voice]")
+{
+    Stage st;
+    auto cb = std::make_unique<ComposeBar>();
+    for (int i = 0; i < 10; ++i)
+        cb->push_amplitude(512);
+    REQUIRE(cb->natural_height() == ComposeBar::kMinHeight);
+}
+
+TEST_CASE("ComposeBar recording: push_amplitude accepted during recording",
+          "[tk][view][compose][voice]")
+{
+    Stage st;
+    auto cb = std::make_unique<ComposeBar>();
+    cb->set_recording(true);
+    for (int i = 0; i < 10; ++i)
+        cb->push_amplitude(static_cast<std::uint16_t>(i * 100));
+    REQUIRE(cb->natural_height() == ComposeBar::kMinHeight);
+}
+
+TEST_CASE("ComposeBar recording: set_recording false resets state",
+          "[tk][view][compose][voice]")
+{
+    Stage st;
+    auto cb = std::make_unique<ComposeBar>();
+    cb->set_recording(true);
+    for (int i = 0; i < 5; ++i)
+        cb->push_amplitude(800);
+    cb->set_recording(false);
+    REQUIRE(!cb->is_recording());
+    cb->push_amplitude(999); // must not crash
+}

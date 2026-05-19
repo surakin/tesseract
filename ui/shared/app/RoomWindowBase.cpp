@@ -176,6 +176,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     {
         request_pagination_back_();
     };
+
+    // Pop-out windows share the shell's singleton capture_ but don't wire
+    // voice recording — the main window owns that interaction. Hide the mic
+    // button so pop-outs present a clean compose bar.
+    rv->compose_bar()->set_mic_available(false);
 }
 
 void RoomWindowBase::on_room_info_updated(const RoomInfo& r)

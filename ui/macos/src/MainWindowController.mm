@@ -227,6 +227,8 @@ public:
     using ShellBase::video_thumb_in_flight_;
     using ShellBase::view_displayed_room_id_;
     using ShellBase::voice_prefetched_;
+    using ShellBase::capture_;
+    using ShellBase::wire_voice_capture_;
     using ShellBase::workers_cv_;
     using ShellBase::workers_in_flight_;
     using ShellBase::workers_mu_;
@@ -1726,6 +1728,23 @@ void MacShell::apply_cached_messages_(
         if (auto player = _mainAppSurface->host().make_audio_player())
         {
             _mainApp->room_view()->set_audio_player(std::move(player));
+        }
+        _shell->capture_ = _mainAppSurface->host().make_audio_capture();
+        {
+            __weak MainWindowController* ws = self;
+            _shell->wire_voice_capture_(
+                _mainApp->room_view(),
+                [ws]() { if (ws) [ws _relayoutChatSurface]; },
+                [shell = _shell]() { return shell->current_room_id_; },
+                [ws]()
+                {
+                    MainWindowController* s = ws;
+                    if (!s) return;
+                    if (s->_roomTextArea)
+                        s->_roomTextArea->set_text("");
+                    if (s->_roomView)
+                        s->_roomView->set_current_text({});
+                });
         }
 
         _mainApp->room_view()->on_send = [weakSelf](const std::string& body)

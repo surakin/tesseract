@@ -570,6 +570,15 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             room_view_->set_audio_player(std::move(player));
         }
+        capture_ = main_app_surface_->host().make_audio_capture();
+        {
+            tk::gtk4::Surface* sfp = main_app_surface_.get();
+            wire_voice_capture_(
+                room_view_,
+                [sfp]() { gtk_widget_queue_draw(sfp->widget()); },
+                [this]() { return current_room_id_; },
+                [this]() { room_view_->set_current_text({}); });
+        }
         room_view_->set_voice_bytes_provider(
             [this](const std::string& source_json) -> std::vector<std::uint8_t>
             {

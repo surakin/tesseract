@@ -63,6 +63,7 @@ target_link_libraries(tesseract_gtk PRIVATE
     PkgConfig::AYATANA_APPINDICATOR  # transitive runtime: appindicator + GTK3
     ${GTK4_LIBRARIES}
     ${GIO_LIBRARIES}
+    opus
 )
 
 set_target_properties(tesseract_gtk PROPERTIES
