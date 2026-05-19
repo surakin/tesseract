@@ -256,6 +256,12 @@ public:
     // are remeasured with the actual pixel dimensions.
     void notify_image_ready(const std::string& url);
 
+    // Update the waveform of the first voice row matching `event_id` and
+    // repaint. Called after local waveform generation completes for a voice
+    // message that arrived without MSC1767 waveform data.
+    void update_voice_waveform(const std::string&              event_id,
+                               std::vector<std::uint16_t>      waveform);
+
     // Voice-message playback (MSC3245). Shells wire all three after
     // construction; the view stays inert (clicks become no-ops) when any
     // of them is missing — Win32 currently lacks an audio backend, so

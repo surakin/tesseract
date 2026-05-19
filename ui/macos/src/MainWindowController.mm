@@ -131,6 +131,9 @@ protected:
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
+    void handle_voice_waveform_ready_ui_(std::string room_id,
+                                         std::string event_id,
+                                         std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(
@@ -921,6 +924,16 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                   avatarBytes:avatar_bytes
                    imageBytes:image_bytes];
     }
+}
+
+void MacShell::handle_voice_waveform_ready_ui_(
+    std::string room_id, std::string event_id,
+    std::vector<std::uint16_t> waveform)
+{
+    if (room_id != current_room_id_)
+        return;
+    if (auto* ml = room_view_->message_list())
+        ml->update_voice_waveform(event_id, std::move(waveform));
 }
 
 void MacShell::on_room_list_state_ui_()

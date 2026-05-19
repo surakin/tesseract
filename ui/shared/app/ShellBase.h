@@ -8,6 +8,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
+#include <tesseract/waveform_cache.h>
 #include "tk/anim_image_cache.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
@@ -138,6 +139,7 @@ protected:
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
+    bool waveform_store_inited_ = false;
 
     // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
     // handle_image_packs_updated_ui_.
@@ -145,6 +147,7 @@ protected:
 
     // ── Media fetch dedup sets ────────────────────────────────────────────────
     std::unordered_set<std::string> voice_prefetched_;
+    std::unordered_set<std::string> voice_waveform_in_flight_;
     std::unordered_set<std::string> video_thumb_in_flight_;
     std::unordered_set<std::string> reply_details_requested_;
     std::unordered_set<std::string> media_fetches_in_flight_;
@@ -450,6 +453,15 @@ protected:
                             std::string /*body*/, bool /*is_mention*/,
                             std::vector<uint8_t> /*avatar_bytes*/,
                             std::vector<uint8_t> /*image_bytes*/)
+    {
+    }
+
+    // Called on the UI thread when a locally generated waveform is ready for
+    // a voice message that arrived without MSC1767 waveform data. Each shell
+    // overrides to call room_view_->message_list()->update_voice_waveform().
+    virtual void handle_voice_waveform_ready_ui_(std::string /*room_id*/,
+                                                 std::string /*event_id*/,
+                                                 std::vector<std::uint16_t> /*waveform*/)
     {
     }
 

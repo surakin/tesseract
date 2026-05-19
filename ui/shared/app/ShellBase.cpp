@@ -368,6 +368,12 @@ void ShellBase::ensure_row_media_(const Event& ev)
                 media_disk_cache_.prune();
             });
     }
+    if (!waveform_store_inited_)
+    {
+        waveform_store_inited_ = true;
+        tesseract::init_waveform_cache(
+            (tesseract::cache_dir() / "waveforms.db").string());
+    }
     ensure_user_avatar_(ev.sender_avatar_url);
     for (const auto& rr : ev.read_receipts)
     {
@@ -389,14 +395,50 @@ void ShellBase::ensure_row_media_(const Event& ev)
     else if (ev.type == EventType::Voice)
     {
         const auto& v = static_cast<const VoiceEvent&>(ev);
-        if (!v.audio_source.empty() &&
-            voice_prefetched_.insert(v.audio_source).second)
+        if (!v.audio_source.empty())
         {
-            run_async_(
-                [this, src = v.audio_source]()
-                {
-                    (void)client_->fetch_source_bytes(src);
-                });
+            const bool audio_new =
+                voice_prefetched_.insert(v.audio_source).second;
+            const bool waveform_new =
+                v.waveform.empty() &&
+                voice_waveform_in_flight_.insert(v.audio_source).second;
+
+            if (audio_new || waveform_new)
+            {
+                const std::string event_id = ev.event_id;
+                const std::string room_id  = current_room_id_;
+                run_async_(
+                    [this, src = v.audio_source, event_id, room_id,
+                     waveform_new]()
+                    {
+                        auto bytes = client_->fetch_source_bytes(src);
+                        if (!waveform_new || bytes.empty())
+                        {
+                            return;
+                        }
+                        auto waveform = tesseract::load_voice_waveform(src);
+                        if (waveform.empty())
+                        {
+                            waveform =
+                                tesseract::compute_waveform_from_ogg(bytes);
+                            if (!waveform.empty())
+                            {
+                                tesseract::store_voice_waveform(src, waveform);
+                            }
+                        }
+                        if (!waveform.empty())
+                        {
+                            post_to_ui_(
+                                [this, room_id, event_id,
+                                 waveform = std::move(waveform)]() mutable
+                                {
+                                    handle_voice_waveform_ready_ui_(
+                                        room_id, event_id,
+                                        std::move(waveform));
+                                });
+                        }
+                    });
+            }
         }
     }
     else if (ev.type == EventType::Video)

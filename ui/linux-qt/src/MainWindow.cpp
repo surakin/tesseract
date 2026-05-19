@@ -3384,6 +3384,16 @@ void MainWindow::handle_notification_ui_(
     }
 }
 
+void MainWindow::handle_voice_waveform_ready_ui_(
+    std::string room_id, std::string event_id,
+    std::vector<std::uint16_t> waveform)
+{
+    if (room_id != current_room_id_)
+        return;
+    if (auto* ml = mainApp_->room_view()->message_list())
+        ml->update_voice_waveform(event_id, std::move(waveform));
+}
+
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
 
 void MainWindow::on_tab_state_changed_ui_()

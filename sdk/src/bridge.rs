@@ -4,6 +4,26 @@ pub fn client_create() -> Box<ClientFfi> {
     Box::new(ClientFfi::new())
 }
 
+pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
+    super::waveform::compute_waveform_from_ogg(bytes)
+}
+
+pub fn init_waveform_store(path: &str) {
+    super::waveform_store::init(std::path::Path::new(path))
+}
+
+pub fn load_voice_waveform(mxc_uri: &str) -> Vec<u16> {
+    super::waveform_store::load(mxc_uri)
+}
+
+pub fn store_voice_waveform(mxc_uri: &str, waveform: &[u16]) {
+    super::waveform_store::store(mxc_uri, waveform)
+}
+
+pub fn evict_voice_waveform(mxc_uri: &str) {
+    super::waveform_store::evict(mxc_uri)
+}
+
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
@@ -432,6 +452,25 @@ pub mod ffi {
         type ClientFfi;
 
         fn client_create() -> Box<ClientFfi>;
+
+        // ----- Local waveform generation -----
+
+        /// Decode an Ogg/Opus buffer and compute MSC1767 waveform samples
+        /// (0..=1024, up to 200 values). Returns empty on invalid input.
+        fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16>;
+
+        /// Open (or create) the waveform SQLite store at `path`. Idempotent —
+        /// safe to call multiple times; only the first call takes effect.
+        fn init_waveform_store(path: &str);
+
+        /// Look up a cached waveform by MXC URI. Returns empty when not found.
+        fn load_voice_waveform(mxc_uri: &str) -> Vec<u16>;
+
+        /// Persist a waveform for `mxc_uri`, evicting oldest entries beyond 2000.
+        fn store_voice_waveform(mxc_uri: &str, waveform: &[u16]);
+
+        /// Remove the cached waveform for `mxc_uri` (e.g. after media eviction).
+        fn evict_voice_waveform(mxc_uri: &str);
 
         // ----- Data directory -----
 

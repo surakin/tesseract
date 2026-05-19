@@ -161,6 +161,16 @@ void MainWindow::handle_notification_ui_(
                       std::move(avatar_bytes), std::move(image_bytes));
 }
 
+void MainWindow::handle_voice_waveform_ready_ui_(
+    std::string room_id, std::string event_id,
+    std::vector<std::uint16_t> waveform)
+{
+    if (room_id != current_room_id_)
+        return;
+    if (auto* ml = room_view_->message_list())
+        ml->update_voice_waveform(event_id, std::move(waveform));
+}
+
 void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();

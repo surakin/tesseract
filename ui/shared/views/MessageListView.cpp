@@ -3472,6 +3472,21 @@ void MessageListView::notify_image_ready(const std::string& url)
     }
 }
 
+void MessageListView::update_voice_waveform(const std::string&         event_id,
+                                            std::vector<std::uint16_t> waveform)
+{
+    for (auto& msg : messages_)
+    {
+        if (msg.kind == MessageRowData::Kind::Voice &&
+            msg.event_id == event_id && msg.waveform.empty())
+        {
+            msg.waveform = std::move(waveform);
+            invalidate_data();
+            return;
+        }
+    }
+}
+
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
 {
     audio_player_ = std::move(player);
