@@ -655,6 +655,22 @@ pub mod ffi {
             reply_event_id: &str,
         ) -> OpResult;
 
+        /// Send an audio file to `room_id` as a plain `m.audio` event (not
+        /// MSC3245 voice). `duration_ms` populates `info.duration`; pass 0
+        /// when unknown. `caption`/`reply_event_id` follow MSC2530/m.in_reply_to
+        /// framing identical to `send_file`.
+        fn send_audio(
+            self: &mut ClientFfi,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            duration_ms: u64,
+            /// When non-empty, adds an `m.in_reply_to` relation.
+            reply_event_id: &str,
+        ) -> OpResult;
+
         /// Encode raw signed 16-bit mono 48 kHz PCM (`pcm` byte slice,
         /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
         /// `m.voice` event in `room_id`. `waveform` carries up to 256 MSC1767
