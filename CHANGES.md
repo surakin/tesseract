@@ -5,15 +5,13 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
-### 2026-05-19
+## v0.1.3 — 2026-05-19
+
+Changes since v0.1.2:
 
 - feat(download): save file attachments, images, and videos to disk — clicking a file card in the timeline opens a native save dialog and fetches the file from the Matrix media server; a ⬇ button added to `ImageViewerOverlay` and `VideoViewerOverlay` does the same for displayed images and videos; all four platforms (Qt6 `QFileDialog`, GTK4 `GtkFileChooserNative`, Win32 `GetSaveFileNameW`, macOS `NSSavePanel`); bytes fetched off the UI thread via `fetch_media_bytes` / `fetch_source_bytes` and written with `std::ofstream`; 328/328 ctest, 96/96 cargo
-
 - feat(voice): MSC3245 voice message send — mic button in `ComposeBar` starts/stops recording; OGG/Opus encoding in Rust (`audiopus` + `ogg` crates) at 48 kHz mono 32 kbps with MSC1767 waveform sampling (up to 256 samples, normalised [0, 1000]); live waveform strip animates during recording; cancel button; per-platform `tk::AudioCapture` backend (Qt6 `QAudioSource`, GTK4 GStreamer `pulsesrc`, Win32 WASAPI, macOS `AVAudioEngine`); `send_voice` FFI + `Client::send_voice` C++ API; mic button hidden automatically when no capture device is available; voice send wired in all four main shells via new `ShellBase::wire_voice_capture_()` helper; pop-out secondary windows hide the mic button (recording is a singleton interaction owned by the main window); 3 new Rust unit tests + 5 new C++ tests (328/328 ctest, 95/95 cargo)
 - fix(tests): update two `ComposeBar` attachment tests to match current floating-preview design — image previews now float above the bar without changing `natural_height()`; only file chips grow it
-
-### 2026-05-18
-
 - fix(ui/win32): image/video viewer now closes on Esc immediately — `SetFocus` to the top-level window on viewer open so its `WM_KEYDOWN` handler receives Esc (previously Esc did nothing until an app deactivate/reactivate restored top-level focus)
 - style: standardise formatting across the whole codebase — reconciled STYLE.md's Rust section to idiomatic same-line braces and narrowed Universal Rule §2 (trivial Rust `match` arms stay unbraced); added a repo-root `.clang-format` (Cpp + ObjC sections) encoding the C++/Objective-C rules; reformatted `sdk/` via `cargo fmt` and all C++/ObjC (`client/`, `ui/shared/`, the four shells, `tests/`) via `clang-format` — behaviour-preserving (323/323 ctest, 92/92 cargo)
 - feat(pickers): unified async image cache — EmojiPicker/StickerPicker now share the message-list `tk_images_`/`anim_cache_` on all four shells (Qt6 dropped its private per-picker caches), images route through `media_disk_cache_` so custom emoticons/stickers survive an app restart, and decode runs off the UI thread (Qt6 QImageReader / GTK4 GdkPixbuf+cairo / macOS CGImageSource / Win32 WIC) so first paint of a large pack no longer stalls
