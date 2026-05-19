@@ -3,6 +3,23 @@ cmake_minimum_required(VERSION 3.25)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia DBus Concurrent Network)
 qt_standard_project_setup()
 
+# ---------------------------------------------------------------------------
+# Optional: xdg-activation-v1 Wayland protocol binding.
+#
+# Qt 6.11 removed _q_waylandActivationToken with no public replacement.
+# We call xdg_activation_v1_activate() directly, getting wl_display* and
+# wl_surface* from QPlatformNativeInterface.
+#
+# The protocol glue (src/xdg-activation-v1-protocol.[ch]) was generated once
+# from wayland-protocols 1.25 and checked in; it only needs updating if the
+# protocol itself changes (it is stable at version 1).
+# ---------------------------------------------------------------------------
+find_library(WAYLAND_CLIENT_LIB wayland-client)
+set(_xdg_sources "")
+if(WAYLAND_CLIENT_LIB)
+    set(_xdg_sources src/xdg-activation-v1-protocol.c)
+endif()
+
 qt_add_executable(tesseract_qt
     src/main.cpp
     src/MainWindow.cpp
@@ -46,6 +63,22 @@ target_link_libraries(tesseract_qt PRIVATE
     Qt6::Network
     opus
 )
+
+if(WAYLAND_CLIENT_LIB)
+    # The root project only enables LANGUAGES CXX. Enable C here so we can
+    # compile the wayland-scanner generated .c protocol glue.
+    enable_language(C)
+    # qt_add_executable / AUTOMOC (enabled globally by qt_standard_project_setup)
+    # silently drops plain .c sources. Compile the Wayland protocol glue into
+    # its own static lib with Qt autogen disabled.
+    add_library(tesseract_xdg_protocol STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/xdg-activation-v1-protocol.c")
+    set_target_properties(tesseract_xdg_protocol PROPERTIES
+        AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+    target_compile_definitions(tesseract_qt PRIVATE HAVE_XDG_ACTIVATION)
+    target_link_libraries(tesseract_qt PRIVATE
+        tesseract_xdg_protocol "${WAYLAND_CLIENT_LIB}")
+endif()
 
 set_target_properties(tesseract_qt PROPERTIES
     OUTPUT_NAME "tesseract"

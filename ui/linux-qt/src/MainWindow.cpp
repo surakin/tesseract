@@ -61,6 +61,15 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QWindow>
+#ifdef HAVE_XDG_ACTIVATION
+#include <wayland-client.h>
+#include "xdg-activation-v1-protocol.h"
+#include <QGuiApplication>
+#include <qguiapplication_platform.h>
+// QPlatformNativeInterface is needed to get wl_surface* via nativeResourceForWindow;
+// Qt 6 exposes no public equivalent.
+#include <QtGui/6.11.0/QtGui/qpa/qplatformnativeinterface.h>
+#endif
 #include <QFileDialog>
 
 #include <algorithm>
@@ -1544,6 +1553,42 @@ MainWindow::~MainWindow()
     loginView_ = nullptr;
 }
 
+#ifdef HAVE_XDG_ACTIVATION
+namespace
+{
+// Lazily-bound xdg_activation_v1 global. Initialised once from the Wayland
+// registry in setupLocalServer_() via a one-shot roundtrip. All access is on
+// the main thread so no locking is needed.
+xdg_activation_v1* s_xdgActivation = nullptr;
+
+void registry_global_cb(void*, wl_registry* reg, uint32_t name,
+                         const char* iface, uint32_t)
+{
+    if (!s_xdgActivation &&
+        strcmp(iface, xdg_activation_v1_interface.name) == 0)
+    {
+        s_xdgActivation = static_cast<xdg_activation_v1*>(
+            wl_registry_bind(reg, name, &xdg_activation_v1_interface, 1));
+    }
+}
+void registry_global_remove_cb(void*, wl_registry*, uint32_t) {}
+
+const wl_registry_listener kRegistryListener = {registry_global_cb,
+                                                 registry_global_remove_cb};
+
+// Token-request callback: stores the compositor-issued token string.
+struct TokenResult { std::string value; };
+
+void s_token_done(void* data, xdg_activation_token_v1* tok, const char* token)
+{
+    static_cast<TokenResult*>(data)->value = token ? token : "";
+    xdg_activation_token_v1_destroy(tok);
+}
+
+const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
+} // namespace
+#endif
+
 void MainWindow::setupLocalServer_()
 {
     const QString name = QStringLiteral("tesseract-activate-")
@@ -1553,26 +1598,103 @@ void MainWindow::setupLocalServer_()
     localServer_->listen(name);
     connect(localServer_, &QLocalServer::newConnection, this,
             &MainWindow::onActivateRequested);
+
+#ifdef HAVE_XDG_ACTIVATION
+    // Bind xdg_activation_v1 from the Wayland registry so we can pass
+    // compositor-issued tokens directly without going through Qt private API.
+    auto* waylandApp =
+        qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+    if (waylandApp)
+    {
+        auto* wl_disp = waylandApp->display();
+        if (wl_disp && !s_xdgActivation)
+        {
+            wl_registry* reg = wl_display_get_registry(wl_disp);
+            wl_registry_add_listener(reg, &kRegistryListener, nullptr);
+            wl_display_roundtrip(wl_disp);
+            wl_registry_destroy(reg);
+        }
+    }
+#endif
+}
+
+void MainWindow::activateWindowWithToken_(const QString& external_token)
+{
+    show();
+    raise();
+#ifdef HAVE_XDG_ACTIVATION
+    auto* waylandApp =
+        qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+    auto* wl_disp = waylandApp ? waylandApp->display() : nullptr;
+    // wl_surface* has no public Qt 6 accessor; nativeResourceForWindow is the
+    // only non-private path available.
+    auto* ni = QGuiApplication::platformNativeInterface();
+    auto* surf = (ni && windowHandle()) ? static_cast<wl_surface*>(
+        ni->nativeResourceForWindow("surface", windowHandle())) : nullptr;
+
+    if (wl_disp && surf && s_xdgActivation)
+    {
+        std::string token = external_token.toStdString();
+
+        if (token.empty())
+        {
+            // No externally-provided token (e.g. tray icon click).
+            // Request a self-issued token synchronously.
+            // We supply the last known input serial and seat so compositors
+            // that require it (GNOME Shell) have a chance to honour the
+            // request; KWin grants these regardless.
+            TokenResult result;
+            xdg_activation_token_v1* tok =
+                xdg_activation_v1_get_activation_token(s_xdgActivation);
+            xdg_activation_token_v1_set_app_id(tok, "tesseract");
+            xdg_activation_token_v1_set_surface(tok, surf);
+            if (waylandApp->lastInputSerial() && waylandApp->lastInputSeat())
+            {
+                xdg_activation_token_v1_set_serial(
+                    tok, waylandApp->lastInputSerial(),
+                    waylandApp->lastInputSeat());
+            }
+            xdg_activation_token_v1_add_listener(
+                tok, &kTokenDoneListener, &result);
+            xdg_activation_token_v1_commit(tok);
+            wl_display_roundtrip(wl_disp);
+            token = result.value;
+        }
+
+        if (!token.empty())
+        {
+            xdg_activation_v1_activate(
+                s_xdgActivation, token.c_str(), surf);
+            wl_display_flush(wl_disp);
+            return;
+        }
+    }
+#endif
+    activateWindow();
 }
 
 void MainWindow::onActivateRequested()
 {
     QLocalSocket* sock = localServer_->nextPendingConnection();
-    connect(sock, &QLocalSocket::readyRead, this,
-            [this, sock]()
-            {
-                const QString token =
-                    QString::fromUtf8(sock->readAll()).trimmed();
-                if (!token.isEmpty() && windowHandle())
-                {
-                    windowHandle()->setProperty("_q_waylandActivationToken",
-                                                token);
-                }
-                show();
-                raise();
-                activateWindow();
-                sock->deleteLater();
-            });
+    if (!sock)
+        return;
+    auto doActivate = [this, sock]()
+    {
+        const QString token = QString::fromUtf8(sock->readAll()).trimmed();
+        activateWindowWithToken_(token);
+        sock->deleteLater();
+    };
+    // If data is already buffered (fast sender), read immediately.
+    // Otherwise wait for readyRead; a safety timer cleans up if no data comes.
+    if (sock->bytesAvailable() > 0)
+    {
+        doActivate();
+    }
+    else
+    {
+        connect(sock, &QLocalSocket::readyRead, this, doActivate);
+        QTimer::singleShot(500, sock, [sock]() { sock->deleteLater(); });
+    }
 }
 
 void MainWindow::runOnPool_(std::function<void()> fn)
@@ -1726,13 +1848,7 @@ void MainWindow::doLogin()
                         break;
                     }
                 }
-                // Pass xdg_activation_v1 token (non-empty on modern Wayland)
-                // so the compositor grants window focus on navigate_to_room.
-                if (!token.empty() && windowHandle())
-                {
-                    windowHandle()->setProperty("_q_waylandActivationToken",
-                                                QString::fromStdString(token));
-                }
+                pending_wayland_token_ = QString::fromStdString(token);
                 navigate_to_room(std::move(room_id));
             });
 
@@ -1792,29 +1908,15 @@ void MainWindow::doLogin()
     if (!tray_)
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this]
-            {
-                show();
-                raise();
-                activateWindow();
-            },
+            [this] { activateWindowWithToken_(QString{}); },
             [this]
             {
                 if (isVisible())
-                {
                     hide();
-                }
                 else
-                {
-                    show();
-                    raise();
-                    activateWindow();
-                }
+                    activateWindowWithToken_(QString{});
             },
-            []
-            {
-                qApp->quit();
-            },
+            [] { qApp->quit(); },
             this);
         if (tray_->is_available())
         {
@@ -1960,11 +2062,7 @@ void MainWindow::onLoginSucceeded()
                     break;
                 }
             }
-            if (!token.empty() && windowHandle())
-            {
-                windowHandle()->setProperty("_q_waylandActivationToken",
-                                            QString::fromStdString(token));
-            }
+            pending_wayland_token_ = QString::fromStdString(token);
             navigate_to_room(std::move(room_id));
         });
 
@@ -1998,29 +2096,15 @@ void MainWindow::onLoginSucceeded()
     if (!tray_)
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this]
-            {
-                show();
-                raise();
-                activateWindow();
-            },
+            [this] { activateWindowWithToken_(QString{}); },
             [this]
             {
                 if (isVisible())
-                {
                     hide();
-                }
                 else
-                {
-                    show();
-                    raise();
-                    activateWindow();
-                }
+                    activateWindowWithToken_(QString{});
             },
-            []
-            {
-                qApp->quit();
-            },
+            [] { qApp->quit(); },
             this);
         if (tray_->is_available())
         {
@@ -2072,9 +2156,9 @@ void MainWindow::navigate_to_room(const std::string& room_id)
         mainApp_->room_list_view()->set_selected_room(room_id);
     }
     tab_navigate_room(room_id);
-    show();
-    raise();
-    activateWindow();
+    QString token = pending_wayland_token_;
+    pending_wayland_token_.clear();
+    activateWindowWithToken_(token);
 }
 
 void MainWindow::onSendClicked()

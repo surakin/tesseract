@@ -317,6 +317,16 @@ private:
     std::string pendingReactionEventId_;
     std::string roomSearchPendingText_;
 
+    // Holds an xdg-activation token to be consumed by the next
+    // navigate_to_room() call. Set by notification/second-instance handlers
+    // before they call navigate_to_room so the compositor grants focus.
+    QString pending_wayland_token_;
+
+    /// Raise the window and activate it. On Wayland, submits `token` via
+    /// xdg_activation_v1_activate() directly (bypassing Qt). Falls back to
+    /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
+    void activateWindowWithToken_(const QString& token);
+
     QLocalServer* localServer_ = nullptr;
 
     QStackedWidget* contentStack_ = nullptr;
