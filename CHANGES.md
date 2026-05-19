@@ -7,6 +7,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-05-19
 
+- feat(download): save file attachments, images, and videos to disk — clicking a file card in the timeline opens a native save dialog and fetches the file from the Matrix media server; a ⬇ button added to `ImageViewerOverlay` and `VideoViewerOverlay` does the same for displayed images and videos; all four platforms (Qt6 `QFileDialog`, GTK4 `GtkFileChooserNative`, Win32 `GetSaveFileNameW`, macOS `NSSavePanel`); bytes fetched off the UI thread via `fetch_media_bytes` / `fetch_source_bytes` and written with `std::ofstream`; 328/328 ctest, 96/96 cargo
+
 - feat(voice): MSC3245 voice message send — mic button in `ComposeBar` starts/stops recording; OGG/Opus encoding in Rust (`audiopus` + `ogg` crates) at 48 kHz mono 32 kbps with MSC1767 waveform sampling (up to 256 samples, normalised [0, 1000]); live waveform strip animates during recording; cancel button; per-platform `tk::AudioCapture` backend (Qt6 `QAudioSource`, GTK4 GStreamer `pulsesrc`, Win32 WASAPI, macOS `AVAudioEngine`); `send_voice` FFI + `Client::send_voice` C++ API; mic button hidden automatically when no capture device is available; voice send wired in all four main shells via new `ShellBase::wire_voice_capture_()` helper; pop-out secondary windows hide the mic button (recording is a singleton interaction owned by the main window); 3 new Rust unit tests + 5 new C++ tests (328/328 ctest, 95/95 cargo)
 - fix(tests): update two `ComposeBar` attachment tests to match current floating-preview design — image previews now float above the bar without changing `natural_height()`; only file chips grow it
 
