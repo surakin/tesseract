@@ -3,7 +3,6 @@
 
 #include "audio_capture.h"
 
-#define WIN32_LEAN_AND_MEAN
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <windows.h>
