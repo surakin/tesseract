@@ -2511,9 +2511,8 @@ impl ClientFfi {
 
     /// Upload `bytes` as-is and send an `m.file` event. See the FFI doc
     /// comment in `bridge.rs` for caption/filename framing.
-    /// matrix-sdk's `send_attachment` infers `m.file` from the absence of an
-    /// image/video/audio `AttachmentInfo`; encryption is handled transparently
-    /// for E2EE rooms.
+    /// `AttachmentInfo::File` carries `size` so the homeserver includes it in
+    /// the `m.file` `info` block. Encryption is handled transparently for E2EE rooms.
     #[cfg(not(test))]
     pub fn send_file(
         &mut self,
@@ -2524,10 +2523,11 @@ impl ClientFfi {
         caption: &str,
         reply_event_id: &str,
     ) -> OpResult {
-        use matrix_sdk::attachment::AttachmentConfig;
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseFileInfo};
         use matrix_sdk::room::reply::{EnforceThread, Reply};
         use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -2544,7 +2544,10 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid mime: {e}")),
         };
 
-        let mut config = AttachmentConfig::new();
+        let info = BaseFileInfo {
+            size: UInt::new(bytes.len() as u64),
+        };
+        let mut config = AttachmentConfig::new().info(AttachmentInfo::File(info));
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
