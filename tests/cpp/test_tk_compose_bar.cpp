@@ -151,7 +151,7 @@ TEST_CASE("ComposeBar natural_height grows with the text-area content height",
     CHECK(bar.natural_height() == ComposeBar::kMinHeight);
 }
 
-TEST_CASE("ComposeBar pending image grows natural_height and enables send "
+TEST_CASE("ComposeBar pending image floats above bar and enables send "
           "without text",
           "[tk][view][compose]")
 {
@@ -179,7 +179,8 @@ TEST_CASE("ComposeBar pending image grows natural_height and enables send "
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
         "image/png");
     CHECK(bar.has_pending_image());
-    CHECK(bar.natural_height() > baseline);
+    // Image previews float above the bar bounds — bar height stays unchanged.
+    CHECK(bar.natural_height() == baseline);
     CHECK(size_changes == 1);
 
     // Send button enables even when the text field is empty.
@@ -395,8 +396,9 @@ TEST_CASE(
     bar.set_pending_file(std::vector<std::uint8_t>(64, 0x11), "application/zip",
                          "archive.zip");
     REQUIRE(bar.has_pending());
-    // File band is strictly smaller than image band, so the bar shrinks.
-    CHECK(bar.natural_height() < h_with_image);
+    // Image previews float above (no height change); file chips live inside
+    // the bar, so replacing an image with a file grows natural_height.
+    CHECK(bar.natural_height() > h_with_image);
 }
 
 TEST_CASE("ComposeBar clear_pending discards a pending file too",

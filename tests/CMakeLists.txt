@@ -68,13 +68,22 @@ target_include_directories(tesseract_tests PRIVATE cpp)
 
 # All three archives are mutually dependent (same WHOLE_ARCHIVE pattern used
 # by the UI executables) so every symbol is present regardless of link order.
+# Catch2::Catch2WithMain must come before tesseract_sdk_ffi-static on Windows:
+# audiopus_sys embeds a prebuilt opus.lib (containing opus_compare's main())
+# into the Rust staticlib.  MSVC resolves 'main' from the first lib that
+# provides it, so Catch2 must win the race before opus_compare.obj is loaded.
 target_link_libraries(tesseract_tests PRIVATE
+    Catch2::Catch2WithMain
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
     tesseract_sdk_ffi-static
     tesseract_tk
-    Catch2::Catch2WithMain
-    opus
 )
+# On Linux/macOS audiopus uses the system libopus and emits
+# cargo:rustc-link-lib=opus; satisfy that here. On Windows audiopus
+# bundles opus into the Rust archive so no separate lib is needed.
+if(NOT WIN32)
+    target_link_libraries(tesseract_tests PRIVATE opus)
+endif()
 
 # Register each Catch2 TEST_CASE as an individual ctest test.
 include(Catch)
