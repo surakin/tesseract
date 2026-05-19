@@ -1918,6 +1918,23 @@ void MacShell::apply_cached_messages_(
         {
             tesseract::Client::open_in_browser(url);
         };
+        {
+            auto hovered = std::make_shared<bool>(false);
+            _mainApp->room_view()->on_link_hovered =
+                [hovered](const std::string& url)
+            {
+                if (!url.empty() && !*hovered)
+                {
+                    [[NSCursor pointingHandCursor] push];
+                    *hovered = true;
+                }
+                else if (url.empty() && *hovered)
+                {
+                    [NSCursor pop];
+                    *hovered = false;
+                }
+            };
+        }
         _mainApp->room_view()->on_show_tooltip =
             [weakSelf](std::string text, tk::Rect anchor)
         {
