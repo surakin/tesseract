@@ -433,10 +433,11 @@ pub(crate) fn encode_voice_ogg(
     opus_head.extend_from_slice(&48000u32.to_le_bytes()); // input sample rate
     opus_head.extend_from_slice(&0i16.to_le_bytes());     // output gain
     opus_head.push(0);                                    // channel mapping family
+    // RFC 7845 §3: each header MUST begin on its own page.
     pw.write_packet(
         opus_head,
         0x1234_5678,
-        ogg::PacketWriteEndInfo::NormalPacket,
+        ogg::PacketWriteEndInfo::EndPage,
         0,
     )
     .map_err(|e| e.to_string())?;
@@ -451,7 +452,7 @@ pub(crate) fn encode_voice_ogg(
     pw.write_packet(
         tags,
         0x1234_5678,
-        ogg::PacketWriteEndInfo::NormalPacket,
+        ogg::PacketWriteEndInfo::EndPage,
         0,
     )
     .map_err(|e| e.to_string())?;
@@ -2672,7 +2673,7 @@ impl ClientFfi {
             }));
         }
 
-        let mime: mime::Mime = "audio/ogg".parse().unwrap();
+        let mime: mime::Mime = "audio/ogg; codecs=opus".parse().unwrap();
 
         match self.rt.block_on(async move {
             room.send_attachment("voice-message.ogg".to_owned(), &mime, ogg_bytes, config)
