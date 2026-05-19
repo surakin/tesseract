@@ -1735,7 +1735,7 @@ void MacShell::apply_cached_messages_(
             _shell->wire_voice_capture_(
                 _mainApp->room_view(),
                 [ws]() { if (ws) [ws _relayoutChatSurface]; },
-                [shell = _shell]() { return shell->current_room_id_; },
+                [shell = _shell.get()]() { return shell->current_room_id_; },
                 [ws]()
                 {
                     MainWindowController* s = ws;
