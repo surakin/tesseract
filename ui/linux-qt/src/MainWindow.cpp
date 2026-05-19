@@ -3406,14 +3406,15 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     }
 }
 
-const std::vector<views::MessageRowData>* MainWindow::get_current_messages_()
+const std::vector<tesseract::views::MessageRowData>*
+MainWindow::get_current_messages_()
 {
     auto* ml = mainApp_ ? mainApp_->room_view()->message_list() : nullptr;
     return ml ? &ml->messages() : nullptr;
 }
 
 void MainWindow::apply_cached_messages_(
-    const std::vector<views::MessageRowData>& msgs)
+    const std::vector<tesseract::views::MessageRowData>& msgs)
 {
     if (mainApp_)
     {

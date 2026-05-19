@@ -1792,6 +1792,12 @@ private:
             float card_w = std::min(kFileCardW, col_w);
             tk::Rect r{x, y, card_w, kFileCardH};
             paint_file_card(m, ctx, r);
+            if (!m.event_id.empty())
+            {
+                owner_.file_geom_[m.event_id] =
+                    MessageListView::FileHit{m.event_id, m.media_url,
+                                              m.file_name, m.file_size, r};
+            }
             return y + kFileCardH;
         }
         case MessageRowData::Kind::Voice:
@@ -2976,6 +2982,21 @@ MessageListView::video_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
+std::optional<MessageListView::FileHit>
+MessageListView::file_hit_at(tk::Point world) const
+{
+    for (const auto& [eid, hit] : file_geom_)
+    {
+        if (world.x >= hit.world_rect.x && world.y >= hit.world_rect.y &&
+            world.x < hit.world_rect.x + hit.world_rect.w &&
+            world.y < hit.world_rect.y + hit.world_rect.h)
+        {
+            return hit;
+        }
+    }
+    return std::nullopt;
+}
+
 void MessageListView::set_messages(std::vector<MessageRowData> msgs,
                                    bool room_switch)
 {
@@ -3942,6 +3963,19 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
         }
+        // File card hover: reuse on_link_hovered with a "file://" sentinel
+        // so the shell switches to the pointing-hand cursor.
+        if (new_link_url.empty())
+        {
+            for (const auto& [eid, hit] : file_geom_)
+            {
+                if (rect_contains(hit.world_rect, world))
+                {
+                    new_link_url = "file://";
+                    break;
+                }
+            }
+        }
     }
     if (new_link_url != hover_link_url_)
     {
@@ -4286,6 +4320,20 @@ bool MessageListView::on_pointer_down(tk::Point local)
             {
                 press_image_ = true;
                 press_image_eid_ = eid;
+                return true;
+            }
+        }
+    }
+
+    // File card click-to-download hit-test.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        for (const auto& [eid, hit] : file_geom_)
+        {
+            if (rect_contains(hit.world_rect, world))
+            {
+                press_file_ = true;
+                press_file_eid_ = eid;
                 return true;
             }
         }
@@ -4643,6 +4691,25 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
 
+    if (press_file_)
+    {
+        bool fire = inside_self && !press_file_eid_.empty();
+        std::string eid = std::move(press_file_eid_);
+        press_file_ = false;
+        press_file_eid_.clear();
+        if (fire)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            auto it = file_geom_.find(eid);
+            if (it != file_geom_.end() &&
+                rect_contains(it->second.world_rect, world) && on_file_clicked)
+            {
+                on_file_clicked(it->second);
+            }
+        }
+        return;
+    }
+
     if (press_target_ == HoverTarget::None)
     {
         tk::ListView::on_pointer_up(local, inside_self);
@@ -4762,6 +4829,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     sticker_geom_.clear();
     image_geom_.clear();
     video_geom_.clear();
+    file_geom_.clear();
     voice_card_geom_.clear();
     quote_block_geom_.clear();
     preview_card_geom_.clear();

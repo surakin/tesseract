@@ -413,6 +413,22 @@ public:
     /// Fires when the user left-clicks a video thumbnail card.
     std::function<void(const MessageListView::VideoHit&)> on_video_clicked;
 
+    // File card left-click hit — fires `on_file_clicked`.
+    // `media_url` is the plain mxc:// URI; pass to
+    // `Client::fetch_media_bytes`. `file_name` is the suggested save name.
+    struct FileHit
+    {
+        std::string event_id;
+        std::string media_url; // mxc:// URI — pass to fetch_media_bytes
+        std::string file_name; // suggested save filename
+        uint64_t    file_size = 0;
+        tk::Rect    world_rect;
+    };
+    std::optional<FileHit> file_hit_at(tk::Point world) const;
+
+    /// Fires when the user left-clicks a file card.
+    std::function<void(const MessageListView::FileHit&)> on_file_clicked;
+
     // Fired with the event_id of the newest real (non-virtual) message
     // visible in the viewport when that id changes. The host should call
     // Client::send_read_receipt for the active room.
@@ -599,6 +615,11 @@ private:
     mutable std::unordered_map<std::string, VideoHit> video_geom_;
     bool press_video_ = false;
     std::string press_video_eid_;
+
+    // File card click-to-download press state.
+    mutable std::unordered_map<std::string, FileHit> file_geom_;
+    bool press_file_ = false;
+    std::string press_file_eid_;
 
     // Quote-block press state. Fires on_scroll_to_original (or internal
     // scroll_to_index) when the user clicks the quote block of a reply.
