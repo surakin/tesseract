@@ -289,6 +289,7 @@ private:
     // chips, so the surfaces look consistent.
     std::unique_ptr<tk::TextLayout> emoji_layout_;
     std::unique_ptr<tk::TextLayout> sticker_layout_;
+    std::unique_ptr<tk::TextLayout> mic_layout_;
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};

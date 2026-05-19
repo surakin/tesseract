@@ -629,28 +629,27 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                   text_top + (text_strip_h - kButtonSide) * 0.5f, kSendWidth,
                   kButtonSide};
 
-    // Mic button sits between send and the card, when available.
+    // Compose card always spans from the left edge to just before send.
+    const float card_left = bounds.x + kPadX;
+    const float card_right = send_rect_.x - kGap;
+    compose_card_rect_ = {card_left, text_top + kPadY,
+                          std::max(0.0f, card_right - card_left),
+                          std::max(0.0f, text_strip_h - kPadY * 2)};
+
+    // Icon buttons live inside the card, stacked right-to-left.
     const float btn_y = text_top + (text_strip_h - kButtonSide) * 0.5f;
+    float inner_right = card_right;
     if (mic_available_)
     {
-        mic_btn_rect_ = {send_rect_.x - kGap - kButtonSide, btn_y, kButtonSide,
+        mic_btn_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide,
                          kButtonSide};
+        inner_right = mic_btn_rect_.x - kGap;
     }
     else
     {
         mic_btn_rect_ = {};
     }
-
-    // The compose card spans from the left edge to just before the mic/send
-    // cluster. When mic is unavailable it abuts the send button directly.
-    const float card_left = bounds.x + kPadX;
-    const float card_right =
-        mic_available_ ? mic_btn_rect_.x - kGap : send_rect_.x - kGap;
-    compose_card_rect_ = {card_left, text_top + kPadY,
-                          std::max(0.0f, card_right - card_left),
-                          std::max(0.0f, text_strip_h - kPadY * 2)};
-
-    sticker_rect_ = {card_right - kButtonSide, btn_y, kButtonSide, kButtonSide};
+    sticker_rect_ = {inner_right - kButtonSide, btn_y, kButtonSide, kButtonSide};
     emoji_rect_ = {sticker_rect_.x - kGap - kButtonSide, btn_y, kButtonSide,
                    kButtonSide};
 
@@ -1034,6 +1033,10 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     {
         paint_glyph_over(sticker_rect_, sticker_layout_,
                          "\xF0\x9F\x96\xBC\xEF\xB8\x8F");
+    }
+    if (mic_btn_ && mic_available_)
+    {
+        paint_glyph_over(mic_btn_rect_, mic_layout_, "\xF0\x9F\x8E\x99");
     }
 }
 
