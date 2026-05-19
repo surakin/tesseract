@@ -250,6 +250,7 @@ private:
     GtkApplication* app_ = nullptr;
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface> branding_surface_;
     std::unique_ptr<LoginView> login_view_;
     std::unique_ptr<SettingsWidget> settings_widget_;
 

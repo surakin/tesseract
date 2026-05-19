@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "views/BrandView.h"
 #include "SettingsWidget.h"
 #include "LinuxScreenLockGtk.h"
 
@@ -395,6 +396,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
     gtk_stack_set_transition_type(GTK_STACK(content_stack_),
                                   GTK_STACK_TRANSITION_TYPE_NONE);
     gtk_window_set_child(GTK_WINDOW(window_), content_stack_);
+
+    branding_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+    branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+    gtk_stack_add_named(GTK_STACK(content_stack_),
+                        branding_surface_->widget(), "branding");
 
     login_view_ = std::make_unique<LoginView>();
     login_view_->set_on_success(
@@ -1842,6 +1848,10 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
 
 void MainWindow::apply_theme_ui_(const tk::Theme& t)
 {
+    if (branding_surface_)
+    {
+        branding_surface_->set_theme(t);
+    }
     if (main_app_surface_)
     {
         main_app_surface_->set_theme(t);

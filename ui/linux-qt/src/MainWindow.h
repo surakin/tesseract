@@ -306,6 +306,7 @@ private:
     QLocalServer* localServer_ = nullptr;
 
     QStackedWidget* contentStack_ = nullptr;
+    tk::qt6::Surface* brandingSurface_ = nullptr;
     LoginView* loginView_ = nullptr;
     SettingsWidget* settingsWidget_ = nullptr;
 

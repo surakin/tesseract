@@ -20,6 +20,7 @@
 #include "tk/host_macos.h"
 #include "tk/theme.h"
 #include "util.h"
+#include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
@@ -1168,6 +1169,9 @@ void MacShell::apply_cached_messages_(
     // When non-empty, the next emoji selection routes through
     // send_reaction for this event id (set by the "+" reaction chip).
     std::string _pendingReactionEventId;
+
+    // Branding splash shown before the session check completes.
+    std::unique_ptr<tk::macos::Surface> _brandingSurface;
 
     // Single surface hosting the full main-app widget tree.
     std::unique_ptr<tk::macos::Surface> _mainAppSurface;
@@ -2750,9 +2754,16 @@ void MacShell::apply_cached_messages_(
     settingsView.translatesAutoresizingMaskIntoConstraints = NO;
     settingsView.hidden = YES;
 
+    _brandingSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    _brandingSurface->set_root(std::make_unique<tesseract::views::BrandView>());
+    NSView* brandingView =
+        (__bridge NSView*)_brandingSurface->view_handle();
+    brandingView.translatesAutoresizingMaskIntoConstraints = NO;
+
     [content addSubview:mainAppView];
     [content addSubview:_loginView];
     [content addSubview:settingsView];
+    [content addSubview:brandingView];
     [NSLayoutConstraint activateConstraints:@[
         [mainAppView.topAnchor constraintEqualToAnchor:content.topAnchor],
         [mainAppView.leadingAnchor
@@ -2772,6 +2783,13 @@ void MacShell::apply_cached_messages_(
         [settingsView.trailingAnchor
             constraintEqualToAnchor:content.trailingAnchor],
         [settingsView.bottomAnchor
+            constraintEqualToAnchor:content.bottomAnchor],
+        [brandingView.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [brandingView.leadingAnchor
+            constraintEqualToAnchor:content.leadingAnchor],
+        [brandingView.trailingAnchor
+            constraintEqualToAnchor:content.trailingAnchor],
+        [brandingView.bottomAnchor
             constraintEqualToAnchor:content.bottomAnchor],
     ]];
 }
@@ -2811,6 +2829,10 @@ void MacShell::apply_cached_messages_(
 
 - (void)_applyTheme:(const tk::Theme&)t
 {
+    if (_brandingSurface)
+    {
+        _brandingSurface->set_theme(t);
+    }
     if (_mainAppSurface)
     {
         _mainAppSurface->set_theme(t);
@@ -3222,6 +3244,11 @@ void MacShell::apply_cached_messages_(
 
 - (void)beginLogin
 {
+    if (_brandingSurface)
+    {
+        ((__bridge NSView*)_brandingSurface->view_handle()).hidden = YES;
+    }
+
     tesseract::SessionStore::migrate_legacy_layout();
 
     auto index = tesseract::SessionStore::load_index();

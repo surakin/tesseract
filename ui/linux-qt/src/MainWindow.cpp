@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "LoginView.h"
+#include "views/BrandView.h"
 #include "SettingsWidget.h"
 #include "EmojiPicker.h"
 #include "StickerPicker.h"
@@ -94,6 +95,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     contentStack_ = new QStackedWidget(this);
     setCentralWidget(contentStack_);
+
+    brandingSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
+    brandingSurface_->set_root(std::make_unique<tesseract::views::BrandView>());
+    contentStack_->addWidget(brandingSurface_);
 
     loginView_ = new LoginView(contentStack_);
     contentStack_->addWidget(loginView_);
@@ -4174,6 +4179,10 @@ void MainWindow::hide_shortcode_popup_()
 
 void MainWindow::apply_theme_ui_(const tk::Theme& t)
 {
+    if (brandingSurface_)
+    {
+        brandingSurface_->set_theme(t);
+    }
     if (mainAppSurface_)
     {
         mainAppSurface_->set_theme(t);

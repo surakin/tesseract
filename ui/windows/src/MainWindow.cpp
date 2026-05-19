@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "RoomWindow.h"
+#include "views/BrandView.h"
 #include "Win32Notifier.h"
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
@@ -253,6 +254,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     }
 
     // Update all tk surfaces.
+    if (branding_surface_)
+    {
+        branding_surface_->set_theme(t);
+    }
     if (main_app_surface_)
     {
         main_app_surface_->set_theme(t);
@@ -2311,6 +2316,10 @@ void MainWindow::on_create(HWND hwnd)
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
     apply_current_theme_();
 
+    branding_surface_ = std::make_unique<tk::win32::Surface>(
+        hInst_, hwnd, tk::Theme::light());
+    branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+
     start_login();
 }
 
@@ -2361,9 +2370,18 @@ void MainWindow::on_size(int w, int h)
     {
         SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H,
                      SWP_NOZORDER);
+        SendMessageW(hStatus_, WM_SIZE, 0, 0);
     }
 
     int content_h = h - STATUS_H;
+
+    if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
+    {
+        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, 0, w, content_h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        branding_surface_->relayout();
+        return;
+    }
 
     if (login_visible_ && login_view_ && login_view_->hwnd())
     {
@@ -2389,8 +2407,6 @@ void MainWindow::on_size(int w, int h)
                      SWP_NOZORDER | SWP_NOACTIVATE);
         main_app_surface_->relayout();
     }
-
-    SendMessageW(hStatus_, WM_SIZE, 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -2665,6 +2681,11 @@ void MainWindow::close_settings_()
 
 void MainWindow::show_login_view()
 {
+    if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
+    {
+        branding_visible_ = false;
+        ShowWindow(branding_surface_->hwnd(), SW_HIDE);
+    }
     login_visible_ = true;
     if (login_view_ && login_view_->hwnd())
     {
@@ -2687,6 +2708,11 @@ void MainWindow::show_login_view()
 
 void MainWindow::show_main_content()
 {
+    if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
+    {
+        branding_visible_ = false;
+        ShowWindow(branding_surface_->hwnd(), SW_HIDE);
+    }
     login_visible_ = false;
     settings_visible_ = false;
     if (login_view_ && login_view_->hwnd())

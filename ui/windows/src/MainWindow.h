@@ -314,6 +314,8 @@ private:
 
     HINSTANCE hInst_;
     HWND hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> branding_surface_;
+    bool branding_visible_ = true;
     std::unique_ptr<LoginView> login_view_;
     bool login_visible_ = false;
 
