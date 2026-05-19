@@ -962,10 +962,10 @@ public:
                 }
                 else
                 {
-                    // Centre the emoji by its ascent (top of layout box to
-                    // baseline): colour-emoji glyphs fill the ascent region
-                    // and leave the descender empty, so centering by the
-                    // full line-height leaves them visually high in the chip.
+                    // Centre the emoji by ascent() — the visual fill height
+                    // of the colour-emoji glyph within the layout box.
+                    // Centering by the full line-height leaves emoji high
+                    // because the descent region is empty for these fonts.
                     float emoji_y =
                         pill.y + (pill.h - emoji_layout->ascent()) * 0.5f;
                     ctx.canvas.draw_text(*emoji_layout, {left_x, emoji_y},
