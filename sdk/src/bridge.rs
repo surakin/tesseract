@@ -671,6 +671,28 @@ pub mod ffi {
             reply_event_id: &str,
         ) -> OpResult;
 
+        /// Send a video file to `room_id` as an `m.video` event. `width`/`height`
+        /// are the video source dimensions; `thumb_bytes` is a JPEG first-frame
+        /// thumbnail (empty slice if unavailable); `thumb_width`/`thumb_height`
+        /// are its dimensions; `duration_ms` populates `info.duration`. The SDK
+        /// uploads the thumbnail as a separate media item and sets
+        /// `info.thumbnail_url`. E2EE rooms are handled transparently.
+        fn send_video(
+            self: &mut ClientFfi,
+            room_id: &str,
+            bytes: &[u8],
+            mime_type: &str,
+            filename: &str,
+            caption: &str,
+            width: u32,
+            height: u32,
+            thumb_bytes: &[u8],
+            thumb_width: u32,
+            thumb_height: u32,
+            duration_ms: u64,
+            reply_event_id: &str,
+        ) -> OpResult;
+
         /// Encode raw signed 16-bit mono 48 kHz PCM (`pcm` byte slice,
         /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
         /// `m.voice` event in `room_id`. `waveform` carries up to 256 MSC1767

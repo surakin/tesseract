@@ -2676,6 +2676,117 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Send a video file to `room_id` as an `m.video` event. `width`/`height`
+    /// are the video source dimensions; `thumb_bytes` is a JPEG first-frame
+    /// thumbnail (empty slice if unavailable); `thumb_width`/`thumb_height`
+    /// are its dimensions; `duration_ms` populates `info.duration`. The SDK
+    /// uploads the thumbnail as a separate media item and sets
+    /// `info.thumbnail_url`. E2EE rooms are handled transparently.
+    #[cfg(not(test))]
+    pub fn send_video(
+        &mut self,
+        room_id: &str,
+        bytes: &[u8],
+        mime_type: &str,
+        filename: &str,
+        caption: &str,
+        width: u32,
+        height: u32,
+        thumb_bytes: &[u8],
+        thumb_width: u32,
+        thumb_height: u32,
+        duration_ms: u64,
+        reply_event_id: &str,
+    ) -> OpResult {
+        use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseVideoInfo, Thumbnail};
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::AddMentions;
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return err("room not found");
+        };
+        let mime: mime::Mime = match mime_type.parse() {
+            Ok(m) => m,
+            Err(e) => return err(format!("invalid mime: {e}")),
+        };
+
+        let info = BaseVideoInfo {
+            duration: if duration_ms > 0 {
+                Some(Duration::from_millis(duration_ms))
+            } else {
+                None
+            },
+            height: UInt::new(height as u64),
+            width: UInt::new(width as u64),
+            size: UInt::new(bytes.len() as u64),
+            blurhash: None,
+        };
+        let mut config = AttachmentConfig::new().info(AttachmentInfo::Video(info));
+        if !thumb_bytes.is_empty() {
+            config = config.thumbnail(Some(Thumbnail {
+                data: thumb_bytes.to_vec(),
+                content_type: mime::IMAGE_JPEG,
+                height: UInt::new(thumb_height as u64).unwrap_or_default(),
+                width: UInt::new(thumb_width as u64).unwrap_or_default(),
+                size: UInt::new(thumb_bytes.len() as u64).unwrap_or_default(),
+            }));
+        }
+        if !caption.is_empty() {
+            config = config.caption(Some(TextMessageEventContent::plain(caption)));
+        }
+        if !reply_event_id.is_empty() {
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid reply event id: {e}")),
+            };
+            config = config.reply(Some(Reply {
+                event_id: reply_id,
+                enforce_thread: EnforceThread::Unthreaded,
+                add_mentions: AddMentions::No,
+            }));
+        }
+
+        let data = bytes.to_vec();
+        let filename = filename.to_owned();
+
+        match self
+            .rt
+            .block_on(async move { room.send_attachment(filename, &mime, data, config).await })
+        {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_video(
+        &mut self,
+        _room_id: &str,
+        _bytes: &[u8],
+        _mime_type: &str,
+        _filename: &str,
+        _caption: &str,
+        _width: u32,
+        _height: u32,
+        _thumb_bytes: &[u8],
+        _thumb_width: u32,
+        _thumb_height: u32,
+        _duration_ms: u64,
+        _reply_event_id: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
     /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
     /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
     /// `m.voice` event in `room_id`. `waveform` carries the MSC1767 waveform
@@ -7095,6 +7206,17 @@ mod tests {
     fn send_audio_not_logged_in() {
         let mut c = ClientFfi::new();
         let r = c.send_audio("!room:server", &[], "audio/ogg", "voice.ogg", "", 0, "");
+        assert!(!r.ok);
+        assert!(r.message.contains("not logged in"), "got: {}", r.message);
+    }
+
+    #[test]
+    fn send_video_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.send_video(
+            "!room:server", &[], "video/mp4", "clip.mp4", "",
+            0, 0, &[], 0, 0, 0, "",
+        );
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
     }
