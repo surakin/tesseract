@@ -811,6 +811,11 @@ private:
     std::optional<Selection> sel_;
     bool sel_is_dragging_ = false; // true once head has moved from anchor
     bool press_sel_ = false;       // this pointer-down started a selection
+
+    // Multi-click tracking: double = word, triple = line.
+    int       click_count_      = 0;
+    tk::Point last_down_pt_     = {};
+    int64_t   last_down_time_ms_ = 0; // ms from steady_clock
 };
 
 } // namespace tesseract::views

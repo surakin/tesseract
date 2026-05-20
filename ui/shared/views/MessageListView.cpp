@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -1712,8 +1713,8 @@ private:
                     ctx.canvas.draw_text(*layout, {x, y},
                                          ctx.theme.palette.text_primary);
                     end_y = y + layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {std::move(layout),
-                                                             {x, y}};
+                    owner_.link_layout_cache_[m.event_id] = {
+                        std::move(layout), {x, y}, spans_to_plain(spans)};
                 }
             }
             if (m.is_edited)
@@ -2370,8 +2371,8 @@ private:
                 {
                     draw_with_selection(*layout, x, y);
                     float h = layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {std::move(layout),
-                                                             {x, y}};
+                    owner_.link_layout_cache_[m.event_id] = {
+                        std::move(layout), {x, y}, spans_to_plain(spans)};
                     return h;
                 }
             }
@@ -2390,8 +2391,8 @@ private:
                 {
                     draw_with_selection(*layout, x, y);
                     float h = layout->measure().h;
-                    owner_.link_layout_cache_[m.event_id] = {std::move(layout),
-                                                             {x, y}};
+                    owner_.link_layout_cache_[m.event_id] = {
+                        std::move(layout), {x, y}, m.body};
                     return h;
                 }
             }
@@ -2405,7 +2406,10 @@ private:
                 return 0.0f;
             draw_with_selection(*layout, x, y);
             float h = layout->measure().h;
-            owner_.link_layout_cache_[m.event_id] = {std::move(layout), {x, y}};
+            std::string plain_text =
+                m.body.empty() ? std::string("(empty message)") : m.body;
+            owner_.link_layout_cache_[m.event_id] = {
+                std::move(layout), {x, y}, std::move(plain_text)};
             return h;
         }
     }
@@ -4549,6 +4553,57 @@ bool MessageListView::on_right_click(tk::Point /*local*/)
     return true;
 }
 
+// ── Multi-click selection helpers ────────────────────────────────────────────
+
+static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
+{
+    std::string out;
+    for (const auto& s : spans)
+        out += s.text;
+    return out;
+}
+
+static std::pair<int, int> word_range_in_text(const std::string& text,
+                                               int byte_offset)
+{
+    int n = static_cast<int>(text.size());
+    byte_offset = std::clamp(byte_offset, 0, n);
+    auto is_word = [](unsigned char c)
+    { return c >= 0x80 || std::isalnum(c) || c == '_'; };
+    int lo = byte_offset;
+    while (lo > 0 && is_word(static_cast<unsigned char>(text[lo - 1])))
+        --lo;
+    int hi = byte_offset;
+    while (hi < n && is_word(static_cast<unsigned char>(text[hi])))
+        ++hi;
+    if (lo == hi) // on a non-word char: select just that char
+        hi = std::min(hi + 1, n);
+    return {lo, hi};
+}
+
+static std::pair<int, int> line_range_in_text(const std::string& text,
+                                               int byte_offset)
+{
+    int n = static_cast<int>(text.size());
+    byte_offset = std::clamp(byte_offset, 0, n);
+    int lo = byte_offset;
+    while (lo > 0 && text[lo - 1] != '\n')
+        --lo;
+    int hi = byte_offset;
+    while (hi < n && text[hi] != '\n')
+        ++hi;
+    return {lo, hi};
+}
+
+static int64_t steady_ms_now()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 bool MessageListView::on_pointer_down(tk::Point local)
 {
     if (gate_blocks_input_())
@@ -4853,7 +4908,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 return true;
             }
 
-            // Text selection anchor: start drag-select on text bodies.
+            // Text selection anchor: single/double/triple click on text bodies.
             if (m.kind == MessageRowData::Kind::Text ||
                 m.kind == MessageRowData::Kind::Notice ||
                 m.kind == MessageRowData::Kind::Emote)
@@ -4867,8 +4922,35 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     int idx = it->second.layout->char_index_at(ll);
                     if (idx >= 0)
                     {
-                        sel_ = Selection{m.event_id, idx, idx};
-                        sel_is_dragging_ = false;
+                        // Multi-click detection.
+                        int64_t now_ms = steady_ms_now();
+                        float dx = world.x - last_down_pt_.x;
+                        float dy = world.y - last_down_pt_.y;
+                        bool same_spot = (dx * dx + dy * dy) < 64.0f;
+                        click_count_ = (now_ms - last_down_time_ms_ < 500 &&
+                                        same_spot)
+                                           ? click_count_ + 1 : 1;
+                        last_down_time_ms_ = now_ms;
+                        last_down_pt_ = world;
+
+                        const std::string& plain = it->second.plain;
+                        if (click_count_ >= 3)
+                        {
+                            auto [lo, hi] = line_range_in_text(plain, idx);
+                            sel_ = Selection{m.event_id, lo, hi};
+                            sel_is_dragging_ = true;
+                        }
+                        else if (click_count_ == 2)
+                        {
+                            auto [lo, hi] = word_range_in_text(plain, idx);
+                            sel_ = Selection{m.event_id, lo, hi};
+                            sel_is_dragging_ = true;
+                        }
+                        else
+                        {
+                            sel_ = Selection{m.event_id, idx, idx};
+                            sel_is_dragging_ = false;
+                        }
                         press_sel_ = true;
                         if (request_repaint_)
                             request_repaint_();
