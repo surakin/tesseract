@@ -5559,7 +5559,8 @@ void MacShell::apply_cached_messages_(
         return;
     }
     BOOL alreadySaved =
-        _shell->client_->user_pack_has_sticker(_ctxStickerMxcUrl);
+        _shell->client_->user_pack_has_sticker(_ctxStickerMxcUrl,
+                                               _ctxStickerInfoJson);
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Sticker"];
     NSMenuItem* item = [[NSMenuItem alloc]
         initWithTitle:alreadySaved ? @"Already in Saved Stickers"

@@ -567,7 +567,8 @@ public:
     /// True when `image_url` is already in the user's personal pack. Used
     /// by the right-click context menu to suppress "Add to Saved Stickers"
     /// for stickers the user has already saved.
-    bool user_pack_has_sticker(const std::string& image_url) const;
+    bool user_pack_has_sticker(const std::string& image_url,
+                               const std::string& info_json) const;
 
     /// Flip the `im.tesseract.favorite` flag on the user-pack entry whose
     /// `url` matches `image_url`. No-op when the sticker isn't in the user

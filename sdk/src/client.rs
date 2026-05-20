@@ -4560,13 +4560,50 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn user_pack_has_sticker(&self, image_url: &str) -> bool {
+    pub fn user_pack_has_sticker(&self, image_url: &str, info_json: &str) -> bool {
         if image_url.is_empty() {
             return false;
         }
         let Ok(cache) = self.image_packs.lock() else {
             return false;
         };
+        // For encrypted stickers, image_url is a JSON-encoded MediaSource.
+        // Derive the same deterministic shortcode base that save_sticker_to_user_pack
+        // uses so the lookup matches even though the re-uploaded mxc URI differs.
+        if image_url.starts_with('{') {
+            use matrix_sdk::ruma::events::room::MediaSource;
+            if let Ok(MediaSource::Encrypted(file)) =
+                serde_json::from_str::<MediaSource>(image_url)
+            {
+                let encrypted_media_id: String = file
+                    .url
+                    .as_str()
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(8)
+                    .collect();
+                let network =
+                    serde_json::from_str::<serde_json::Value>(info_json)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("fi.mau.bridged_sticker")?
+                                .get("network")?
+                                .as_str()
+                                .map(str::to_owned)
+                        });
+                let derived_base = match network {
+                    Some(n) => format!("{n}_{encrypted_media_id}"),
+                    None => encrypted_media_id,
+                };
+                return cache
+                    .iter()
+                    .filter(|p| matches!(p.source, crate::image_packs::PackSource::User))
+                    .flat_map(|p| p.images.iter())
+                    .any(|e| e.shortcode == derived_base);
+            }
+        }
         cache
             .iter()
             .filter(|p| matches!(p.source, crate::image_packs::PackSource::User))
@@ -4575,7 +4612,7 @@ impl ClientFfi {
     }
 
     #[cfg(test)]
-    pub fn user_pack_has_sticker(&self, _image_url: &str) -> bool {
+    pub fn user_pack_has_sticker(&self, _image_url: &str, _info_json: &str) -> bool {
         false
     }
 

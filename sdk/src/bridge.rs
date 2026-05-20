@@ -856,7 +856,7 @@ pub mod ffi {
         /// True when `image_url` is already present in the user's personal
         /// pack. Used by the right-click context menu to hide the "Add to
         /// Saved Stickers" item for stickers the user has already saved.
-        fn user_pack_has_sticker(self: &ClientFfi, image_url: &str) -> bool;
+        fn user_pack_has_sticker(self: &ClientFfi, image_url: &str, info_json: &str) -> bool;
 
         /// Flip the `im.tesseract.favorite` flag on the user-pack entry
         /// whose `url` matches `image_url`. No-op when the sticker isn't in

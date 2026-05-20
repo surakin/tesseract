@@ -1886,11 +1886,11 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     return;
                 }
-                const bool already_saved =
-                    client_->user_pack_has_sticker(hit->mxc_url);
                 const std::string mxc = hit->mxc_url;
                 const std::string body = hit->body;
                 const std::string info = hit->info_json;
+                const bool already_saved =
+                    client_->user_pack_has_sticker(mxc, info);
                 HMENU menu = CreatePopupMenu();
                 AppendMenuW(menu, MF_STRING | (already_saved ? MF_GRAYED : 0),
                             1,

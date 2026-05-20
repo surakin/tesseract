@@ -1465,11 +1465,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
-            const bool already_saved =
-                client_->user_pack_has_sticker(hit->mxc_url);
             const auto mxc_url = hit->mxc_url;
             const auto body = hit->body;
             const auto info_json = hit->info_json;
+            const bool already_saved =
+                client_->user_pack_has_sticker(mxc_url, info_json);
             auto* menu = new QMenu(this);
             menu->setAttribute(Qt::WA_DeleteOnClose);
             QAction* add =

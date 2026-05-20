@@ -937,9 +937,10 @@ Result Client::save_sticker_to_user_pack(const std::string& shortcode,
         shortcode, body, image_url, info_json));
 }
 
-bool Client::user_pack_has_sticker(const std::string& image_url) const
+bool Client::user_pack_has_sticker(const std::string& image_url,
+                                   const std::string& info_json) const
 {
-    return impl_->ffi->user_pack_has_sticker(image_url);
+    return impl_->ffi->user_pack_has_sticker(image_url, info_json);
 }
 
 Result Client::toggle_favorite_sticker(const std::string& image_url)

@@ -4896,7 +4896,8 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
     // renders grayed-out rather than the menu being suppressed entirely.
     {
         const bool already_saved =
-            self->client_->user_pack_has_sticker(hit->mxc_url);
+            self->client_->user_pack_has_sticker(hit->mxc_url,
+                                                 hit->info_json);
         GAction* act = g_action_map_lookup_action(
             G_ACTION_MAP(self->sticker_ctx_actions_), "save");
         if (act)
