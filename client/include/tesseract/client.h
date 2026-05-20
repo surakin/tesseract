@@ -502,6 +502,30 @@ public:
     /// a worker thread.
     std::string join_room(const std::string& room_id_or_alias);
 
+    /// Leave a room. Blocks the calling thread — call from a worker thread.
+    Result leave_room(const std::string& room_id);
+
+    /// Fetch the joined member list for a room.
+    /// Blocks the calling thread — call from a worker thread.
+    std::vector<RoomMember> get_room_members(const std::string& room_id);
+
+    /// Send an m.room.topic state event to update the room topic.
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_room_topic(const std::string& room_id, const std::string& topic);
+
+    /// Add user_id to m.ignored_user_list account data.
+    /// Blocks the calling thread — call from a worker thread.
+    Result ignore_user(const std::string& user_id);
+
+    /// Remove user_id from m.ignored_user_list.
+    /// Blocks the calling thread — call from a worker thread.
+    Result unignore_user(const std::string& user_id);
+
+    /// Return the room ID of an existing DM with user_id, or create a new DM.
+    /// Returns an empty string on error.
+    /// Blocks the calling thread — call from a worker thread.
+    std::string get_or_create_dm(const std::string& user_id);
+
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
     // ------------------------------------------------------------------

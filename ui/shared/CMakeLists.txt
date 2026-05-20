@@ -79,6 +79,10 @@ set(_tk_sources
     views/ShortcodePopup.cpp
     views/JoinRoomView.h
     views/JoinRoomView.cpp
+    views/UserProfilePanel.h
+    views/UserProfilePanel.cpp
+    views/RoomInfoPanel.h
+    views/RoomInfoPanel.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h

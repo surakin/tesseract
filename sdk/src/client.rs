@@ -3897,6 +3897,177 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // Room management
+    // -----------------------------------------------------------------------
+
+    /// Leave a room. Blocks the calling thread — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn leave_room(&mut self, room_id: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        match self.rt.block_on(room.leave()) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn leave_room(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Fetch the joined member list for a room. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn get_room_members(&mut self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        let Some(client) = self.client.as_ref() else {
+            return Vec::new();
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return Vec::new(),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return Vec::new();
+        };
+        match self.rt.block_on(room.members(matrix_sdk::RoomMemberships::JOIN)) {
+            Ok(members) => members
+                .into_iter()
+                .map(|m| crate::ffi::RoomMember {
+                    user_id: m.user_id().to_string(),
+                    display_name: m
+                        .display_name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| m.user_id().localpart().to_string()),
+                    avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn get_room_members(&mut self, _room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        Vec::new()
+    }
+
+    /// Send an m.room.topic state event. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_topic(&mut self, room_id: &str, topic: &str) -> OpResult {
+        use matrix_sdk::ruma::events::room::topic::RoomTopicEventContent;
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        let content = RoomTopicEventContent::new(topic.to_owned());
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_topic(&mut self, _room_id: &str, _topic: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn ignore_user(&mut self, user_id: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return err("invalid user id");
+        };
+        match self.rt.block_on(client.account().ignore_user(&uid)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn ignore_user(&mut self, _user_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn unignore_user(&mut self, user_id: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return err("invalid user id");
+        };
+        match self.rt.block_on(client.account().unignore_user(&uid)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn unignore_user(&mut self, _user_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Return room ID of an existing DM with user_id, or create one.
+    /// Returns empty string on error. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn get_or_create_dm(&mut self, user_id: &str) -> String {
+        let Some(client) = self.client.as_ref() else {
+            return String::new();
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(user_id) else {
+            return String::new();
+        };
+        self.rt.block_on(async {
+            // Look for an existing DM with this user
+            for room in client.joined_rooms() {
+                if room.is_direct().await.unwrap_or(false) {
+                    if let Ok(members) =
+                        room.members(matrix_sdk::RoomMemberships::JOIN).await
+                    {
+                        let ids: Vec<_> = members.iter().map(|m| m.user_id()).collect();
+                        if ids.len() == 2
+                            && ids.iter().any(|id| *id == uid)
+                            && client
+                                .user_id()
+                                .is_some_and(|me| ids.iter().any(|id| *id == me))
+                        {
+                            return room.room_id().to_string();
+                        }
+                    }
+                }
+            }
+            // Create a new DM
+            match client.create_dm(&uid).await {
+                Ok(room) => room.room_id().to_string(),
+                Err(_) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn get_or_create_dm(&mut self, _user_id: &str) -> String {
+        String::new()
+    }
+
+    // -----------------------------------------------------------------------
     // Homeserver discovery
     // -----------------------------------------------------------------------
 
@@ -5545,6 +5716,17 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
                 _ => String::new(),
             }
         };
+        let is_encrypted = room.encryption_state().is_encrypted();
+        let history_visibility = {
+            use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
+            match room.history_visibility_or_default() {
+                HistoryVisibility::WorldReadable => "world_readable".to_string(),
+                HistoryVisibility::Shared => "shared".to_string(),
+                HistoryVisibility::Invited => "invited".to_string(),
+                HistoryVisibility::Joined => "joined".to_string(),
+                _ => "shared".to_string(),
+            }
+        };
         result.push(crate::ffi::RoomInfo {
             id: room.room_id().to_string(),
             name,
@@ -5562,6 +5744,8 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             last_activity_ts,
             is_space,
             is_favorite,
+            is_encrypted,
+            history_visibility,
         });
     }
     // Activity sort: unread rooms first, then by newest last-event timestamp.

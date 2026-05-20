@@ -782,6 +782,44 @@ std::string Client::join_room(const std::string& room_id_or_alias)
     return std::string(impl_->ffi->join_room(room_id_or_alias));
 }
 
+Result Client::leave_room(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->leave_room(room_id));
+}
+
+std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
+{
+    auto raw = impl_->ffi->get_room_members(room_id);
+    std::vector<RoomMember> out;
+    out.reserve(raw.size());
+    for (const auto& m : raw)
+    {
+        out.push_back({std::string(m.user_id), std::string(m.display_name),
+                       std::string(m.avatar_url)});
+    }
+    return out;
+}
+
+Result Client::set_room_topic(const std::string& room_id, const std::string& topic)
+{
+    return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
+}
+
+Result Client::ignore_user(const std::string& user_id)
+{
+    return from_ffi(impl_->ffi->ignore_user(user_id));
+}
+
+Result Client::unignore_user(const std::string& user_id)
+{
+    return from_ffi(impl_->ffi->unignore_user(user_id));
+}
+
+std::string Client::get_or_create_dm(const std::string& user_id)
+{
+    return std::string(impl_->ffi->get_or_create_dm(user_id));
+}
+
 Client::DiscoveryResult
 Client::discover_homeserver(const std::string& server_name_or_mxid)
 {

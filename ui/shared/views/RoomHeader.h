@@ -11,7 +11,6 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/widget.h"
-#include "views/html_spans.h"
 
 #include <tesseract/types.h>
 
@@ -67,6 +66,10 @@ public:
     // Fired when the user clicks the calendar/jump-to-date button.
     std::function<void()> on_jump_to_date_requested;
 
+    // Fired when the user clicks the room name or avatar area (not on a topic
+    // hyperlink or calendar button).
+    std::function<void()> on_info_requested;
+
     // Tooltip for truncated topic text. on_show_tooltip fires when the pointer
     // enters a topic that did not fit in the available width; on_hide_tooltip
     // fires when the pointer leaves or the topic is not truncated.
@@ -84,6 +87,7 @@ private:
     bool press_calendar_ = false;
     tk::Rect calendar_btn_rect_{}; // updated each paint pass
 
+    bool press_info_ = false; // true when header area (not calendar) is pressed
     bool hover_topic_ = false;
     bool topic_truncated_ = false;
     bool topic_dirty_ = true;

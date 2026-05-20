@@ -1762,6 +1762,80 @@ void MainWindow::on_create(HWND hwnd)
                 popup_sticker_at_rect(main_app_surface_->hwnd(), btn);
             }
         };
+        room_view_->on_fetch_room_members = [this](std::string room_id)
+        {
+            auto* c = client_;
+            run_async_(
+                [this, c, room_id = std::move(room_id)]() mutable
+                {
+                    auto members = c->get_room_members(room_id);
+                    post_to_ui_(
+                        [this, members = std::move(members)]() mutable
+                        {
+                            if (main_app_)
+                                main_app_->room_view()->set_room_members(
+                                    std::move(members));
+                        });
+                });
+        };
+        room_view_->on_save_topic = [this](std::string room_id, std::string topic)
+        {
+            auto* c = client_;
+            run_async_(
+                [c, room_id = std::move(room_id), topic = std::move(topic)]()
+                {
+                    c->set_room_topic(room_id, topic);
+                });
+        };
+        room_view_->on_leave_room = [this](std::string room_id)
+        {
+            auto* c = client_;
+            if (!c) return;
+            run_async_(
+                [this, c, room_id = std::move(room_id)]() mutable
+                {
+                    auto result = c->leave_room(room_id);
+                    if (result.ok)
+                    {
+                        post_to_ui_(
+                            [this]()
+                            {
+                                current_room_id_.clear();
+                                clear_messages();
+                                if (room_list_view_)
+                                    room_list_view_->set_selected_room("");
+                                if (main_app_surface_)
+                                    main_app_surface_->relayout();
+                            });
+                    }
+                });
+        };
+        room_view_->on_open_dm = [this](std::string user_id)
+        {
+            auto* c = client_;
+            run_async_(
+                [this, c, user_id = std::move(user_id)]() mutable
+                {
+                    auto dm_room_id = c->get_or_create_dm(user_id);
+                    if (!dm_room_id.empty())
+                    {
+                        post_to_ui_(
+                            [this, dm_room_id = std::move(dm_room_id)]() mutable
+                            {
+                                navigate_to_room(dm_room_id);
+                            });
+                    }
+                });
+        };
+        room_view_->on_ignore_user = [this](std::string user_id)
+        {
+            auto* c = client_;
+            run_async_(
+                [c, user_id = std::move(user_id)]()
+                {
+                    c->ignore_user(user_id);
+                });
+        };
         room_view_->set_repaint_requester(
             [this]
             {
@@ -2068,6 +2142,15 @@ void MainWindow::on_create(HWND hwnd)
                         std::move(bytes), std::move(mime));
                 }
             });
+
+        topic_text_area_ = main_app_surface_->host().make_text_area();
+        topic_text_area_->set_on_changed(
+            [this](const std::string& t)
+            {
+                if (main_app_)
+                    main_app_->room_view()->set_topic_edit_text(t);
+            });
+        topic_text_area_->set_visible(false);
 
         recovery_key_field_ = main_app_surface_->host().make_text_field();
         recovery_key_field_->set_placeholder("Recovery key or passphrase");
@@ -2415,6 +2498,24 @@ void MainWindow::on_create(HWND hwnd)
                     room_text_area_->set_visible(show_ta);
                     if (show_ta)
                         room_text_area_->set_rect(ta);
+                }
+
+                // Topic edit text area.
+                if (topic_text_area_)
+                {
+                    const tk::Rect tr =
+                        main_app_->room_view()->topic_edit_rect();
+                    const bool show_t = !hide && !tr.empty();
+                    const bool was_visible = topic_text_area_->visible();
+                    topic_text_area_->set_visible(show_t);
+                    if (show_t)
+                    {
+                        topic_text_area_->set_rect(tr);
+                        if (!was_visible)
+                            topic_text_area_->set_text(
+                                main_app_->room_view()
+                                    ->topic_edit_initial_text());
+                    }
                 }
 
                 // Room search field.

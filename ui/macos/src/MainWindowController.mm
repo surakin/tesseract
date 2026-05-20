@@ -1347,6 +1347,7 @@ void MacShell::apply_cached_messages_(
     // Native overlay fields positioned via _mainAppSurface->set_on_layout().
     std::unique_ptr<tk::NativeTextField> _roomSearchField;
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
+    std::unique_ptr<tk::NativeTextArea> _topicTextArea;
     std::unique_ptr<tk::NativeTextField> _recoveryKeyField;
 
     // Borrowed sub-view aliases (set after building _mainAppSurface).
@@ -2509,6 +2510,111 @@ void MacShell::apply_cached_messages_(
                 s->_roomTextArea->set_focused(true);
             }
         };
+        _mainApp->room_view()->on_fetch_room_members =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_(
+                [weakSelf, c, room_id = std::move(room_id)]() mutable
+                {
+                    auto members = c->get_room_members(room_id);
+                    auto members_holder =
+                        std::make_shared<std::vector<tesseract::RoomMember>>(
+                            std::move(members));
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s2 = weakSelf;
+                        if (!s2 || !s2->_mainApp)
+                            return;
+                        s2->_mainApp->room_view()->set_room_members(
+                            std::move(*members_holder));
+                    });
+                });
+        };
+        _mainApp->room_view()->on_save_topic =
+            [weakSelf](std::string room_id, std::string topic)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_(
+                [c, room_id = std::move(room_id),
+                 topic = std::move(topic)]() mutable
+                {
+                    c->set_room_topic(room_id, topic);
+                });
+        };
+        _mainApp->room_view()->on_leave_room =
+            [weakSelf](std::string room_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_(
+                [weakSelf, c, room_id = std::move(room_id)]() mutable
+                {
+                    auto result = c->leave_room(room_id);
+                    if (result.ok)
+                    {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            MainWindowController* s2 = weakSelf;
+                            if (!s2)
+                                return;
+                            s2->_shell->tab_close(room_id);
+                            // Fallback: if the room wasn't in a tab (only tab,
+                            // or not found), tab_close is a no-op — clear manually.
+                            if (s2->_shell->current_room_id_ == room_id)
+                            {
+                                s2->_shell->current_room_id_.clear();
+                                s2->_mainApp->room_view()->clear_room();
+                                s2->_mainApp->room_list_view()
+                                    ->set_selected_room("");
+                                if (s2->_mainAppSurface)
+                                    s2->_mainAppSurface->relayout();
+                            }
+                        });
+                    }
+                });
+        };
+        _mainApp->room_view()->on_open_dm =
+            [weakSelf](std::string user_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_(
+                [weakSelf, c, user_id = std::move(user_id)]() mutable
+                {
+                    std::string dm_room = c->get_or_create_dm(user_id);
+                    if (!dm_room.empty())
+                    {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            MainWindowController* s2 = weakSelf;
+                            if (!s2)
+                                return;
+                            s2->_shell->tab_navigate_room(dm_room);
+                        });
+                    }
+                });
+        };
+        _mainApp->room_view()->on_ignore_user =
+            [weakSelf](std::string user_id)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_shell->client_)
+                return;
+            auto* c = s->_shell->client_;
+            s->_shell->run_async_(
+                [c, user_id = std::move(user_id)]() mutable
+                {
+                    c->ignore_user(user_id);
+                });
+        };
         _mainApp->room_view()->set_repaint_requester(
             [weakSelf]
             {
@@ -2580,6 +2686,17 @@ void MacShell::apply_cached_messages_(
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
         _roomTextArea->set_placeholder("Message…");
+        // Topic-edit overlay (positioned by set_on_layout below).
+        _topicTextArea = _mainAppSurface->host().make_text_area();
+        _topicTextArea->set_multiline(true);
+        _topicTextArea->set_on_changed(
+            [weakSelf](const std::string& t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainApp)
+                    s->_mainApp->room_view()->set_topic_edit_text(t);
+            });
+        _topicTextArea->set_visible(false);
         _roomTextArea->set_on_changed(
             [weakSelf](const std::string& s)
             {
@@ -2884,6 +3001,7 @@ void MacShell::apply_cached_messages_(
                 if (viewerOpen)
                 {
                     s->_roomTextArea->set_visible(false);
+                    s->_topicTextArea->set_visible(false);
                     s->_roomSearchField->set_visible(false);
                     s->_recoveryKeyField->set_visible(false);
                     (void)surf;
@@ -2895,6 +3013,19 @@ void MacShell::apply_cached_messages_(
                     s->_roomTextArea->set_visible(!ta.empty());
                     if (!ta.empty())
                         s->_roomTextArea->set_rect(ta);
+                }
+                // Topic-edit text area.
+                {
+                    const tk::Rect tr = app->room_view()->topic_edit_rect();
+                    const bool wasVisible = s->_topicTextArea->visible();
+                    s->_topicTextArea->set_visible(!tr.empty() && !viewerOpen);
+                    if (!tr.empty() && !viewerOpen)
+                    {
+                        s->_topicTextArea->set_rect(tr);
+                        if (!wasVisible)
+                            s->_topicTextArea->set_text(
+                                app->room_view()->topic_edit_initial_text());
+                    }
                 }
                 // Room search field.
                 bool searchVisible = app->room_search_field_visible();

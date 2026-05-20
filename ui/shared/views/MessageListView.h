@@ -301,6 +301,10 @@ public:
     // Click hooks. on_message_clicked fires on row click.
     std::function<void(const std::string& event_id)> on_message_clicked;
 
+    // Fired when the user clicks a message sender's avatar or display name.
+    std::function<void(std::string user_id, std::string display_name,
+                       std::string avatar_url)> on_sender_clicked;
+
     // Reaction-chip clicks. `key` is the emoji (or `:shortcode:`) the
     // user tapped. The host should call `Client::send_reaction` — the
     // Rust toggle semantics handle both add-and-remove in one call.
@@ -614,6 +618,12 @@ private:
     HoverTarget press_target_ = HoverTarget::None;
     int press_chip_idx_ = -1;
     std::string press_event_id_;
+
+    // Sender avatar / name press state.
+    bool press_sender_ = false;
+    std::string press_sender_user_id_;
+    std::string press_sender_display_name_;
+    std::string press_sender_avatar_url_;
 
     // Reply button press state. Tracks a clean down-up on the hover reply btn.
     bool press_reply_btn_ = false;

@@ -340,6 +340,7 @@ private:
     // Native overlays hosted on main_app_surface_.
     std::unique_ptr<tk::NativeTextField> room_search_field_;
     std::unique_ptr<tk::NativeTextArea> room_text_area_;
+    std::unique_ptr<tk::NativeTextArea> topic_text_area_;
     std::unique_ptr<tk::NativeTextField> recovery_key_field_;
 
     // ── Shortcode popup ───────────────────────────────────────────────────

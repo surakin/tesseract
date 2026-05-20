@@ -789,6 +789,15 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 }
             });
 
+        // Topic edit text area overlay.
+        topic_text_area_ = main_app_surface_->host().make_text_area();
+        topic_text_area_->set_multiline(true);
+        topic_text_area_->set_on_changed([this](const std::string& t)
+        {
+            if (main_app_) main_app_->room_view()->set_topic_edit_text(t);
+        });
+        topic_text_area_->set_visible(false);
+
         // File drop.
         auto on_file_drop = [this](std::vector<std::uint8_t> bytes,
                                    std::string mime, std::string filename)
@@ -1260,6 +1269,72 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 popup_sticker_at_rect(main_app_surface_->widget(), btn);
             }
+        };
+        room_view_->on_fetch_room_members = [this](std::string room_id)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_([this, c, room_id = std::move(room_id)]() mutable
+            {
+                auto members = c->get_room_members(room_id);
+                post_to_ui_([this, members = std::move(members)]() mutable
+                {
+                    if (room_view_)
+                        room_view_->set_room_members(std::move(members));
+                });
+            });
+        };
+        room_view_->on_save_topic = [this](std::string room_id, std::string t)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_([c, room_id = std::move(room_id), t = std::move(t)]() mutable
+            {
+                c->set_room_topic(room_id, t);
+            });
+        };
+        room_view_->on_leave_room = [this](std::string room_id)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_([this, c, room_id = std::move(room_id)]() mutable
+            {
+                auto res = c->leave_room(room_id);
+                post_to_ui_([this, room_id, ok = res.ok]() mutable
+                {
+                    if (!main_app_ || !ok) return;
+                    if (current_room_id_ == room_id)
+                    {
+                        current_room_id_.clear();
+                        if (room_view_) room_view_->clear_room();
+                        if (main_app_) main_app_->room_list_view()->set_selected_room("");
+                        if (main_app_surface_) main_app_surface_->relayout();
+                    }
+                });
+            });
+        };
+        room_view_->on_open_dm = [this](std::string user_id)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_([this, c, user_id = std::move(user_id)]() mutable
+            {
+                auto dm_id = c->get_or_create_dm(user_id);
+                post_to_ui_([this, dm_id = std::move(dm_id)]() mutable
+                {
+                    if (!main_app_ || dm_id.empty()) return;
+                    navigate_to_room(dm_id);
+                });
+            });
+        };
+        room_view_->on_ignore_user = [this](std::string user_id)
+        {
+            if (!client_) return;
+            auto* c = client_;
+            run_async_([c, user_id = std::move(user_id)]() mutable
+            {
+                c->ignore_user(user_id);
+            });
         };
 
         // Image viewer.
@@ -1740,6 +1815,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     room_text_area_->set_visible(!ta.empty());
                     if (!ta.empty())
                         room_text_area_->set_rect(ta);
+                }
+
+                if (topic_text_area_)
+                {
+                    const tk::Rect tr = main_app_->room_view()->topic_edit_rect();
+                    const bool was_visible = topic_text_area_->visible();
+                    topic_text_area_->set_visible(!tr.empty());
+                    if (!tr.empty())
+                    {
+                        topic_text_area_->set_rect(tr);
+                        if (!was_visible)
+                            topic_text_area_->set_text(
+                                main_app_->room_view()->topic_edit_initial_text());
+                    }
                 }
 
                 if (recovery_key_field_)

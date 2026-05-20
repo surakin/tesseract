@@ -1,5 +1,6 @@
 #include "RoomHeader.h"
 
+#include "html_spans.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -439,6 +440,13 @@ bool RoomHeader::on_pointer_down(tk::Point local)
         press_calendar_ = true;
         return true;
     }
+    // Capture press on the name/avatar area in full (non-condensed) mode so
+    // on_pointer_up is delivered and can fire on_info_requested.
+    if (!condensed_)
+    {
+        press_info_ = true;
+        return true;
+    }
     return false;
 }
 
@@ -465,21 +473,35 @@ void RoomHeader::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
 
-    // Topic hyperlink click. `local` is widget-local but topic_rect_ is in
-    // world coordinates (set in arrange() from bounds_.{x,y}); convert to
-    // world first, exactly like the calendar-button hit-test above, else
-    // links are unhittable on any layout whose origin isn't (0,0).
-    if (!inside_self || !topic_layout_)
-    {
+    if (!press_info_)
         return;
-    }
-    tk::Point ll{(bounds_.x + local.x) - topic_rect_.x,
-                 (bounds_.y + local.y) - topic_rect_.y};
-    std::string url = topic_layout_->link_at(ll);
-    if (!url.empty() && on_link_clicked)
+    press_info_ = false;
+
+    // Topic hyperlink click and name/avatar click.
+    // `local` is widget-local but topic_rect_ is in world coordinates (set in
+    // arrange() from bounds_.{x,y}); convert to world first, exactly like the
+    // calendar-button hit-test above, else links are unhittable on any layout
+    // whose origin isn't (0,0).
+    if (!inside_self)
+        return;
+
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+
+    // Check for a topic hyperlink hit first.
+    if (topic_layout_)
     {
-        on_link_clicked(url);
+        tk::Point ll{world.x - topic_rect_.x, world.y - topic_rect_.y};
+        std::string url = topic_layout_->link_at(ll);
+        if (!url.empty() && on_link_clicked)
+        {
+            on_link_clicked(url);
+            return;
+        }
     }
+
+    // Click was not on a hyperlink — fire on_info_requested.
+    if (on_info_requested)
+        on_info_requested();
 }
 
 tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world, bool* dirty)
@@ -545,6 +567,7 @@ void RoomHeader::on_pointer_leave()
 {
     hover_calendar_ = false;
     press_calendar_ = false;
+    press_info_ = false;
     if (hover_topic_ && on_hide_tooltip)
     {
         on_hide_tooltip();

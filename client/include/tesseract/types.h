@@ -56,6 +56,16 @@ struct ReadReceipt
     std::string avatar_url;
 };
 
+/// A joined member of a room. `display_name` resolves to the user's
+/// localpart when no display name is set. `avatar_url` is the mxc://
+/// URI of the member's avatar, or empty when unset.
+struct RoomMember
+{
+    std::string user_id;
+    std::string display_name; ///< resolves to user_id localpart when unset
+    std::string avatar_url;   ///< mxc:// or empty
+};
+
 struct Event
 {
     std::string event_id;
@@ -316,6 +326,10 @@ struct RoomInfo
     bool is_favorite = false;
     /// HTML body from the MSC3765 m.topic block; empty when absent.
     std::string topic_html;
+    /// True when the room has encryption enabled.
+    bool is_encrypted = false;
+    /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
+    std::string history_visibility;
 };
 
 /// MSC3266 room summary — metadata about a room fetched without joining.

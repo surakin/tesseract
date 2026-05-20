@@ -36,6 +36,8 @@ pub mod ffi {
         pub last_activity_ts: u64,
         pub is_space: bool,
         pub is_favorite: bool,
+        pub is_encrypted: bool,
+        pub history_visibility: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -49,6 +51,13 @@ pub mod ffi {
 
     #[derive(Debug, PartialEq, Default)]
     pub struct ReadReceipt {
+        pub user_id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct RoomMember {
         pub user_id: String,
         pub display_name: String,
         pub avatar_url: String,

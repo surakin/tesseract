@@ -65,6 +65,10 @@ pub mod ffi {
         is_space: bool,
         /// True when the room is tagged `m.favourite` by the current user.
         is_favorite: bool,
+        /// True when the room has encryption enabled.
+        is_encrypted: bool,
+        /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
+        history_visibility: String,
     }
 
     /// One aggregated reaction key on a `TimelineEvent`.
@@ -92,6 +96,15 @@ pub mod ffi {
     /// unset). Receipts for the current user are filtered on the Rust side
     /// so the UI never has to render its own avatar on every message.
     struct ReadReceipt {
+        user_id: String,
+        display_name: String,
+        avatar_url: String,
+    }
+
+    /// A joined member of a room. `display_name` resolves to the user's
+    /// localpart when no display name is set. `avatar_url` is the mxc://
+    /// URI of the member's avatar, or empty when unset.
+    struct RoomMember {
         user_id: String,
         display_name: String,
         avatar_url: String,
@@ -936,6 +949,25 @@ pub mod ffi {
         /// (e.g. `!id:server`) on success, or an empty string on failure.
         /// Blocks the calling thread — call only from a worker thread.
         fn join_room(self: &mut ClientFfi, room_id_or_alias: &str) -> String;
+
+        /// Leave a room. Blocks the calling thread — call from a worker thread.
+        fn leave_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Fetch the joined member list for a room. Blocks — worker thread.
+        fn get_room_members(self: &mut ClientFfi, room_id: &str) -> Vec<RoomMember>;
+
+        /// Send an m.room.topic state event. Blocks — worker thread.
+        fn set_room_topic(self: &mut ClientFfi, room_id: &str, topic: &str) -> OpResult;
+
+        /// Add user_id to m.ignored_user_list account data. Blocks — worker thread.
+        fn ignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
+
+        /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
+        fn unignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
+
+        /// Return room ID of an existing DM with user_id, or create one.
+        /// Returns empty string on error. Blocks — worker thread.
+        fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;
 
         /// Discover the homeserver URL for a server name or Matrix ID.
         /// Accepts "matrix.org", "@user:matrix.org", or "https://matrix.org".

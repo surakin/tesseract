@@ -94,10 +94,13 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .last_message_sender_name = std::string(r.last_message_sender_name),
         .last_message_kind = std::string(r.last_message_kind),
         .last_message_sticker_url = std::string(r.last_message_sticker_url),
+        .last_message_thumbnail_url = std::string(r.last_message_thumbnail_url),
         .last_activity_ts = r.last_activity_ts,
         .is_space = r.is_space,
         .is_favorite = r.is_favorite,
         .topic_html = std::string(r.topic_html),
+        .is_encrypted = r.is_encrypted,
+        .history_visibility = std::string(r.history_visibility),
     };
 }
 

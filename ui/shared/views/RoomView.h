@@ -22,9 +22,10 @@
 #include "ComposeBar.h"
 #include "MessageListView.h"
 #include "RoomHeader.h"
+#include "RoomInfoPanel.h"
+#include "UserProfilePanel.h"
 
 #include "tk/audio.h"
-#include "tk/video.h"
 #include "tk/widget.h"
 
 #include <tesseract/types.h>
@@ -129,6 +130,12 @@ public:
     // message. Returns true when an edit was started (consume the key).
     bool edit_last_own();
 
+    void set_room_members(std::vector<tesseract::RoomMember> members);
+    tk::Rect    topic_edit_rect() const;
+    bool        topic_edit_visible() const;
+    void        set_topic_edit_text(std::string t);
+    std::string topic_edit_initial_text() const;
+
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
     // Plain text send.
@@ -196,6 +203,12 @@ public:
     // Host::set_clipboard_text in the shell.
     std::function<void(std::string_view)> on_set_clipboard;
 
+    std::function<void(std::string room_id)>                on_fetch_room_members;
+    std::function<void(std::string room_id, std::string t)> on_save_topic;
+    std::function<void(std::string room_id)>                on_leave_room;
+    std::function<void(std::string user_id)>                on_open_dm;
+    std::function<void(std::string user_id)>                on_ignore_user;
+
     // Fired when the pointer enters a topic text that was truncated (i.e. the
     // topic didn't fit and shows an ellipsis). Shell should show a tooltip with
     // the full text anchored to `anchor`. on_hide_tooltip fires when the
@@ -228,6 +241,9 @@ public:
 
 private:
     void wire_internal_callbacks();
+    void show_room_info();
+    void show_user_profile(std::string user_id, std::string display_name,
+                           std::string avatar_url);
 
     bool has_room_ = false; // true after the first set_room() call
 
@@ -235,11 +251,16 @@ private:
     std::function<void(int, std::function<void()>)> post_delayed_;
     bool anim_repaint_pending_ = false;
 
+    // Cached so show_room_info() can open the panel with the current room data.
+    tesseract::RoomInfo current_room_info_;
+
     // Child widgets — owned via add_child, raw pointers borrowed back.
     BrandView* brand_view_ = nullptr;
     RoomHeader* header_ = nullptr;
     MessageListView* message_list_ = nullptr;
     ComposeBar* compose_bar_ = nullptr;
+    RoomInfoPanel*    room_info_panel_    = nullptr;
+    UserProfilePanel* user_profile_panel_ = nullptr;
 };
 
 } // namespace tesseract::views

@@ -1,7 +1,5 @@
 #include "RoomView.h"
 
-#include "tk/theme.h"
-
 #include <algorithm>
 #include <memory>
 
@@ -22,6 +20,12 @@ RoomView::RoomView()
     auto compose = std::make_unique<ComposeBar>();
     compose_bar_ = add_child(std::move(compose));
     compose_bar_->set_enabled(false);
+
+    auto room_info = std::make_unique<RoomInfoPanel>();
+    room_info_panel_ = add_child(std::move(room_info));
+
+    auto user_profile = std::make_unique<UserProfilePanel>();
+    user_profile_panel_ = add_child(std::move(user_profile));
 
     wire_internal_callbacks();
 }
@@ -338,17 +342,104 @@ void RoomView::wire_internal_callbacks()
             on_scroll_to_original(original_event_id);
         }
     };
+
+    // Wire header info-requested to show room info panel.
+    header_->on_info_requested = [this]() { show_room_info(); };
+
+    // Wire message list sender click to show user profile panel.
+    message_list_->on_sender_clicked =
+        [this](std::string uid, std::string name, std::string av)
+    {
+        show_user_profile(std::move(uid), std::move(name), std::move(av));
+    };
+
+    // Wire room info panel callbacks.
+    room_info_panel_->on_close = [this]()
+    {
+        room_info_panel_->close();
+        if (repaint_requester_) repaint_requester_();
+    };
+    room_info_panel_->on_fetch_members = [this](std::string room_id)
+    {
+        if (on_fetch_room_members) on_fetch_room_members(std::move(room_id));
+    };
+    room_info_panel_->on_save_topic = [this](std::string room_id, std::string t)
+    {
+        if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
+    };
+    room_info_panel_->on_leave_room = [this](std::string room_id)
+    {
+        if (on_leave_room) on_leave_room(std::move(room_id));
+    };
+    room_info_panel_->on_member_clicked =
+        [this](std::string uid, std::string name, std::string av)
+    {
+        show_user_profile(std::move(uid), std::move(name), std::move(av));
+    };
+    room_info_panel_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+
+    // Wire user profile panel callbacks.
+    user_profile_panel_->on_close = [this]()
+    {
+        user_profile_panel_->close();
+        if (repaint_requester_) repaint_requester_();
+    };
+    user_profile_panel_->on_open_dm = [this](std::string user_id)
+    {
+        user_profile_panel_->close();
+        if (on_open_dm) on_open_dm(std::move(user_id));
+    };
+    user_profile_panel_->on_ignore = [this](std::string user_id)
+    {
+        if (on_ignore_user) on_ignore_user(std::move(user_id));
+    };
+}
+
+// ── Private helpers ────────────────────────────────────────────────────────
+
+void RoomView::show_room_info()
+{
+    if (!room_info_panel_ || !has_room_)
+        return;
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->close();
+    room_info_panel_->open(current_room_info_);
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::show_user_profile(std::string user_id, std::string display_name,
+                                  std::string avatar_url)
+{
+    if (!user_profile_panel_)
+        return;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->close();
+    user_profile_panel_->open(std::move(user_id), std::move(display_name),
+                               std::move(avatar_url));
+    if (repaint_requester_) repaint_requester_();
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────
 
 void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
 {
-    // The same provider goes to both the header (for the room avatar) and
-    // the message list (for per-sender avatars).
+    // The same provider goes to the header (room avatar), the panels, and the
+    // message list (per-sender avatars). Copy to all except the last recipient;
+    // move into the last one.
     if (header_)
     {
         header_->set_avatar_provider(p);
+    }
+    if (room_info_panel_)
+    {
+        room_info_panel_->set_avatar_provider(p);
+    }
+    if (user_profile_panel_)
+    {
+        user_profile_panel_->set_avatar_provider(p);
     }
     if (message_list_)
     {
@@ -443,6 +534,7 @@ bool RoomView::scroll_to_event_id(const std::string& id)
 void RoomView::set_room(const tesseract::RoomInfo& info)
 {
     has_room_ = true;
+    current_room_info_ = info;
     if (header_)
     {
         header_->set_room(info);
@@ -577,6 +669,35 @@ tk::Rect RoomView::compose_text_area_rect() const
     return compose_bar_ ? compose_bar_->text_area_rect() : tk::Rect{};
 }
 
+// ── Panel convenience setters ─────────────────────────────────────────────
+
+void RoomView::set_room_members(std::vector<tesseract::RoomMember> members)
+{
+    if (room_info_panel_)
+        room_info_panel_->set_members(std::move(members));
+}
+
+tk::Rect RoomView::topic_edit_rect() const
+{
+    return room_info_panel_ ? room_info_panel_->topic_edit_rect() : tk::Rect{};
+}
+
+bool RoomView::topic_edit_visible() const
+{
+    return room_info_panel_ && room_info_panel_->topic_edit_visible();
+}
+
+void RoomView::set_topic_edit_text(std::string t)
+{
+    if (room_info_panel_)
+        room_info_panel_->set_topic_edit_text(std::move(t));
+}
+
+std::string RoomView::topic_edit_initial_text() const
+{
+    return room_info_panel_ ? room_info_panel_->topic_edit_initial_text() : std::string{};
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size RoomView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -625,6 +746,12 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         compose_bar_->arrange(ctx,
                               {bounds.x, compose_top, bounds.w, compose_h});
     }
+
+    // Overlay panels fill the full bounds (painted on top of all other children).
+    if (room_info_panel_)
+        room_info_panel_->arrange(ctx, bounds);
+    if (user_profile_panel_)
+        user_profile_panel_->arrange(ctx, bounds);
 }
 
 void RoomView::paint(tk::PaintCtx& ctx)
@@ -654,6 +781,11 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         compose_bar_->paint(ctx);
     }
+
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->paint(ctx);
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->paint(ctx);
 }
 
 } // namespace tesseract::views

@@ -275,6 +275,20 @@ protected:
         return hovered_index_;
     }
 
+    // World-space rect for the row at `idx`. Returns an empty rect when `idx`
+    // is out of range. The Y coordinate accounts for the current scroll offset
+    // so it matches the position used by paint_row(). Subclasses can use this
+    // in on_pointer_down to hit-test rows without waiting for a paint pass to
+    // populate geometry caches.
+    Rect row_world_rect(int idx) const
+    {
+        if (idx < 0 || static_cast<std::size_t>(idx) + 1 >= row_offsets_.size())
+            return {};
+        const float top = row_offsets_[static_cast<std::size_t>(idx)];
+        const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
+        return {bounds_.x, bounds_.y + top - scroll_y_, bounds_.w, bot - top};
+    }
+
 private:
     void rebuild_heights(LayoutCtx&, float width);
     void clamp_scroll();
