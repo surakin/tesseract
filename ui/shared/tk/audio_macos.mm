@@ -83,8 +83,8 @@ public:
         }
         player_.delegate = delegate_;
         player_.enableRate = YES;
-        player_.rate = rate_;
         [player_ prepareToPlay];
+        player_.rate = rate_;
         [player_ play];
         start_timer();
     }
