@@ -30,6 +30,7 @@
 #include <QtCore/QMimeData>
 #include <QtCore/QMimeDatabase>
 #include <QtCore/QUrl>
+#include <QtGui/QClipboard>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QDragMoveEvent>
 #include <QtGui/QDropEvent>

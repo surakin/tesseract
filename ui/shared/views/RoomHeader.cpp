@@ -215,8 +215,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-    // Reserve space on the right for the calendar button.
-    const float right_reserve = kCalBtnMargin + kCalBtnSize + kCalBtnMargin;
+    const float right_reserve = show_calendar_btn_
+                                    ? kCalBtnMargin + kCalBtnSize + kCalBtnMargin
+                                    : 0.0f;
     const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
                                             kAvatarGap - right_reserve);
 
@@ -371,22 +372,23 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         topic_label_->paint(ctx);
     }
 
-    // Calendar / jump-to-date button — 28×28 rounded-rect at the right edge.
-    calendar_btn_rect_ = {bounds_.x + bounds_.w - kCalBtnMargin - kCalBtnSize,
-                          bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
-                          kCalBtnSize, kCalBtnSize};
+    // Calendar / jump-to-date button — only shown when MSC3030 is supported.
+    if (show_calendar_btn_)
+    {
+        calendar_btn_rect_ = {bounds_.x + bounds_.w - kCalBtnMargin - kCalBtnSize,
+                              bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
+                              kCalBtnSize, kCalBtnSize};
 
-    const tk::Color btn_bg =
-        press_calendar_ ? ctx.theme.palette.subtle_pressed
-        : hover_calendar_
-            ? ctx.theme.palette.subtle_hover
-            : ctx.theme.palette.chrome_bg; // blends with header when idle
+        const tk::Color btn_bg =
+            press_calendar_ ? ctx.theme.palette.subtle_pressed
+            : hover_calendar_
+                ? ctx.theme.palette.subtle_hover
+                : ctx.theme.palette.chrome_bg;
 
-    ctx.canvas.fill_rounded_rect(calendar_btn_rect_, kCalBtnRadius, btn_bg);
-
-    // Draw a crisp vector calendar icon centred inside the button.
-    draw_calendar_icon(ctx.canvas, calendar_btn_rect_,
-                       ctx.theme.palette.text_primary);
+        ctx.canvas.fill_rounded_rect(calendar_btn_rect_, kCalBtnRadius, btn_bg);
+        draw_calendar_icon(ctx.canvas, calendar_btn_rect_,
+                           ctx.theme.palette.text_primary);
+    }
 }
 
 void RoomHeader::draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
@@ -428,7 +430,8 @@ bool RoomHeader::on_pointer_down(tk::Point local)
     // calendar_btn_rect_ is in world coords; reconstruct the world point
     // from the widget-local `local` by adding the widget's own origin.
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
-    if (world.x >= calendar_btn_rect_.x &&
+    if (show_calendar_btn_ &&
+        world.x >= calendar_btn_rect_.x &&
         world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
         world.y >= calendar_btn_rect_.y &&
         world.y < calendar_btn_rect_.y + calendar_btn_rect_.h)
@@ -509,7 +512,8 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
 
-    hover_calendar_ = world.x >= calendar_btn_rect_.x &&
+    hover_calendar_ = show_calendar_btn_ &&
+                      world.x >= calendar_btn_rect_.x &&
                       world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
                       world.y >= calendar_btn_rect_.y &&
                       world.y < calendar_btn_rect_.y + calendar_btn_rect_.h;

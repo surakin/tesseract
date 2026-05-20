@@ -43,6 +43,13 @@ public:
         return condensed_;
     }
 
+    // Show or hide the calendar / jump-to-date button. Hidden by default until
+    // the shell confirms the homeserver supports MSC3030 via set_jump_to_date_enabled(true).
+    void set_jump_to_date_enabled(bool enabled)
+    {
+        show_calendar_btn_ = enabled;
+    }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -72,6 +79,7 @@ private:
                             tk::Color tint);
 
     bool condensed_ = false;
+    bool show_calendar_btn_ = false;
     bool hover_calendar_ = false;
     bool press_calendar_ = false;
     tk::Rect calendar_btn_rect_{}; // updated each paint pass

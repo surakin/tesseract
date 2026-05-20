@@ -3927,6 +3927,11 @@ void MainWindow::on_server_info_ready_ui_()
 {
     if (settingsWidget_)
         settingsWidget_->set_server_info(server_info_);
+    if (mainApp_ && mainApp_->room_view())
+        mainApp_->room_view()->header()->set_jump_to_date_enabled(
+            server_info_.supports_msc3030);
+    if (mainAppSurface_)
+        mainAppSurface_->relayout();
 }
 
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)

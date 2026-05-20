@@ -11,6 +11,7 @@
 #include <QtGui/QPainterPath>
 #include <QtGui/QPen>
 #include <QtGui/QTextOption>
+#include <QtGui/QTextBlock>
 #include <QtGui/QTextDocument>
 #include <QtGui/QAbstractTextDocumentLayout>
 #include <QtGui/QPalette>
@@ -529,7 +530,7 @@ private:
         QString plain = doc_->toPlainText();
         if (qt_pos <= 0)
             return 0;
-        int clamped = std::min(qt_pos, plain.size());
+        int clamped = std::min(qt_pos, static_cast<int>(plain.size()));
         return plain.left(clamped).toUtf8().size();
     }
 

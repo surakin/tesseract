@@ -4741,6 +4741,11 @@ void MacShell::apply_cached_messages_(
 {
     if (_settingsView)
         _settingsView->set_server_info(_shell->server_info_);
+    if (_mainApp && _mainApp->room_view())
+        _mainApp->room_view()->header()->set_jump_to_date_enabled(
+            _shell->server_info_.supports_msc3030);
+    if (_mainAppSurface)
+        _mainAppSurface->relayout();
 }
 
 - (void)_maybeShowRecoveryBanner
