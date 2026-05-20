@@ -767,6 +767,78 @@ impl ClientFfi {
         serde_json::to_string(&persisted).unwrap_or_default()
     }
 
+    /// Fetch homeserver spec versions and enabled capabilities.
+    /// Returns a JSON blob or empty string when not logged in or on any error.
+    /// Blocks the calling thread — call only from a worker thread.
+    pub fn get_server_info(&self) -> String {
+        let Some(client) = &self.client else {
+            return String::new();
+        };
+        let client = client.clone();
+        let http = self.http_client.clone();
+
+        self.rt.block_on(async move {
+            let base = {
+                let url = client.homeserver().to_string();
+                url.trim_end_matches('/').to_owned()
+            };
+            let access_token = client.access_token().unwrap_or_default();
+
+            let (versions_resp, caps_resp) = tokio::join!(
+                http.get(format!("{base}/_matrix/client/versions")).send(),
+                http.get(format!("{base}/_matrix/client/v3/capabilities"))
+                    .bearer_auth(&access_token)
+                    .send()
+            );
+
+            let versions_json: serde_json::Value = match versions_resp {
+                Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
+                Err(_) => serde_json::Value::Null,
+            };
+
+            let spec_versions: Vec<String> = versions_json["versions"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let supports_msc3030 = versions_json
+                .pointer("/unstable_features/org.matrix.msc3030")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let caps: serde_json::Value = match caps_resp {
+                Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
+                Err(_) => serde_json::Value::Null,
+            };
+
+            let cap_bool = |key: &str| -> bool {
+                caps.pointer(&format!("/capabilities/{key}/enabled"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true)
+            };
+            let default_room_ver = caps
+                .pointer("/capabilities/m.room_versions/default")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+
+            serde_json::json!({
+                "homeserver": base,
+                "spec_versions": spec_versions,
+                "supports_msc3030": supports_msc3030,
+                "can_change_password": cap_bool("m.change_password"),
+                "can_set_displayname": cap_bool("m.set_displayname"),
+                "can_set_avatar": cap_bool("m.set_avatar_url"),
+                "default_room_version": default_room_ver
+            })
+            .to_string()
+        })
+    }
+
     // -----------------------------------------------------------------------
     // Sync loop (Step 2: SyncService + RoomListService)
     // -----------------------------------------------------------------------
@@ -7738,5 +7810,16 @@ mod location_tests {
             .as_ref()
             .and_then(|info| info.thumbnail_source.as_ref());
         assert!(thumb_src.is_none(), "no thumbnail → None");
+    }
+}
+
+#[cfg(test)]
+mod server_info_tests {
+    use super::*;
+
+    #[test]
+    fn get_server_info_no_client_returns_empty() {
+        let ffi = ClientFfi::new();
+        assert!(ffi.get_server_info().is_empty());
     }
 }

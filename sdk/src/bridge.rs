@@ -495,6 +495,11 @@ pub mod ffi {
         fn restore_session(self: &mut ClientFfi, session_json: &str) -> OpResult;
         fn export_session(self: &ClientFfi) -> String;
 
+        /// Fetch homeserver spec versions and enabled capabilities.
+        /// Returns JSON blob or empty string when not logged in / on error.
+        /// Blocks — call from a worker thread only.
+        fn get_server_info(self: &ClientFfi) -> String;
+
         // ----- Sync -----
 
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
