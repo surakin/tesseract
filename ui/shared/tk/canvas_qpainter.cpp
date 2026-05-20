@@ -24,6 +24,8 @@
 #include <QtGui/QImageReader>
 
 #include <array>
+#include <cmath>
+#include <list>
 #include <unordered_map>
 #include <utility>
 
@@ -151,8 +153,51 @@ public:
         return image_;
     }
 
+    // Return a copy of `image_` pre-scaled to (target_w × target_h) DEVICE
+    // pixels via Qt::SmoothTransformation, with devicePixelRatio set to
+    // `dpr`. Drawn at (target_w/dpr × target_h/dpr) logical pixels, QPainter
+    // sees a deviceIndependentSize match and skips its own (bilinear-only)
+    // resampling — the result is the multi-step area filter Qt applies in
+    // QImage::scaled, which approaches cubic quality on >2× downscales.
+    //
+    // The result is memoised on the QtImage with a tiny LRU; sticker grids
+    // and avatar lists redraw the same image at the same size every frame,
+    // so a 4-entry cap is plenty and keeps per-image memory bounded.
+    const QImage& scaled_for(int target_w, int target_h, qreal dpr) const
+    {
+        for (auto it = cache_.begin(); it != cache_.end(); ++it)
+        {
+            if (it->w == target_w && it->h == target_h)
+            {
+                if (it != cache_.begin())
+                {
+                    cache_.splice(cache_.begin(), cache_, it);
+                }
+                return cache_.front().img;
+            }
+        }
+        QImage scaled = image_.scaled(target_w, target_h, Qt::IgnoreAspectRatio,
+                                      Qt::SmoothTransformation);
+        scaled.setDevicePixelRatio(dpr);
+        cache_.push_front(Entry{target_w, target_h, std::move(scaled)});
+        if (cache_.size() > kCacheLimit)
+        {
+            cache_.pop_back();
+        }
+        return cache_.front().img;
+    }
+
 private:
+    static constexpr std::size_t kCacheLimit = 4;
+    struct Entry
+    {
+        int w;
+        int h;
+        QImage img;
+    };
+
     QImage image_;
+    mutable std::list<Entry> cache_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -414,11 +459,14 @@ public:
     void draw_image(const Image& image, Rect dst) override
     {
         const auto& qi = static_cast<const QtImage&>(image);
-        p_.drawImage(to_qrect(dst), qi.image());
+        p_.drawImage(to_qrect(dst), pick_image_(qi, dst.w, dst.h));
     }
 
     void draw_image_subregion(const Image& image, Rect src, Rect dst) override
     {
+        // Subregion blits go through the unscaled source — the LRU keys
+        // on whole-image dimensions, so caching pre-clipped variants would
+        // explode the working set. Relies on SmoothPixmapTransform (bilinear).
         const auto& qi = static_cast<const QtImage&>(image);
         p_.drawImage(to_qrect(dst), qi.image(), to_qrect(src));
     }
@@ -443,7 +491,7 @@ public:
         p_.setClipPath(path, Qt::IntersectClip);
         p_.drawImage(
             QRectF(-diameter * 0.5, -diameter * 0.5, diameter, diameter),
-            qi.image());
+            pick_image_(qi, diameter, diameter));
         p_.restore();
     }
 
@@ -499,6 +547,34 @@ public:
     }
 
 private:
+    // Pick the source QImage for `qi` at logical destination size
+    // (dst_w × dst_h): the cached pre-scaled variant when its device-pixel
+    // size differs meaningfully from the source, otherwise the original.
+    //
+    // The cache is bypassed for identity / single-pixel-mismatch blits so we
+    // don't churn entries on subpixel-rounded paint rects.
+    const QImage& pick_image_(const QtImage& qi, float dst_w, float dst_h) const
+    {
+        if (dst_w <= 0.0f || dst_h <= 0.0f)
+        {
+            return qi.image();
+        }
+        const qreal dpr = p_.device()->devicePixelRatioF();
+        const int tw = static_cast<int>(std::lround(dst_w * dpr));
+        const int th = static_cast<int>(std::lround(dst_h * dpr));
+        if (tw <= 0 || th <= 0)
+        {
+            return qi.image();
+        }
+        const int sw = qi.image().width();
+        const int sh = qi.image().height();
+        if (std::abs(tw - sw) <= 1 && std::abs(th - sh) <= 1)
+        {
+            return qi.image();
+        }
+        return qi.scaled_for(tw, th, dpr);
+    }
+
     QPainter& p_;
 };
 

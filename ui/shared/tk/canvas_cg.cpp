@@ -821,6 +821,10 @@ public:
     {
         CGContextSetShouldAntialias(ctx_, true);
         CGContextSetAllowsAntialiasing(ctx_, true);
+        // kCGInterpolationHigh → cubic resampling for CGContextDrawImage,
+        // matching the D2D backend's HIGH_QUALITY_CUBIC. The context default
+        // (kCGInterpolationDefault) is bilinear-equivalent.
+        CGContextSetInterpolationQuality(ctx_, kCGInterpolationHigh);
     }
 
     void clear(Color c) override

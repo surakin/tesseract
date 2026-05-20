@@ -422,6 +422,9 @@ public:
         cairo_scale(cr_, sx, sy);
         cairo_translate(cr_, -src.x, -src.y);
         cairo_set_source_surface(cr_, ci.surface(), 0, 0);
+        // CAIRO_FILTER_BEST → cubic-quality resampling, matching the D2D
+        // backend's HIGH_QUALITY_CUBIC. Default (GOOD) is bilinear.
+        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_BEST);
         cairo_paint(cr_);
         cairo_restore(cr_);
     }
@@ -546,6 +549,9 @@ private:
         cairo_translate(cr_, dst.x, dst.y);
         cairo_scale(cr_, sx, sy);
         cairo_set_source_surface(cr_, image.surface(), 0, 0);
+        // CAIRO_FILTER_BEST → cubic-quality resampling, matching the D2D
+        // backend's HIGH_QUALITY_CUBIC. Default (GOOD) is bilinear.
+        cairo_pattern_set_filter(cairo_get_source(cr_), CAIRO_FILTER_BEST);
         cairo_paint(cr_);
         cairo_restore(cr_);
     }
