@@ -267,3 +267,25 @@ TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr",
         std::span<const std::uint8_t>{}, 384);
     CHECK(anim == nullptr);
 }
+
+TEST_CASE("decode_animated_image returns 2-frame AnimatedImage for minimal GIF",
+          "[tk][anim][decode]")
+{
+    Stage st;
+    const std::span<const std::uint8_t> gif_span{kMinAnimGif};
+    auto anim = st.surface->factory().decode_animated_image(gif_span, 384);
+    REQUIRE(anim != nullptr);
+    CHECK(anim->frame_count() == 2);
+    CHECK(anim->width() == 1);
+    CHECK(anim->height() == 1);
+    CHECK(anim->ms_until_next_frame() > 0);
+    CHECK(anim->ms_until_next_frame() <= 200);
+}
+
+TEST_CASE("decode_animated_image returns nullptr for empty bytes",
+          "[tk][anim][decode]")
+{
+    Stage st;
+    auto anim = st.surface->factory().decode_animated_image({}, 384);
+    CHECK(anim == nullptr);
+}

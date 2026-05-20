@@ -18,6 +18,9 @@
 #include <QtCore/QSizeF>
 #include <QtCore/QString>
 
+#include <QtCore/QBuffer>
+#include <QtGui/QImageReader>
+
 #include <array>
 #include <unordered_map>
 #include <utility>
@@ -500,6 +503,55 @@ public:
         QImage scaled = orig.scaled(max_w, max_h, Qt::KeepAspectRatio,
                                     Qt::SmoothTransformation);
         return std::make_unique<QtImage>(std::move(scaled));
+    }
+
+    std::unique_ptr<AnimatedImage>
+    decode_animated_image(std::span<const std::uint8_t> bytes,
+                          int max_px) override
+    {
+        if (bytes.empty())
+            return nullptr;
+
+        QByteArray qba(reinterpret_cast<const char*>(bytes.data()),
+                       static_cast<qsizetype>(bytes.size()));
+        QBuffer buf(&qba);
+        buf.open(QIODevice::ReadOnly);
+
+        QImageReader reader(&buf);
+        const int count = reader.imageCount();
+        if (count <= 1)
+            return nullptr;
+
+        std::vector<std::unique_ptr<Image>> frames;
+        std::vector<int> delays;
+        frames.reserve(static_cast<std::size_t>(count));
+        delays.reserve(static_cast<std::size_t>(count));
+
+        for (int i = 0; i < count; ++i)
+        {
+            // jumpToImage() returns false for sequential-only formats (e.g. GIF)
+            // even when the read succeeds — ignore its return value and rely on
+            // read() returning a null image to detect real failures.
+            if (i > 0)
+                reader.jumpToNextImage();
+            QImage img = reader.read();
+            if (img.isNull())
+                break;
+
+            const int delay = qMax(reader.nextImageDelay(), 20);
+
+            if (img.width() > max_px || img.height() > max_px)
+                img = img.scaled(max_px, max_px, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+
+            frames.push_back(std::make_unique<QtImage>(std::move(img)));
+            delays.push_back(delay);
+        }
+
+        if (frames.size() < 2)
+            return nullptr;
+        return std::make_unique<AnimatedImage>(std::move(frames),
+                                              std::move(delays));
     }
 
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
