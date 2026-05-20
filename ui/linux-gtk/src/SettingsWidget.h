@@ -33,6 +33,9 @@ public:
                   tesseract::Settings::ThemePreference theme_pref,
                   bool notifications_enabled);
 
+    // Forward server capability info into the shared SettingsView.
+    void set_server_info(const tesseract::ServerInfo& info);
+
     // Callbacks — set by MainWindow before use.
     std::function<void()> on_close;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;

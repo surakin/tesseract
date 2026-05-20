@@ -560,6 +560,12 @@ void MainWindow::on_room_list_state_ui_()
     refresh_sync_status();
 }
 
+void MainWindow::on_server_info_ready_ui_()
+{
+    if (settings_view_)
+        settings_view_->set_server_info(server_info_);
+}
+
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
     if (room_view_)
@@ -4771,6 +4777,7 @@ void MainWindow::logout_active_account()
     rooms_.clear();
     message_cache_.clear();
     message_cache_lru_.clear();
+    reset_server_info_();
     if (room_list_view_)
     {
         room_list_view_->set_rooms({});

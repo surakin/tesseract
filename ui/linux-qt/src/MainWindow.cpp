@@ -74,7 +74,6 @@
 
 #include <algorithm>
 #include <fstream>
-#include <thread>
 #include <unistd.h>
 #include <unordered_set>
 
@@ -3897,6 +3896,12 @@ void MainWindow::on_room_list_state_ui_()
     refreshSyncStatus();
 }
 
+void MainWindow::on_server_info_ready_ui_()
+{
+    if (settingsWidget_)
+        settingsWidget_->set_server_info(server_info_);
+}
+
 void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
 {
     if (mainApp_)
@@ -4072,6 +4077,7 @@ void MainWindow::logoutActiveAccount()
     rooms_.clear();
     message_cache_.clear();
     message_cache_lru_.clear();
+    reset_server_info_();
     refreshRoomList();
     clearMessages();
     if (mainApp_)

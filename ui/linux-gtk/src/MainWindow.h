@@ -105,6 +105,7 @@ private:
                                          std::string event_id,
                                          std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
+    void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
     // ── Internal push helpers (called from handle_*_ui_ and async workers) ────

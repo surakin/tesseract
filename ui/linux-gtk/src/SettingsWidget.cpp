@@ -57,6 +57,12 @@ GtkWidget* SettingsWidget::widget() const
     return surface_->widget();
 }
 
+void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
+{
+    if (settings_view_)
+        settings_view_->set_server_info(info);
+}
+
 void SettingsWidget::set_theme(const tk::Theme& t)
 {
     surface_->set_theme(t);

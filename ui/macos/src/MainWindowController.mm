@@ -136,6 +136,7 @@ protected:
                                          std::string event_id,
                                          std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
+    void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(
         const std::string& url,
@@ -372,6 +373,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutRoomSurface;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
+- (void)_onServerInfoReady;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
@@ -1093,6 +1095,15 @@ void MacShell::on_room_list_state_ui_()
     if (c)
     {
         [c _onRoomListStateChanged];
+    }
+}
+
+void MacShell::on_server_info_ready_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+    {
+        [c _onServerInfoReady];
     }
 }
 
@@ -4072,6 +4083,7 @@ void MacShell::apply_cached_messages_(
     auto idxData = tesseract::SessionStore::load_index();
     auto& ids = idxData.user_ids;
     ids.erase(std::remove(ids.begin(), ids.end(), uid), ids.end());
+    _shell->reset_server_info_();
 
     if (_shell->accounts_.empty())
     {
@@ -4692,6 +4704,12 @@ void MacShell::apply_cached_messages_(
             }
         }
     }
+}
+
+- (void)_onServerInfoReady
+{
+    if (_settingsView)
+        _settingsView->set_server_info(_shell->server_info_);
 }
 
 - (void)_maybeShowRecoveryBanner

@@ -64,6 +64,12 @@ void SettingsWidget::populate(
     surface_->relayout();
 }
 
+void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
+{
+    if (settings_view_)
+        settings_view_->set_server_info(info);
+}
+
 void SettingsWidget::set_theme(const tk::Theme& t)
 {
     if (surface_)

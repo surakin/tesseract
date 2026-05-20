@@ -146,6 +146,7 @@ public:
                                          std::string event_id,
                                          std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
+    void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
     void on_url_preview_ready_(
         const std::string& url,
