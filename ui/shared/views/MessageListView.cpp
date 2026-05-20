@@ -4950,8 +4950,15 @@ bool MessageListView::on_pointer_down(tk::Point local)
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
     if (t == HoverTarget::None)
     {
-        // Spoiler reveal: capture click if the row has unrevealed spoilers.
-        std::size_t row = hovered_row_geom_.row_index;
+        // Spoiler reveal + text-selection anchor: capture click on the row
+        // at the click point. Uses index_at(local) instead of
+        // hovered_row_geom_.row_index because on_pointer_move() invalidates
+        // the geom to (size_t)-1 on every hovered-row change and only the
+        // next paint repopulates it — so a click landing before that next
+        // paint would read SIZE_MAX and silently skip both blocks.
+        int row_at = index_at(local);
+        std::size_t row =
+            row_at >= 0 ? static_cast<std::size_t>(row_at) : messages_.size();
         if (row < messages_.size())
         {
             const auto& m = messages_[row];
