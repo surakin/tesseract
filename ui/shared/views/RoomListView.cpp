@@ -152,13 +152,15 @@ private:
         const char* title = RoomListView::kSectionTitles[item.section];
         bool collapsed = owner_.collapsed_[item.section];
 
-        // Sum unread counts for the section (used for badge when collapsed).
-        std::uint64_t section_unread = 0;
+        // Sum notification counts and check for mentions (badge when collapsed).
+        std::uint64_t section_unread   = 0;
+        bool          section_mention  = false;
         if (collapsed)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
-                section_unread += r->unread_count;
+                section_unread  += r->notification_count;
+                section_mention  = section_mention || (r->highlight_count > 0);
             }
         }
 
@@ -201,15 +203,20 @@ private:
             tk::Rect pill{chevron_x - kBadgePadX - pill_w,
                           bounds.y + (bounds.h - kBadgeH) * 0.5f, pill_w,
                           kBadgeH};
-            ctx.canvas.fill_rounded_rect(pill, kBadgeRadius,
-                                         ctx.theme.palette.unread_bg);
+            const tk::Color sec_pill_bg   = section_mention
+                                              ? ctx.theme.palette.accent
+                                              : ctx.theme.palette.unread_bg;
+            const tk::Color sec_pill_text = section_mention
+                                              ? ctx.theme.palette.text_on_accent
+                                              : ctx.theme.palette.unread_text;
+            ctx.canvas.fill_rounded_rect(pill, kBadgeRadius, sec_pill_bg);
             if (blayout)
             {
                 tk::Size ts2 = blayout->measure();
                 ctx.canvas.draw_text(*blayout,
                                      {pill.x + (pill.w - ts2.w) * 0.5f,
                                       pill.y + (pill.h - ts2.h) * 0.5f},
-                                     ctx.theme.palette.unread_text);
+                                     sec_pill_text);
             }
         }
     }
@@ -254,12 +261,12 @@ private:
         float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kPadX;
 
-        // Reserve space on the right for the unread badge (if any).
+        // Reserve space on the right for the notification badge (if any).
         float badge_width = 0;
         std::string badge_text;
-        if (room.unread_count > 0)
+        if (room.notification_count > 0)
         {
-            badge_text = format_unread(room.unread_count);
+            badge_text = format_unread(room.notification_count);
             badge_width = std::max(
                 kBadgeMinW,
                 kBadgePadX * 2 + 7.0f * static_cast<float>(badge_text.size()));
@@ -390,14 +397,18 @@ private:
             tk::Rect pill{bounds.x + bounds.w - kPadX - pill_w,
                           bounds.y + (bounds.h - kBadgeH) * 0.5f, pill_w,
                           kBadgeH};
-            ctx.canvas.fill_rounded_rect(pill, kBadgeRadius,
-                                         ctx.theme.palette.unread_bg);
+            const bool is_mention = room.highlight_count > 0;
+            const tk::Color pill_bg   = is_mention ? ctx.theme.palette.accent
+                                                   : ctx.theme.palette.unread_bg;
+            const tk::Color pill_text = is_mention ? ctx.theme.palette.text_on_accent
+                                                   : ctx.theme.palette.unread_text;
+            ctx.canvas.fill_rounded_rect(pill, kBadgeRadius, pill_bg);
             if (badge_layout)
             {
                 ctx.canvas.draw_text(*badge_layout,
                                      {pill.x + (pill.w - badge_sz.w) * 0.5f,
                                       pill.y + (pill.h - badge_sz.h) * 0.5f},
-                                     ctx.theme.palette.unread_text);
+                                     pill_text);
             }
         }
     }
@@ -659,7 +670,8 @@ void RoomListView::rebuild_items()
         {
             for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
             {
-                if (section_rooms_[s][r]->unread_count > 0 ||
+                if (section_rooms_[s][r]->notification_count > 0 ||
+                    section_rooms_[s][r]->highlight_count > 0 ||
                     section_rooms_[s][r]->id == selected_room_id_cache_)
                 {
                     items_.push_back({Item::Kind::Room, s, r});

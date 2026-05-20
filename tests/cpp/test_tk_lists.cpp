@@ -9,6 +9,7 @@
 
 #include <tesseract/types.h>
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -203,13 +204,13 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     std::vector<RoomInfo> rooms;
     rooms.push_back(RoomInfo{.id = "!a:example.org",
                              .name = "Alpha room",
-                             .unread_count = 2,
+                             .notification_count = 2,
                              .last_message_body = "preview a"});
     rooms.push_back(RoomInfo{.id = "!b:example.org",
                              .name = "Beta room",
                              .last_message_body = "preview b"});
     rooms.push_back(RoomInfo{
-        .id = "!c:example.org", .name = "Gamma room", .unread_count = 99});
+        .id = "!c:example.org", .name = "Gamma room", .notification_count = 99});
     view.set_rooms(rooms);
 
     std::string selected;
@@ -231,6 +232,45 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
     // set_selected_room translates ID → index.
     view.set_selected_room("!c:example.org");
     CHECK(view.selected_index() == 2);
+}
+
+TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent rooms",
+          "[tk][view][roomlist]")
+{
+    Stage st;
+    RoomListView view;
+
+    // "mention" has highlight_count but no notification_count.
+    // "silent" has neither.  Both go into the "Rooms" section.
+    std::vector<RoomInfo> rooms = {
+        RoomInfo{.id = "!mention:x", .name = "Mention room",
+                 .highlight_count = 1},
+        RoomInfo{.id = "!silent:x",  .name = "Silent room"},
+    };
+    view.set_rooms(rooms);
+
+    // First layout — section is expanded by default; both rooms visible.
+    // Layout: search bar 0..36, Rooms header 36..64, rows 64.. (62 px each).
+    st.run(view, {0, 0, 260, 400});
+    {
+        auto ids = view.visible_room_ids();
+        REQUIRE(std::find(ids.begin(), ids.end(), "!mention:x") != ids.end());
+        REQUIRE(std::find(ids.begin(), ids.end(), "!silent:x")  != ids.end());
+    }
+
+    // Click the Rooms section header (y ≈ 50) to collapse it.
+    view.on_pointer_down({130.0f, 50.0f});
+    view.on_pointer_up({130.0f, 50.0f}, true);
+
+    // Re-layout after collapse.
+    st.run(view, {0, 0, 260, 400});
+    {
+        auto ids = view.visible_room_ids();
+        // Mention room (highlight_count > 0) must still be visible.
+        CHECK(std::find(ids.begin(), ids.end(), "!mention:x") != ids.end());
+        // Silent room (zero counts) must be hidden.
+        CHECK(std::find(ids.begin(), ids.end(), "!silent:x")  == ids.end());
+    }
 }
 
 TEST_CASE("RoomListView preserves selection after rooms swap",

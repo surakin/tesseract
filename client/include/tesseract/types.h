@@ -293,7 +293,10 @@ struct RoomInfo
     std::string id;
     std::string name;
     std::string topic;
-    uint64_t unread_count = 0;
+    /// Messages matching a notify push-rule action (server-side count).
+    uint64_t notification_count = 0;
+    /// Subset of notification_count that matched a highlight/mention action.
+    uint64_t highlight_count = 0;
     bool is_direct = false;
     std::string avatar_url;
     std::string last_message_body;

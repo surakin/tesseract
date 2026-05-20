@@ -897,7 +897,8 @@ void ShellBase::mark_room_read_(const std::string& room_id)
     {
         if (r.id == room_id)
         {
-            r.unread_count = 0;
+            r.notification_count = 0;
+            r.highlight_count    = 0;
             break;
         }
     }
@@ -908,7 +909,8 @@ void ShellBase::mark_room_read_(const std::string& room_id)
         {
             if (r.id == room_id)
             {
-                r.unread_count = 0;
+                r.notification_count = 0;
+                r.highlight_count    = 0;
                 break;
             }
         }

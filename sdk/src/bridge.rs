@@ -37,7 +37,10 @@ pub mod ffi {
         topic: String,
         /// HTML body from the MSC3765 `m.topic` block; empty when absent.
         topic_html: String,
-        unread_count: u64,
+        /// Number of unread messages that matched a notify push-rule action.
+        notification_count: u64,
+        /// Subset of notification_count that matched a highlight (mention) action.
+        highlight_count: u64,
         is_direct: bool,
         /// mxc:// URI of the room avatar, empty string if none.
         avatar_url: String,

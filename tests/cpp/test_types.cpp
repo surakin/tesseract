@@ -63,7 +63,8 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]")
     CHECK(r.id.empty());
     CHECK(r.name.empty());
     CHECK(r.topic.empty());
-    CHECK(r.unread_count == 0u);
+    CHECK(r.notification_count == 0u);
+    CHECK(r.highlight_count == 0u);
     CHECK_FALSE(r.is_direct);
     CHECK_FALSE(r.is_space);
 }
