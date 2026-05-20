@@ -1762,6 +1762,12 @@ void MacShell::apply_cached_messages_(
             }
             s->_mainApp->show_image_viewer(false);
             s->_mainAppSurface->relayout();
+            // Restore keyboard focus to the compose bar now that the overlay
+            // is gone and the NSTextView overlay is visible again.
+            if (!s->_mainApp->compose_text_area_rect().empty())
+            {
+                s->_roomTextArea->set_focused(true);
+            }
         };
         _mainApp->image_viewer()->set_repaint_requester(
             [weakSelf]
@@ -1836,6 +1842,10 @@ void MacShell::apply_cached_messages_(
             }
             s->_mainApp->show_video_viewer(false);
             s->_mainAppSurface->relayout();
+            if (!s->_mainApp->compose_text_area_rect().empty())
+            {
+                s->_roomTextArea->set_focused(true);
+            }
         };
         _mainApp->video_viewer()->on_save =
             [weakSelf](std::string source_json, std::string mime_type)
@@ -2879,6 +2889,12 @@ void MacShell::apply_cached_messages_(
                                                              false);
                                                      s->_mainAppSurface
                                                          ->relayout();
+                                                     if (!s->_mainApp
+                                                              ->compose_text_area_rect()
+                                                              .empty())
+                                                         s->_roomTextArea
+                                                             ->set_focused(
+                                                                 true);
                                                      return (NSEvent*)nil;
                                                  }
                                                  if (s->_imgViewer &&
@@ -2890,6 +2906,12 @@ void MacShell::apply_cached_messages_(
                                                              false);
                                                      s->_mainAppSurface
                                                          ->relayout();
+                                                     if (!s->_mainApp
+                                                              ->compose_text_area_rect()
+                                                              .empty())
+                                                         s->_roomTextArea
+                                                             ->set_focused(
+                                                                 true);
                                                      return (NSEvent*)nil;
                                                  }
                                              }
