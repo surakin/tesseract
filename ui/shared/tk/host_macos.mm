@@ -830,6 +830,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     view_.textContainer.widthTracksTextView = YES;
     view_.textContainer.containerSize =
         NSMakeSize(scroll_.contentSize.width, FLT_MAX);
+    view_.drawsBackground = NO;
     view_.richText = NO;
     view_.usesFontPanel = NO;
     view_.allowsUndo = YES;
