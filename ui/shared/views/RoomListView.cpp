@@ -658,7 +658,8 @@ void RoomListView::rebuild_items()
         {
             for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
             {
-                if (section_rooms_[s][r]->unread_count > 0)
+                if (section_rooms_[s][r]->unread_count > 0 ||
+                    section_rooms_[s][r]->id == selected_room_id_cache_)
                 {
                     items_.push_back({Item::Kind::Room, s, r});
                 }
