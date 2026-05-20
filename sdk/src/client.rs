@@ -541,7 +541,10 @@ impl ClientFfi {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("matrix_sdk=info".parse().unwrap()),
+                    .add_directive("matrix_sdk=info".parse().unwrap())
+                    // TEMPORARY: surface the fetch_source_bytes diagnostics
+                    // without requiring the user to set RUST_LOG.
+                    .add_directive("tesseract_sdk_ffi=info".parse().unwrap()),
             )
             .try_init();
 
@@ -3688,7 +3691,21 @@ impl ClientFfi {
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
 
+        // TEMPORARY DIAGNOSTIC — short tag so we can see what failed without
+        // dumping full URLs / encryption keys. Tag the source variant + the
+        // first few chars of the mxc URI (or "{...}" for encrypted JSON).
+        let tag = if source.is_empty() {
+            "empty".to_owned()
+        } else if source.starts_with("mxc://") {
+            format!("plain:{}", &source[..source.len().min(40)])
+        } else if source.starts_with('{') {
+            format!("encrypted:json({}b)", source.len())
+        } else {
+            format!("unknown:{}b", source.len())
+        };
+
         let Some(client) = self.client.clone() else {
+            tracing::warn!("fetch_source_bytes[{tag}]: no client (not logged in)");
             return Vec::new();
         };
         if source.is_empty() {
@@ -3698,13 +3715,19 @@ impl ClientFfi {
         let media_source = if source.starts_with("mxc://") {
             let uri = OwnedMxcUri::from(source);
             if !uri.is_valid() {
+                tracing::warn!("fetch_source_bytes[{tag}]: invalid mxc URI");
                 return Vec::new();
             }
             MediaSource::Plain(uri.into())
         } else {
             match serde_json::from_str::<MediaSource>(source) {
                 Ok(s) => s,
-                Err(_) => return Vec::new(),
+                Err(e) => {
+                    tracing::warn!(
+                        "fetch_source_bytes[{tag}]: MediaSource JSON parse error: {e}"
+                    );
+                    return Vec::new();
+                }
             }
         };
 
@@ -3716,8 +3739,22 @@ impl ClientFfi {
         self.rt.block_on(async move {
             let media = client.media();
             tokio::select! {
-                result = media.get_media_content(&request, true) =>
-                    cap_media_bytes(result.unwrap_or_default()),
+                result = media.get_media_content(&request, true) => {
+                    match result {
+                        Ok(bytes) => {
+                            tracing::info!(
+                                "fetch_source_bytes[{tag}]: ok, {} bytes", bytes.len()
+                            );
+                            cap_media_bytes(bytes)
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "fetch_source_bytes[{tag}]: matrix-sdk error: {e}"
+                            );
+                            Vec::new()
+                        }
+                    }
+                }
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
