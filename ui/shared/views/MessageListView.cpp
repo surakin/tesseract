@@ -37,7 +37,16 @@ MessageRowData make_row_data(const tesseract::Event& ev,
 
     row.in_reply_to_id = ev.in_reply_to_id;
     row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
-    row.in_reply_to_body = ev.in_reply_to_body;
+    // Collapse newlines to spaces: the quote card has a fixed height and no
+    // clip rect, so hard line-breaks in a multiline original message cause
+    // the text to render outside the card bounds.
+    {
+        std::string flat;
+        flat.reserve(ev.in_reply_to_body.size());
+        for (char c : ev.in_reply_to_body)
+            flat += (c == '\n' || c == '\r') ? ' ' : c;
+        row.in_reply_to_body = std::move(flat);
+    }
     row.is_edited = ev.is_edited;
 
     if (ev.pending_state == "sending")
