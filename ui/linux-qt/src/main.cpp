@@ -53,6 +53,8 @@ int main(int argc, char* argv[])
 
     qt6::MainWindow window;
     window.show();
+    window.activateOnStartup();
 
     return app.exec();
+
 }

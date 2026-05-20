@@ -2528,6 +2528,8 @@ void MacShell::apply_cached_messages_(
                         MainWindowController* s2 = weakSelf;
                         if (!s2 || !s2->_mainApp)
                             return;
+                        for (const auto& m : *members_holder)
+                            s2->_shell->ensure_user_avatar_(m.avatar_url);
                         s2->_mainApp->room_view()->set_room_members(
                             std::move(*members_holder));
                     });

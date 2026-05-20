@@ -75,6 +75,12 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    /// Call once after show() to bring the window to the foreground on launch.
+    /// Reads XDG_ACTIVATION_TOKEN from the environment (set by Wayland-aware
+    /// launchers) and uses it; falls back to activateWindow() on X11 or when
+    /// no token is available.
+    void activateOnStartup();
+
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
     void keyPressEvent(QKeyEvent* ev) override;

@@ -59,6 +59,7 @@ public:
     void     on_pointer_up(tk::Point local, bool inside_self) override;
     bool     on_pointer_move(tk::Point local) override;
     void     on_pointer_leave() override;
+    bool     on_wheel(tk::Point local, float dx, float dy) override;
 
 private:
     bool open_ = false;
@@ -108,9 +109,11 @@ private:
     };
     std::vector<MemberLayout> member_layouts_;
 
-    bool press_backdrop_ = false;
-    int  hover_member_   = -1;
-    int  press_member_   = -1;
+    bool  press_backdrop_  = false;
+    int   hover_member_    = -1;
+    int   press_member_    = -1;
+    float scroll_offset_   = 0.0f; // pixels scrolled from top of scrollable content
+    float content_height_  = 0.0f; // total scrollable content height, updated each arrange
 
     ImageProvider image_provider_;
 

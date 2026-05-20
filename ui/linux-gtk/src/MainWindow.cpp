@@ -1280,7 +1280,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 post_to_ui_([this, members = std::move(members)]() mutable
                 {
                     if (room_view_)
+                    {
+                        for (const auto& m : members)
+                            ensure_user_avatar_(m.avatar_url);
                         room_view_->set_room_members(std::move(members));
+                    }
                 });
             });
         };

@@ -4,6 +4,7 @@
 
 #include "tk/theme.h"
 
+#include <algorithm>
 #include <string>
 
 namespace tesseract::views
@@ -88,6 +89,7 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     editing_topic_   = false;
     topic_edit_text_ = {};
     members_expanded_ = false;
+    scroll_offset_   = 0.0f;
 
     members_.clear();
     member_layouts_.clear();
@@ -153,18 +155,23 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     panel_rect_    = {bounds.x + bounds.w - kPanelW, bounds.y,
                       kPanelW, bounds.h};
 
-    const float px = panel_rect_.x; // left edge of panel
-    const float iw = kPanelW - kPadX * 2.0f; // inner content width
+    const float px = panel_rect_.x;
+    const float iw = kPanelW - kPadX * 2.0f;
 
-    float y = panel_rect_.y + 8.0f;
-
-    // Close button: 32×32 top-left of panel
+    // Close button: fixed at the top of the panel, never scrolls.
     constexpr float kCloseSz = 32.0f;
     if (close_btn_)
-    {
-        close_btn_->arrange(lc, {px + 8.0f, y, kCloseSz, kCloseSz});
-    }
-    y += kCloseSz + 4.0f;
+        close_btn_->arrange(lc, {px + 8.0f, panel_rect_.y + 8.0f, kCloseSz, kCloseSz});
+
+    // Everything below the close button scrolls. Compute the y origin of the
+    // scrollable viewport and clamp scroll_offset_ to valid range.
+    const float scroll_top = panel_rect_.y + 8.0f + kCloseSz + 4.0f;
+    const float viewport_h = panel_rect_.h - (scroll_top - panel_rect_.y);
+    const float max_scroll = std::max(0.0f, content_height_ - viewport_h);
+    scroll_offset_ = std::clamp(scroll_offset_, 0.0f, max_scroll);
+
+    // y is the running cursor in world-space with scroll applied.
+    float y = scroll_top - scroll_offset_;
 
     // Avatar circle (72×72), centred in panel
     const float av_x = px + (kPanelW - kAvatarD) * 0.5f;
@@ -185,7 +192,6 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     topic_rect_ = {px + kPadX, y, iw, 80.0f};
     y += 80.0f + 4.0f;
 
-    // topic_edit_rect_ is the same region, in world-space
     topic_edit_rect_ = topic_rect_;
 
     // Edit topic button: 28×28 to the right of the topic header
@@ -203,32 +209,25 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         save_btn_->set_visible(show_edit_btns);
         if (show_edit_btns)
-        {
             save_btn_->arrange(lc, {px + kPadX, y, iw * 0.5f - 4.0f, kSmallEditH});
-        }
     }
     if (cancel_btn_)
     {
         cancel_btn_->set_visible(show_edit_btns);
         if (show_edit_btns)
-        {
             cancel_btn_->arrange(lc, {px + kPadX + iw * 0.5f + 4.0f, y,
                                       iw * 0.5f - 4.0f, kSmallEditH});
-        }
     }
     if (show_edit_btns)
-    {
         y += kSmallEditH + kPadY;
-    }
 
     // Separator + "Members (N)" section header
     y += 1.0f + kPadY + 12.0f + 4.0f;
 
     // Member rows
-    const int total_members     = static_cast<int>(members_.size());
-    const int visible_members   = (members_expanded_ || total_members <= 5)
-                                  ? total_members
-                                  : 5;
+    const int total_members   = static_cast<int>(members_.size());
+    const int visible_members = (members_expanded_ || total_members <= 5)
+                                    ? total_members : 5;
 
     member_rects_.clear();
     for (int i = 0; i < visible_members; ++i)
@@ -249,12 +248,17 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         }
     }
 
-    // Leave button: near bottom, 16px margin from panel bottom
+    // Leave button: flows after content, never overlaps the member list.
     if (leave_btn_)
     {
-        const float leave_y = panel_rect_.y + panel_rect_.h - kButtonH - 16.0f;
+        const float leave_y = y + kPadY;
         leave_btn_->arrange(lc, {px + kPadX, leave_y, iw, kButtonH});
+        y = leave_y + kButtonH + kPadY;
     }
+
+    // content_height_: natural full height of scrollable content.
+    // y is in world-space with scroll applied, so natural_y = y + scroll_offset_.
+    content_height_ = (y + scroll_offset_) - scroll_top;
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -276,8 +280,9 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     cv.fill_rect({panel_rect_.x, panel_rect_.y, 1.0f, panel_rect_.h},
                  pal.separator);
 
-    // 4. Close button
-    if (close_btn_) close_btn_->paint(ctx);
+    // 4. Clip all scrollable content to the panel rect, then paint the close
+    //    button last so it always renders above scrolled content.
+    ctx.canvas.push_clip_rect(panel_rect_);
 
     // 5. Avatar
     const tk::Point av_centre{avatar_rect_.x + kAvatarD * 0.5f,
@@ -546,6 +551,12 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
 
     // 15. Leave button
     if (leave_btn_) leave_btn_->paint(ctx);
+
+    ctx.canvas.pop_clip();
+
+    // 16. Close button — painted outside the clip so it's always visible
+    //     regardless of scroll position.
+    if (close_btn_) close_btn_->paint(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
@@ -638,6 +649,18 @@ void RoomInfoPanel::on_pointer_leave()
     press_backdrop_ = false;
     hover_member_   = -1;
     press_member_   = -1;
+}
+
+bool RoomInfoPanel::on_wheel(tk::Point local, float /*dx*/, float dy)
+{
+    if (!open_) return false;
+    const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+    if (!rect_contains(panel_rect_, w)) return false;
+
+    scroll_offset_ += dy * 20.0f;
+    scroll_offset_ = std::max(0.0f, scroll_offset_);
+    if (on_layout_changed) on_layout_changed();
+    return true;
 }
 
 } // namespace tesseract::views

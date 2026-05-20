@@ -1773,8 +1773,12 @@ void MainWindow::on_create(HWND hwnd)
                         [this, members = std::move(members)]() mutable
                         {
                             if (main_app_)
+                            {
+                                for (const auto& m : members)
+                                    ensure_user_avatar_(m.avatar_url);
                                 main_app_->room_view()->set_room_members(
                                     std::move(members));
+                            }
                         });
                 });
         };

@@ -1011,8 +1011,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                         [this, members = std::move(members)]() mutable
                         {
                             if (mainApp_)
+                            {
+                                for (const auto& m : members)
+                                    ensure_user_avatar_(m.avatar_url);
                                 mainApp_->room_view()->set_room_members(
                                     std::move(members));
+                            }
                         },
                         Qt::QueuedConnection);
                 });
@@ -1851,6 +1855,15 @@ void MainWindow::onActivateRequested()
         connect(sock, &QLocalSocket::readyRead, this, doActivate);
         QTimer::singleShot(500, sock, [sock]() { sock->deleteLater(); });
     }
+}
+
+void MainWindow::activateOnStartup()
+{
+    const char* env_tok = std::getenv("XDG_ACTIVATION_TOKEN");
+    const QString token = (env_tok && *env_tok) ? QString::fromUtf8(env_tok) : QString{};
+    // Defer by one event-loop tick so the Wayland surface is fully mapped
+    // before we attempt activation.
+    QTimer::singleShot(0, this, [this, token]() { activateWindowWithToken_(token); });
 }
 
 void MainWindow::runOnPool_(std::function<void()> fn)
