@@ -26,7 +26,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -163,6 +162,10 @@ protected:
 
     // ── BlurHash decode dedup ────────────────────────────────────────────────
     std::unordered_set<std::string> blurhash_attempted_;
+
+    // ── Server capabilities ───────────────────────────────────────────────────
+    tesseract::ServerInfo server_info_;        ///< populated after first sync
+    bool server_info_fetch_started_ = false;  ///< guards begin_server_info_fetch_
 
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState last_room_list_state_ = RoomListState::Init;
@@ -489,6 +492,35 @@ protected:
     {
     }
 
+    /// Called on the UI thread after `server_info_` has been populated.
+    /// Override in shells that gate UI elements on server capabilities.
+    virtual void on_server_info_ready_ui_() {}
+
+    /// Reset server-info state on logout / account-switch. Call this instead of
+    /// touching server_info_ and server_info_fetch_started_ directly from shells.
+    void reset_server_info_()
+    {
+        server_info_fetch_started_ = false;
+        server_info_ = tesseract::ServerInfo{};
+    }
+
+    /// Spawn a detached thread to call Client::get_server_info(), then
+    /// marshal the result back to the UI thread. Only fetches once per session.
+    void begin_server_info_fetch_()
+    {
+        if (server_info_fetch_started_ || !client_)
+            return;
+        server_info_fetch_started_ = true;
+        auto* c = client_;
+        run_async_([this, c] {
+            auto info = c->get_server_info();
+            post_to_ui_([this, info = std::move(info)] {
+                server_info_ = std::move(info);
+                on_server_info_ready_ui_();
+            });
+        });
+    }
+
     // ── Verification banner hooks (default no-op) ──────────────────────────────
     virtual void handle_verification_request_ui_(std::string /*flow_id*/,
                                                  std::string /*user_id*/,
@@ -680,6 +712,10 @@ protected:
     // Update last_room_list_state_.  Shells call their own refresh_sync_status
     // implementation after this to update native UI.
     void push_room_list_state_(RoomListState state);
+
+private:
+    // intentionally empty — all state is protected so shells can reset it on
+    // logout / account-switch without needing friend declarations.
 };
 
 } // namespace tesseract

@@ -121,6 +121,8 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
         {
             shell->push_room_list_state_(s);
             shell->on_room_list_state_ui_();
+            if (s == RoomListState::Running)
+                shell->begin_server_info_fetch_();
         });
 }
 
