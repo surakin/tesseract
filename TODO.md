@@ -3,20 +3,20 @@
 ## Step 5 — UI polish (in progress)
 - [ ] Message bubbles / cards (visual polish pass on MessageListView rows)
 - [ ] Threaded reply panel (slide-in sidebar, Telegram-style — layout TBD)
-- [ ] Emoji reactions (reaction bar per row; `send_reaction` / `redact_reaction` FFI; `Vec<(emoji, count, reacted_by_me)>` in TimelineEvent)
-- [ ] Room list: unread badge + last-message preview + last-activity sort
+- [x] Emoji reactions (reaction bar per row; `send_reaction` / `redact_reaction` FFI; `Vec<(emoji, count, reacted_by_me)>` in TimelineEvent)
+- [x] Room list: last-message preview + last-activity sort
+- [ ] Room list: unread count badge
 - [ ] Room list: DM rooms show the other user's avatar
 - [ ] ComposeBar: `/` slash-command hint popup
-- [ ] ComposeBar: send typing indicator to the room (`m.typing`)
-- [ ] ComposeBar: placeholder label for GTK4 + macOS NativeTextArea (GtkTextView / NSTextView have no built-in placeholder)
+- [x] ComposeBar: send typing indicator to the room (`m.typing`)
+- [x] ComposeBar: placeholder label for GTK4 + macOS NativeTextArea (GtkTextView / NSTextView have no built-in placeholder)
 
 ## Step 8 — MSC2545 stickers/emoticons, remaining
 - [ ] Inline emoticons in HTML bodies (`<img data-mx-emoticon>`) — Qt6, GTK4, macOS, Win32
-- [ ] Inline emoticons in HTML bodies (`<img data-mx-emoticon>`) — Qt6, GTK4, macOS, Win32
 - [x] Win32: right-click "Add to Saved Stickers" (`TrackPopupMenu` on `WM_RBUTTONUP` via `tk::win32::Surface::set_on_right_click`)
 - [x] Fix `save_sticker_to_user_pack` posting empty `info` — `sticker_info_json` now threaded Rust→C++→`StickerHit`; all four callers updated
-- [ ] GTK4: sticker/emoji picker async worker fetch (stickers unseen in timeline show placeholder)
-- [ ] `tk::AsyncImageCache` consolidation (shared host-side cache for picker + message-list images)
+- [x] GTK4: sticker/emoji picker async worker fetch (unified async image cache, all four platforms)
+- [x] `tk::AsyncImageCache` consolidation (shared host-side cache for picker + message-list images)
 
 ## Step 8b — Win32 RichEdit inline media overlay
 - [ ] `tk::InlineMediaSurface` abstraction + Win32 RichEdit 4.1 (`MSFTEDIT.DLL`) implementation
@@ -36,8 +36,8 @@
 - [ ] Manual sticker order / sort
 
 ## Step 12 — Server pushers
-- [ ] FFI: `register_pusher` / `remove_pusher`
-- [ ] Linux: UnifiedPush via D-Bus `org.unifiedpush.Connector1`
+
+- [x] Linux: UnifiedPush via D-Bus `org.unifiedpush.Connector1` (Qt6 + GTK4)
 - [ ] Windows: UnifiedPush distributor or WNS (needs Store registration)
 - [ ] macOS: APNs pusher
 
@@ -47,7 +47,7 @@
 
 ## Voice messages
 
-- [ ] All platforms: voice message recording + send (MSC3245)
+- [x] All platforms: voice message recording + send (MSC3245)
 
 ## Known bugs / gaps
 
