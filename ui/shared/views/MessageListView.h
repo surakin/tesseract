@@ -815,13 +815,18 @@ private:
     // Drag-select state.
     struct Selection
     {
-        std::string event_id;
+        std::string anchor_event_id;
         int         anchor_byte = 0; // UTF-8 byte offset at pointer_down
+        std::string head_event_id;
         int         head_byte   = 0; // UTF-8 byte offset during drag
     };
     std::optional<Selection> sel_;
     bool sel_is_dragging_ = false; // true once head has moved from anchor
     bool press_sel_ = false;       // this pointer-down started a selection
+
+    struct OrderedSel { int lo_idx = 0, lo_byte = 0, hi_idx = 0, hi_byte = 0; };
+    int message_index_of(const std::string& event_id) const;
+    std::optional<OrderedSel> selection_ordered() const;
 
     // Multi-click tracking: double = word, triple = line.
     int       click_count_      = 0;

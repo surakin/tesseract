@@ -2393,21 +2393,25 @@ private:
                           float y, float w, tk::Color color) const
     {
         bool eo = is_emoji_only(m.body);
+        auto ord     = owner_.selection_ordered();
+        int  msg_idx = owner_.message_index_of(m.event_id);
         auto draw_with_selection = [&](tk::TextLayout& layout, float ox,
-                                       float oy)
+                                       float oy, int plain_len)
         {
-            if (owner_.sel_ && owner_.sel_->event_id == m.event_id &&
-                owner_.sel_->anchor_byte != owner_.sel_->head_byte)
+            if (ord && msg_idx >= 0 &&
+                msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
             {
-                int lo = std::min(owner_.sel_->anchor_byte,
-                                  owner_.sel_->head_byte);
-                int hi = std::max(owner_.sel_->anchor_byte,
-                                  owner_.sel_->head_byte);
-                for (const tk::Rect& r : layout.selection_rects(lo, hi))
+                int lo_b = (msg_idx == ord->lo_idx) ? ord->lo_byte : 0;
+                int hi_b = (msg_idx == ord->hi_idx) ? ord->hi_byte
+                                                     : plain_len;
+                if (lo_b != hi_b)
                 {
-                    ctx.canvas.fill_rect(
-                        {r.x + ox, r.y + oy, r.w, r.h},
-                        ctx.theme.palette.selection);
+                    for (const tk::Rect& r : layout.selection_rects(lo_b, hi_b))
+                    {
+                        ctx.canvas.fill_rect(
+                            {r.x + ox, r.y + oy, r.w, r.h},
+                            ctx.theme.palette.selection);
+                    }
                 }
             }
             ctx.canvas.draw_text(layout, {ox, oy}, color);
@@ -2422,10 +2426,12 @@ private:
                     ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout)
                 {
-                    draw_with_selection(*layout, x, y);
+                    std::string plain_spans = spans_to_plain(spans);
+                    draw_with_selection(*layout, x, y,
+                                        static_cast<int>(plain_spans.size()));
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] = {
-                        std::move(layout), {x, y}, spans_to_plain(spans)};
+                        std::move(layout), {x, y}, std::move(plain_spans)};
                     return h;
                 }
             }
@@ -2442,7 +2448,8 @@ private:
                     ctx.factory.build_rich_text(link_spans, body_style(w, eo));
                 if (layout)
                 {
-                    draw_with_selection(*layout, x, y);
+                    draw_with_selection(*layout, x, y,
+                                        static_cast<int>(m.body.size()));
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] = {
                         std::move(layout), {x, y}, m.body};
@@ -2452,15 +2459,14 @@ private:
         }
         // Plain text with no URLs — build a text layout so selection works.
         {
-            auto layout = ctx.factory.build_text(
-                m.body.empty() ? std::string("(empty message)") : m.body,
-                body_style(w, eo));
-            if (!layout)
-                return 0.0f;
-            draw_with_selection(*layout, x, y);
-            float h = layout->measure().h;
             std::string plain_text =
                 m.body.empty() ? std::string("(empty message)") : m.body;
+            auto layout = ctx.factory.build_text(plain_text, body_style(w, eo));
+            if (!layout)
+                return 0.0f;
+            draw_with_selection(*layout, x, y,
+                                static_cast<int>(plain_text.size()));
+            float h = layout->measure().h;
             owner_.link_layout_cache_[m.event_id] = {
                 std::move(layout), {x, y}, std::move(plain_text)};
             return h;
@@ -3959,18 +3965,33 @@ void MessageListView::on_pointer_drag(tk::Point local)
     if (press_sel_ && sel_)
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        auto it = link_layout_cache_.find(sel_->event_id);
-        if (it != link_layout_cache_.end() && it->second.layout)
+        int row_idx = index_at(local);
+        if (row_idx >= 0 && row_idx < static_cast<int>(messages_.size()))
         {
-            tk::Point ll{world.x - it->second.origin.x,
-                         world.y - it->second.origin.y};
-            int idx = it->second.layout->char_index_at(ll);
-            if (idx >= 0 && idx != sel_->head_byte)
+            const auto& m = messages_[static_cast<std::size_t>(row_idx)];
+            if (m.kind == MessageRowData::Kind::Text ||
+                m.kind == MessageRowData::Kind::Notice ||
+                m.kind == MessageRowData::Kind::Emote)
             {
-                sel_->head_byte = idx;
-                sel_is_dragging_ = (idx != sel_->anchor_byte);
-                if (request_repaint_)
-                    request_repaint_();
+                auto it = link_layout_cache_.find(m.event_id);
+                if (it != link_layout_cache_.end() && it->second.layout)
+                {
+                    tk::Point ll{world.x - it->second.origin.x,
+                                 world.y - it->second.origin.y};
+                    int idx = it->second.layout->char_index_at(ll);
+                    if (idx >= 0)
+                    {
+                        bool changed = (sel_->head_event_id != m.event_id ||
+                                        sel_->head_byte != idx);
+                        sel_->head_event_id = m.event_id;
+                        sel_->head_byte     = idx;
+                        sel_is_dragging_ =
+                            (sel_->head_event_id != sel_->anchor_event_id ||
+                             sel_->head_byte     != sel_->anchor_byte);
+                        if (changed && request_repaint_)
+                            request_repaint_();
+                    }
+                }
             }
         }
         return;
@@ -4578,21 +4599,58 @@ void MessageListView::set_historical_mode(bool historical)
     invalidate_data();
 }
 
+int MessageListView::message_index_of(const std::string& event_id) const
+{
+    for (int i = 0; i < static_cast<int>(messages_.size()); ++i)
+        if (messages_[i].event_id == event_id)
+            return i;
+    return -1;
+}
+
+std::optional<MessageListView::OrderedSel>
+MessageListView::selection_ordered() const
+{
+    if (!sel_) return std::nullopt;
+    int ai = message_index_of(sel_->anchor_event_id);
+    int hi = message_index_of(sel_->head_event_id);
+    if (ai < 0 || hi < 0) return std::nullopt;
+    if (ai < hi || (ai == hi && sel_->anchor_byte <= sel_->head_byte))
+        return OrderedSel{ai, sel_->anchor_byte, hi, sel_->head_byte};
+    return OrderedSel{hi, sel_->head_byte, ai, sel_->anchor_byte};
+}
+
 bool MessageListView::has_selection() const
 {
-    return sel_.has_value() && sel_->anchor_byte != sel_->head_byte;
+    if (!sel_) return false;
+    if (sel_->anchor_event_id != sel_->head_event_id) return true;
+    return sel_->anchor_byte != sel_->head_byte;
 }
 
 void MessageListView::copy_selection()
 {
     if (!has_selection() || !on_set_clipboard)
         return;
-    auto it = link_layout_cache_.find(sel_->event_id);
-    if (it == link_layout_cache_.end() || !it->second.layout)
-        return;
-    int lo = std::min(sel_->anchor_byte, sel_->head_byte);
-    int hi = std::max(sel_->anchor_byte, sel_->head_byte);
-    on_set_clipboard(it->second.layout->text_range(lo, hi));
+    auto ord = selection_ordered();
+    if (!ord) return;
+
+    std::string result;
+    for (int i = ord->lo_idx; i <= ord->hi_idx; ++i)
+    {
+        const auto& m = messages_[static_cast<std::size_t>(i)];
+        auto it = link_layout_cache_.find(m.event_id);
+        if (it == link_layout_cache_.end() || !it->second.layout)
+            continue;
+        int lo_b = (i == ord->lo_idx) ? ord->lo_byte : 0;
+        int hi_b = (i == ord->hi_idx)
+                       ? ord->hi_byte
+                       : static_cast<int>(it->second.plain.size());
+        std::string seg = it->second.layout->text_range(lo_b, hi_b);
+        if (!result.empty() && result.back() != '\n')
+            result += '\n';
+        result += std::move(seg);
+    }
+    if (!result.empty())
+        on_set_clipboard(result);
 }
 
 bool MessageListView::on_right_click(tk::Point /*local*/)
@@ -4999,18 +5057,18 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         if (click_count_ >= 3)
                         {
                             auto [lo, hi] = line_range_in_text(plain, idx);
-                            sel_ = Selection{m.event_id, lo, hi};
+                            sel_ = Selection{m.event_id, lo, m.event_id, hi};
                             sel_is_dragging_ = true;
                         }
                         else if (click_count_ == 2)
                         {
                             auto [lo, hi] = word_range_in_text(plain, idx);
-                            sel_ = Selection{m.event_id, lo, hi};
+                            sel_ = Selection{m.event_id, lo, m.event_id, hi};
                             sel_is_dragging_ = true;
                         }
                         else
                         {
-                            sel_ = Selection{m.event_id, idx, idx};
+                            sel_ = Selection{m.event_id, idx, m.event_id, idx};
                             sel_is_dragging_ = false;
                         }
                         press_sel_ = true;
@@ -5047,9 +5105,20 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         press_sel_ = false;
         if (!sel_is_dragging_)
         {
+            // Single click on text body: clear any selection and propagate as
+            // a normal message click so on_message_clicked still fires.
+            std::string fire_eid =
+                (inside_self && sel_)
+                    ? sel_->anchor_event_id
+                    : std::string{};
             sel_.reset();
             if (request_repaint_)
                 request_repaint_();
+            sel_is_dragging_ = false;
+            tk::ListView::on_pointer_up(local, inside_self);
+            if (!fire_eid.empty() && on_message_clicked)
+                on_message_clicked(fire_eid);
+            return;
         }
         sel_is_dragging_ = false;
         tk::ListView::on_pointer_up(local, inside_self);
