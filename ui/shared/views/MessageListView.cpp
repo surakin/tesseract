@@ -3760,7 +3760,12 @@ void MessageListView::notify_image_ready(const std::string& url)
     auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
-        if (messages_[i].media_url == url)
+        // Match either the full-res key (media_url) or the server-thumbnail
+        // key. ShellBase pre-fetches whichever is present (thumbnail wins),
+        // so an Image/Sticker row whose only cached representation is the
+        // thumbnail would otherwise never remeasure when bytes arrive.
+        const auto& m = messages_[i];
+        if (m.media_url == url || m.thumbnail_url == url)
         {
             if (first > 0 && static_cast<int>(i) < first)
             {
