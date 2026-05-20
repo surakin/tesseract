@@ -576,6 +576,139 @@ public:
         return std::make_unique<CairoImage>(dst);
     }
 
+    std::unique_ptr<AnimatedImage>
+    decode_animated_image(std::span<const std::uint8_t> bytes,
+                          int max_px) override
+    {
+        if (bytes.empty())
+            return nullptr;
+
+        GInputStream* stream = g_memory_input_stream_new_from_data(
+            bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+
+        GError* err = nullptr;
+        GdkPixbufAnimation* anim =
+            gdk_pixbuf_animation_new_from_stream(stream, nullptr, &err);
+        g_object_unref(stream);
+
+        if (!anim || err)
+        {
+            if (err)
+                g_error_free(err);
+            if (anim)
+                g_object_unref(anim);
+            return nullptr;
+        }
+        if (gdk_pixbuf_animation_is_static_image(anim))
+        {
+            g_object_unref(anim);
+            return nullptr;
+        }
+
+        // Synthesise a GTimeVal timeline to step through frames deterministically
+        // without depending on wallclock time. GTimeVal is deprecated in GLib 2.62+
+        // but GdkPixbufAnimation still requires it — suppress the warnings.
+        //
+        // Loop detection: GdkPixbuf's GIF loader reuses a single composite
+        // GdkPixbuf* and modifies it in place on each advance(). For a looping
+        // GIF, advance() always returns TRUE (the frame changed), so we cannot
+        // rely on its return value to detect the loop boundary. Instead we
+        // snapshot the raw pixel bytes of frame 0 and compare against the
+        // current pixbuf after each advance — when they match we have wrapped
+        // back to the beginning.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        GTimeVal tv = {0, 0};
+        GdkPixbufAnimationIter* iter =
+            gdk_pixbuf_animation_get_iter(anim, &tv);
+
+        std::vector<std::unique_ptr<Image>> frames;
+        std::vector<int> delays;
+        constexpr int kMaxFrames = 200;
+
+        // Pixel snapshot of frame 0 for loop detection (empty until first frame).
+        std::vector<guchar> frame0_pixels;
+        gsize frame0_pixel_bytes = 0;
+
+        for (;;)
+        {
+            if (static_cast<int>(frames.size()) >= kMaxFrames)
+                break;
+
+            GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
+            if (!pb)
+                break;
+
+            // Snapshot frame 0 so we can detect when the animation loops back.
+            const guchar* cur_pixels = gdk_pixbuf_read_pixels(pb);
+            const int cur_rowstride  = gdk_pixbuf_get_rowstride(pb);
+            const int cur_h          = gdk_pixbuf_get_height(pb);
+            const gsize cur_bytes    =
+                static_cast<gsize>(cur_rowstride) * static_cast<gsize>(cur_h);
+
+            if (frames.empty())
+            {
+                frame0_pixel_bytes = cur_bytes;
+                frame0_pixels.assign(cur_pixels, cur_pixels + cur_bytes);
+            }
+            else if (cur_bytes == frame0_pixel_bytes &&
+                     std::memcmp(cur_pixels, frame0_pixels.data(), cur_bytes) == 0)
+            {
+                // Pixel data matches frame 0 — we have completed one full loop.
+                break;
+            }
+
+            int delay = gdk_pixbuf_animation_iter_get_delay_time(iter);
+            if (delay <= 0)
+                delay = 100;
+            delay = std::max(delay, 20);
+
+            int w = gdk_pixbuf_get_width(pb);
+            int h = gdk_pixbuf_get_height(pb);
+            GdkPixbuf* scaled = pb;
+            bool owned = false;
+            if (w > max_px || h > max_px)
+            {
+                int nw, nh;
+                if (w >= h)
+                {
+                    nw = max_px;
+                    nh = std::max(1, h * max_px / w);
+                }
+                else
+                {
+                    nh = max_px;
+                    nw = std::max(1, w * max_px / h);
+                }
+                scaled = gdk_pixbuf_scale_simple(pb, nw, nh, GDK_INTERP_BILINEAR);
+                owned = true;
+            }
+
+            cairo_surface_t* surf = pixbuf_to_image_surface(scaled);
+            if (owned)
+                g_object_unref(scaled);
+            if (surf)
+            {
+                frames.push_back(std::make_unique<CairoImage>(surf));
+                delays.push_back(delay);
+            }
+
+            g_time_val_add(&tv, static_cast<glong>(delay) * 1000L);
+
+            if (!gdk_pixbuf_animation_iter_advance(iter, &tv))
+                break; // animation ended (non-looping)
+        }
+#pragma GCC diagnostic pop
+
+        g_object_unref(iter);
+        g_object_unref(anim);
+
+        if (frames.size() < 2)
+            return nullptr;
+        return std::make_unique<AnimatedImage>(std::move(frames),
+                                              std::move(delays));
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
