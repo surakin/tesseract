@@ -1085,9 +1085,11 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         constexpr float kEditPadY = 5.0f;
 
         ctx.canvas.fill_rounded_rect(edit_band_rect_, 6.0f, card_bg(ctx.theme));
+        ctx.canvas.push_clip_rounded_rect(edit_band_rect_, 6.0f);
         ctx.canvas.fill_rect(
             {edit_band_rect_.x, edit_band_rect_.y, kAccentW, edit_band_rect_.h},
             ctx.theme.palette.accent);
+        ctx.canvas.pop_clip();
 
         float text_x = edit_band_rect_.x + kAccentW + kEditPadX;
 
@@ -1129,9 +1131,11 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
 
         ctx.canvas.fill_rounded_rect(reply_band_rect_, 6.0f,
                                      card_bg(ctx.theme));
+        ctx.canvas.push_clip_rounded_rect(reply_band_rect_, 6.0f);
         ctx.canvas.fill_rect({reply_band_rect_.x, reply_band_rect_.y, kAccentW,
                               reply_band_rect_.h},
                              ctx.theme.palette.accent);
+        ctx.canvas.pop_clip();
 
         float text_x = reply_band_rect_.x + kAccentW + kReplyPadX;
 

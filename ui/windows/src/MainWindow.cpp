@@ -2425,10 +2425,10 @@ void MainWindow::on_create(HWND hwnd)
                     if (srch)
                     {
                         tk::Rect r = main_app_->room_search_field_rect();
-                        r.x += 1;
-                        r.y += 1;
-                        r.w -= 2;
-                        r.h -= 2;
+                        r.x += 2;
+                        r.y += 2;
+                        r.w -= 4;
+                        r.h -= 4;
                         room_search_field_->set_rect(r);
                     }
                 }
