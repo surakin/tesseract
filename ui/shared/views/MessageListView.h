@@ -828,6 +828,10 @@ private:
     int message_index_of(const std::string& event_id) const;
     std::optional<OrderedSel> selection_ordered() const;
 
+    // Last pointer-move position in widget-local coordinates. Used to
+    // re-evaluate chip_hit_at after hovered_row_geom_ is repopulated by paint.
+    tk::Point last_pointer_local_{};
+
     // Multi-click tracking: double = word, triple = line.
     int       click_count_      = 0;
     tk::Point last_down_pt_     = {};

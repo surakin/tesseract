@@ -703,11 +703,11 @@ bool json_bool_field(std::string_view json, std::string_view key)
 // ServerInfo JSON helpers
 // ---------------------------------------------------------------------------
 
-std::vector<std::string>
-si_extract_string_array(std::string_view json, std::string_view key)
+std::vector<tesseract::SpecVersion>
+si_parse_spec_versions(std::string_view json)
 {
-    std::vector<std::string> out;
-    const auto pos0 = find_value(json, key);
+    std::vector<tesseract::SpecVersion> out;
+    const auto pos0 = find_value(json, "spec_versions");
     if (pos0 == std::string_view::npos)
         return out;
     auto pos = pos0;
@@ -728,8 +728,15 @@ si_extract_string_array(std::string_view json, std::string_view key)
         ++pos;
         auto end = json.find('"', pos);
         if (end == std::string_view::npos) break;
-        out.emplace_back(json.substr(pos, end - pos));
+        auto raw = json.substr(pos, end - pos); // e.g. "v1.6"
         pos = end + 1;
+        if (raw.size() >= 2 && raw[0] == 'v') {
+            int major = 0, minor = 0;
+            const char* p = raw.data() + 1;
+            while (*p >= '0' && *p <= '9') major = major * 10 + (*p++ - '0');
+            if (*p == '.') { ++p; while (*p >= '0' && *p <= '9') minor = minor * 10 + (*p++ - '0'); }
+            out.push_back({major, minor});
+        }
     }
     return out;
 }
@@ -841,8 +848,11 @@ tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
         return {};
     ServerInfo info;
     info.homeserver_url       = json_string_field(json, "homeserver");
-    info.spec_versions        = si_extract_string_array(json, "spec_versions");
+    info.spec_versions        = si_parse_spec_versions(json);
     info.supports_msc3030     = si_extract_bool(json, "supports_msc3030", false);
+    // MSC3030 (Jump to Date) was stabilised in spec v1.6.
+    for (const auto& sv : info.spec_versions)
+        if (sv.at_least(1, 6)) { info.supports_msc3030 = true; break; }
     info.can_change_password  = si_extract_bool(json, "can_change_password", true);
     info.can_set_displayname  = si_extract_bool(json, "can_set_displayname", true);
     info.can_set_avatar       = si_extract_bool(json, "can_set_avatar", true);

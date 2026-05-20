@@ -4785,6 +4785,7 @@ void MainWindow::switch_active_account(int new_idx)
     {
         return;
     }
+    reset_server_info_();
     active_account_index_ = new_idx;
     auto& sess = accounts_[new_idx];
 

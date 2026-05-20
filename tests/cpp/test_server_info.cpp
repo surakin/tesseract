@@ -41,8 +41,10 @@ TEST_CASE("ServerInfo::from_json: full blob", "[server][info]")
     ServerInfo info = ServerInfo::from_json(json);
     CHECK(info.homeserver_url == "https://matrix.org");
     REQUIRE(info.spec_versions.size() == 3);
-    CHECK(info.spec_versions[0] == "v1.1");
-    CHECK(info.spec_versions[2] == "v1.3");
+    CHECK(info.spec_versions[0].major == 1);
+    CHECK(info.spec_versions[0].minor == 1);
+    CHECK(info.spec_versions[2].major == 1);
+    CHECK(info.spec_versions[2].minor == 3);
     CHECK(info.supports_msc3030 == true);
     CHECK(info.can_change_password == false);
     CHECK(info.can_set_displayname == true);
@@ -77,7 +79,14 @@ TEST_CASE("ServerInfo::from_json: spec_versions array", "[server][info]")
         R"({"spec_versions":["v1.4","v1.5","v1.6"],"homeserver":"h"})";
     ServerInfo info = ServerInfo::from_json(json);
     REQUIRE(info.spec_versions.size() == 3);
-    CHECK(info.spec_versions[1] == "v1.5");
+    CHECK(info.spec_versions[0].major == 1);
+    CHECK(info.spec_versions[0].minor == 4);
+    CHECK(info.spec_versions[1].major == 1);
+    CHECK(info.spec_versions[1].minor == 5);
+    CHECK(info.spec_versions[2].major == 1);
+    CHECK(info.spec_versions[2].minor == 6);
+    // v1.6 in the list should enable MSC3030 even without the unstable flag
+    CHECK(info.supports_msc3030 == true);
 }
 
 TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")

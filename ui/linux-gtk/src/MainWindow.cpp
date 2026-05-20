@@ -5159,6 +5159,7 @@ void MainWindow::switch_active_account(int new_idx)
     message_cache_lru_.clear();
     clear_messages();
 
+    reset_server_info_();
     active_account_index_ = new_idx;
     auto& sess = *accounts_[new_idx];
 

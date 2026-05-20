@@ -47,15 +47,26 @@ struct PaginateResult
     }
 };
 
+/// A parsed Matrix spec version string (e.g. "v1.6" → {1, 6}).
+struct SpecVersion
+{
+    int major = 0;
+    int minor = 0;
+
+    bool at_least(int maj, int min) const noexcept
+    {
+        return major > maj || (major == maj && minor >= min);
+    }
+};
+
 /// Information about the connected homeserver fetched after login.
 /// Bool capability fields default to `true` (permissive) when absent —
 /// old servers omit capabilities they support.
-/// `supports_msc3030` defaults to `false` — opt-in unstable feature.
 struct ServerInfo
 {
     std::string homeserver_url;
-    std::vector<std::string> spec_versions;  ///< e.g. ["v1.1","v1.2","v1.5"]
-    bool supports_msc3030    = false;        ///< Jump-to-Date (org.matrix.msc3030)
+    std::vector<SpecVersion> spec_versions;  ///< parsed from e.g. ["v1.1","v1.6"]
+    bool supports_msc3030    = false;        ///< Jump-to-Date; true if server advertises MSC3030 or spec >= v1.6
     bool can_change_password = true;
     bool can_set_displayname = true;
     bool can_set_avatar      = true;

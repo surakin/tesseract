@@ -4112,6 +4112,7 @@ void MainWindow::switchActiveAccount(int new_idx)
     message_cache_lru_.clear();
     clearMessages();
 
+    reset_server_info_();
     active_account_index_ = new_idx;
     auto& s = *accounts_[new_idx];
     client_ = s.client.get();

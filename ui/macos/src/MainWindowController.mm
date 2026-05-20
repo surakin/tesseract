@@ -3919,6 +3919,7 @@ void MacShell::apply_cached_messages_(
 
 - (void)_switchActiveAccount:(int)idx
 {
+    _shell->reset_server_info_();
     _shell->active_account_index_ = idx;
     auto* session = _shell->accounts_[idx].get();
     _shell->client_ = session->client.get();

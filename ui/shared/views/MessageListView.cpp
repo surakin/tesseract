@@ -4392,6 +4392,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
     {
         return false;
     }
+    last_pointer_local_ = local;
     tk::ListView::on_pointer_move(local);
 
     // Map pan: apply drag delta while a pan is active.
@@ -5666,6 +5667,26 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 
     tk::ListView::paint(ctx);
     maybe_notify_receipt_();
+
+    // After paint_row() has repopulated hovered_row_geom_, re-evaluate the
+    // hover target in case it became stale. This fixes the receipt-disc tooltip
+    // on platforms (Qt6) where multiple pointer-move events can arrive before a
+    // repaint: each move clears receipt_discs when entering a new row, so
+    // chip_hit_at returns None even though the pointer is over a disc. Once
+    // the geom is fresh we correct the state here so the tooltip paints in the
+    // same frame without needing another mouse event.
+    if (hover_target_ == HoverTarget::None &&
+        hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
+    {
+        int re_idx = -1;
+        HoverTarget re_t =
+            chip_hit_at(hovered_row_geom_, bounds(), last_pointer_local_, re_idx);
+        if (re_t != HoverTarget::None)
+        {
+            hover_target_    = re_t;
+            hover_chip_idx_  = re_idx;
+        }
+    }
 
     // Scroll-to-bottom pill — overlays the bottom-right corner of the
     // viewport when the user is not pinned to the live tail. Painted
