@@ -11,8 +11,8 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
-// Matches IDR_TWEMOJI_FONT in ui/windows/src/resource.h
-static constexpr int kTwemojiFontResourceId = 201;
+// Matches IDR_EMOJI_FONT in ui/windows/src/resource.h
+static constexpr int kEmojiFontResourceId = 201;
 
 #include <algorithm>
 #include <cstring>
@@ -232,21 +232,19 @@ struct Backend::Impl
     }
 };
 
-// Loads the Twemoji Mozilla TTF from the embedded RCDATA resource and builds
-// an IDWriteFontFallback that maps only country-flag Regional Indicator pairs
-// (U+1F1E0–U+1F1FF) to Twemoji Mozilla, then chains the system fallback for
-// everything else (Segoe UI Emoji handles all other emoji including ZWJ
-// sequences natively).
+// Loads the Noto Color Emoji TTF from the embedded RCDATA resource and builds
+// an IDWriteFontFallback that maps all major Unicode emoji blocks to Noto Color
+// Emoji, then chains the system fallback for everything else.
 // Returns nullptr (and leaves mem_loader_out untouched) on any failure — the
 // caller then keeps using the system-only fallback.
 static ComPtr<IDWriteFontFallback>
-build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
-                       ComPtr<IDWriteFontFallback> system_fallback,
-                       ComPtr<IDWriteFontFileLoader>& mem_loader_out)
+build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
+                     ComPtr<IDWriteFontFallback> system_fallback,
+                     ComPtr<IDWriteFontFileLoader>& mem_loader_out)
 {
     // 1. Read font bytes from the embedded RCDATA resource.
     HMODULE hmod = GetModuleHandleW(nullptr);
-    HRSRC hrsrc = FindResourceW(hmod, MAKEINTRESOURCEW(kTwemojiFontResourceId),
+    HRSRC hrsrc = FindResourceW(hmod, MAKEINTRESOURCEW(kEmojiFontResourceId),
                                 RT_RCDATA);
     if (!hrsrc)
     {
@@ -315,26 +313,130 @@ build_twemoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
         return nullptr;
     }
 
-    ComPtr<IDWriteFontCollection1> twemoji_coll;
+    ComPtr<IDWriteFontCollection1> emoji_coll;
     if (FAILED(dwrite5->CreateFontCollectionFromFontSet(font_set.Get(),
-                                                        &twemoji_coll)))
+                                                        &emoji_coll)))
     {
         return nullptr;
     }
 
-    // 5. Build a fallback: flags → Twemoji Mozilla, everything else → system.
-    static const DWRITE_UNICODE_RANGE kFlagRanges[] = {
-        {0x1F1E0, 0x1F1FF}, // Regional Indicator Symbols (country flags)
+    // 5. Build a fallback: all emoji blocks → Noto Color Emoji, everything else → system.
+    // DWrite falls through to the next mapping for any codepoint Noto lacks.
+    static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
+        // Scattered BMP emoji (©, ®, ™, arrows, clocks, symbols, dingbats …)
+        {0x00A9, 0x00A9},  // ©
+        {0x00AE, 0x00AE},  // ®
+        {0x203C, 0x203C},  // ‼
+        {0x2049, 0x2049},  // ⁉
+        {0x20E3, 0x20E3},  // ⃣ combining enclosing keycap
+        {0x2122, 0x2122},  // ™
+        {0x2139, 0x2139},  // ℹ
+        {0x2194, 0x21AA},  // various arrows
+        {0x231A, 0x231B},  // watch, hourglass
+        {0x23CF, 0x23CF},  // eject
+        {0x23E9, 0x23F3},  // rewind / fast-forward / clocks
+        {0x23F8, 0x23FA},  // pause / stop / record
+        {0x24C2, 0x24C2},  // Ⓜ
+        {0x25AA, 0x25AB},  // small black/white squares
+        {0x25B6, 0x25B6},  // ▶ play
+        {0x25C0, 0x25C0},  // ◀ reverse
+        {0x25FB, 0x25FE},  // medium squares
+        {0x2600, 0x2604},  // sun, cloud, etc.
+        {0x260E, 0x260E},  // ☎
+        {0x2611, 0x2611},  // ☑
+        {0x2614, 0x2615},  // umbrella, hot beverage
+        {0x2618, 0x2618},  // shamrock
+        {0x261D, 0x261D},  // index pointing up
+        {0x2620, 0x2620},  // skull and crossbones
+        {0x2622, 0x2623},  // radioactive, biohazard
+        {0x2626, 0x2626},  // orthodox cross
+        {0x262A, 0x262A},  // star and crescent
+        {0x262E, 0x262F},  // peace, yin yang
+        {0x2638, 0x263A},  // wheel of dharma, smiley
+        {0x2640, 0x2640},  // female sign
+        {0x2642, 0x2642},  // male sign
+        {0x2648, 0x2653},  // zodiac signs
+        {0x265F, 0x2660},  // chess pawn, spade
+        {0x2663, 0x2663},  // club
+        {0x2665, 0x2666},  // heart, diamond
+        {0x2668, 0x2668},  // hot springs
+        {0x267B, 0x267B},  // recycling
+        {0x267E, 0x267F},  // infinity, wheelchair
+        {0x2692, 0x2697},  // tools
+        {0x2699, 0x2699},  // gear
+        {0x269B, 0x269C},  // atom, fleur-de-lis
+        {0x26A0, 0x26A1},  // warning, lightning
+        {0x26A7, 0x26A7},  // male-female sign
+        {0x26AA, 0x26AB},  // circles
+        {0x26B0, 0x26B1},  // coffin, funeral urn
+        {0x26BD, 0x26BE},  // soccer, baseball
+        {0x26C4, 0x26C5},  // snowman, sun behind cloud
+        {0x26CE, 0x26CF},  // ophiuchus, pick
+        {0x26D1, 0x26D1},  // rescue worker helmet
+        {0x26D3, 0x26D4},  // chains, no entry
+        {0x26E9, 0x26EA},  // shinto shrine, church
+        {0x26F0, 0x26F5},  // mountain, camping, etc.
+        {0x26F7, 0x26FA},  // skier, etc.
+        {0x26FD, 0x26FD},  // fuel pump
+        {0x2702, 0x2702},  // scissors
+        {0x2705, 0x2705},  // check mark (green)
+        {0x2708, 0x270D},  // plane, umbrella, pencil, hand
+        {0x270F, 0x270F},  // pencil
+        {0x2712, 0x2712},  // black nib
+        {0x2714, 0x2714},  // heavy check mark
+        {0x2716, 0x2716},  // heavy ✖
+        {0x271D, 0x271D},  // latin cross
+        {0x2721, 0x2721},  // star of david
+        {0x2728, 0x2728},  // sparkles
+        {0x2733, 0x2734},  // asterisks
+        {0x2744, 0x2744},  // snowflake
+        {0x2747, 0x2747},  // sparkle
+        {0x274C, 0x274C},  // cross mark
+        {0x274E, 0x274E},  // cross mark
+        {0x2753, 0x2755},  // question / exclamation ornaments
+        {0x2757, 0x2757},  // exclamation mark
+        {0x2763, 0x2764},  // hearts
+        {0x2795, 0x2797},  // plus, minus, divide
+        {0x27A1, 0x27A1},  // right arrow
+        {0x27B0, 0x27B0},  // curly loop
+        {0x27BF, 0x27BF},  // double curly loop
+        {0x2934, 0x2935},  // curved arrows
+        {0x2B05, 0x2B07},  // directional arrows
+        {0x2B1B, 0x2B1C},  // black/white squares
+        {0x2B50, 0x2B50},  // star
+        {0x2B55, 0x2B55},  // hollow red circle
+        {0x3030, 0x3030},  // wavy dash
+        {0x303D, 0x303D},  // part alternation mark
+        {0x3297, 0x3297},  // circled ideograph congratulation
+        {0x3299, 0x3299},  // circled ideograph secret
+        // Supplementary Multilingual Plane — all major emoji blocks
+        {0x1F004, 0x1F004}, // mahjong red dragon
+        {0x1F0CF, 0x1F0CF}, // playing card black joker
+        {0x1F170, 0x1F171}, // A/B button (blood type)
+        {0x1F17E, 0x1F17F}, // O/P button
+        {0x1F18E, 0x1F18E}, // AB button
+        {0x1F191, 0x1F19A}, // squared letters
+        {0x1F1E0, 0x1F1FF}, // regional indicators (country flags)
+        {0x1F201, 0x1F202}, // Japanese buttons
+        {0x1F21A, 0x1F21A}, // free button
+        {0x1F22F, 0x1F22F}, // reserved button
+        {0x1F232, 0x1F23A}, // Japanese buttons
+        {0x1F250, 0x1F251}, // Japanese buttons
+        {0x1F300, 0x1F6FF}, // Misc Symbols & Pictographs, Emoticons, Transport…
+        {0x1F7E0, 0x1F7FF}, // Geometric Shapes Extended (colored circles/squares)
+        {0x1F900, 0x1F9FF}, // Supplemental Symbols and Pictographs
+        {0x1FA00, 0x1FA6F}, // Chess Symbols
+        {0x1FA70, 0x1FAFF}, // Symbols and Pictographs Extended-A
     };
-    const wchar_t* family[] = {L"Twemoji Mozilla"};
+    const wchar_t* family[] = {L"Noto Color Emoji"};
 
     ComPtr<IDWriteFontFallbackBuilder> fb_builder;
     if (FAILED(dwrite->CreateFontFallbackBuilder(&fb_builder)))
     {
         return nullptr;
     }
-    if (FAILED(fb_builder->AddMapping(kFlagRanges, ARRAYSIZE(kFlagRanges),
-                                      family, 1, twemoji_coll.Get(), nullptr,
+    if (FAILED(fb_builder->AddMapping(kEmojiRanges, ARRAYSIZE(kEmojiRanges),
+                                      family, 1, emoji_coll.Get(), nullptr,
                                       nullptr, 1.0f)))
     {
         return nullptr;
@@ -381,10 +483,10 @@ Backend::Backend() : impl_(std::make_unique<Impl>())
         reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
     check(hr, "DWriteCreateFactory");
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
-    if (auto twemoji = build_twemoji_fallback(
+    if (auto emoji = build_emoji_fallback(
             impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader))
     {
-        impl_->font_fallback = std::move(twemoji);
+        impl_->font_fallback = std::move(emoji);
     }
 
     hr =

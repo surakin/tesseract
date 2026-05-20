@@ -6,4 +6,4 @@
 // (Explorer, taskbar, Alt+Tab) — keep IDI_TESSERACT first.
 IDI_TESSERACT ICON "@TESSERACT_ICO_PATH@"
 
-IDR_TWEMOJI_FONT RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/fonts/twemoji-mozilla.ttf"
+IDR_EMOJI_FONT RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/fonts/NotoColorEmoji.ttf"
