@@ -227,6 +227,9 @@ private:
 
     bool has_room_ = false; // true after the first set_room() call
 
+    std::function<void()> repaint_requester_;
+    std::function<void(int, std::function<void()>)> post_delayed_;
+
     // Child widgets — owned via add_child, raw pointers borrowed back.
     BrandView* brand_view_ = nullptr;
     RoomHeader* header_ = nullptr;

@@ -60,6 +60,13 @@ void RoomView::wire_internal_callbacks()
             on_layout_changed();
         }
     };
+    compose_bar_->on_request_anim_repaint_ = [this](int delay_ms)
+    {
+        if (post_delayed_ && repaint_requester_)
+        {
+            post_delayed_(delay_ms, [this] { repaint_requester_(); });
+        }
+    };
     compose_bar_->on_send = [this](const std::string& body)
     {
         if (on_send)
@@ -360,6 +367,7 @@ void RoomView::set_voice_bytes_provider(MessageListView::VoiceBytesProvider p)
 
 void RoomView::set_repaint_requester(std::function<void()> f)
 {
+    repaint_requester_ = f;
     if (message_list_)
     {
         message_list_->set_repaint_requester(std::move(f));
@@ -369,6 +377,7 @@ void RoomView::set_repaint_requester(std::function<void()> f)
 void RoomView::set_post_delayed(
     std::function<void(int, std::function<void()>)> f)
 {
+    post_delayed_ = f;
     if (message_list_)
     {
         message_list_->set_post_delayed(std::move(f));
