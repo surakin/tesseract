@@ -1277,11 +1277,13 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_view_->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
         {
-            img_viewer_->open(hit.media_url, hit.body, hit.natural_w,
-                              hit.natural_h);
+            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+                              hit.natural_w, hit.natural_h);
             main_app_->show_image_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
+            ensure_media_image_(hit.media_url, visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight);
         };
 
         img_viewer_->set_repaint_requester(

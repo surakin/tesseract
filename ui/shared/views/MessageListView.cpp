@@ -1846,7 +1846,8 @@ private:
                 int ih =
                     (m.media_h > 0) ? m.media_h : (img ? img->height() : 0);
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.media_url, m.body, iw, ih, r};
+                    m.event_id, m.media_url, m.thumbnail_url, m.body,
+                    iw, ih, r};
             }
             float cursor = y + sz.h;
             if (m.has_filename_caption && !m.body.empty())
@@ -1895,7 +1896,8 @@ private:
                              ? sticker_img->height()
                              : m.media_h;
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.media_url, m.body, iw, ih, r};
+                    m.event_id, m.media_url, m.thumbnail_url, m.body,
+                    iw, ih, r};
             }
             return y + sz.h;
         }

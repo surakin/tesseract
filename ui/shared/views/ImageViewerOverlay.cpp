@@ -20,10 +20,11 @@ static constexpr float kCloseBtnS = 36.0f;
 
 // ── public API ───────────────────────────────────────────────────────────
 
-void ImageViewerOverlay::open(std::string media_url, std::string body,
-                              int natural_w, int natural_h)
+void ImageViewerOverlay::open(std::string media_url, std::string display_key,
+                              std::string body, int natural_w, int natural_h)
 {
     media_url_ = std::move(media_url);
+    display_key_ = std::move(display_key);
     body_ = std::move(body);
     natural_w_ = natural_w;
     natural_h_ = natural_h;
@@ -155,10 +156,15 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
     // Dark backdrop
     cv.fill_rect(b, tk::Color::rgba(0, 0, 0, 210));
 
-    // Image or placeholder
+    // Image or placeholder.  Try full-res first; fall back to the thumbnail
+    // cache key while the full-res fetch is still in flight.
     const tk::Image* img = (image_provider_ && !media_url_.empty())
                                ? image_provider_(media_url_)
                                : nullptr;
+    if (!img && image_provider_ && !display_key_.empty())
+    {
+        img = image_provider_(display_key_);
+    }
     // is_loading_ is cleared here (in paint) rather than via a separate
     // callback because ImageViewerOverlay has no direct "image ready" hook —
     // it polls image_provider_ on each frame. Once it returns non-null the

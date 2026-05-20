@@ -385,8 +385,9 @@ public:
     struct ImageHit
     {
         std::string event_id;
-        std::string media_url; // source_json — pass to image_provider_
-        std::string body;      // MSC2530 caption, may be empty
+        std::string media_url;     // source_json — full-res; pass to image_provider_
+        std::string thumbnail_url; // thumbnail cache key; empty when absent
+        std::string body;          // MSC2530 caption, may be empty
         int natural_w = 0;
         int natural_h = 0;
         tk::Rect world_rect;

@@ -221,8 +221,8 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             {
                 return;
             }
-            img_viewer_->open(hit.media_url, hit.body, hit.natural_w,
-                              hit.natural_h);
+            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+                              hit.natural_w, hit.natural_h);
             img_viewer_->set_visible(true);
             request_relayout();
             ensure_viewer_image_(hit.media_url);

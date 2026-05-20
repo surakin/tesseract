@@ -2172,8 +2172,8 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            img_viewer_->open(hit.media_url, hit.body, hit.natural_w,
-                              hit.natural_h);
+            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+                              hit.natural_w, hit.natural_h);
             main_app_->show_image_viewer(true);
             if (main_app_surface_)
             {
@@ -2188,6 +2188,8 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
+            ensure_media_image_(hit.media_url, visual::kMaxInlineImageWidth,
+                                visual::kMaxInlineImageHeight);
         };
 
         // ── VideoViewerOverlay callbacks ─────────────────────────────────────

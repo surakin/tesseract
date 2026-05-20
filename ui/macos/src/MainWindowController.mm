@@ -2231,10 +2231,13 @@ void MacShell::apply_cached_messages_(
             {
                 return;
             }
-            s->_imgViewer->open(hit.media_url, hit.body, hit.natural_w,
-                                hit.natural_h);
+            s->_imgViewer->open(hit.media_url, hit.thumbnail_url, hit.body,
+                                hit.natural_w, hit.natural_h);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
+            s->_shell->ensure_media_image_(hit.media_url,
+                                           visual::kMaxInlineImageWidth,
+                                           visual::kMaxInlineImageHeight);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };

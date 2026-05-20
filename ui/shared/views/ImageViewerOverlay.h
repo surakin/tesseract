@@ -29,8 +29,11 @@ class ImageViewerOverlay : public tk::Widget
 {
 public:
     // Show the overlay for the given image or sticker.
-    void open(std::string media_url, std::string body, int natural_w,
-              int natural_h);
+    // `display_key` is the thumbnail cache key — shown immediately while the
+    // full-res `media_url` is still in flight (may be empty for stickers /
+    // images with no server thumbnail).
+    void open(std::string media_url, std::string display_key, std::string body,
+              int natural_w, int natural_h);
     // Hide the overlay and reset zoom/pan state.
     void close();
     bool is_open() const
@@ -85,6 +88,7 @@ private:
 
     bool is_open_ = false;
     std::string media_url_;
+    std::string display_key_; // thumbnail cache key — fallback while full-res loads
     std::string body_;
     int natural_w_ = 0;
     int natural_h_ = 0;

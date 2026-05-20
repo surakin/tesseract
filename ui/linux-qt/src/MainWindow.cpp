@@ -863,8 +863,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->room_view()->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
         {
-            mainApp_->image_viewer()->open(hit.media_url, hit.body,
-                                           hit.natural_w, hit.natural_h);
+            mainApp_->image_viewer()->open(hit.media_url, hit.thumbnail_url,
+                                           hit.body, hit.natural_w,
+                                           hit.natural_h);
             mainApp_->show_image_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();

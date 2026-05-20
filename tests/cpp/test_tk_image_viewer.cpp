@@ -47,7 +47,7 @@ TEST_CASE("ImageViewerOverlay is_open starts false", "[tk][imageviewer]")
 TEST_CASE("ImageViewerOverlay open sets is_open true", "[tk][imageviewer]")
 {
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "A caption", 640, 360);
+    overlay.open("mxc://example.org/img", "", "A caption", 640, 360);
     REQUIRE(overlay.is_open());
 }
 
@@ -55,7 +55,7 @@ TEST_CASE("ImageViewerOverlay close fires on_close and resets is_open",
           "[tk][imageviewer]")
 {
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 320, 240);
+    overlay.open("mxc://example.org/img", "", "", 320, 240);
     REQUIRE(overlay.is_open());
 
     bool closed = false;
@@ -75,7 +75,7 @@ TEST_CASE(
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "test", 640, 360);
+    overlay.open("mxc://example.org/img", "", "test", 640, 360);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
@@ -84,7 +84,7 @@ TEST_CASE("ImageViewerOverlay paint does not crash with no dimensions",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 0, 0);
+    overlay.open("mxc://example.org/img", "", "", 0, 0);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
@@ -107,7 +107,7 @@ TEST_CASE("ImageViewerOverlay opens an oversized image zoomed to fit",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/big", "", 3200,
+    overlay.open("mxc://example.org/big", "", "", 3200,
                  1800); // far larger than 536×304
     st.run(overlay, {0, 0, 600, 400});
 
@@ -132,7 +132,7 @@ TEST_CASE("ImageViewerOverlay opens a small image at 1:1 (no upscaling)",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/small", "", 200, 150); // fits at 1:1
+    overlay.open("mxc://example.org/small", "", "", 200, 150); // fits at 1:1
     st.run(overlay, {0, 0, 600, 400});
 
     const Rect r = overlay.image_rect();
@@ -150,7 +150,7 @@ TEST_CASE(
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 640, 360);
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -170,7 +170,7 @@ TEST_CASE("ImageViewerOverlay pointer-down on close button fires on_close",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 640, 360);
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -191,7 +191,7 @@ TEST_CASE("ImageViewerOverlay pointer-down on image does not fire on_close",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 640, 360);
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -221,7 +221,7 @@ TEST_CASE("ImageViewerOverlay on_wheel returns true when open",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 640, 360);
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f)); // zoom in
@@ -239,7 +239,7 @@ TEST_CASE("ImageViewerOverlay zoom-in then drag moves image rect",
 {
     Stage st;
     ImageViewerOverlay overlay;
-    overlay.open("mxc://example.org/img", "", 640, 360);
+    overlay.open("mxc://example.org/img", "", "", 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     // Zoom in substantially at centre so press_drag_ will be set.
