@@ -62,6 +62,13 @@ RoomInfoPanel::RoomInfoPanel()
     save_btn_->set_visible(false);
     cancel_btn_->set_visible(false);
     expand_btn_->set_visible(false);
+
+    // The panel is a closed-by-default overlay. Tie its widget visibility
+    // to the open state so the Widget tree's hit-test walks past us entirely
+    // when closed — otherwise leave_btn_ (positioned at the bottom-right of
+    // panel_rect_) overlaps the compose-bar buttons and silently captures
+    // their clicks. Children are skipped because their parent is invisible.
+    set_visible(false);
 }
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -77,6 +84,7 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     history_visibility_ = info.history_visibility;
 
     open_            = true;
+    set_visible(true);
     editing_topic_   = false;
     topic_edit_text_ = {};
     members_expanded_ = false;
@@ -98,6 +106,7 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
 void RoomInfoPanel::close()
 {
     open_ = false;
+    set_visible(false);
 }
 
 void RoomInfoPanel::set_avatar_provider(ImageProvider p)

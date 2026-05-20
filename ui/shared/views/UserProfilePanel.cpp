@@ -23,6 +23,13 @@ UserProfilePanel::UserProfilePanel()
     close_btn_->set_on_click([this]() { if (on_close) on_close(); });
     dm_btn_->set_on_click([this]() { if (on_open_dm) on_open_dm(user_id_); });
     ignore_btn_->set_on_click([this]() { if (on_ignore) on_ignore(user_id_); });
+
+    // Closed-by-default overlay. Tie widget visibility to the open state so
+    // the Widget tree's hit-test walks past us entirely when closed — the
+    // dm_btn_ and ignore_btn_ children are otherwise visible-by-default
+    // (Widget contract) and would capture clicks at their last-arranged rects
+    // even though paint() draws nothing.
+    set_visible(false);
 }
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -34,6 +41,7 @@ void UserProfilePanel::open(std::string user_id, std::string display_name,
     display_name_ = std::move(display_name);
     avatar_url_   = std::move(avatar_url);
     open_         = true;
+    set_visible(true);
     name_layout_.reset();
     uid_layout_.reset();
 }
@@ -41,6 +49,7 @@ void UserProfilePanel::open(std::string user_id, std::string display_name,
 void UserProfilePanel::close()
 {
     open_ = false;
+    set_visible(false);
 }
 
 void UserProfilePanel::set_avatar_provider(ImageProvider p)
