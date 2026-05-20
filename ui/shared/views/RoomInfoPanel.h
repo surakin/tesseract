@@ -23,6 +23,7 @@ public:
     ~RoomInfoPanel() override = default;
 
     void open(const tesseract::RoomInfo& info);
+    void refresh_info(const tesseract::RoomInfo& info); // update without resetting state
     void close();
     bool is_open() const { return open_; }
 

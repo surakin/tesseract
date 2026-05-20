@@ -105,6 +105,24 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     if (on_fetch_members) on_fetch_members(room_id_);
 }
 
+void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
+{
+    if (!open_) return;
+    display_name_       = info.name;
+    avatar_url_         = info.avatar_url;
+    is_encrypted_       = info.is_encrypted;
+    history_visibility_ = info.history_visibility;
+    if (topic_ != info.topic || topic_html_ != info.topic_html)
+    {
+        topic_      = info.topic;
+        topic_html_ = info.topic_html;
+        topic_layout_.reset();
+    }
+    name_layout_.reset();
+    badge_enc_layout_.reset();
+    badge_hist_layout_.reset();
+}
+
 void RoomInfoPanel::close()
 {
     open_ = false;

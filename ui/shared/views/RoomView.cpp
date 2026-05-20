@@ -533,10 +533,18 @@ bool RoomView::scroll_to_event_id(const std::string& id)
 
 void RoomView::set_room(const tesseract::RoomInfo& info)
 {
-    if (room_info_panel_)
-        room_info_panel_->close();
-    if (user_profile_panel_)
-        user_profile_panel_->close();
+    const bool room_changed = info.id != current_room_info_.id;
+    if (room_changed)
+    {
+        if (room_info_panel_)
+            room_info_panel_->close();
+        if (user_profile_panel_)
+            user_profile_panel_->close();
+    }
+    else if (room_info_panel_ && room_info_panel_->is_open())
+    {
+        room_info_panel_->refresh_info(info);
+    }
     has_room_ = true;
     current_room_info_ = info;
     if (header_)
