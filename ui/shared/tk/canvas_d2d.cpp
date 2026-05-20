@@ -1035,6 +1035,32 @@ public:
         return std::make_unique<D2DImage>(std::move(bitmap), w, h);
     }
 
+    std::unique_ptr<AnimatedImage>
+    decode_animated_image(std::span<const std::uint8_t> bytes,
+                          int max_px) override
+    {
+        auto raw = tk::d2d::decode_animation(owner_, bytes);
+        if (raw.empty())
+            return nullptr;
+
+        std::vector<std::unique_ptr<Image>> frames;
+        std::vector<int> delays;
+        frames.reserve(raw.size());
+        delays.reserve(raw.size());
+
+        for (auto& f : raw)
+        {
+            std::unique_ptr<Image> img = std::move(f.image);
+            if (auto scaled = scale_image(*img, max_px, max_px))
+                img = std::move(scaled);
+            frames.push_back(std::move(img));
+            delays.push_back(f.delay_ms);
+        }
+
+        return std::make_unique<AnimatedImage>(std::move(frames),
+                                              std::move(delays));
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
