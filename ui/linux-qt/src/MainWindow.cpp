@@ -469,7 +469,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->room_view()->on_set_clipboard = [this](std::string_view t)
         {
             if (mainAppSurface_)
-                mainAppSurface_->set_clipboard_text(t);
+                mainAppSurface_->host().set_clipboard_text(t);
         };
         mainApp_->room_view()->message_list()->on_show_copy_menu = [this]()
         {

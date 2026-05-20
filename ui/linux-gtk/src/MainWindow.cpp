@@ -1118,7 +1118,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_view_->on_set_clipboard = [this](std::string_view t)
         {
             if (main_app_surface_)
-                main_app_surface_->set_clipboard_text(t);
+                main_app_surface_->host().set_clipboard_text(t);
         };
         room_view_->message_list()->on_show_copy_menu = [this]()
         {
@@ -1287,8 +1287,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             main_app_->show_image_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
-            ensure_media_image_(hit.media_url, visual::kMaxInlineImageWidth,
-                                visual::kMaxInlineImageHeight);
+            ensure_media_image_(hit.media_url, 320, 200);
         };
 
         img_viewer_->set_repaint_requester(

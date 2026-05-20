@@ -92,7 +92,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     room_view_->on_set_clipboard = [this](std::string_view t)
     {
         if (surface_)
-            surface_->set_clipboard_text(t);
+            surface_->host().set_clipboard_text(t);
     };
     room_view_->message_list()->on_show_copy_menu = [this]()
     {

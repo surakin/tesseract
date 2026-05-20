@@ -2314,7 +2314,7 @@ void MacShell::apply_cached_messages_(
             {
                 MainWindowController* s = weakSelf;
                 if (s && s->_mainAppSurface)
-                    s->_mainAppSurface->set_clipboard_text(t);
+                    s->_mainAppSurface->host().set_clipboard_text(t);
             };
         }
         {
