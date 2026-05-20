@@ -5242,8 +5242,9 @@ async fn set_account_data_both(
     Ok(())
 }
 
-/// Rebuild the aggregated image-pack cache. Reads prefer the merged MSC2545
-/// stable names, falling back to the unstable names. Returns an empty Vec
+/// Rebuild the aggregated image-pack cache. Reads prefer the unstable
+/// `im.ponies.*` names (first entry in `EMOTE_ROOMS_TYPES` / `ROOM_PACK_TYPES`)
+/// since most homeservers and rooms only carry those. Returns an empty Vec
 /// when not logged in.
 #[cfg(not(test))]
 async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePack> {
@@ -5333,18 +5334,12 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
         // the local cache. For explicitly subscribed rooms the number is small,
         // so one HTTP round-trip per missing room is acceptable.
-        //
-        // Try unstable first here: most rooms still store packs under the old
-        // im.ponies.room_emotes type, so trying stable first would generate a
-        // spurious 404 (logged at ERROR by matrix-sdk) before the working
-        // fallback. The local-cache path above already prefers stable correctly
-        // because a local lookup is free; HTTP prefers unstable pragmatically.
-        // TODO: revert to forward ROOM_PACK_TYPES order (stable first) once the
-        // matrix-sdk suppresses or downgrades 404 errors from state-event GETs,
-        // or once the ecosystem has broadly migrated to m.room.image_pack.
+        // ROOM_PACK_TYPES is unstable-first, so we try im.ponies.room_emotes
+        // before m.room.image_pack, avoiding spurious 404s on servers that
+        // don't yet recognise the stable name.
         if !found {
             use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
-            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES.iter().rev().copied() {
+            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                 let et = StateEventType::from(ev_type_str);
                 let req = get_state_event_for_key::v3::Request::new(
                     room_id.clone(),

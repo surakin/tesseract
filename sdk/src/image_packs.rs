@@ -104,12 +104,14 @@ pub const TYPE_ROOM_PACK_STABLE: &str = "m.room.image_pack";
 pub const TYPE_ROOM_PACK_UNSTABLE: &str = "im.ponies.room_emotes";
 
 /// Identifier precedence for the two MSC2545 types that have a stable form:
-/// **stable first** (preferred now the MSC is merged), unstable as the
-/// compat fallback. Reads iterate these and take the first hit; future
-/// writers must dual-write every entry (see `set_account_data_both`) until
-/// the ecosystem has fully migrated off the unstable names.
-pub const EMOTE_ROOMS_TYPES: [&str; 2] = [TYPE_EMOTE_ROOMS_STABLE, TYPE_EMOTE_ROOMS_UNSTABLE];
-pub const ROOM_PACK_TYPES: [&str; 2] = [TYPE_ROOM_PACK_STABLE, TYPE_ROOM_PACK_UNSTABLE];
+/// **unstable first** — most homeservers and rooms still only carry the
+/// `im.ponies.*` names; trying the stable name first generates spurious 404s
+/// on servers that don't recognise it yet. Switch to stable-first once the
+/// ecosystem has broadly adopted `m.image_pack.*` / `m.room.image_pack`.
+/// Reads iterate these and take the first hit; writers dual-write both entries
+/// (see `set_account_data_both`) so data is visible to all client versions.
+pub const EMOTE_ROOMS_TYPES: [&str; 2] = [TYPE_EMOTE_ROOMS_UNSTABLE, TYPE_EMOTE_ROOMS_STABLE];
+pub const ROOM_PACK_TYPES: [&str; 2] = [TYPE_ROOM_PACK_UNSTABLE, TYPE_ROOM_PACK_STABLE];
 
 /// Tesseract-private flag stored alongside image entries to mark favorites.
 /// Spec is open about unknown keys; other clients ignore it.
