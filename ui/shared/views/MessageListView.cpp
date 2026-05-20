@@ -20,6 +20,57 @@
 namespace tesseract::views
 {
 
+// ── Multi-click selection helpers ────────────────────────────────────────────
+
+static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
+{
+    std::string out;
+    for (const auto& s : spans)
+        out += s.text;
+    return out;
+}
+
+static std::pair<int, int> word_range_in_text(const std::string& text,
+                                               int byte_offset)
+{
+    int n = static_cast<int>(text.size());
+    byte_offset = std::clamp(byte_offset, 0, n);
+    auto is_word = [](unsigned char c)
+    { return c >= 0x80 || std::isalnum(c) || c == '_'; };
+    int lo = byte_offset;
+    while (lo > 0 && is_word(static_cast<unsigned char>(text[lo - 1])))
+        --lo;
+    int hi = byte_offset;
+    while (hi < n && is_word(static_cast<unsigned char>(text[hi])))
+        ++hi;
+    if (lo == hi) // on a non-word char: select just that char
+        hi = std::min(hi + 1, n);
+    return {lo, hi};
+}
+
+static std::pair<int, int> line_range_in_text(const std::string& text,
+                                               int byte_offset)
+{
+    int n = static_cast<int>(text.size());
+    byte_offset = std::clamp(byte_offset, 0, n);
+    int lo = byte_offset;
+    while (lo > 0 && text[lo - 1] != '\n')
+        --lo;
+    int hi = byte_offset;
+    while (hi < n && text[hi] != '\n')
+        ++hi;
+    return {lo, hi};
+}
+
+static int64_t steady_ms_now()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 MessageRowData make_row_data(const tesseract::Event& ev,
                              const std::string& my_user_id)
 {
@@ -4552,57 +4603,6 @@ bool MessageListView::on_right_click(tk::Point /*local*/)
         copy_selection();
     return true;
 }
-
-// ── Multi-click selection helpers ────────────────────────────────────────────
-
-static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
-{
-    std::string out;
-    for (const auto& s : spans)
-        out += s.text;
-    return out;
-}
-
-static std::pair<int, int> word_range_in_text(const std::string& text,
-                                               int byte_offset)
-{
-    int n = static_cast<int>(text.size());
-    byte_offset = std::clamp(byte_offset, 0, n);
-    auto is_word = [](unsigned char c)
-    { return c >= 0x80 || std::isalnum(c) || c == '_'; };
-    int lo = byte_offset;
-    while (lo > 0 && is_word(static_cast<unsigned char>(text[lo - 1])))
-        --lo;
-    int hi = byte_offset;
-    while (hi < n && is_word(static_cast<unsigned char>(text[hi])))
-        ++hi;
-    if (lo == hi) // on a non-word char: select just that char
-        hi = std::min(hi + 1, n);
-    return {lo, hi};
-}
-
-static std::pair<int, int> line_range_in_text(const std::string& text,
-                                               int byte_offset)
-{
-    int n = static_cast<int>(text.size());
-    byte_offset = std::clamp(byte_offset, 0, n);
-    int lo = byte_offset;
-    while (lo > 0 && text[lo - 1] != '\n')
-        --lo;
-    int hi = byte_offset;
-    while (hi < n && text[hi] != '\n')
-        ++hi;
-    return {lo, hi};
-}
-
-static int64_t steady_ms_now()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 bool MessageListView::on_pointer_down(tk::Point local)
 {

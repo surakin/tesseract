@@ -5,7 +5,14 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <unistd.h>
+#ifdef _WIN32
+#  include <process.h>
+#  define getpid _getpid
+static int setenv(const char* n, const char* v, int) { return _putenv_s(n, v); }
+static int unsetenv(const char* n) { return _putenv_s(n, ""); }
+#else
+#  include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
