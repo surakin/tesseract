@@ -5334,10 +5334,17 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
         // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
         // the local cache. For explicitly subscribed rooms the number is small,
         // so one HTTP round-trip per missing room is acceptable.
+        // Guard: only attempt when the user is currently joined — a stale
+        // subscription entry for a room the user has left/been kicked from
+        // produces a 403 "not in room" error.
         // ROOM_PACK_TYPES is unstable-first, so we try im.ponies.room_emotes
         // before m.room.image_pack, avoiding spurious 404s on servers that
         // don't yet recognise the stable name.
-        if !found {
+        let is_joined = client
+            .get_room(&room_id)
+            .map(|r| r.state() == matrix_sdk::RoomState::Joined)
+            .unwrap_or(false);
+        if !found && is_joined {
             use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
             for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
                 let et = StateEventType::from(ev_type_str);
