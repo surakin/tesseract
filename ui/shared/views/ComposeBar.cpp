@@ -629,6 +629,25 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
     }
 
+    // ── Decode animated frames once is_animated is confirmed ────────────────
+    if (pending_.has_value() &&
+        pending_->kind == PendingAttachment::Kind::Image &&
+        pending_->is_animated && !pending_->anim_preview)
+    {
+        constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
+        pending_->anim_preview = ctx.factory.decode_animated_image(
+            std::span<const std::uint8_t>(pending_->bytes.data(),
+                                          pending_->bytes.size()),
+            kMaxPx);
+        if (pending_->anim_preview)
+        {
+            pending_->width =
+                static_cast<std::uint32_t>(pending_->anim_preview->width());
+            pending_->height =
+                static_cast<std::uint32_t>(pending_->anim_preview->height());
+        }
+    }
+
     // ── Decode video thumbnail lazily once extraction fills thumb_bytes_raw ──
     if (pending_.has_value() &&
         pending_->kind == PendingAttachment::Kind::Video &&
@@ -931,14 +950,23 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                                        ctx.theme.palette.border, 1.0f);
         if (pending_->kind == PendingAttachment::Kind::Image)
         {
-            if (pending_->preview)
+            constexpr float kImgInset = 1.0f;
+            tk::Rect img_rect{
+                preview_image_rect_.x + kImgInset,
+                preview_image_rect_.y + kImgInset,
+                std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
+                std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+
+            if (pending_->anim_preview)
             {
-                constexpr float kImgInset = 1.0f;
-                tk::Rect img_rect{
-                    preview_image_rect_.x + kImgInset,
-                    preview_image_rect_.y + kImgInset,
-                    std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
-                    std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+                ctx.canvas.draw_image(pending_->anim_preview->current_frame(),
+                                      img_rect);
+                if (on_request_anim_repaint_)
+                    on_request_anim_repaint_(
+                        pending_->anim_preview->ms_until_next_frame());
+            }
+            else if (pending_->preview)
+            {
                 ctx.canvas.draw_image(*pending_->preview, img_rect);
             }
         }

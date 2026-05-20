@@ -290,3 +290,31 @@ TEST_CASE("decode_animated_image returns nullptr for empty bytes",
     auto anim = st.surface->factory().decode_animated_image({}, 384);
     CHECK(anim == nullptr);
 }
+
+TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint callback",
+          "[tk][view][compose][anim]")
+{
+    Stage st;
+    ComposeBar bar;
+
+    int repaint_delay = -1;
+    bar.on_request_anim_repaint_ = [&](int d) { repaint_delay = d; };
+
+    std::vector<std::uint8_t> gif_bytes(std::begin(kMinAnimGif),
+                                        std::end(kMinAnimGif));
+    bar.set_pending_image(gif_bytes, "image/gif", "anim.gif",
+                         /*is_animated=*/true);
+
+    auto lc = st.layout_ctx();
+    bar.measure(lc, {640.0f, 200.0f});
+    bar.arrange(lc, {0.0f, 0.0f, 640.0f, 200.0f});
+    auto pc = st.paint_ctx();
+    bar.paint(pc);
+
+    const auto* p = bar.pending_for_test();
+    REQUIRE(p != nullptr);
+    if (!p->anim_preview)
+        return; // skip: backend does not implement decode_animated_image
+    CHECK(repaint_delay > 0);
+    CHECK(repaint_delay <= 200);
+}

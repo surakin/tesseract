@@ -193,6 +193,10 @@ public:
         // Image kind: true for animated GIF/WebP.
         bool is_animated = false;
 
+        // Image kind: non-null when decode_animated_image() decoded all frames.
+        // paint() uses this in preference to `preview` when set.
+        std::unique_ptr<tk::AnimatedImage> anim_preview;
+
         // Video kind: raw JPEG first-frame bytes passed to on_send_video.
         std::vector<std::uint8_t> thumb_bytes_raw;
         std::uint32_t thumb_width = 0, thumb_height = 0;
@@ -281,6 +285,11 @@ public:
     /// being attached or detached. The host should re-apply its
     /// fixed-height envelope and re-run `relayout()`.
     std::function<void()> on_size_changed;
+
+    /// Fired from paint() while an animated image preview is active.
+    /// The shell should schedule a repaint of the compose surface after
+    /// `delay_ms` milliseconds (the time until the next animation frame).
+    std::function<void(int delay_ms)> on_request_anim_repaint_;
 
     /// Enter reply mode. Displays a "Replying to <sender_name>" banner
     /// with `body_preview` above the text input. Grows `natural_height()`
