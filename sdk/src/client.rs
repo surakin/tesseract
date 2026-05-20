@@ -541,10 +541,7 @@ impl ClientFfi {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("matrix_sdk=info".parse().unwrap())
-                    // TEMPORARY: surface the fetch_source_bytes diagnostics
-                    // without requiring the user to set RUST_LOG.
-                    .add_directive("tesseract_sdk_ffi=info".parse().unwrap()),
+                    .add_directive("matrix_sdk=info".parse().unwrap()),
             )
             .try_init();
 
@@ -3691,21 +3688,7 @@ impl ClientFfi {
         use matrix_sdk::ruma::events::room::MediaSource;
         use matrix_sdk::ruma::OwnedMxcUri;
 
-        // TEMPORARY DIAGNOSTIC — short tag so we can see what failed without
-        // dumping full URLs / encryption keys. Tag the source variant + the
-        // first few chars of the mxc URI (or "{...}" for encrypted JSON).
-        let tag = if source.is_empty() {
-            "empty".to_owned()
-        } else if source.starts_with("mxc://") {
-            format!("plain:{}", &source[..source.len().min(40)])
-        } else if source.starts_with('{') {
-            format!("encrypted:json({}b)", source.len())
-        } else {
-            format!("unknown:{}b", source.len())
-        };
-
         let Some(client) = self.client.clone() else {
-            tracing::warn!("fetch_source_bytes[{tag}]: no client (not logged in)");
             return Vec::new();
         };
         if source.is_empty() {
@@ -3715,19 +3698,13 @@ impl ClientFfi {
         let media_source = if source.starts_with("mxc://") {
             let uri = OwnedMxcUri::from(source);
             if !uri.is_valid() {
-                tracing::warn!("fetch_source_bytes[{tag}]: invalid mxc URI");
                 return Vec::new();
             }
             MediaSource::Plain(uri.into())
         } else {
             match serde_json::from_str::<MediaSource>(source) {
                 Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!(
-                        "fetch_source_bytes[{tag}]: MediaSource JSON parse error: {e}"
-                    );
-                    return Vec::new();
-                }
+                Err(_) => return Vec::new(),
             }
         };
 
@@ -3739,22 +3716,8 @@ impl ClientFfi {
         self.rt.block_on(async move {
             let media = client.media();
             tokio::select! {
-                result = media.get_media_content(&request, true) => {
-                    match result {
-                        Ok(bytes) => {
-                            tracing::info!(
-                                "fetch_source_bytes[{tag}]: ok, {} bytes", bytes.len()
-                            );
-                            cap_media_bytes(bytes)
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "fetch_source_bytes[{tag}]: matrix-sdk error: {e}"
-                            );
-                            Vec::new()
-                        }
-                    }
-                }
+                result = media.get_media_content(&request, true) =>
+                    cap_media_bytes(result.unwrap_or_default()),
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
         })
@@ -5604,9 +5567,19 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                             text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
                         }
                         MessageType::Image(img) => {
+                            // For encrypted images, serialise the full
+                            // MediaSource so fetch_source_bytes can re-parse
+                            // the EncryptedFile and decrypt — matches the
+                            // timeline path. Extracting just `f.url` would
+                            // ship the ciphertext URL with no key and the
+                            // C++ side would loop refetching undecryptable
+                            // bytes.
                             let url = match &img.source {
                                 MediaSource::Plain(uri) => uri.to_string(),
-                                MediaSource::Encrypted(f) => f.url.to_string(),
+                                MediaSource::Encrypted(_) => {
+                                    serde_json::to_string(&img.source)
+                                        .unwrap_or_default()
+                                }
                             };
                             LatestPreview {
                                 kind: "image".to_owned(),
@@ -5625,9 +5598,18 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                     let Some(orig) = ev.as_original() else {
                         return LatestPreview::default();
                     };
+                    // For encrypted stickers, serialise the full MediaSource
+                    // so fetch_source_bytes can re-parse the EncryptedFile
+                    // and decrypt — matches the timeline path's source_json.
+                    // Extracting just `f.url` shipped the encrypted-ciphertext
+                    // URL with no key, causing the C++ side to refetch in a
+                    // loop because the bytes never decoded.
                     let url = match &orig.content.source {
                         StickerMediaSource::Plain(uri) => uri.to_string(),
-                        StickerMediaSource::Encrypted(f) => f.url.to_string(),
+                        StickerMediaSource::Encrypted(f) => {
+                            let ms = MediaSource::Encrypted(f.clone());
+                            serde_json::to_string(&ms).unwrap_or_default()
+                        }
                         _ => String::new(),
                     };
                     LatestPreview {

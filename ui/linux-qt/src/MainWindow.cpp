@@ -2625,23 +2625,6 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                                        std::vector<uint8_t> bytes)
 {
     // Called on the UI thread (already posted via post_to_ui_ in ShellBase).
-    // TEMPORARY DIAGNOSTIC: short tag to correlate with the Rust-side log.
-    const std::string tag =
-        cache_key.empty()
-            ? std::string("empty")
-            : (cache_key.rfind("mxc://", 0) == 0
-                   ? "plain:" + cache_key.substr(0, std::min<std::size_t>(40, cache_key.size()))
-                   : (cache_key.front() == '{'
-                          ? "encrypted:json(" + std::to_string(cache_key.size()) + "b)"
-                          : "unknown:" + std::to_string(cache_key.size()) + "b"));
-    const char* kind_str = (kind == MediaKind::RoomAvatar) ? "RoomAvatar"
-                         : (kind == MediaKind::UserAvatar) ? "UserAvatar"
-                         : (kind == MediaKind::MediaImage) ? "MediaImage"
-                         : (kind == MediaKind::Tile)       ? "Tile"
-                                                            : "Other";
-    qDebug() << "on_media_bytes_ready_" << kind_str
-             << QString::fromStdString(tag) << "bytes=" << bytes.size();
-
     if (bytes.empty())
     {
         mediaImageSizes_.erase(cache_key);
@@ -2714,8 +2697,6 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     DecodedImage d = decode_image_(bytes, max_w, max_h);
     if (!d.frames.empty())
     {
-        qDebug() << "on_media_bytes_ready_ decoded animated frames="
-                 << d.frames.size() << "for" << QString::fromStdString(tag);
         anim_cache_.store(cache_key, std::move(d.frames),
                           std::move(d.delays_ms),
                           QDateTime::currentMSecsSinceEpoch());
@@ -2726,15 +2707,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     }
     else if (d.still)
     {
-        qDebug() << "on_media_bytes_ready_ decoded still size="
-                 << d.still->width() << "x" << d.still->height()
-                 << "for" << QString::fromStdString(tag);
         tk_images_.emplace(cache_key, std::move(d.still));
     }
     else
     {
-        qDebug() << "on_media_bytes_ready_ DECODE FAILED for"
-                 << QString::fromStdString(tag) << "input bytes=" << bytes.size();
         return;
     }
     if (mainApp_)
