@@ -1,4 +1,5 @@
 #include "tesseract/session_store.h"
+#include "tesseract/secret_store.h"
 #include "tesseract/paths.h"
 
 #include <cstdio>
@@ -283,6 +284,10 @@ static bool atomic_write(const fs::path& p, std::string_view content)
     return true;
 }
 
+// Written to session.json after a successful migration to SecretStore.
+// load_account() treats this as "data is in SecretStore; return nullopt on miss."
+static constexpr std::string_view kMigratedSentinel = "{\"v\":2}";
+
 // ---------------------------------------------------------------------------
 // Legacy single-account API
 // ---------------------------------------------------------------------------
@@ -435,23 +440,35 @@ bool SessionStore::save_index(const AccountIndex& idx)
 std::optional<std::string>
 SessionStore::load_account(const std::string& user_id)
 {
+    // 1. Authoritative store: SecretStore (Keychain / CredManager / libsecret).
+    //    Returns nullopt when the backend is unavailable (stub) or the key
+    //    does not exist.
+    if (auto sec = SecretStore::load(user_id))
+        return sec;
+
+    // 2. Legacy plaintext fallback.
     fs::path p = account_dir(user_id) / "session.json";
     std::ifstream in(p, std::ios::binary);
     if (!in)
-    {
         return std::nullopt;
-    }
     std::ostringstream buf;
     buf << in.rdbuf();
     if (in.bad())
-    {
         return std::nullopt;
-    }
     std::string s = buf.str();
-    if (s.empty())
-    {
+
+    // Sentinel: migration has already run but SecretStore returned nothing
+    // (key deleted externally or backend temporarily unavailable). Treat as
+    // no session — the user must log in again.
+    if (s.empty() || s == kMigratedSentinel)
         return std::nullopt;
-    }
+
+    // 3. Opportunistic migration: on first load after upgrade, move the
+    //    plaintext session to SecretStore. Best-effort: if SecretStore is
+    //    unavailable (stub) the plaintext continues to be used as-is.
+    if (SecretStore::save(user_id, s))
+        atomic_write(p, kMigratedSentinel);
+
     return s;
 }
 
@@ -459,14 +476,24 @@ bool SessionStore::save_account(const std::string& user_id,
                                 const std::string& json)
 {
     if (sanitize_user_id(user_id).empty())
-    {
         return false;
+
+    if (SecretStore::save(user_id, json))
+    {
+        // Sentinel write is best-effort: if it fails, SecretStore remains
+        // authoritative on the next load (step 1 of load_account).
+        atomic_write(account_dir(user_id) / "session.json", kMigratedSentinel);
+        return true;
     }
+
+    // SecretStore unavailable (stub / backend error) — write full JSON to
+    // disk (plaintext fallback).
     return atomic_write(account_dir(user_id) / "session.json", json);
 }
 
 void SessionStore::clear_account(const std::string& user_id)
 {
+    SecretStore::remove(user_id);
     std::error_code ec;
     fs::remove_all(account_dir(user_id), ec);
 }
