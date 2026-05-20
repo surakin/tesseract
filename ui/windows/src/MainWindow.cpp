@@ -2188,8 +2188,8 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
-            ensure_media_image_(hit.media_url, visual::kMaxInlineImageWidth,
-                                visual::kMaxInlineImageHeight);
+            ensure_media_image_(hit.media_url, tesseract::visual::kMaxInlineImageWidth,
+                                tesseract::visual::kMaxInlineImageHeight);
         };
 
         // ── VideoViewerOverlay callbacks ─────────────────────────────────────
