@@ -549,6 +549,24 @@ public:
         return false;
     }
 
+    // Returns true only if there is at least one real content row between
+    // this index and the next DaySeparator (or the end of the list). Used to
+    // suppress day separators that have no visible events beneath them, so
+    // consecutive empty-day separators collapse to just the last one.
+    bool has_content_before_next_separator(std::size_t index) const
+    {
+        using Kind = MessageRowData::Kind;
+        for (std::size_t j = index + 1; j < owner_.messages_.size(); ++j)
+        {
+            const Kind k = owner_.messages_[j].kind;
+            if (k == Kind::DaySeparator)
+                return false;
+            if (k != Kind::ReadMarker && k != Kind::TimelineStart)
+                return true;
+        }
+        return false;
+    }
+
     std::size_t count() const override
     {
         return owner_.messages_.size() + 1; // +1 for always-present typing row
@@ -630,7 +648,7 @@ public:
         using Kind = MessageRowData::Kind;
         if (m.kind == Kind::DaySeparator)
         {
-            return has_content_after(index) ? kDaySepH : 0.0f;
+            return has_content_before_next_separator(index) ? kDaySepH : 0.0f;
         }
         if (m.kind == Kind::ReadMarker)
         {
@@ -677,7 +695,7 @@ public:
         using Kind = MessageRowData::Kind;
         if (m.kind == Kind::DaySeparator)
         {
-            if (has_content_after(index))
+            if (has_content_before_next_separator(index))
             {
                 paint_day_separator(m, ctx, bounds);
             }
