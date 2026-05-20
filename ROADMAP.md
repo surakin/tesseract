@@ -4,9 +4,8 @@ Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending 
 
 ## Step 5 — UI redesign (in progress)
 
-Done: inline images, stickers, reply-to, message editing, voice messages (receive + send), ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing). Remaining:
+Done: inline images, stickers, reply-to, message editing, voice messages (receive + send), ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing), emoji reactions (reaction chips, toggle, `send_reaction` / `redact_reaction` FFI). Remaining:
 
-- **Emoji reactions** — reaction bar below each message (emoji + count); tap to toggle; `send_reaction` / `redact_reaction` FFI; reactions in `TimelineEvent` as `Vec<(emoji, count, reacted_by_me)>`.
 - **Message bubbles / cards** — visual polish pass on the message layout.
 - **Threaded reply panel** — slide-in sidebar (deferred from reply-to landing).
 - **Sidebar polish** — DM rooms show the other user's avatar.
@@ -16,7 +15,6 @@ Done: inline images, stickers, reply-to, message editing, voice messages (receiv
 
 - **Inline emoticons in HTML message bodies** — render `<img data-mx-emoticon ...>` in `formatted_body` instead of alt text. Per-platform: Qt `QTextDocument::addResource`, GTK `GtkTextChildAnchor`, macOS `NSTextAttachment`, Win32 via RichEdit overlay (Step 8b).
 - **Win32 shell wiring** — `StickerPicker` child `WS_POPUP` surface and the underlying RichEdit overlay (Step 8b). Right-click "Add to Saved Stickers" is done (`tk::win32::Surface::set_on_right_click` + `WM_RBUTTONUP`).
-- **Async image cache for pickers** — promote `ensure_media_image` into a shared `tk::AsyncImageCache` (worker → decode → post-to-UI → cache + repaint) so `StickerPicker` / `EmojiPicker` custom tabs don't show grey placeholders for stickers not yet seen in a timeline. GTK4 worker-fetch now wired for both pickers; consolidation into a shared `AsyncImageCache` across all platforms still pending.
 
 ## Step 8b — Win32 RichEdit inline media overlay
 
@@ -45,7 +43,6 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 
 - **`m.location` send not yet implemented** — receive + display is done (see CHANGES.md 2026-05-17); composing and sending location messages is out of scope for this iteration.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D are tested; macOS CGBitmapContext surface is still TODO.
-- **Picker image cache consolidation** — GTK4 now has per-picker async fetch for both `StickerPicker` and `EmojiPicker`; a shared `tk::AsyncImageCache` to unify the four platform paths is still pending.
 - **`tk_avatars_` / `tk_images_` not keyed by `(user_id, mxc)`** — cosmetic ghosting risk when two accounts share an mxc URL that resolves to different bytes.
 - **i18n not wired on macOS (`NSLocalizedString`) or Win32 (`LoadString`)**.
 - **Notification preview image is fetched as a full file, not a thumbnail** — image/sticker notification previews now work (incl. a lock-screen privacy gate via `IScreenLock`), but the SDK downloads the full media (≤ 2 MiB cap) on the sync handler regardless of whether the C++ layer will display it (it can't see window-focus / lock state). Fix: use `MediaFormat::Thumbnail` and skip the fetch when the notification won't be shown. The macOS + Linux (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need on-device smoke tests (built only on Win32 here).
