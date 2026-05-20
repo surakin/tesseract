@@ -18,6 +18,7 @@
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
+#include "views/settings/ServerSection.h"
 
 #include "tk/controls.h"
 #include "tk/side_tab_view.h"
@@ -64,6 +65,11 @@ public:
     // Silently initialise the prefetch checkbox from persisted settings.
     void set_prefetch_enabled(bool enabled);
 
+    // ----- Server section ---------------------------------------------------
+
+    // Populate the Server section with the connected server's info.
+    void set_server_info(const tesseract::ServerInfo& info);
+
     // ----- Callbacks wired by the shell -------------------------------------
 
     // Fired when the user clicks "← Back".
@@ -98,6 +104,7 @@ private:
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
     MediaSection* media_ = nullptr;
+    ServerSection* server_section_ = nullptr;
 };
 
 } // namespace tesseract::views

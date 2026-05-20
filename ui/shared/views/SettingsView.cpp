@@ -72,12 +72,17 @@ SettingsView::SettingsView()
     };
     media_ = media.get();
 
-    // SideTabView — owns the four section widgets.
+    // Server section.
+    auto server = std::make_unique<ServerSection>();
+    server_section_ = server.get();
+
+    // SideTabView — owns the five section widgets.
     auto tabs = std::make_unique<tk::SideTabView>();
     tabs->add_tab("Account", std::move(account));
     tabs->add_tab("Appearance", std::move(appearance));
     tabs->add_tab("Notifications", std::move(notifications));
     tabs->add_tab("Media", std::move(media));
+    tabs->add_tab("Server", std::move(server));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs_ = add_child(std::move(tabs));
 }
@@ -135,6 +140,14 @@ void SettingsView::set_prefetch_enabled(bool enabled)
     if (media_)
     {
         media_->set_prefetch_checked(enabled);
+    }
+}
+
+void SettingsView::set_server_info(const tesseract::ServerInfo& info)
+{
+    if (server_section_)
+    {
+        server_section_->set_server_info(info);
     }
 }
 
