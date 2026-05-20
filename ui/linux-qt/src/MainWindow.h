@@ -280,6 +280,7 @@ private:
 
     static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
     static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
+    static constexpr int kAvatarCacheSize = tesseract::visual::kAvatarCacheSize;
     static constexpr int kMaxImageWidth =
         tesseract::visual::kMaxInlineImageWidth;
     static constexpr int kMaxImageHeight =
@@ -297,6 +298,8 @@ private:
     std::unique_ptr<tk::NativeTextField> recoveryKeyField_;
     std::unique_ptr<tk::NativeTextField> roomSearchField_;
     std::unique_ptr<tk::NativeTextArea> roomTextArea_;
+    std::unique_ptr<tk::NativeTextArea> topicTextArea_;
+    bool topicTextAreaVisible_ = false; // mirrors topicTextArea_ visibility for transition detection
 
     // Sync-progress status text (initial room hydration + key backfill).
     // Single-shot timer that defers entering the "Syncing rooms…" message

@@ -996,6 +996,114 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                         Qt::QueuedConnection);
                 });
         };
+        mainApp_->room_view()->on_fetch_room_members =
+            [this](const std::string& room_id)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            runOnPool_(
+                [this, c, room_id]()
+                {
+                    auto members = c->get_room_members(room_id);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, members = std::move(members)]() mutable
+                        {
+                            if (mainApp_)
+                                mainApp_->room_view()->set_room_members(
+                                    std::move(members));
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->room_view()->on_save_topic =
+            [this](const std::string& room_id, const std::string& topic)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            runOnPool_(
+                [this, c, room_id, topic]()
+                {
+                    auto res = c->set_room_topic(room_id, topic);
+                    if (!res.ok)
+                    {
+                        QMetaObject::invokeMethod(
+                            this,
+                            [this, msg = res.message]()
+                            {
+                                statusBar()->showMessage(
+                                    tr("Failed to set topic: %1")
+                                        .arg(QString::fromStdString(msg)),
+                                    4000);
+                            },
+                            Qt::QueuedConnection);
+                    }
+                });
+        };
+        mainApp_->room_view()->on_leave_room =
+            [this](const std::string& room_id)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            runOnPool_(
+                [this, c, room_id]()
+                {
+                    auto res = c->leave_room(room_id);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, room_id, ok = res.ok]()
+                        {
+                            if (!mainApp_ || !ok)
+                                return;
+                            if (current_room_id_ == room_id)
+                            {
+                                current_room_id_.clear();
+                                mainApp_->room_view()->clear_room();
+                                mainApp_->room_list_view()->set_selected_room(
+                                    "");
+                                if (mainAppSurface_)
+                                    mainAppSurface_->relayout();
+                            }
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->room_view()->on_open_dm =
+            [this](const std::string& user_id)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            runOnPool_(
+                [this, c, user_id]()
+                {
+                    auto dm_id = c->get_or_create_dm(user_id);
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, dm_id = std::move(dm_id)]() mutable
+                        {
+                            if (!mainApp_ || dm_id.empty())
+                                return;
+                            navigate_to_room(dm_id);
+                        },
+                        Qt::QueuedConnection);
+                });
+        };
+        mainApp_->room_view()->on_ignore_user =
+            [this](const std::string& user_id)
+        {
+            if (!client_)
+                return;
+            auto* c = client_;
+            runOnPool_(
+                [c, user_id]()
+                {
+                    c->ignore_user(user_id);
+                });
+        };
         mainApp_->video_viewer()->on_save =
             [this](std::string source_json, std::string mime_type)
         {
@@ -1193,6 +1301,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             }
         });
 
+    topicTextArea_ = mainAppSurface_->host().make_text_area();
+    topicTextArea_->set_font_role(tk::FontRole::Body);
+    topicTextArea_->set_text_color(
+        mainAppSurface_->theme().palette.text_primary);
+    topicTextArea_->set_on_changed(
+        [this](const std::string& t)
+        {
+            if (mainApp_)
+                mainApp_->room_view()->set_topic_edit_text(t);
+        });
+    topicTextArea_->set_visible(false);
+
     roomSearchField_ = mainAppSurface_->host().make_text_field();
     roomSearchField_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
@@ -1234,6 +1354,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     mainApp_->recovery_key_field_visible());
                 recoveryKeyField_->set_rect(
                     mainApp_->recovery_key_field_rect());
+            }
+            if (mainApp_ && topicTextArea_)
+            {
+                const tk::Rect tr =
+                    mainApp_->room_view()->topic_edit_rect();
+                const bool edit_visible =
+                    mainApp_->room_view()->topic_edit_visible();
+                const bool now_visible = edit_visible && !tr.empty();
+                // Detect transition from hidden to visible to prefill text.
+                const bool was_visible = topicTextAreaVisible_;
+                topicTextAreaVisible_ = now_visible;
+                topicTextArea_->set_visible(now_visible);
+                if (now_visible)
+                {
+                    topicTextArea_->set_rect(tr);
+                    if (!was_visible)
+                        topicTextArea_->set_text(
+                            mainApp_->room_view()->topic_edit_initial_text());
+                }
             }
         });
 
@@ -2504,9 +2643,7 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             return;
         }
-        const int size =
-            (kind == MediaKind::RoomAvatar) ? kRoomAvatarSize : kMsgAvatarSize;
-        QImage scaled = img.scaled(size, size, Qt::KeepAspectRatio,
+        QImage scaled = img.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio,
                                    Qt::SmoothTransformation);
         tk_avatars_.emplace(cache_key, tk::qt6::make_image(std::move(scaled)));
         if (mainAppSurface_)

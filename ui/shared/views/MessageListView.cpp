@@ -4893,6 +4893,61 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
+    // Sender avatar / name hit-test. Uses hovered_row_index() (synchronously
+    // updated on every pointer_move) + row_world_rect() so this works even
+    // when hovered_row_geom_ hasn't been repopulated by the next paint yet.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        int ri_int = hovered_row_index();
+        if (ri_int >= 0)
+        {
+            std::size_t ri = static_cast<std::size_t>(ri_int);
+            if (ri < messages_.size())
+            {
+                const auto& m = messages_[ri];
+                using Kind = MessageRowData::Kind;
+                const bool is_virtual = m.kind == Kind::DaySeparator ||
+                                        m.kind == Kind::ReadMarker ||
+                                        m.kind == Kind::TimelineStart;
+                // Continuation rows don't render an avatar or sender name.
+                const bool is_cont_row =
+                    (hovered_row_geom_.row_index == ri)
+                        ? false // geom is fresh — trust paint had !cont
+                        : (ri > 0 && messages_[ri - 1].sender == m.sender &&
+                           !m.has_reply() && !is_virtual);
+                if (!is_virtual && !is_cont_row && !m.sender.empty())
+                {
+                    const tk::Rect rb = row_world_rect(ri_int);
+                    if (rb.w > 0)
+                    {
+                        const tk::Rect avatar_rect{rb.x + kPadX, rb.y + kPadY,
+                                                   kAvatarSize, kAvatarSize};
+                        const float col_x = rb.x + kPadX + kAvatarSize + kAvatarGap;
+                        const float sender_y =
+                            rb.y + kPadY + (kAvatarSize - kSenderH) * 0.5f;
+                        // Cap at 200px so clicking message body doesn't trigger.
+                        const float name_max_w =
+                            std::min(200.0f, std::max(0.0f, rb.w - kPadX -
+                                                                 kAvatarSize -
+                                                                 kAvatarGap - kPadX));
+                        const tk::Rect sender_name_rect{col_x, sender_y,
+                                                        name_max_w, kSenderH};
+                        if (rect_contains(avatar_rect, world) ||
+                            (sender_name_rect.w > 0 &&
+                             rect_contains(sender_name_rect, world)))
+                        {
+                            press_sender_ = true;
+                            press_sender_user_id_ = m.sender;
+                            press_sender_display_name_ = m.sender_name;
+                            press_sender_avatar_url_ = m.sender_avatar_url;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
     if (t == HoverTarget::None)
@@ -5014,6 +5069,21 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             revealed_spoilers_.insert(eid);
             invalidate_data();
+        }
+        return;
+    }
+    if (press_sender_)
+    {
+        std::string uid  = std::move(press_sender_user_id_);
+        std::string name = std::move(press_sender_display_name_);
+        std::string aurl = std::move(press_sender_avatar_url_);
+        press_sender_ = false;
+        press_sender_user_id_.clear();
+        press_sender_display_name_.clear();
+        press_sender_avatar_url_.clear();
+        if (inside_self && on_sender_clicked)
+        {
+            on_sender_clicked(std::move(uid), std::move(name), std::move(aurl));
         }
         return;
     }
