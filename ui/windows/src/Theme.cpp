@@ -257,6 +257,30 @@ bool refresh_from_system()
     return true;
 }
 
+COLORREF accent_colorref()
+{
+    // AccentColorMenu is 0xAABBGGRR (alpha + COLORREF byte order).
+    // Masking out the alpha gives a ready-to-use COLORREF.
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent",
+            0, KEY_READ, &key) == ERROR_SUCCESS)
+    {
+        DWORD value = 0, size = sizeof(value), type = REG_DWORD;
+        LSTATUS rc = RegQueryValueExW(key, L"AccentColorMenu", nullptr, &type,
+                                      reinterpret_cast<BYTE*>(&value), &size);
+        RegCloseKey(key);
+        if (rc == ERROR_SUCCESS && type == REG_DWORD)
+            return value & 0x00FFFFFF;
+    }
+    // Fallback: DwmGetColorizationColor is documented as 0xAARRGGBB.
+    DWORD col = 0;
+    BOOL  opaque = FALSE;
+    if (SUCCEEDED(DwmGetColorizationColor(&col, &opaque)))
+        return RGB((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF);
+    return RGB(0x00, 0x78, 0xD4); // Win11 default blue
+}
+
 void set_mode(Mode m)
 {
     g_mode_initialised = true;

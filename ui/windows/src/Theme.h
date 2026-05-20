@@ -65,6 +65,10 @@ const Palette& palette();
 // Pull the latest mode from the registry. Returns true if the mode changed.
 bool refresh_from_system();
 
+// Read the user's chosen Windows accent color from the registry.
+// Returns a COLORREF (0x00BBGGRR). Falls back to Win11 default blue.
+COLORREF accent_colorref();
+
 // Force a specific mode (user preference override). Clears the brush cache.
 void set_mode(Mode);
 

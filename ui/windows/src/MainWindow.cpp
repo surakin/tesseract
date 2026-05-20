@@ -261,46 +261,102 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
         InvalidateRect(hStatus_, nullptr, TRUE);
     }
 
-    // Update all tk surfaces.
+    // Build a tk::Theme that mirrors the Windows system accent color so D2D
+    // surfaces (buttons, badges, chips, selection) use the user's chosen color.
+    const COLORREF accent_cr = win32::theme::accent_colorref();
+
+    // Derive light/dark variants from the raw system accent.
+    COLORREF a_cr, ah_cr, ap_cr;
+    if (t.mode == tk::ThemeMode::Dark)
+    {
+        // Lighten for legibility on dark backgrounds.
+        a_cr  = RGB(min(255, (int)GetRValue(accent_cr) + 0x30),
+                    min(255, (int)GetGValue(accent_cr) + 0x30),
+                    min(255, (int)GetBValue(accent_cr) + 0x30));
+        ah_cr = RGB(min(255, (int)GetRValue(a_cr) + 0x18),
+                    min(255, (int)GetGValue(a_cr) + 0x18),
+                    min(255, (int)GetBValue(a_cr) + 0x18));
+        ap_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x18),
+                    max(0, (int)GetGValue(a_cr) - 0x18),
+                    max(0, (int)GetBValue(a_cr) - 0x18));
+    }
+    else
+    {
+        a_cr  = accent_cr;
+        ah_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x1A),
+                    max(0, (int)GetGValue(a_cr) - 0x1A),
+                    max(0, (int)GetBValue(a_cr) - 0x1A));
+        ap_cr = RGB(max(0, (int)GetRValue(a_cr) - 0x30),
+                    max(0, (int)GetGValue(a_cr) - 0x30),
+                    max(0, (int)GetBValue(a_cr) - 0x30));
+    }
+
+    // Black or white depending on perceived luminance.
+    const float lum = (0.2126f * GetRValue(a_cr) + 0.7152f * GetGValue(a_cr)
+                       + 0.0722f * GetBValue(a_cr)) / 255.f;
+    const COLORREF ton_cr = (lum > 0.45f) ? RGB(0x1B, 0x1B, 0x1B)
+                                           : RGB(0xFF, 0xFF, 0xFF);
+
+    // COLORREF (0x00BBGGRR) → tk::Color::rgb(0xRRGGBB).
+    auto cr2tk = [](COLORREF c) -> tk::Color {
+        return tk::Color::rgb((static_cast<uint32_t>(GetRValue(c)) << 16) |
+                              (static_cast<uint32_t>(GetGValue(c)) <<  8) |
+                               static_cast<uint32_t>(GetBValue(c)));
+    };
+
+    // Patch accent into current_theme_ (the stable ShellBase member whose address
+    // surfaces hold via set_theme's theme_ = &t pointer store).
+    current_theme_                        = t;
+    current_theme_.palette.accent         = cr2tk(a_cr);
+    current_theme_.palette.accent_hover   = cr2tk(ah_cr);
+    current_theme_.palette.accent_pressed = cr2tk(ap_cr);
+    current_theme_.palette.text_on_accent = cr2tk(ton_cr);
+    current_theme_.palette.unread_bg      = cr2tk(a_cr);
+    current_theme_.palette.unread_text    = cr2tk(ton_cr);
+    current_theme_.palette.selection      = tk::Color::rgba(
+        GetRValue(a_cr), GetGValue(a_cr), GetBValue(a_cr), 0x50);
+
+    // Update all tk surfaces with current_theme_ so they hold &current_theme_,
+    // a pointer that stays valid for the shell's lifetime.
     if (branding_surface_)
     {
-        branding_surface_->set_theme(t);
+        branding_surface_->set_theme(current_theme_);
     }
     if (main_app_surface_)
     {
-        main_app_surface_->set_theme(t);
+        main_app_surface_->set_theme(current_theme_);
     }
     if (emoji_picker_surface_)
     {
-        emoji_picker_surface_->set_theme(t);
+        emoji_picker_surface_->set_theme(current_theme_);
     }
     if (sticker_picker_surface_)
     {
-        sticker_picker_surface_->set_theme(t);
+        sticker_picker_surface_->set_theme(current_theme_);
     }
     if (shortcode_popup_surface_)
     {
-        shortcode_popup_surface_->set_theme(t);
+        shortcode_popup_surface_->set_theme(current_theme_);
     }
     if (join_room_surface_)
     {
-        join_room_surface_->set_theme(t);
+        join_room_surface_->set_theme(current_theme_);
     }
     if (account_picker_surface_)
     {
-        account_picker_surface_->set_theme(t);
+        account_picker_surface_->set_theme(current_theme_);
     }
     if (settings_surface_)
     {
-        settings_surface_->set_theme(t);
+        settings_surface_->set_theme(current_theme_);
     }
     if (login_view_)
     {
-        login_view_->set_theme(t);
+        login_view_->set_theme(current_theme_);
     }
 
     // Pop-out room windows track the theme too.
-    apply_theme_to_secondary_windows_(t);
+    apply_theme_to_secondary_windows_(current_theme_);
 }
 
 void MainWindow::on_system_theme_changed()
