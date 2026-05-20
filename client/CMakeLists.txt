@@ -15,6 +15,28 @@ add_library(tesseract_client STATIC
     src/waveform_cache.cpp
 )
 
+# ── SecretStore: platform credential backend ────────────────────────────────
+if(WIN32)
+    target_sources(tesseract_client PRIVATE src/secret_store_windows.cpp)
+elseif(APPLE)
+    target_sources(tesseract_client PRIVATE src/secret_store_macos.cpp)
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBSECRET QUIET libsecret-1)
+    endif()
+    if(LIBSECRET_FOUND)
+        target_sources(tesseract_client PRIVATE src/secret_store_linux.cpp)
+        target_include_directories(tesseract_client
+            PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+        target_link_libraries(tesseract_client
+            PRIVATE ${LIBSECRET_LIBRARIES})
+    else()
+        target_sources(tesseract_client PRIVATE src/secret_store_stub.cpp)
+        message(STATUS "tesseract: libsecret not found — using plaintext token fallback")
+    endif()
+endif()
+
 target_compile_features(tesseract_client PUBLIC cxx_std_20)
 
 target_include_directories(tesseract_client
@@ -37,5 +59,10 @@ if(WIN32)
     # (case-sensitive filesystem), while MSVC on Windows is case-insensitive.
     target_link_libraries(tesseract_client PUBLIC
         ws2_32 bcrypt userenv ntdll
-        shell32)               # ShellExecuteA in open_in_browser()
+        shell32                # ShellExecuteA in open_in_browser()
+        advapi32)              # CredWriteW / CredReadW for SecretStore
+endif()
+
+if(APPLE)
+    target_link_libraries(tesseract_client PRIVATE "-framework Security")
 endif()
