@@ -1059,6 +1059,8 @@ public:
             delays.push_back(f.delay_ms);
         }
 
+        if (frames.size() < 2)
+            return nullptr;
         return std::make_unique<AnimatedImage>(std::move(frames),
                                               std::move(delays));
     }

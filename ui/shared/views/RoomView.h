@@ -229,6 +229,7 @@ private:
 
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;
+    bool anim_repaint_pending_ = false;
 
     // Child widgets — owned via add_child, raw pointers borrowed back.
     BrandView* brand_view_ = nullptr;

@@ -62,9 +62,15 @@ void RoomView::wire_internal_callbacks()
     };
     compose_bar_->on_request_anim_repaint_ = [this](int delay_ms)
     {
-        if (post_delayed_ && repaint_requester_)
+        if (post_delayed_ && repaint_requester_ && !anim_repaint_pending_)
         {
-            post_delayed_(delay_ms, [this] { repaint_requester_(); });
+            anim_repaint_pending_ = true;
+            post_delayed_(delay_ms,
+                          [this]
+                          {
+                              anim_repaint_pending_ = false;
+                              repaint_requester_();
+                          });
         }
     };
     compose_bar_->on_send = [this](const std::string& body)
