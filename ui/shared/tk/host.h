@@ -80,6 +80,10 @@ public:
     virtual void set_placeholder(std::string text) = 0;
     virtual void set_focused(bool focused) = 0;
     virtual void set_visible(bool visible) = 0;
+    // Last value passed to set_visible() (defaults to true at construction —
+    // matches the existing "show on first set_rect" semantics shells rely on
+    // to detect the hidden→visible transition for prefill).
+    virtual bool visible() const = 0;
     virtual void set_enabled(bool enabled) = 0;
 
     // Set the font used to render and measure input text. Callers pass a

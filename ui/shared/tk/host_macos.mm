@@ -641,6 +641,10 @@ public:
     void set_placeholder(std::string text) override;
     void set_focused(bool focused) override;
     void set_visible(bool visible) override;
+    bool visible() const override
+    {
+        return visible_;
+    }
     void set_enabled(bool enabled) override;
     float natural_height() const override;
     void set_on_changed(std::function<void(const std::string&)> cb) override
@@ -690,6 +694,9 @@ private:
     TKTextViewBridge* bridge_ = nil;
     NSTextField* placeholder_ = nil;
     float last_height_ = 0.f;
+    // Tracks the last value passed to set_visible(). Mirrors the
+    // freshly-created NSScrollView's default (hidden=NO ⇒ visible).
+    bool visible_ = true;
     std::string placeholder_text_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
@@ -927,6 +934,7 @@ void NSTextViewNative::set_focused(bool focused)
 }
 void NSTextViewNative::set_visible(bool visible)
 {
+    visible_ = visible;
     scroll_.hidden = !visible;
     if (placeholder_)
         placeholder_.hidden = !visible || !text().empty() || placeholder_text_.empty();

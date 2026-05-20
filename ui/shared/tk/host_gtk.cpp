@@ -343,10 +343,15 @@ public:
     }
     void set_visible(bool visible) override
     {
+        visible_ = visible;
         if (scroll_)
         {
             gtk_widget_set_visible(scroll_, visible);
         }
+    }
+    bool visible() const override
+    {
+        return visible_;
     }
     void set_enabled(bool enabled) override
     {
@@ -641,6 +646,9 @@ private:
     gulong changed_id_ = 0;
     gulong paste_id_ = 0;
     float last_height_ = 0.f;
+    // Tracks the last value passed to set_visible(). Mirrors GtkWidget's
+    // default-visible state on construction.
+    bool visible_ = true;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;

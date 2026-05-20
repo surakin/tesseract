@@ -437,10 +437,15 @@ public:
     }
     void set_visible(bool visible) override
     {
+        visible_ = visible;
         if (edit_)
         {
             edit_->setVisible(visible);
         }
+    }
+    bool visible() const override
+    {
+        return visible_;
     }
     void set_enabled(bool enabled) override
     {
@@ -603,6 +608,10 @@ private:
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
     float last_height_ = 0.f;
+    // Tracks the last value passed to set_visible(). Construction-time
+    // default mirrors a freshly-created QPlainTextEdit, which is visible
+    // until something hides it.
+    bool visible_ = true;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

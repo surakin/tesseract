@@ -615,10 +615,15 @@ public:
     }
     void set_visible(bool visible) override
     {
+        visible_ = visible;
         if (hwnd_)
         {
             ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
         }
+    }
+    bool visible() const override
+    {
+        return visible_;
     }
     void set_enabled(bool enabled) override
     {
@@ -954,6 +959,9 @@ private:
     HWND hwnd_ = nullptr;
     int id_ = 0;
     bool suppress_changed_ = false;
+    // Tracks the last value passed to set_visible(). Matches the WS_VISIBLE
+    // style on the CreateWindowExW call above.
+    bool visible_ = true;
     float last_height_ = 0.f;
     Rect last_rect_ = {-1.f, -1.f, -1.f, -1.f};
     IWICImagingFactory* wic_ = nullptr;
