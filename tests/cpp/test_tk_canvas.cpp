@@ -98,6 +98,60 @@ TEST_CASE("CanvasFactory::build_text returns a measurable layout",
     CHECK(layout->line_count() >= 1);
 }
 
+TEST_CASE("build_text layout char_index_at returns valid offset for plain text",
+          "[tk][canvas][selection]")
+{
+    auto s = TestSurface::create(400, 60);
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.wrap      = true;
+    st.max_width = 380.0f;
+    auto layout  = s->factory().build_text("Hello world", st);
+    REQUIRE(layout);
+
+    auto sz  = layout->measure();
+    tk::Point mid{sz.w * 0.5f, sz.h * 0.5f};
+    int idx = layout->char_index_at(mid);
+    CHECK(idx >= 0);
+    CHECK(idx <= static_cast<int>(std::string("Hello world").size()));
+}
+
+TEST_CASE("build_text layout selection_rects returns non-empty rects",
+          "[tk][canvas][selection]")
+{
+    auto s = TestSurface::create(400, 60);
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.wrap      = true;
+    st.max_width = 380.0f;
+    auto layout  = s->factory().build_text("Hello world", st);
+    REQUIRE(layout);
+
+    auto rects = layout->selection_rects(0, 5); // "Hello"
+    CHECK(!rects.empty());
+    for (const auto& r : rects)
+    {
+        CHECK(r.w > 0.0f);
+        CHECK(r.h > 0.0f);
+    }
+}
+
+TEST_CASE("build_text layout text_range extracts correct UTF-8 substring",
+          "[tk][canvas][selection]")
+{
+    auto s = TestSurface::create(400, 60);
+    tk::TextStyle st{};
+    st.role      = tk::FontRole::Body;
+    st.wrap      = true;
+    st.max_width = 380.0f;
+    auto layout  = s->factory().build_text("Hello world", st);
+    REQUIRE(layout);
+
+    CHECK(layout->text_range(0, 5)  == "Hello");
+    CHECK(layout->text_range(6, 11) == "world");
+    CHECK(layout->text_range(3, 3).empty());
+}
+
 TEST_CASE("Canvas::draw_text writes glyphs into the surface", "[tk][canvas]")
 {
     auto s = TestSurface::create(200, 50);

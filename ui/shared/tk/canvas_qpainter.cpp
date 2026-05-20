@@ -10,9 +10,10 @@
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
 #include <QtGui/QPen>
-#include <QtGui/QTextOption>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextDocument>
+#include <QtGui/QTextLayout>
+#include <QtGui/QTextOption>
 #include <QtGui/QAbstractTextDocumentLayout>
 #include <QtGui/QPalette>
 #include <QtCore/QRectF>
@@ -226,7 +227,116 @@ public:
         p.restore();
     }
 
+    int char_index_at(tk::Point local) const override
+    {
+        if (elide_single_line_)
+            return -1;
+        ensure_ql_();
+        if (!ql_ || ql_->lineCount() == 0)
+            return -1;
+        int target = ql_->lineCount() - 1;
+        for (int i = 0; i < ql_->lineCount(); ++i)
+        {
+            QTextLine ln = ql_->lineAt(i);
+            if (local.y < ln.position().y() + ln.height())
+            {
+                target = i;
+                break;
+            }
+        }
+        QTextLine ln = ql_->lineAt(target);
+        int qt16 = ln.xToCursor(static_cast<qreal>(local.x),
+                                 QTextLine::CursorBetweenCharacters);
+        return qt16_to_utf8_(qt16);
+    }
+
+    std::vector<tk::Rect> selection_rects(int start_byte,
+                                          int end_byte) const override
+    {
+        if (start_byte >= end_byte || elide_single_line_)
+            return {};
+        ensure_ql_();
+        if (!ql_)
+            return {};
+        int qs = utf8_to_qt16_(start_byte);
+        int qe = utf8_to_qt16_(end_byte);
+        if (qs >= qe)
+            return {};
+        std::vector<tk::Rect> out;
+        for (int i = 0; i < ql_->lineCount(); ++i)
+        {
+            QTextLine ln = ql_->lineAt(i);
+            int ls = ln.textStart();
+            int le = ls + ln.textLength();
+            int cs = std::max(qs, ls);
+            int ce = std::min(qe, le);
+            if (cs >= ce)
+                continue;
+            qreal x1 = ln.cursorToX(cs, QTextLine::Leading);
+            qreal x2 = ln.cursorToX(ce, QTextLine::Leading);
+            if (x1 > x2)
+                std::swap(x1, x2);
+            out.push_back({static_cast<float>(x1),
+                           static_cast<float>(ln.position().y()),
+                           static_cast<float>(x2 - x1),
+                           static_cast<float>(ln.height())});
+        }
+        return out;
+    }
+
+    std::string text_range(int start_byte, int end_byte) const override
+    {
+        if (start_byte >= end_byte)
+            return {};
+        QByteArray utf8 = text_.toUtf8();
+        int lo = std::max(0, start_byte);
+        int hi = std::min(end_byte, static_cast<int>(utf8.size()));
+        if (lo >= hi)
+            return {};
+        return std::string(utf8.constData() + lo,
+                           static_cast<std::size_t>(hi - lo));
+    }
+
 private:
+    void ensure_ql_() const
+    {
+        if (ql_)
+            return;
+        ql_ = std::make_unique<QTextLayout>(text_, font_);
+        ql_->setTextOption(option_);
+        ql_->beginLayout();
+        qreal y = 0;
+        qreal w = max_width_ > 0 ? max_width_ : measured_.width();
+        while (true)
+        {
+            QTextLine ln = ql_->createLine();
+            if (!ln.isValid())
+                break;
+            ln.setLineWidth(w);
+            ln.setPosition(QPointF(0, y));
+            y += ln.height();
+        }
+        ql_->endLayout();
+    }
+
+    int qt16_to_utf8_(int qt16) const
+    {
+        if (qt16 <= 0)
+            return 0;
+        int clamped = std::min(qt16, static_cast<int>(text_.size()));
+        return static_cast<int>(text_.left(clamped).toUtf8().size());
+    }
+
+    int utf8_to_qt16_(int utf8_byte) const
+    {
+        if (utf8_byte <= 0)
+            return 0;
+        QByteArray ba = text_.toUtf8();
+        int clamped = std::min(utf8_byte, static_cast<int>(ba.size()));
+        return static_cast<int>(
+            QString::fromUtf8(ba.constData(), clamped).size());
+    }
+
     QString text_;
     QFont font_;
     QTextOption option_;
@@ -236,6 +346,7 @@ private:
     qreal max_height_ = -1;
     bool elide_single_line_ = false;
     qreal ascent_ = 0;
+    mutable std::unique_ptr<QTextLayout> ql_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
