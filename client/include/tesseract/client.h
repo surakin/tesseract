@@ -47,6 +47,25 @@ struct PaginateResult
     }
 };
 
+/// Information about the connected homeserver fetched after login.
+/// Bool capability fields default to `true` (permissive) when absent —
+/// old servers omit capabilities they support.
+/// `supports_msc3030` defaults to `false` — opt-in unstable feature.
+struct ServerInfo
+{
+    std::string homeserver_url;
+    std::vector<std::string> spec_versions;  ///< e.g. ["v1.1","v1.2","v1.5"]
+    bool supports_msc3030    = false;        ///< Jump-to-Date (org.matrix.msc3030)
+    bool can_change_password = true;
+    bool can_set_displayname = true;
+    bool can_set_avatar      = true;
+    std::string default_room_version;        ///< e.g. "10"; empty when absent
+
+    /// Parse from the JSON blob returned by `Client::get_server_info()`.
+    /// Missing/malformed fields use the defaults above.
+    static ServerInfo from_json(const std::string& json);
+};
+
 /// High-level C++ Matrix client.
 ///
 /// Thread-safety: methods may be called from any thread; the underlying Rust
@@ -78,6 +97,10 @@ public:
     /// `<config>/tesseract/accounts/<sanitized-uid>/matrix-store/`. Passing
     /// an empty path is a no-op (the client keeps the default location).
     void set_data_dir(const std::string& path);
+
+    // ------------------------------------------------------------------
+    // Server information
+    // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
     // Authentication (OAuth 2.0 / Matrix Authentication Service)
@@ -124,6 +147,13 @@ public:
 
     Result restore_session(const std::string& session_json);
     std::string export_session() const;
+
+    /// Fetch homeserver spec versions and enabled capabilities.
+    /// Blocks the calling thread — must be called from a worker thread.
+    /// Returns a default-constructed `ServerInfo` on network error or when
+    /// not logged in.
+    tesseract::ServerInfo get_server_info() const;
+
     Result logout();
 
     // ------------------------------------------------------------------

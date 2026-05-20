@@ -699,6 +699,54 @@ bool json_bool_field(std::string_view json, std::string_view key)
     return json.substr(pos, 4) == "true";
 }
 
+// ---------------------------------------------------------------------------
+// ServerInfo JSON helpers
+// ---------------------------------------------------------------------------
+
+std::vector<std::string>
+si_extract_string_array(std::string_view json, std::string_view key)
+{
+    std::vector<std::string> out;
+    const auto pos0 = find_value(json, key);
+    if (pos0 == std::string_view::npos)
+        return out;
+    auto pos = pos0;
+    while (pos < json.size() &&
+           (json[pos] == ' ' || json[pos] == '\t'))
+        ++pos;
+    if (pos >= json.size() || json[pos] != '[')
+        return out;
+    ++pos;
+    while (pos < json.size())
+    {
+        while (pos < json.size() &&
+               (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ',' ||
+                json[pos] == '\n' || json[pos] == '\r'))
+            ++pos;
+        if (pos >= json.size() || json[pos] == ']') break;
+        if (json[pos] != '"') break;
+        ++pos;
+        auto end = json.find('"', pos);
+        if (end == std::string_view::npos) break;
+        out.emplace_back(json.substr(pos, end - pos));
+        pos = end + 1;
+    }
+    return out;
+}
+
+bool si_extract_bool(std::string_view json, std::string_view key,
+                     bool default_val)
+{
+    const auto pos = find_value(json, key);
+    if (pos == std::string_view::npos)
+        return default_val;
+    if (pos + 4 <= json.size() && json.substr(pos, 4) == "true")
+        return true;
+    if (pos + 5 <= json.size() && json.substr(pos, 5) == "false")
+        return false;
+    return default_val;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -743,6 +791,30 @@ Client::discover_homeserver(const std::string& server_name_or_mxid)
     std::string error = json_string_field(json, "error");
     return DiscoveryResult{error.empty() && !base_url.empty(),
                            std::move(base_url), std::move(error)};
+}
+
+// ---------------------------------------------------------------------------
+// ServerInfo
+// ---------------------------------------------------------------------------
+
+tesseract::ServerInfo tesseract::ServerInfo::from_json(const std::string& json)
+{
+    if (json.empty())
+        return {};
+    ServerInfo info;
+    info.homeserver_url       = json_string_field(json, "homeserver");
+    info.spec_versions        = si_extract_string_array(json, "spec_versions");
+    info.supports_msc3030     = si_extract_bool(json, "supports_msc3030", false);
+    info.can_change_password  = si_extract_bool(json, "can_change_password", true);
+    info.can_set_displayname  = si_extract_bool(json, "can_set_displayname", true);
+    info.can_set_avatar       = si_extract_bool(json, "can_set_avatar", true);
+    info.default_room_version = json_string_field(json, "default_room_version");
+    return info;
+}
+
+ServerInfo Client::get_server_info() const
+{
+    return ServerInfo::from_json(std::string(impl_->ffi->get_server_info()));
 }
 
 Client::UrlPreview Client::get_url_preview(const std::string& url)
