@@ -4893,13 +4893,17 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
-    // Sender avatar / name hit-test. Uses hovered_row_index() (synchronously
-    // updated on every pointer_move) + row_world_rect() so this works even
-    // when hovered_row_geom_ hasn't been repopulated by the next paint yet.
+    // Sender avatar / name hit-test. Resolves the row from the click point
+    // (index_at) so we don't depend on hovered_row_geom_ being repopulated by
+    // a paint pass after the last hover change. Continuation status comes
+    // straight from Adapter::is_cont — the same function paint uses to decide
+    // whether to draw the avatar+name strip at all — so the hit-test rect
+    // exactly matches what's on screen, including the time-window regrouping
+    // that the previous heuristic ignored.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        int ri_int = hovered_row_index();
-        if (ri_int >= 0)
+        int ri_int = index_at(local);
+        if (ri_int >= 0 && adapter_)
         {
             std::size_t ri = static_cast<std::size_t>(ri_int);
             if (ri < messages_.size())
@@ -4909,13 +4913,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 const bool is_virtual = m.kind == Kind::DaySeparator ||
                                         m.kind == Kind::ReadMarker ||
                                         m.kind == Kind::TimelineStart;
-                // Continuation rows don't render an avatar or sender name.
-                const bool is_cont_row =
-                    (hovered_row_geom_.row_index == ri)
-                        ? false // geom is fresh — trust paint had !cont
-                        : (ri > 0 && messages_[ri - 1].sender == m.sender &&
-                           !m.has_reply() && !is_virtual);
-                if (!is_virtual && !is_cont_row && !m.sender.empty())
+                if (!is_virtual && !adapter_->is_cont(ri) && !m.sender.empty())
                 {
                     const tk::Rect rb = row_world_rect(ri_int);
                     if (rb.w > 0)
