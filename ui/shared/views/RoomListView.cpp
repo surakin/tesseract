@@ -122,14 +122,6 @@ public:
         }
         else
         {
-            // 1px separator at top of room row when the previous item is also
-            // a room (not a section header or the very first row).
-            if (index > 0 && owner_.items_[index - 1].kind == Item::Kind::Room)
-            {
-                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
-                                     ctx.theme.palette.separator);
-            }
-
             const auto& rooms = owner_.section_rooms_[item.section];
             if (item.room_idx < 0 ||
                 item.room_idx >= static_cast<int>(rooms.size()))
@@ -137,6 +129,15 @@ public:
                 return;
             }
             paint_room(*rooms[item.room_idx], ctx, bounds, selected, hovered);
+
+            // 1px separator at top of room row when the previous item is also
+            // a room (not a section header or the very first row).  Drawn after
+            // paint_room so the hover/selection fill does not paint over it.
+            if (index > 0 && owner_.items_[index - 1].kind == Item::Kind::Room)
+            {
+                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
+                                     ctx.theme.palette.separator);
+            }
         }
     }
 
