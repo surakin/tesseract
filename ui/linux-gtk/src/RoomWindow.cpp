@@ -119,6 +119,46 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             surface_->relayout();
         }
     };
+    room_view_->on_set_clipboard = [this](std::string_view t)
+    {
+        if (surface_)
+            surface_->set_clipboard_text(t);
+    };
+    room_view_->message_list()->on_show_copy_menu = [this]()
+    {
+        if (!copy_ctx_menu_)
+        {
+            GMenu* menu = g_menu_new();
+            g_menu_append(menu, _("Copy"), "copy-sel.copy");
+            copy_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+            gtk_popover_set_has_arrow(GTK_POPOVER(copy_ctx_menu_), FALSE);
+            gtk_widget_set_parent(copy_ctx_menu_, surface_->widget());
+            g_object_unref(menu);
+            copy_ctx_actions_ = g_simple_action_group_new();
+            GSimpleAction* act = g_simple_action_new("copy", nullptr);
+            g_signal_connect(act, "activate", G_CALLBACK(on_copy_action_), this);
+            g_action_map_add_action(G_ACTION_MAP(copy_ctx_actions_),
+                                    G_ACTION(act));
+            g_object_unref(act);
+            gtk_widget_insert_action_group(surface_->widget(), "copy-sel",
+                                           G_ACTION_GROUP(copy_ctx_actions_));
+        }
+        GtkWidget* w = surface_->widget();
+        GdkDisplay* dpy = gtk_widget_get_display(w);
+        GdkSeat* seat = gdk_display_get_default_seat(dpy);
+        GdkDevice* ptr = gdk_seat_get_pointer(seat);
+        GdkSurface* surf = gtk_native_get_surface(
+            GTK_NATIVE(gtk_widget_get_native(w)));
+        double sx = 0, sy = 0;
+        if (surf)
+            gdk_surface_get_device_position(surf, ptr, &sx, &sy, nullptr);
+        double wx = 0, wy = 0;
+        gtk_widget_translate_coordinates(
+            GTK_WIDGET(gtk_widget_get_native(w)), w, sx, sy, &wx, &wy);
+        GdkRectangle r{static_cast<int>(wx), static_cast<int>(wy), 1, 1};
+        gtk_popover_set_pointing_to(GTK_POPOVER(copy_ctx_menu_), &r);
+        gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
+    };
 
     // "destroy" fires when the GtkWindow is destroyed (user clicks X or
     // gtk_window_destroy is called). At that point the GtkWidget tree is
@@ -148,6 +188,16 @@ RoomWindow::~RoomWindow()
 }
 
 // static
+void RoomWindow::on_copy_action_(GSimpleAction* /*action*/,
+                                  GVariant* /*parameter*/,
+                                  gpointer self)
+{
+    auto* w = static_cast<RoomWindow*>(self);
+    if (w->room_view_)
+        w->room_view_->message_list()->copy_selection();
+}
+
+// static
 void RoomWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
@@ -157,9 +207,18 @@ void RoomWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
 
 // static
 gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
-                                      guint, GdkModifierType, gpointer self)
+                                      guint, GdkModifierType state,
+                                      gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
+    if (keyval == GDK_KEY_c && (state & GDK_CONTROL_MASK))
+    {
+        if (w->room_view_ && w->room_view_->message_list()->has_selection())
+        {
+            w->room_view_->message_list()->copy_selection();
+            return TRUE;
+        }
+    }
     if (keyval == GDK_KEY_Escape)
     {
         if (w->vid_viewer_ && w->vid_viewer_->is_open())

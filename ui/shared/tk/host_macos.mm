@@ -1298,6 +1298,16 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     return out;
 }
 
+void Host::set_clipboard_text(std::string_view text)
+{
+    NSString* str = [NSString stringWithUTF8String:std::string(text).c_str()];
+    if (!str)
+        return;
+    NSPasteboard* pb = [NSPasteboard generalPasteboard];
+    [pb clearContents];
+    [pb setString:str forType:NSPasteboardTypeString];
+}
+
 void Host::relayout()
 {
     if (!root_ || !view_)
@@ -1478,12 +1488,11 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)
 
 void Host::on_right_click(NSPoint p)
 {
-    if (!on_right_click_)
-    {
-        return;
-    }
-    on_right_click_(
-        tk::Point{static_cast<float>(p.x), static_cast<float>(p.y)});
+    tk::Point pt{static_cast<float>(p.x), static_cast<float>(p.y)};
+    if (root_)
+        root_->dispatch_right_click(pt);
+    if (on_right_click_)
+        on_right_click_(pt);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

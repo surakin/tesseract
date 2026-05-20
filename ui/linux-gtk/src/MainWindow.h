@@ -154,6 +154,8 @@ private:
     static void on_sticker_save_activate_(GSimpleAction* action,
                                           GVariant* parameter,
                                           gpointer user_data);
+    static void on_copy_action_(GSimpleAction* action, GVariant* parameter,
+                                gpointer user_data);
     static void on_logout_activate_(GSimpleAction* action, GVariant* parameter,
                                     gpointer user_data);
     static void on_add_account_activate_(GSimpleAction* action,
@@ -316,6 +318,10 @@ private:
     GtkWidget* sticker_ctx_menu_ = nullptr;
     GSimpleActionGroup* sticker_ctx_actions_ = nullptr;
     std::string ctx_sticker_event_id_;
+
+    GtkWidget* copy_ctx_menu_ = nullptr;
+    GSimpleActionGroup* copy_ctx_actions_ = nullptr;
+    void build_copy_context_menu_();
     std::string ctx_sticker_mxc_url_;
     std::string ctx_sticker_body_;
     std::string ctx_sticker_info_json_;

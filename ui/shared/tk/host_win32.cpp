@@ -1268,6 +1268,28 @@ public:
         return out;
     }
 
+    void set_clipboard_text(std::string_view text) override
+    {
+        std::wstring wide = utf8_to_wide(std::string(text));
+        if (!OpenClipboard(hwnd_))
+            return;
+        EmptyClipboard();
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE,
+                                    (wide.size() + 1) * sizeof(wchar_t));
+        if (hMem)
+        {
+            auto* dst = static_cast<wchar_t*>(GlobalLock(hMem));
+            if (dst)
+            {
+                std::copy(wide.begin(), wide.end(), dst);
+                dst[wide.size()] = L'\0';
+                GlobalUnlock(hMem);
+            }
+            SetClipboardData(CF_UNICODETEXT, hMem);
+        }
+        CloseClipboard();
+    }
+
     // Look up the NativeTextField owning a child EDIT control by ID.
     Win32NativeTextField* field_by_id(int id)
     {
@@ -1567,11 +1589,11 @@ public:
     }
     void fire_right_click(int x, int y)
     {
+        tk::Point pt{static_cast<float>(x), static_cast<float>(y)};
+        if (root_)
+            root_->dispatch_right_click(pt);
         if (on_right_click_)
-        {
-            on_right_click_(
-                tk::Point{static_cast<float>(x), static_cast<float>(y)});
-        }
+            on_right_click_(pt);
     }
     void set_drag_active(bool active)
     {

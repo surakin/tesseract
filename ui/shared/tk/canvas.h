@@ -199,6 +199,31 @@ public:
     {
         return {};
     }
+
+    // UTF-8 byte offset of the character nearest to `local` (layout-local
+    // coords). Returns -1 when not over any character or when the backend
+    // does not support hit-testing (plain-text-only layouts).
+    virtual int char_index_at(Point /*local*/) const
+    {
+        return -1;
+    }
+
+    // Highlight rects for the UTF-8 byte range [start_byte, end_byte).
+    // May return multiple rects for multi-line selections. Returns empty
+    // when the backend does not implement this or the range is empty.
+    virtual std::vector<Rect> selection_rects(int /*start_byte*/,
+                                              int /*end_byte*/) const
+    {
+        return {};
+    }
+
+    // Plain UTF-8 text for the range [start_byte, end_byte) as rendered.
+    // Used to put the selected substring onto the clipboard.
+    virtual std::string text_range(int /*start_byte*/,
+                                   int /*end_byte*/) const
+    {
+        return {};
+    }
 };
 
 // One formatting run for rich text. Bold, italic, code, and strikethrough

@@ -159,6 +159,13 @@ public:
     {
     }
 
+    // Secondary (right) mouse button — analogue of on_pointer_down for
+    // right-click. Return true to consume the event; false to bubble.
+    virtual bool on_right_click(Point /*local*/)
+    {
+        return false;
+    }
+
     // Walk into the deepest visible child under `world`, then bubble
     // back up to find a widget whose on_pointer_down returns true.
     // Returns the claiming widget (or nullptr if none did). `world` is
@@ -166,6 +173,12 @@ public:
     // The widget-local Point handed to on_pointer_down is computed by
     // subtracting the claimer's own world origin.
     Widget* dispatch_pointer_down(Point world);
+
+    // Analogue of dispatch_pointer_down for right-click. Walks the
+    // widget tree depth-first; calls on_right_click on the deepest
+    // widget under `world` that returns true. Returns the consuming
+    // widget or nullptr.
+    Widget* dispatch_right_click(Point world);
 
     // Walk into the deepest visible child under `world` and call
     // `on_pointer_move(local)` on it. Returns the deepest widget that

@@ -89,6 +89,23 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             surface_->relayout();
         }
     };
+    room_view_->on_set_clipboard = [this](std::string_view t)
+    {
+        if (surface_)
+            surface_->set_clipboard_text(t);
+    };
+    room_view_->message_list()->on_show_copy_menu = [this]()
+    {
+        auto* ml = room_view_->message_list();
+        auto* menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        QAction* copyAct = menu->addAction(tr("Copy"));
+        QObject::connect(copyAct, &QAction::triggered, [ml]()
+        {
+            ml->copy_selection();
+        });
+        menu->popup(QCursor::pos());
+    };
 
     // NativeTextArea is not used here: Qt6's host creates it lazily if needed.
     // The compose bar's built-in QTextEdit handles input on this platform.
@@ -183,6 +200,15 @@ void RoomWindow::keyPressEvent(QKeyEvent* ev)
             img_viewer_->set_visible(false);
             if (surface_)
                 surface_->relayout();
+            return;
+        }
+    }
+    if (ev->key() == Qt::Key_C && (ev->modifiers() & Qt::ControlModifier))
+    {
+        if (room_view_ && room_view_->message_list()->has_selection())
+        {
+            room_view_->message_list()->copy_selection();
+            ev->accept();
             return;
         }
     }

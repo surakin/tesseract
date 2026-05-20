@@ -2339,6 +2339,25 @@ private:
                           float y, float w, tk::Color color) const
     {
         bool eo = is_emoji_only(m.body);
+        auto draw_with_selection = [&](tk::TextLayout& layout, float ox,
+                                       float oy)
+        {
+            if (owner_.sel_ && owner_.sel_->event_id == m.event_id &&
+                owner_.sel_->anchor_byte != owner_.sel_->head_byte)
+            {
+                int lo = std::min(owner_.sel_->anchor_byte,
+                                  owner_.sel_->head_byte);
+                int hi = std::max(owner_.sel_->anchor_byte,
+                                  owner_.sel_->head_byte);
+                for (const tk::Rect& r : layout.selection_rects(lo, hi))
+                {
+                    ctx.canvas.fill_rect(
+                        {r.x + ox, r.y + oy, r.w, r.h},
+                        ctx.theme.palette.selection);
+                }
+            }
+            ctx.canvas.draw_text(layout, {ox, oy}, color);
+        };
         if (!m.formatted_body.empty())
         {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
@@ -2349,7 +2368,7 @@ private:
                     ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout)
                 {
-                    ctx.canvas.draw_text(*layout, {x, y}, color);
+                    draw_with_selection(*layout, x, y);
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] = {std::move(layout),
                                                              {x, y}};
@@ -2369,7 +2388,7 @@ private:
                     ctx.factory.build_rich_text(link_spans, body_style(w, eo));
                 if (layout)
                 {
-                    ctx.canvas.draw_text(*layout, {x, y}, color);
+                    draw_with_selection(*layout, x, y);
                     float h = layout->measure().h;
                     owner_.link_layout_cache_[m.event_id] = {std::move(layout),
                                                              {x, y}};
@@ -2377,9 +2396,18 @@ private:
                 }
             }
         }
-        return paint_wrapped_text(
-            m.body.empty() ? std::string("(empty message)") : m.body, ctx, x, y,
-            w, color, eo);
+        // Plain text with no URLs — build a text layout so selection works.
+        {
+            auto layout = ctx.factory.build_text(
+                m.body.empty() ? std::string("(empty message)") : m.body,
+                body_style(w, eo));
+            if (!layout)
+                return 0.0f;
+            draw_with_selection(*layout, x, y);
+            float h = layout->measure().h;
+            owner_.link_layout_cache_[m.event_id] = {std::move(layout), {x, y}};
+            return h;
+        }
     }
 
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -3213,6 +3241,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     link_layout_cache_.clear();
     adapter_->clear_layout_cache();
     suppress_read_marker_ = false;
+    sel_.reset();
+    sel_is_dragging_ = false;
+    press_sel_ = false;
     messages_ = std::move(msgs);
     invalidate_data();
     scroll_to_bottom();
@@ -3868,6 +3899,26 @@ void MessageListView::on_pointer_drag(tk::Point local)
         return;
     }
 
+    if (press_sel_ && sel_)
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        auto it = link_layout_cache_.find(sel_->event_id);
+        if (it != link_layout_cache_.end() && it->second.layout)
+        {
+            tk::Point ll{world.x - it->second.origin.x,
+                         world.y - it->second.origin.y};
+            int idx = it->second.layout->char_index_at(ll);
+            if (idx >= 0 && idx != sel_->head_byte)
+            {
+                sel_->head_byte = idx;
+                sel_is_dragging_ = (idx != sel_->anchor_byte);
+                if (request_repaint_)
+                    request_repaint_();
+            }
+        }
+        return;
+    }
+
     if (press_voice_kind_ != VoicePressKind::Waveform)
     {
         tk::ListView::on_pointer_drag(local);
@@ -4470,12 +4521,50 @@ void MessageListView::set_historical_mode(bool historical)
     invalidate_data();
 }
 
+bool MessageListView::has_selection() const
+{
+    return sel_.has_value() && sel_->anchor_byte != sel_->head_byte;
+}
+
+void MessageListView::copy_selection()
+{
+    if (!has_selection() || !on_set_clipboard)
+        return;
+    auto it = link_layout_cache_.find(sel_->event_id);
+    if (it == link_layout_cache_.end() || !it->second.layout)
+        return;
+    int lo = std::min(sel_->anchor_byte, sel_->head_byte);
+    int hi = std::max(sel_->anchor_byte, sel_->head_byte);
+    on_set_clipboard(it->second.layout->text_range(lo, hi));
+}
+
+bool MessageListView::on_right_click(tk::Point /*local*/)
+{
+    if (!has_selection())
+        return false;
+    if (on_show_copy_menu)
+        on_show_copy_menu();
+    else
+        copy_selection();
+    return true;
+}
+
 bool MessageListView::on_pointer_down(tk::Point local)
 {
     if (gate_blocks_input_())
     {
         return false; // list not painted yet
     }
+
+    // Any new press outside a text-body selection clears the old selection.
+    if (sel_ && !press_sel_)
+    {
+        sel_.reset();
+        sel_is_dragging_ = false;
+        if (request_repaint_)
+            request_repaint_();
+    }
+
     if (pill_visible_)
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -4763,6 +4852,30 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 press_spoiler_eid_ = m.event_id;
                 return true;
             }
+
+            // Text selection anchor: start drag-select on text bodies.
+            if (m.kind == MessageRowData::Kind::Text ||
+                m.kind == MessageRowData::Kind::Notice ||
+                m.kind == MessageRowData::Kind::Emote)
+            {
+                tk::Point world{local.x + bounds().x, local.y + bounds().y};
+                auto it = link_layout_cache_.find(m.event_id);
+                if (it != link_layout_cache_.end() && it->second.layout)
+                {
+                    tk::Point ll{world.x - it->second.origin.x,
+                                 world.y - it->second.origin.y};
+                    int idx = it->second.layout->char_index_at(ll);
+                    if (idx >= 0)
+                    {
+                        sel_ = Selection{m.event_id, idx, idx};
+                        sel_is_dragging_ = false;
+                        press_sel_ = true;
+                        if (request_repaint_)
+                            request_repaint_();
+                        return true;
+                    }
+                }
+            }
         }
         return tk::ListView::on_pointer_down(local);
     }
@@ -4781,6 +4894,21 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (gate_blocks_input_())
     {
+        return;
+    }
+
+    // Selection drag ended.
+    if (press_sel_)
+    {
+        press_sel_ = false;
+        if (!sel_is_dragging_)
+        {
+            sel_.reset();
+            if (request_repaint_)
+                request_repaint_();
+        }
+        sel_is_dragging_ = false;
+        tk::ListView::on_pointer_up(local, inside_self);
         return;
     }
 

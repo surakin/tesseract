@@ -1110,6 +1110,34 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             tesseract::Client::open_in_browser(url);
         };
+        room_view_->on_set_clipboard = [this](std::string_view t)
+        {
+            if (main_app_surface_)
+                main_app_surface_->set_clipboard_text(t);
+        };
+        room_view_->message_list()->on_show_copy_menu = [this]()
+        {
+            if (!copy_ctx_menu_)
+                build_copy_context_menu_();
+            if (!copy_ctx_menu_)
+                return;
+            GtkWidget* w = main_app_surface_->widget();
+            GdkDisplay* dpy = gtk_widget_get_display(w);
+            GdkSeat* seat = gdk_display_get_default_seat(dpy);
+            GdkDevice* ptr = gdk_seat_get_pointer(seat);
+            GdkSurface* surf = gtk_native_get_surface(
+                GTK_NATIVE(gtk_widget_get_native(w)));
+            double sx = 0, sy = 0;
+            if (surf)
+                gdk_surface_get_device_position(surf, ptr, &sx, &sy, nullptr);
+            double wx = 0, wy = 0;
+            gtk_widget_translate_coordinates(
+                GTK_WIDGET(gtk_widget_get_native(w)), w,
+                sx, sy, &wx, &wy);
+            GdkRectangle r{static_cast<int>(wx), static_cast<int>(wy), 1, 1};
+            gtk_popover_set_pointing_to(GTK_POPOVER(copy_ctx_menu_), &r);
+            gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
+        };
         room_view_->on_link_hovered = [this](const std::string& url)
         {
             GtkWidget* w = main_app_surface_->widget();
@@ -4708,6 +4736,39 @@ void MainWindow::build_sticker_context_menu()
                                    G_ACTION_GROUP(sticker_ctx_actions_));
 }
 
+// ---------------------------------------------------------------------------
+// Copy context menu — right-click on a text selection offers "Copy".
+// ---------------------------------------------------------------------------
+
+void MainWindow::build_copy_context_menu_()
+{
+    GMenu* menu = g_menu_new();
+    g_menu_append(menu, _("Copy"), "copy-sel.copy");
+
+    copy_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+    gtk_popover_set_has_arrow(GTK_POPOVER(copy_ctx_menu_), FALSE);
+    gtk_widget_set_parent(copy_ctx_menu_, main_app_surface_->widget());
+    g_object_unref(menu);
+
+    copy_ctx_actions_ = g_simple_action_group_new();
+    GSimpleAction* act = g_simple_action_new("copy", nullptr);
+    g_signal_connect(act, "activate", G_CALLBACK(on_copy_action_), this);
+    g_action_map_add_action(G_ACTION_MAP(copy_ctx_actions_), G_ACTION(act));
+    g_object_unref(act);
+    gtk_widget_insert_action_group(main_app_surface_->widget(), "copy-sel",
+                                   G_ACTION_GROUP(copy_ctx_actions_));
+}
+
+// static
+void MainWindow::on_copy_action_(GSimpleAction* /*action*/,
+                                  GVariant* /*parameter*/,
+                                  gpointer user_data)
+{
+    auto* self = static_cast<MainWindow*>(user_data);
+    if (self->room_view_)
+        self->room_view_->message_list()->copy_selection();
+}
+
 void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
                                      double x, double y, gpointer user_data)
 {
@@ -4759,9 +4820,18 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
 
 gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
                                             guint keyval, guint,
-                                            GdkModifierType, gpointer user_data)
+                                            GdkModifierType state,
+                                            gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
+    if (keyval == GDK_KEY_c && (state & GDK_CONTROL_MASK))
+    {
+        if (self->room_view_ && self->room_view_->message_list()->has_selection())
+        {
+            self->room_view_->message_list()->copy_selection();
+            return TRUE;
+        }
+    }
     if (keyval == GDK_KEY_Escape)
     {
         if (self->vid_viewer_ && self->vid_viewer_->is_open())

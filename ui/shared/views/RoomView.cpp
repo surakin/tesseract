@@ -52,6 +52,13 @@ void RoomView::wire_internal_callbacks()
         }
     };
 
+    // Clipboard write — forwarded to the shell via on_set_clipboard.
+    message_list_->on_set_clipboard = [this](std::string_view text)
+    {
+        if (on_set_clipboard)
+            on_set_clipboard(text);
+    };
+
     // Forward compose callbacks that reach the shell.
     compose_bar_->on_size_changed = [this]
     {

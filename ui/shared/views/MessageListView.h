@@ -443,6 +443,21 @@ public:
     // Client::send_read_receipt for the active room.
     std::function<void(const std::string& event_id)> on_receipt_needed;
 
+    // Clipboard write. Wire to Host::set_clipboard_text via RoomView.
+    std::function<void(std::string_view)> on_set_clipboard;
+
+    // Called by on_right_click when there is an active selection. The shell
+    // should show a native context menu with a "Copy" item and call
+    // copy_selection() if chosen. Falls back to copy_selection() if unset.
+    std::function<void()> on_show_copy_menu;
+
+    // True when the user has dragged out a non-empty selection.
+    bool has_selection() const;
+
+    // Copy the current selection to the clipboard via on_set_clipboard.
+    // No-op when has_selection() is false or on_set_clipboard is unset.
+    void copy_selection();
+
     // Widget overrides — own pointer-move/down/up so we can hit-test
     // reaction chips before the ListView base sees the event.
     bool on_pointer_down(tk::Point local) override;
@@ -451,6 +466,7 @@ public:
     void on_pointer_drag(tk::Point local) override;
     void on_pointer_leave() override;
     bool on_wheel(tk::Point local, float dx, float dy) override;
+    bool on_right_click(tk::Point local) override;
     void paint(tk::PaintCtx&) override;
 
     // Per-chip geometry for the currently hovered row. Populated by
@@ -658,6 +674,7 @@ private:
     {
         std::unique_ptr<tk::TextLayout> layout;
         tk::Point origin{}; // world-space draw origin
+        std::string plain;  // concatenated span text for clipboard
     };
     mutable std::unordered_map<std::string, LinkLayout> link_layout_cache_;
     std::string press_link_url_;
@@ -783,6 +800,17 @@ private:
     tk::Point map_drag_start_vp_px_{}; // world-pixel viewport at drag start
     float map_zoom_accum_ = 0.0f;      // fractional wheel accumulator
     bool map_tooltip_showing_ = false;
+
+    // Drag-select state.
+    struct Selection
+    {
+        std::string event_id;
+        int         anchor_byte = 0; // UTF-8 byte offset at pointer_down
+        int         head_byte   = 0; // UTF-8 byte offset during drag
+    };
+    std::optional<Selection> sel_;
+    bool sel_is_dragging_ = false; // true once head has moved from anchor
+    bool press_sel_ = false;       // this pointer-down started a selection
 };
 
 } // namespace tesseract::views

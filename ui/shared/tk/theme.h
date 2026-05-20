@@ -58,6 +58,9 @@ struct Palette
     // Default initials-avatar disc colours when the sender has no avatar.
     Color avatar_initials_bg;
     Color avatar_initials_text;
+
+    // Text selection highlight — drawn behind glyphs so text remains readable.
+    Color selection;
 };
 
 struct Theme

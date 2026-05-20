@@ -357,9 +357,10 @@ public:
     };
 
     CTLayout(CFAttributedStringRef attr, CGFloat max_width, CGFloat max_height,
-             bool elide_single_line, std::vector<UrlRange> url_ranges = {})
+             bool elide_single_line, std::string utf8,
+             std::vector<UrlRange> url_ranges = {})
         : attr_(attr), max_width_(max_width), max_height_(max_height),
-          elide_single_line_(elide_single_line),
+          elide_single_line_(elide_single_line), utf8_(std::move(utf8)),
           url_ranges_(std::move(url_ranges))
     {
         framesetter_ = CTFramesetterCreateWithAttributedString(attr_);
@@ -577,6 +578,103 @@ public:
         }
     }
 
+    int char_index_at(tk::Point local) const override
+    {
+        if (!frame_ && !attr_)
+            return -1;
+        CFIndex cf_idx = kCFNotFound;
+        if (frame_)
+        {
+            CFArrayRef lines = CTFrameGetLines(frame_);
+            CFIndex n = CFArrayGetCount(lines);
+            if (n == 0)
+                return -1;
+            std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+            CTFrameGetLineOrigins(frame_, CFRangeMake(0, n), origins.data());
+            // Convert tk Y-down to CTFrame Y-up.
+            CGFloat ct_y = static_cast<CGFloat>(measured_.h - local.y);
+            CFIndex best = 0;
+            CGFloat best_dist = std::abs(origins[0].y - ct_y);
+            for (CFIndex i = 1; i < n; ++i)
+            {
+                CGFloat d = std::abs(origins[i].y - ct_y);
+                if (d < best_dist)
+                {
+                    best_dist = d;
+                    best = i;
+                }
+            }
+            CTLineRef line = static_cast<CTLineRef>(
+                CFArrayGetValueAtIndex(lines, best));
+            CGPoint pt = CGPointMake(
+                static_cast<CGFloat>(local.x) - origins[best].x, 0);
+            cf_idx = CTLineGetStringIndexForPosition(line, pt);
+        }
+        else
+        {
+            CFRetained<CTLineRef> line{CTLineCreateWithAttributedString(attr_)};
+            if (!line.get())
+                return -1;
+            CGPoint pt = CGPointMake(static_cast<CGFloat>(local.x), 0);
+            cf_idx = CTLineGetStringIndexForPosition(line.get(), pt);
+        }
+        if (cf_idx == kCFNotFound)
+            return -1;
+        return cf_to_utf8_byte(static_cast<int>(cf_idx));
+    }
+
+    std::vector<tk::Rect> selection_rects(int start_byte,
+                                          int end_byte) const override
+    {
+        if (start_byte >= end_byte || !frame_)
+            return {};
+        CFIndex cf_start = utf8_byte_to_cf(start_byte);
+        CFIndex cf_end   = utf8_byte_to_cf(end_byte);
+        if (cf_start >= cf_end)
+            return {};
+
+        CFArrayRef lines = CTFrameGetLines(frame_);
+        CFIndex n = CFArrayGetCount(lines);
+        if (n == 0)
+            return {};
+        std::vector<CGPoint> origins(static_cast<std::size_t>(n));
+        CTFrameGetLineOrigins(frame_, CFRangeMake(0, n), origins.data());
+
+        std::vector<tk::Rect> out;
+        for (CFIndex li = 0; li < n; ++li)
+        {
+            CTLineRef line = static_cast<CTLineRef>(
+                CFArrayGetValueAtIndex(lines, li));
+            CFRange lr = CTLineGetStringRange(line);
+            CFIndex seg_start = std::max(cf_start, lr.location);
+            CFIndex seg_end   = std::min(cf_end, lr.location + lr.length);
+            if (seg_start >= seg_end)
+                continue;
+            CGFloat x1 = CTLineGetOffsetForStringIndex(line, seg_start, nullptr);
+            CGFloat x2 = CTLineGetOffsetForStringIndex(line, seg_end,   nullptr);
+            CGFloat asc = 0, desc = 0, lead = 0;
+            CTLineGetTypographicBounds(line, &asc, &desc, &lead);
+            CGFloat h = asc + desc + lead;
+            // Convert from CTFrame Y-up to tk Y-down.
+            CGFloat y_top = static_cast<CGFloat>(measured_.h) -
+                            (origins[li].y + asc);
+            out.push_back({static_cast<float>(origins[li].x + std::min(x1, x2)),
+                           static_cast<float>(y_top),
+                           static_cast<float>(std::abs(x2 - x1)),
+                           static_cast<float>(h)});
+        }
+        return out;
+    }
+
+    std::string text_range(int start_byte, int end_byte) const override
+    {
+        int lo = std::max(0, start_byte);
+        int hi = std::min(end_byte, static_cast<int>(utf8_.size()));
+        if (lo >= hi)
+            return {};
+        return utf8_.substr(lo, hi - lo);
+    }
+
     CGFloat font_line_height() const
     {
         if (!attr_ || CFAttributedStringGetLength(attr_) == 0)
@@ -644,6 +742,62 @@ private:
         CGContextRestoreGState(ctx);
     }
 
+    // Convert a Unicode code-point's UTF-8 byte length to the number of
+    // UTF-16 code units it occupies (1 for BMP, 2 for supplementary).
+    static int cp_utf16_units(uint32_t cp)
+    {
+        return (cp >= 0x10000u) ? 2 : 1;
+    }
+
+    // Decode one UTF-8 code point starting at `p`; advance `p` past it.
+    // Returns U+FFFD on invalid input.
+    static uint32_t next_cp(const char*& p, const char* end)
+    {
+        if (p >= end) return 0xFFFDu;
+        unsigned char c = static_cast<unsigned char>(*p);
+        uint32_t cp; int extra;
+        if      (c < 0x80) { cp = c; extra = 0; }
+        else if (c < 0xE0) { cp = c & 0x1Fu; extra = 1; }
+        else if (c < 0xF0) { cp = c & 0x0Fu; extra = 2; }
+        else                { cp = c & 0x07u; extra = 3; }
+        ++p;
+        for (int i = 0; i < extra && p < end; ++i, ++p)
+            cp = (cp << 6) | (static_cast<unsigned char>(*p) & 0x3Fu);
+        return cp;
+    }
+
+    // UTF-8 byte offset → CF (UTF-16 code-unit) index.
+    CFIndex utf8_byte_to_cf(int byte_offset) const
+    {
+        const char* p   = utf8_.c_str();
+        const char* end = p + std::min(byte_offset, static_cast<int>(utf8_.size()));
+        const char* src = utf8_.c_str();
+        CFIndex cf = 0;
+        while (src < end)
+            cf += cp_utf16_units(next_cp(src, end));
+        return cf;
+    }
+
+    // CF (UTF-16 code-unit) index → UTF-8 byte offset.
+    int cf_to_utf8_byte(int cf_idx) const
+    {
+        const char* p   = utf8_.c_str();
+        const char* end = p + utf8_.size();
+        int consumed = 0;
+        while (p < end && consumed < cf_idx)
+        {
+            const char* before = p;
+            uint32_t cp = next_cp(p, end);
+            consumed += cp_utf16_units(cp);
+            if (consumed > cf_idx)
+            {
+                // cf_idx landed inside a surrogate pair — return byte before.
+                return static_cast<int>(before - utf8_.c_str());
+            }
+        }
+        return static_cast<int>(p - utf8_.c_str());
+    }
+
     CFAttributedStringRef attr_ = nullptr;
     CTFramesetterRef framesetter_ = nullptr;
     CTFrameRef frame_ = nullptr;
@@ -652,6 +806,7 @@ private:
     CGFloat max_width_ = -1;
     CGFloat max_height_ = -1;
     bool elide_single_line_ = false;
+    std::string utf8_;
     std::vector<UrlRange> url_ranges_;
 };
 
@@ -1006,7 +1161,8 @@ public:
         bool elide = (s.trim == TextTrim::Ellipsis);
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
-        return std::make_unique<CTLayout>(attr, max_w, max_h, elide);
+        return std::make_unique<CTLayout>(attr, max_w, max_h, elide,
+                                          std::string(utf8));
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
@@ -1044,6 +1200,8 @@ public:
         FontDesc base_desc = desc_for(s.role);
         std::vector<CTLayout::UrlRange> url_ranges;
         CFIndex char_offset = 0;
+        std::string plain_utf8;
+        for (const auto& sp : spans) plain_utf8 += sp.text;
 
         for (const auto& span : spans)
         {
@@ -1143,6 +1301,7 @@ public:
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(iattr.release(), max_w, max_h, elide,
+                                          std::move(plain_utf8),
                                           std::move(url_ranges));
     }
 };

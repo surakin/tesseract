@@ -846,6 +846,18 @@ public:
         return out;
     }
 
+    void set_clipboard_text(std::string_view text) override
+    {
+        if (!drawing_area_)
+            return;
+        GdkDisplay* display = gtk_widget_get_display(drawing_area_);
+        if (!display)
+            return;
+        GdkClipboard* cb = gdk_display_get_clipboard(display);
+        if (cb)
+            gdk_clipboard_set_text(cb, std::string(text).c_str());
+    }
+
     // ── Internal ──────────────────────────────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {
@@ -1082,6 +1094,15 @@ public:
         }
     }
 
+    void on_right_click(double x, double y)
+    {
+        if (!root_)
+            return;
+        Point pt{static_cast<float>(x), static_cast<float>(y)};
+        if (root_->dispatch_right_click(pt))
+            request_repaint();
+    }
+
     void on_pointer_up(double x, double y)
     {
         if (!pressed_widget_)
@@ -1264,6 +1285,12 @@ void click_released_cb(GtkGestureClick*, int /*n_press*/, double x, double y,
     static_cast<Host*>(p)->on_pointer_up(x, y);
 }
 
+void click_pressed_secondary_cb(GtkGestureClick*, int /*n_press*/, double x,
+                                 double y, gpointer p)
+{
+    static_cast<Host*>(p)->on_right_click(x, y);
+}
+
 void motion_cb(GtkEventControllerMotion*, double x, double y, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
@@ -1371,6 +1398,14 @@ Surface::Surface(const Theme& theme, bool transparent)
     g_signal_connect(click, "released", G_CALLBACK(&click_released_cb),
                      host_.get());
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click));
+
+    GtkGesture* click_secondary = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_secondary),
+                                  GDK_BUTTON_SECONDARY);
+    g_signal_connect(click_secondary, "pressed",
+                     G_CALLBACK(&click_pressed_secondary_cb), host_.get());
+    gtk_widget_add_controller(drawing_area,
+                              GTK_EVENT_CONTROLLER(click_secondary));
 
     GtkEventController* motion = gtk_event_controller_motion_new();
     g_signal_connect(motion, "motion", G_CALLBACK(&motion_cb), host_.get());

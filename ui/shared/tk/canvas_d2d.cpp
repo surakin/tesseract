@@ -492,8 +492,11 @@ public:
     };
 
     DWriteLayout(ComPtr<IDWriteTextLayout> layout,
+                 std::wstring wtext,
+                 std::string utf8,
                  std::vector<UrlRange> url_ranges = {})
-        : layout_(std::move(layout)), url_ranges_(std::move(url_ranges))
+        : layout_(std::move(layout)), wtext_(std::move(wtext)),
+          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges))
     {
         DWRITE_TEXT_METRICS m{};
         layout_->GetMetrics(&m);
@@ -543,13 +546,86 @@ public:
         return {};
     }
 
+    int char_index_at(Point local) const override
+    {
+        if (wtext_.empty())
+            return -1;
+        BOOL trailing = FALSE, inside = FALSE;
+        DWRITE_HIT_TEST_METRICS m{};
+        layout_->HitTestPoint(local.x, local.y, &trailing, &inside, &m);
+        UINT32 u16pos = m.textPosition + (trailing ? m.length : 0);
+        u16pos = std::min(u16pos, static_cast<UINT32>(wtext_.size()));
+        return utf16_to_utf8_byte(u16pos);
+    }
+
+    std::vector<Rect> selection_rects(int start_byte, int end_byte) const override
+    {
+        if (start_byte >= end_byte || wtext_.empty())
+            return {};
+        UINT32 u16start = utf8_to_utf16_unit(start_byte);
+        UINT32 u16end   = utf8_to_utf16_unit(end_byte);
+        if (u16start >= u16end)
+            return {};
+        UINT32 actual = 0;
+        layout_->HitTestTextRange(u16start, u16end - u16start,
+                                   0.f, 0.f, nullptr, 0, &actual);
+        if (actual == 0)
+            return {};
+        std::vector<DWRITE_HIT_TEST_METRICS> hits(actual);
+        layout_->HitTestTextRange(u16start, u16end - u16start,
+                                   0.f, 0.f, hits.data(), actual, &actual);
+        std::vector<Rect> out;
+        out.reserve(actual);
+        for (UINT32 i = 0; i < actual; ++i)
+            out.push_back({hits[i].left, hits[i].top,
+                           hits[i].width, hits[i].height});
+        return out;
+    }
+
+    std::string text_range(int start_byte, int end_byte) const override
+    {
+        if (start_byte >= end_byte || utf8_.empty())
+            return {};
+        int lo = std::max(0, start_byte);
+        int hi = std::min(end_byte, static_cast<int>(utf8_.size()));
+        if (lo >= hi)
+            return {};
+        return utf8_.substr(lo, hi - lo);
+    }
+
     IDWriteTextLayout* raw() const
     {
         return layout_.Get();
     }
 
 private:
+    // Convert a UTF-8 byte offset into the number of UTF-16 code units that
+    // precede it (i.e. the UTF-16 position DWrite expects).
+    UINT32 utf8_to_utf16_unit(int byte_offset) const
+    {
+        if (byte_offset <= 0)
+            return 0;
+        int clamped = std::min(byte_offset, static_cast<int>(utf8_.size()));
+        int n = MultiByteToWideChar(CP_UTF8, 0, utf8_.c_str(), clamped,
+                                    nullptr, 0);
+        return n > 0 ? static_cast<UINT32>(n) : 0;
+    }
+
+    // Convert a UTF-16 code-unit offset into the corresponding UTF-8 byte offset.
+    int utf16_to_utf8_byte(UINT32 utf16_pos) const
+    {
+        if (utf16_pos == 0)
+            return 0;
+        UINT32 clamped = std::min(utf16_pos,
+                                   static_cast<UINT32>(wtext_.size()));
+        int n = WideCharToMultiByte(CP_UTF8, 0, wtext_.c_str(), clamped,
+                                    nullptr, 0, nullptr, nullptr);
+        return n > 0 ? n : 0;
+    }
+
     ComPtr<IDWriteTextLayout> layout_;
+    std::wstring wtext_;
+    std::string  utf8_;
     std::vector<UrlRange> url_ranges_;
     Size size_{};
     int line_count_ = 0;
@@ -1138,14 +1214,17 @@ public:
             layout->SetTrimming(&tr, ellipsis_sign.Get());
         }
 
-        return std::make_unique<DWriteLayout>(std::move(layout));
+        return std::make_unique<DWriteLayout>(std::move(layout),
+                                              std::move(wide),
+                                              std::string(utf8));
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
     {
-        // Concatenate all span text to UTF-16, tracking per-span character ranges.
+        // Concatenate all span text to UTF-16 and plain UTF-8, tracking ranges.
         std::wstring wide;
+        std::string plain_utf8;
         struct WideRange
         {
             UINT32 start, end;
@@ -1157,6 +1236,7 @@ public:
         {
             UINT32 start = static_cast<UINT32>(wide.size());
             wide += utf8_to_wide(sp.text);
+            plain_utf8 += sp.text;
             ranges.push_back({start, static_cast<UINT32>(wide.size()), &sp});
         }
 
@@ -1230,6 +1310,8 @@ public:
         }
 
         return std::make_unique<DWriteLayout>(std::move(layout),
+                                              std::move(wide),
+                                              std::move(plain_utf8),
                                               std::move(url_ranges));
     }
 

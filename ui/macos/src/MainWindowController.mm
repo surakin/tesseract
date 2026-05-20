@@ -2204,6 +2204,25 @@ void MacShell::apply_cached_messages_(
                 s->_shell->ensure_tile_async(z, x, y);
             }
         };
+        _mainApp->room_view()->message_list()->on_show_copy_menu =
+            [weakSelf]()
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface)
+                return;
+            auto* ml = s->_mainApp->room_view()->message_list();
+            NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+            NSMenuItem* item = [[NSMenuItem alloc]
+                initWithTitle:NSLocalizedString(@"Copy", nil)
+                       action:@selector(copy:)
+                keyEquivalent:@""];
+            [menu addItem:item];
+            NSEvent* event = [NSApp currentEvent];
+            NSView* view =
+                (__bridge NSView*)s->_mainAppSurface->view_handle();
+            if (event && view)
+                [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+        };
         _mainApp->room_view()->on_image_clicked =
             [weakSelf](const tesseract::views::MessageListView::ImageHit& hit)
         {
@@ -2286,6 +2305,15 @@ void MacShell::apply_cached_messages_(
         {
             tesseract::Client::open_in_browser(url);
         };
+        {
+            __weak MainWindowController* weakSelf = self;
+            _mainApp->room_view()->on_set_clipboard = [weakSelf](std::string_view t)
+            {
+                MainWindowController* s = weakSelf;
+                if (s && s->_mainAppSurface)
+                    s->_mainAppSurface->set_clipboard_text(t);
+            };
+        }
         {
             auto hovered = std::make_shared<bool>(false);
             _mainApp->room_view()->on_link_hovered =
@@ -5426,6 +5454,25 @@ void MacShell::apply_cached_messages_(
             [NSString stringWithUTF8String:res.message.c_str()] ?: @"";
         [alert beginSheetModalForWindow:self.window completionHandler:nil];
     }
+}
+
+// ─── Cmd+C for message-list text selection ────────────────────────────────
+
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
+{
+    if (item.action == @selector(copy:))
+    {
+        auto* ml = _mainApp ? _mainApp->room_view()->message_list() : nullptr;
+        return ml && ml->has_selection();
+    }
+    return YES;
+}
+
+- (void)copy:(id)/*sender*/
+{
+    auto* ml = _mainApp ? _mainApp->room_view()->message_list() : nullptr;
+    if (ml)
+        ml->copy_selection();
 }
 
 @end

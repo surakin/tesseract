@@ -466,6 +466,23 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             tesseract::Client::open_in_browser(url);
         };
+        mainApp_->room_view()->on_set_clipboard = [this](std::string_view t)
+        {
+            if (mainAppSurface_)
+                mainAppSurface_->set_clipboard_text(t);
+        };
+        mainApp_->room_view()->message_list()->on_show_copy_menu = [this]()
+        {
+            auto* ml = mainApp_->room_view()->message_list();
+            auto* menu = new QMenu(mainAppSurface_);
+            menu->setAttribute(Qt::WA_DeleteOnClose);
+            QAction* copyAct = menu->addAction(tr("Copy"));
+            QObject::connect(copyAct, &QAction::triggered, [ml]()
+            {
+                ml->copy_selection();
+            });
+            menu->popup(QCursor::pos());
+        };
         {
             QPointer<tk::qt6::Surface> sfp = mainAppSurface_;
             mainApp_->room_view()->on_link_hovered =
@@ -1736,6 +1753,15 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
             mainApp_->image_viewer()->close();
             mainApp_->show_image_viewer(false);
             mainAppSurface_->relayout();
+            ev->accept();
+            return;
+        }
+    }
+    if (ev->key() == Qt::Key_C && (ev->modifiers() & Qt::ControlModifier))
+    {
+        if (mainApp_ && mainApp_->room_view()->message_list()->has_selection())
+        {
+            mainApp_->room_view()->message_list()->copy_selection();
             ev->accept();
             return;
         }

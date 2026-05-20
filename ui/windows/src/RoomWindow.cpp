@@ -30,6 +30,20 @@ static std::wstring utf8_to_wstr(const std::string& s)
     return w;
 }
 
+static std::string wstr_to_utf8(const std::wstring& w)
+{
+    if (w.empty())
+        return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0,
+                                nullptr, nullptr);
+    if (n <= 0)
+        return {};
+    std::string s(static_cast<std::size_t>(n - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n,
+                        nullptr, nullptr);
+    return s;
+}
+
 // ---------------------------------------------------------------------------
 
 RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
@@ -93,7 +107,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
         if (!path.empty())
             save_source_to_file_(std::move(source_url),
-                                  std::string(path.begin(), path.end()));
+                                  wstr_to_utf8(path));
     };
     vid_viewer_->on_save =
         [this](std::string source_json, std::string mime_type)
@@ -108,7 +122,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
         if (!path.empty())
             save_source_to_file_(std::move(source_json),
-                                  std::string(path.begin(), path.end()));
+                                  wstr_to_utf8(path));
     };
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
@@ -130,6 +144,27 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         {
             surface_->relayout();
         }
+    };
+    room_view_->on_set_clipboard = [this](std::string_view t)
+    {
+        if (surface_)
+            surface_->host().set_clipboard_text(t);
+    };
+    room_view_->message_list()->on_show_copy_menu = [this]()
+    {
+        if (!room_view_)
+            return;
+        auto* ml = room_view_->message_list();
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING, 1, L"Copy");
+        POINT pt{};
+        GetCursorPos(&pt);
+        int cmd = static_cast<int>(TrackPopupMenuEx(
+            menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+            pt.x, pt.y, hwnd_, nullptr));
+        DestroyMenu(menu);
+        if (cmd == 1)
+            ml->copy_selection();
     };
 
     // ── NativeTextArea overlay ────────────────────────────────────────────
@@ -341,6 +376,14 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                 img_viewer_->set_visible(false);
                 if (surface_)
                     surface_->relayout();
+                return 0;
+            }
+        }
+        if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000))
+        {
+            if (room_view_ && room_view_->message_list()->has_selection())
+            {
+                room_view_->message_list()->copy_selection();
                 return 0;
             }
         }

@@ -69,6 +69,27 @@ Widget* Widget::dispatch_pointer_down(Point world)
     return on_pointer_down(local) ? this : nullptr;
 }
 
+Widget* Widget::dispatch_right_click(Point world)
+{
+    if (!visible_ || !contains_world(world))
+    {
+        return nullptr;
+    }
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (Widget* hit = ch->dispatch_right_click(world))
+        {
+            return hit;
+        }
+    }
+    Point local{world.x - bounds_.x, world.y - bounds_.y};
+    return on_right_click(local) ? this : nullptr;
+}
+
 Widget* Widget::dispatch_pointer_move(Point world, bool* dirty)
 {
     if (!visible_ || !contains_world(world))

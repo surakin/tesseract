@@ -35,9 +35,13 @@ private:
     static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
                                     guint, GdkModifierType, gpointer self);
 
+    static void on_copy_action_(GSimpleAction*, GVariant*, gpointer self);
+
     MainWindow* parent_shell_;
     GtkWindow* window_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> surface_;
+    GtkWidget* copy_ctx_menu_ = nullptr;
+    GSimpleActionGroup* copy_ctx_actions_ = nullptr;
 };
 
 } // namespace gtk4

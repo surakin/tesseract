@@ -216,6 +216,85 @@ public:
         return layout_;
     }
 
+    int char_index_at(tk::Point local) const override
+    {
+        int byte_idx = 0, trailing = 0;
+        // pango_layout_xy_to_index returns FALSE when the point is outside
+        // the layout extents, but still fills byte_idx with the nearest char.
+        pango_layout_xy_to_index(layout_,
+            static_cast<int>(local.x * PANGO_SCALE),
+            static_cast<int>(local.y * PANGO_SCALE),
+            &byte_idx, &trailing);
+        // When trailing==1 the hit is past the glyph's midpoint; advance one
+        // grapheme cluster so the caret lands after it.
+        if (trailing)
+        {
+            const char* text = pango_layout_get_text(layout_);
+            const char* p    = text + byte_idx;
+            byte_idx = static_cast<int>(g_utf8_next_char(p) - text);
+        }
+        return byte_idx;
+    }
+
+    std::vector<tk::Rect> selection_rects(int start_byte,
+                                          int end_byte) const override
+    {
+        if (start_byte >= end_byte)
+            return {};
+        const char* text  = pango_layout_get_text(layout_);
+        int text_len = static_cast<int>(strlen(text));
+        int lo = std::max(0, start_byte);
+        int hi = std::min(end_byte, text_len);
+        if (lo >= hi)
+            return {};
+
+        std::vector<tk::Rect> out;
+        int n_lines = pango_layout_get_line_count(layout_);
+        PangoLayoutIter* iter = pango_layout_get_iter(layout_);
+
+        for (int li = 0; li < n_lines; ++li)
+        {
+            PangoLayoutLine* line = pango_layout_get_line_readonly(layout_, li);
+            int line_start = line->start_index;
+            int line_end   = line_start + line->length;
+
+            int seg_start = std::max(lo, line_start);
+            int seg_end   = std::min(hi, line_end);
+            if (seg_start < seg_end)
+            {
+                int x1_pu = 0, x2_pu = 0;
+                pango_layout_line_index_to_x(line, seg_start, FALSE, &x1_pu);
+                pango_layout_line_index_to_x(line, seg_end,   FALSE, &x2_pu);
+
+                PangoRectangle logical{};
+                pango_layout_iter_get_line_extents(iter, nullptr, &logical);
+
+                float x1   = static_cast<float>(x1_pu) / PANGO_SCALE;
+                float x2   = static_cast<float>(x2_pu) / PANGO_SCALE;
+                float y    = static_cast<float>(logical.y) / PANGO_SCALE;
+                float h    = static_cast<float>(logical.height) / PANGO_SCALE;
+                out.push_back({std::min(x1, x2), y,
+                               std::abs(x2 - x1), h});
+            }
+
+            if (li < n_lines - 1)
+                pango_layout_iter_next_line(iter);
+        }
+        pango_layout_iter_free(iter);
+        return out;
+    }
+
+    std::string text_range(int start_byte, int end_byte) const override
+    {
+        const char* text = pango_layout_get_text(layout_);
+        int len = static_cast<int>(strlen(text));
+        int lo = std::max(0, start_byte);
+        int hi = std::min(end_byte, len);
+        if (lo >= hi)
+            return {};
+        return std::string(text + lo, hi - lo);
+    }
+
 private:
     PangoLayout* layout_;
     Size size_{};

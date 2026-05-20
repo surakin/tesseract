@@ -448,7 +448,100 @@ public:
         return fmt.isAnchor() ? fmt.anchorHref().toStdString() : "";
     }
 
+    int char_index_at(tk::Point local) const override
+    {
+        int qt_pos = doc_->documentLayout()->hitTest(
+            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)),
+            Qt::FuzzyHit);
+        if (qt_pos < 0)
+            return -1;
+        return qt_pos_to_utf8_byte(qt_pos);
+    }
+
+    std::vector<tk::Rect> selection_rects(int start_byte,
+                                          int end_byte) const override
+    {
+        if (start_byte >= end_byte)
+            return {};
+        int qt_start = utf8_byte_to_qt_pos(start_byte);
+        int qt_end   = utf8_byte_to_qt_pos(end_byte);
+        if (qt_start >= qt_end)
+            return {};
+
+        std::vector<tk::Rect> out;
+        // Walk each block's QTextLayout and collect line-level selection rects.
+        for (QTextBlock blk = doc_->begin(); blk != doc_->end(); blk = blk.next())
+        {
+            int blk_start = blk.position();
+            int blk_end   = blk_start + blk.length();
+            if (blk_end <= qt_start || blk_start >= qt_end)
+                continue;
+            int sel_start = std::max(qt_start, blk_start) - blk_start;
+            int sel_end   = std::min(qt_end,   blk_end)   - blk_start;
+            const QTextLayout* tl = blk.layout();
+            if (!tl)
+                continue;
+            for (int li = 0; li < tl->lineCount(); ++li)
+            {
+                QTextLine line = tl->lineAt(li);
+                int line_start = line.textStart();
+                int line_end   = line_start + line.textLength();
+                if (line_end < sel_start || line_start > sel_end)
+                    continue;
+                int clamped_start = std::max(sel_start, line_start);
+                int clamped_end   = std::min(sel_end,   line_end);
+                qreal x1 = line.cursorToX(clamped_start, QTextLine::Leading);
+                qreal x2 = line.cursorToX(clamped_end,   QTextLine::Leading);
+                if (x1 > x2)
+                    std::swap(x1, x2);
+                QRectF lr = line.naturalTextRect();
+                // naturalTextRect y is block-local; add block's visual y
+                qreal block_y =
+                    doc_->documentLayout()->blockBoundingRect(blk).top();
+                out.push_back({static_cast<float>(x1),
+                               static_cast<float>(block_y + lr.top()),
+                               static_cast<float>(x2 - x1),
+                               static_cast<float>(lr.height())});
+            }
+        }
+        return out;
+    }
+
+    std::string text_range(int start_byte, int end_byte) const override
+    {
+        if (start_byte >= end_byte)
+            return {};
+        int qt_start = utf8_byte_to_qt_pos(start_byte);
+        int qt_end   = utf8_byte_to_qt_pos(end_byte);
+        if (qt_start >= qt_end)
+            return {};
+        QTextCursor cur(doc_.get());
+        cur.setPosition(qt_start);
+        cur.setPosition(qt_end, QTextCursor::KeepAnchor);
+        return cur.selectedText().replace(QChar(0x2029), '\n').toStdString();
+    }
+
 private:
+    // QTextDocument uses UTF-16 positions internally (one code unit per
+    // BMP character, two for supplementary). Convert to/from UTF-8 byte offset.
+    int qt_pos_to_utf8_byte(int qt_pos) const
+    {
+        QString plain = doc_->toPlainText();
+        if (qt_pos <= 0)
+            return 0;
+        int clamped = std::min(qt_pos, plain.size());
+        return plain.left(clamped).toUtf8().size();
+    }
+
+    int utf8_byte_to_qt_pos(int byte_offset) const
+    {
+        if (byte_offset <= 0)
+            return 0;
+        QByteArray utf8 = doc_->toPlainText().toUtf8();
+        int clamped = std::min(byte_offset, static_cast<int>(utf8.size()));
+        return QString::fromUtf8(utf8.constData(), clamped).size();
+    }
+
     std::unique_ptr<QTextDocument> doc_;
     QSizeF sz_;
     int lines_ = 0;

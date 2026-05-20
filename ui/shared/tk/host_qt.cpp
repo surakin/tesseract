@@ -762,6 +762,12 @@ public:
         return out;
     }
 
+    void set_clipboard_text(std::string_view text) override
+    {
+        QGuiApplication::clipboard()->setText(
+            QString::fromUtf8(text.data(), static_cast<int>(text.size())));
+    }
+
     // ── Internal accessors used by Surface ────────────────────────────
     void set_root(std::unique_ptr<Widget> root)
     {
@@ -834,6 +840,12 @@ public:
         {
             request_repaint();
         }
+    }
+
+    void on_right_click(Point local)
+    {
+        if (root_)
+            root_->dispatch_right_click(local);
     }
 
     void on_pointer_up(Point local)
@@ -1100,10 +1112,15 @@ void Surface::resizeEvent(QResizeEvent*)
 
 void Surface::mousePressEvent(QMouseEvent* e)
 {
+    tk::Point pt{static_cast<float>(e->position().x()),
+                 static_cast<float>(e->position().y())};
     if (e->button() == Qt::LeftButton)
     {
-        host_->on_pointer_down({static_cast<float>(e->position().x()),
-                                static_cast<float>(e->position().y())});
+        host_->on_pointer_down(pt);
+    }
+    else if (e->button() == Qt::RightButton)
+    {
+        host_->on_right_click(pt);
     }
     QWidget::mousePressEvent(e);
 }

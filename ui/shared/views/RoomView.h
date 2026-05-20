@@ -192,6 +192,10 @@ public:
     std::function<void()> on_jump_to_date_requested;
     std::function<void(std::string original_event_id)> on_scroll_to_original;
 
+    // Clipboard write — forward to the platform host. Wire to
+    // Host::set_clipboard_text in the shell.
+    std::function<void(std::string_view)> on_set_clipboard;
+
     // Fired when the pointer enters a topic text that was truncated (i.e. the
     // topic didn't fit and shows an ellipsis). Shell should show a tooltip with
     // the full text anchored to `anchor`. on_hide_tooltip fires when the

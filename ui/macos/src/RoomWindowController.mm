@@ -175,6 +175,26 @@ MacRoomWindow::MacRoomWindow(
             surface_->relayout();
         }
     };
+    room_view_->on_set_clipboard = [this](std::string_view t)
+    {
+        if (surface_)
+            surface_->set_clipboard_text(t);
+    };
+    room_view_->message_list()->on_show_copy_menu = [this]()
+    {
+        if (!surface_) return;
+        auto* ml = room_view_->message_list();
+        NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+        NSMenuItem* item = [[NSMenuItem alloc]
+            initWithTitle:NSLocalizedString(@"Copy", nil)
+                   action:@selector(copy:)
+            keyEquivalent:@""];
+        [menu addItem:item];
+        NSEvent* event = [NSApp currentEvent];
+        NSView* view = (__bridge NSView*)surface_->view_handle();
+        if (event && view)
+            [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+    };
 
     // ── NativeTextArea overlay ────────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
@@ -334,6 +354,25 @@ MacRoomWindow::preview_lookup_(const std::string& url)
             return;
     }
     [super keyDown:event];
+}
+
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
+{
+    if (item.action == @selector(copy:))
+    {
+        auto* rv = _cppWindow ? _cppWindow->room_view() : nullptr;
+        auto* ml = rv ? rv->message_list() : nullptr;
+        return ml && ml->has_selection();
+    }
+    return YES;
+}
+
+- (void)copy:(id)/*sender*/
+{
+    auto* rv = _cppWindow ? _cppWindow->room_view() : nullptr;
+    auto* ml = rv ? rv->message_list() : nullptr;
+    if (ml)
+        ml->copy_selection();
 }
 
 @end

@@ -933,6 +933,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 return 0;
             }
         }
+        if (wParam == 'C' && (GetKeyState(VK_CONTROL) & 0x8000))
+        {
+            if (self->room_view_ && self->room_view_->message_list()->has_selection())
+            {
+                self->room_view_->message_list()->copy_selection();
+                return 0;
+            }
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_TIMER:
@@ -1555,6 +1563,27 @@ void MainWindow::on_create(HWND hwnd)
         {
             tesseract::Client::open_in_browser(url);
         };
+        room_view_->on_set_clipboard = [this](std::string_view t)
+        {
+            if (main_app_surface_)
+                main_app_surface_->host().set_clipboard_text(t);
+        };
+        room_view_->message_list()->on_show_copy_menu = [this]()
+        {
+            if (!room_view_)
+                return;
+            auto* ml = room_view_->message_list();
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, L"Copy");
+            POINT pt{};
+            GetCursorPos(&pt);
+            int cmd = static_cast<int>(TrackPopupMenuEx(
+                menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                pt.x, pt.y, hwnd_, nullptr));
+            DestroyMenu(menu);
+            if (cmd == 1)
+                ml->copy_selection();
+        };
         room_view_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
         {
             if (!main_app_surface_)
@@ -2129,7 +2158,7 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     auto bytes = client_->fetch_source_bytes(source_url);
                     auto* p = new FileBytesPayload{
-                        std::string(path.begin(), path.end()), std::move(bytes)};
+                        wstr_to_utf8(path.c_str()), std::move(bytes)};
                     if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
                                       reinterpret_cast<LPARAM>(p)))
                         delete p;
@@ -2209,7 +2238,7 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     auto bytes = client_->fetch_source_bytes(source_json);
                     auto* p = new FileBytesPayload{
-                        std::string(path.begin(), path.end()), std::move(bytes)};
+                        wstr_to_utf8(path.c_str()), std::move(bytes)};
                     if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
                                       reinterpret_cast<LPARAM>(p)))
                         delete p;
@@ -2271,7 +2300,7 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     auto bytes = client_->fetch_media_bytes(url);
                     auto* p = new FileBytesPayload{
-                        std::string(path.begin(), path.end()), std::move(bytes)};
+                        wstr_to_utf8(path.c_str()), std::move(bytes)};
                     if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,
                                       reinterpret_cast<LPARAM>(p)))
                         delete p;

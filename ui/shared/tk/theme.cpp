@@ -48,6 +48,9 @@ constexpr Palette light_palette()
     // Initials disc
     p.avatar_initials_bg = Color::rgb(0xCFE3FF);
     p.avatar_initials_text = Color::rgb(0x004A9E);
+
+    // Selection highlight
+    p.selection = Color::rgba(0x00, 0x84, 0xFF, 0x50);
     return p;
 }
 
@@ -89,6 +92,8 @@ constexpr Palette dark_palette()
 
     p.avatar_initials_bg = Color::rgb(0x1F3A66);
     p.avatar_initials_text = Color::rgb(0xBFD8FF);
+
+    p.selection = Color::rgba(0x4D, 0xA3, 0xFF, 0x50);
     return p;
 }
 

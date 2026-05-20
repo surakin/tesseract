@@ -240,6 +240,9 @@ public:
     // `bytes` vector if the input can't be decoded.
     virtual EncodedImage encode_for_send(const std::uint8_t* data,
                                          std::size_t len, bool compress) = 0;
+
+    // Write `text` to the system clipboard as plain text.
+    virtual void set_clipboard_text(std::string_view text) = 0;
 };
 
 } // namespace tk
