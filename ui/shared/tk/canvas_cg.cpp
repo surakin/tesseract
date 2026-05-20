@@ -900,6 +900,81 @@ public:
         return std::make_unique<CGImageWrapper>(scaled);
     }
 
+    std::unique_ptr<AnimatedImage>
+    decode_animated_image(std::span<const std::uint8_t> bytes,
+                          int max_px) override
+    {
+        if (bytes.empty())
+            return nullptr;
+
+        CFRetained<CFDataRef> data{
+            CFDataCreate(kCFAllocatorDefault, bytes.data(),
+                         static_cast<CFIndex>(bytes.size()))};
+        if (!data.get())
+            return nullptr;
+
+        CFRetained<CGImageSourceRef> src{
+            CGImageSourceCreateWithData(data.get(), nullptr)};
+        if (!src.get())
+            return nullptr;
+
+        const std::size_t count = CGImageSourceGetCount(src.get());
+        if (count <= 1)
+            return nullptr;
+
+        std::vector<std::unique_ptr<Image>> frames;
+        std::vector<int> delays;
+        frames.reserve(count);
+        delays.reserve(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            int delay_ms = 100;
+
+            CFRetained<CFDictionaryRef> props{
+                CGImageSourceCopyPropertiesAtIndex(src.get(), i, nullptr)};
+            if (props.get())
+            {
+                // GIF delay
+                auto* gif_dict = static_cast<CFDictionaryRef>(
+                    CFDictionaryGetValue(props.get(),
+                                        kCGImagePropertyGIFDictionary));
+                if (gif_dict)
+                {
+                    auto* num = static_cast<CFNumberRef>(CFDictionaryGetValue(
+                        gif_dict, kCGImagePropertyGIFUnclampedDelayTime));
+                    if (!num)
+                        num = static_cast<CFNumberRef>(CFDictionaryGetValue(
+                            gif_dict, kCGImagePropertyGIFDelayTime));
+                    if (num)
+                    {
+                        double secs = 0;
+                        CFNumberGetValue(num, kCFNumberDoubleType, &secs);
+                        delay_ms =
+                            std::max(20, static_cast<int>(secs * 1000));
+                    }
+                }
+            }
+
+            CGImageRef cg =
+                CGImageSourceCreateImageAtIndex(src.get(), i, nullptr);
+            if (!cg)
+                continue;
+
+            std::unique_ptr<Image> img = std::make_unique<CGImageWrapper>(cg);
+            if (auto scaled = scale_image(*img, max_px, max_px))
+                img = std::move(scaled);
+
+            frames.push_back(std::move(img));
+            delays.push_back(delay_ms);
+        }
+
+        if (frames.size() < 2)
+            return nullptr;
+        return std::make_unique<AnimatedImage>(std::move(frames),
+                                              std::move(delays));
+    }
+
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
