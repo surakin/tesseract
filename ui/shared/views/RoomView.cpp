@@ -211,6 +211,12 @@ void RoomView::wire_internal_callbacks()
         {
             on_link_clicked(url);
         }
+        // Clicking anywhere on the canvas steals OS focus from the native
+        // text area overlay.  Restore it after the browser opens.
+        if (on_reply_focus)
+        {
+            on_reply_focus();
+        }
     };
     message_list_->on_link_hovered = [this](const std::string& url)
     {
@@ -238,6 +244,10 @@ void RoomView::wire_internal_callbacks()
         if (on_link_clicked)
         {
             on_link_clicked(url);
+        }
+        if (on_reply_focus)
+        {
+            on_reply_focus();
         }
     };
     message_list_->on_receipt_needed = [this](const std::string& event_id)
