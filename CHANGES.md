@@ -5,6 +5,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(client): server capabilities on login — `tesseract::ServerInfo` struct (homeserver URL, spec versions, MSC3030/Jump-to-Date support, `can_change_password`/`can_set_displayname`/`can_set_avatar`, default room version); fetched concurrently via `/_matrix/client/versions` + `/_matrix/client/v3/capabilities` after `RoomListState::Running`; stored in `ShellBase::server_info_` for feature-gating; Settings "Server" tab shows the homeserver URL; 363/363 C++ tests, 108/108 Rust tests
+- feat(auth): per-platform secure token storage — `SecretStore` backend using Windows Credential Manager, macOS Keychain, and Linux `libsecret` (plaintext stub fallback when absent); `SessionStore` migrates transparently from legacy plaintext `session.json` on first load (sentinel `{"v":2}` written on success); 357/357 C++ tests
+
 ## v0.1.3 — 2026-05-19
 
 Changes since v0.1.2:

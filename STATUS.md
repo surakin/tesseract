@@ -1,15 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-19**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-20**.
 
-> **Wayland foreground activation.**
-> Both the Qt6 and GTK4 notification backends now use the XDG Desktop Portal
-> (`org.freedesktop.portal.Notification`) on any Wayland session, not only inside
-> Flatpak. The portal's `ActionInvoked` signal (xdg-desktop-portal 1.16+) carries an
-> `xdg_activation_v1` token granted by the compositor when the user clicks the
-> notification; Qt6 passes it via `QWindow::setProperty("_q_waylandActivationToken")`
-> and GTK4 via `gtk_window_set_startup_id()`, so GNOME Shell now reliably brings the
-> window to the foreground. 323/323 C++ tests pass.
+> **Server capabilities on login.**
+> After the sliding-sync state reaches `Running`, the client concurrently fetches
+> `/_matrix/client/versions` and `/_matrix/client/v3/capabilities`, assembles a
+> `tesseract::ServerInfo` struct (homeserver URL, spec versions, MSC3030 support,
+> capability bits, default room version), and stores it in `ShellBase::server_info_`
+> for feature-gating. A "Server" tab in Settings shows the homeserver URL. 363/363
+> C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -17,8 +16,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 95 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 328 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 108 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 363 |
 
 ## Platforms
 
@@ -34,10 +33,12 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 ## Authentication & session
 
 - **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI.
+- **Secure token storage** — per-platform `SecretStore` backend: Windows Credential Manager (`CredWriteW`/`CredReadW`), macOS Keychain (`SecItemAdd`/`SecItemCopyMatching`), Linux `libsecret` (probed at build time; plaintext stub fallback when absent). `SessionStore` migrates transparently from the legacy plaintext `session.json` on first load, writing a `{"v":2}` sentinel on success so subsequent starts bypass the migration path.
 - **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh (`%APPDATA%/Tesseract/` on Windows, `~/.config/tesseract/` on Linux, `~/Library/Application Support/Tesseract/` on macOS) and reloads it at launch.
 - **`logout`** — wipes Rust session, C++ wrapper state, and the SQLite store; surfaces back through the FFI.
 - **Soft logout** — `SessionChange::UnknownToken` threaded through `on_error` with a `soft_logout` flag so the UI can retry restore without clearing the store.
 - **Recovery key / device verification (Step 6)** — `needs_recovery`, `recover(key_or_passphrase)`, `backup_state` FFI; `on_backup_progress` callback; per-platform `RecoveryBanner` (in-toolkit; not a modal dialog).
+- **Server capabilities on login** — `tesseract::ServerInfo` struct captures homeserver URL, Matrix spec versions, MSC3030 (Jump-to-Date) support flag, capability bits (`can_change_password`, `can_set_displayname`, `can_set_avatar`), and default room version; fetched concurrently via `/_matrix/client/versions` (no-auth) + `/_matrix/client/v3/capabilities` (Bearer) after `RoomListState::Running`; stored in `ShellBase::server_info_` for feature-gating across all four shells; Settings "Server" tab shows the homeserver URL.
 - **Shutdown stability** — background workers are drained before the tokio runtime tears down, preventing use-after-free when a worker posts back to the UI thread after the EventHandler is destroyed; a separate guard prevents a double-callback segfault when `stop_sync` is called re-entrantly.
 - **Identity strip in sidebar** — circular avatar + display name + right-click "Log Out" on every platform.
 - **Single-instance enforcement** — a per-user OS lock prevents two app instances from running concurrently (`QLockFile` on Qt6, `GApplication` uniqueness on GTK4, a named mutex on Win32, `NSRunningApplication` check on macOS); the second launch exits with a notice.
@@ -51,7 +52,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Timeline FFI** — `subscribe_room`, `unsubscribe_room`, `paginate_back`, `paginate_back_with_status` (reports `reached_start`); position-aligned `on_timeline_reset` / `on_message_inserted` / `on_message_updated` / `on_message_removed` callbacks mirror matrix-sdk-ui's `VectorDiff` semantics.
 - **Back-pagination on scroll-to-top** — UI fires `paginate_back` when the user reaches the top; in-place insertion preserves the visual scroll position.
 - **Background backfill** — `start_background_backfill` walks every joined room not currently subscribed and warms the persistent event cache with bounded concurrency.
-- **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "<user> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
+- **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "\<sender\> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
 

@@ -438,10 +438,16 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
     CHECK(selected.empty()); // header click must not fire on_room_selected
     st.run(view, {0, 0, 260, 400});
 
-    // After collapse: search bar + 28 px header; no room rows.
-    // Click where !a used to be — no row there now.
-    view.on_pointer_down({10, 80});
+    // After collapse: search bar + header + selected room !a only.
+    // !a (currently selected) stays visible at y=64..126.
+    REQUIRE(view.on_pointer_down({10, 80}));
     view.on_pointer_up({10, 80}, true);
+    CHECK(selected == "!a:x"); // selected room still reachable when collapsed
+    selected.clear();
+
+    // !b (not selected, no unreads) is gone — click where it was.
+    view.on_pointer_down({10, 150});
+    view.on_pointer_up({10, 150}, true);
     CHECK(selected.empty());
 
     // Click header again to expand.
@@ -449,10 +455,10 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
     view.on_pointer_up({10, 50}, true);
     st.run(view, {0, 0, 260, 400});
 
-    // !a is back at y=64..126.
-    REQUIRE(view.on_pointer_down({10, 80}));
-    view.on_pointer_up({10, 80}, true);
-    CHECK(selected == "!a:x");
+    // Both rooms back: !a at y=64..126, !b at y=126..188.
+    REQUIRE(view.on_pointer_down({10, 150}));
+    view.on_pointer_up({10, 150}, true);
+    CHECK(selected == "!b:x");
 }
 
 TEST_CASE("RoomListView search shows rooms in collapsed sections",
