@@ -1051,6 +1051,8 @@ public:
         for (auto& f : raw)
         {
             std::unique_ptr<Image> img = std::move(f.image);
+            if (!img)
+                continue;
             if (auto scaled = scale_image(*img, max_px, max_px))
                 img = std::move(scaled);
             frames.push_back(std::move(img));
