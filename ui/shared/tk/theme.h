@@ -60,6 +60,11 @@ struct Palette
     Color unread_bg;
     Color unread_text;
 
+    // Presence dots (DM avatar badge + member rows)
+    Color presence_online;      // green
+    Color presence_unavailable; // amber
+    Color presence_offline;     // muted grey
+
     // Default initials-avatar disc colours when the sender has no avatar.
     Color avatar_initials_bg;
     Color avatar_initials_text;

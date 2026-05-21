@@ -30,7 +30,9 @@ public:
     void set_members(std::vector<tesseract::RoomMember> members);
 
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
+    using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
     void set_avatar_provider(ImageProvider p);
+    void set_presence_provider(PresenceProvider p);
 
     // NativeTextArea overlay for topic editing (follows RecoveryBanner pattern).
     // Returns the text-area rect when editing, empty otherwise.
@@ -117,6 +119,7 @@ private:
     float content_height_  = 0.0f; // total scrollable content height, updated each arrange
 
     ImageProvider image_provider_;
+    PresenceProvider presence_provider_;
 
     static constexpr float kAvatarD     = 72.0f;
     static constexpr float kAvatarSmall = 32.0f;

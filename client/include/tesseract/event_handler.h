@@ -172,6 +172,14 @@ public:
                                    const std::vector<std::string>& /*names*/)
     {
     }
+
+    /// Called when a presence event is received for `user_id`.
+    /// `state` reflects the user's current presence state.
+    /// Called on a background thread.
+    virtual void on_presence_changed(const std::string& /*user_id*/,
+                                     PresenceState /*state*/)
+    {
+    }
 };
 
 } // namespace tesseract

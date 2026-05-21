@@ -582,6 +582,19 @@ protected:
     {
     }
 
+    // ── Presence ──────────────────────────────────────────────────────────────
+    // Maps bare Matrix user ID → last-received PresenceState.
+    // Keyed only on IDs we've ever received a presence event for.
+    std::unordered_map<std::string, PresenceState> user_presence_;
+
+    // Called on the UI thread by EventHandlerBase. Updates user_presence_ and
+    // triggers a room-list repaint when the changed user is a DM counterpart.
+    void handle_presence_changed_ui_(const std::string& user_id,
+                                     PresenceState state);
+
+    // Look up the presence state for user_id. Returns Offline when unknown.
+    PresenceState presence_for_(const std::string& user_id) const;
+
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.

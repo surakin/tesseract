@@ -67,6 +67,8 @@ public:
     void on_verification_state_changed(bool is_verified) override;
     void on_typing_changed(const std::string& room_id,
                            const std::vector<std::string>& names) override;
+    void on_presence_changed(const std::string& user_id,
+                             PresenceState state) override;
 
 protected:
     ShellBase* shell_;

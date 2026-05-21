@@ -36,6 +36,8 @@ public:
         std::function<const tk::Image*(const std::string& mxc_url)>;
     using StickerProvider =
         std::function<const tk::Image*(const std::string& mxc_url)>;
+    using PresenceProvider =
+        std::function<tesseract::PresenceState(const std::string& user_id)>;
 
     RoomListView();
     ~RoomListView() override; // out-of-line — Adapter is opaque here
@@ -54,6 +56,7 @@ public:
     void set_avatar_provider(AvatarProvider p);
 
     void set_sticker_provider(StickerProvider p);
+    void set_presence_provider(PresenceProvider p);
 
     // Selection by room ID. Stays stable across filter changes — when
     // the filter excludes the selected room, the index is cleared on the
@@ -149,6 +152,7 @@ private:
     std::string search_text_;
     AvatarProvider avatar_provider_;
     StickerProvider sticker_provider_;
+    PresenceProvider presence_provider_;
 
     std::unique_ptr<Adapter> adapter_;
     tk::ListView* list_ = nullptr;

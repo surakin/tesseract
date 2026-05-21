@@ -258,6 +258,46 @@ private:
                 ctx.theme.palette.avatar_initials_text);
         }
 
+        // Presence dot — bottom-right of avatar, DM rooms only.
+        // Drawn for Online (green) and Unavailable (amber); Offline shows nothing.
+        if (!room.dm_counterpart_user_id.empty() && owner_.presence_provider_)
+        {
+            const auto ps = owner_.presence_provider_(room.dm_counterpart_user_id);
+            tk::Color dot_color{};
+            bool show_dot = true;
+            if (ps == tesseract::PresenceState::Online)
+            {
+                dot_color = ctx.theme.palette.presence_online;
+            }
+            else if (ps == tesseract::PresenceState::Unavailable)
+            {
+                dot_color = ctx.theme.palette.presence_unavailable;
+            }
+            else
+            {
+                show_dot = false;
+            }
+            if (show_dot)
+            {
+                constexpr float kDotD = 8.0f;
+                constexpr float kRing = 2.0f;
+                const float outer_d   = kDotD + kRing * 2.0f;
+                // Centre on avatar's bottom-right edge: half inside, half outside.
+                const float dot_cx    = avatar_cx + kAvatarSize * 0.5f;
+                const float dot_cy    = avatar_cy + kAvatarSize * 0.5f;
+                const tk::Color ring_col = selected ? ctx.theme.palette.sidebar_selected
+                                         : hovered  ? ctx.theme.palette.sidebar_hover
+                                                    : ctx.theme.palette.sidebar_bg;
+                ctx.canvas.fill_rounded_rect(
+                    {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f,
+                     outer_d, outer_d},
+                    outer_d * 0.5f, ring_col);
+                ctx.canvas.fill_rounded_rect(
+                    {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+                    kDotD * 0.5f, dot_color);
+            }
+        }
+
         // Text column geometry.
         float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kPadX;
@@ -485,6 +525,11 @@ void RoomListView::set_avatar_provider(AvatarProvider p)
 void RoomListView::set_sticker_provider(StickerProvider p)
 {
     sticker_provider_ = std::move(p);
+}
+
+void RoomListView::set_presence_provider(PresenceProvider p)
+{
+    presence_provider_ = std::move(p);
 }
 
 void RoomListView::set_selected_room(const std::string& room_id)

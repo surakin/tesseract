@@ -27,6 +27,15 @@ enum class EventType
     Location,
 };
 
+/// User presence state. Wire encoding (matches sdk/src/bridge.rs on_presence_changed):
+///   1 = Online  2 = Unavailable  3 = Offline (also used as "unknown/no data received").
+enum class PresenceState : uint8_t
+{
+    Online,
+    Unavailable,
+    Offline,
+};
+
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
 /// tooltip (e.g. "Reacted by:\n  Alice\n  Bob"). Each sender entry is the
@@ -313,6 +322,10 @@ struct RoomInfo
     /// real counterpart could be identified. Render sites should prefer
     /// `effective_avatar_url()` rather than reading either field directly.
     std::string dm_avatar_url;
+    /// Bare Matrix ID of the DM counterpart (e.g. "@alice:server").
+    /// Empty when not a 1:1 DM or no real counterpart was identified.
+    /// Use as the key for presence lookups.
+    std::string dm_counterpart_user_id;
     std::string last_message_body;
     /// Display name of the last-message sender; empty when the sender is the
     /// current user (render as "You"), or when there is no last message.

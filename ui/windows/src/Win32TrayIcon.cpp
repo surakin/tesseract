@@ -2,6 +2,7 @@
 #include "resource.h"
 
 #include <shellapi.h>
+#include <ole2.h>   // IStream + DEFINE_GUID — required before gdiplus.h
 #include <algorithm>
 #include <cwchar>
 #include <utility>

@@ -55,6 +55,11 @@ constexpr Palette light_palette()
 
     // Selection highlight
     p.selection = Color::rgba(0x00, 0x84, 0xFF, 0x50);
+
+    // Presence dots
+    p.presence_online      = Color::rgb(0x2ECC40); // green
+    p.presence_unavailable = Color::rgb(0xFF851B); // amber
+    p.presence_offline     = Color::rgb(0xB0B3BA); // muted grey
     return p;
 }
 
@@ -102,6 +107,11 @@ constexpr Palette dark_palette()
     p.avatar_initials_text = Color::rgb(0xBFD8FF);
 
     p.selection = Color::rgba(0x4D, 0xA3, 0xFF, 0x50);
+
+    // Presence dots
+    p.presence_online      = Color::rgb(0x23B064); // green
+    p.presence_unavailable = Color::rgb(0xE08C1A); // amber
+    p.presence_offline     = Color::rgb(0x606470); // muted grey
     return p;
 }
 

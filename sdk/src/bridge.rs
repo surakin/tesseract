@@ -51,6 +51,10 @@ pub mod ffi {
         /// when the room is not a DM, when it has its own avatar, or when
         /// no real counterpart could be identified.
         dm_avatar_url: String,
+        /// Bare Matrix ID (e.g. `@alice:server`) of the DM counterpart.
+        /// Empty when the room is not a 1:1 DM or no real counterpart was
+        /// identified. Presence lookups should key on this field.
+        dm_counterpart_user_id: String,
         /// Body text of the most recent message (best-effort, may be empty).
         last_message_body: String,
         /// Display name of the last-message sender; empty when the sender is
@@ -478,6 +482,10 @@ pub mod ffi {
             room_id: &str,
             typing_user_ids: &Vec<String>,
         );
+
+        /// Fired when a presence event arrives for `user_id`. `state` encodes:
+        ///   1 = Online  2 = Unavailable  3 = Offline
+        fn on_presence_changed(self: &EventHandlerBridge, user_id: &str, state: u8);
     }
 
     // -------------------------------------------------------------------------

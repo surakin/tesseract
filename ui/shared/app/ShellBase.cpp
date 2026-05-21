@@ -218,6 +218,13 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         });
 
     app->user_info()->set_image_provider(avatar_lookup);
+
+    auto presence_lookup = [this](const std::string& uid) -> PresenceState
+    {
+        return presence_for_(uid);
+    };
+    app->room_list_view()->set_presence_provider(presence_lookup);
+    app->room_view()->room_info_panel()->set_presence_provider(presence_lookup);
 }
 
 void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
@@ -1172,6 +1179,23 @@ void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                    {
                                        w->on_typing_changed(text, visible);
                                    });
+}
+
+void ShellBase::handle_presence_changed_ui_(const std::string& user_id,
+                                            PresenceState state)
+{
+    user_presence_[user_id] = state;
+    // Always repaint: the room list may show a DM dot, and the RoomInfoPanel
+    // (main or pop-out) may show a member dot — both read presence_provider_
+    // on every paint. Presence events are low-frequency so the cost is small.
+    on_rooms_updated_();
+    update_secondary_room_infos_();
+}
+
+PresenceState ShellBase::presence_for_(const std::string& user_id) const
+{
+    auto it = user_presence_.find(user_id);
+    return it != user_presence_.end() ? it->second : PresenceState::Offline;
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)

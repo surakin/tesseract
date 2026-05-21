@@ -131,6 +131,10 @@ public:
     {
         return message_list_;
     }
+    RoomInfoPanel* room_info_panel() const
+    {
+        return room_info_panel_;
+    }
 
     // "Press Up in an empty composer to edit your last message." Wired by
     // the shell to the NativeTextArea's set_on_edit_last hook. No-op (and

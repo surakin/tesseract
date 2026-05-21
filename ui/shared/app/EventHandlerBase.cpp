@@ -239,4 +239,14 @@ void EventHandlerBase::on_typing_changed(const std::string& room_id,
         });
 }
 
+void EventHandlerBase::on_presence_changed(const std::string& user_id,
+                                           PresenceState state)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, uid = user_id, s = state]()
+        {
+            shell->handle_presence_changed_ui_(uid, s);
+        });
+}
+
 } // namespace tesseract

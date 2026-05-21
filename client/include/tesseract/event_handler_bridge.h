@@ -69,6 +69,8 @@ public:
     void on_typing_changed(rust::Str room_id,
                            const rust::Vec<rust::String>& user_ids) const;
 
+    void on_presence_changed(rust::Str user_id, std::uint8_t state) const;
+
 private:
     // `const`: set once at construction and never reassigned. Rust calls the
     // methods above from worker threads; making the pointer immutable keeps

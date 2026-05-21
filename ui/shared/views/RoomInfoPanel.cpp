@@ -142,6 +142,11 @@ void RoomInfoPanel::set_avatar_provider(ImageProvider p)
     image_provider_ = std::move(p);
 }
 
+void RoomInfoPanel::set_presence_provider(PresenceProvider p)
+{
+    presence_provider_ = std::move(p);
+}
+
 void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
 {
     members_       = std::move(members);
@@ -537,6 +542,42 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
             cv.draw_initials_circle(disp_sv, sm_centre, kAvatarSmall,
                                     pal.avatar_initials_bg,
                                     pal.avatar_initials_text);
+        }
+
+        // Presence dot — bottom-right of member avatar.
+        if (presence_provider_)
+        {
+            const auto ps = presence_provider_(mem.user_id);
+            tk::Color dot_color{};
+            bool show_dot = true;
+            if (ps == tesseract::PresenceState::Online)
+            {
+                dot_color = pal.presence_online;
+            }
+            else if (ps == tesseract::PresenceState::Unavailable)
+            {
+                dot_color = pal.presence_unavailable;
+            }
+            else
+            {
+                show_dot = false;
+            }
+            if (show_dot)
+            {
+                constexpr float kDotD = 7.0f; // slightly smaller for 32dp avatar
+                constexpr float kRing = 1.5f;
+                const float outer_d   = kDotD + kRing * 2.0f;
+                // Centre on avatar's bottom-right edge: half inside, half outside.
+                const float dot_cx    = sm_centre.x + kAvatarSmall * 0.5f;
+                const float dot_cy    = sm_centre.y + kAvatarSmall * 0.5f;
+                cv.fill_rounded_rect(
+                    {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f,
+                     outer_d, outer_d},
+                    outer_d * 0.5f, pal.bg);
+                cv.fill_rounded_rect(
+                    {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+                    kDotD * 0.5f, dot_color);
+            }
         }
 
         // Text column: display_name + user_id

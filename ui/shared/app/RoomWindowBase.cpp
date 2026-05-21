@@ -68,6 +68,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_avatar_(mxc);
         });
+    rv->room_info_panel()->set_presence_provider(
+        [this](const std::string& uid) -> tesseract::PresenceState
+        {
+            return shell_->presence_for_(uid);
+        });
     rv->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*
         {

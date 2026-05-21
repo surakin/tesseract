@@ -29,6 +29,7 @@ pub mod ffi {
         pub is_direct: bool,
         pub avatar_url: String,
         pub dm_avatar_url: String,
+        pub dm_counterpart_user_id: String,
         pub last_message_body: String,
         pub last_message_sender_name: String,
         pub last_message_kind: String,

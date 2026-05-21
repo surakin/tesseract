@@ -358,4 +358,25 @@ void EventHandlerBridge::on_typing_changed(
           });
 }
 
+void EventHandlerBridge::on_presence_changed(rust::Str user_id,
+                                             std::uint8_t state) const
+{
+    guard("on_presence_changed",
+          [&]
+          {
+              if (!handler_)
+              {
+                  return;
+              }
+              tesseract::PresenceState ps;
+              switch (state)
+              {
+              case 1:  ps = tesseract::PresenceState::Online;      break;
+              case 2:  ps = tesseract::PresenceState::Unavailable; break;
+              default: ps = tesseract::PresenceState::Offline;     break;
+              }
+              handler_->on_presence_changed(std::string(user_id), ps);
+          });
+}
+
 } // namespace tesseract_ffi

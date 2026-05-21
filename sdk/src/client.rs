@@ -1182,6 +1182,29 @@ impl ClientFfi {
             ));
         }
 
+        // Global presence handler.
+        {
+            use matrix_sdk::ruma::events::presence::PresenceEvent;
+            use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
+            let h = Arc::clone(&handler);
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: PresenceEvent| {
+                    let h = Arc::clone(&h);
+                    async move {
+                        let user_id = ev.sender.to_string();
+                        let state: u8 = match ev.content.presence {
+                            RumaPresence::Online => 1,
+                            RumaPresence::Unavailable => 2,
+                            _ => 3,
+                        };
+                        if let Ok(g) = h.lock() {
+                            g.on_presence_changed(&user_id, state);
+                        }
+                    }
+                },
+            ));
+        }
+
         // Build SyncService.
         let sync_service = match self
             .rt
@@ -5922,16 +5945,16 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
         // treat as DMs aren't actually marked in m.direct account data, but
         // dm_other_user already protects against false positives by only
         // returning Some when there is exactly one real counterpart.
-        let dm_avatar_url = if avatar_url.is_empty() && !is_space {
+        let (dm_avatar_url, dm_counterpart_user_id) = if avatar_url.is_empty() && !is_space {
             match client.user_id() {
                 Some(me) => dm_other_user(&room, me)
                     .await
-                    .map(|m| m.avatar_url)
+                    .map(|m| (m.avatar_url, m.user_id))
                     .unwrap_or_default(),
-                None => String::new(),
+                None => (String::new(), String::new()),
             }
         } else {
-            String::new()
+            (String::new(), String::new())
         };
         result.push(crate::ffi::RoomInfo {
             id: room.room_id().to_string(),
@@ -5943,6 +5966,7 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             is_direct,
             avatar_url,
             dm_avatar_url,
+            dm_counterpart_user_id,
             last_message_body,
             last_message_sender_name,
             last_message_kind,
