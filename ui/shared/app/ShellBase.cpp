@@ -2,6 +2,10 @@
 #include "app/RoomWindowBase.h"
 #include "tk/blurhash.h"
 #include "tk/theme.h"
+#include "views/MainAppWidget.h"
+#include "views/RoomListView.h"
+#include "views/RoomView.h"
+#include "views/UserInfo.h"
 #include "views/html_spans.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
@@ -140,6 +144,112 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                                           std::move(bytes));
                 });
         });
+}
+
+const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
+{
+    if (const auto* f = anim_cache_.current_frame(mxc))
+    {
+        return f;
+    }
+    auto it = tk_images_.find(mxc);
+    if (it != tk_images_.end())
+    {
+        return it->second.get();
+    }
+    ensure_media_image_(mxc, 64, 64);
+    return nullptr;
+}
+
+const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc) const
+{
+    if (const auto* f = anim_cache_.current_frame(mxc))
+    {
+        return f;
+    }
+    auto it = tk_images_.find(mxc);
+    return it == tk_images_.end() ? nullptr : it->second.get();
+}
+
+void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
+{
+    auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
+    {
+        auto it = tk_avatars_.find(mxc);
+        return it == tk_avatars_.end() ? nullptr : it->second.get();
+    };
+
+    app->set_avatar_provider(avatar_lookup);
+    app->room_list_view()->set_avatar_provider(avatar_lookup);
+    app->room_list_view()->set_sticker_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            return shell_sticker_(mxc);
+        });
+
+    app->room_view()->set_avatar_provider(avatar_lookup);
+    app->room_view()->set_image_provider(
+        [this](const std::string& mxc) -> const tk::Image*
+        {
+            return shell_sticker_no_fetch_(mxc);
+        });
+    app->room_view()->set_preview_provider(
+        [this](const std::string& url) -> const views::UrlPreviewData*
+        {
+            auto it = url_preview_data_.find(url);
+            if (it == url_preview_data_.end())
+            {
+                return nullptr;
+            }
+            if (!it->second.image_mxc.empty() &&
+                !tk_images_.count(it->second.image_mxc) &&
+                !anim_cache_.has(it->second.image_mxc))
+            {
+                ensure_media_image_(it->second.image_mxc, 64, 64);
+            }
+            return &it->second;
+        });
+
+    app->user_info()->set_image_provider(avatar_lookup);
+}
+
+void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
+                                       tk::Host&             host,
+                                       std::function<void()> request_relayout,
+                                       std::function<void()> on_image_close,
+                                       std::function<void()> on_video_close)
+{
+    auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
+    {
+        return shell_sticker_no_fetch_(mxc);
+    };
+
+    auto* iv = app->image_viewer();
+    iv->set_image_provider(image_lookup);
+    iv->set_repaint_requester(request_relayout);
+    iv->on_close = [app, request_relayout, on_image_close]
+    {
+        app->show_image_viewer(false);
+        request_relayout();
+        if (on_image_close)
+        {
+            on_image_close();
+        }
+    };
+
+    auto* vv = app->video_viewer();
+    vv->set_image_provider(image_lookup);
+    vv->set_video_player(host.make_video_player());
+    vv->set_repaint_requester(request_relayout);
+    vv->on_close = [app, request_relayout, on_video_close]
+    {
+        app->show_video_viewer(false);
+        request_relayout();
+        if (on_video_close)
+        {
+            on_video_close();
+        }
+    };
 }
 
 void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)

@@ -49,7 +49,6 @@ class SettingsWidget;
 
 class MainWindow : public tesseract::ShellBase
 {
-    friend class RoomWindow; // accesses url_preview_data_ for preview provider
 public:
     explicit MainWindow(GtkApplication* app);
     ~MainWindow();
@@ -247,9 +246,6 @@ private:
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
-
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
-        url_preview_data_;
 
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();

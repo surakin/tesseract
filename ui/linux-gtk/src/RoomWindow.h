@@ -27,8 +27,6 @@ public:
 
 protected:
     void surface_repaint_() override;
-    const tesseract::views::UrlPreviewData*
-    preview_lookup_(const std::string& url) override;
 
 private:
     static void on_destroy_(GtkWidget* widget, gpointer self);

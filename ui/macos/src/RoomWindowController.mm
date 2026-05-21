@@ -25,10 +25,7 @@ class MacRoomWindow;
 class MacRoomWindow : public tesseract::RoomWindowBase
 {
 public:
-    MacRoomWindow(
-        tesseract::ShellBase* shell, const std::string& room_id,
-        const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
-            preview_data);
+    MacRoomWindow(tesseract::ShellBase* shell, const std::string& room_id);
     ~MacRoomWindow() override;
 
     void bring_to_front() override;
@@ -70,15 +67,11 @@ protected:
     {
         return text_area_.get();
     }
-    const tesseract::views::UrlPreviewData*
-    preview_lookup_(const std::string& url) override;
 
 private:
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
-    const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
-        preview_data_ = nullptr;
     bool window_closed_ = false;
 };
 
@@ -86,11 +79,9 @@ private:
 // MacRoomWindow implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
-MacRoomWindow::MacRoomWindow(
-    tesseract::ShellBase* shell, const std::string& room_id,
-    const std::unordered_map<std::string, tesseract::views::UrlPreviewData>*
-        preview_data)
-    : tesseract::RoomWindowBase(shell, room_id), preview_data_(preview_data)
+MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
+                             const std::string&    room_id)
+    : tesseract::RoomWindowBase(shell, room_id)
 {
     NSRect frame = NSMakeRect(0, 0, 800, 600);
     NSWindowStyleMask style =
@@ -317,17 +308,6 @@ void MacRoomWindow::surface_repaint_()
     }
 }
 
-const tesseract::views::UrlPreviewData*
-MacRoomWindow::preview_lookup_(const std::string& url)
-{
-    if (!preview_data_)
-    {
-        return nullptr;
-    }
-    auto it = preview_data_->find(url);
-    return it == preview_data_->end() ? nullptr : &it->second;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // RoomWindowController ObjC implementation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -384,11 +364,10 @@ MacRoomWindow::preview_lookup_(const std::string& url)
 namespace tesseract
 {
 
-RoomWindowBase* make_mac_room_window(
-    ShellBase* shell, const std::string& room_id,
-    const std::unordered_map<std::string, views::UrlPreviewData>* preview_data)
+RoomWindowBase* make_mac_room_window(ShellBase*         shell,
+                                     const std::string& room_id)
 {
-    return new MacRoomWindow(shell, room_id, preview_data);
+    return new MacRoomWindow(shell, room_id);
 }
 
 } // namespace tesseract

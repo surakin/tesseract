@@ -295,15 +295,6 @@ void RoomWindow::surface_repaint_()
     }
 }
 
-const tesseract::views::UrlPreviewData*
-RoomWindow::preview_lookup_(const std::string& url)
-{
-    // URL previews are cached in the main shell's url_preview_data_.
-    // RoomWindowBase is a friend of ShellBase; access via parent_.
-    auto it = parent_->url_preview_data_.find(url);
-    return it == parent_->url_preview_data_.end() ? nullptr : &it->second;
-}
-
 // ---------------------------------------------------------------------------
 
 LRESULT CALLBACK RoomWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,

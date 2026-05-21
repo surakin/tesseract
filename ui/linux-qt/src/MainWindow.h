@@ -70,7 +70,6 @@ public:
 
 class MainWindow final : public QMainWindow, public tesseract::ShellBase
 {
-    friend class RoomWindow; // accesses url_preview_data_ for preview provider
     Q_OBJECT
 public:
     explicit MainWindow(QWidget* parent = nullptr);
@@ -255,9 +254,6 @@ private:
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
-
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
-        url_preview_data_;
 
     /// Run `fn` on `mediaPool_`. No-ops when shutdown is in progress, and
     /// the runnable itself rechecks the flag before invoking `fn` so a

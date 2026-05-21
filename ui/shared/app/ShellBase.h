@@ -30,8 +30,18 @@
 #include <unordered_set>
 #include <vector>
 
+namespace tk
+{
+class Host;
+} // namespace tk
+
 namespace tesseract
 {
+
+namespace views
+{
+class MainAppWidget;
+}
 
 // ShellBase holds all state and platform-agnostic logic that is identical
 // across the Qt6, GTK4, Win32, and macOS shells. Platform-specific concerns
@@ -159,6 +169,13 @@ protected:
     std::unordered_map<std::string, tesseract::Client::UrlPreview>
         url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
+
+    // Decoded UrlPreviewData (title/description/image_mxc + dims) cached for
+    // every URL the SDK has resolved. Populated by each shell's
+    // on_url_preview_ready_ and looked up by RoomWindowBase::preview_lookup_
+    // for both main-window and pop-out room views.
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
+        url_preview_data_;
 
     // ── BlurHash decode dedup ────────────────────────────────────────────────
     std::unordered_set<std::string> blurhash_attempted_;
@@ -611,6 +628,36 @@ protected:
     void ensure_room_avatar_(const RoomInfo& r);
     void ensure_user_avatar_(const std::string& mxc);
     void ensure_media_image_(const std::string& url, int max_w, int max_h);
+
+    // Sticker / animated-media lookup: anim_cache_ → tk_images_ fallback.
+    // shell_sticker_ kicks an ensure_media_image_(mxc, 64, 64) fetch on miss
+    // (used by RoomListView's sticker_provider, where the row hasn't yet
+    // pre-warmed the cache). shell_sticker_no_fetch_ is the pure-lookup
+    // variant (used by RoomView's image_provider, where ensure_row_media_
+    // has already kicked the fetch).
+    const tk::Image* shell_sticker_(const std::string& mxc);
+    const tk::Image* shell_sticker_no_fetch_(const std::string& mxc) const;
+
+    // Wire MainAppWidget-level + RoomListView/RoomView/UserInfo providers
+    // that read from tk_avatars_, tk_images_, anim_cache_, and
+    // url_preview_data_. Each shell calls this once during construction after
+    // creating its MainAppWidget. Does NOT touch image_viewer/video_viewer
+    // (see wire_main_app_viewers_) nor non-provider callbacks
+    // (on_room_selected, on_scroll, on_search_clear, etc.) — those touch
+    // shell-specific state and stay in the per-shell ctor.
+    void wire_main_app_widget_(views::MainAppWidget* app);
+
+    // Wire image_viewer() + video_viewer() provider/repaint/close callbacks.
+    // `host` builds the video player. `request_relayout` is each shell's
+    // surface relayout primitive. `on_image_close` / `on_video_close`
+    // (optional) run AFTER the standard hide+relayout sequence — Qt6 uses
+    // these to restore focus to its native compose text area; other shells
+    // pass {} when they don't need a tail action.
+    void wire_main_app_viewers_(views::MainAppWidget* app,
+                                tk::Host&             host,
+                                std::function<void()> request_relayout,
+                                std::function<void()> on_image_close = {},
+                                std::function<void()> on_video_close = {});
 
     // Shared async picker-image path. Idempotent: no-op if already in
     // tk_images_ / anim_cache_ / in-flight. Dedups via

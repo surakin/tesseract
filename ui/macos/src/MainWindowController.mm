@@ -233,11 +233,14 @@ public:
     using ShellBase::tabs_;
     using ShellBase::tk_avatars_;
     using ShellBase::tk_images_;
+    using ShellBase::url_preview_data_;
     using ShellBase::verification_banner_dismissed_;
     using ShellBase::video_thumb_in_flight_;
     using ShellBase::view_displayed_room_id_;
     using ShellBase::voice_prefetched_;
     using ShellBase::capture_;
+    using ShellBase::wire_main_app_viewers_;
+    using ShellBase::wire_main_app_widget_;
     using ShellBase::wire_voice_capture_;
     using ShellBase::workers_cv_;
     using ShellBase::workers_in_flight_;
@@ -272,9 +275,6 @@ public:
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
     std::vector<tesseract::views::ShortcodeSuggestion>
         shortcode_current_suggestions_;
-
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
-        url_preview_data_;
 
 private:
     MainWindowController*
@@ -1187,7 +1187,7 @@ void MacShell::on_url_preview_failed_(const std::string& url)
 tesseract::RoomWindowBase*
 MacShell::create_secondary_room_window_(const std::string& room_id)
 {
-    return tesseract::make_mac_room_window(this, room_id, &url_preview_data_);
+    return tesseract::make_mac_room_window(this, room_id);
 }
 
 tk::ThemeMode MacShell::os_color_scheme_() const
@@ -1492,19 +1492,8 @@ void MacShell::apply_cached_messages_(
         };
 
         // UserInfo callbacks: left-click → account picker, right-click → context menu.
+        // (image_provider is wired in wire_main_app_widget_ below.)
         __weak MainWindowController* weakSelf = self;
-        _mainApp->user_info()->set_image_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                          : it->second.get();
-            });
         _mainApp->user_info()->on_primary = [weakSelf](tk::Point /*p*/)
         {
             MainWindowController* s = weakSelf;
@@ -1571,50 +1560,9 @@ void MacShell::apply_cached_messages_(
         };
 
         // Space nav + RoomListView avatar providers.
-        _mainApp->set_avatar_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                          : it->second.get();
-            });
-        _mainApp->room_list_view()->set_avatar_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                          : it->second.get();
-            });
-        _mainApp->room_list_view()->set_sticker_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                if (const auto* f = s->_shell->anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = s->_shell->tk_images_.find(mxc);
-                if (it != s->_shell->tk_images_.end())
-                {
-                    return it->second.get();
-                }
-                s->_shell->ensure_media_image_(mxc, 64, 64);
-                return nullptr;
-            });
+        // Provider wiring (avatar/image/sticker/preview/user-info).
+        _shell->wire_main_app_widget_(_mainApp);
+
         _mainApp->room_list_view()->on_room_selected =
             [weakSelf](const std::string& room_id)
         {
@@ -1761,40 +1709,11 @@ void MacShell::apply_cached_messages_(
             [s _maybeShowRecoveryBanner];
         };
 
-        // ImageViewerOverlay callbacks.
-        _mainApp->image_viewer()->set_image_provider(
-            [weakSelf](const std::string& url) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                if (auto* f = s->_shell->anim_cache_.current_frame(url))
-                {
-                    return f;
-                }
-                auto it = s->_shell->tk_images_.find(url);
-                return it == s->_shell->tk_images_.end() ? nullptr
-                                                         : it->second.get();
-            });
-        _mainApp->image_viewer()->on_close = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_mainApp->show_image_viewer(false);
-            s->_mainAppSurface->relayout();
-            // Restore keyboard focus to the compose bar now that the overlay
-            // is gone and the NSTextView overlay is visible again.
-            if (!s->_mainApp->compose_text_area_rect().empty())
-            {
-                s->_roomTextArea->set_focused(true);
-            }
-        };
-        _mainApp->image_viewer()->set_repaint_requester(
+        // Image + video viewers — providers / repaint / on_close.
+        // The shell-passed on_*_close callable restores compose focus when
+        // the overlay closes (matches Qt6 behavior).
+        _shell->wire_main_app_viewers_(
+            _mainApp, _mainAppSurface->host(),
             [weakSelf]
             {
                 MainWindowController* s = weakSelf;
@@ -1802,7 +1721,32 @@ void MacShell::apply_cached_messages_(
                 {
                     s->_mainAppSurface->relayout();
                 }
+            },
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return;
+                }
+                if (!s->_mainApp->compose_text_area_rect().empty())
+                {
+                    s->_roomTextArea->set_focused(true);
+                }
+            },
+            [weakSelf]
+            {
+                MainWindowController* s = weakSelf;
+                if (!s)
+                {
+                    return;
+                }
+                if (!s->_mainApp->compose_text_area_rect().empty())
+                {
+                    s->_roomTextArea->set_focused(true);
+                }
             });
+
         _mainApp->image_viewer()->on_save =
             [weakSelf](std::string source_url, std::string filename_hint)
         {
@@ -1834,44 +1778,6 @@ void MacShell::apply_cached_messages_(
                 });
         };
 
-        // VideoViewerOverlay callbacks.
-        _mainApp->video_viewer()->set_image_provider(
-            [weakSelf](const std::string& url) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->tk_images_.find(url);
-                return it == s->_shell->tk_images_.end() ? nullptr
-                                                         : it->second.get();
-            });
-        _mainApp->video_viewer()->set_video_player(
-            _mainAppSurface->host().make_video_player());
-        _mainApp->video_viewer()->set_repaint_requester(
-            [weakSelf]
-            {
-                MainWindowController* s = weakSelf;
-                if (s && s->_mainAppSurface)
-                {
-                    s->_mainAppSurface->relayout();
-                }
-            });
-        _mainApp->video_viewer()->on_close = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_mainApp->show_video_viewer(false);
-            s->_mainAppSurface->relayout();
-            if (!s->_mainApp->compose_text_area_rect().empty())
-            {
-                s->_roomTextArea->set_focused(true);
-            }
-        };
         _mainApp->video_viewer()->on_save =
             [weakSelf](std::string source_json, std::string mime_type)
         {
@@ -1905,63 +1811,13 @@ void MacShell::apply_cached_messages_(
                 });
         };
 
-        // RoomView callbacks.
-        _mainApp->room_view()->set_avatar_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->tk_avatars_.find(mxc);
-                return it == s->_shell->tk_avatars_.end() ? nullptr
-                                                          : it->second.get();
-            });
-        _mainApp->room_view()->set_image_provider(
-            [weakSelf](const std::string& mxc) -> const tk::Image*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                if (auto* f = s->_shell->anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = s->_shell->tk_images_.find(mxc);
-                return it == s->_shell->tk_images_.end() ? nullptr
-                                                         : it->second.get();
-            });
+        // RoomView shortcode lookup (avatar/image/preview wired via
+        // wire_main_app_widget_).
         _mainApp->room_view()->set_shortcode_provider(
             [weakSelf](const std::string& mxc) -> std::string
             {
                 MainWindowController* s = weakSelf;
                 return s ? s->_shell->shortcode_for_mxc_(mxc) : std::string();
-            });
-        _mainApp->room_view()->set_preview_provider(
-            [weakSelf](const std::string& url)
-                -> const tesseract::views::UrlPreviewData*
-            {
-                MainWindowController* s = weakSelf;
-                if (!s)
-                {
-                    return nullptr;
-                }
-                auto it = s->_shell->url_preview_data_.find(url);
-                if (it == s->_shell->url_preview_data_.end())
-                {
-                    return nullptr;
-                }
-                if (!it->second.image_mxc.empty() &&
-                    !s->_shell->tk_images_.count(it->second.image_mxc) &&
-                    !s->_shell->anim_cache_.has(it->second.image_mxc))
-                {
-                    s->_shell->ensure_media_image_(it->second.image_mxc, 64,
-                                                   64);
-                }
-                return &it->second;
             });
         _mainApp->room_view()->set_voice_bytes_provider(
             [weakSelf](

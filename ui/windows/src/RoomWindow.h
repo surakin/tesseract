@@ -47,8 +47,6 @@ protected:
     {
         return text_area_.get();
     }
-    const tesseract::views::UrlPreviewData*
-    preview_lookup_(const std::string& url) override;
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);

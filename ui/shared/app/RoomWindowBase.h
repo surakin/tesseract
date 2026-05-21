@@ -95,11 +95,9 @@ protected:
         return nullptr;
     }
 
-    // Look up a cached URL-preview card for `url`, or nullptr. The cache
-    // (url_preview_data_) lives on the concrete shell, not ShellBase, so
-    // each shell forwards this one-liner to its own map.
-    virtual const views::UrlPreviewData*
-    preview_lookup_(const std::string& url) = 0;
+    // Look up a cached URL-preview card for `url`, or nullptr. Reads from
+    // ShellBase::url_preview_data_; every shell shares the same cache.
+    const views::UrlPreviewData* preview_lookup_(const std::string& url);
 
     // Post a deferred call to ShellBase::release_owned_window_(this) on the UI
     // thread. Call from WM_DESTROY (Win32) or the platform destroy callback

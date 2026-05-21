@@ -31,8 +31,6 @@ protected:
     void keyPressEvent(QKeyEvent* ev) override;
 
     void surface_repaint_() override;
-    const tesseract::views::UrlPreviewData*
-    preview_lookup_(const std::string& url) override;
 
 private:
     MainWindow* parent_shell_;

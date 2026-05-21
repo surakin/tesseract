@@ -94,8 +94,6 @@ class LoginView;
 
 class MainWindow : public tesseract::ShellBase
 {
-    friend class RoomWindow; // accesses url_preview_data_ for preview provider
-
 public:
     static bool register_class(HINSTANCE hInst);
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
@@ -411,10 +409,6 @@ private:
     // pagination_ and kPaginationBatch are inherited from tesseract::ShellBase.
 
     ULONG_PTR gdiplus_token_ = 0;
-
-    // URL preview cache: keyed by URL, populated by on_url_preview_ready_.
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
-        url_preview_data_;
 
     // tk_avatars_, tk_images_, anim_cache_, voice_prefetched_,
     // video_thumb_in_flight_, reply_details_requested_, media_fetches_in_flight_,

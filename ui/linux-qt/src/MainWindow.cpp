@@ -130,34 +130,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             onSpaceBack();
         };
 
+        // ---- Provider wiring (avatar/image/sticker/preview/user-info) ----
+        wire_main_app_widget_(mainApp_);
+
         // ---- Room list ----
-        mainApp_->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        mainApp_->room_list_view()->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        mainApp_->room_list_view()->set_sticker_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                if (const auto* f = anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = tk_images_.find(mxc);
-                if (it != tk_images_.end())
-                {
-                    return it->second.get();
-                }
-                ensure_media_image_(mxc, 64, 64);
-                return nullptr;
-            });
         mainApp_->room_list_view()->on_room_selected =
             [this](const std::string& room_id)
         {
@@ -223,12 +199,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         };
 
         // ---- User info strip ----
-        mainApp_->user_info()->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it != tk_avatars_.end() ? it->second.get() : nullptr;
-            });
         mainApp_->user_info()->on_primary = [this](tk::Point world)
         {
             if (accounts_.size() < 2)
@@ -308,7 +278,34 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             maybeShowRecoveryBanner();
         };
 
-        // ---- Image viewer ----
+        // ---- Image + video viewers ----
+        wire_main_app_viewers_(
+            mainApp_, mainAppSurface_->host(),
+            [this]
+            {
+                if (mainAppSurface_)
+                {
+                    mainAppSurface_->relayout();
+                }
+            },
+            [this]
+            {
+                if (roomTextArea_)
+                {
+                    roomTextArea_->set_focused(true);
+                }
+            },
+            [this]
+            {
+                if (roomTextArea_)
+                {
+                    roomTextArea_->set_focused(true);
+                }
+            });
+
+        // Qt6-only residual: install a richer image_viewer provider that
+        // also consults viewerFullresCache_ before falling back to the
+        // shared anim_cache_/tk_images_ chain set by wire_main_app_viewers_.
         mainApp_->image_viewer()->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             {
@@ -324,89 +321,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 auto it = tk_images_.find(url);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        mainApp_->image_viewer()->on_close = [this]
-        {
-            mainApp_->show_image_viewer(false);
-            mainAppSurface_->relayout();
-            if (roomTextArea_)
-            {
-                roomTextArea_->set_focused(true);
-            }
-        };
-        mainApp_->image_viewer()->set_repaint_requester(
-            [this]
-            {
-                if (mainAppSurface_)
-                {
-                    mainAppSurface_->relayout();
-                }
-            });
-
-        // ---- Video viewer ----
-        mainApp_->video_viewer()->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
-        mainApp_->video_viewer()->set_video_player(
-            mainAppSurface_->host().make_video_player());
-        mainApp_->video_viewer()->set_repaint_requester(
-            [this]
-            {
-                if (mainAppSurface_)
-                {
-                    mainAppSurface_->relayout();
-                }
-            });
-        mainApp_->video_viewer()->on_close = [this]
-        {
-            mainApp_->show_video_viewer(false);
-            mainAppSurface_->relayout();
-            if (roomTextArea_)
-            {
-                roomTextArea_->set_focused(true);
-            }
-        };
 
         // ---- Room view ----
-        mainApp_->room_view()->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        mainApp_->room_view()->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                if (const auto* f = anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = tk_images_.find(mxc);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
         mainApp_->room_view()->set_shortcode_provider(
             [this](const std::string& mxc) -> std::string
             {
                 return shortcode_for_mxc_(mxc);
-            });
-        mainApp_->room_view()->set_preview_provider(
-            [this](const std::string& url)
-                -> const tesseract::views::UrlPreviewData*
-            {
-                auto it = url_preview_data_.find(url);
-                if (it == url_preview_data_.end())
-                {
-                    return nullptr;
-                }
-                if (!it->second.image_mxc.empty() &&
-                    !tk_images_.count(it->second.image_mxc) &&
-                    !anim_cache_.has(it->second.image_mxc))
-                {
-                    ensure_media_image_(it->second.image_mxc, 64, 64);
-                }
-                return &it->second;
             });
         if (auto player = mainAppSurface_->host().make_audio_player())
         {

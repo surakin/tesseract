@@ -490,6 +490,13 @@ const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
     return it == shell_->tk_images_.end() ? nullptr : it->second.get();
 }
 
+const views::UrlPreviewData*
+RoomWindowBase::preview_lookup_(const std::string& url)
+{
+    auto it = shell_->url_preview_data_.find(url);
+    return it == shell_->url_preview_data_.end() ? nullptr : &it->second;
+}
+
 std::vector<std::uint8_t>
 RoomWindowBase::fetch_source_bytes_(const std::string& source_json)
 {

@@ -451,13 +451,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             tab_close(room_id);
         };
 
+        // Wire provider callbacks (avatar/image/sticker/preview/user-info).
+        wire_main_app_widget_(main_app_);
+
         // Wire UserInfo callbacks (replaces native GTK user-strip gestures).
-        main_app_->user_info()->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
         main_app_->user_info()->on_primary = [this](tk::Point world)
         {
             open_account_picker(world.x, world.y);
@@ -484,34 +481,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             refresh_room_list();
         };
 
-        // Wire space nav and RoomListView avatar providers.
-        main_app_->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        room_list_view_->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        room_list_view_->set_sticker_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                if (const auto* f = anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = tk_images_.find(mxc);
-                if (it != tk_images_.end())
-                {
-                    return it->second.get();
-                }
-                ensure_media_image_(mxc, 64, 64);
-                return nullptr;
-            });
         room_list_view_->on_room_selected = [this](const std::string& room_id)
         {
             tab_select_room(room_id);
@@ -560,44 +529,12 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             open_join_room_dialog();
         };
 
-        // Wire RoomView callbacks.
-        room_view_->set_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
-        room_view_->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                if (const auto* f = anim_cache_.current_frame(mxc))
-                {
-                    return f;
-                }
-                auto it = tk_images_.find(mxc);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
+        // Wire RoomView shortcode lookup (avatar/image/preview wired via
+        // wire_main_app_widget_).
         room_view_->set_shortcode_provider(
             [this](const std::string& mxc) -> std::string
             {
                 return shortcode_for_mxc_(mxc);
-            });
-        room_view_->set_preview_provider(
-            [this](const std::string& url)
-                -> const tesseract::views::UrlPreviewData*
-            {
-                auto it = url_preview_data_.find(url);
-                if (it == url_preview_data_.end())
-                {
-                    return nullptr;
-                }
-                if (!it->second.image_mxc.empty() &&
-                    !tk_images_.count(it->second.image_mxc) &&
-                    !anim_cache_.has(it->second.image_mxc))
-                {
-                    ensure_media_image_(it->second.image_mxc, 64, 64);
-                }
-                return &it->second;
             });
         if (auto player = main_app_surface_->host().make_audio_player())
         {
@@ -796,7 +733,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
 
         // Topic edit text area overlay.
         topic_text_area_ = main_app_surface_->host().make_text_area();
-        topic_text_area_->set_multiline(true);
         topic_text_area_->set_on_changed([this](const std::string& t)
         {
             if (main_app_) main_app_->room_view()->set_topic_edit_text(t);
@@ -1360,22 +1296,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             });
         };
 
-        // Image viewer.
-        img_viewer_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
+        // Image + video viewers — providers / repaint / on_close.
+        wire_main_app_viewers_(
+            main_app_, main_app_surface_->host(),
+            [this]
             {
-                if (const auto* f = anim_cache_.current_frame(url))
+                if (main_app_surface_)
                 {
-                    return f;
+                    main_app_surface_->relayout();
                 }
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
             });
-        img_viewer_->on_close = [this]
-        {
-            main_app_->show_image_viewer(false);
-            main_app_surface_->relayout();
-        };
 
         room_view_->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
@@ -1390,14 +1320,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             ensure_media_image_(src_tok, 320, 200);
         };
 
-        img_viewer_->set_repaint_requester(
-            [this]
-            {
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-            });
         img_viewer_->on_save =
             [this](std::string source_url, std::string filename_hint)
         {
@@ -1462,29 +1384,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 }),
                 ctx);
             gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
-        };
-
-        // Video viewer.
-        vid_viewer_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
-        vid_viewer_->set_video_player(
-            main_app_surface_->host().make_video_player());
-        vid_viewer_->set_repaint_requester(
-            [this]
-            {
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
-                }
-            });
-        vid_viewer_->on_close = [this]
-        {
-            main_app_->show_video_viewer(false);
-            main_app_surface_->relayout();
         };
 
         room_view_->on_video_clicked =

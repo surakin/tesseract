@@ -159,13 +159,6 @@ void RoomWindow::surface_repaint_()
     }
 }
 
-const tesseract::views::UrlPreviewData*
-RoomWindow::preview_lookup_(const std::string& url)
-{
-    auto it = parent_shell_->url_preview_data_.find(url);
-    return it == parent_shell_->url_preview_data_.end() ? nullptr : &it->second;
-}
-
 void RoomWindow::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);
