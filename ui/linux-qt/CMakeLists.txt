@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Multimedia DBus Concurrent Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Widgets Multimedia DBus Concurrent Network)
 qt_standard_project_setup()
 
 # ---------------------------------------------------------------------------
@@ -77,7 +77,8 @@ if(WAYLAND_CLIENT_LIB)
         AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
     target_compile_definitions(tesseract_qt PRIVATE HAVE_XDG_ACTIVATION)
     target_link_libraries(tesseract_qt PRIVATE
-        tesseract_xdg_protocol "${WAYLAND_CLIENT_LIB}")
+        tesseract_xdg_protocol "${WAYLAND_CLIENT_LIB}"
+        Qt6::GuiPrivate)
 endif()
 
 set_target_properties(tesseract_qt PROPERTIES

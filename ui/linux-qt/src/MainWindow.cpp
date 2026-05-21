@@ -68,7 +68,7 @@
 #include <qguiapplication_platform.h>
 // QPlatformNativeInterface is needed to get wl_surface* via nativeResourceForWindow;
 // Qt 6 exposes no public equivalent.
-#include <QtGui/6.11.0/QtGui/qpa/qplatformnativeinterface.h>
+#include <QtGui/qpa/qplatformnativeinterface.h>
 #endif
 #include <QFile>
 #include <QFileDialog>
