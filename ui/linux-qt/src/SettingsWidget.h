@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include "app/SettingsController.h"
+#include "tk/host.h"
 #include "tk/host_qt.h"
 #include "views/settings/AccountSection.h"
 #include "views/SettingsView.h"
@@ -35,6 +37,9 @@ public:
     /// Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    void set_controller(tesseract::SettingsController* ctrl,
+                        const std::string& current_display_name);
+
 signals:
     void settingsClosed();
     void themeChanged(tesseract::Settings::ThemePreference pref);
@@ -46,6 +51,8 @@ protected:
 private:
     tk::qt6::Surface* surface_ = nullptr;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
+    tesseract::SettingsController* controller_ = nullptr;
+    std::unique_ptr<tk::NativeTextField> name_field_;
 };
 
 } // namespace qt6

@@ -70,6 +70,7 @@
 // Qt 6 exposes no public equivalent.
 #include <QtGui/6.11.0/QtGui/qpa/qplatformnativeinterface.h>
 #endif
+#include <QFile>
 #include <QFileDialog>
 
 #include <algorithm>
@@ -2114,6 +2115,34 @@ void MainWindow::doLogin()
         target_active = 0;
     }
     switchActiveAccount(target_active);
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto cb)
+        {
+            const QString path = QFileDialog::getOpenFileName(
+                this, tr("Select avatar image"), {},
+                tr("Images (*.png *.jpg *.jpeg *.gif *.webp)"));
+            if (path.isEmpty()) return;
+            QFile f(path);
+            if (!f.open(QIODevice::ReadOnly)) return;
+            QByteArray data = f.readAll();
+            const std::string mime =
+                path.endsWith(".png",  Qt::CaseInsensitive) ? "image/png"  :
+                path.endsWith(".gif",  Qt::CaseInsensitive) ? "image/gif"  :
+                path.endsWith(".webp", Qt::CaseInsensitive) ? "image/webp" :
+                "image/jpeg";
+            std::vector<uint8_t> bytes(data.begin(), data.end());
+            post_to_ui_([cb = std::move(cb),
+                         bytes = std::move(bytes),
+                         mime]() mutable
+            {
+                cb(std::move(bytes), mime);
+            });
+        });
+    if (settingsWidget_)
+        settingsWidget_->set_controller(settings_controller_.get(),
+                                        my_display_name_);
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
     maybeShowRecoveryBanner();
@@ -2299,6 +2328,34 @@ void MainWindow::onLoginSucceeded()
     tesseract::SessionStore::save_index(idx);
 
     switchActiveAccount(new_idx);
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto cb)
+        {
+            const QString path = QFileDialog::getOpenFileName(
+                this, tr("Select avatar image"), {},
+                tr("Images (*.png *.jpg *.jpeg *.gif *.webp)"));
+            if (path.isEmpty()) return;
+            QFile f(path);
+            if (!f.open(QIODevice::ReadOnly)) return;
+            QByteArray data = f.readAll();
+            const std::string mime =
+                path.endsWith(".png",  Qt::CaseInsensitive) ? "image/png"  :
+                path.endsWith(".gif",  Qt::CaseInsensitive) ? "image/gif"  :
+                path.endsWith(".webp", Qt::CaseInsensitive) ? "image/webp" :
+                "image/jpeg";
+            std::vector<uint8_t> bytes(data.begin(), data.end());
+            post_to_ui_([cb = std::move(cb),
+                         bytes = std::move(bytes),
+                         mime]() mutable
+            {
+                cb(std::move(bytes), mime);
+            });
+        });
+    if (settingsWidget_)
+        settingsWidget_->set_controller(settings_controller_.get(),
+                                        my_display_name_);
     statusBar()->showMessage(tr("Connected"));
     contentStack_->setCurrentWidget(mainAppSurface_);
     maybeShowRecoveryBanner();
@@ -3608,6 +3665,10 @@ void MainWindow::openSettings()
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
 
+    if (settings_controller_)
+        settingsWidget_->set_controller(settings_controller_.get(),
+                                        my_display_name_);
+
     contentStack_->setCurrentWidget(settingsWidget_);
 }
 
@@ -4162,6 +4223,9 @@ void MainWindow::switchActiveAccount(int new_idx)
     my_display_name_ = s.display_name;
     my_avatar_url_ = s.avatar_url;
     pending_restore_room_ = s.last_room;
+
+    if (settings_controller_)
+        settings_controller_->set_client(client_);
 
     populateUserStrip();
     if (emojiPicker_)

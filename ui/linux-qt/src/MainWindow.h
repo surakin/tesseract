@@ -13,8 +13,9 @@
 #include <tesseract/session_store.h>
 #include <tesseract/visual.h>
 
-#include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "app/SettingsController.h"
+#include "app/ShellBase.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -336,6 +337,8 @@ private:
     /// xdg_activation_v1_activate() directly (bypassing Qt). Falls back to
     /// activateWindow() on X11 or when xdg-activation-v1 is unavailable.
     void activateWindowWithToken_(const QString& token);
+
+    std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
     QLocalServer* localServer_ = nullptr;
 
