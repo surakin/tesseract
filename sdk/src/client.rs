@@ -1211,27 +1211,60 @@ impl ClientFfi {
             ));
         }
 
-        // Global presence handler.
+        // Presence polling task.
+        // SyncService uses SlidingSync (MSC3575) which does not include the
+        // presence extension, so add_event_handler(PresenceEvent) never fires.
+        // Instead poll GET /_matrix/client/v3/presence/{userId}/status for each
+        // DM counterpart on a 30-second interval.
         {
-            use matrix_sdk::ruma::events::presence::PresenceEvent;
+            use matrix_sdk::ruma::api::client::presence::get_presence;
             use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
             let h = Arc::clone(&handler);
-            self.event_handler_handles.push(client.add_event_handler(
-                move |ev: PresenceEvent| {
-                    let h = Arc::clone(&h);
-                    async move {
-                        let user_id = ev.sender.to_string();
-                        let state: u8 = match ev.content.presence {
-                            RumaPresence::Online => 1,
-                            RumaPresence::Unavailable => 2,
-                            _ => 3,
-                        };
-                        if let Ok(g) = h.lock() {
-                            g.on_presence_changed(&user_id, state);
-                        }
+            let client_p = client.clone();
+            let mut stop_rx_presence = stop_rx.clone();
+            self.spawn_tracked(async move {
+                let mut interval =
+                    tokio::time::interval(tokio::time::Duration::from_secs(30));
+                interval.set_missed_tick_behavior(
+                    tokio::time::MissedTickBehavior::Skip,
+                );
+                loop {
+                    tokio::select! {
+                        _ = stop_rx_presence.changed() => break,
+                        _ = interval.tick() => {}
                     }
-                },
-            ));
+                    let Some(me) = client_p.user_id() else { continue };
+                    let me = me.to_owned();
+                    let rooms = client_p.joined_rooms();
+                    let mut futs = Vec::new();
+                    for room in rooms {
+                        let cp = client_p.clone();
+                        let me_ref = me.clone();
+                        let h_ref = Arc::clone(&h);
+                        futs.push(async move {
+                            let counterpart =
+                                dm_other_user(&room, &me_ref).await?;
+                            let uid = counterpart.user_id;
+                            let user_id: matrix_sdk::ruma::OwnedUserId =
+                                uid.parse().ok()?;
+                            let resp = cp
+                                .send(get_presence::v3::Request::new(user_id))
+                                .await
+                                .ok()?;
+                            let state: u8 = match resp.presence {
+                                RumaPresence::Online => 1,
+                                RumaPresence::Unavailable => 2,
+                                _ => 3,
+                            };
+                            if let Ok(g) = h_ref.lock() {
+                                g.on_presence_changed(&uid, state);
+                            }
+                            Some(())
+                        });
+                    }
+                    futures_util::future::join_all(futs).await;
+                }
+            });
         }
 
         // Build SyncService.
@@ -6148,17 +6181,24 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
         // treat as DMs aren't actually marked in m.direct account data, but
         // dm_other_user already protects against false positives by only
         // returning Some when there is exactly one real counterpart.
-        let (dm_avatar_url, dm_counterpart_user_id) = if avatar_url.is_empty() && !is_space {
+        // dm_other_user is called for all non-space rooms (cheap: in-memory path
+        // for m.direct rooms; early-out on member-count for group rooms).
+        // dm_avatar_url is only used as a fallback when the room has no avatar.
+        // dm_counterpart_user_id is needed for presence lookups regardless of avatar.
+        let dm_other = if !is_space {
             match client.user_id() {
-                Some(me) => dm_other_user(&room, me)
-                    .await
-                    .map(|m| (m.avatar_url, m.user_id))
-                    .unwrap_or_default(),
-                None => (String::new(), String::new()),
+                Some(me) => dm_other_user(&room, me).await,
+                None => None,
             }
         } else {
-            (String::new(), String::new())
+            None
         };
+        let dm_avatar_url = if avatar_url.is_empty() {
+            dm_other.as_ref().map(|m| m.avatar_url.clone()).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let dm_counterpart_user_id = dm_other.map(|m| m.user_id).unwrap_or_default();
         result.push(crate::ffi::RoomInfo {
             id: room.room_id().to_string(),
             name,
