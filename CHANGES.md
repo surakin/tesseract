@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.1.4 — 2026-05-21
+
+Changes since v0.1.3:
+
 - fix(shutdown): route `LoginView` homeserver-discovery thread and `UpConnector` endpoint-scan through `ShellBase::run_async_` so they are drained before destruction. Two detached `std::thread`s were still live at teardown — `hs_changed_` (300 ms debounce for `discover_homeserver`) and the UP scan thread — causing malloc corruption in `~MessageListView` after `accounts_.clear()` had already freed the client.
 - fix(qt6): reset `QMediaPlayer` source between voice/audio clips — `setSourceDevice` short-circuits on an unchanged pointer and replayed the first clip's FFmpeg stream for every subsequent play. Fixed by clearing the source and resetting the `QBuffer`/`QByteArray` before each `play()` call.
 - feat(notifications): wire the Notifications toggle to the SDK pusher — `IUpConnector::set_enabled` added so Linux UnifiedPush connectors can remove or re-register their homeserver pusher when the toggle changes; routed through `SettingsController` instead of inline per-shell persistence so all four platforms share the same path. Local OS-notification suppression via `Settings::notifications_enabled` is unchanged.
