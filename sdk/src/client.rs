@@ -690,6 +690,7 @@ impl ClientFfi {
                 .server_name_or_homeserver_url(homeserver)
                 .sqlite_store(&path, None)
                 .handle_refresh_tokens()
+                .user_agent(crate::oauth::build_user_agent())
                 .with_encryption_settings(EncryptionSettings {
                     backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
                     ..Default::default()

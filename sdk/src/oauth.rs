@@ -59,6 +59,24 @@ fn build_device_display_name() -> Option<String> {
         .map(|host| format!("Tesseract on {host} ({PLATFORM})"))
 }
 
+/// User-Agent string for every HTTP request matrix-sdk makes — both the
+/// OAuth-flow client (token exchange, refresh, `PUT /devices/{id}`) and the
+/// long-lived post-login client (sync, send, etc.). Identifies the install
+/// in homeserver / MAS access logs even before the device-display-name
+/// rename request fires.
+pub(crate) fn build_user_agent() -> String {
+    let host = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "unknown".to_owned());
+    format!(
+        "Tesseract/{} ({}; {})",
+        env!("CARGO_PKG_VERSION"),
+        host,
+        std::env::consts::OS,
+    )
+}
+
 /// State carried between `begin` and `await_callback`.
 pub struct PendingFlow {
     /// The half-built client; `finish_login` populates it with tokens.
@@ -100,6 +118,7 @@ pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::R
         .server_name_or_homeserver_url(homeserver)
         .sqlite_store(sqlite_path, None)
         .handle_refresh_tokens()
+        .user_agent(build_user_agent())
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             ..Default::default()
