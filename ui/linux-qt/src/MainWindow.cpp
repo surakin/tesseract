@@ -328,6 +328,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             mainApp_->show_image_viewer(false);
             mainAppSurface_->relayout();
+            if (roomTextArea_)
+            {
+                roomTextArea_->set_focused(true);
+            }
         };
         mainApp_->image_viewer()->set_repaint_requester(
             [this]
@@ -359,6 +363,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             mainApp_->show_video_viewer(false);
             mainAppSurface_->relayout();
+            if (roomTextArea_)
+            {
+                roomTextArea_->set_focused(true);
+            }
         };
 
         // ---- Room view ----
