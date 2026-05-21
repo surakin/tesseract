@@ -660,7 +660,7 @@ void ShellBase::ensure_row_media_(const Event& ev)
 }
 
 std::vector<views::MessageRowData>
-ShellBase::build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot)
+ShellBase::build_rows_(const EventList& snapshot)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
@@ -703,7 +703,7 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot)
 
 void ShellBase::dispatch_timeline_reset_secondary_(
     const std::string& room_id,
-    const std::vector<std::unique_ptr<Event>>& snapshot)
+    const EventList& snapshot)
 {
     dispatch_to_secondary_windows_(room_id,
                                    [&](RoomWindowBase* w)

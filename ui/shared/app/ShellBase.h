@@ -439,7 +439,7 @@ protected:
 
     virtual void
     handle_timeline_reset_ui_(std::string /*room_id*/,
-                              std::vector<std::unique_ptr<Event>> /*snapshot*/)
+                              EventList /*snapshot*/)
     {
     }
     virtual void handle_message_inserted_ui_(std::string /*room_id*/,
@@ -725,7 +725,7 @@ protected:
     // reply details, make_row_data. Used by every shell's timeline-reset and
     // message handlers (primary + secondary-window paths).
     std::vector<views::MessageRowData>
-    build_rows_(const std::vector<std::unique_ptr<Event>>& snapshot);
+    build_rows_(const EventList& snapshot);
     // macOS hands primary-path events across the ObjC boundary as raw
     // pointers; this overload serves that path.
     std::vector<views::MessageRowData>
@@ -734,7 +734,7 @@ protected:
     // Secondary-window fan-out (primary-window mutation stays per-shell).
     void dispatch_timeline_reset_secondary_(
         const std::string& room_id,
-        const std::vector<std::unique_ptr<Event>>& snapshot);
+        const EventList& snapshot);
     void dispatch_message_inserted_secondary_(const std::string& room_id,
                                               std::size_t index,
                                               const Event& ev);

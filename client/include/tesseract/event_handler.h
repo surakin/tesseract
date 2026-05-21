@@ -32,7 +32,7 @@ public:
     ///   - On any `VectorDiff::Reset` / `Clear` from matrix-sdk-ui.
     virtual void
     on_timeline_reset(const std::string& room_id,
-                      std::vector<std::unique_ptr<Event>> snapshot) = 0;
+                      EventList snapshot) = 0;
 
     /// Insert `event` at visible-index `index` in `room_id`'s timeline.
     /// `index == current_length` means "append at the end".

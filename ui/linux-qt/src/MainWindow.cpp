@@ -3678,7 +3678,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 
 void MainWindow::handle_timeline_reset_ui_(
     std::string room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+    tesseract::EventList snapshot)
 {
     if (room_id == current_room_id_)
     {

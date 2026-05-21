@@ -37,4 +37,7 @@ public:
                                                    std::string json);
 };
 
+/// Shared ownership of an immutable MediaSource. nullptr = absent source.
+using MediaSourceRef = std::shared_ptr<const MediaSource>;
+
 } // namespace tesseract

@@ -96,7 +96,7 @@ struct JumpDlgCtx
 
 void MainWindow::handle_timeline_reset_ui_(
     std::string room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+    tesseract::EventList snapshot)
 {
     push_timeline_reset(std::move(room_id), std::move(snapshot));
 }
@@ -3038,7 +3038,7 @@ void MainWindow::push_error(std::string description)
 
 void MainWindow::push_timeline_reset(
     std::string room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+    tesseract::EventList snapshot)
 {
     if (room_id == current_room_id_)
     {

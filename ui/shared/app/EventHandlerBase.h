@@ -33,7 +33,7 @@ public:
 
     void
     on_timeline_reset(const std::string& room_id,
-                      std::vector<std::unique_ptr<Event>> snapshot) override;
+                      EventList snapshot) override;
     void on_message_inserted(const std::string& room_id, std::size_t index,
                              std::unique_ptr<Event> event) override;
     void on_message_updated(const std::string& room_id, std::size_t index,

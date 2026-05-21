@@ -106,7 +106,7 @@ protected:
 
     void handle_timeline_reset_ui_(
         std::string room_id,
-        std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+        tesseract::EventList snapshot) override;
     void
     handle_message_inserted_ui_(std::string room_id, std::size_t index,
                                 std::unique_ptr<tesseract::Event> ev) override;
@@ -926,7 +926,7 @@ void MacShell::repaint_pickers_()
 
 void MacShell::handle_timeline_reset_ui_(
     std::string room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+    tesseract::EventList snapshot)
 {
     dispatch_timeline_reset_secondary_(room_id, snapshot);
 

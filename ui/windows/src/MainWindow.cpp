@@ -387,7 +387,7 @@ void MainWindow::paint_main_background(HDC hdc, const RECT& rc)
 
 void MainWindow::handle_timeline_reset_ui_(
     std::string room_id,
-    std::vector<std::unique_ptr<tesseract::Event>> snapshot)
+    tesseract::EventList snapshot)
 {
     PostedTimelineReset payload{std::move(room_id), std::move(snapshot)};
     on_tesseract_timeline_reset(&payload);

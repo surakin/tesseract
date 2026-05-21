@@ -6,14 +6,14 @@ namespace tesseract
 {
 
 void EventHandlerBase::on_timeline_reset(
-    const std::string& room_id, std::vector<std::unique_ptr<Event>> snapshot)
+    const std::string& room_id, EventList snapshot)
 {
     // Wrap in shared_ptr so the move-only lambda is copy-constructible
     // (std::function requires a copyable target).
     struct Payload
     {
         std::string rid;
-        std::vector<std::unique_ptr<Event>> snap;
+        EventList snap;
     };
     auto p = std::make_shared<Payload>(Payload{room_id, std::move(snapshot)});
     shell_->post_to_ui_(

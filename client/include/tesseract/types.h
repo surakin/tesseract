@@ -40,7 +40,7 @@ struct Reaction
     /// MediaSource for MSC4027 custom-image reactions; nullptr for plain
     /// Unicode reactions. Always a plain mxc:// source (reactions reference
     /// existing pack images). Pass fetch_token() to fetch_source_bytes.
-    std::shared_ptr<const MediaSource> source;
+    MediaSourceRef source;
     std::vector<std::string> senders;
 };
 
@@ -126,8 +126,8 @@ struct EmoteEvent : public Event
 
 struct ImageEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source;    // full-resolution media
-    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
+    MediaSourceRef source;    // full-resolution media
+    MediaSourceRef thumbnail; // nullptr when absent
     uint64_t width = 0;
     uint64_t height = 0;
     /// Non-empty only when the sender supplied an MSC2530 `filename` field.
@@ -144,8 +144,8 @@ struct ImageEvent : public Event
 
 struct StickerEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source;    // full-resolution media
-    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
+    MediaSourceRef source;    // full-resolution media
+    MediaSourceRef thumbnail; // nullptr when absent
     uint64_t width = 0;
     uint64_t height = 0;
     std::string blurhash;  // MSC2448: xyz.amorgan.blurhash; empty when absent
@@ -170,7 +170,7 @@ struct RedactedEvent : public Event
 
 struct FileEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source; // file attachment source
+    MediaSourceRef source; // file attachment source
     std::string file_name;
     uint64_t file_size = 0;
 
@@ -185,7 +185,7 @@ struct FileEvent : public Event
 /// file card.
 struct AudioEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source; // audio clip source
+    MediaSourceRef source; // audio clip source
     std::string mime_type;                     // e.g. "audio/mpeg"; may be empty
     uint64_t duration_ms = 0;
     std::string filename;  // from m.audio body / filename field
@@ -202,7 +202,7 @@ struct AudioEvent : public Event
 /// placeholder bars.
 struct VoiceEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source; // voice clip source
+    MediaSourceRef source; // voice clip source
     std::string mime_type;                     // e.g. "audio/ogg"; may be empty
     uint64_t duration_ms = 0;
     std::vector<uint16_t> waveform; // MSC1767 amplitudes, 0..=1024
@@ -217,8 +217,8 @@ struct VoiceEvent : public Event
 /// empty → no caption below the card.
 struct VideoEvent : public Event
 {
-    std::shared_ptr<const MediaSource> source;    // video source
-    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
+    MediaSourceRef source;    // video source
+    MediaSourceRef thumbnail; // nullptr when absent
     std::string mime_type;                        // e.g. "video/mp4"
     uint64_t width = 0;
     uint64_t height = 0;
@@ -291,6 +291,10 @@ struct TimelineStartEvent : public Event
         type = EventType::TimelineStart;
     }
 };
+
+/// Ordered list of timeline events (oldest-first), as passed to
+/// IEventHandler::on_timeline_reset and the handle_*_ui_ virtuals.
+using EventList = std::vector<std::unique_ptr<Event>>;
 
 struct RoomInfo
 {

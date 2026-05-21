@@ -70,7 +70,7 @@ private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
     void handle_timeline_reset_ui_(
         std::string room_id,
-        std::vector<std::unique_ptr<tesseract::Event>> snapshot) override;
+        tesseract::EventList snapshot) override;
     void
     handle_message_inserted_ui_(std::string room_id, std::size_t index,
                                 std::unique_ptr<tesseract::Event> ev) override;
@@ -111,7 +111,7 @@ private:
     // ── Internal push helpers (called from handle_*_ui_ and async workers) ────
     void push_timeline_reset(
         std::string room_id,
-        std::vector<std::unique_ptr<tesseract::Event>> snapshot);
+        tesseract::EventList snapshot);
     void push_message_inserted(std::string room_id, std::size_t index,
                                std::unique_ptr<tesseract::Event> ev);
     void push_message_updated(std::string room_id, std::size_t index,

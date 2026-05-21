@@ -107,7 +107,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
 
 /// Build a MediaSource from the split url/encrypted_json pair carried over
 /// the FFI.  Returns nullptr when url is empty (= absent source).
-inline std::shared_ptr<const MediaSource> make_source(rust::Str url,
+inline MediaSourceRef make_source(rust::Str url,
                                                        rust::Str enc_json)
 {
     if (url.empty())

@@ -66,8 +66,8 @@ struct MessageRowData
     // `thumbnail` carries the thumbnail source; nullptr when the server omits one.
     // For video, the client-side first-frame generator fills `image_provider_`
     // under the key `"thumb::" + event_id` when thumbnail is nullptr.
-    std::shared_ptr<const tesseract::MediaSource> source;
-    std::shared_ptr<const tesseract::MediaSource> thumbnail;
+    tesseract::MediaSourceRef source;
+    tesseract::MediaSourceRef thumbnail;
     int media_w = 0;
     int media_h = 0;
     // MSC2530 caption — non-empty for `m.image` events whose sender
@@ -80,7 +80,7 @@ struct MessageRowData
     std::string sticker_info_json;
 
     // File card
-    std::shared_ptr<const tesseract::MediaSource> file_source; // file attachment
+    tesseract::MediaSourceRef file_source; // file attachment
     std::string file_name;
     std::uint64_t file_size = 0;
 
@@ -88,7 +88,7 @@ struct MessageRowData
     // `waveform` is the MSC1767 amplitude list (each 0..=1024); empty for
     // Kind::Audio (no waveform) and for voice messages that omitted it
     // (view paints flat placeholder bars in that case).
-    std::shared_ptr<const tesseract::MediaSource> audio_source;
+    tesseract::MediaSourceRef audio_source;
     std::string audio_mime;
     std::uint64_t duration_ms = 0;
     std::vector<std::uint16_t> waveform;
@@ -391,7 +391,7 @@ public:
     struct StickerHit
     {
         std::string event_id;
-        std::shared_ptr<const tesseract::MediaSource> source;
+        tesseract::MediaSourceRef source;
         std::string body;
         std::string info_json; // JSON-serialised ImageInfo from the sticker event
         tk::Rect world_rect;
@@ -402,8 +402,8 @@ public:
     struct ImageHit
     {
         std::string event_id;
-        std::shared_ptr<const tesseract::MediaSource> source;    // full-res
-        std::shared_ptr<const tesseract::MediaSource> thumbnail; // nullptr when absent
+        tesseract::MediaSourceRef source;    // full-res
+        tesseract::MediaSourceRef thumbnail; // nullptr when absent
         std::string body;  // MSC2530 caption, may be empty
         int natural_w = 0;
         int natural_h = 0;
@@ -418,8 +418,8 @@ public:
     struct VideoHit
     {
         std::string event_id;
-        std::shared_ptr<const tesseract::MediaSource> source;    // video source
-        std::shared_ptr<const tesseract::MediaSource> thumbnail; // nullptr when absent
+        tesseract::MediaSourceRef source;    // video source
+        tesseract::MediaSourceRef thumbnail; // nullptr when absent
         std::string mime_type;
         int natural_w = 0;
         int natural_h = 0;
@@ -441,7 +441,7 @@ public:
     struct FileHit
     {
         std::string event_id;
-        std::shared_ptr<const tesseract::MediaSource> source; // file source
+        tesseract::MediaSourceRef source; // file source
         std::string file_name; // suggested save filename
         uint64_t    file_size = 0;
         tk::Rect    world_rect;
