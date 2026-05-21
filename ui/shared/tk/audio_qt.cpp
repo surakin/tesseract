@@ -70,6 +70,12 @@ public:
               std::string_view /*mime*/) override
     {
         player_.stop();
+        // QMediaPlayer::setSourceDevice short-circuits when the device
+        // pointer is unchanged — it keeps the previously decoded stream in
+        // its FFmpeg pipeline and play() resumes that instead of re-probing
+        // the new bytes. Detach first so the next setSourceDevice triggers
+        // a fresh load.
+        player_.setSourceDevice(nullptr);
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data),
                             static_cast<int>(size));
