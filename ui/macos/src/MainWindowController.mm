@@ -3897,6 +3897,11 @@ void MacShell::apply_cached_messages_(
                 if (s)
                     s->_shell->post_to_ui_(std::move(fn));
             },
+            [ws](auto fn) {
+                MainWindowController* s = ws;
+                if (s)
+                    s->_shell->run_async_(std::move(fn));
+            },
             [ws](auto cb) {
                 MainWindowController* s = ws;
                 if (!s)

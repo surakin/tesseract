@@ -1,17 +1,17 @@
 #include "SettingsController.h"
 
-#include <thread>
-
 namespace tesseract
 {
 
 SettingsController::SettingsController(
     tesseract::Client* client,
     std::function<void(std::function<void()>)>                          post_to_ui,
+    std::function<void(std::function<void()>)>                          run_async,
     std::function<void(std::function<void(std::vector<uint8_t>,
                                           std::string)>)>               open_file_picker)
     : client_(client)
     , post_to_ui_(std::move(post_to_ui))
+    , run_async_(std::move(run_async))
     , open_file_picker_(std::move(open_file_picker))
 {
 }
@@ -85,7 +85,7 @@ void SettingsController::upload_avatar()
                 avatar_in_flight_.store(false);
                 return;
             }
-            std::thread(
+            run_async_(
                 [this, client_snap,
                  bytes = std::move(bytes),
                  mime  = std::move(mime)]() mutable
@@ -102,8 +102,7 @@ void SettingsController::upload_avatar()
                             if (result.ok && on_avatar_changed)
                                 on_avatar_changed(result.message);
                         });
-                })
-                .detach();
+                });
         });
 }
 
@@ -126,7 +125,7 @@ void SettingsController::remove_avatar()
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c]()
         {
             auto result = c->remove_avatar();
@@ -141,8 +140,7 @@ void SettingsController::remove_avatar()
                     if (result.ok && on_avatar_changed)
                         on_avatar_changed("");
                 });
-        })
-        .detach();
+        });
 }
 
 void SettingsController::load_devices()
@@ -162,7 +160,7 @@ void SettingsController::load_devices()
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c]()
         {
             auto list = c->list_devices();
@@ -175,8 +173,7 @@ void SettingsController::load_devices()
                     if (on_devices_loaded)
                         on_devices_loaded(std::move(list));
                 });
-        })
-        .detach();
+        });
 }
 
 void SettingsController::rename_device(std::string device_id, std::string name)
@@ -196,7 +193,7 @@ void SettingsController::rename_device(std::string device_id, std::string name)
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c, device_id = std::move(device_id),
          name = std::move(name)]() mutable
         {
@@ -212,8 +209,7 @@ void SettingsController::rename_device(std::string device_id, std::string name)
                         on_device_renamed(std::move(device_id), result.ok,
                                           result.message);
                 });
-        })
-        .detach();
+        });
 }
 
 void SettingsController::delete_device(std::string device_id)
@@ -233,7 +229,7 @@ void SettingsController::delete_device(std::string device_id)
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c, device_id = std::move(device_id)]() mutable
         {
             auto begin = c->begin_delete_device(device_id);
@@ -270,8 +266,7 @@ void SettingsController::delete_device(std::string device_id)
                     if (on_device_deleted)
                         on_device_deleted(std::move(device_id), true, "");
                 });
-        })
-        .detach();
+        });
 }
 
 void SettingsController::cancel_device_deletion(std::string device_id)
@@ -294,7 +289,7 @@ void SettingsController::confirm_device_deletion(std::string device_id,
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c, device_id = std::move(device_id),
          session = std::move(session)]() mutable
         {
@@ -310,8 +305,7 @@ void SettingsController::confirm_device_deletion(std::string device_id,
                         on_device_deleted(std::move(device_id), result.ok,
                                           result.message);
                 });
-        })
-        .detach();
+        });
 }
 
 void SettingsController::set_display_name(std::string name)
@@ -333,7 +327,7 @@ void SettingsController::set_display_name(std::string name)
         return;
     }
 
-    std::thread(
+    run_async_(
         [this, c, name = std::move(name)]() mutable
         {
             auto result = c->set_display_name(name);
@@ -349,8 +343,7 @@ void SettingsController::set_display_name(std::string name)
                     if (result.ok && on_name_changed)
                         on_name_changed(std::move(name));
                 });
-        })
-        .detach();
+        });
 }
 
 } // namespace tesseract

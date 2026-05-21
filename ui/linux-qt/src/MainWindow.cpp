@@ -2135,6 +2135,7 @@ void MainWindow::doLogin()
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto fn) { run_async_(std::move(fn)); },
         [this](auto cb)
         {
             const QString path = QFileDialog::getOpenFileName(
@@ -2352,6 +2353,7 @@ void MainWindow::onLoginSucceeded()
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto fn) { run_async_(std::move(fn)); },
         [this](auto cb)
         {
             const QString path = QFileDialog::getOpenFileName(

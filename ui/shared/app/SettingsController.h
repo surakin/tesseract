@@ -18,6 +18,7 @@ public:
     SettingsController(
         tesseract::Client* client,
         std::function<void(std::function<void()>)>                          post_to_ui,
+        std::function<void(std::function<void()>)>                          run_async,
         std::function<void(std::function<void(std::vector<uint8_t>,
                                               std::string)>)>               open_file_picker);
 
@@ -59,6 +60,7 @@ private:
 
     tesseract::Client* client_;
     std::function<void(std::function<void()>)>                       post_to_ui_;
+    std::function<void(std::function<void()>)>                       run_async_;
     std::function<void(std::function<void(std::vector<uint8_t>,
                                           std::string)>)>            open_file_picker_;
 
