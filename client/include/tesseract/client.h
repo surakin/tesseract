@@ -461,6 +461,73 @@ public:
     Result remove_avatar();
 
     // ------------------------------------------------------------------
+    // Devices / sessions
+    // ------------------------------------------------------------------
+
+    /// Cross-signing verification state of a device. `Unknown` means the
+    /// device is not present in the local crypto store yet (e.g. on a fresh
+    /// login before sync has populated it). `Unverified` means the device is
+    /// known but not signed by the user's self-signing key.
+    enum class DeviceVerification : std::uint8_t
+    {
+        Unknown = 0,
+        Unverified = 1,
+        Verified = 2,
+    };
+
+    /// One Matrix device/session for the current user.
+    struct Device
+    {
+        std::string id;
+        std::string display_name;
+        std::string last_seen_ip;
+        std::uint64_t last_seen_ts = 0;
+        DeviceVerification verification = DeviceVerification::Unknown;
+        bool is_current = false;
+    };
+
+    /// Result of `begin_delete_device`. On a fresh request the homeserver
+    /// always returns a UIA challenge, in which case `needs_uia=true` and
+    /// `fallback_url` is a homeserver URL the UI must open in a browser.
+    /// After the user authenticates there, call `complete_delete_device`
+    /// passing the same `session` back.
+    struct DeleteDeviceBegin
+    {
+        bool ok = false;
+        std::string message;
+        bool needs_uia = false;
+        std::string fallback_url;
+        std::string session;
+
+        explicit operator bool() const noexcept { return ok; }
+    };
+
+    /// Returns the current device ID (e.g. "ABCDEFGHIJ"), or an empty
+    /// string if not logged in.
+    std::string get_device_id() const;
+
+    /// List the user's devices/sessions on the homeserver, with verification
+    /// state and a current-device marker. Returns an empty vector on error.
+    /// Blocks the calling thread — call from a worker thread.
+    std::vector<Device> list_devices() const;
+
+    /// Rename a device (no UIA required). Blocks — worker thread.
+    Result set_device_display_name(const std::string& device_id,
+                                   const std::string& name);
+
+    /// Start deleting a device. The homeserver will normally respond with a
+    /// UIA challenge; see `DeleteDeviceBegin` for the follow-up flow.
+    /// Blocks — worker thread.
+    DeleteDeviceBegin begin_delete_device(const std::string& device_id);
+
+    /// Finish deleting a device once the user has completed UIA in a
+    /// browser via the fallback URL returned by `begin_delete_device`.
+    /// `session` is the value from `DeleteDeviceBegin::session`.
+    /// Blocks — worker thread.
+    Result complete_delete_device(const std::string& device_id,
+                                  const std::string& session);
+
+    // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------
 

@@ -38,6 +38,13 @@ Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
 
+## Settings — Sessions tab follow-ups
+
+The "Sessions" tab landed with list + verification badges + this-device marker + sign-out via UIAA fallback. Remaining UI work:
+
+- **Inline rename of device display name.** FFI/Client/Controller already plumbed end-to-end (`Client::set_device_display_name`, `SettingsController::rename_device`, `on_device_renamed`). Needs a per-row `NativeTextField` overlay: either (a) extend `DevicesSection` with a `rename_field_rect()` analogous to `AccountSection::name_field_rect()` and route each shell's existing single `NativeTextField` over the active row, or (b) add a `tk::Host::prompt_text(...)` dialog primitive backed by `QInputDialog` / `GtkDialog` / `MessageBoxW` / `NSAlert`.
+- **Out-of-band verification trigger.** Each row could carry a "Verify" button that fires `request_self_verification()` and pops the SAS overlay focused on the chosen device.
+
 ## Known gaps
 
 - **`m.location` send not yet implemented** — receive + display is done (see CHANGES.md 2026-05-17); composing and sending location messages is out of scope for this iteration.

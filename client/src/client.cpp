@@ -454,6 +454,59 @@ Result Client::remove_avatar()
     return from_ffi(impl_->ffi->remove_avatar());
 }
 
+std::string Client::get_device_id() const
+{
+    return std::string(impl_->ffi->device_id());
+}
+
+std::vector<Client::Device> Client::list_devices() const
+{
+    auto ffi_devices = impl_->ffi->list_devices();
+    std::vector<Device> out;
+    out.reserve(ffi_devices.size());
+    for (const auto& d : ffi_devices)
+    {
+        Device dev;
+        dev.id = std::string(d.device_id);
+        dev.display_name = std::string(d.display_name);
+        dev.last_seen_ip = std::string(d.last_seen_ip);
+        dev.last_seen_ts = d.last_seen_ts;
+        dev.verification = (d.verification_state == 2)
+                               ? DeviceVerification::Verified
+                               : (d.verification_state == 1)
+                                     ? DeviceVerification::Unverified
+                                     : DeviceVerification::Unknown;
+        dev.is_current = d.is_current;
+        out.push_back(std::move(dev));
+    }
+    return out;
+}
+
+Result Client::set_device_display_name(const std::string& device_id,
+                                       const std::string& name)
+{
+    return from_ffi(impl_->ffi->set_device_display_name(device_id, name));
+}
+
+Client::DeleteDeviceBegin
+Client::begin_delete_device(const std::string& device_id)
+{
+    auto r = impl_->ffi->begin_delete_device(device_id);
+    DeleteDeviceBegin out;
+    out.ok = r.ok;
+    out.message = std::string(r.message);
+    out.needs_uia = r.needs_uia;
+    out.fallback_url = std::string(r.fallback_url);
+    out.session = std::string(r.session);
+    return out;
+}
+
+Result Client::complete_delete_device(const std::string& device_id,
+                                       const std::string& session)
+{
+    return from_ffi(impl_->ffi->complete_delete_device(device_id, session));
+}
+
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 {
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);

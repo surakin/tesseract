@@ -2792,6 +2792,10 @@ void MainWindow::start_login()
 
     if (settings_view_)
     {
+        settings_view_->set_request_repaint([this]
+        {
+            if (settings_surface_) settings_surface_->relayout();
+        });
         settings_view_->set_controller(settings_controller_.get());
         settings_view_->on_avatar_upload_requested = [this]
         { if (settings_controller_) settings_controller_->upload_avatar(); };
@@ -2985,6 +2989,10 @@ void MainWindow::on_login_succeeded()
 
     if (settings_view_)
     {
+        settings_view_->set_request_repaint([this]
+        {
+            if (settings_surface_) settings_surface_->relayout();
+        });
         settings_view_->set_controller(settings_controller_.get());
         settings_view_->on_avatar_upload_requested = [this]
         { if (settings_controller_) settings_controller_->upload_avatar(); };

@@ -67,6 +67,35 @@ fn err(msg: impl Into<String>) -> OpResult {
     }
 }
 
+/// Build the spec'd UIAA fallback URL for `stage` and `session`. The
+/// homeserver base may or may not end with `/`; the spec path is
+/// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.
+fn build_uia_fallback_url(homeserver: &str, stage: &str, session: &str) -> String {
+    let base = homeserver.trim_end_matches('/');
+    let stage_enc = urlencoding_encode_segment(stage);
+    let session_enc = urlencoding_encode_segment(session);
+    format!(
+        "{base}/_matrix/client/v3/auth/{stage_enc}/fallback/web?session={session_enc}",
+    )
+}
+
+/// Minimal percent-encoder for a single path segment / query value. Encodes
+/// every byte that isn't unreserved per RFC 3986. Used only for the UIAA
+/// fallback URL; pulling in a full URL crate just for this would be overkill.
+fn urlencoding_encode_segment(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for b in input.bytes() {
+        let unreserved = matches!(b,
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~');
+        if unreserved {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
 fn oauth_err(msg: impl Into<String>) -> OAuthBegin {
     OAuthBegin {
         ok: false,
@@ -4094,6 +4123,180 @@ impl ClientFfi {
     }
     #[cfg(test)]
     pub fn remove_avatar(&mut self) -> OpResult { err("not logged in") }
+
+    // -----------------------------------------------------------------------
+    // Devices / sessions
+    // -----------------------------------------------------------------------
+
+    pub fn device_id(&self) -> String {
+        self.client
+            .as_ref()
+            .and_then(|c| c.device_id())
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    }
+
+    #[cfg(not(test))]
+    pub fn list_devices(&self) -> Vec<crate::ffi::DeviceFfi> {
+        let Some(client) = self.client.clone() else { return Vec::new(); };
+        let current_device = client.device_id().map(|d| d.to_owned());
+        let user_id = client.user_id().map(|u| u.to_owned());
+        self.rt.block_on(async move {
+            let response = match client.devices().await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("list_devices: {e}");
+                    return Vec::new();
+                }
+            };
+            let mut out = Vec::with_capacity(response.devices.len());
+            for d in response.devices {
+                let id_str = d.device_id.to_string();
+                let verification = if let Some(uid) = user_id.as_deref() {
+                    match client.encryption().get_device(uid, &d.device_id).await {
+                        Ok(Some(dev)) => if dev.is_verified() { 2u8 } else { 1u8 },
+                        Ok(None) => 0u8,
+                        Err(_) => 0u8,
+                    }
+                } else {
+                    0u8
+                };
+                let is_current = current_device
+                    .as_ref()
+                    .map(|c| c.as_str() == id_str.as_str())
+                    .unwrap_or(false);
+                out.push(crate::ffi::DeviceFfi {
+                    device_id: id_str,
+                    display_name: d.display_name.unwrap_or_default(),
+                    last_seen_ip: d.last_seen_ip.unwrap_or_default(),
+                    last_seen_ts: d
+                        .last_seen_ts
+                        .map(|ts| u64::from(ts.get()))
+                        .unwrap_or(0),
+                    verification_state: verification,
+                    is_current,
+                });
+            }
+            // Current device first; then by last_seen_ts desc; stable on ties.
+            out.sort_by(|a, b| {
+                b.is_current
+                    .cmp(&a.is_current)
+                    .then_with(|| b.last_seen_ts.cmp(&a.last_seen_ts))
+            });
+            out
+        })
+    }
+    #[cfg(test)]
+    pub fn list_devices(&self) -> Vec<crate::ffi::DeviceFfi> { Vec::new() }
+
+    #[cfg(not(test))]
+    pub fn set_device_display_name(&mut self, device_id: &str, name: &str) -> OpResult {
+        use matrix_sdk::ruma::api::client::device::update_device::v3;
+        use matrix_sdk::ruma::OwnedDeviceId;
+        let Some(client) = self.client.clone() else { return err("not logged in"); };
+        let owned: OwnedDeviceId = device_id.into();
+        let trimmed = name.to_owned();
+        let result = self.rt.block_on(async move {
+            let mut req = v3::Request::new(owned);
+            req.display_name = Some(trimmed);
+            client.send(req).await
+        });
+        match result {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn set_device_display_name(&mut self, _device_id: &str, _name: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    #[cfg(not(test))]
+    pub fn begin_delete_device(&mut self, device_id: &str) -> crate::ffi::DeleteDeviceBegin {
+        use matrix_sdk::ruma::OwnedDeviceId;
+        let Some(client) = self.client.clone() else {
+            return crate::ffi::DeleteDeviceBegin {
+                ok: false,
+                message: "not logged in".into(),
+                needs_uia: false,
+                fallback_url: String::new(),
+                session: String::new(),
+            };
+        };
+        let homeserver = client.homeserver().to_string();
+        let owned: OwnedDeviceId = device_id.into();
+        self.rt.block_on(async move {
+            match client.delete_devices(&[owned], None).await {
+                Ok(_) => crate::ffi::DeleteDeviceBegin {
+                    ok: true,
+                    message: String::new(),
+                    needs_uia: false,
+                    fallback_url: String::new(),
+                    session: String::new(),
+                },
+                Err(http_err) => {
+                    if let Some(info) = http_err.as_uiaa_response() {
+                        let session = info.session.clone().unwrap_or_default();
+                        let stage = info
+                            .flows
+                            .first()
+                            .and_then(|f| f.stages.first())
+                            .map(|s| s.as_ref().to_owned())
+                            .unwrap_or_default();
+                        let fallback_url = build_uia_fallback_url(
+                            &homeserver,
+                            &stage,
+                            &session,
+                        );
+                        crate::ffi::DeleteDeviceBegin {
+                            ok: true,
+                            message: String::new(),
+                            needs_uia: true,
+                            fallback_url,
+                            session,
+                        }
+                    } else {
+                        crate::ffi::DeleteDeviceBegin {
+                            ok: false,
+                            message: http_err.to_string(),
+                            needs_uia: false,
+                            fallback_url: String::new(),
+                            session: String::new(),
+                        }
+                    }
+                }
+            }
+        })
+    }
+    #[cfg(test)]
+    pub fn begin_delete_device(&mut self, _device_id: &str) -> crate::ffi::DeleteDeviceBegin {
+        crate::ffi::DeleteDeviceBegin {
+            ok: false,
+            message: "not logged in".into(),
+            needs_uia: false,
+            fallback_url: String::new(),
+            session: String::new(),
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn complete_delete_device(&mut self, device_id: &str, session: &str) -> OpResult {
+        use matrix_sdk::ruma::api::client::uiaa;
+        use matrix_sdk::ruma::OwnedDeviceId;
+        let Some(client) = self.client.clone() else { return err("not logged in"); };
+        let owned: OwnedDeviceId = device_id.into();
+        let auth = uiaa::AuthData::FallbackAcknowledgement(
+            uiaa::FallbackAcknowledgement::new(session.to_owned()),
+        );
+        match self.rt.block_on(client.delete_devices(&[owned], Some(auth))) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn complete_delete_device(&mut self, _device_id: &str, _session: &str) -> OpResult {
+        err("not logged in")
+    }
 
     /// Return room ID of an existing DM with user_id, or create one.
     /// Returns empty string on error. Blocks — worker thread.
@@ -8283,5 +8486,49 @@ mod server_info_tests {
     fn get_server_info_no_client_returns_empty() {
         let ffi = ClientFfi::new();
         assert!(ffi.get_server_info().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod uia_fallback_url_tests {
+    use super::{build_uia_fallback_url, urlencoding_encode_segment};
+
+    #[test]
+    fn builds_spec_compliant_url() {
+        let url = build_uia_fallback_url(
+            "https://matrix-client.matrix.org",
+            "m.login.sso",
+            "abc123",
+        );
+        assert_eq!(
+            url,
+            "https://matrix-client.matrix.org/_matrix/client/v3/auth/m.login.sso/fallback/web?session=abc123",
+        );
+    }
+
+    #[test]
+    fn trims_trailing_slash_on_homeserver() {
+        let url = build_uia_fallback_url(
+            "https://matrix.example.org/",
+            "m.login.password",
+            "s",
+        );
+        assert!(url.starts_with("https://matrix.example.org/_matrix/client/v3/auth/"));
+        assert!(!url.contains("//_matrix"));
+    }
+
+    #[test]
+    fn percent_encodes_session_special_chars() {
+        let url = build_uia_fallback_url(
+            "https://h",
+            "m.login.password",
+            "with space&plus+slash/",
+        );
+        assert!(url.ends_with("session=with%20space%26plus%2Bslash%2F"));
+    }
+
+    #[test]
+    fn encode_segment_keeps_unreserved() {
+        assert_eq!(urlencoding_encode_segment("AZaz09-_.~"), "AZaz09-_.~");
     }
 }

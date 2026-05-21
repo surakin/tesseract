@@ -107,6 +107,8 @@ set(_tk_sources
     views/settings/MediaSection.cpp
     views/settings/ServerSection.h
     views/settings/ServerSection.cpp
+    views/settings/DevicesSection.h
+    views/settings/DevicesSection.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")

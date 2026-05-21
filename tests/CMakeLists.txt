@@ -50,6 +50,7 @@ add_executable(tesseract_tests
     cpp/test_server_info.cpp
     cpp/test_tk_account_section.cpp
     cpp/test_settings_controller.cpp
+    cpp/test_tk_devices_section.cpp
     cpp/test_tray_unread.cpp
 )
 

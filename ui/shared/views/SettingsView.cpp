@@ -76,9 +76,15 @@ SettingsView::SettingsView()
     auto server = std::make_unique<ServerSection>();
     server_section_ = server.get();
 
-    // SideTabView — owns the five section widgets.
+    // Sessions section.
+    auto devices = std::make_unique<DevicesSection>();
+    devices_ = devices.get();
+
+    // SideTabView — owns the section widgets. "Sessions" sits next to
+    // "Account" since both relate to the signed-in user's identity.
     auto tabs = std::make_unique<tk::SideTabView>();
     tabs->add_tab("Account", std::move(account));
+    tabs->add_tab("Sessions", std::move(devices));
     tabs->add_tab("Appearance", std::move(appearance));
     tabs->add_tab("Notifications", std::move(notifications));
     tabs->add_tab("Media", std::move(media));
@@ -152,6 +158,17 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
     }
     account_->set_editable(info.can_set_displayname);
     account_->set_avatar_editable(info.can_set_avatar);
+}
+
+void SettingsView::set_current_device_id(std::string id)
+{
+    if (devices_)
+        devices_->set_current_device_id(std::move(id));
+}
+
+void SettingsView::set_request_repaint(std::function<void()> cb)
+{
+    request_repaint_ = std::move(cb);
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +272,86 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         if (on_avatar_remove_requested)
             on_avatar_remove_requested();
     };
+
+    // Wire controller → DevicesSection state. Each callback that mutates
+    // widget-tree state must trigger a repaint via request_repaint_ — the
+    // shared layer has no other way to invalidate the surface from an
+    // async callback.
+    ctrl->on_devices_loaded =
+        [this](std::vector<tesseract::Client::Device> devices)
+    {
+        if (!devices_) return;
+        devices_->set_devices(std::move(devices));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_device_renamed =
+        [this](std::string id, bool ok, std::string err)
+    {
+        if (!devices_) return;
+        devices_->set_device_busy(id, false);
+        if (!ok)
+            devices_->set_device_error(id, std::move(err));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_device_needs_uia =
+        [this](std::string id, std::string fallback_url, std::string session)
+    {
+        if (!devices_) return;
+        devices_->enter_uia_state(id, std::move(fallback_url),
+                                  std::move(session));
+        if (request_repaint_) request_repaint_();
+    };
+    ctrl->on_device_deleted =
+        [this, ctrl](std::string id, bool ok, std::string err)
+    {
+        if (!devices_) return;
+        devices_->set_device_busy(id, false);
+        if (ok)
+        {
+            // Refresh the list — the row is gone on the server now.
+            devices_->set_loading(true);
+            ctrl->load_devices();
+        }
+        else
+        {
+            devices_->clear_uia_state(id);
+            devices_->set_device_error(id, std::move(err));
+        }
+        if (request_repaint_) request_repaint_();
+    };
+
+    // Wire DevicesSection click callbacks → controller.
+    devices_->on_delete_requested = [this, ctrl](std::string id)
+    {
+        devices_->set_device_busy(id, true);
+        devices_->set_device_error(id, "");
+        ctrl->delete_device(std::move(id));
+        if (request_repaint_) request_repaint_();
+    };
+    devices_->on_uia_confirmed =
+        [this, ctrl](std::string id, std::string session)
+    {
+        devices_->set_device_busy(id, true);
+        devices_->set_device_error(id, "");
+        ctrl->confirm_device_deletion(std::move(id), std::move(session));
+        if (request_repaint_) request_repaint_();
+    };
+    devices_->on_uia_cancelled = [this, ctrl](std::string id)
+    {
+        ctrl->cancel_device_deletion(id);
+        devices_->clear_uia_state(id);
+        if (request_repaint_) request_repaint_();
+    };
+
+    // Kick off the device list fetch so the Sessions tab is populated by
+    // the time the user navigates to it. The current device id is read off
+    // the underlying Client so we don't need every shell to wire it.
+    if (auto* c = ctrl->client())
+    {
+        devices_->set_current_device_id(c->get_device_id());
+    }
+    devices_->set_loading(true);
+    ctrl->load_devices();
 }
 
 void SettingsView::set_name_busy(bool busy)        { account_->set_name_busy(busy); }

@@ -1,17 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-21**.
 
-> **DM-counterpart avatar fallback.**
-> Rooms with no avatar of their own now show the other participant's avatar in
-> the room list, room header, room-info panel, and tab strip. A new
-> `RoomInfo::dm_avatar_url` field is computed in `build_room_infos` and consumed
-> via the inline `effective_avatar_url()` accessor at every render site;
-> `ShellBase::ensure_room_avatar_` routes the fallback through
-> `fetch_media_bytes`. Functional members (`io.element.functional_members` /
-> MSC4171) are excluded so bridged 1:1s show the puppet's avatar, not the bot's;
-> `get_or_create_dm` applies the same filter so bridged DMs are recognised
-> instead of duplicated. 382/382 C++ tests pass.
+> **Device list in Settings.**
+> A new "Sessions" tab in Settings lists every device on the account with the
+> SDK-reported display name, device id, last-seen IP/time, cross-signing
+> verification badge, and a "This device" marker for the current session. Sign
+> out walks the Matrix UIAA fallback-URL flow: when the homeserver returns a
+> 401 challenge the row offers "Open in browser" (`Client::open_in_browser` on
+> the spec'd `/_matrix/client/v3/auth/<stage>/fallback/web?session=…` URL) and
+> an "I've confirmed" button retries `delete_devices` with
+> `AuthData::FallbackAcknowledgement{session}`. Works on both MAS/OAuth and
+> password homeservers. Rename plumbing exists end-to-end
+> (`set_device_display_name` FFI/Client/Controller) but the per-row inline-edit
+> UI is deferred. 112 Rust tests + 401 C++ tests.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -19,8 +21,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 108 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 390 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 112 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 401 |
 
 ## Platforms
 

@@ -351,6 +351,32 @@ pub mod ffi {
         favorite: bool,
     }
 
+    /// One Matrix device/session for the current user, returned by
+    /// `list_devices()`. `verification_state` is 0=Unknown, 1=Unverified,
+    /// 2=Verified. `is_current` is true for the device this client is
+    /// logged in as. `last_seen_ts` is unix milliseconds, 0 when absent.
+    struct DeviceFfi {
+        device_id: String,
+        display_name: String,
+        last_seen_ip: String,
+        last_seen_ts: u64,
+        verification_state: u8,
+        is_current: bool,
+    }
+
+    /// Result of `begin_delete_device`. On a clean success `needs_uia` is
+    /// false. When the homeserver requires User-Interactive Auth, `needs_uia`
+    /// is true and `fallback_url` is a homeserver URL the UI must open in a
+    /// browser; once the user authenticates there, the UI calls
+    /// `complete_delete_device(device_id, session)` to finish the delete.
+    struct DeleteDeviceBegin {
+        ok: bool,
+        message: String,
+        needs_uia: bool,
+        fallback_url: String,
+        session: String,
+    }
+
     // -------------------------------------------------------------------------
     // C++ types that Rust calls back into
     // -------------------------------------------------------------------------
@@ -919,6 +945,11 @@ pub mod ffi {
         /// an empty string if not logged in.
         fn user_id(self: &ClientFfi) -> String;
 
+        /// Returns the current device ID (e.g. "ABCDEFGHIJ"), or an empty
+        /// string if not logged in. Used by the Settings UI to mark the
+        /// "This device" row in the sessions list.
+        fn device_id(self: &ClientFfi) -> String;
+
         /// Returns the current user's display name, or an empty string when
         /// none is set / not logged in / the network fetch fails. Cached by
         /// matrix-sdk after the first call.
@@ -998,6 +1029,43 @@ pub mod ffi {
 
         /// Remove the current user's avatar. Blocks — worker thread.
         fn remove_avatar(self: &mut ClientFfi) -> OpResult;
+
+        // ----- Devices / sessions -----
+
+        /// Fetch the user's full device list from the homeserver. Each entry
+        /// is cross-referenced with the local crypto store for verification
+        /// state. The current device sorts first; other devices follow in
+        /// descending `last_seen_ts` order. Returns empty on error or when
+        /// not logged in. Blocks — call from a worker thread.
+        fn list_devices(self: &ClientFfi) -> Vec<DeviceFfi>;
+
+        /// Rename a device on the homeserver (no UIA required). `device_id`
+        /// must belong to the current user. Blocks — worker thread.
+        fn set_device_display_name(
+            self: &mut ClientFfi,
+            device_id: &str,
+            name: &str,
+        ) -> OpResult;
+
+        /// Begin deleting a device. If the homeserver returns a UIA challenge
+        /// (which it always does on a fresh request for `/devices/{id}`), the
+        /// returned `DeleteDeviceBegin` carries `needs_uia=true` plus the
+        /// fallback URL and session id the UI uses to complete auth in a
+        /// browser. Pass the session back to `complete_delete_device` once
+        /// the user has authenticated. Blocks — worker thread.
+        fn begin_delete_device(
+            self: &mut ClientFfi,
+            device_id: &str,
+        ) -> DeleteDeviceBegin;
+
+        /// Retry a device deletion after the user has completed UIA in a
+        /// browser. `session` is the value returned by `begin_delete_device`.
+        /// Blocks — worker thread.
+        fn complete_delete_device(
+            self: &mut ClientFfi,
+            device_id: &str,
+            session: &str,
+        ) -> OpResult;
 
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.

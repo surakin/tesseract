@@ -240,6 +240,13 @@ public:
         return raw;
     }
 
+    // Drop every child widget. Any borrowed pointers returned from
+    // add_child() are dangling after this call — callers must clear them.
+    void clear_children()
+    {
+        children_.clear();
+    }
+
     const std::vector<std::unique_ptr<Widget>>& children() const
     {
         return children_;

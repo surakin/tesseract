@@ -105,7 +105,14 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
 {
     controller_ = ctrl;
 
-    // Wire SettingsView (which wires AccountSection).
+    // Plug in the surface-relayout callback so DevicesSection's async
+    // callbacks can invalidate the surface after mutating widgets.
+    settings_view_->set_request_repaint([this]
+    {
+        if (surface_) surface_->relayout();
+    });
+
+    // Wire SettingsView (which wires AccountSection + DevicesSection).
     settings_view_->set_controller(ctrl);
 
     // Wire SettingsView avatar callbacks to controller.

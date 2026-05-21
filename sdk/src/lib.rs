@@ -171,6 +171,25 @@ pub mod ffi {
         pub favorite: bool,
     }
 
+    #[derive(Debug, PartialEq, Default)]
+    pub struct DeviceFfi {
+        pub device_id: String,
+        pub display_name: String,
+        pub last_seen_ip: String,
+        pub last_seen_ts: u64,
+        pub verification_state: u8,
+        pub is_current: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct DeleteDeviceBegin {
+        pub ok: bool,
+        pub message: String,
+        pub needs_uia: bool,
+        pub fallback_url: String,
+        pub session: String,
+    }
+
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str, _snapshot: &Vec<TimelineEvent>) {}

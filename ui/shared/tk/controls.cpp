@@ -238,7 +238,11 @@ void Button::click()
 {
     if (enabled_ && on_click_)
     {
-        on_click_();
+        // Copy the handler before invoking — a handler that destroys this
+        // button (e.g. by rebuilding its parent's children) would otherwise
+        // free the std::function while operator() is still executing.
+        auto cb = on_click_;
+        cb();
     }
 }
 
@@ -258,7 +262,10 @@ void Button::on_pointer_up(Point /*local*/, bool inside_self)
     pressed_ = false;
     if (was_pressed && inside_self && enabled_ && on_click_)
     {
-        on_click_();
+        // See Button::click() — copy before invoking so the handler can
+        // safely free this button.
+        auto cb = on_click_;
+        cb();
     }
 }
 

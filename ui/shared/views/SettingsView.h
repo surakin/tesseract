@@ -16,6 +16,7 @@
 
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
+#include "views/settings/DevicesSection.h"
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
 #include "views/settings/ServerSection.h"
@@ -72,9 +73,22 @@ public:
     // Populate the Server section with the connected server's info.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    // ----- Sessions section -------------------------------------------------
+
+    // Mark which device id is the current session in the Sessions tab.
+    void set_current_device_id(std::string id);
+
     // Wire the controller: sets controller callbacks → AccountSection state,
     // and AccountSection click callbacks → SettingsView output callbacks.
     void set_controller(tesseract::SettingsController* controller);
+
+    // Plug a relayout/repaint callback that the device async callbacks
+    // invoke after mutating the widget tree (the alternative is requiring
+    // every shell to re-wire the controller's device callbacks the same
+    // way Qt6/GTK4 already do for `on_name_changed`). Each shell should
+    // call this once, typically right after `set_controller`, with a
+    // lambda that calls `surface_->relayout()`.
+    void set_request_repaint(std::function<void()> cb);
 
     // State-forwarding methods (called by shells via controller callbacks):
     void set_name_busy(bool busy);
@@ -133,6 +147,9 @@ private:
     NotificationsSection* notifications_ = nullptr;
     MediaSection* media_ = nullptr;
     ServerSection* server_section_ = nullptr;
+    DevicesSection* devices_ = nullptr;
+
+    std::function<void()> request_repaint_;
 };
 
 } // namespace tesseract::views

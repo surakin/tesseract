@@ -3906,6 +3906,12 @@ void MacShell::apply_cached_messages_(
 
     if (_settingsView)
     {
+        _settingsView->set_request_repaint([ws]
+        {
+            MainWindowController* s = ws;
+            if (s && s->_settingsSurface)
+                s->_settingsSurface->relayout();
+        });
         _settingsView->set_controller(
             _shell->settings_controller_.get());
         _settingsView->on_avatar_upload_requested = [ws]
