@@ -3653,6 +3653,10 @@ void MainWindow::openSettings()
                     tesseract::Settings::instance().save_to_disk(
                         tesseract::config_dir());
                 });
+
+        // server_info_ may have already arrived before this lazy widget was
+        // created — apply it now so capability gating is correct on first open.
+        settingsWidget_->set_server_info(server_info_);
     }
 
     settingsWidget_->populate(
