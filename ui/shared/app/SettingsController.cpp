@@ -28,11 +28,31 @@ void SettingsController::upload_avatar()
     if (avatar_in_flight_.exchange(true))
         return;
 
+    auto* c = client_;
+
+    if (!c)
+    {
+        // No client: immediately report error via post_to_ui_.
+        avatar_in_flight_.store(false);
+        post_to_ui_([this]()
+        {
+            if (on_avatar_result)
+                on_avatar_result(false, "not logged in");
+        });
+        return;
+    }
+
     open_file_picker_(
         [this, client_snap = client_](std::vector<uint8_t> bytes,
                                       std::string mime)
         {
             if (bytes.empty())
+            {
+                avatar_in_flight_.store(false);
+                return;
+            }
+            // If client switched while picker was open, discard.
+            if (client_snap != client_)
             {
                 avatar_in_flight_.store(false);
                 return;
@@ -65,6 +85,19 @@ void SettingsController::remove_avatar()
         return;
 
     auto* c = client_;
+
+    if (!c)
+    {
+        // No client: immediately report error via post_to_ui_.
+        avatar_in_flight_.store(false);
+        post_to_ui_([this]()
+        {
+            if (on_avatar_result)
+                on_avatar_result(false, "not logged in");
+        });
+        return;
+    }
+
     std::thread(
         [this, c]()
         {
