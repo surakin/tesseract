@@ -3107,13 +3107,11 @@ void MacShell::apply_cached_messages_(
         _settingsView->on_notifications_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
-            if (!s)
+            if (!s || !s->_shell->settings_controller_)
             {
                 return;
             }
-            tesseract::Settings::instance().notifications_enabled = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
+            s->_shell->settings_controller_->set_notifications_enabled(enabled);
         };
         _settingsView->on_hide_content_changed = [ws](bool enabled)
         {

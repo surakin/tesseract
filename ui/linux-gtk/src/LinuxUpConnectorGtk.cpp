@@ -1,5 +1,6 @@
 #include "LinuxUpConnectorGtk.h"
 #include <tesseract/client.h>
+#include <tesseract/settings.h>
 #include <cctype>
 #include <cstring>
 #include <unordered_map>
@@ -311,6 +312,9 @@ void LinuxUpConnectorGtk::start(tesseract::Client* client,
     }
     client_ = client;
     token_ = sanitize_token(user_id);
+    // Honour the persisted Notifications toggle on startup so a user who
+    // disabled push isn't silently re-registered every launch.
+    enabled_ = tesseract::Settings::instance().notifications_enabled;
 
     GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
     if (!bus)
@@ -417,8 +421,40 @@ void LinuxUpConnectorGtk::on_new_endpoint(const std::string& endpoint)
     }
     // Matrix HTTP pushers require the URL path to be /_matrix/push/v1/notify.
     gateway += "/_matrix/push/v1/notify";
+    gateway_url_ = gateway;
+    if (!enabled_)
+    {
+        return; // user disabled notifications; keep the endpoint cached
+    }
     client_->register_pusher(token_, "im.gnomos.tesseract", "Tesseract",
-                             "Linux Desktop", gateway, "en");
+                             "Linux Desktop", gateway_url_, "en");
+}
+
+void LinuxUpConnectorGtk::set_enabled(bool enabled)
+{
+    if (enabled_ == enabled)
+    {
+        return;
+    }
+    enabled_ = enabled;
+    if (!client_)
+    {
+        return; // not started yet; honour the flag when start() runs
+    }
+    if (enabled)
+    {
+        if (!gateway_url_.empty())
+        {
+            client_->register_pusher(token_, "im.gnomos.tesseract", "Tesseract",
+                                     "Linux Desktop", gateway_url_, "en");
+        }
+    }
+    else
+    {
+        // remove_pusher is idempotent on the homeserver, so calling it when
+        // no pusher exists is harmless.
+        client_->remove_pusher(token_, "im.gnomos.tesseract");
+    }
 }
 
 void LinuxUpConnectorGtk::on_unregistered()

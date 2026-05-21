@@ -1,5 +1,6 @@
 #include "LinuxUpConnectorQt.h"
 #include <tesseract/client.h>
+#include <tesseract/settings.h>
 #include <QDBusAbstractAdaptor>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -286,6 +287,9 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
     }
     client_ = client;
     token_ = sanitize_token(user_id);
+    // Honour the persisted Notifications toggle on startup so a user who
+    // disabled push isn't silently re-registered every launch.
+    enabled_ = tesseract::Settings::instance().notifications_enabled;
 
     UpSharedBusQt& bus = UpSharedBusQt::get();
     if (!bus.acquire())
@@ -348,9 +352,13 @@ void LinuxUpConnectorQt::on_new_endpoint(const std::string& endpoint)
     url.setPath(QStringLiteral("/_matrix/push/v1/notify"));
     url.setQuery(QString{});
     url.setFragment(QString{});
+    gateway_url_ = url.toString().toStdString();
+    if (!enabled_)
+    {
+        return; // user disabled notifications; keep the endpoint cached
+    }
     client_->register_pusher(token_, "im.gnomos.tesseract", "Tesseract",
-                             "Linux Desktop", url.toString().toStdString(),
-                             "en");
+                             "Linux Desktop", gateway_url_, "en");
 }
 
 void LinuxUpConnectorQt::on_unregistered()
@@ -365,6 +373,33 @@ void LinuxUpConnectorQt::on_unregistered()
     {
         UpSharedBusQt::get().distributor_register(
             QString::fromStdString(distributor_service_), token_);
+    }
+}
+
+void LinuxUpConnectorQt::set_enabled(bool enabled)
+{
+    if (enabled_ == enabled)
+    {
+        return;
+    }
+    enabled_ = enabled;
+    if (!client_)
+    {
+        return; // not started yet; honour the flag when start() runs
+    }
+    if (enabled)
+    {
+        if (!gateway_url_.empty())
+        {
+            client_->register_pusher(token_, "im.gnomos.tesseract", "Tesseract",
+                                     "Linux Desktop", gateway_url_, "en");
+        }
+    }
+    else
+    {
+        // remove_pusher is idempotent on the homeserver, so calling it when
+        // no pusher exists is harmless.
+        client_->remove_pusher(token_, "im.gnomos.tesseract");
     }
 }
 

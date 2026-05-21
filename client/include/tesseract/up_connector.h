@@ -28,6 +28,15 @@ public:
     /// Unregister from the distributor and remove the homeserver pusher.
     /// Call only on explicit user logout, not on normal app exit.
     virtual void logout() = 0;
+
+    /// Toggle whether this device's pusher is registered with the homeserver.
+    /// `false` — call `Client::remove_pusher` so the homeserver stops sending
+    /// pushes to this device, and suppress any future `register_pusher` calls
+    /// (including those triggered by a fresh distributor endpoint) until
+    /// re-enabled. `true` — re-run `register_pusher` if the connector
+    /// currently has a distributor endpoint cached. The D-Bus listener stays
+    /// up either way so the user can flip back on without restarting.
+    virtual void set_enabled(bool enabled) = 0;
 };
 
 } // namespace tesseract

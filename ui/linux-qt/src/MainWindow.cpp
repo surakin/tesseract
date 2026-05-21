@@ -2132,6 +2132,11 @@ void MainWindow::doLogin()
         target_active = 0;
     }
     switchActiveAccount(target_active);
+    auto* active_up_connector =
+        (active_account_index_ >= 0 &&
+         active_account_index_ < static_cast<int>(accounts_.size()))
+            ? accounts_[active_account_index_]->up_connector.get()
+            : nullptr;
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
@@ -2158,6 +2163,7 @@ void MainWindow::doLogin()
                 cb(std::move(bytes), mime);
             });
         });
+    settings_controller_->set_up_connector(active_up_connector);
     if (settingsWidget_)
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
@@ -2350,6 +2356,11 @@ void MainWindow::onLoginSucceeded()
     tesseract::SessionStore::save_index(idx);
 
     switchActiveAccount(new_idx);
+    auto* new_account_up_connector =
+        (active_account_index_ >= 0 &&
+         active_account_index_ < static_cast<int>(accounts_.size()))
+            ? accounts_[active_account_index_]->up_connector.get()
+            : nullptr;
     settings_controller_ = std::make_unique<tesseract::SettingsController>(
         client_,
         [this](auto fn) { post_to_ui_(std::move(fn)); },
@@ -2376,6 +2387,7 @@ void MainWindow::onLoginSucceeded()
                 cb(std::move(bytes), mime);
             });
         });
+    settings_controller_->set_up_connector(new_account_up_connector);
     if (settingsWidget_)
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
@@ -3686,10 +3698,8 @@ void MainWindow::openSettings()
         connect(settingsWidget_, &SettingsWidget::notificationsChanged, this,
                 [this](bool enabled)
                 {
-                    tesseract::Settings::instance().notifications_enabled =
-                        enabled;
-                    tesseract::Settings::instance().save_to_disk(
-                        tesseract::config_dir());
+                    if (settings_controller_)
+                        settings_controller_->set_notifications_enabled(enabled);
                 });
 
         // server_info_ may have already arrived before this lazy widget was
@@ -4266,7 +4276,10 @@ void MainWindow::switchActiveAccount(int new_idx)
     pending_restore_room_ = s.last_room;
 
     if (settings_controller_)
+    {
         settings_controller_->set_client(client_);
+        settings_controller_->set_up_connector(s.up_connector.get());
+    }
 
     populateUserStrip();
     if (emojiPicker_)

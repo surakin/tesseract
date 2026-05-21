@@ -1,5 +1,8 @@
 #include "SettingsController.h"
 
+#include "tesseract/paths.h"
+#include "tesseract/settings.h"
+
 namespace tesseract
 {
 
@@ -25,6 +28,32 @@ void SettingsController::set_client(tesseract::Client* client)
     {
         std::lock_guard<std::mutex> lock(device_ops_mu_);
         device_ops_in_flight_.clear();
+    }
+}
+
+void SettingsController::set_up_connector(tesseract::IUpConnector* connector)
+{
+    up_connector_ = connector;
+}
+
+void SettingsController::set_notifications_enabled(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    if (s.notifications_enabled != enabled)
+    {
+        s.notifications_enabled = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    }
+    // Drive the per-device pusher off the UI thread — register_pusher /
+    // remove_pusher are network calls. The connector is owned by the account
+    // session, which outlives this controller for the lifetime of the binding,
+    // so capturing the raw pointer is safe.
+    if (auto* connector = up_connector_)
+    {
+        run_async_([connector, enabled]()
+        {
+            connector->set_enabled(enabled);
+        });
     }
 }
 

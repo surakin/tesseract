@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tesseract/client.h"
+#include "tesseract/up_connector.h"
 
 #include <atomic>
 #include <functional>
@@ -26,9 +27,21 @@ public:
 
     tesseract::Client* client() const { return client_; }
 
+    // Bind the per-account UnifiedPush connector so notification-toggle changes
+    // can drive `register_pusher` / `remove_pusher`. May be null — passing
+    // nullptr is the expected case on Win32 and macOS, where push delivery
+    // happens purely through local sync and only the `Settings` flag matters.
+    void set_up_connector(tesseract::IUpConnector* connector);
+
     void upload_avatar();
     void remove_avatar();
     void set_display_name(std::string name);
+
+    // Persist the Notifications toggle and, if an `IUpConnector` was injected,
+    // register or unregister this device's pusher with the homeserver. Local
+    // OS notifications are gated separately by each shell's
+    // `handle_notification_ui_` early-return on `Settings::notifications_enabled`.
+    void set_notifications_enabled(bool enabled);
 
     // Devices / sessions.
     void load_devices();
@@ -59,6 +72,7 @@ private:
     void release_device_op_(const std::string& device_id);
 
     tesseract::Client* client_;
+    tesseract::IUpConnector* up_connector_ = nullptr;
     std::function<void(std::function<void()>)>                       post_to_ui_;
     std::function<void(std::function<void()>)>                       run_async_;
     std::function<void(std::function<void(std::vector<uint8_t>,

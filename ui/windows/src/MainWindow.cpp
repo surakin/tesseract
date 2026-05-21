@@ -2568,9 +2568,8 @@ void MainWindow::on_create(HWND hwnd)
         };
         settings_view_->on_notifications_changed = [this](bool enabled)
         {
-            tesseract::Settings::instance().notifications_enabled = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
+            if (settings_controller_)
+                settings_controller_->set_notifications_enabled(enabled);
         };
         settings_view_->on_hide_content_changed = [this](bool enabled)
         {

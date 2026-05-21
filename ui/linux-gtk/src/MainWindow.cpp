@@ -1890,9 +1890,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         };
         settings_widget_->on_notifications_changed = [this](bool enabled)
         {
-            tesseract::Settings::instance().notifications_enabled = enabled;
-            tesseract::Settings::instance().save_to_disk(
-                tesseract::config_dir());
+            if (settings_controller_)
+                settings_controller_->set_notifications_enabled(enabled);
         };
     }
 
@@ -2350,6 +2349,12 @@ void MainWindow::do_login()
 
                     gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
                 });
+            if (active_account_index_ >= 0 &&
+                active_account_index_ < static_cast<int>(accounts_.size()))
+            {
+                settings_controller_->set_up_connector(
+                    accounts_[active_account_index_]->up_connector.get());
+            }
             if (settings_widget_)
                 settings_widget_->set_controller(settings_controller_.get(),
                                                  my_display_name_);
@@ -2567,6 +2572,12 @@ void MainWindow::on_login_succeeded()
 
             gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
         });
+    if (active_account_index_ >= 0 &&
+        active_account_index_ < static_cast<int>(accounts_.size()))
+    {
+        settings_controller_->set_up_connector(
+            accounts_[active_account_index_]->up_connector.get());
+    }
     if (settings_widget_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);
@@ -5355,7 +5366,10 @@ void MainWindow::switch_active_account(int new_idx)
     pending_restore_room_ = sess.last_room;
 
     if (settings_controller_)
+    {
         settings_controller_->set_client(client_);
+        settings_controller_->set_up_connector(sess.up_connector.get());
+    }
 
     populate_user_strip();
 
