@@ -448,14 +448,21 @@ SessionStore::load_account(const std::string& user_id)
 
     // 2. Legacy plaintext fallback.
     fs::path p = account_dir(user_id) / "session.json";
-    std::ifstream in(p, std::ios::binary);
-    if (!in)
-        return std::nullopt;
-    std::ostringstream buf;
-    buf << in.rdbuf();
-    if (in.bad())
-        return std::nullopt;
-    std::string s = buf.str();
+    std::string s;
+    {
+        // Scoped so the read handle is released before atomic_write below.
+        // On Windows the replace-rename in atomic_write fails while another
+        // handle in this process still has the target file open, which would
+        // silently keep the plaintext in place and break the migration path.
+        std::ifstream in(p, std::ios::binary);
+        if (!in)
+            return std::nullopt;
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        if (in.bad())
+            return std::nullopt;
+        s = buf.str();
+    }
 
     // Sentinel: migration has already run but SecretStore returned nothing
     // (key deleted externally or backend temporarily unavailable). Treat as
