@@ -20,6 +20,13 @@ SettingsWidget::SettingsWidget()
             on_close();
         }
     };
+    settings_view_->on_logout = [this]
+    {
+        if (on_logout)
+        {
+            on_logout();
+        }
+    };
     settings_view_->on_theme_changed = [this](auto p)
     {
         if (on_theme_changed)

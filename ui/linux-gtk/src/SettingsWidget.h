@@ -44,6 +44,7 @@ public:
 
     // Callbacks — set by MainWindow before use.
     std::function<void()> on_close;
+    std::function<void()> on_logout;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
 
