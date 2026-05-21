@@ -1890,7 +1890,7 @@ void MainWindow::on_create(HWND hwnd)
                 {
                     return;
                 }
-                const std::string mxc = hit->mxc_url;
+                const std::string mxc = hit->source ? hit->source->mxc_url() : std::string{};
                 const std::string body = hit->body;
                 const std::string info = hit->info_json;
                 const bool already_saved =
@@ -2320,7 +2320,9 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            img_viewer_->open(src_tok, thumb_tok, hit.body,
                               hit.natural_w, hit.natural_h);
             main_app_->show_image_viewer(true);
             if (main_app_surface_)
@@ -2336,7 +2338,7 @@ void MainWindow::on_create(HWND hwnd)
             {
                 SetFocus(hwnd_);
             }
-            ensure_media_image_(hit.media_url, tesseract::visual::kMaxInlineImageWidth,
+            ensure_media_image_(src_tok, tesseract::visual::kMaxInlineImageWidth,
                                 tesseract::visual::kMaxInlineImageHeight);
         };
 
@@ -2402,7 +2404,9 @@ void MainWindow::on_create(HWND hwnd)
             {
                 return;
             }
-            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
                               hit.duration_ms, hit.natural_w, hit.natural_h,
                               hit.autoplay, hit.loop, hit.no_audio,
                               hit.hide_controls);
@@ -2419,7 +2423,7 @@ void MainWindow::on_create(HWND hwnd)
             }
             // Async byte fetch via PostMessage.
             HWND target = hwnd_;
-            std::string src = hit.source_json;
+            std::string src = src_tok;
             run_async_(
                 [this, target, src = std::move(src)]() mutable
                 {
@@ -2444,11 +2448,11 @@ void MainWindow::on_create(HWND hwnd)
             if (path.empty())
                 return;
             HWND target = hwnd_;
-            std::string url = hit.media_url;
+            std::string url = hit.source ? hit.source->fetch_token() : std::string{};
             run_async_(
                 [this, target, url, path]()
                 {
-                    auto bytes = client_->fetch_media_bytes(url);
+                    auto bytes = client_->fetch_source_bytes(url);
                     auto* p = new FileBytesPayload{
                         wstr_to_utf8(path.c_str()), std::move(bytes)};
                     if (!PostMessageW(target, WM_TESSERACT_FILE_BYTES, 0,

@@ -1361,12 +1361,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_view_->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
         {
-            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            img_viewer_->open(src_tok, thumb_tok, hit.body,
                               hit.natural_w, hit.natural_h);
             main_app_->show_image_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
-            ensure_media_image_(hit.media_url, 320, 200);
+            ensure_media_image_(src_tok, 320, 200);
         };
 
         img_viewer_->set_repaint_requester(
@@ -1469,14 +1471,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         room_view_->on_video_clicked =
             [this](const tesseract::views::MessageListView::VideoHit& hit)
         {
-            vid_viewer_->open(hit.source_json, hit.thumbnail_url, hit.mime_type,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            vid_viewer_->open(src_tok, thumb_tok, hit.mime_type,
                               hit.duration_ms, hit.natural_w, hit.natural_h,
                               hit.autoplay, hit.loop, hit.no_audio,
                               hit.hide_controls);
             main_app_->show_video_viewer(true);
             main_app_surface_->relayout();
             gtk_widget_grab_focus(main_app_surface_->widget());
-            std::string src = hit.source_json;
+            std::string src = src_tok;
             run_async_(
                 [this, src = std::move(src)]() mutable
                 {
@@ -1587,9 +1591,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             struct FileSaveCtx
             {
                 MainWindow* self;
-                std::string media_url;
+                std::string fetch_tok;
             };
-            auto* ctx = new FileSaveCtx{this, hit.media_url};
+            auto* ctx = new FileSaveCtx{this, hit.source ? hit.source->fetch_token() : std::string{}};
             g_signal_connect(
                 dlg, "response",
                 G_CALLBACK(+[](GtkNativeDialog* d, gint response, gpointer p)
@@ -1603,11 +1607,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         std::string dest(cpath);
                         g_free(cpath);
                         g_object_unref(gf);
-                        std::string url = std::move(c->media_url);
+                        std::string url = std::move(c->fetch_tok);
                         c->self->run_async_(
                             [self = c->self, url = std::move(url), dest]()
                             {
-                                auto bytes = self->client_->fetch_media_bytes(url);
+                                auto bytes = self->client_->fetch_source_bytes(url);
                                 struct WriteCtx
                                 {
                                     std::string dest;
@@ -4906,7 +4910,7 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
     // points into MessageListView's per-frame sticker_geom_ map and would
     // dangle by the time the action fires.
     self->ctx_sticker_event_id_ = hit->event_id;
-    self->ctx_sticker_mxc_url_ = hit->mxc_url;
+    self->ctx_sticker_mxc_url_ = hit->source ? hit->source->mxc_url() : std::string{};
     self->ctx_sticker_body_ = hit->body;
     self->ctx_sticker_info_json_ = hit->info_json;
 
@@ -4914,7 +4918,7 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
     // renders grayed-out rather than the menu being suppressed entirely.
     {
         const bool already_saved =
-            self->client_->user_pack_has_sticker(hit->mxc_url,
+            self->client_->user_pack_has_sticker(self->ctx_sticker_mxc_url_,
                                                  hit->info_json);
         GAction* act = g_action_map_lookup_action(
             G_ACTION_MAP(self->sticker_ctx_actions_), "save");

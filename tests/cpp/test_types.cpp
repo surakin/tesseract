@@ -112,7 +112,7 @@ TEST_CASE("ImageEvent default-initialised fields", "[types]")
     CHECK(ev.body.empty());
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::Image);
-    CHECK(ev.image_url.empty());
+    CHECK(ev.source == nullptr);
     CHECK(ev.width == 0u);
     CHECK(ev.height == 0u);
     CHECK(ev.filename.empty());
@@ -126,7 +126,7 @@ TEST_CASE("ImageEvent fields are settable", "[types]")
     ev.sender = "@user:example.org";
     ev.body = "look at this";
     ev.timestamp = 1234567890;
-    ev.image_url = "mxc://example.org/image";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/image");
     ev.width = 1920;
     ev.height = 1080;
     ev.filename = ""; // no MSC2530 filename → body is not a caption
@@ -136,7 +136,8 @@ TEST_CASE("ImageEvent fields are settable", "[types]")
     CHECK(ev.sender == "@user:example.org");
     CHECK(ev.body == "look at this");
     CHECK(ev.timestamp == 1234567890);
-    CHECK(ev.image_url == "mxc://example.org/image");
+    CHECK(ev.source != nullptr);
+    CHECK(ev.source->mxc_url() == "mxc://example.org/image");
     CHECK(ev.width == 1920);
     CHECK(ev.height == 1080);
     CHECK(ev.filename.empty());
@@ -145,7 +146,7 @@ TEST_CASE("ImageEvent fields are settable", "[types]")
 TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]")
 {
     tesseract::ImageEvent ev{};
-    ev.image_url = "mxc://example.org/photo.jpg";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/photo.jpg");
     ev.body = "My holiday photo";
     ev.filename = "photo.jpg"; // distinct filename → body is a caption
 
@@ -154,20 +155,38 @@ TEST_CASE("ImageEvent MSC2530 caption via filename field", "[types]")
     CHECK(ev.filename == "photo.jpg");
 }
 
-TEST_CASE("ImageEvent thumbnail_url defaults empty", "[types]")
+TEST_CASE("ImageEvent thumbnail defaults null", "[types]")
 {
     tesseract::ImageEvent ev{};
-    CHECK(ev.thumbnail_url.empty());
+    CHECK(ev.thumbnail == nullptr);
 }
 
-TEST_CASE("ImageEvent thumbnail_url is settable independently of image_url", "[types]")
+TEST_CASE("ImageEvent thumbnail is settable independently of source", "[types]")
 {
     tesseract::ImageEvent ev{};
-    ev.image_url = "mxc://example.org/full";
-    ev.thumbnail_url = "mxc://example.org/thumb";
+    ev.source    = tesseract::MediaSource::plain("mxc://example.org/full");
+    ev.thumbnail = tesseract::MediaSource::plain("mxc://example.org/thumb");
 
-    CHECK(ev.image_url == "mxc://example.org/full");
-    CHECK(ev.thumbnail_url == "mxc://example.org/thumb");
+    CHECK(ev.source->mxc_url()    == "mxc://example.org/full");
+    CHECK(ev.thumbnail->mxc_url() == "mxc://example.org/thumb");
+}
+
+TEST_CASE("PlainMediaSource: fetch_token equals mxc_url", "[types][mediasource]")
+{
+    auto s = tesseract::MediaSource::plain("mxc://example.org/abc");
+    CHECK(s->mxc_url()    == "mxc://example.org/abc");
+    CHECK(s->fetch_token() == "mxc://example.org/abc");
+    CHECK_FALSE(s->is_encrypted());
+}
+
+TEST_CASE("EncryptedMediaSource: fetch_token returns JSON blob, mxc_url returns URI",
+          "[types][mediasource]")
+{
+    const std::string json = R"({"url":"mxc://example.org/cipher","key":"secret"})";
+    auto s = tesseract::MediaSource::encrypted("mxc://example.org/cipher", json);
+    CHECK(s->mxc_url()    == "mxc://example.org/cipher");
+    CHECK(s->fetch_token() == json);
+    CHECK(s->is_encrypted());
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +202,7 @@ TEST_CASE("FileEvent default-initialised fields", "[types]")
     CHECK(ev.body.empty());
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::File);
-    CHECK(ev.file_url.empty());
+    CHECK(ev.source == nullptr);
     CHECK(ev.file_name.empty());
     CHECK(ev.file_size == 0u);
 }
@@ -196,7 +215,7 @@ TEST_CASE("FileEvent fields are settable", "[types]")
     ev.sender = "@user:example.org";
     ev.body = "sending a file";
     ev.timestamp = 1234567890;
-    ev.file_url = "mxc://example.org/file";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/file");
     ev.file_name = "document.pdf";
     ev.file_size = 102400;
 
@@ -205,7 +224,8 @@ TEST_CASE("FileEvent fields are settable", "[types]")
     CHECK(ev.sender == "@user:example.org");
     CHECK(ev.body == "sending a file");
     CHECK(ev.timestamp == 1234567890);
-    CHECK(ev.file_url == "mxc://example.org/file");
+    CHECK(ev.source != nullptr);
+    CHECK(ev.source->mxc_url() == "mxc://example.org/file");
     CHECK(ev.file_name == "document.pdf");
     CHECK(ev.file_size == 102400);
 }
@@ -246,7 +266,7 @@ TEST_CASE("StickerEvent default-initialised fields", "[types]")
     CHECK(ev.body.empty());
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::Sticker);
-    CHECK(ev.image_url.empty());
+    CHECK(ev.source == nullptr);
     CHECK(ev.width == 0u);
     CHECK(ev.height == 0u);
 }
@@ -259,7 +279,7 @@ TEST_CASE("StickerEvent fields are settable", "[types]")
     ev.sender = "@user:example.org";
     ev.body = "wave";
     ev.timestamp = 1234567890;
-    ev.image_url = "mxc://example.org/sticker.png";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/sticker.png");
     ev.width = 512;
     ev.height = 512;
 
@@ -268,26 +288,27 @@ TEST_CASE("StickerEvent fields are settable", "[types]")
     CHECK(ev.sender == "@user:example.org");
     CHECK(ev.body == "wave");
     CHECK(ev.timestamp == 1234567890);
-    CHECK(ev.image_url == "mxc://example.org/sticker.png");
+    CHECK(ev.source != nullptr);
+    CHECK(ev.source->mxc_url() == "mxc://example.org/sticker.png");
     CHECK(ev.width == 512);
     CHECK(ev.height == 512);
     CHECK(ev.type == tesseract::EventType::Sticker);
 }
 
-TEST_CASE("StickerEvent thumbnail_url defaults empty", "[types]")
+TEST_CASE("StickerEvent thumbnail defaults null", "[types]")
 {
     tesseract::StickerEvent ev{};
-    CHECK(ev.thumbnail_url.empty());
+    CHECK(ev.thumbnail == nullptr);
 }
 
-TEST_CASE("StickerEvent thumbnail_url is settable independently of image_url", "[types]")
+TEST_CASE("StickerEvent thumbnail is settable independently of source", "[types]")
 {
     tesseract::StickerEvent ev{};
-    ev.image_url = "mxc://example.org/sticker-full";
-    ev.thumbnail_url = "mxc://example.org/sticker-thumb";
+    ev.source    = tesseract::MediaSource::plain("mxc://example.org/sticker-full");
+    ev.thumbnail = tesseract::MediaSource::plain("mxc://example.org/sticker-thumb");
 
-    CHECK(ev.image_url == "mxc://example.org/sticker-full");
-    CHECK(ev.thumbnail_url == "mxc://example.org/sticker-thumb");
+    CHECK(ev.source->mxc_url()    == "mxc://example.org/sticker-full");
+    CHECK(ev.thumbnail->mxc_url() == "mxc://example.org/sticker-thumb");
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +324,7 @@ TEST_CASE("VoiceEvent default-initialised fields", "[types][voice]")
     CHECK(ev.body.empty());
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::Voice);
-    CHECK(ev.audio_source.empty());
+    CHECK(ev.source == nullptr);
     CHECK(ev.mime_type.empty());
     CHECK(ev.duration_ms == 0u);
     CHECK(ev.waveform.empty());
@@ -317,14 +338,15 @@ TEST_CASE("VoiceEvent fields round-trip", "[types][voice]")
     ev.sender = "@alice:example.org";
     ev.body = "Voice message";
     ev.timestamp = 1700000000000ull;
-    ev.audio_source = "mxc://example.org/voice.ogg";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/voice.ogg");
     ev.mime_type = "audio/ogg";
     ev.duration_ms = 4200;
     ev.waveform = {0, 256, 512, 1024, 512, 256, 0};
 
     CHECK(ev.event_id == "$voice-evt:example.org");
     CHECK(ev.body == "Voice message");
-    CHECK(ev.audio_source == "mxc://example.org/voice.ogg");
+    CHECK(ev.source != nullptr);
+    CHECK(ev.source->mxc_url() == "mxc://example.org/voice.ogg");
     CHECK(ev.mime_type == "audio/ogg");
     CHECK(ev.duration_ms == 4200u);
     REQUIRE(ev.waveform.size() == 7);
@@ -339,7 +361,7 @@ TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)",
     // Missing MSC1767 waveform → empty vector; the UI renders flat bars.
     tesseract::VoiceEvent ev{};
     ev.duration_ms = 3000;
-    ev.audio_source = "mxc://example.org/x";
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/x");
     CHECK(ev.waveform.empty());
     CHECK(ev.duration_ms == 3000u);
 }
@@ -348,7 +370,7 @@ TEST_CASE("VoiceEvent carries reactions like other Event subtypes",
           "[types][voice][reactions]")
 {
     tesseract::VoiceEvent ev{};
-    ev.reactions.push_back({"🔥", 2, true, "", {"@alice", "@bob"}});
+    ev.reactions.push_back({"🔥", 2, true, nullptr, {"@alice", "@bob"}});
     REQUIRE(ev.reactions.size() == 1);
     CHECK(ev.reactions[0].key == "🔥");
     CHECK(ev.reactions[0].reacted_by_me);
@@ -367,7 +389,7 @@ TEST_CASE("AudioEvent default-initialised fields", "[types][audio]")
     CHECK(ev.body.empty());
     CHECK(ev.timestamp == 0u);
     CHECK(ev.type == tesseract::EventType::Audio);
-    CHECK(ev.audio_source.empty());
+    CHECK(ev.source == nullptr);
     CHECK(ev.mime_type.empty());
     CHECK(ev.duration_ms == 0u);
     CHECK(ev.filename.empty());
@@ -382,14 +404,19 @@ TEST_CASE("AudioEvent fields round-trip", "[types][audio]")
     ev.sender      = "@alice:example.org";
     ev.body        = "song.mp3";
     ev.timestamp   = 1700000001000ull;
-    ev.audio_source = R"({"url":"mxc://example.org/abc123"})";
+    ev.source      = tesseract::MediaSource::encrypted(
+                         "mxc://example.org/abc123",
+                         R"({"url":"mxc://example.org/abc123"})");
     ev.mime_type   = "audio/mpeg";
     ev.duration_ms = 183000;
     ev.filename    = "song.mp3";
     ev.file_size   = 4567890;
 
     CHECK(ev.type == tesseract::EventType::Audio);
-    CHECK(ev.audio_source == R"({"url":"mxc://example.org/abc123"})");
+    CHECK(ev.source != nullptr);
+    CHECK(ev.source->mxc_url()    == "mxc://example.org/abc123");
+    CHECK(ev.source->fetch_token() == R"({"url":"mxc://example.org/abc123"})");
+    CHECK(ev.source->is_encrypted());
     CHECK(ev.mime_type == "audio/mpeg");
     CHECK(ev.duration_ms == 183000u);
     CHECK(ev.filename == "song.mp3");
@@ -402,8 +429,8 @@ TEST_CASE("AudioEvent with zero duration is valid (unknown length)",
     // Senders may omit duration from m.audio info; the player queries the
     // backend after loading.
     tesseract::AudioEvent ev{};
-    ev.audio_source = R"({"url":"mxc://example.org/x"})";
-    ev.filename     = "clip.aac";
+    ev.source   = tesseract::MediaSource::plain("mxc://example.org/x");
+    ev.filename = "clip.aac";
     CHECK(ev.duration_ms == 0u);
     CHECK(ev.type == tesseract::EventType::Audio);
 }
@@ -412,7 +439,7 @@ TEST_CASE("AudioEvent carries reactions like other Event subtypes",
           "[types][audio][reactions]")
 {
     tesseract::AudioEvent ev{};
-    ev.reactions.push_back({"🎵", 3, false, "", {"@alice", "@bob", "@carol"}});
+    ev.reactions.push_back({"🎵", 3, false, nullptr, {"@alice", "@bob", "@carol"}});
     REQUIRE(ev.reactions.size() == 1);
     CHECK(ev.reactions[0].key == "🎵");
     CHECK(ev.reactions[0].count == 3);
@@ -433,7 +460,7 @@ TEST_CASE("Reaction default-initialised fields", "[types][reactions]")
     CHECK(r.key.empty());
     CHECK(r.count == 0u);
     CHECK_FALSE(r.reacted_by_me);
-    CHECK(r.source_json.empty());
+    CHECK(r.source == nullptr);
     CHECK(r.senders.empty());
 }
 
@@ -443,7 +470,6 @@ TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]")
         .key = "👍",
         .count = 3,
         .reacted_by_me = true,
-        .source_json = "",
         .senders = {"@alice:example.org", "@bob:example.org", "Carol"},
     };
     CHECK(r.key == "👍");
@@ -456,23 +482,23 @@ TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]")
     CHECK(r.senders.size() == static_cast<size_t>(r.count));
 }
 
-TEST_CASE("MSC 4027 custom reaction preserves source_json",
+TEST_CASE("MSC 4027 custom reaction source is accessible via MediaSource",
           "[types][reactions]")
 {
     tesseract::Reaction r{
         .key = ":partyparrot:",
         .count = 2,
         .reacted_by_me = false,
-        .source_json = R"({"url":"mxc://example.org/abc123"})",
+        .source = tesseract::MediaSource::plain("mxc://example.org/abc123"),
         .senders = {"@alice:example.org", "@bob:example.org"},
     };
-    CHECK_FALSE(r.source_json.empty());
-    CHECK(r.source_json.find("mxc://example.org/abc123") != std::string::npos);
+    CHECK(r.source != nullptr);
+    CHECK(r.source->mxc_url() == "mxc://example.org/abc123");
 
-    // Copy-assignment must preserve the JSON blob verbatim — chip-icon
-    // dedup keys by source_json so any trimming would break caching.
+    // Copy-assignment must share the same source pointer — chip-icon
+    // dedup keys by fetch_token() so the pointer stays valid.
     tesseract::Reaction copy = r;
-    CHECK(copy.source_json == r.source_json);
+    CHECK(copy.source == r.source);
 }
 
 TEST_CASE("Event base type carries reactions", "[types][reactions]")
@@ -481,8 +507,8 @@ TEST_CASE("Event base type carries reactions", "[types][reactions]")
     ev.event_id = "$abc:example.org";
     ev.body = "hello";
     ev.reactions = {
-        {"👍", 2, true, "", {"@alice:example.org", "@bob:example.org"}},
-        {"❤", 1, false, "", {"@bob:example.org"}},
+        {"👍", 2, true, nullptr, {"@alice:example.org", "@bob:example.org"}},
+        {"❤", 1, false, nullptr, {"@bob:example.org"}},
     };
 
     CHECK(ev.reactions.size() == 2);
@@ -497,15 +523,15 @@ TEST_CASE("Reactions live on every Event subtype (base field)",
     // Each subtype should carry its own reaction list since the field is on
     // the base. Sanity-check that subtype-specific fields don't shadow it.
     tesseract::TextEvent t;
-    t.reactions.push_back({"👍", 1, true, "", {"@a"}});
+    t.reactions.push_back({"👍", 1, true, nullptr, {"@a"}});
     tesseract::ImageEvent img;
-    img.reactions.push_back({"❤", 2, false, "", {"@a", "@b"}});
+    img.reactions.push_back({"❤", 2, false, nullptr, {"@a", "@b"}});
     tesseract::StickerEvent st;
-    st.reactions.push_back({"😂", 3, false, "", {"@a", "@b", "@c"}});
+    st.reactions.push_back({"😂", 3, false, nullptr, {"@a", "@b", "@c"}});
     tesseract::FileEvent f;
-    f.reactions.push_back({"🔥", 4, true, "", {"@a", "@b", "@c", "@d"}});
+    f.reactions.push_back({"🔥", 4, true, nullptr, {"@a", "@b", "@c", "@d"}});
     tesseract::UnhandledEvent u;
-    u.reactions.push_back({"👀", 0, false, "", {}});
+    u.reactions.push_back({"👀", 0, false, nullptr, {}});
 
     CHECK(t.reactions.size() == 1);
     CHECK(img.reactions.size() == 1);

@@ -863,13 +863,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->room_view()->on_image_clicked =
             [this](const tesseract::views::MessageListView::ImageHit& hit)
         {
-            mainApp_->image_viewer()->open(hit.media_url, hit.thumbnail_url,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            mainApp_->image_viewer()->open(src_tok, thumb_tok,
                                            hit.body, hit.natural_w,
                                            hit.natural_h);
             mainApp_->show_image_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
-            const std::string url = hit.media_url;
+            const std::string url = src_tok;
             if (!url.empty() && !viewerFullresCache_.count(url) &&
                 !anim_cache_.has(url) &&
                 viewerFullresInFlight_.insert(url).second)
@@ -942,14 +944,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         mainApp_->room_view()->on_video_clicked =
             [this](const tesseract::views::MessageListView::VideoHit& hit)
         {
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
             mainApp_->video_viewer()->open(
-                hit.source_json, hit.thumbnail_url, hit.mime_type,
+                src_tok, thumb_tok, hit.mime_type,
                 hit.duration_ms, hit.natural_w, hit.natural_h, hit.autoplay,
                 hit.loop, hit.no_audio, hit.hide_controls);
             mainApp_->show_video_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
-            std::string src = hit.source_json;
+            std::string src = src_tok;
             runOnPool_(
                 [this, src = std::move(src)]() mutable
                 {
@@ -977,12 +981,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 tr("All files (*.*)"));
             if (path.isEmpty())
                 return;
-            std::string url  = hit.media_url;
+            std::string url  = hit.source ? hit.source->fetch_token() : std::string{};
             std::string dest = path.toStdString();
             runOnPool_(
                 [this, url, dest]()
                 {
-                    auto bytes = client_->fetch_media_bytes(url);
+                    auto bytes = client_->fetch_source_bytes(url);
                     QMetaObject::invokeMethod(
                         this,
                         [dest, bytes = std::move(bytes)]() mutable
@@ -1469,7 +1473,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
-            const auto mxc_url = hit->mxc_url;
+            const auto mxc_url = hit->source ? hit->source->mxc_url() : std::string{};
             const auto body = hit->body;
             const auto info_json = hit->info_json;
             const bool already_saved =
@@ -3293,34 +3297,25 @@ void MainWindow::prep_row_media_(const tesseract::Event& ev)
     if (ev.type == tesseract::EventType::Image)
     {
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        if (!img.image_url.empty())
-        {
-            mediaImageSizes_[img.image_url] = {kMaxImageWidth, kMaxImageHeight};
-        }
+        if (img.source)
+            mediaImageSizes_[img.source->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
     }
     else if (ev.type == tesseract::EventType::Sticker)
     {
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        if (!s.image_url.empty())
-        {
-            mediaImageSizes_[s.image_url] = {kMaxStickerSize, kMaxStickerSize};
-        }
+        if (s.source)
+            mediaImageSizes_[s.source->fetch_token()] = {kMaxStickerSize, kMaxStickerSize};
     }
     else if (ev.type == tesseract::EventType::Video)
     {
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        if (!vid.thumbnail_url.empty())
-        {
-            mediaImageSizes_[vid.thumbnail_url] = {kMaxImageWidth,
-                                                   kMaxImageHeight};
-        }
+        if (vid.thumbnail)
+            mediaImageSizes_[vid.thumbnail->fetch_token()] = {kMaxImageWidth, kMaxImageHeight};
     }
     for (const auto& r : ev.reactions)
     {
-        if (!r.source_json.empty())
-        {
-            mediaImageSizes_[r.source_json] = {20, 20};
-        }
+        if (r.source)
+            mediaImageSizes_[r.source->fetch_token()] = {20, 20};
     }
     ensure_row_media_(ev);
 }

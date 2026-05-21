@@ -80,10 +80,9 @@ pub mod ffi {
         count: u64,
         /// True when the current user is among the senders for this key.
         reacted_by_me: bool,
-        /// JSON-serialised `MediaSource` (compatible with
-        /// `fetch_source_bytes`) when this is an MSC 4027 custom-image
-        /// reaction. Empty string for plain Unicode reactions.
-        source_json: String,
+        /// mxc:// URI when this is an MSC 4027 custom-image reaction.
+        /// Empty string for plain Unicode reactions.
+        source_url: String,
         /// Display label for each sender, in iteration order from the SDK.
         /// Each entry is the member's display name when resolvable from the
         /// room state, otherwise the bare Matrix ID.
@@ -112,20 +111,23 @@ pub mod ffi {
 
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
-    /// For `m.image`   → source_json, width, height are populated.
+    /// For `m.image`   → source_url / source_encrypted_json, width, height are populated.
     ///                   image_filename is non-empty only when the sender supplied
     ///                   an explicit MSC2530 filename; in that case `body` is a caption.
     ///                   image_animated is true when MSC4230 is_animated flag is set.
-    /// For `m.file`    → file_json, file_name, file_size are populated.
-    /// For `m.sticker` → source_json, width, height are populated (same as m.image).
+    /// For `m.file`    → file_url / file_encrypted_json, file_name, file_size are populated.
+    /// For `m.sticker` → source_url / source_encrypted_json, width, height (same as m.image).
     ///                   image_animated is true when MSC4230 is_animated flag is set.
-    /// For `m.voice`   → audio_source_json, audio_duration_ms, audio_waveform,
+    /// For `m.voice`   → audio_url / audio_encrypted_json, audio_duration_ms, audio_waveform,
     ///                   audio_mime are populated (MSC3245 voice messages).
     ///                   Non-voice `m.audio` events are converted to "m.file"
     ///                   on the Rust side so the file-card path renders them.
-    /// For `m.video`   → source_json (video MediaSource), width, height,
+    /// For `m.video`   → source_url / source_encrypted_json (video source), width, height,
     ///                   image_filename (MSC2530 caption filename),
-    ///                   video_thumbnail_json, video_duration_ms, video_mime.
+    ///                   video_thumbnail_url / video_thumbnail_encrypted_json,
+    ///                   video_duration_ms, video_mime.
+    /// Thumbnail fields → *_url is always the mxc:// URI; *_encrypted_json is non-empty
+    ///                   only when the thumbnail itself is encrypted.
     /// Reply fields   → in_reply_to_id is non-empty when this event is a reply.
     ///                   in_reply_to_sender_name and in_reply_to_body carry the
     ///                   replied-to event's display name and body snippet (populated
@@ -147,22 +149,27 @@ pub mod ffi {
         ///   "virtual.read_marker"   → marks the user's last-read position.
         ///   "virtual.timeline_start"→ no earlier history to paginate.
         msg_type: String,
-        /// mxc:// URI of the image (valid when msg_type is "m.image" or "m.sticker").
-        source_json: String,
+        /// mxc:// URI of the primary media source (m.image, m.sticker, m.video).
+        source_url: String,
+        /// Non-empty only when the primary source is encrypted; contains the full
+        /// JSON MediaSource blob for Client::fetch_source_bytes.
+        source_encrypted_json: String,
         width: u64,
         height: u64,
-        /// JSON serialisation of a `MediaSource` for the file attachment.
-        /// Non-empty when msg_type is "m.file".
-        file_json: String,
+        /// mxc:// URI of the file attachment (m.file).
+        file_url: String,
+        /// Non-empty only when the file attachment is encrypted.
+        file_encrypted_json: String,
         file_name: String,
         file_size: u64,
         /// Non-empty when msg_type is "m.image" and the sender provided an explicit
         /// MSC2530 `filename` field (distinct from `body`).  When set, `body` is a
         /// user-written caption and should be displayed below the image.
         image_filename: String,
-        /// JSON-serialised `MediaSource` for the voice clip (plain mxc:// or
-        /// encrypted `EncryptedFile`). Non-empty when `msg_type == "m.voice"`.
-        audio_source_json: String,
+        /// mxc:// URI of the audio/voice clip (m.voice / m.audio).
+        audio_url: String,
+        /// Non-empty only when the audio source is encrypted.
+        audio_encrypted_json: String,
         /// Duration of the voice clip in milliseconds (MSC1767 `audio.duration`,
         /// falling back to `info.duration`). 0 when neither is provided.
         audio_duration_ms: u64,
@@ -172,12 +179,14 @@ pub mod ffi {
         /// MIME type advertised by the sender (typically "audio/ogg"). May be
         /// empty when missing from `info.mimetype`.
         audio_mime: String,
-        /// Thumbnail MediaSource JSON for `m.video` events (plain mxc:// or
-        /// encrypted JSON). Empty when the server omits a thumbnail.
-        video_thumbnail_json: String,
-        /// Thumbnail MediaSource JSON for `m.image` (and sticker) events (plain
-        /// mxc:// or encrypted JSON). Empty when the server omits a thumbnail.
-        image_thumbnail_json: String,
+        /// mxc:// URI of the video thumbnail (m.video). Empty when absent.
+        video_thumbnail_url: String,
+        /// Non-empty only when the video thumbnail is encrypted.
+        video_thumbnail_encrypted_json: String,
+        /// mxc:// URI of the image/sticker thumbnail. Empty when absent.
+        image_thumbnail_url: String,
+        /// Non-empty only when the image thumbnail is encrypted.
+        image_thumbnail_encrypted_json: String,
         /// Duration of the video in milliseconds. 0 when not provided.
         video_duration_ms: u64,
         /// MIME type of the video (e.g. "video/mp4"). May be empty.

@@ -383,51 +383,53 @@ void ShellBase::ensure_row_media_(const Event& ev)
     if (ev.type == EventType::Image)
     {
         const auto& img = static_cast<const ImageEvent&>(ev);
-        if (!img.thumbnail_url.empty())
+        if (img.thumbnail)
         {
-            ensure_media_image_(img.thumbnail_url, visual::kMaxInlineImageWidth,
+            ensure_media_image_(img.thumbnail->fetch_token(),
+                                visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight);
         }
-        if (img.thumbnail_url.empty() ||
-            tesseract::Settings::instance().prefetch_full_media)
+        if (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media)
         {
-            ensure_media_image_(img.image_url, visual::kMaxInlineImageWidth,
-                                visual::kMaxInlineImageHeight);
+            if (img.source)
+                ensure_media_image_(img.source->fetch_token(),
+                                    visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight);
         }
     }
     else if (ev.type == EventType::Sticker)
     {
         const auto& s = static_cast<const StickerEvent&>(ev);
-        if (!s.thumbnail_url.empty())
+        if (s.thumbnail)
         {
-            ensure_media_image_(s.thumbnail_url, visual::kStickerSize,
-                                visual::kStickerSize);
+            ensure_media_image_(s.thumbnail->fetch_token(),
+                                visual::kStickerSize, visual::kStickerSize);
         }
-        if (s.thumbnail_url.empty() ||
-            tesseract::Settings::instance().prefetch_full_media)
+        if (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media)
         {
-            ensure_media_image_(s.image_url, visual::kStickerSize,
-                                visual::kStickerSize);
+            if (s.source)
+                ensure_media_image_(s.source->fetch_token(),
+                                    visual::kStickerSize, visual::kStickerSize);
         }
     }
     else if (ev.type == EventType::Voice)
     {
         const auto& v = static_cast<const VoiceEvent&>(ev);
-        if (!v.audio_source.empty())
+        if (v.source)
         {
+            const std::string src = v.source->fetch_token();
             const bool audio_new =
-                voice_prefetched_.insert(v.audio_source).second;
+                voice_prefetched_.insert(src).second;
             const bool waveform_new =
                 v.waveform.empty() &&
-                voice_waveform_in_flight_.insert(v.audio_source).second;
+                voice_waveform_in_flight_.insert(src).second;
 
             if (audio_new || waveform_new)
             {
                 const std::string event_id = ev.event_id;
                 const std::string room_id  = current_room_id_;
                 run_async_(
-                    [this, src = v.audio_source, event_id, room_id,
-                     waveform_new]()
+                    [this, src, event_id, room_id, waveform_new]()
                     {
                         auto bytes = client_->fetch_source_bytes(src);
                         if (!waveform_new || bytes.empty())
@@ -462,33 +464,34 @@ void ShellBase::ensure_row_media_(const Event& ev)
     else if (ev.type == EventType::Audio)
     {
         const auto& a = static_cast<const AudioEvent&>(ev);
-        if (!a.audio_source.empty() &&
-            tesseract::Settings::instance().prefetch_full_media &&
-            voice_prefetched_.insert(a.audio_source).second)
+        if (a.source &&
+            tesseract::Settings::instance().prefetch_full_media)
         {
-            run_async_([this, src = a.audio_source]()
-                       { client_->fetch_source_bytes(src); });
+            const std::string src = a.source->fetch_token();
+            if (voice_prefetched_.insert(src).second)
+                run_async_([this, src]() { client_->fetch_source_bytes(src); });
         }
     }
     else if (ev.type == EventType::Video)
     {
         const auto& vid = static_cast<const VideoEvent&>(ev);
-        if (!vid.thumbnail_url.empty())
+        if (vid.thumbnail)
         {
-            ensure_media_image_(vid.thumbnail_url, visual::kMaxInlineImageWidth,
+            ensure_media_image_(vid.thumbnail->fetch_token(),
+                                visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight);
         }
-        if (vid.thumbnail_url.empty() && !vid.video_url.empty() &&
+        if (!vid.thumbnail && vid.source &&
             video_thumb_in_flight_.insert(ev.event_id).second)
         {
-            generate_video_thumbnail_(ev.event_id, vid.video_url);
+            generate_video_thumbnail_(ev.event_id, vid.source->fetch_token());
         }
     }
     for (const auto& r : ev.reactions)
     {
-        if (!r.source_json.empty())
+        if (r.source)
         {
-            ensure_media_image_(r.source_json, 20, 20);
+            ensure_media_image_(r.source->fetch_token(), 20, 20);
         }
     }
 

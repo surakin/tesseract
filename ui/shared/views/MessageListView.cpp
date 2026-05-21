@@ -132,8 +132,8 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     {
         row.kind = Kind::Image;
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        row.media_url = img.image_url;
-        row.thumbnail_url = img.thumbnail_url;
+        row.source    = img.source;
+        row.thumbnail = img.thumbnail;
         row.media_w = static_cast<int>(img.width);
         row.media_h = static_cast<int>(img.height);
         row.has_filename_caption = !img.filename.empty();
@@ -145,8 +145,8 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     {
         row.kind = Kind::Sticker;
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        row.media_url = s.image_url;
-        row.thumbnail_url = s.thumbnail_url;
+        row.source    = s.source;
+        row.thumbnail = s.thumbnail;
         row.media_w = static_cast<int>(s.width);
         row.media_h = static_cast<int>(s.height);
         row.blurhash = s.blurhash;
@@ -158,40 +158,45 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     {
         row.kind = Kind::File;
         const auto& f = static_cast<const tesseract::FileEvent&>(ev);
-        row.file_name = f.file_name;
-        row.file_size = f.file_size;
-        row.media_url = f.file_url;
+        row.file_source = f.source;
+        row.file_name   = f.file_name;
+        row.file_size   = f.file_size;
         break;
     }
     case tesseract::EventType::Audio:
     {
         row.kind = Kind::Audio;
         const auto& a = static_cast<const tesseract::AudioEvent&>(ev);
-        row.audio_source = a.audio_source;
-        row.audio_mime = a.mime_type;
-        row.duration_ms = a.duration_ms;
-        row.file_name = a.filename;
-        row.file_size = a.file_size;
+        row.audio_source = a.source;
+        row.audio_mime   = a.mime_type;
+        row.duration_ms  = a.duration_ms;
+        row.file_name    = a.filename;
+        row.file_size    = a.file_size;
         break;
     }
     case tesseract::EventType::Voice:
     {
         row.kind = Kind::Voice;
         const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
-        row.audio_source = v.audio_source;
-        row.audio_mime = v.mime_type;
-        row.duration_ms = v.duration_ms;
-        row.waveform = v.waveform;
+        row.audio_source = v.source;
+        row.audio_mime   = v.mime_type;
+        row.duration_ms  = v.duration_ms;
+        row.waveform     = v.waveform;
         break;
     }
     case tesseract::EventType::Video:
     {
         row.kind = Kind::Video;
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        row.media_url = vid.video_url;
-        row.video_thumb_url = vid.thumbnail_url.empty()
-                                  ? ("thumb::" + ev.event_id)
-                                  : vid.thumbnail_url;
+        row.source    = vid.source;
+        // When the server omits a thumbnail, the client-side first-frame
+        // generator fills image_provider_ under a "thumb::<event_id>" key.
+        // Store it as a PlainMediaSource so fetch_token() / image provider
+        // lookups are uniform.  mxc_url() on this sentinel returns a non-mxc
+        // string — it must only be used as a cache key, never sent to a server.
+        row.thumbnail = vid.thumbnail
+                            ? vid.thumbnail
+                            : tesseract::MediaSource::plain("thumb::" + ev.event_id);
         row.video_mime = vid.mime_type;
         row.media_w = static_cast<int>(vid.width);
         row.media_h = static_cast<int>(vid.height);
@@ -956,7 +961,7 @@ public:
                 const auto& r = m.reactions[ri];
                 constexpr float kChipInnerGap = 4.0f;
                 constexpr float kImgPad = 4.0f;
-                const bool is_img = !r.source_json.empty();
+                const bool is_img = r.source != nullptr;
 
                 auto& rc = cache_for(index);
                 if (rc.reactions.size() <= ri)
@@ -972,7 +977,7 @@ public:
                     cst.role = tk::FontRole::UiSemibold;
                     rxc.count_layout =
                         ctx.factory.build_text(std::to_string(r.count), cst);
-                    if (!r.source_json.empty())
+                    if (r.source != nullptr)
                     {
                         rxc.glyph_layout.reset();
                     }
@@ -1046,8 +1051,8 @@ public:
                     tk::Rect img_dst{left_x, pill.y + kImgPad, img_side,
                                      img_side};
                     const tk::Image* img =
-                        owner_.image_provider_
-                            ? owner_.image_provider_(r.source_json)
+                        (owner_.image_provider_ && r.source)
+                            ? owner_.image_provider_(r.source->fetch_token())
                             : nullptr;
                     if (img)
                     {
@@ -1562,8 +1567,8 @@ private:
         case MessageRowData::Kind::Image:
         {
             float max_w = std::min(col_w, kImageMaxW);
-            const std::string& img_key =
-                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string img_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img =
                 (owner_.image_provider_ && !img_key.empty())
                     ? owner_.image_provider_(img_key)
@@ -1582,8 +1587,8 @@ private:
         case MessageRowData::Kind::Sticker:
         {
             float max_side = std::min(col_w, kStickerSize);
-            const std::string& sticker_key =
-                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string sticker_key = look ? look->fetch_token() : std::string{};
             const tk::Image* sticker_img =
                 (owner_.image_provider_ && !sticker_key.empty())
                     ? owner_.image_provider_(sticker_key)
@@ -1803,8 +1808,8 @@ private:
         case MessageRowData::Kind::Image:
         {
             float max_w = std::min(col_w, kImageMaxW);
-            const std::string& img_key =
-                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string img_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img =
                 (owner_.image_provider_ && !img_key.empty())
                     ? owner_.image_provider_(img_key)
@@ -1846,8 +1851,7 @@ private:
                 int ih =
                     (m.media_h > 0) ? m.media_h : (img ? img->height() : 0);
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.media_url, m.thumbnail_url, m.body,
-                    iw, ih, r};
+                    m.event_id, m.source, m.thumbnail, m.body, iw, ih, r};
             }
             float cursor = y + sz.h;
             if (m.has_filename_caption && !m.body.empty())
@@ -1862,8 +1866,8 @@ private:
         case MessageRowData::Kind::Sticker:
         {
             float max_side = std::min(col_w, kStickerSize);
-            const std::string& sticker_key =
-                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            const std::string sticker_key = look ? look->fetch_token() : std::string{};
             const tk::Image* sticker_img =
                 (owner_.image_provider_ && !sticker_key.empty())
                     ? owner_.image_provider_(sticker_key)
@@ -1888,7 +1892,7 @@ private:
             if (!m.event_id.empty())
             {
                 owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
-                    m.event_id, m.media_url, m.body, m.sticker_info_json, r};
+                    m.event_id, m.source, m.body, m.sticker_info_json, r};
                 int iw = (sticker_img && sticker_img->width() > 0)
                              ? sticker_img->width()
                              : m.media_w;
@@ -1896,8 +1900,7 @@ private:
                              ? sticker_img->height()
                              : m.media_h;
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.media_url, m.thumbnail_url, m.body,
-                    iw, ih, r};
+                    m.event_id, m.source, m.thumbnail, m.body, iw, ih, r};
             }
             return y + sz.h;
         }
@@ -1909,7 +1912,7 @@ private:
             if (!m.event_id.empty())
             {
                 owner_.file_geom_[m.event_id] =
-                    MessageListView::FileHit{m.event_id, m.media_url,
+                    MessageListView::FileHit{m.event_id, m.file_source,
                                               m.file_name, m.file_size, r};
             }
             return y + kFileCardH;
@@ -1940,12 +1943,10 @@ private:
             paint_video_card(m, ctx, r);
             if (!m.event_id.empty())
             {
-                const std::string& thumb =
-                    m.video_thumb_url.empty() ? m.media_url : m.video_thumb_url;
                 owner_.video_geom_[m.event_id] =
                     MessageListView::VideoHit{m.event_id,
-                                              m.media_url,
-                                              thumb,
+                                              m.source,
+                                              m.thumbnail,
                                               m.video_mime,
                                               m.media_w,
                                               m.media_h,
@@ -2476,8 +2477,8 @@ private:
     void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,
                             tk::Rect dst) const
     {
-        const std::string& display_key =
-            m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        const std::string display_key = look ? look->fetch_token() : std::string{};
         const tk::Image* img = nullptr;
         if (owner_.image_provider_ && !display_key.empty())
         {
@@ -3040,8 +3041,8 @@ private:
         }
 
         // Thumbnail fallback (or placeholder when neither is available).
-        const std::string& thumb_key =
-            m.video_thumb_url.empty() ? m.media_url : m.video_thumb_url;
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        const std::string thumb_key = look ? look->fetch_token() : std::string{};
         const tk::Image* thumb = nullptr;
         if (!live_frame && owner_.image_provider_ && !thumb_key.empty())
         {
@@ -3410,8 +3411,8 @@ bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const
     case K::Image:
     case K::Sticker:
     {
-        const std::string& wait_key =
-            m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url;
+        const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+        const std::string wait_key = look ? look->fetch_token() : std::string{};
         if (wait_key.empty() || !image_provider_)
         {
             return true;
@@ -3427,11 +3428,11 @@ bool MessageListView::gate_dep_satisfied_(const MessageRowData& m) const
         // server omits one the row falls back to a client-generated frame
         // (no generator on every platform) — don't stall the whole list
         // on it; the metadata/placeholder height is already stable.
-        if (m.video_thumb_url.empty() || !image_provider_)
+        if (!m.thumbnail || !image_provider_)
         {
             return true;
         }
-        if (const tk::Image* im = image_provider_(m.video_thumb_url))
+        if (const tk::Image* im = image_provider_(m.thumbnail->fetch_token()))
         {
             return im->width() > 0 && im->height() > 0;
         }
@@ -3479,12 +3480,12 @@ void MessageListView::collect_gate_deps_()
         using K = MessageRowData::Kind;
         if (m.kind == K::Image || m.kind == K::Sticker)
         {
-            g.pending.insert(
-                m.thumbnail_url.empty() ? m.media_url : m.thumbnail_url);
+            const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
+            if (look) g.pending.insert(look->fetch_token());
         }
         else if (m.kind == K::Video)
         {
-            g.pending.insert(m.video_thumb_url);
+            if (m.thumbnail) g.pending.insert(m.thumbnail->fetch_token());
         }
         else if (!m.first_url.empty())
         {
@@ -3760,12 +3761,15 @@ void MessageListView::notify_image_ready(const std::string& url)
     auto [first, last] = visible_range();
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
-        // Match either the full-res key (media_url) or the server-thumbnail
-        // key. ShellBase pre-fetches whichever is present (thumbnail wins),
-        // so an Image/Sticker row whose only cached representation is the
-        // thumbnail would otherwise never remeasure when bytes arrive.
+        // Match either the full-res token or the thumbnail token.
+        // ShellBase pre-fetches whichever is present (thumbnail wins), so an
+        // Image/Sticker row whose only cached representation is the thumbnail
+        // would otherwise never remeasure when bytes arrive.
         const auto& m = messages_[i];
-        if (m.media_url == url || m.thumbnail_url == url)
+        const bool src_match = m.source && m.source->fetch_token() == url;
+        const bool thumb_match = m.thumbnail && m.thumbnail->fetch_token() == url;
+        const bool fsrc_match = m.file_source && m.file_source->fetch_token() == url;
+        if (src_match || thumb_match || fsrc_match)
         {
             if (first > 0 && static_cast<int>(i) < first)
             {
@@ -3869,7 +3873,7 @@ void MessageListView::start_inline_video(const MessageRowData& m)
     inline_players_[m.event_id] = {std::move(player)};
 
     const std::string eid = m.event_id;
-    const std::string src = m.media_url;
+    const std::string src = m.source ? m.source->fetch_token() : std::string{};
     const std::string mime = m.video_mime;
     const bool autoplay = m.video_autoplay;
 
@@ -4072,7 +4076,7 @@ void MessageListView::handle_voice_scrub_at(const MessageRowData& row,
         // as a regular play click; on cache miss the view stays idle and
         // the user can try again once the prefetch lands.
         std::vector<std::uint8_t> bytes =
-            voice_bytes_provider_(row.audio_source);
+            voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
         if (bytes.empty())
         {
             if (request_repaint_)
@@ -4187,7 +4191,7 @@ void MessageListView::handle_voice_play_click(const MessageRowData& row)
         audio_player_->stop();
     }
 
-    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source);
+    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
     if (bytes.empty())
     {
         // Cache miss — the SDK kicks off a background fetch on the first
@@ -4239,7 +4243,7 @@ void MessageListView::handle_audio_play_click(const MessageRowData& row)
     {
         audio_player_->stop();
     }
-    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source);
+    std::vector<std::uint8_t> bytes = voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
     if (bytes.empty())
     {
         playing_event_id_.clear();
@@ -4299,7 +4303,7 @@ void MessageListView::handle_audio_scrub_at(const MessageRowData& row,
     if (row.event_id != playing_event_id_)
     {
         std::vector<std::uint8_t> bytes =
-            voice_bytes_provider_(row.audio_source);
+            voice_bytes_provider_(row.audio_source ? row.audio_source->fetch_token() : std::string{});
         if (bytes.empty())
         {
             if (request_repaint_)

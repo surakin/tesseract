@@ -5853,8 +5853,8 @@ async fn collect_reactions(
         }
 
         // MSC4027: when the reaction key is an mxc:// URI it IS the image URL.
-        // No raw-event lookup needed — the key string is sufficient to fetch.
-        let source_json = if key.starts_with("mxc://") {
+        // Reactions reference existing pack images, which are always plain mxc://.
+        let source_url = if key.starts_with("mxc://") {
             key.clone()
         } else {
             String::new()
@@ -5863,7 +5863,7 @@ async fn collect_reactions(
             key: key.clone(),
             count,
             reacted_by_me,
-            source_json,
+            source_url,
             senders,
         });
     }
@@ -5907,6 +5907,36 @@ async fn collect_read_receipts(
     out
 }
 
+/// Split a `MediaSource` into the two FFI fields used by the C++ bridge:
+/// - `url`:           the plain mxc:// URI (both plain and encrypted carry this)
+/// - `encrypted_json`: non-empty only when the source is encrypted; full JSON blob
+///                     understood by `fetch_source_bytes` for decryption
+#[cfg(not(test))]
+fn split_source(
+    source: &matrix_sdk::ruma::events::room::MediaSource,
+) -> (String, String) {
+    use matrix_sdk::ruma::events::room::MediaSource;
+    match source {
+        MediaSource::Plain(uri) => (uri.to_string(), String::new()),
+        MediaSource::Encrypted(file) => (
+            file.url.to_string(),
+            serde_json::to_string(source).unwrap_or_default(),
+        ),
+    }
+}
+
+/// Same as `split_source` but for an `Option<&MediaSource>`; returns ("","")
+/// when absent.
+#[cfg(not(test))]
+fn split_source_opt(
+    source: Option<&matrix_sdk::ruma::events::room::MediaSource>,
+) -> (String, String) {
+    match source {
+        Some(s) => split_source(s),
+        None => (String::new(), String::new()),
+    }
+}
+
 /// Parse a `geo:lat,lon` or `geo:lat,lon,alt` URI.
 /// Returns `(lat, lon)` or `None` on parse failure.
 fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
@@ -5945,19 +5975,24 @@ async fn timeline_item_to_ffi(
                 sender_name: String::new(),
                 sender_avatar_url: String::new(),
                 body: String::new(),
-                source_json: String::new(),
+                source_url: String::new(),
+                source_encrypted_json: String::new(),
                 width: 0,
                 height: 0,
-                file_json: String::new(),
+                file_url: String::new(),
+                file_encrypted_json: String::new(),
                 file_name: String::new(),
                 file_size: 0,
                 image_filename: String::new(),
-                audio_source_json: String::new(),
+                audio_url: String::new(),
+                audio_encrypted_json: String::new(),
                 audio_duration_ms: 0,
                 audio_waveform: Vec::new(),
                 audio_mime: String::new(),
-                video_thumbnail_json: String::new(),
-                image_thumbnail_json: String::new(),
+                video_thumbnail_url: String::new(),
+                video_thumbnail_encrypted_json: String::new(),
+                image_thumbnail_url: String::new(),
+                image_thumbnail_encrypted_json: String::new(),
                 video_duration_ms: 0,
                 video_mime: String::new(),
                 video_autoplay: false,
@@ -6040,19 +6075,24 @@ async fn timeline_item_to_ffi(
             body: String::new(),
             timestamp: event_item.timestamp().get().into(),
             msg_type: "m.redacted".to_owned(),
-            source_json: String::new(),
+            source_url: String::new(),
+            source_encrypted_json: String::new(),
             width: 0u64,
             height: 0u64,
-            file_json: String::new(),
+            file_url: String::new(),
+            file_encrypted_json: String::new(),
             file_name: String::new(),
             file_size: 0u64,
             image_filename: String::new(),
-            audio_source_json: String::new(),
+            audio_url: String::new(),
+            audio_encrypted_json: String::new(),
             audio_duration_ms: 0u64,
             audio_waveform: Vec::new(),
             audio_mime: String::new(),
-            video_thumbnail_json: String::new(),
-            image_thumbnail_json: String::new(),
+            video_thumbnail_url: String::new(),
+            video_thumbnail_encrypted_json: String::new(),
+            image_thumbnail_url: String::new(),
+            image_thumbnail_encrypted_json: String::new(),
             video_duration_ms: 0u64,
             video_mime: String::new(),
             video_autoplay: false,
@@ -6091,17 +6131,18 @@ async fn timeline_item_to_ffi(
     }) = event_item.content()
     {
         let c = s.content();
-        // For encrypted sticker sources (MSC2545 + ruma compat-encrypted-stickers
-        // feature) we serialise the full MediaSource as JSON so the C++ side can
-        // pipe it back through fetch_source_bytes for decryption.
-        let src = match &c.source {
-            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) => uri.to_string(),
+        let (source_url, source_encrypted_json) = match &c.source {
+            matrix_sdk::ruma::events::sticker::StickerMediaSource::Plain(uri) => {
+                (uri.to_string(), String::new())
+            }
             matrix_sdk::ruma::events::sticker::StickerMediaSource::Encrypted(file) => {
                 let ms = matrix_sdk::ruma::events::room::MediaSource::Encrypted(file.clone());
-                serde_json::to_string(&ms).unwrap_or_default()
+                (file.url.to_string(), serde_json::to_string(&ms).unwrap_or_default())
             }
-            _ => String::new(),
+            _ => (String::new(), String::new()),
         };
+        let (image_thumbnail_url, image_thumbnail_encrypted_json) =
+            split_source_opt(c.info.thumbnail_source.as_ref());
         let w = c.info.width.map(u64::from).unwrap_or(0);
         let h = c.info.height.map(u64::from).unwrap_or(0);
         let (sender_name, sender_avatar_url) =
@@ -6130,29 +6171,24 @@ async fn timeline_item_to_ffi(
             body: c.body.clone(),
             timestamp: event_item.timestamp().get().into(),
             msg_type: "m.sticker".to_owned(),
-            source_json: src,
+            source_url,
+            source_encrypted_json,
             width: w,
             height: h,
-            file_json: String::new(),
+            file_url: String::new(),
+            file_encrypted_json: String::new(),
             file_name: String::new(),
             file_size: 0u64,
             image_filename: String::new(),
-            audio_source_json: String::new(),
+            audio_url: String::new(),
+            audio_encrypted_json: String::new(),
             audio_duration_ms: 0u64,
             audio_waveform: Vec::new(),
             audio_mime: String::new(),
-            video_thumbnail_json: String::new(),
-            image_thumbnail_json: c
-                .info
-                .thumbnail_source
-                .as_ref()
-                .map(|ts| match ts {
-                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                    matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                        serde_json::to_string(ts).unwrap_or_default()
-                    }
-                })
-                .unwrap_or_default(),
+            video_thumbnail_url: String::new(),
+            video_thumbnail_encrypted_json: String::new(),
+            image_thumbnail_url,
+            image_thumbnail_encrypted_json,
             video_duration_ms: 0u64,
             video_mime: String::new(),
             video_autoplay: false,
@@ -6192,18 +6228,22 @@ async fn timeline_item_to_ffi(
         body,
         formatted_body,
         msg_type,
-        source_json,
+        source_url,
+        source_encrypted_json,
         width,
         height,
-        file_json,
+        file_url,
+        file_encrypted_json,
         file_name,
         file_size,
         image_filename,
-        audio_source_json,
+        audio_url,
+        audio_encrypted_json,
         audio_duration_ms,
         audio_waveform,
         audio_mime,
-        video_thumbnail_json,
+        video_thumbnail_url,
+        video_thumbnail_encrypted_json,
         video_duration_ms,
         video_mime,
         video_autoplay,
@@ -6231,18 +6271,22 @@ async fn timeline_item_to_ffi(
                 t.body.clone(),
                 fmt,
                 "m.text".to_owned(),
-                String::new(),
+                String::new(), // source_url
+                String::new(), // source_encrypted_json
                 0u64,
                 0u64,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 String::new(),
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::<u16>::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6256,15 +6300,7 @@ async fn timeline_item_to_ffi(
             )
         }
         MessageType::Image(i) => {
-            // Plain → plain mxc URI string; encrypted → full MediaSource
-            // serialised as JSON so `fetch_source_bytes` can decrypt it.
-            // Matches the sticker handler above (no point of difference).
-            let source_str = match &i.source {
-                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                    serde_json::to_string(&i.source).unwrap_or_default()
-                }
-            };
+            let (src_url, src_enc) = split_source(&i.source);
             let (w, h) = i
                 .info
                 .as_ref()
@@ -6281,18 +6317,22 @@ async fn timeline_item_to_ffi(
                 i.body.clone(),
                 String::new(),
                 "m.image".to_owned(),
-                source_str,
+                src_url,       // source_url
+                src_enc,       // source_encrypted_json
                 w,
                 h,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 img_filename,
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6306,12 +6346,7 @@ async fn timeline_item_to_ffi(
             )
         }
         MessageType::File(f) => {
-            let file_str = match &f.source {
-                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                    serde_json::to_string(&f.source).unwrap_or_default()
-                }
-            };
+            let (file_url, file_enc) = split_source(&f.source);
             let name = f.filename.clone().unwrap_or_else(|| f.body.clone());
             let size = f
                 .info
@@ -6323,18 +6358,22 @@ async fn timeline_item_to_ffi(
                 f.body.clone(),
                 String::new(),
                 "m.file".to_owned(),
-                String::new(),
+                String::new(), // source_url
+                String::new(), // source_encrypted_json
                 0u64,
                 0u64,
-                file_str,
+                file_url,      // file_url
+                file_enc,      // file_encrypted_json
                 name,
                 size,
                 String::new(),
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6349,10 +6388,10 @@ async fn timeline_item_to_ffi(
         }
         // MSC3245: voice messages are `m.audio` events tagged with
         // `org.matrix.msc3245.voice`; the MSC1767 `audio` block carries
-        // duration + waveform. Plain `m.audio` (no voice marker) folds
-        // into the file-card path so the UI still surfaces them.
+        // duration + waveform. Plain `m.audio` (no voice marker) is surfaced
+        // as msg_type "m.audio" and rendered as an inline audio-player card.
         MessageType::Audio(a) => {
-            let source_str = serde_json::to_string(&a.source).unwrap_or_default();
+            let (aud_url, aud_enc) = split_source(&a.source);
             let info_mime = a
                 .info
                 .as_deref()
@@ -6381,18 +6420,22 @@ async fn timeline_item_to_ffi(
                     a.body.clone(),
                     String::new(),
                     "m.voice".to_owned(),
-                    String::new(),
+                    String::new(), // source_url
+                    String::new(), // source_encrypted_json
                     0u64,
                     0u64,
-                    String::new(),
+                    String::new(), // file_url
+                    String::new(), // file_encrypted_json
                     String::new(),
                     0u64,
                     String::new(),
-                    source_str,
+                    aud_url,       // audio_url
+                    aud_enc,       // audio_encrypted_json
                     duration_ms,
                     waveform,
                     info_mime,
-                    String::new(),
+                    String::new(), // video_thumbnail_url
+                    String::new(), // video_thumbnail_encrypted_json
                     0u64,
                     String::new(),
                     false,
@@ -6416,18 +6459,22 @@ async fn timeline_item_to_ffi(
                     a.body.clone(),
                     String::new(),
                     "m.audio".to_owned(),
-                    String::new(),
+                    String::new(), // source_url
+                    String::new(), // source_encrypted_json
                     0u64,
                     0u64,
-                    String::new(),
+                    String::new(), // file_url
+                    String::new(), // file_encrypted_json
                     name,
                     size,
                     String::new(),
-                    source_str,
+                    aud_url,       // audio_url
+                    aud_enc,       // audio_encrypted_json
                     info_duration_ms,
                     Vec::new(),
                     info_mime,
-                    String::new(),
+                    String::new(), // video_thumbnail_url
+                    String::new(), // video_thumbnail_encrypted_json
                     0u64,
                     String::new(),
                     false,
@@ -6442,13 +6489,8 @@ async fn timeline_item_to_ffi(
             }
         }
         MessageType::Video(v) => {
-            let source_str = match &v.source {
-                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                    serde_json::to_string(&v.source).unwrap_or_default()
-                }
-            };
-            let (w, h, dur_ms, mime, thumb_json) = v
+            let (src_url, src_enc) = split_source(&v.source);
+            let (w, h, dur_ms, mime, thumb_url, thumb_enc) = v
                 .info
                 .as_ref()
                 .map(|info| {
@@ -6456,19 +6498,8 @@ async fn timeline_item_to_ffi(
                     let h = info.height.map(u64::from).unwrap_or(0u64);
                     let dur = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0u64);
                     let mime = info.mimetype.clone().unwrap_or_default();
-                    let thumb = info
-                        .thumbnail_source
-                        .as_ref()
-                        .map(|ts| match ts {
-                            matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => {
-                                uri.to_string()
-                            }
-                            matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                                serde_json::to_string(ts).unwrap_or_default()
-                            }
-                        })
-                        .unwrap_or_default();
-                    (w, h, dur, mime, thumb)
+                    let (tu, te) = split_source_opt(info.thumbnail_source.as_ref());
+                    (w, h, dur, mime, tu, te)
                 })
                 .unwrap_or_default();
             let vid_filename = v.filename.clone().unwrap_or_default();
@@ -6492,18 +6523,22 @@ async fn timeline_item_to_ffi(
                 v.body.clone(),
                 String::new(),
                 "m.video".to_owned(),
-                source_str,
+                src_url,       // source_url
+                src_enc,       // source_encrypted_json
                 w,
                 h,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 vid_filename,
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::new(),
                 String::new(),
-                thumb_json,
+                thumb_url,     // video_thumbnail_url
+                thumb_enc,     // video_thumbnail_encrypted_json
                 dur_ms,
                 mime,
                 video_autoplay,
@@ -6532,18 +6567,22 @@ async fn timeline_item_to_ffi(
                 e.body.clone(),
                 fmt,
                 "m.emote".to_owned(),
-                String::new(),
+                String::new(), // source_url
+                String::new(), // source_encrypted_json
                 0u64,
                 0u64,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 String::new(),
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::<u16>::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6572,18 +6611,22 @@ async fn timeline_item_to_ffi(
                 n.body.clone(),
                 fmt,
                 "m.notice".to_owned(),
-                String::new(),
+                String::new(), // source_url
+                String::new(), // source_encrypted_json
                 0u64,
                 0u64,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 String::new(),
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::<u16>::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6602,18 +6645,22 @@ async fn timeline_item_to_ffi(
                 l.body.clone(),
                 String::new(),
                 "m.location".to_owned(),
-                String::new(),
+                String::new(), // source_url
+                String::new(), // source_encrypted_json
                 0u64,
                 0u64,
-                String::new(),
+                String::new(), // file_url
+                String::new(), // file_encrypted_json
                 String::new(),
                 0u64,
                 String::new(),
-                String::new(),
+                String::new(), // audio_url
+                String::new(), // audio_encrypted_json
                 0u64,
                 Vec::<u16>::new(),
                 String::new(),
-                String::new(),
+                String::new(), // video_thumbnail_url
+                String::new(), // video_thumbnail_encrypted_json
                 0u64,
                 String::new(),
                 false,
@@ -6723,20 +6770,15 @@ async fn timeline_item_to_ffi(
             }
         };
 
-    let image_thumbnail_json: String = match msg_content.msgtype() {
-        MessageType::Image(i) => i
-            .info
-            .as_ref()
-            .and_then(|info| info.thumbnail_source.as_ref())
-            .map(|ts| match ts {
-                matrix_sdk::ruma::events::room::MediaSource::Plain(uri) => uri.to_string(),
-                matrix_sdk::ruma::events::room::MediaSource::Encrypted(_) => {
-                    serde_json::to_string(ts).unwrap_or_default()
-                }
-            })
-            .unwrap_or_default(),
-        _ => String::new(),
-    };
+    let (image_thumbnail_url, image_thumbnail_encrypted_json): (String, String) =
+        match msg_content.msgtype() {
+            MessageType::Image(i) => split_source_opt(
+                i.info
+                    .as_ref()
+                    .and_then(|info| info.thumbnail_source.as_ref()),
+            ),
+            _ => (String::new(), String::new()),
+        };
 
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
@@ -6753,19 +6795,24 @@ async fn timeline_item_to_ffi(
         body,
         timestamp: event_item.timestamp().get().into(),
         msg_type,
-        source_json,
+        source_url,
+        source_encrypted_json,
         width,
         height,
-        file_json,
+        file_url,
+        file_encrypted_json,
         file_name,
         file_size,
         image_filename,
-        audio_source_json,
+        audio_url,
+        audio_encrypted_json,
         audio_duration_ms,
         audio_waveform,
         audio_mime,
-        video_thumbnail_json,
-        image_thumbnail_json,
+        video_thumbnail_url,
+        video_thumbnail_encrypted_json,
+        image_thumbnail_url,
+        image_thumbnail_encrypted_json,
         video_duration_ms,
         video_mime,
         video_autoplay,

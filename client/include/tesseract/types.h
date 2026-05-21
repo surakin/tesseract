@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+#include "tesseract/media_source.h"
 
 namespace tesseract
 {
@@ -35,11 +37,10 @@ struct Reaction
     std::string key;
     uint64_t count = 0;
     bool reacted_by_me = false;
-    /// JSON `MediaSource` for MSC 4027 custom-image reactions; empty for
-    /// plain Unicode reactions. Pass to `Client::fetch_media_bytes` (treats
-    /// it as an mxc:// URI when not a full JSON blob) to download the chip
-    /// icon.
-    std::string source_json;
+    /// MediaSource for MSC4027 custom-image reactions; nullptr for plain
+    /// Unicode reactions. Always a plain mxc:// source (reactions reference
+    /// existing pack images). Pass fetch_token() to fetch_source_bytes.
+    std::shared_ptr<const MediaSource> source;
     std::vector<std::string> senders;
 };
 
@@ -125,8 +126,8 @@ struct EmoteEvent : public Event
 
 struct ImageEvent : public Event
 {
-    std::string image_url;     // mxc:// URI (full resolution)
-    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when absent
+    std::shared_ptr<const MediaSource> source;    // full-resolution media
+    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
     uint64_t width = 0;
     uint64_t height = 0;
     /// Non-empty only when the sender supplied an MSC2530 `filename` field.
@@ -143,8 +144,8 @@ struct ImageEvent : public Event
 
 struct StickerEvent : public Event
 {
-    std::string image_url;     // mxc:// URI (full resolution)
-    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when absent
+    std::shared_ptr<const MediaSource> source;    // full-resolution media
+    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
     uint64_t width = 0;
     uint64_t height = 0;
     std::string blurhash;  // MSC2448: xyz.amorgan.blurhash; empty when absent
@@ -169,7 +170,7 @@ struct RedactedEvent : public Event
 
 struct FileEvent : public Event
 {
-    std::string file_url; // mxc:// URI
+    std::shared_ptr<const MediaSource> source; // file attachment source
     std::string file_name;
     uint64_t file_size = 0;
 
@@ -179,14 +180,13 @@ struct FileEvent : public Event
     }
 };
 
-/// Plain `m.audio` event (no MSC3245 voice marker). `audio_source` carries
-/// the full JSON-serialised `MediaSource`, suitable for
-/// `Client::fetch_source_bytes`. Rendered as an inline audio player card
-/// (play/pause + linear scrub track) rather than a download file card.
+/// Plain `m.audio` event (no MSC3245 voice marker). Rendered as an inline
+/// audio player card (play/pause + linear scrub track) rather than a download
+/// file card.
 struct AudioEvent : public Event
 {
-    std::string audio_source; // JSON MediaSource for fetch_source_bytes
-    std::string mime_type;    // e.g. "audio/mpeg"; may be empty
+    std::shared_ptr<const MediaSource> source; // audio clip source
+    std::string mime_type;                     // e.g. "audio/mpeg"; may be empty
     uint64_t duration_ms = 0;
     std::string filename;  // from m.audio body / filename field
     uint64_t file_size = 0;
@@ -197,15 +197,13 @@ struct AudioEvent : public Event
     }
 };
 
-/// MSC3245 voice message. `audio_source` carries the full JSON-serialised
-/// `MediaSource` (plain mxc:// or encrypted), suitable for
-/// `Client::fetch_source_bytes`. `waveform` holds the sender-supplied
-/// MSC1767 samples (each clamped to 0..=1024); when empty the UI renders
-/// flat placeholder bars.
+/// MSC3245 voice message. `waveform` holds the sender-supplied MSC1767
+/// samples (each clamped to 0..=1024); when empty the UI renders flat
+/// placeholder bars.
 struct VoiceEvent : public Event
 {
-    std::string audio_source; // JSON MediaSource for fetch_source_bytes
-    std::string mime_type;    // e.g. "audio/ogg"; may be empty
+    std::shared_ptr<const MediaSource> source; // voice clip source
+    std::string mime_type;                     // e.g. "audio/ogg"; may be empty
     uint64_t duration_ms = 0;
     std::vector<uint16_t> waveform; // MSC1767 amplitudes, 0..=1024
 
@@ -215,17 +213,13 @@ struct VoiceEvent : public Event
     }
 };
 
-/// `m.video` message. `video_url` carries the full JSON-serialised
-/// `MediaSource` (plain mxc:// or encrypted), suitable for
-/// `Client::fetch_source_bytes`. `thumbnail_url` carries the thumbnail
-/// MediaSource JSON; empty when the server omits it (client generates one
-/// from the first frame). `filename` is the MSC2530 caption filename;
+/// `m.video` message. `filename` is the MSC2530 caption filename;
 /// empty → no caption below the card.
 struct VideoEvent : public Event
 {
-    std::string video_url;     // JSON MediaSource for fetch_source_bytes
-    std::string thumbnail_url; // thumbnail MediaSource JSON; empty when absent
-    std::string mime_type;     // e.g. "video/mp4", "video/webm"
+    std::shared_ptr<const MediaSource> source;    // video source
+    std::shared_ptr<const MediaSource> thumbnail; // nullptr when absent
+    std::string mime_type;                        // e.g. "video/mp4"
     uint64_t width = 0;
     uint64_t height = 0;
     uint64_t duration_ms = 0;

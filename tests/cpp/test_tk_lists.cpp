@@ -688,7 +688,7 @@ TEST_CASE("MessageListView measures Image rows taller than text rows",
     img.kind = MessageRowData::Kind::Image;
     img.event_id = "$i";
     img.sender_name = "B";
-    img.media_url = "mxc://example.org/picture";
+    img.source = tesseract::MediaSource::plain("mxc://example.org/picture");
     img.media_w = 800;
     img.media_h = 500;
 
@@ -1613,7 +1613,7 @@ MessageRowData gate_image_row()
     img.kind = MessageRowData::Kind::Image;
     img.event_id = "$img";
     img.sender_name = "A";
-    img.media_url = "mxc://example.org/pic";
+    img.source = tesseract::MediaSource::plain("mxc://example.org/pic");
     img.media_w = 800;
     img.media_h = 500;
     return img;

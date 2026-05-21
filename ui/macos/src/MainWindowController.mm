@@ -2232,11 +2232,13 @@ void MacShell::apply_cached_messages_(
             {
                 return;
             }
-            s->_imgViewer->open(hit.media_url, hit.thumbnail_url, hit.body,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            s->_imgViewer->open(src_tok, thumb_tok, hit.body,
                                 hit.natural_w, hit.natural_h);
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
-            s->_shell->ensure_media_image_(hit.media_url,
+            s->_shell->ensure_media_image_(src_tok,
                                            visual::kMaxInlineImageWidth,
                                            visual::kMaxInlineImageHeight);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
@@ -2250,7 +2252,9 @@ void MacShell::apply_cached_messages_(
             {
                 return;
             }
-            s->_vidViewer->open(hit.source_json, hit.thumbnail_url,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            s->_vidViewer->open(src_tok, thumb_tok,
                                 hit.mime_type, hit.duration_ms, hit.natural_w,
                                 hit.natural_h, hit.autoplay, hit.loop,
                                 hit.no_audio, hit.hide_controls);
@@ -2259,7 +2263,7 @@ void MacShell::apply_cached_messages_(
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
             auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
-            std::string src = hit.source_json;
+            std::string src = src_tok;
             s->_shell->run_async_(
                 [weakSelf, src, bytes_holder, clientPtr = s->_shell->client_]()
                 {
@@ -2290,12 +2294,12 @@ void MacShell::apply_cached_messages_(
             if (resp != NSModalResponseOK || !panel.URL)
                 return;
             std::string dest = panel.URL.path.UTF8String;
-            std::string url  = hit.media_url;
+            std::string url  = hit.source ? hit.source->fetch_token() : std::string{};
             auto bytes_holder = std::make_shared<std::vector<uint8_t>>();
             s->_shell->run_async_(
                 [weakSelf, url, dest, bytes_holder, clientPtr = s->_shell->client_]()
                 {
-                    *bytes_holder = clientPtr->fetch_media_bytes(url);
+                    *bytes_holder = clientPtr->fetch_source_bytes(url);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         if (bytes_holder->empty())
                             return;
@@ -2672,7 +2676,7 @@ void MacShell::apply_cached_messages_(
                     return;
                 }
                 s->_ctxStickerEventId = hit->event_id;
-                s->_ctxStickerMxcUrl = hit->mxc_url;
+                s->_ctxStickerMxcUrl = hit->source ? hit->source->mxc_url() : std::string{};
                 s->_ctxStickerBody = hit->body;
                 s->_ctxStickerInfoJson = hit->info_json;
                 NSView* view =

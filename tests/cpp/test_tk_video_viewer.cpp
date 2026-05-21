@@ -196,7 +196,7 @@ TEST_CASE(
     vid.media_w = 640;
     vid.media_h = 360;
     vid.duration_ms = 12000u;
-    vid.video_thumb_url = "mxc://example.org/thumb";
+    vid.thumbnail = tesseract::MediaSource::plain("mxc://example.org/thumb");
 
     view.set_messages({txt, vid});
     REQUIRE_NOTHROW(st.run(view, {0, 0, 600, 600}));
@@ -222,7 +222,6 @@ TEST_CASE("MessageListView video_hit_at returns hit for rendered video row",
     vid.media_w = 320;
     vid.media_h = 180;
     vid.duration_ms = 5000u;
-    vid.video_thumb_url = "";
 
     view.set_messages({vid});
     st.run(view, {0, 0, 600, 400});
@@ -245,11 +244,11 @@ TEST_CASE("MessageListView on_video_clicked fires when video row is clicked",
     vid.kind = MessageRowData::Kind::Video;
     vid.event_id = "$vid3";
     vid.sender_name = "Dave";
-    vid.media_url = "mxc://example.org/video.mp4";
+    vid.source    = tesseract::MediaSource::plain("mxc://example.org/video.mp4");
     vid.media_w = 320;
     vid.media_h = 180;
     vid.duration_ms = 7500u;
-    vid.video_thumb_url = "mxc://example.org/thumb.jpg";
+    vid.thumbnail = tesseract::MediaSource::plain("mxc://example.org/thumb.jpg");
 
     view.set_messages({vid});
     st.run(view, {0, 0, 600, 400});

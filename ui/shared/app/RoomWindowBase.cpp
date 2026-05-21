@@ -221,11 +221,13 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             {
                 return;
             }
-            img_viewer_->open(hit.media_url, hit.thumbnail_url, hit.body,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            img_viewer_->open(src_tok, thumb_tok, hit.body,
                               hit.natural_w, hit.natural_h);
             img_viewer_->set_visible(true);
             request_relayout();
-            ensure_viewer_image_(hit.media_url);
+            ensure_viewer_image_(src_tok);
         };
     }
 
@@ -258,13 +260,15 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             {
                 return;
             }
-            vid_viewer_->open(hit.source_json, hit.thumbnail_url,
+            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
+            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
+            vid_viewer_->open(src_tok, thumb_tok,
                               hit.mime_type, hit.duration_ms, hit.natural_w,
                               hit.natural_h, hit.autoplay, hit.loop,
                               hit.no_audio, hit.hide_controls);
             vid_viewer_->set_visible(true);
             request_relayout();
-            std::string src = hit.source_json;
+            std::string src = src_tok;
             std::weak_ptr<bool> alive_weak = alive_;
             run_async_(
                 [this, src = std::move(src),

@@ -104,6 +104,18 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
     };
 }
 
+/// Build a MediaSource from the split url/encrypted_json pair carried over
+/// the FFI.  Returns nullptr when url is empty (= absent source).
+inline std::shared_ptr<const MediaSource> make_source(rust::Str url,
+                                                       rust::Str enc_json)
+{
+    if (url.empty())
+        return nullptr;
+    if (enc_json.empty())
+        return MediaSource::plain(std::string(url));
+    return MediaSource::encrypted(std::string(url), std::string(enc_json));
+}
+
 /// Copy every base-`Event` field (including `reactions`) from an FFI
 /// `TimelineEvent` onto a freshly allocated subtype. Each branch in
 /// `make_event` calls this before filling in its subtype-specific fields,
@@ -124,10 +136,12 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.reactions.reserve(e.reactions.size());
     for (const auto& r : e.reactions)
     {
-        Reaction out{
-            std::string(r.key),         r.count, r.reacted_by_me,
-            std::string(r.source_json), {},
-        };
+        Reaction out;
+        out.key = std::string(r.key);
+        out.count = r.count;
+        out.reacted_by_me = r.reacted_by_me;
+        if (!r.source_url.empty())
+            out.source = MediaSource::plain(std::string(r.source_url));
         out.senders.reserve(r.senders.size());
         for (const auto& s : r.senders)
         {
@@ -186,10 +200,11 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<ImageEvent>();
         assign_base(*ev, e);
-        ev->image_url = std::string(e.source_json);
-        ev->thumbnail_url = std::string(e.image_thumbnail_json);
-        ev->width = e.width;
-        ev->height = e.height;
+        ev->source    = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.image_thumbnail_url,
+                                    e.image_thumbnail_encrypted_json);
+        ev->width    = e.width;
+        ev->height   = e.height;
         ev->filename = std::string(e.image_filename);
         ev->blurhash = std::string(e.blurhash);
         ev->animated = e.image_animated;
@@ -200,13 +215,14 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<StickerEvent>();
         assign_base(*ev, e);
-        ev->image_url = std::string(e.source_json);
-        ev->thumbnail_url = std::string(e.image_thumbnail_json);
-        ev->width = e.width;
-        ev->height = e.height;
-        ev->blurhash = std::string(e.blurhash);
+        ev->source    = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.image_thumbnail_url,
+                                    e.image_thumbnail_encrypted_json);
+        ev->width    = e.width;
+        ev->height   = e.height;
+        ev->blurhash  = std::string(e.blurhash);
         ev->info_json = std::string(e.sticker_info_json);
-        ev->animated = e.image_animated;
+        ev->animated  = e.image_animated;
         return ev;
     }
 
@@ -221,7 +237,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<FileEvent>();
         assign_base(*ev, e);
-        ev->file_url = std::string(e.file_json);
+        ev->source    = make_source(e.file_url, e.file_encrypted_json);
         ev->file_name = std::string(e.file_name);
         ev->file_size = e.file_size;
         return ev;
@@ -231,11 +247,11 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<AudioEvent>();
         assign_base(*ev, e);
-        ev->audio_source = std::string(e.audio_source_json);
-        ev->mime_type    = std::string(e.audio_mime);
-        ev->duration_ms  = e.audio_duration_ms;
-        ev->filename     = std::string(e.file_name);
-        ev->file_size    = e.file_size;
+        ev->source     = make_source(e.audio_url, e.audio_encrypted_json);
+        ev->mime_type  = std::string(e.audio_mime);
+        ev->duration_ms = e.audio_duration_ms;
+        ev->filename   = std::string(e.file_name);
+        ev->file_size  = e.file_size;
         return ev;
     }
 
@@ -243,8 +259,8 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<VoiceEvent>();
         assign_base(*ev, e);
-        ev->audio_source = std::string(e.audio_source_json);
-        ev->mime_type = std::string(e.audio_mime);
+        ev->source     = make_source(e.audio_url, e.audio_encrypted_json);
+        ev->mime_type  = std::string(e.audio_mime);
         ev->duration_ms = e.audio_duration_ms;
         ev->waveform.reserve(e.audio_waveform.size());
         for (uint16_t amp : e.audio_waveform)
@@ -258,19 +274,20 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<VideoEvent>();
         assign_base(*ev, e);
-        ev->video_url = std::string(e.source_json);
-        ev->thumbnail_url = std::string(e.video_thumbnail_json);
-        ev->mime_type = std::string(e.video_mime);
-        ev->width = e.width;
-        ev->height = e.height;
-        ev->duration_ms = e.video_duration_ms;
-        ev->filename = std::string(e.image_filename);
-        ev->autoplay = e.video_autoplay;
-        ev->loop = e.video_loop;
-        ev->no_audio = e.video_no_audio;
+        ev->source    = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.video_thumbnail_url,
+                                    e.video_thumbnail_encrypted_json);
+        ev->mime_type    = std::string(e.video_mime);
+        ev->width        = e.width;
+        ev->height       = e.height;
+        ev->duration_ms  = e.video_duration_ms;
+        ev->filename     = std::string(e.image_filename);
+        ev->autoplay     = e.video_autoplay;
+        ev->loop         = e.video_loop;
+        ev->no_audio     = e.video_no_audio;
         ev->hide_controls = e.video_hide_controls;
-        ev->gif = e.video_gif;
-        ev->blurhash = std::string(e.blurhash);
+        ev->gif          = e.video_gif;
+        ev->blurhash     = std::string(e.blurhash);
         return ev;
     }
 
