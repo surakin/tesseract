@@ -2285,6 +2285,7 @@ void MainWindow::do_login()
             settings_controller_ = std::make_unique<tesseract::SettingsController>(
                 client_,
                 [this](auto fn) { post_to_ui_(std::move(fn)); },
+                [this](auto fn) { run_async_(std::move(fn)); },
                 [this](auto cb)
                 {
                     GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
