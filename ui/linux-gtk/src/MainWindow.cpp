@@ -577,6 +577,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
+        room_view_->set_shortcode_provider(
+            [this](const std::string& mxc) -> std::string
+            {
+                return shortcode_for_mxc_(mxc);
+            });
         room_view_->set_preview_provider(
             [this](const std::string& url)
                 -> const tesseract::views::UrlPreviewData*
@@ -1102,10 +1107,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             client_->redact_event(current_room_id_, event_id);
         };
         room_view_->on_reaction_toggled =
-            [this](const std::string& event_id, const std::string& key)
+            [this](const std::string& event_id, const std::string& key,
+                   const std::string& source_mxc)
         {
             if (current_room_id_.empty())
             {
+                return;
+            }
+            if (!source_mxc.empty())
+            {
+                // For MSC4027 chips matrix-sdk aggregates by the mxc:// key
+                // (so `key` IS the mxc URI). Look up the shortcode locally
+                // so the outgoing event carries `:shortcode:` rather than
+                // re-broadcasting the URI as its own shortcode.
+                std::string sc = shortcode_for_mxc_(source_mxc);
+                std::string shortcode =
+                    sc.empty() ? std::string() : ":" + sc + ":";
+                client_->send_reaction_custom(current_room_id_, event_id,
+                                              source_mxc, shortcode);
                 return;
             }
             client_->send_reaction(current_room_id_, event_id, key);
@@ -4794,6 +4813,11 @@ void MainWindow::build_emoji_popover()
     {
         emoji_selected(glyph);
     };
+    emoji_picker_shared_->on_emoticon_selected =
+        [this](const tesseract::ImagePackImage& img)
+    {
+        emoticon_selected(img);
+    };
     // Async fetch for custom emoticon images — mirrors the sticker picker.
     emoji_picker_shared_->set_image_provider(
         [this](const std::string& cache_key,
@@ -5301,6 +5325,42 @@ void MainWindow::emoji_selected(const std::string& glyph)
     room_text_area_->set_focused(true);
     // The shared picker already calls recent_emoji_bump before invoking
     // this callback. Keep the popover open so users can pick several.
+}
+
+void MainWindow::emoticon_selected(const tesseract::ImagePackImage& img)
+{
+    if (img.url.empty())
+    {
+        return;
+    }
+    // Reaction mode (parallel to emoji_selected): send an MSC4027
+    // custom-image reaction with the mxc key + `:shortcode:`.
+    if (!pending_reaction_event_id_.empty())
+    {
+        std::string ev = std::move(pending_reaction_event_id_);
+        pending_reaction_event_id_.clear();
+        if (!current_room_id_.empty())
+        {
+            client_->send_reaction_custom(current_room_id_, ev, img.url,
+                                          ":" + img.shortcode + ":");
+        }
+        if (emoji_popover_)
+        {
+            gtk_popover_popdown(GTK_POPOVER(emoji_popover_));
+        }
+        return;
+    }
+    // Compose mode: insert `:shortcode:` text into the compose field.
+    if (!room_text_area_)
+    {
+        return;
+    }
+    room_text_area_->insert_at_cursor(":" + img.shortcode + ":");
+    if (room_view_)
+    {
+        room_view_->set_current_text(room_text_area_->text());
+    }
+    room_text_area_->set_focused(true);
 }
 
 // ---------------------------------------------------------------------------

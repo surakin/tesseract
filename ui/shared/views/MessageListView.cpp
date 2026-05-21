@@ -2010,9 +2010,16 @@ private:
 
         // Build both text layouts before drawing so we can measure their
         // actual heights and vertically centre the pair within the card.
-        const std::string& sname = m.in_reply_to_sender_name.empty()
-                                       ? m.in_reply_to_id
-                                       : m.in_reply_to_sender_name;
+        // When the replied-to event isn't in the local timeline cache the
+        // SDK sends empty sender_name + body — fall back to a single muted
+        // placeholder line instead of showing the raw event id.
+        const bool unresolved = m.in_reply_to_sender_name.empty();
+        const std::string sname = unresolved ? std::string{}
+                                             : m.in_reply_to_sender_name;
+        const std::string sbody =
+            unresolved
+                ? std::string("Original message unavailable")
+                : m.in_reply_to_body;
 
         tk::TextStyle name_st{};
         name_st.role = tk::FontRole::UiSemibold;
@@ -2026,9 +2033,7 @@ private:
         body_st.trim = tk::TextTrim::Ellipsis;
         body_st.max_width = tw;
         auto body_lo =
-            m.in_reply_to_body.empty()
-                ? nullptr
-                : ctx.factory.build_text(m.in_reply_to_body, body_st);
+            sbody.empty() ? nullptr : ctx.factory.build_text(sbody, body_st);
 
         constexpr float kLineGap = 2.0f;
         float name_h = name_lo ? name_lo->measure().h : 0.0f;
@@ -2830,7 +2835,16 @@ private:
         const int bars = std::max(1, static_cast<int>(strip_w_avail / step));
 
         // Resample sender waveform → `bars` buckets. When empty, the loop
-        // below uses the placeholder height.
+        // below uses the placeholder height. Senders often record voice well
+        // below the spec's 0..=1024 ceiling (a normal-volume voice peaks at
+        // ~10% of full scale), so normalise by the per-message peak instead
+        // of the spec ceiling — otherwise quiet recordings collapse into a
+        // flat row of minimum-height bars.
+        std::uint16_t wf_peak = 0;
+        for (std::uint16_t v : m.waveform)
+            if (v > wf_peak) wf_peak = v;
+        const float wf_norm = wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak)
+                                          : 0.0f;
         auto amp_at = [&](int i) -> float
         {
             if (m.waveform.empty())
@@ -2842,7 +2856,7 @@ private:
                 n - 1, static_cast<std::size_t>(static_cast<double>(i) / bars *
                                                 static_cast<double>(n)));
             return std::min(1.0f,
-                            static_cast<float>(m.waveform[src]) / 1024.0f);
+                            static_cast<float>(m.waveform[src]) * wf_norm);
         };
 
         float cursor_frac = 0.0f;
@@ -3719,6 +3733,11 @@ void MessageListView::set_avatar_provider(ImageProvider p)
     avatar_provider_ = std::move(p);
 }
 
+void MessageListView::set_shortcode_provider(ShortcodeProvider p)
+{
+    shortcode_provider_ = std::move(p);
+}
+
 void MessageListView::set_image_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
@@ -4489,6 +4508,21 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 if (rect_contains(hit.world_rect, world))
                 {
                     new_link_url = "file://";
+                    break;
+                }
+            }
+        }
+        // URL preview card hover: clicking the card opens the URL in the
+        // browser (see on_pointer_up's press_preview_ branch), so report
+        // the URL on hover too — the shell switches to the pointing-hand
+        // cursor the same way it does for inline hyperlinks.
+        if (new_link_url.empty())
+        {
+            for (const auto& [eid, hit] : preview_card_geom_)
+            {
+                if (!hit.url.empty() && rect_contains(hit.rect, world))
+                {
+                    new_link_url = hit.url;
                     break;
                 }
             }
@@ -5575,7 +5609,10 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         }
         if (on_reaction_toggled)
         {
-            on_reaction_toggled(ev, reactions[idx].key);
+            const auto& r = reactions[idx];
+            const std::string src =
+                r.source ? r.source->mxc_url() : std::string();
+            on_reaction_toggled(ev, r.key, src);
         }
     }
     else if (t == HoverTarget::AddButton)
@@ -5827,9 +5864,37 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     std::vector<std::string> lines;
     lines.reserve(r.senders.size() + 1);
     {
-        std::string header = "Reacted with ";
-        header += r.key;
-        header += ":";
+        // MSC4027 custom-image reactions: `r.key` IS the mxc:// URI (matrix-
+        // sdk aggregates by raw key, not by per-event shortcode). Resolve
+        // the shortcode from the local emoticon packs so we render
+        // `:shortcode:` instead of the raw mxc string; fall back to plain
+        // "Reacted by:" when the mxc isn't in any of the user's packs.
+        std::string header;
+        if (r.source && shortcode_provider_)
+        {
+            std::string sc = shortcode_provider_(r.source->mxc_url());
+            if (!sc.empty())
+            {
+                // Shortcode already supplies its trailing ':' so we don't
+                // append the extra punctuation colon the Unicode branch uses.
+                header = "Reacted with :";
+                header += sc;
+                header += ":";
+            }
+        }
+        if (header.empty())
+        {
+            if (r.source)
+            {
+                header = "Reacted by:";
+            }
+            else
+            {
+                header = "Reacted with ";
+                header += r.key;
+                header += ":";
+            }
+        }
         lines.push_back(std::move(header));
     }
     for (const auto& s : r.senders)

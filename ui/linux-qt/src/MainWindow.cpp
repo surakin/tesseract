@@ -378,6 +378,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 auto it = tk_images_.find(mxc);
                 return it == tk_images_.end() ? nullptr : it->second.get();
             });
+        mainApp_->room_view()->set_shortcode_provider(
+            [this](const std::string& mxc) -> std::string
+            {
+                return shortcode_for_mxc_(mxc);
+            });
         mainApp_->room_view()->set_preview_provider(
             [this](const std::string& url)
                 -> const tesseract::views::UrlPreviewData*
@@ -576,10 +581,24 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             client_->redact_event(current_room_id_, event_id);
         };
         mainApp_->room_view()->on_reaction_toggled =
-            [this](const std::string& event_id, const std::string& key)
+            [this](const std::string& event_id, const std::string& key,
+                   const std::string& source_mxc)
         {
             if (current_room_id_.empty())
             {
+                return;
+            }
+            if (!source_mxc.empty())
+            {
+                // For MSC4027 chips matrix-sdk aggregates by the mxc:// key
+                // (so `key` IS the mxc URI). Look up the shortcode locally
+                // so the outgoing event carries `:shortcode:` rather than
+                // re-broadcasting the URI as its own shortcode.
+                std::string sc = shortcode_for_mxc_(source_mxc);
+                std::string shortcode =
+                    sc.empty() ? std::string() : ":" + sc + ":";
+                client_->send_reaction_custom(current_room_id_, event_id,
+                                              source_mxc, shortcode);
                 return;
             }
             client_->send_reaction(current_room_id_, event_id, key);
@@ -1558,6 +1577,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     emojiPicker_->onEmoticonSelected =
         [this](const tesseract::ImagePackImage& img)
     {
+        // Reaction mode (mirrors the Unicode onSelected branch above): the
+        // "+" chip set pendingReactionEventId_ before opening the picker.
+        // Send an MSC4027 custom-image reaction and skip the compose insert.
+        if (!pendingReactionEventId_.empty())
+        {
+            std::string ev = std::move(pendingReactionEventId_);
+            pendingReactionEventId_.clear();
+            if (!current_room_id_.empty() && !img.url.empty())
+            {
+                client_->send_reaction_custom(current_room_id_, ev, img.url,
+                                              ":" + img.shortcode + ":");
+            }
+            emojiPicker_->hide();
+            return;
+        }
         if (!roomTextArea_)
         {
             return;

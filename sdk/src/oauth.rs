@@ -46,6 +46,11 @@ const HTML_FAILURE: &str = "<!doctype html><html><head><meta charset='utf-8'>\
 text-align:center;padding:4em'><h1>Sign-in failed.</h1>\
 <p>Return to Tesseract for details.</p></body></html>";
 
+/// Informational `client_uri` advertised in the OAuth dynamic-registration
+/// metadata. The MAS consent page may surface this to the user, so it
+/// points at the project repo.
+const CLIENT_URI: &str = "https://github.com/surakin/tesseract";
+
 fn build_device_display_name() -> Option<String> {
     const PLATFORM: &str = env!("TESSERACT_UI_PLATFORM");
     hostname::get()
@@ -112,7 +117,7 @@ pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::R
                 redirect_uris: vec![redirect_url.clone()],
             }],
             // client_uri – purely informational; required to be a valid URL.
-            Localized::new(Url::parse("https://github.com/").expect("client_uri"), []),
+            Localized::new(Url::parse(CLIENT_URI).expect("client_uri"), []),
         )
     };
     let raw_metadata = matrix_sdk::ruma::serde::Raw::new(&metadata)

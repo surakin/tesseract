@@ -31,6 +31,12 @@ public:
     std::function<void(std::string user_id)> on_ignore;
     std::function<void()>                    on_close;
 
+    // Fires on open/close. RoomView routes this into the shared layout-
+    // changed chain so the shells re-query rect accessors (specifically:
+    // hide the compose textarea + room-search NativeTextField while the
+    // panel covers the canvas).
+    std::function<void()>                    on_layout_changed;
+
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;

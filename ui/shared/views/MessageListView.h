@@ -174,6 +174,13 @@ public:
         std::function<const tk::Image*(const std::string& mxc_or_url)>;
     using PreviewProvider =
         std::function<const UrlPreviewData*(const std::string& url)>;
+    // Resolves the bare shortcode (no surrounding colons) for an mxc://
+    // URI from the user's MSC2545 image packs. Returns an empty string
+    // when the mxc isn't in any of the user's emoticon packs. Used to
+    // render `:shortcode:` instead of the raw mxc URI in the MSC4027
+    // image-reaction chip tooltip.
+    using ShortcodeProvider =
+        std::function<std::string(const std::string& mxc)>;
 
     MessageListView();
     ~MessageListView() override; // out-of-line — Adapter is opaque here
@@ -233,6 +240,9 @@ public:
 
     // Inline image / sticker bytes come from the same kind of cache.
     void set_image_provider(ImageProvider p);
+
+    // Wire the mxc → shortcode lookup used by the MSC4027 reaction tooltip.
+    void set_shortcode_provider(ShortcodeProvider p);
 
     // URL preview cards. Returns UrlPreviewData* for the given URL or nullptr
     // when data is not yet available (returning nullptr is a signal to the shell
@@ -305,9 +315,15 @@ public:
                        std::string avatar_url)> on_sender_clicked;
 
     // Reaction-chip clicks. `key` is the emoji (or `:shortcode:`) the
-    // user tapped. The host should call `Client::send_reaction` — the
-    // Rust toggle semantics handle both add-and-remove in one call.
-    std::function<void(const std::string& event_id, const std::string& key)>
+    // user tapped. `source_mxc` is the mxc:// URI for MSC4027 custom-image
+    // reactions, empty for plain Unicode. The host should call
+    // `Client::send_reaction` when `source_mxc` is empty (Rust toggle
+    // semantics handle add/remove); for non-empty `source_mxc`, route to
+    // `Client::send_reaction_custom(room, ev, source_mxc, key)` so the
+    // outgoing event carries the MSC4027 mxc:// key and shortcode.
+    std::function<void(const std::string& event_id,
+                       const std::string& key,
+                       const std::string& source_mxc)>
         on_reaction_toggled;
 
     // Add-reaction button (the trailing "+" pseudo-chip that appears on
@@ -587,6 +603,7 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
+    ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
 
     // Per-frame chip geometry for the hovered row. Mutable so paint_row

@@ -20,6 +20,7 @@
 
 #include "BrandView.h"
 #include "ComposeBar.h"
+#include "ConfirmDialog.h"
 #include "MessageListView.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
@@ -49,6 +50,7 @@ public:
 
     void set_avatar_provider(MessageListView::ImageProvider p);
     void set_image_provider(MessageListView::ImageProvider p);
+    void set_shortcode_provider(MessageListView::ShortcodeProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(MessageListView::VoiceBytesProvider p);
@@ -56,6 +58,13 @@ public:
     void set_post_delayed(std::function<void(int, std::function<void()>)> f);
     void set_video_player_factory(MessageListView::VideoPlayerFactory f);
     void set_video_fetch_provider(MessageListView::VideoFetchProvider f);
+
+    // Closure that opens a confirmation dialog with the given options. Set by
+    // MainAppWidget to route through its shared ConfirmDialog overlay; if
+    // unset, destructive callbacks fire directly without confirmation.
+    using ConfirmProvider = std::function<void(ConfirmDialog::Options,
+                                                std::function<void()>)>;
+    void set_confirm_provider(ConfirmProvider p);
 
     // ── Room / message state ─────────────────────────────────────────────
 
@@ -136,6 +145,12 @@ public:
     void        set_topic_edit_text(std::string t);
     std::string topic_edit_initial_text() const;
 
+    // True when any room-view-owned modal (room-info or user-profile panel)
+    // is currently up. MainAppWidget combines this with its own ConfirmDialog
+    // state to hide the compose-textarea + room-search NativeTextField while
+    // overlays cover the canvas.
+    bool is_overlay_open() const;
+
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
     // Plain text send.
@@ -183,7 +198,11 @@ public:
     std::function<void()> on_cancel_voice;
 
     std::function<void(std::string event_id)> on_delete_requested;
-    std::function<void(std::string event_id, std::string emoji)>
+    // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
+    // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
+    // non-empty → `Client::send_reaction_custom`.
+    std::function<void(std::string event_id, std::string key,
+                       std::string source_mxc)>
         on_reaction_toggled;
     std::function<void(std::string event_id, tk::Rect anchor)>
         on_add_reaction_requested;
@@ -250,6 +269,8 @@ private:
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;
     bool anim_repaint_pending_ = false;
+
+    ConfirmProvider confirm_provider_;
 
     // Cached so show_room_info() can open the panel with the current room data.
     tesseract::RoomInfo current_room_info_;

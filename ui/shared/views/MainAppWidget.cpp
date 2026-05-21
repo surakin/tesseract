@@ -67,6 +67,32 @@ MainAppWidget::MainAppWidget()
     auto vid = std::make_unique<VideoViewerOverlay>();
     vid_viewer_ = add_child(std::move(vid));
     vid_viewer_->set_visible(false);
+
+    // Modal confirmation overlay — added after the lightboxes so it paints
+    // on top of *everything*. Visibility is gated by ConfirmDialog::open()
+    // / close() so an idle dialog doesn't capture hit-tests.
+    auto confirm = std::make_unique<ConfirmDialog>();
+    confirm_dialog_ = add_child(std::move(confirm));
+
+    // Hand RoomView a closure that opens this dialog with caller-supplied
+    // options. Downstream destructive actions (leave room, …) route through
+    // this provider without each shell needing its own native dialog code.
+    if (room_view_ && confirm_dialog_)
+    {
+        room_view_->set_confirm_provider(
+            [this](ConfirmDialog::Options opts,
+                   std::function<void()> on_confirm) {
+                confirm_dialog_->open(std::move(opts), std::move(on_confirm));
+            });
+
+        // Route the dialog's layout-changed notification through RoomView's
+        // shared on_layout_changed chain so the shell hides the compose
+        // textarea + room-search overlays while the dialog is up.
+        confirm_dialog_->on_layout_changed = [this]() {
+            if (room_view_ && room_view_->on_layout_changed)
+                room_view_->on_layout_changed();
+        };
+    }
 }
 
 // ── Visibility controls ────────────────────────────────────────────────────
@@ -143,13 +169,23 @@ void MainAppWidget::show_video_viewer(bool show)
 
 // ── Native overlay rect queries ────────────────────────────────────────────
 
+bool MainAppWidget::any_modal_open_() const
+{
+    return (confirm_dialog_ && confirm_dialog_->is_open()) ||
+           (room_view_      && room_view_->is_overlay_open());
+}
+
 tk::Rect MainAppWidget::compose_text_area_rect() const
 {
+    // While a modal covers the canvas the native textarea must not steal
+    // focus or clicks — report an empty rect so the shell hides the overlay.
+    if (any_modal_open_()) return {};
     return room_view_ ? room_view_->compose_text_area_rect() : tk::Rect{};
 }
 
 bool MainAppWidget::room_search_field_visible() const
 {
+    if (any_modal_open_()) return false;
     return room_list_view_ && room_list_view_->search_field_visible();
 }
 
@@ -253,6 +289,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     img_viewer_->arrange(ctx, bounds);
     vid_viewer_->arrange(ctx, bounds);
+    if (confirm_dialog_) confirm_dialog_->arrange(ctx, bounds);
 }
 
 void MainAppWidget::paint(tk::PaintCtx& ctx)
@@ -351,6 +388,12 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     if (vid_viewer_ && vid_viewer_->visible())
     {
         vid_viewer_->paint(ctx);
+    }
+    // Modal confirmation — drawn above the lightboxes so destructive prompts
+    // are still reachable when the image/video viewer is up.
+    if (confirm_dialog_ && confirm_dialog_->visible())
+    {
+        confirm_dialog_->paint(ctx);
     }
 }
 

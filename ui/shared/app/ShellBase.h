@@ -441,6 +441,13 @@ protected:
     // MSC2545 emoticon flat list (cached_emoticons_).
     virtual void handle_image_packs_updated_ui_();
 
+    // Look up the bare shortcode (no surrounding colons) for an mxc:// URI
+    // by scanning cached_emoticons_. Used by the MSC4027 reaction path so
+    // image-reaction chips can be rendered as `:shortcode:` and the chip-
+    // re-tap toggle can carry the shortcode out on the wire. Returns an
+    // empty string when the mxc isn't in any of the user's emoticon packs.
+    std::string shortcode_for_mxc_(const std::string& mxc) const;
+
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
     virtual void prep_row_media_(const Event& ev)

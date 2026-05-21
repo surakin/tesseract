@@ -37,6 +37,7 @@ UserProfilePanel::UserProfilePanel()
 void UserProfilePanel::open(std::string user_id, std::string display_name,
                              std::string avatar_url)
 {
+    const bool was_open = open_;
     user_id_      = std::move(user_id);
     display_name_ = std::move(display_name);
     avatar_url_   = std::move(avatar_url);
@@ -44,12 +45,17 @@ void UserProfilePanel::open(std::string user_id, std::string display_name,
     set_visible(true);
     name_layout_.reset();
     uid_layout_.reset();
+    // Tells the shell to re-query rect accessors so the compose textarea +
+    // room-search NativeTextField overlays hide while the panel is up.
+    if (!was_open && on_layout_changed) on_layout_changed();
 }
 
 void UserProfilePanel::close()
 {
+    const bool was_open = open_;
     open_ = false;
     set_visible(false);
+    if (was_open && on_layout_changed) on_layout_changed();
 }
 
 void UserProfilePanel::set_avatar_provider(ImageProvider p)

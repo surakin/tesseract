@@ -33,6 +33,10 @@ constexpr Palette light_palette()
     p.subtle_hover = Color::rgba(0x00, 0x00, 0x00, 0x0F);
     p.subtle_pressed = Color::rgba(0x00, 0x00, 0x00, 0x1F);
 
+    p.destructive         = Color::rgb(0xD93636);
+    p.destructive_hover   = Color::rgb(0xE04848);
+    p.destructive_pressed = Color::rgb(0xB52A2A);
+
     // Reaction chips
     p.chip_bg = Color::rgb(0xEBEDF0);
     p.chip_bg_me = Color::rgb(0xCFE3FF);
@@ -79,6 +83,10 @@ constexpr Palette dark_palette()
     p.accent_pressed = Color::rgb(0x3388E0);
     p.subtle_hover = Color::rgba(0xFF, 0xFF, 0xFF, 0x14);
     p.subtle_pressed = Color::rgba(0xFF, 0xFF, 0xFF, 0x28);
+
+    p.destructive         = Color::rgb(0xE45656);
+    p.destructive_hover   = Color::rgb(0xEC6868);
+    p.destructive_pressed = Color::rgb(0xC44343);
 
     p.chip_bg = Color::rgb(0x2A2D33);
     p.chip_bg_me = Color::rgb(0x1F3A66);

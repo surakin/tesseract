@@ -43,6 +43,11 @@ struct Palette
     Color subtle_hover;
     Color subtle_pressed;
 
+    // Destructive (red) — used by confirm-and-leave style buttons.
+    Color destructive;
+    Color destructive_hover;
+    Color destructive_pressed;
+
     // Reaction chips
     Color chip_bg;
     Color chip_bg_me;

@@ -76,6 +76,8 @@ RoomInfoPanel::RoomInfoPanel()
 
 void RoomInfoPanel::open(const tesseract::RoomInfo& info)
 {
+    const bool was_open = open_;
+
     room_id_            = info.id;
     display_name_       = info.name;
     avatar_url_         = info.avatar_url;
@@ -103,6 +105,10 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
     expand_btn_->set_label("Show all \xE2\x96\xBE");
 
     if (on_fetch_members) on_fetch_members(room_id_);
+
+    // Fire the layout-changed callback so the shell hides native overlays
+    // (compose textarea, room search) while the panel covers the canvas.
+    if (!was_open && on_layout_changed) on_layout_changed();
 }
 
 void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
@@ -125,8 +131,10 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
 
 void RoomInfoPanel::close()
 {
+    const bool was_open = open_;
     open_ = false;
     set_visible(false);
+    if (was_open && on_layout_changed) on_layout_changed();
 }
 
 void RoomInfoPanel::set_avatar_provider(ImageProvider p)
@@ -430,6 +438,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                 topic_layout_ = ctx.factory.build_text(topic_, st);
             }
         }
+        // Topic text can exceed the 80px slot reserved by arrange() —
+        // neither QPainter::drawText nor QTextDocument honour max_height,
+        // so clip to the slot to keep overflow off the Members section.
+        ctx.canvas.push_clip_rect(topic_rect_);
         if (topic_layout_)
         {
             cv.draw_text(*topic_layout_,
@@ -449,6 +461,7 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                              pal.text_muted);
             }
         }
+        ctx.canvas.pop_clip();
     }
 
     // 11. Save + Cancel when editing

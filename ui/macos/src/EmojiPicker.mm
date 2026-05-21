@@ -5,6 +5,8 @@
 #include "tk/theme.h"
 #include "views/EmojiPicker.h"
 
+#include <tesseract/image_pack.h>
+
 #include <memory>
 #include <string>
 
@@ -85,6 +87,15 @@ static EmojiPickerPanel* g_emojiPanel = nil;
             {
                 s.onSelect(g);
             }
+        }
+    };
+    _shared->on_emoticon_selected =
+        [weakSelf](const tesseract::ImagePackImage& img)
+    {
+        EmojiPickerPanel* s = weakSelf;
+        if (s && s.onEmoticonSelect)
+        {
+            s.onEmoticonSelect(img);
         }
     };
     _surface->set_root(std::move(shared));

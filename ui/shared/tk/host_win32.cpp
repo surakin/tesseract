@@ -1557,6 +1557,25 @@ public:
         hwnd_ = nullptr;
     }
 
+    // Cursor management. LoadCursor() returns a process-shared handle that
+    // doesn't require DestroyCursor, so caching by raw value is safe.
+    HCURSOR current_cursor() const
+    {
+        return current_cursor_;
+    }
+    void set_cursor(Cursor c)
+    {
+        HCURSOR newc = LoadCursorW(
+            nullptr, (c == Cursor::Pointer) ? IDC_HAND : IDC_ARROW);
+        if (newc == current_cursor_) return;
+        current_cursor_ = newc;
+        // Apply immediately so the change is visible before the next
+        // WM_SETCURSOR. SetCursor only affects the visible cursor when the
+        // pointer is over the calling thread's window, so this is a no-op
+        // when the user has moved off the window entirely.
+        SetCursor(newc);
+    }
+
 private:
     HWND hwnd_;
     const Theme* theme_;
@@ -1568,6 +1587,7 @@ private:
     Widget* pressed_widget_ = nullptr;
     Button* hovered_btn_ = nullptr;
     Widget* hovered_widget_ = nullptr;
+    HCURSOR current_cursor_ = LoadCursorW(nullptr, IDC_ARROW);
 
     int next_ctrl_id_ = 0x4000;
     std::unordered_map<int, Win32NativeTextField*> fields_by_id_;
@@ -1712,6 +1732,21 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             host->fire_right_click(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         }
         return 0;
+    case WM_SETCURSOR:
+        // Override the window-class arrow only for the surface's own canvas
+        // pixels (wParam == this HWND, hit-test == HTCLIENT). When the
+        // cursor is over a child HWND — e.g. a Win32NativeTextField /
+        // NativeTextArea EDIT control — wParam is the child's HWND; we
+        // must NOT return TRUE there or the child's default WndProc never
+        // runs and the I-beam is suppressed. Falling through to
+        // DefWindowProc lets the message bubble back to the child.
+        if (host && reinterpret_cast<HWND>(wParam) == hwnd &&
+            LOWORD(lParam) == HTCLIENT)
+        {
+            SetCursor(host->current_cursor());
+            return TRUE;
+        }
+        break;
     case WM_MOUSEMOVE:
     {
         if (host)
@@ -2230,6 +2265,11 @@ void Surface::set_on_file_drop(FileDropHandler cb)
 void Surface::set_on_right_click(std::function<void(tk::Point)> cb)
 {
     host_->set_on_right_click(std::move(cb));
+}
+
+void Surface::set_cursor(Cursor c)
+{
+    host_->set_cursor(c);
 }
 
 std::vector<tk::d2d::AnimatedFrame>

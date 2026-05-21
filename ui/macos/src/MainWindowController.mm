@@ -8,6 +8,7 @@
 
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
+#include <tesseract/image_pack.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
 #include <tesseract/paths.h>
@@ -220,6 +221,7 @@ public:
     using ShellBase::run_async_;
     using ShellBase::set_screen_lock_;
     using ShellBase::set_theme_preference_;
+    using ShellBase::shortcode_for_mxc_;
     using ShellBase::shutting_down_;
     using ShellBase::space_stack_;
     using ShellBase::sticker_fetches_in_flight_;
@@ -1932,6 +1934,12 @@ void MacShell::apply_cached_messages_(
                 return it == s->_shell->tk_images_.end() ? nullptr
                                                          : it->second.get();
             });
+        _mainApp->room_view()->set_shortcode_provider(
+            [weakSelf](const std::string& mxc) -> std::string
+            {
+                MainWindowController* s = weakSelf;
+                return s ? s->_shell->shortcode_for_mxc_(mxc) : std::string();
+            });
         _mainApp->room_view()->set_preview_provider(
             [weakSelf](const std::string& url)
                 -> const tesseract::views::UrlPreviewData*
@@ -2175,11 +2183,27 @@ void MacShell::apply_cached_messages_(
                                              event_id);
         };
         _mainApp->room_view()->on_reaction_toggled =
-            [weakSelf](const std::string& event_id, const std::string& key)
+            [weakSelf](const std::string& event_id, const std::string& key,
+                       const std::string& source_mxc)
         {
             MainWindowController* s = weakSelf;
             if (!s || s->_shell->current_room_id_.empty())
             {
+                return;
+            }
+            if (!source_mxc.empty())
+            {
+                // For MSC4027 chips matrix-sdk aggregates by the mxc:// key
+                // (so `key` IS the mxc URI). Look up the shortcode locally
+                // so the outgoing event carries `:shortcode:` rather than
+                // re-broadcasting the URI as its own shortcode.
+                std::string sc =
+                    s->_shell->shortcode_for_mxc_(source_mxc);
+                std::string shortcode =
+                    sc.empty() ? std::string() : ":" + sc + ":";
+                s->_shell->client_->send_reaction_custom(
+                    s->_shell->current_room_id_, event_id, source_mxc,
+                    shortcode);
                 return;
             }
             s->_shell->client_->send_reaction(s->_shell->current_room_id_,
@@ -3403,6 +3427,39 @@ void MacShell::apply_cached_messages_(
         }
         s->_roomTextArea->set_focused(true);
     };
+    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
+        MainWindowController* s = weakSelf;
+        if (!s || img.url.empty())
+        {
+            return;
+        }
+        // Reaction mode (parallel to onSelect above): send an MSC4027
+        // custom-image reaction.
+        if (!s->_pendingReactionEventId.empty())
+        {
+            std::string ev = std::move(s->_pendingReactionEventId);
+            s->_pendingReactionEventId.clear();
+            if (!s->_shell->current_room_id_.empty())
+            {
+                s->_shell->client_->send_reaction_custom(
+                    s->_shell->current_room_id_, ev, img.url,
+                    ":" + img.shortcode + ":");
+            }
+            [weakPanel close];
+            return;
+        }
+        // Compose mode: insert `:shortcode:` text.
+        if (!s->_roomTextArea)
+        {
+            return;
+        }
+        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
+        if (s->_roomView)
+        {
+            s->_roomView->set_current_text(s->_roomTextArea->text());
+        }
+        s->_roomTextArea->set_focused(true);
+    };
     NSView* anchor = (__bridge NSView*)_mainAppSurface->view_handle();
     [panel popupAboveView:anchor];
 }
@@ -3599,6 +3656,36 @@ void MacShell::apply_cached_messages_(
             return;
         }
         s->_roomTextArea->insert_at_cursor(std::string(glyph.UTF8String ?: ""));
+        if (s->_roomView)
+        {
+            s->_roomView->set_current_text(s->_roomTextArea->text());
+        }
+        s->_roomTextArea->set_focused(true);
+    };
+    panel.onEmoticonSelect = ^(const tesseract::ImagePackImage& img) {
+        MainWindowController* s = weakSelf;
+        if (!s || img.url.empty())
+        {
+            return;
+        }
+        if (!s->_pendingReactionEventId.empty())
+        {
+            std::string ev = std::move(s->_pendingReactionEventId);
+            s->_pendingReactionEventId.clear();
+            if (!s->_shell->current_room_id_.empty())
+            {
+                s->_shell->client_->send_reaction_custom(
+                    s->_shell->current_room_id_, ev, img.url,
+                    ":" + img.shortcode + ":");
+            }
+            [weakPanel close];
+            return;
+        }
+        if (!s->_roomTextArea)
+        {
+            return;
+        }
+        s->_roomTextArea->insert_at_cursor(":" + img.shortcode + ":");
         if (s->_roomView)
         {
             s->_roomView->set_current_text(s->_roomTextArea->text());
