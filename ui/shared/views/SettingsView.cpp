@@ -265,7 +265,9 @@ void SettingsView::set_display_name_text(std::string n) { account_->set_display_
 
 tk::Rect SettingsView::name_field_rect() const
 {
-    return account_ ? account_->name_field_rect() : tk::Rect{};
+    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+        return {};
+    return account_->name_field_rect();
 }
 
 } // namespace tesseract::views
