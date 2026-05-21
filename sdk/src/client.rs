@@ -67,6 +67,18 @@ fn err(msg: impl Into<String>) -> OpResult {
     }
 }
 
+/// Returns true when `kind` is the `M_FORBIDDEN` variant. Used by the
+/// presence-polling task to recognise homeservers that refuse to disclose a
+/// user's presence (typical for bridge puppet accounts with privacy
+/// enabled) and stop polling them. Other error kinds — `NotFound`, `Unknown`,
+/// transport errors — are considered retriable and not handled here.
+fn is_presence_forbidden(
+    kind: Option<&matrix_sdk::ruma::api::error::ErrorKind>,
+) -> bool {
+    use matrix_sdk::ruma::api::error::ErrorKind;
+    matches!(kind, Some(ErrorKind::Forbidden))
+}
+
 /// Build the spec'd UIAA fallback URL for `stage` and `session`. The
 /// homeserver base may or may not end with `/`; the spec path is
 /// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.
@@ -1219,9 +1231,17 @@ impl ClientFfi {
         {
             use matrix_sdk::ruma::api::client::presence::get_presence;
             use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
+            use std::collections::HashSet;
             let h = Arc::clone(&handler);
             let client_p = client.clone();
             let mut stop_rx_presence = stop_rx.clone();
+            // Users that returned 403 Forbidden — typically bridge puppet
+            // accounts with presence privacy enabled. They never recover
+            // mid-session so we record them and skip future polls. Lives
+            // for the lifetime of this start_sync; a re-login starts
+            // fresh (cheap: one 403 per session per puppet).
+            let forbidden_presence: Arc<std::sync::Mutex<HashSet<matrix_sdk::ruma::OwnedUserId>>> =
+                Arc::new(std::sync::Mutex::new(HashSet::new()));
             self.spawn_tracked(async move {
                 let mut interval =
                     tokio::time::interval(tokio::time::Duration::from_secs(30));
@@ -1241,25 +1261,56 @@ impl ClientFfi {
                         let cp = client_p.clone();
                         let me_ref = me.clone();
                         let h_ref = Arc::clone(&h);
+                        let forbidden_clone = Arc::clone(&forbidden_presence);
                         futs.push(async move {
                             let counterpart =
                                 dm_other_user(&room, &me_ref).await?;
                             let uid = counterpart.user_id;
                             let user_id: matrix_sdk::ruma::OwnedUserId =
                                 uid.parse().ok()?;
-                            let resp = cp
-                                .send(get_presence::v3::Request::new(user_id))
-                                .await
-                                .ok()?;
-                            let state: u8 = match resp.presence {
-                                RumaPresence::Online => 1,
-                                RumaPresence::Unavailable => 2,
-                                _ => 3,
-                            };
-                            if let Ok(g) = h_ref.lock() {
-                                g.on_presence_changed(&uid, state);
+                            // Skip users known to return 403 Forbidden.
+                            if forbidden_clone
+                                .lock()
+                                .ok()?
+                                .contains(&user_id)
+                            {
+                                return None;
                             }
-                            Some(())
+                            let req = get_presence::v3::Request::new(user_id.clone());
+                            match cp.send(req).await {
+                                Ok(resp) => {
+                                    let state: u8 = match resp.presence {
+                                        RumaPresence::Online => 1,
+                                        RumaPresence::Unavailable => 2,
+                                        _ => 3,
+                                    };
+                                    if let Ok(g) = h_ref.lock() {
+                                        g.on_presence_changed(&uid, state);
+                                    }
+                                    Some(())
+                                }
+                                Err(e) => {
+                                    if is_presence_forbidden(
+                                        e.client_api_error_kind(),
+                                    ) {
+                                        if let Ok(mut set) =
+                                            forbidden_clone.lock()
+                                        {
+                                            if set.insert(user_id) {
+                                                tracing::info!(
+                                                    "presence: stopping polls \
+                                                     for {uid} (homeserver \
+                                                     forbids)"
+                                                );
+                                            }
+                                        }
+                                    }
+                                    // Other transient errors (404, 5xx,
+                                    // network) silently ignored — the next
+                                    // tick will retry.
+                                    None
+                                }
+                            }
                         });
                     }
                     futures_util::future::join_all(futs).await;
@@ -8635,5 +8686,34 @@ mod set_presence_tests {
                 "byte {byte} message was {:?}", r.message
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod presence_polling_tests {
+    use super::is_presence_forbidden;
+    use matrix_sdk::ruma::api::error::ErrorKind;
+
+    #[test]
+    fn forbidden_kind_is_detected() {
+        assert!(is_presence_forbidden(Some(&ErrorKind::Forbidden)));
+    }
+
+    #[test]
+    fn other_kinds_are_not_forbidden() {
+        for k in [
+            ErrorKind::NotFound,
+            ErrorKind::Unknown,
+            ErrorKind::Unrecognized,
+        ] {
+            assert!(!is_presence_forbidden(Some(&k)));
+        }
+    }
+
+    #[test]
+    fn none_is_not_forbidden() {
+        // Network errors / non-matrix-API errors surface as None — must
+        // not be treated as a permanent stop.
+        assert!(!is_presence_forbidden(None));
     }
 }
