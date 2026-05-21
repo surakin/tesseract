@@ -117,6 +117,23 @@ TEST_CASE("ShortcodePopup:on_accepted fires with correct suggestion")
     CHECK(accepted->shortcode == "smile");
 }
 
+TEST_CASE("ShortcodePopup:set_suggestions preselects first match")
+{
+    ShortcodePopup popup;
+    popup.set_suggestions({
+        make_unicode("smile", "😄"),
+        make_unicode("grinning", "😀"),
+    });
+    CHECK(popup.selected_index() == 0);
+}
+
+TEST_CASE("ShortcodePopup:set_suggestions stays -1 when list is empty")
+{
+    ShortcodePopup popup;
+    popup.set_suggestions({});
+    CHECK(popup.selected_index() == -1);
+}
+
 TEST_CASE("ShortcodePopup:set_selected_index highlights selected row")
 {
     Stage st;

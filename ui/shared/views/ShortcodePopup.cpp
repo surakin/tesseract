@@ -9,7 +9,9 @@ namespace tesseract::views
 void ShortcodePopup::set_suggestions(std::vector<ShortcodeSuggestion> s)
 {
     suggestions_ = std::move(s);
-    selected_index_ = -1;
+    // Preselect the first match so Tab/Enter accepts the top result without
+    // the user having to press Down first. Stays -1 when the list is empty.
+    selected_index_ = suggestions_.empty() ? -1 : 0;
     hovered_index_ = -1;
     pressed_index_ = -1;
 }
