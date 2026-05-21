@@ -437,6 +437,23 @@ std::string Client::get_avatar_url() const
     return std::string(impl_->ffi->current_user_avatar_url());
 }
 
+Result Client::set_display_name(const std::string& name)
+{
+    return from_ffi(impl_->ffi->set_display_name(name));
+}
+
+Result Client::upload_avatar(const std::vector<uint8_t>& bytes,
+                              const std::string& mime_type)
+{
+    auto slice = rust::Slice<const uint8_t>{bytes.data(), bytes.size()};
+    return from_ffi(impl_->ffi->upload_avatar(slice, mime_type));
+}
+
+Result Client::remove_avatar()
+{
+    return from_ffi(impl_->ffi->remove_avatar());
+}
+
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 {
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);

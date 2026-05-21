@@ -445,6 +445,21 @@ public:
     /// `fetch_media_bytes(mxc_url)` to render. Cached by the SDK.
     std::string get_avatar_url() const;
 
+    /// Set the current user's display name on the homeserver.
+    /// Blocks the calling thread — call from a worker thread.
+    Result set_display_name(const std::string& name);
+
+    /// Upload an avatar image for the current user to the homeserver.
+    /// `bytes` is the raw image payload (PNG/JPEG/etc. — identified by
+    /// `mime_type`, e.g. "image/png" or "image/jpeg").
+    /// Blocks the calling thread — call from a worker thread.
+    Result upload_avatar(const std::vector<uint8_t>& bytes,
+                         const std::string& mime_type);
+
+    /// Remove the current user's avatar from the homeserver.
+    /// Blocks the calling thread — call from a worker thread.
+    Result remove_avatar();
+
     // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------
