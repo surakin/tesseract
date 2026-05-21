@@ -52,6 +52,8 @@ public:
     std::function<void(std::string user_id,
                        std::string display_name,
                        std::string avatar_url)>             on_member_clicked;
+    std::function<void(std::string avatar_url,
+                       std::string display_name)>           on_avatar_clicked;
     std::function<void()>                                   on_close;
 
     // tk::Widget overrides
@@ -113,6 +115,7 @@ private:
     std::vector<MemberLayout> member_layouts_;
 
     bool  press_backdrop_  = false;
+    bool  press_avatar_    = false;
     int   hover_member_    = -1;
     int   press_member_    = -1;
     float scroll_offset_   = 0.0f; // pixels scrolled from top of scrollable content

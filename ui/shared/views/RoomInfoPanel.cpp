@@ -641,6 +641,14 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
 
     if (rect_contains(panel_rect_, w))
     {
+        // Avatar click → open lightbox. Falls through when no URL or no
+        // callback so initials-only rooms keep the current no-op behaviour.
+        if (rect_contains(avatar_rect_, w) && !avatar_url_.empty()
+            && on_avatar_clicked)
+        {
+            press_avatar_ = true;
+            return true;
+        }
         // Hit-test direct-painted member rows first (not child widgets).
         for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
         {
@@ -661,6 +669,20 @@ bool RoomInfoPanel::on_pointer_down(tk::Point local)
 
 void RoomInfoPanel::on_pointer_up(tk::Point local, bool inside_self)
 {
+    if (press_avatar_)
+    {
+        press_avatar_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (rect_contains(avatar_rect_, w) && on_avatar_clicked)
+            {
+                on_avatar_clicked(avatar_url_, display_name_);
+            }
+        }
+        return;
+    }
+
     if (press_backdrop_)
     {
         press_backdrop_ = false;
@@ -719,6 +741,7 @@ bool RoomInfoPanel::on_pointer_move(tk::Point local)
 void RoomInfoPanel::on_pointer_leave()
 {
     press_backdrop_ = false;
+    press_avatar_   = false;
     hover_member_   = -1;
     press_member_   = -1;
 }
