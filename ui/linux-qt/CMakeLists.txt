@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
+set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Widgets Multimedia DBus Concurrent Network)
 qt_standard_project_setup()
 
