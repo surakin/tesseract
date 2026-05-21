@@ -1698,6 +1698,14 @@ void MainWindow::on_create(HWND hwnd)
             ti.uId = 1;
             SendMessageW(hTopicTooltip_, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
         };
+        // Switch the surface cursor to the link/pointer shape while the
+        // mouse is over a URL / map tile / file card. Empty URL clears.
+        room_view_->on_link_hovered = [this](const std::string& url)
+        {
+            if (!main_app_surface_) return;
+            main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
+                                                      : tk::win32::Cursor::Pointer);
+        };
         room_view_->on_near_top = [this]
         {
             if (current_room_id_.empty())

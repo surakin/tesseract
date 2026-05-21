@@ -4507,6 +4507,21 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
         }
+        // URL preview card hover: clicking the card opens the URL in the
+        // browser (see on_pointer_up's press_preview_ branch), so report
+        // the URL on hover too — the shell switches to the pointing-hand
+        // cursor the same way it does for inline hyperlinks.
+        if (new_link_url.empty())
+        {
+            for (const auto& [eid, hit] : preview_card_geom_)
+            {
+                if (!hit.url.empty() && rect_contains(hit.rect, world))
+                {
+                    new_link_url = hit.url;
+                    break;
+                }
+            }
+        }
     }
     if (new_link_url != hover_link_url_)
     {

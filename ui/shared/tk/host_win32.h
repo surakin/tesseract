@@ -34,6 +34,16 @@ namespace tk::win32
 
 class Host;
 
+// Pointer-shape requests routed from the application code (e.g. "change
+// the cursor while hovering a hyperlink"). The Surface handles the platform
+// detail of keeping the cursor sticky across WM_SETCURSOR; callers just
+// flip between Default and Pointer.
+enum class Cursor
+{
+    Default,
+    Pointer,
+};
+
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then
 // SetWindowPos / MoveWindow it as the parent resizes.
 class Surface
@@ -91,6 +101,12 @@ public:
     // the same logical pixel space as pointer-down/up events. Fired on
     // WM_RBUTTONUP. Pass {} to clear.
     void set_on_right_click(std::function<void(tk::Point)> cb);
+
+    // Request a pointer shape for the surface's client area. The Surface's
+    // WM_SETCURSOR handler reapplies this on every cursor query, so the
+    // change persists across mouse moves without callers having to deal
+    // with the per-message Win32 cursor protocol.
+    void set_cursor(Cursor c);
 
 private:
     std::unique_ptr<Host> host_;
