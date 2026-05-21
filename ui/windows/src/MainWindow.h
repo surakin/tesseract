@@ -152,6 +152,11 @@ public:
         const tesseract::Client::UrlPreview& preview) override;
     void on_url_preview_failed_(const std::string& url) override;
 
+    // Returns the user-chosen path, or L"" if cancelled.
+    // Also called by RoomWindow for save dialogs in popout windows.
+    std::wstring show_save_dialog_(const std::wstring& suggested,
+                                   const wchar_t* filter);
+
 private:
     void on_create(HWND hwnd);
     void on_destroy();
@@ -285,10 +290,6 @@ private:
     // When non-empty, the next emoji selection routes through
     // `Client::send_reaction` for this event_id rather than into compose.
     std::string pending_reaction_event_id_;
-
-    // Returns the user-chosen path, or L"" if cancelled.
-    std::wstring show_save_dialog_(const std::wstring& suggested,
-                                   const wchar_t* filter);
 
     void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
     void on_system_theme_changed();               // re-apply DWM + invalidate
