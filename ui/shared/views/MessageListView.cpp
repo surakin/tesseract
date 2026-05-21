@@ -2010,9 +2010,16 @@ private:
 
         // Build both text layouts before drawing so we can measure their
         // actual heights and vertically centre the pair within the card.
-        const std::string& sname = m.in_reply_to_sender_name.empty()
-                                       ? m.in_reply_to_id
-                                       : m.in_reply_to_sender_name;
+        // When the replied-to event isn't in the local timeline cache the
+        // SDK sends empty sender_name + body — fall back to a single muted
+        // placeholder line instead of showing the raw event id.
+        const bool unresolved = m.in_reply_to_sender_name.empty();
+        const std::string sname = unresolved ? std::string{}
+                                             : m.in_reply_to_sender_name;
+        const std::string sbody =
+            unresolved
+                ? std::string("Original message unavailable")
+                : m.in_reply_to_body;
 
         tk::TextStyle name_st{};
         name_st.role = tk::FontRole::UiSemibold;
@@ -2026,9 +2033,7 @@ private:
         body_st.trim = tk::TextTrim::Ellipsis;
         body_st.max_width = tw;
         auto body_lo =
-            m.in_reply_to_body.empty()
-                ? nullptr
-                : ctx.factory.build_text(m.in_reply_to_body, body_st);
+            sbody.empty() ? nullptr : ctx.factory.build_text(sbody, body_st);
 
         constexpr float kLineGap = 2.0f;
         float name_h = name_lo ? name_lo->measure().h : 0.0f;
