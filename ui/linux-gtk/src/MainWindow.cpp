@@ -154,10 +154,8 @@ void MainWindow::handle_notification_ui_(
         return;
     }
 
-    if (!notification_image_allowed_())
-    {
-        image_bytes.clear();
-    }
+    apply_notification_redaction_(sender, room_name, body, avatar_bytes,
+                                  image_bytes);
     push_notification(user_id, room_id, room_name, sender, body, is_mention,
                       std::move(avatar_bytes), std::move(image_bytes));
 }

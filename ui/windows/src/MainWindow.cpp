@@ -588,6 +588,8 @@ void MainWindow::handle_notification_ui_(
         return;
     }
 
+    apply_notification_redaction_(sender, room_name, body, avatar_bytes,
+                                  image_bytes);
     NotificationPayload p{std::move(room_id),
                           std::move(room_name),
                           std::move(sender),
@@ -595,9 +597,7 @@ void MainWindow::handle_notification_ui_(
                           std::move(user_id),
                           is_mention,
                           std::move(avatar_bytes),
-                          notification_image_allowed_()
-                              ? std::move(image_bytes)
-                              : std::vector<uint8_t>{}};
+                          std::move(image_bytes)};
     on_tesseract_notify(&p);
 }
 
@@ -2546,6 +2546,12 @@ void MainWindow::on_create(HWND hwnd)
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        settings_view_->on_hide_content_changed = [this](bool enabled)
+        {
+            tesseract::Settings::instance().notification_hide_content = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+        };
         settings_view_->on_image_previews_changed = [this](bool enabled)
         {
             tesseract::Settings::instance().notification_image_previews =
@@ -3068,6 +3074,8 @@ void MainWindow::open_settings_()
     settings_view_->set_theme_pref(tesseract::Settings::instance().theme_pref);
     settings_view_->set_notifications_enabled(
         tesseract::Settings::instance().notifications_enabled);
+    settings_view_->set_hide_content_enabled(
+        tesseract::Settings::instance().notification_hide_content);
     settings_view_->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(

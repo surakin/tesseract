@@ -88,6 +88,11 @@ public:
     // regardless of this setting.
     bool notification_image_previews = true;
 
+    // Redact all identifying content from notifications: title becomes the
+    // app name, body becomes a generic "New message", and avatar/image bytes
+    // are cleared. Useful for screensharing or shared screens.
+    bool notification_hide_content = false;
+
     // ── Media loading ────────────────────────────────────────────────
     // When true, full-resolution images and stickers are pre-fetched as rows
     // scroll into view so ImageViewerOverlay opens instantly. When false (the

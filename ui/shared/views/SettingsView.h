@@ -61,6 +61,9 @@ public:
     // Silently initialise the notifications checkbox from persisted settings.
     void set_notifications_enabled(bool enabled);
 
+    // Silently initialise the hide-content checkbox from persisted settings.
+    void set_hide_content_enabled(bool enabled);
+
     // Silently initialise the image-preview checkbox from persisted settings.
     void set_image_previews_enabled(bool enabled);
 
@@ -122,6 +125,9 @@ public:
 
     // Fired when the user toggles notifications.
     std::function<void(bool)> on_notifications_changed;
+
+    // Fired when the user toggles "hide message content in notifications".
+    std::function<void(bool)> on_hide_content_changed;
 
     // Fired when the user toggles image/sticker notification previews.
     std::function<void(bool)> on_image_previews_changed;

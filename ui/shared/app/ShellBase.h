@@ -527,6 +527,32 @@ protected:
         return tesseract::Settings::instance().notification_image_previews &&
                !(screen_lock_ && screen_lock_->is_locked());
     }
+
+    // Apply all notification-content privacy gates in-place. Call from
+    // handle_notification_ui_() before constructing the Notification.
+    // Combines:
+    //   - image-preview gate (clears image_bytes when disabled / locked)
+    //   - hide-content toggle (replaces sender/room/body with generic
+    //     strings and clears both avatar_bytes and image_bytes)
+    void apply_notification_redaction_(std::string& sender,
+                                       std::string& room_name,
+                                       std::string& body,
+                                       std::vector<uint8_t>& avatar_bytes,
+                                       std::vector<uint8_t>& image_bytes) const
+    {
+        if (!notification_image_allowed_())
+        {
+            image_bytes.clear();
+        }
+        if (tesseract::Settings::instance().notification_hide_content)
+        {
+            sender = "Tesseract";
+            room_name.clear();
+            body = "New message";
+            avatar_bytes.clear();
+            image_bytes.clear();
+        }
+    }
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()
     {

@@ -36,6 +36,12 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
+    settings_view_->on_hide_content_changed = [](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.notification_hide_content = enabled;
+        s.save_to_disk(tesseract::config_dir());
+    };
     settings_view_->on_image_previews_changed = [](bool enabled)
     {
         auto& s = tesseract::Settings::instance();
@@ -76,6 +82,8 @@ void SettingsWidget::populate(
     settings_view_->set_image_provider(std::move(provider));
     settings_view_->set_theme_pref(theme_pref);
     settings_view_->set_notifications_enabled(notifications_enabled);
+    settings_view_->set_hide_content_enabled(
+        tesseract::Settings::instance().notification_hide_content);
     settings_view_->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(

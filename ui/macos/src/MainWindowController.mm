@@ -1095,10 +1095,8 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     {
         return;
     }
-    if (!notification_image_allowed_())
-    {
-        image_bytes.clear();
-    }
+    apply_notification_redaction_(sender, room_name, body, avatar_bytes,
+                                  image_bytes);
     MainWindowController* c = ctrl_;
     if (c)
     {
@@ -3094,6 +3092,17 @@ void MacShell::apply_cached_messages_(
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        _settingsView->on_hide_content_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().notification_hide_content = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+        };
         _settingsView->on_image_previews_changed = [ws](bool enabled)
         {
             MainWindowController* s = ws;
@@ -4227,6 +4236,8 @@ void MacShell::apply_cached_messages_(
     _settingsView->set_theme_pref(tesseract::Settings::instance().theme_pref);
     _settingsView->set_notifications_enabled(
         tesseract::Settings::instance().notifications_enabled);
+    _settingsView->set_hide_content_enabled(
+        tesseract::Settings::instance().notification_hide_content);
     _settingsView->set_image_previews_enabled(
         tesseract::Settings::instance().notification_image_previews);
     _settingsView->set_prefetch_enabled(

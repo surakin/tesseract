@@ -52,6 +52,13 @@ SettingsView::SettingsView()
             on_notifications_changed(enabled);
         }
     };
+    notifications->on_hide_content_changed = [this](bool enabled)
+    {
+        if (on_hide_content_changed)
+        {
+            on_hide_content_changed(enabled);
+        }
+    };
     notifications->on_image_previews_changed = [this](bool enabled)
     {
         if (on_image_previews_changed)
@@ -147,6 +154,14 @@ void SettingsView::set_notifications_enabled(bool enabled)
     if (notifications_)
     {
         notifications_->set_checked(enabled);
+    }
+}
+
+void SettingsView::set_hide_content_enabled(bool enabled)
+{
+    if (notifications_)
+    {
+        notifications_->set_hide_content_checked(enabled);
     }
 }
 

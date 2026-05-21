@@ -3977,10 +3977,8 @@ void MainWindow::handle_notification_ui_(
     {
         return;
     }
-    if (!notification_image_allowed_())
-    {
-        image_bytes.clear();
-    }
+    apply_notification_redaction_(sender, room_name, body, avatar_bytes,
+                                  image_bytes);
 
     bool win_visible = isVisible() && !isMinimized();
     bool win_focused = isActiveWindow();
