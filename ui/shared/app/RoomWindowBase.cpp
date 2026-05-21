@@ -218,6 +218,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 img_viewer_->set_visible(false);
             }
             request_relayout();
+            if (auto* ta = compose_text_area_())
+            {
+                ta->set_focused(true);
+            }
         };
 
         rv->on_image_clicked =
@@ -257,6 +261,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
                 vid_viewer_->set_visible(false);
             }
             request_relayout();
+            if (auto* ta = compose_text_area_())
+            {
+                ta->set_focused(true);
+            }
         };
 
         rv->on_video_clicked =
