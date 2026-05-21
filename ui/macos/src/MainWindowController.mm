@@ -3912,6 +3912,26 @@ void MacShell::apply_cached_messages_(
             s->_settingsSurface->relayout();
         });
 
+    _shell->settings_controller_->on_name_changed =
+        [ws](std::string name)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_settingsView->set_display_name_text(name);
+            if (s->_settingsNameField)
+                s->_settingsNameField->set_text(name);
+            s->_settingsSurface->relayout();
+        };
+    _shell->settings_controller_->on_name_result =
+        [ws](bool ok, std::string error)
+        {
+            MainWindowController* s = ws;
+            if (!s) return;
+            s->_settingsView->set_name_busy(false);
+            if (!ok) s->_settingsView->set_name_error(std::move(error));
+            s->_settingsSurface->relayout();
+        };
+
     if (_settingsView)
     {
         _settingsView->set_controller(

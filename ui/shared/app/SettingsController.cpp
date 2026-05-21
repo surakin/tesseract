@@ -28,11 +28,8 @@ void SettingsController::upload_avatar()
     if (avatar_in_flight_.exchange(true))
         return;
 
-    auto* c = client_;
-
-    if (!c)
+    if (!client_)
     {
-        // No client: immediately report error via post_to_ui_.
         avatar_in_flight_.store(false);
         post_to_ui_([this]()
         {
@@ -42,16 +39,29 @@ void SettingsController::upload_avatar()
         return;
     }
 
+    // Guard: if the picker callback is destroyed without being invoked (user
+    // cancels the dialog), the RAII cleaner fires and clears the in-flight flag.
+    struct FlagCleaner {
+        std::atomic<bool>& flag;
+        bool armed = true;
+        ~FlagCleaner() { if (armed) flag.store(false); }
+        void disarm() { armed = false; }
+    };
+    auto cleaner = std::make_shared<FlagCleaner>(avatar_in_flight_);
+
     open_file_picker_(
-        [this, client_snap = client_](std::vector<uint8_t> bytes,
-                                      std::string mime)
+        [this, client_snap = client_, cleaner](std::vector<uint8_t> bytes,
+                                                std::string mime) mutable
         {
+            // The callback was invoked (cancel sends empty bytes).
+            // Disarm the RAII guard — we manage the flag from here.
+            cleaner->disarm();
+
             if (bytes.empty())
             {
                 avatar_in_flight_.store(false);
                 return;
             }
-            // If client switched while picker was open, discard.
             if (client_snap != client_)
             {
                 avatar_in_flight_.store(false);
