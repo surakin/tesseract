@@ -3733,6 +3733,11 @@ void MessageListView::set_avatar_provider(ImageProvider p)
     avatar_provider_ = std::move(p);
 }
 
+void MessageListView::set_shortcode_provider(ShortcodeProvider p)
+{
+    shortcode_provider_ = std::move(p);
+}
+
 void MessageListView::set_image_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
@@ -5604,7 +5609,10 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         }
         if (on_reaction_toggled)
         {
-            on_reaction_toggled(ev, reactions[idx].key);
+            const auto& r = reactions[idx];
+            const std::string src =
+                r.source ? r.source->mxc_url() : std::string();
+            on_reaction_toggled(ev, r.key, src);
         }
     }
     else if (t == HoverTarget::AddButton)
@@ -5856,9 +5864,37 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     std::vector<std::string> lines;
     lines.reserve(r.senders.size() + 1);
     {
-        std::string header = "Reacted with ";
-        header += r.key;
-        header += ":";
+        // MSC4027 custom-image reactions: `r.key` IS the mxc:// URI (matrix-
+        // sdk aggregates by raw key, not by per-event shortcode). Resolve
+        // the shortcode from the local emoticon packs so we render
+        // `:shortcode:` instead of the raw mxc string; fall back to plain
+        // "Reacted by:" when the mxc isn't in any of the user's packs.
+        std::string header;
+        if (r.source && shortcode_provider_)
+        {
+            std::string sc = shortcode_provider_(r.source->mxc_url());
+            if (!sc.empty())
+            {
+                // Shortcode already supplies its trailing ':' so we don't
+                // append the extra punctuation colon the Unicode branch uses.
+                header = "Reacted with :";
+                header += sc;
+                header += ":";
+            }
+        }
+        if (header.empty())
+        {
+            if (r.source)
+            {
+                header = "Reacted by:";
+            }
+            else
+            {
+                header = "Reacted with ";
+                header += r.key;
+                header += ":";
+            }
+        }
         lines.push_back(std::move(header));
     }
     for (const auto& s : r.senders)

@@ -981,6 +981,22 @@ void ShellBase::handle_image_packs_updated_ui_()
     }
 }
 
+std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
+{
+    if (mxc.empty())
+    {
+        return {};
+    }
+    for (const auto& e : cached_emoticons_)
+    {
+        if (e.url == mxc)
+        {
+            return e.shortcode;
+        }
+    }
+    return {};
+}
+
 void ShellBase::handle_typing_changed_ui_(std::string room_id,
                                           std::vector<std::string> names)
 {

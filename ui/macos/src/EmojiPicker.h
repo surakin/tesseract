@@ -10,6 +10,7 @@
 namespace tesseract
 {
 class Client;
+struct ImagePackImage;
 }
 
 /// Floating emoji picker presented as a utility panel. The panel hosts a
@@ -22,6 +23,13 @@ class Client;
 
 /// Fired when the user picks an emoji; the NSString is the UTF-8 glyph.
 @property(nonatomic, copy) void (^onSelect)(NSString* glyph);
+
+/// Fired when the user picks a custom MSC2545 emoticon. The block
+/// receives the C++ ImagePackImage by const-ref so the receiver can read
+/// `url` (mxc://) and `shortcode` (no surrounding colons). Hosts use this
+/// to send an MSC4027 reaction, insert `:shortcode:` text, etc.
+@property(nonatomic, copy) void (^onEmoticonSelect)(
+    const tesseract::ImagePackImage& img);
 
 /// Borrowed SDK client; must outlive the panel's lifetime. The shared
 /// picker reads recent_emoji_top + writes recent_emoji_bump.

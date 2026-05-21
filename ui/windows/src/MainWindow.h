@@ -266,6 +266,7 @@ private:
     void popup_emoji_at_rect(HWND parent_hwnd, tk::Rect local_rect);
     void popup_sticker_at_rect(HWND parent_hwnd, tk::Rect local_rect);
     void insert_emoji_at_cursor(const std::string& glyph);
+    void pick_emoticon_at_cursor(const tesseract::ImagePackImage& img);
 
     // ── Sticker picker ───────────────────────────────────────────────────
     // Parallel to the emoji picker. A floating WS_POPUP HWND parents a

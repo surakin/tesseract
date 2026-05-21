@@ -148,6 +148,7 @@ private:
 
 public:
     void emoji_selected(const std::string& glyph);
+    void emoticon_selected(const tesseract::ImagePackImage& img);
 
 private:
     static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,

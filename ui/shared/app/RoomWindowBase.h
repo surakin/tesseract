@@ -113,7 +113,8 @@ protected:
                      const std::string& body);
     void send_edit_(const std::string& event_id, const std::string& new_body);
     void delete_event_(const std::string& event_id);
-    void toggle_reaction_(const std::string& event_id, const std::string& key);
+    void toggle_reaction_(const std::string& event_id, const std::string& key,
+                          const std::string& source_mxc);
     void send_receipt_(const std::string& event_id);
     void send_typing_notice_(bool typing);
     void retry_send_(const std::string& txn_id);

@@ -50,6 +50,7 @@ public:
 
     void set_avatar_provider(MessageListView::ImageProvider p);
     void set_image_provider(MessageListView::ImageProvider p);
+    void set_shortcode_provider(MessageListView::ShortcodeProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(MessageListView::VoiceBytesProvider p);
@@ -197,7 +198,11 @@ public:
     std::function<void()> on_cancel_voice;
 
     std::function<void(std::string event_id)> on_delete_requested;
-    std::function<void(std::string event_id, std::string emoji)>
+    // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
+    // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
+    // non-empty → `Client::send_reaction_custom`.
+    std::function<void(std::string event_id, std::string key,
+                       std::string source_mxc)>
         on_reaction_toggled;
     std::function<void(std::string event_id, tk::Rect anchor)>
         on_add_reaction_requested;

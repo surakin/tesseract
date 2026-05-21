@@ -838,11 +838,13 @@ TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
     view.set_messages({make_row_with_reactions()});
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
 
-    std::string got_event, got_key;
-    view.on_reaction_toggled = [&](const std::string& ev, const std::string& k)
+    std::string got_event, got_key, got_source;
+    view.on_reaction_toggled = [&](const std::string& ev, const std::string& k,
+                                   const std::string& src)
     {
         got_event = ev;
         got_key = k;
+        got_source = src;
     };
 
     auto chips = view.hovered_row_geom().chips;
@@ -857,6 +859,51 @@ TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
 
     CHECK(got_event == "$evt");
     CHECK(got_key == "🎉");
+    CHECK(got_source.empty());
+}
+
+TEST_CASE("MessageListView MSC4027 chip click forwards source mxc",
+          "[tk][view][messagelist][reactions]")
+{
+    Stage st;
+    MessageListView view;
+    MessageRowData m{};
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$evt";
+    m.sender_name = "Alice";
+    m.body = "hi";
+    tesseract::Reaction r{};
+    r.key = ":partyparrot:";
+    r.count = 1;
+    r.reacted_by_me = false;
+    r.source = tesseract::MediaSource::plain("mxc://example.org/parrot");
+    r.senders = {"@alice:example.org"};
+    m.reactions = {r};
+    view.set_messages({m});
+    paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
+
+    std::string got_event, got_key, got_source;
+    view.on_reaction_toggled = [&](const std::string& ev, const std::string& k,
+                                   const std::string& src)
+    {
+        got_event = ev;
+        got_key = k;
+        got_source = src;
+    };
+
+    auto chips = view.hovered_row_geom().chips;
+    REQUIRE(chips.size() == 1);
+    tk::Point in_chip{
+        chips[0].x + chips[0].w * 0.5f - view.bounds().x,
+        chips[0].y + chips[0].h * 0.5f - view.bounds().y,
+    };
+    view.on_pointer_move(in_chip);
+    REQUIRE(view.on_pointer_down(in_chip));
+    view.on_pointer_up(in_chip, true);
+
+    CHECK(got_event == "$evt");
+    CHECK(got_key == ":partyparrot:");
+    CHECK(got_source == "mxc://example.org/parrot");
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -201,11 +201,12 @@ void RoomView::wire_internal_callbacks()
         }
     };
     message_list_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& emoji)
+        [this](const std::string& event_id, const std::string& key,
+               const std::string& source_mxc)
     {
         if (on_reaction_toggled)
         {
-            on_reaction_toggled(event_id, emoji);
+            on_reaction_toggled(event_id, key, source_mxc);
         }
     };
     message_list_->on_add_reaction_requested =
@@ -484,6 +485,14 @@ void RoomView::set_image_provider(MessageListView::ImageProvider p)
     if (message_list_)
     {
         message_list_->set_image_provider(std::move(p));
+    }
+}
+
+void RoomView::set_shortcode_provider(MessageListView::ShortcodeProvider p)
+{
+    if (message_list_)
+    {
+        message_list_->set_shortcode_provider(std::move(p));
     }
 }
 

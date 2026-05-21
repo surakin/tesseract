@@ -73,6 +73,11 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         {
             return shell_image_(mxc);
         });
+    rv->set_shortcode_provider(
+        [this](const std::string& mxc) -> std::string
+        {
+            return shell_->shortcode_for_mxc_(mxc);
+        });
     rv->set_preview_provider(
         [this](
             const std::string& url) -> const tesseract::views::UrlPreviewData*
@@ -166,9 +171,10 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
         delete_event_(event_id);
     };
     rv->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key)
+        [this](const std::string& event_id, const std::string& key,
+               const std::string& source_mxc)
     {
-        toggle_reaction_(event_id, key);
+        toggle_reaction_(event_id, key, source_mxc);
     };
     rv->on_receipt_needed = [this](const std::string& event_id)
     {
@@ -405,10 +411,24 @@ void RoomWindowBase::delete_event_(const std::string& event_id)
 }
 
 void RoomWindowBase::toggle_reaction_(const std::string& event_id,
-                                      const std::string& key)
+                                      const std::string& key,
+                                      const std::string& source_mxc)
 {
     if (event_id.empty() || room_id_.empty() || !shell_->client_)
     {
+        return;
+    }
+    if (!source_mxc.empty())
+    {
+        // For MSC4027 chips matrix-sdk aggregates by the mxc:// key (so the
+        // incoming `key` IS the mxc URI). Look up the shortcode locally so
+        // the outgoing event carries `:shortcode:` rather than the URI; if
+        // unknown, send an empty shortcode (MSC4027 allows omitting it).
+        std::string sc = shell_->shortcode_for_mxc_(source_mxc);
+        std::string shortcode =
+            sc.empty() ? std::string() : ":" + sc + ":";
+        shell_->client_->send_reaction_custom(room_id_, event_id, source_mxc,
+                                              shortcode);
         return;
     }
     shell_->client_->send_reaction(room_id_, event_id, key);
