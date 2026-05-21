@@ -369,6 +369,34 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_leave_room = [this](std::string room_id)
     {
+        // If MainAppWidget supplied a confirm provider, prompt before
+        // forwarding the SDK-touching callback. Falls back to firing
+        // directly so tests / future hosts that skip wiring still work.
+        if (confirm_provider_)
+        {
+            ConfirmDialog::Options opts;
+            const std::string display = current_room_info_.name.empty()
+                                            ? "this room"
+                                            : current_room_info_.name;
+            opts.title          = "Leave " + display + "?";
+            opts.body           = "You will stop receiving messages and need "
+                                  "to be re-invited to rejoin.";
+            opts.confirm_label  = "Leave";
+            opts.cancel_label   = "Cancel";
+            opts.destructive    = true;
+
+            // Close the room-info panel as we hand off to the confirm
+            // overlay — otherwise the prompt would sit on top of the panel
+            // and the user would see two backdrops stacked.
+            if (room_info_panel_) room_info_panel_->close();
+            if (on_layout_changed) on_layout_changed();
+
+            const std::string captured_id = room_id;
+            confirm_provider_(std::move(opts), [this, captured_id]() {
+                if (on_leave_room) on_leave_room(captured_id);
+            });
+            return;
+        }
         if (on_leave_room) on_leave_room(std::move(room_id));
     };
     room_info_panel_->on_member_clicked =
@@ -395,6 +423,10 @@ void RoomView::wire_internal_callbacks()
     user_profile_panel_->on_ignore = [this](std::string user_id)
     {
         if (on_ignore_user) on_ignore_user(std::move(user_id));
+    };
+    user_profile_panel_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
     };
 }
 
@@ -496,6 +528,17 @@ void RoomView::set_post_delayed(
     {
         message_list_->set_post_delayed(std::move(f));
     }
+}
+
+void RoomView::set_confirm_provider(ConfirmProvider p)
+{
+    confirm_provider_ = std::move(p);
+}
+
+bool RoomView::is_overlay_open() const
+{
+    return (room_info_panel_    && room_info_panel_->is_open()) ||
+           (user_profile_panel_ && user_profile_panel_->is_open());
 }
 
 void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f)

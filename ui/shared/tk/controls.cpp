@@ -109,9 +109,11 @@ Color button_fill(Button::Variant v, const Theme& th, bool enabled,
 {
     if (!enabled)
     {
-        return (v == Button::Variant::Primary)
-                   ? th.palette.accent.with_alpha(120)
-                   : Color::rgba(0, 0, 0, 0);
+        if (v == Button::Variant::Primary)
+            return th.palette.accent.with_alpha(120);
+        if (v == Button::Variant::Destructive)
+            return th.palette.destructive.with_alpha(120);
+        return Color::rgba(0, 0, 0, 0);
     }
     switch (v)
     {
@@ -145,6 +147,16 @@ Color button_fill(Button::Variant v, const Theme& th, bool enabled,
             return th.palette.subtle_hover;
         }
         return Color::rgba(0, 0, 0, 0);
+    case Button::Variant::Destructive:
+        if (pressed)
+        {
+            return th.palette.destructive_pressed;
+        }
+        if (hovered)
+        {
+            return th.palette.destructive_hover;
+        }
+        return th.palette.destructive;
     }
     return th.palette.accent;
 }
@@ -155,7 +167,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
     {
         return th.palette.text_muted;
     }
-    if (v == Button::Variant::Primary)
+    if (v == Button::Variant::Primary || v == Button::Variant::Destructive)
     {
         return th.palette.text_on_accent;
     }

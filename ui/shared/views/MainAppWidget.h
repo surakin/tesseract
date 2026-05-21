@@ -22,6 +22,7 @@
 //   room_search_field_rect()    → NativeTextField position
 //   recovery_key_field_rect()   → NativeTextField position
 
+#include "ConfirmDialog.h"
 #include "ImageViewerOverlay.h"
 #include "RecoveryBanner.h"
 #include "RoomListView.h"
@@ -97,6 +98,10 @@ public:
     {
         return vid_viewer_;
     }
+    ConfirmDialog* confirm_dialog() const
+    {
+        return confirm_dialog_;
+    }
     UserInfo* user_info() const
     {
         return user_info_;
@@ -112,6 +117,11 @@ public:
     void set_tab_bar_visible(bool visible);
 
     // ── Native overlay rects (call from the surface's set_on_layout) ──────
+    //
+    // While any modal overlay is up (ConfirmDialog at this level, or the
+    // room-info / user-profile panels owned by RoomView) the compose-textarea
+    // and room-search accessors report "hidden" so the shells don't leave
+    // those native OS controls clickable through the panel backdrop.
 
     tk::Rect compose_text_area_rect() const;
     bool room_search_field_visible() const;
@@ -131,6 +141,11 @@ public:
     void paint(tk::PaintCtx&) override;
 
 private:
+    // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
+    // drives compose_text_area_rect() / room_search_field_visible() so the
+    // native OS controls hide while overlays are up.
+    bool any_modal_open_() const;
+
     static constexpr float kSidebarW =
         static_cast<float>(tesseract::visual::kSidebarWidth);
     static constexpr float kSepW = 1.0f;
@@ -162,6 +177,10 @@ private:
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;
     VideoViewerOverlay* vid_viewer_ = nullptr;
+
+    // Modal confirmation overlay — sits above everything else, including the
+    // lightboxes, so destructive prompts are always reachable.
+    ConfirmDialog* confirm_dialog_ = nullptr;
 
     bool recovery_visible_ = false;
     bool verif_visible_ = false;

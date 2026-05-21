@@ -85,6 +85,8 @@ set(_tk_sources
     views/UserProfilePanel.cpp
     views/RoomInfoPanel.h
     views/RoomInfoPanel.cpp
+    views/ConfirmDialog.h
+    views/ConfirmDialog.cpp
     views/MainAppWidget.h
     views/MainAppWidget.cpp
     views/PopoutRoomWidget.h

@@ -20,6 +20,7 @@
 
 #include "BrandView.h"
 #include "ComposeBar.h"
+#include "ConfirmDialog.h"
 #include "MessageListView.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
@@ -56,6 +57,13 @@ public:
     void set_post_delayed(std::function<void(int, std::function<void()>)> f);
     void set_video_player_factory(MessageListView::VideoPlayerFactory f);
     void set_video_fetch_provider(MessageListView::VideoFetchProvider f);
+
+    // Closure that opens a confirmation dialog with the given options. Set by
+    // MainAppWidget to route through its shared ConfirmDialog overlay; if
+    // unset, destructive callbacks fire directly without confirmation.
+    using ConfirmProvider = std::function<void(ConfirmDialog::Options,
+                                                std::function<void()>)>;
+    void set_confirm_provider(ConfirmProvider p);
 
     // ── Room / message state ─────────────────────────────────────────────
 
@@ -135,6 +143,12 @@ public:
     bool        topic_edit_visible() const;
     void        set_topic_edit_text(std::string t);
     std::string topic_edit_initial_text() const;
+
+    // True when any room-view-owned modal (room-info or user-profile panel)
+    // is currently up. MainAppWidget combines this with its own ConfirmDialog
+    // state to hide the compose-textarea + room-search NativeTextField while
+    // overlays cover the canvas.
+    bool is_overlay_open() const;
 
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
@@ -250,6 +264,8 @@ private:
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;
     bool anim_repaint_pending_ = false;
+
+    ConfirmProvider confirm_provider_;
 
     // Cached so show_room_info() can open the panel with the current room data.
     tesseract::RoomInfo current_room_info_;

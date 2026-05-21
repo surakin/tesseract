@@ -134,7 +134,8 @@ public:
     {
         Primary,
         Subtle,
-        Icon
+        Icon,
+        Destructive,
     };
 
     explicit Button(std::string label, std::function<void()> on_click = {},
