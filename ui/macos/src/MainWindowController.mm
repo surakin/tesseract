@@ -3180,6 +3180,10 @@ void MacShell::apply_cached_messages_(
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        _settingsView->on_tab_changed = [ws] {
+            MainWindowController* s = ws;
+            if (s) s->_settingsSurface->relayout();
+        };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
         _settingsSurface->set_on_layout(

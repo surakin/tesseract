@@ -2621,6 +2621,7 @@ void MainWindow::on_create(HWND hwnd)
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
         settings_surface_->set_root(std::move(view));
         settings_surface_->set_on_layout(
             [this]

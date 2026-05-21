@@ -44,6 +44,8 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         s.save_to_disk(tesseract::config_dir());
     };
 
+    settings_view_->on_tab_changed = [this] { surface_->relayout(); };
+
     surface_->set_root(std::move(view));
 
     surface_->set_on_layout(

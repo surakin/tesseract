@@ -111,6 +111,10 @@ public:
     // Fired when the user toggles full-media pre-fetch.
     std::function<void(bool)> on_prefetch_changed;
 
+    // Fired when the active settings tab changes (so shells can relayout
+    // native overlays whose visibility depends on the selected tab).
+    std::function<void()> on_tab_changed;
+
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

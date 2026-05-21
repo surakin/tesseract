@@ -84,6 +84,7 @@ SettingsView::SettingsView()
     tabs->add_tab("Media", std::move(media));
     tabs->add_tab("Server", std::move(server));
     // First tab is auto-selected by SideTabView::add_tab.
+    tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
     tabs_ = add_child(std::move(tabs));
 }
 
