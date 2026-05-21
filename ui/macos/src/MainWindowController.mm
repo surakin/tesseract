@@ -3062,6 +3062,20 @@ void MacShell::apply_cached_messages_(
     _loginView.delegate = self;
     _loginView.translatesAutoresizingMaskIntoConstraints = NO;
     _loginView.hidden = YES;
+    // Route the homeserver-discovery debounce through MacShell's drain so a
+    // blocked discover_homeserver call can't outlive ~LoginView and corrupt
+    // the heap (mirrors the SettingsController wiring elsewhere).
+    {
+        __weak MainWindowController* ws = self;
+        [_loginView setRunAsync:^(void (^body)(void)) {
+            MainWindowController* s = ws;
+            if (!s || !s->_shell)
+            {
+                return;
+            }
+            s->_shell->run_async_([body] { body(); });
+        }];
+    }
 
     // ── Settings overlay ──────────────────────────────────────────────
     {

@@ -2534,6 +2534,11 @@ void MainWindow::on_create(HWND hwnd)
                                hInst_, nullptr);
 
     login_view_ = std::make_unique<LoginView>(hInst_, hwnd);
+    // Route the homeserver-discovery debounce through the shell's worker
+    // drain so a blocked discover_homeserver call can't outlive ~LoginView
+    // and corrupt the heap (mirrors the SettingsController wiring below).
+    login_view_->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
     login_view_->set_on_success(
         [this]()
         {

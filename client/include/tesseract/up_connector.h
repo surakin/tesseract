@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <string>
 
 namespace tesseract
@@ -37,6 +38,13 @@ public:
     /// currently has a distributor endpoint cached. The D-Bus listener stays
     /// up either way so the user can flip back on without restarting.
     virtual void set_enabled(bool enabled) = 0;
+
+    /// Wire the shell's `run_async`/`post_to_ui` thunks so any background
+    /// work spawned by `start()` (e.g. DBus distributor discovery) is tracked
+    /// by `ShellBase::workers_in_flight_` and drained on shutdown. Default
+    /// implementations are no-ops — only the Linux connectors need them.
+    virtual void set_run_async(std::function<void(std::function<void()>)>) {}
+    virtual void set_post_to_ui(std::function<void(std::function<void()>)>) {}
 };
 
 } // namespace tesseract

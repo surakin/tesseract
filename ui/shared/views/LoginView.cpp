@@ -312,28 +312,45 @@ void LoginView::hs_changed_(const std::string& text)
     if (!snap)
         return;
 
-    std::thread(
-        [this, gen, snap, text]
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
-            if (gen != discovery_gen_.load())
-                return;
-            auto result = snap->discover_homeserver(text);
-            post_to_ui_(
-                [this, gen, result = std::move(result)]
-                {
-                    if (gen != discovery_gen_.load())
-                        return;
-                    if (result)
-                        set_discovery_state(DiscoveryState::Resolved,
-                                            result.base_url);
-                    else
-                        set_discovery_state(DiscoveryState::Failed,
-                                            result.error);
-                    relayout_();
-                });
-        })
-        .detach();
+    // Route through the host's `run_async` thunk so the worker is tracked
+    // by ShellBase::workers_in_flight_ and drained on shutdown.  Without
+    // this, a `discover_homeserver` blocked in tokio block_on outlives
+    // ~LoginView; when rt.drop() later unblocks it, the post_to_ui_
+    // callback fires into freed memory and corrupts the heap (the abort
+    // typically surfaces later in an unrelated free, e.g. ~MessageListView).
+    // Hosts that haven't wired set_run_async fall back to the legacy
+    // detached thread for backward compat.
+    auto body = [this, gen, snap, text]
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        if (gen != discovery_gen_.load())
+            return;
+        auto result = snap->discover_homeserver(text);
+        if (gen != discovery_gen_.load())
+            return;
+        post_to_ui_(
+            [this, gen, result = std::move(result)]
+            {
+                if (gen != discovery_gen_.load())
+                    return;
+                if (result)
+                    set_discovery_state(DiscoveryState::Resolved,
+                                        result.base_url);
+                else
+                    set_discovery_state(DiscoveryState::Failed,
+                                        result.error);
+                relayout_();
+            });
+    };
+
+    if (run_async_)
+    {
+        run_async_(std::move(body));
+    }
+    else
+    {
+        std::thread(std::move(body)).detach();
+    }
 }
 
 void LoginView::begin_completed_(bool ok, std::string url)

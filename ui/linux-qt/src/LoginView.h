@@ -28,6 +28,7 @@ public:
     void set_mode(tesseract::views::LoginView::Mode m);
     void set_theme(const tk::Theme& t);
     void set_on_begin_oauth(std::function<void()> cb);
+    void set_run_async(std::function<void(std::function<void()>)> fn);
     void reset();
 
 signals:

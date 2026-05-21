@@ -103,6 +103,12 @@ void LoginView::set_on_cancel(std::function<void()> cb)
         shared_->set_on_cancel_done(std::move(cb));
 }
 
+void LoginView::set_run_async(std::function<void(std::function<void()>)> fn)
+{
+    if (shared_)
+        shared_->set_run_async(std::move(fn));
+}
+
 std::string LoginView::wstring_to_utf8(const std::wstring& s)
 {
     if (s.empty())

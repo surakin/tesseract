@@ -113,6 +113,17 @@ public:
         post_to_ui_ = std::move(fn);
     }
 
+    /// run_async: spawn a background worker that participates in the host's
+    /// shutdown drain.  Used by the homeserver-discovery debounce so a
+    /// blocking `discover_homeserver` call can't outlive the LoginView and
+    /// then post back into a freed widget.  Hosts should pass a thunk that
+    /// forwards to `ShellBase::run_async_`.  When unset, discovery falls
+    /// back to a detached std::thread (legacy behaviour).
+    void set_run_async(std::function<void(std::function<void()>)> fn)
+    {
+        run_async_ = std::move(fn);
+    }
+
     /// relayout: call surface->relayout().
     void set_relayout(std::function<void()> fn)
     {
@@ -201,6 +212,7 @@ private:
 
     // Injected platform hooks
     std::function<void(std::function<void()>)> post_to_ui_;
+    std::function<void(std::function<void()>)> run_async_;
     std::function<void()>                      relayout_;
     std::function<void(const std::string&)>    open_browser_;
 

@@ -27,6 +27,11 @@
 /// Set by MainWindow to lazily create the pending directory on first sign-in.
 @property(nonatomic, copy) void (^onBeginOAuth)(void);
 
+/// Route background workers (e.g. the homeserver-discovery debounce) through
+/// the shell's drain so they can't outlive ~LoginView and corrupt the heap.
+/// Wired by MainWindowController to MacShell::run_async_.
+- (void)setRunAsync:(void (^)(void (^body)(void)))runAsync;
+
 /// Initial = no cancel button; AddAccount = cancel visible in Form + Waiting.
 - (void)setMode:(tesseract::views::LoginView::Mode)mode;
 

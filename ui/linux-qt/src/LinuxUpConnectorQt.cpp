@@ -122,12 +122,42 @@ public:
         return {};
     }
 
-    // Non-blocking: runs find_distributor() on a thread pool worker and delivers
-    // the result via QFutureWatcher::finished back on the main thread.
-    void find_distributor_async(const std::string& token)
+    // Non-blocking: runs find_distributor() via the supplied run_async thunk
+    // (so the worker is drained on shutdown) and hops the result back to the
+    // main thread via post_to_ui. Falls back to QtConcurrent + QFutureWatcher
+    // when no thunks are wired (e.g. tests).
+    void find_distributor_async(
+        const std::string& token,
+        std::function<void(std::function<void()>)> run_async,
+        std::function<void(std::function<void()>)> post_to_ui)
     {
-        auto* watcher = new QFutureWatcher<QString>(this);
         std::string tok = token;
+        if (run_async && post_to_ui)
+        {
+            auto pti = post_to_ui;
+            run_async(
+                [this, tok, pti]()
+                {
+                    QString dist = find_distributor();
+                    if (dist.isEmpty())
+                    {
+                        return;
+                    }
+                    pti([this, tok, dist = dist.toStdString()]()
+                    {
+                        auto it = routes_.find(tok);
+                        if (it == routes_.end())
+                        {
+                            return; // connector stopped before scan finished
+                        }
+                        it->second->set_distributor(dist);
+                        distributor_register(QString::fromStdString(dist), tok);
+                    });
+                });
+            return;
+        }
+
+        auto* watcher = new QFutureWatcher<QString>(this);
         QObject::connect(
             watcher, &QFutureWatcher<QString>::finished, this,
             [this, watcher, tok]()
@@ -299,7 +329,8 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
 
     bus.add_route(token_, this);
     bus.find_distributor_async(
-        token_); // non-blocking; callback sets distributor
+        token_, run_async_,
+        post_to_ui_); // non-blocking; callback sets distributor
 }
 
 void LinuxUpConnectorQt::stop()

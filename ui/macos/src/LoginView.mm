@@ -117,6 +117,22 @@ std::string nsstr(NSString* s)
         _shared->set_client(client);
 }
 
+- (void)setRunAsync:(void (^)(void (^body)(void)))runAsync
+{
+    if (!_shared)
+        return;
+    if (!runAsync)
+    {
+        _shared->set_run_async({});
+        return;
+    }
+    auto run = [runAsync](std::function<void()> fn)
+    {
+        runAsync(^{ fn(); });
+    };
+    _shared->set_run_async(std::move(run));
+}
+
 - (void)setTheme:(const tk::Theme&)t
 {
     if (_surface)

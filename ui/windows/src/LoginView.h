@@ -48,6 +48,7 @@ public:
     void set_on_begin_oauth(std::function<void()> cb);
     void set_on_success(std::function<void()> cb);
     void set_on_cancel(std::function<void()> cb);
+    void set_run_async(std::function<void(std::function<void()>)> fn);
 
 private:
     static std::string wstring_to_utf8(const std::wstring& s);

@@ -111,6 +111,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     loginView_ = new LoginView(contentStack_);
     contentStack_->addWidget(loginView_);
+    // Route the homeserver-discovery debounce through the shell's worker
+    // drain so a blocked discover_homeserver call can't outlive ~LoginView
+    // and corrupt the heap (mirrors the SettingsController wiring below).
+    loginView_->set_run_async(
+        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
     connect(loginView_, &LoginView::loginSucceeded, this,
             &MainWindow::onLoginSucceeded);
     connect(loginView_, &LoginView::loginCancelled, this,
@@ -1630,8 +1635,18 @@ MainWindow::~MainWindow()
     //
     //  2. ShellBase detached std::threads — used by run_async_() for avatar /
     //     media fetches (ensure_room_avatar_, ensure_user_avatar_,
-    //     ensure_media_image_).  Guarded by shutting_down_ (ShellBase);
-    //     tracked by workers_in_flight_ / workers_cv_.
+    //     ensure_media_image_), SettingsController, LoginView's
+    //     homeserver-discovery debounce, and LinuxUpConnectorQt's distributor
+    //     scan. Guarded by shutting_down_ (ShellBase); tracked by
+    //     workers_in_flight_ / workers_cv_. (Historically the LoginView and
+    //     UpConnector workers ran on their own untracked threads; this is
+    //     the defect class that produced both the ~StickerPicker abort
+    //     ace5261 fixed in SettingsController and the ~MessageListView
+    //     unlink_chunk abort that motivated extending the drain here.)
+    //
+    // JoinRoomDialog's QThreadPool::globalInstance() tasks are deliberately
+    // not drained here — the dialog is modal and tears its workers down on
+    // close before this destructor runs.
     //
     // Both flags must be flipped first so no new work is enqueued after the
     // clear/drain calls.  stop_sync() is called early to cancel the Rust sync
@@ -2085,6 +2100,10 @@ void MainWindow::doLogin()
 
         // Per-account UnifiedPush connector (registers with distributor on start).
         auto up = std::make_unique<LinuxUpConnectorQt>();
+        up->set_run_async(
+            [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+        up->set_post_to_ui(
+            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
         up->start(session->client.get(), uid);
         session->up_connector = std::move(up);
 
@@ -2339,6 +2358,10 @@ void MainWindow::onLoginSucceeded()
     // Per-account UnifiedPush connector.
     {
         auto up = std::make_unique<LinuxUpConnectorQt>();
+        up->set_run_async(
+            [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+        up->set_post_to_ui(
+            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
         up->start(session->client.get(), user_id);
         session->up_connector = std::move(up);
     }
