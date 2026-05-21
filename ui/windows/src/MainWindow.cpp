@@ -3637,6 +3637,14 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
+{
+    if (tray_)
+    {
+        tray_->set_unread(has_unread, has_highlight);
+    }
+}
+
 void MainWindow::on_tesseract_subscribe_done(std::string* room_id,
                                              bool reached_start)
 {
@@ -4988,6 +4996,13 @@ void MainWindow::switch_active_account(int new_idx)
                 quitting_ = true;
                 DestroyWindow(hwnd_);
             });
+        if (tray_ && tray_->is_available())
+        {
+            // Seed the new tray with the current aggregate so an already-
+            // unread state shows immediately rather than waiting for the
+            // next sync tick to flip on_tray_unread_changed_.
+            tray_->set_unread(last_tray_unread_, last_tray_highlight_);
+        }
     }
 }
 

@@ -3,7 +3,9 @@
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QColor>
 #include <QIcon>
+#include <QPainter>
 
 LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
                                  std::function<void()> on_toggle,
@@ -19,8 +21,11 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
         return;
     }
 
-    tray_ =
-        std::make_unique<QSystemTrayIcon>(QIcon(":/icons/tesseract.svg"), this);
+    // Rasterise the base SVG once at a generous size so subsequent overlay
+    // composites are pure pixmap operations (no SVG re-rasterisation per state
+    // change).  Qt downsamples to the actual tray size on display.
+    base_pixmap_ = QIcon(":/icons/tesseract.svg").pixmap(64, 64);
+    tray_ = std::make_unique<QSystemTrayIcon>(QIcon(base_pixmap_), this);
     tray_->setToolTip(QCoreApplication::applicationName());
 
     menu_ = std::make_unique<QMenu>();
@@ -75,4 +80,44 @@ void LinuxQtTrayIcon::set_tooltip(const std::string& text)
     {
         tray_->setToolTip(QString::fromStdString(text));
     }
+}
+
+void LinuxQtTrayIcon::set_unread(bool has_unread, bool has_highlight)
+{
+    if (!tray_ || base_pixmap_.isNull())
+    {
+        return;
+    }
+    if (!has_unread && !has_highlight)
+    {
+        tray_->setIcon(QIcon(base_pixmap_));
+        return;
+    }
+
+    // Composite a coloured dot in the bottom-right corner.  Highlight (server
+    // push-rule mention) wins over plain unread, mirroring the per-room badge
+    // color logic in RoomListView.
+    QPixmap pm = base_pixmap_.copy();
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Dot sized at ~38% of the icon edge, anchored to the bottom-right with a
+    // small inset so the outline isn't clipped.
+    const int side = std::min(pm.width(), pm.height());
+    const int dot  = std::max(8, side * 38 / 100);
+    const int inset = std::max(1, side / 32);
+    const int x = pm.width() - dot - inset;
+    const int y = pm.height() - dot - inset;
+
+    // 0xD93636 (destructive/red) for mentions, 0x0084FF (accent/blue) for
+    // plain unread.  Hex values mirror the light palette in ui/shared/tk/theme.cpp.
+    const QColor fill = has_highlight ? QColor(0xD9, 0x36, 0x36)
+                                      : QColor(0x00, 0x84, 0xFF);
+    // White stroke so the dot stays legible on both light and dark trays.
+    p.setBrush(fill);
+    p.setPen(QPen(QColor(255, 255, 255), std::max(1, side / 32)));
+    p.drawEllipse(QRect(x, y, dot, dot));
+    p.end();
+
+    tray_->setIcon(QIcon(pm));
 }

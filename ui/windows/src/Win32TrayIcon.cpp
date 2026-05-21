@@ -5,6 +5,14 @@
 #include <algorithm>
 #include <cwchar>
 #include <utility>
+#include <vector>
+
+// GdiplusTypes.h calls unqualified min()/max(); with NOMINMAX the Win32 macros
+// are gone, so std::min/std::max must be brought into scope before the include.
+// Mirrors the trick in MainWindow.h.
+using std::max;
+using std::min;
+#include <gdiplus.h>
 
 namespace win32
 {
@@ -157,6 +165,11 @@ Win32TrayIcon::~Win32TrayIcon()
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
     }
+    if (displayed_overlay_)
+    {
+        DestroyIcon(displayed_overlay_);
+        displayed_overlay_ = nullptr;
+    }
     if (hIcon_)
     {
         DestroyIcon(hIcon_);
@@ -200,6 +213,160 @@ void Win32TrayIcon::on_tray_message(WPARAM /*icon_id*/, LPARAM lParam)
         show_menu();
         return;
     }
+}
+
+HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
+{
+    if (!hIcon_)
+    {
+        return nullptr;
+    }
+    const int cx = GetSystemMetrics(SM_CXSMICON);
+    const int cy = GetSystemMetrics(SM_CYSMICON);
+    if (cx <= 0 || cy <= 0)
+    {
+        return nullptr;
+    }
+
+    // 32-bpp top-down DIB so the colour bitmap carries premultiplied alpha
+    // straight into CreateIconIndirect.
+    BITMAPV5HEADER bi{};
+    bi.bV5Size        = sizeof(bi);
+    bi.bV5Width       = cx;
+    bi.bV5Height      = -cy; // negative → top-down
+    bi.bV5Planes      = 1;
+    bi.bV5BitCount    = 32;
+    bi.bV5Compression = BI_BITFIELDS;
+    bi.bV5RedMask     = 0x00FF0000;
+    bi.bV5GreenMask   = 0x0000FF00;
+    bi.bV5BlueMask    = 0x000000FF;
+    bi.bV5AlphaMask   = 0xFF000000;
+
+    HDC screen_dc = GetDC(nullptr);
+    void* bits = nullptr;
+    HBITMAP color = CreateDIBSection(screen_dc,
+                                     reinterpret_cast<BITMAPINFO*>(&bi),
+                                     DIB_RGB_COLORS, &bits, nullptr, 0);
+    ReleaseDC(nullptr, screen_dc);
+    if (!color || !bits)
+    {
+        if (color)
+        {
+            DeleteObject(color);
+        }
+        return nullptr;
+    }
+
+    HDC mem_dc = CreateCompatibleDC(nullptr);
+    HGDIOBJ old_bmp = SelectObject(mem_dc, color);
+
+    // Draw the base icon into the DIB. DrawIconEx honours per-pixel alpha
+    // for 32-bpp icon resources.
+    DrawIconEx(mem_dc, 0, 0, hIcon_, cx, cy, 0, nullptr, DI_NORMAL);
+
+    if (dot_color_argb != 0)
+    {
+        // Antialiased ellipse via GDI+ on top of the DIB. GDI+ is initialised
+        // by MainWindow (which owns the tray), so it's safe to use here.
+        Gdiplus::Graphics g(mem_dc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+
+        const int side  = std::min(cx, cy);
+        const int dot   = std::max(6, side * 38 / 100);
+        const int inset = std::max(1, side / 32);
+        const int x     = cx - dot - inset;
+        const int y     = cy - dot - inset;
+
+        Gdiplus::Color fill(dot_color_argb);
+        Gdiplus::SolidBrush brush(fill);
+        g.FillEllipse(&brush, x, y, dot, dot);
+
+        // White outline so the dot reads on both light and dark trays.
+        Gdiplus::Pen pen(Gdiplus::Color(255, 255, 255, 255),
+                         static_cast<Gdiplus::REAL>(std::max(1, side / 32)));
+        g.DrawEllipse(&pen, x, y, dot, dot);
+    }
+
+    SelectObject(mem_dc, old_bmp);
+    DeleteDC(mem_dc);
+
+    // CreateIconIndirect requires a mask bitmap even for ARGB icons; a 1bpp
+    // all-black mask preserves the colour bitmap's per-pixel alpha. Pass an
+    // explicitly zero-initialised bit buffer instead of nullptr — MSDN leaves
+    // the contents undefined when `bits` is null, and modern Windows ignores
+    // the mask on 32-bpp colour bitmaps but legacy / non-standard compositors
+    // may not.
+    const SIZE_T mask_stride = ((cx + 15) / 16) * 2; // 1bpp scanlines are WORD-aligned
+    std::vector<BYTE> mask_bits(mask_stride * cy, 0);
+    HBITMAP mask =
+        CreateBitmap(cx, cy, 1, 1, mask_bits.data());
+    if (!mask)
+    {
+        DeleteObject(color);
+        return nullptr;
+    }
+
+    ICONINFO ii{};
+    ii.fIcon    = TRUE;
+    ii.hbmMask  = mask;
+    ii.hbmColor = color;
+    HICON ico = CreateIconIndirect(&ii);
+
+    DeleteObject(mask);
+    DeleteObject(color);
+    return ico;
+}
+
+void Win32TrayIcon::set_unread(bool has_unread, bool has_highlight)
+{
+    if (!added_)
+    {
+        return;
+    }
+
+    UINT32 dot = 0;
+    if (has_highlight)
+    {
+        // 0xFFD93636 — destructive/red from the light palette.
+        dot = 0xFFD93636;
+    }
+    else if (has_unread)
+    {
+        // 0xFF0084FF — accent/blue from the light palette.
+        dot = 0xFF0084FF;
+    }
+
+    HICON new_icon = nullptr;
+    if (dot != 0)
+    {
+        new_icon = make_overlay_icon_(dot);
+        if (!new_icon)
+        {
+            return; // leave the previous icon untouched on failure
+        }
+    }
+
+    NOTIFYICONDATAW nid{};
+    nid.cbSize = sizeof(nid);
+    nid.hWnd   = hwnd_;
+    nid.uID    = kIconId;
+    nid.uFlags = NIF_ICON;
+    nid.hIcon  = new_icon ? new_icon : hIcon_;
+    if (Shell_NotifyIconW(NIM_MODIFY, &nid) == FALSE)
+    {
+        if (new_icon)
+        {
+            DestroyIcon(new_icon);
+        }
+        return;
+    }
+
+    // Replace any previously-installed overlay only after a successful swap.
+    if (displayed_overlay_)
+    {
+        DestroyIcon(displayed_overlay_);
+    }
+    displayed_overlay_ = new_icon; // may be nullptr (back to plain base)
 }
 
 void Win32TrayIcon::show_menu()

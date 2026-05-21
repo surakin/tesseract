@@ -98,6 +98,12 @@ protected:
 
     std::unordered_map<std::string, std::vector<RoomInfo>> per_account_rooms_;
 
+    // Last tray indicator state pushed to on_tray_unread_changed_().  Used to
+    // suppress redundant hook calls (and the per-shell icon repaint they
+    // trigger) when a sync tick produces no net change to the aggregate.
+    bool last_tray_unread_    = false;
+    bool last_tray_highlight_ = false;
+
     std::unique_ptr<Client> pending_login_client_;
     std::filesystem::path pending_login_temp_dir_;
     bool pending_login_is_add_account_ = false;
@@ -313,6 +319,15 @@ protected:
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
+
+    // Called on the UI thread when the aggregate unread/highlight state across
+    // all signed-in accounts changes. Each shell overrides to forward to its
+    // tray icon. Default no-op so shells without a tray (or with a tray that
+    // failed to register) silently skip the update.
+    virtual void on_tray_unread_changed_(bool /*has_unread*/,
+                                         bool /*has_highlight*/)
+    {
+    }
 
     // Called on the UI thread when async media bytes arrive.
     // Shell decodes the bytes, stores a tk::Image in tk_avatars_ or tk_images_
@@ -733,6 +748,22 @@ protected:
 
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);
+
+    // Recompute the aggregate from per_account_rooms_ and fire
+    // on_tray_unread_changed_ only when the value differs from the last call.
+    // Called from push_rooms_ and mark_room_read_.
+    void notify_tray_unread_();
+
+public:
+    // Pure function: returns {has_unread, has_highlight} computed across every
+    // account's room list. has_unread is true iff some room has
+    // notification_count > 0; has_highlight is true iff some room has
+    // highlight_count > 0. Exposed as a public static so the unit test can
+    // exercise it without standing up a real shell.
+    static std::pair<bool, bool> compute_tray_unread(
+        const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account);
+
+protected:
 
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);

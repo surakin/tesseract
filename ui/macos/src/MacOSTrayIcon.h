@@ -21,6 +21,7 @@ public:
         return bridge_ != nil;
     }
     void set_tooltip(const std::string& text) override;
+    void set_unread(bool has_unread, bool has_highlight) override;
 
 private:
     // ARC-managed bridge; held through __strong because this header is

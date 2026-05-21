@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-21**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
 
 > **DM-counterpart avatar fallback.**
 > Rooms with no avatar of their own now show the other participant's avatar in
@@ -20,7 +20,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 108 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 382 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 390 |
 
 ## Platforms
 
@@ -163,6 +163,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **GTK4** — `libayatana-appindicator3` (probed via `org.kde.StatusNotifierWatcher`). Built in a separate `tesseract_gtk_tray` static lib so GTK3 headers stay isolated from the GTK4 shell. Requires `libayatana-appindicator3-dev`.
 - **Win32** — `Shell_NotifyIcon` against a hidden helper HWND; `TrackPopupMenuEx` for the right-click menu; `WM_CLOSE` intercepted in `MainWindow`'s wnd_proc.
 - **macOS** — `NSStatusItem` with a template menu-bar icon; `windowShouldClose:` hides the window; Quit calls `[NSApp terminate:nil]`.
+- **Unread overlay** — when any signed-in account has rooms with notifications, the tray icon gets a small coloured dot in the bottom-right (accent blue for unread, destructive red for highlights / mentions). Aggregation lives in `ShellBase::compute_tray_unread` over `per_account_rooms_`; the `ITrayIcon::set_unread` hook is implemented per shell (QPainter overlay on Qt6, pre-rendered Cairo PNGs swapped via `app_indicator_set_icon_full` on GTK4, GDI+ ARGB compositing into `CreateIconIndirect` on Win32, `NSImage lockFocus`+`NSBezierPath` on macOS).
 
 ## Notifications (foreground toasts)
 

@@ -212,6 +212,8 @@ private:
 
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
+    void on_tray_unread_changed_(bool has_unread,
+                                 bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
 

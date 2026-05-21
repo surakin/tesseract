@@ -776,12 +776,54 @@ void ShellBase::update_secondary_room_infos_()
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
 {
     per_account_rooms_[user_id] = rooms;
+    // The tray aggregate covers every signed-in account, not just the active
+    // one — recompute on every account's update, even if it isn't the one
+    // whose rooms_ cache is currently live.
+    notify_tray_unread_();
     if (user_id != my_user_id_)
     {
         return;
     }
     rooms_ = std::move(rooms);
     on_rooms_updated_();
+}
+
+std::pair<bool, bool> ShellBase::compute_tray_unread(
+    const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account)
+{
+    bool has_unread    = false;
+    bool has_highlight = false;
+    for (const auto& [_uid, rooms] : by_account)
+    {
+        for (const auto& r : rooms)
+        {
+            if (r.notification_count > 0)
+            {
+                has_unread = true;
+            }
+            if (r.highlight_count > 0)
+            {
+                has_highlight = true;
+            }
+            if (has_unread && has_highlight)
+            {
+                return {true, true};
+            }
+        }
+    }
+    return {has_unread, has_highlight};
+}
+
+void ShellBase::notify_tray_unread_()
+{
+    auto [u, h] = compute_tray_unread(per_account_rooms_);
+    if (u == last_tray_unread_ && h == last_tray_highlight_)
+    {
+        return;
+    }
+    last_tray_unread_    = u;
+    last_tray_highlight_ = h;
+    on_tray_unread_changed_(u, h);
 }
 
 void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
@@ -1034,6 +1076,7 @@ void ShellBase::mark_room_read_(const std::string& room_id)
         }
     }
     on_rooms_updated_();
+    notify_tray_unread_();
     run_async_(
         [this, room_id]()
         {

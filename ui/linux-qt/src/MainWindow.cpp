@@ -2125,6 +2125,10 @@ void MainWindow::doLogin()
         if (tray_->is_available())
         {
             qApp->setQuitOnLastWindowClosed(false);
+            // Seed the new tray with the current aggregate so an already-
+            // unread state shows immediately instead of waiting for the next
+            // sync tick to flip on_tray_unread_changed_.
+            tray_->set_unread(last_tray_unread_, last_tray_highlight_);
         }
     }
 }
@@ -2341,6 +2345,7 @@ void MainWindow::onLoginSucceeded()
         if (tray_->is_available())
         {
             qApp->setQuitOnLastWindowClosed(false);
+            tray_->set_unread(last_tray_unread_, last_tray_highlight_);
         }
     }
 }
@@ -2685,6 +2690,14 @@ void MainWindow::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+}
+
+void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
+{
+    if (tray_)
+    {
+        tray_->set_unread(has_unread, has_highlight);
+    }
 }
 
 void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
@@ -4301,6 +4314,10 @@ void MainWindow::logoutActiveAccount()
     a.client->stop_sync();
     tesseract::SessionStore::clear_account(uid);
     per_account_rooms_.erase(uid);
+    // Recompute the tray aggregate so the dot clears (or rolls over to the
+    // surviving accounts) immediately; without this the indicator can stick
+    // when the only account with unreads was the one we just signed out.
+    notify_tray_unread_();
 
     // Remove this account from the live vector.
     accounts_.erase(accounts_.begin() + active_account_index_);

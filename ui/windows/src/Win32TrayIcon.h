@@ -32,11 +32,17 @@ public:
         return added_;
     }
     void set_tooltip(const std::string& text) override;
+    void set_unread(bool has_unread, bool has_highlight) override;
 
 private:
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
     void on_tray_message(WPARAM, LPARAM);
     void show_menu();
+    // Returns an HICON copy of base_icon_ with a coloured dot overlay in the
+    // bottom-right; nullptr on failure. Caller owns and must DestroyIcon().
+    // dot_color_argb: 0xAARRGGBB; pass 0 to skip the overlay (returns a plain
+    // copy of base_icon_).
+    HICON make_overlay_icon_(UINT32 dot_color_argb) const;
 
     static constexpr int kMenuShowId = 1001;
     static constexpr int kMenuQuitId = 1002;
@@ -46,7 +52,14 @@ private:
 
     HINSTANCE hInst_ = nullptr;
     HWND hwnd_ = nullptr;
+    // Plain application icon owned for the lifetime of the tray. Held
+    // separately from displayed_overlay_ so set_unread() can rebuild the
+    // overlay from the source without re-loading the resource.
     HICON hIcon_ = nullptr;
+    // The currently displayed overlay HICON (composited base + dot), or
+    // nullptr when the plain hIcon_ is showing. set_unread() destroys this
+    // before installing a new one to avoid leaks.
+    HICON displayed_overlay_ = nullptr;
     std::function<void()> on_show_;
     std::function<void()> on_toggle_;
     std::function<void()> on_quit_;

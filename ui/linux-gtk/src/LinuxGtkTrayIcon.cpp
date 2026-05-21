@@ -8,8 +8,17 @@
 #include <libayatana-appindicator/app-indicator.h>
 #include <gtk/gtk.h> // GTK3 (pulled in by app-indicator.h)
 #include <gio/gio.h>
+#include <gdk/gdk.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <cairo.h>
+#include <glib/gstdio.h>
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <sys/types.h>
+#include <unistd.h>
 #include <string>
 
 namespace
@@ -83,7 +92,62 @@ const char* resolve_icon_path()
         return dev_path.c_str();
     }
 #endif
-    return "tesseract";
+    return nullptr;
+}
+
+// Render one tray variant (base icon + optional coloured dot in the bottom-
+// right) to `out_path`. Returns true on success. dot_rgb < 0 → no overlay.
+bool render_variant_png(GdkPixbuf* base, int side, std::int32_t dot_rgb,
+                        const std::string& out_path)
+{
+    if (!base)
+    {
+        return false;
+    }
+    cairo_surface_t* surf =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, side, side);
+    if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
+    {
+        if (surf)
+        {
+            cairo_surface_destroy(surf);
+        }
+        return false;
+    }
+    cairo_t* cr = cairo_create(surf);
+
+    // Paint the base.
+    gdk_cairo_set_source_pixbuf(cr, base, 0.0, 0.0);
+    cairo_paint(cr);
+
+    if (dot_rgb >= 0)
+    {
+        // Dot at ~38% of side, anchored bottom-right with a small inset so
+        // the white outline isn't clipped.
+        const double dot   = std::max(8, side * 38 / 100);
+        const double inset = std::max(1.0, side / 32.0);
+        const double cx    = side - dot / 2.0 - inset;
+        const double cy    = side - dot / 2.0 - inset;
+        const double r     = dot / 2.0;
+
+        const double rr = ((dot_rgb >> 16) & 0xFF) / 255.0;
+        const double gg = ((dot_rgb >> 8)  & 0xFF) / 255.0;
+        const double bb = ( dot_rgb        & 0xFF) / 255.0;
+
+        cairo_set_source_rgb(cr, rr, gg, bb);
+        cairo_arc(cr, cx, cy, r, 0.0, 2.0 * G_PI);
+        cairo_fill_preserve(cr);
+        // White outline; legible on both light and dark trays.
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_set_line_width(cr, std::max(1.0, side / 32.0));
+        cairo_stroke(cr);
+    }
+
+    cairo_status_t write_status =
+        cairo_surface_write_to_png(surf, out_path.c_str());
+    cairo_destroy(cr);
+    cairo_surface_destroy(surf);
+    return write_status == CAIRO_STATUS_SUCCESS;
 }
 
 } // namespace
@@ -109,8 +173,69 @@ LinuxGtkTrayIcon::LinuxGtkTrayIcon(std::function<void()> on_show,
         return;
     }
 
+    // Pre-render the three icon variants (normal, unread, mention) to PNGs
+    // in a per-pid runtime dir and let AppIndicator pick by path. AppIndicator
+    // only accepts icon names or file paths, so an in-memory composite is not
+    // an option; we pay the cost once at startup and just swap path strings
+    // on state change.
+    const char* base_svg = resolve_icon_path();
+    if (base_svg)
+    {
+        // $XDG_RUNTIME_DIR (or the GLib fallback) is the canonical place for
+        // per-user, per-session ephemeral files like these.
+        const char* runtime_root = g_get_user_runtime_dir();
+        if (runtime_root)
+        {
+            char* dir = g_strdup_printf("%s/tesseract-%ld", runtime_root,
+                                        static_cast<long>(getpid()));
+            // g_mkdir_with_parents returns 0 on success (incl. already exists).
+            if (g_mkdir_with_parents(dir, 0700) == 0)
+            {
+                runtime_dir_ = dir;
+            }
+            g_free(dir);
+        }
+
+        if (!runtime_dir_.empty())
+        {
+            constexpr int kSide = 64;
+            GError* err = nullptr;
+            GdkPixbuf* base = gdk_pixbuf_new_from_file_at_scale(
+                base_svg, kSide, kSide, TRUE, &err);
+            if (base)
+            {
+                const std::string normal_path  = runtime_dir_ + "/tesseract-normal.png";
+                const std::string unread_path  = runtime_dir_ + "/tesseract-unread.png";
+                const std::string mention_path = runtime_dir_ + "/tesseract-mention.png";
+
+                if (render_variant_png(base, kSide, -1, normal_path))
+                {
+                    normal_icon_path_ = normal_path;
+                }
+                if (render_variant_png(base, kSide, 0x0084FF, unread_path))
+                {
+                    unread_icon_path_ = unread_path;
+                }
+                if (render_variant_png(base, kSide, 0xD93636, mention_path))
+                {
+                    mention_icon_path_ = mention_path;
+                }
+                g_object_unref(base);
+            }
+            else if (err)
+            {
+                g_clear_error(&err);
+            }
+        }
+    }
+
+    // Pick the initial icon path: prefer our pre-rendered "normal" PNG, then
+    // the installed SVG, then fall back to icon-theme name "tesseract".
+    const char* initial_icon = !normal_icon_path_.empty()
+                                   ? normal_icon_path_.c_str()
+                                   : (base_svg ? base_svg : "tesseract");
     AppIndicator* ind =
-        app_indicator_new("io.gnomos.Tesseract", resolve_icon_path(),
+        app_indicator_new("io.gnomos.Tesseract", initial_icon,
                           APP_INDICATOR_CATEGORY_COMMUNICATIONS);
     if (!ind)
     {
@@ -154,6 +279,25 @@ LinuxGtkTrayIcon::~LinuxGtkTrayIcon()
         gtk_widget_destroy(static_cast<GtkWidget*>(menu_));
         menu_ = nullptr;
     }
+    // Best-effort cleanup of the per-pid runtime dir. Leftovers on crash are
+    // harmless because $XDG_RUNTIME_DIR is wiped on logout, and the next run
+    // gets a fresh PID-suffixed directory anyway.
+    if (!normal_icon_path_.empty())
+    {
+        std::remove(normal_icon_path_.c_str());
+    }
+    if (!unread_icon_path_.empty())
+    {
+        std::remove(unread_icon_path_.c_str());
+    }
+    if (!mention_icon_path_.empty())
+    {
+        std::remove(mention_icon_path_.c_str());
+    }
+    if (!runtime_dir_.empty())
+    {
+        g_rmdir(runtime_dir_.c_str());
+    }
 }
 
 void LinuxGtkTrayIcon::set_tooltip(const std::string& text)
@@ -163,4 +307,36 @@ void LinuxGtkTrayIcon::set_tooltip(const std::string& text)
         app_indicator_set_title(static_cast<AppIndicator*>(indicator_),
                                 text.c_str());
     }
+}
+
+void LinuxGtkTrayIcon::set_unread(bool has_unread, bool has_highlight)
+{
+    if (!indicator_)
+    {
+        return;
+    }
+    // Highlight wins over plain unread, mirroring the per-room color logic
+    // in RoomListView. Fall back to whatever variant rendered successfully:
+    // if a variant is missing (couldn't render the PNG), prefer the others
+    // so we still show *some* indicator rather than silently leaving the
+    // icon stale.
+    const std::string* pick = nullptr;
+    if (has_highlight && !mention_icon_path_.empty())
+    {
+        pick = &mention_icon_path_;
+    }
+    else if ((has_unread || has_highlight) && !unread_icon_path_.empty())
+    {
+        pick = &unread_icon_path_;
+    }
+    else if (!normal_icon_path_.empty())
+    {
+        pick = &normal_icon_path_;
+    }
+    if (!pick)
+    {
+        return;
+    }
+    app_indicator_set_icon_full(static_cast<AppIndicator*>(indicator_),
+                                pick->c_str(), "Tesseract");
 }

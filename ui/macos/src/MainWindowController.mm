@@ -90,6 +90,8 @@ public:
 protected:
     void post_to_ui_(std::function<void()> fn) override;
     void on_rooms_updated_() override;
+    void on_tray_unread_changed_(bool has_unread,
+                                 bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& key,
                                ShellBase::MediaKind kind,
                                std::vector<uint8_t> bytes) override;
@@ -195,6 +197,8 @@ public:
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
     using ShellBase::last_room_list_state_;
+    using ShellBase::last_tray_highlight_;
+    using ShellBase::last_tray_unread_;
     using ShellBase::mark_room_read_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::media_fetches_in_flight_;
@@ -211,6 +215,7 @@ public:
     using ShellBase::per_account_rooms_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
+    using ShellBase::notify_tray_unread_;
     using ShellBase::push_rooms_;
     using ShellBase::recovery_banner_dismissed_;
     using ShellBase::reply_details_requested_;
@@ -384,6 +389,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
 - (void)_onServerInfoReady;
+- (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight;
 
 // Sticker picker + animated stickers.
 - (void)handleImagePacksUpdated;
@@ -456,6 +462,16 @@ void MacShell::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+}
+
+void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
+{
+    MainWindowController* c = ctrl_;
+    if (!c)
+    {
+        return;
+    }
+    [c _updateTrayUnread:has_unread highlight:has_highlight];
 }
 
 void MacShell::on_media_bytes_ready_(const std::string& key,
@@ -4080,6 +4096,14 @@ void MacShell::apply_cached_messages_(
                     [NSApp terminate:nil];
                 });
             });
+        if (_tray && _tray->is_available())
+        {
+            // Seed the new tray with the current aggregate so an already-
+            // unread state shows immediately rather than waiting for the next
+            // sync tick to flip on_tray_unread_changed_.
+            _tray->set_unread(_shell->last_tray_unread_,
+                              _shell->last_tray_highlight_);
+        }
     }
 
     UNUserNotificationCenter* center =
@@ -4326,6 +4350,10 @@ void MacShell::apply_cached_messages_(
 
     tesseract::SessionStore::clear_account(uid);
     _shell->per_account_rooms_.erase(uid);
+    // Recompute the tray aggregate so the dot clears (or rolls over to the
+    // surviving accounts) immediately; without this the indicator can stick
+    // when the only account with unreads was the one we just signed out.
+    _shell->notify_tray_unread_();
     _shell->accounts_.erase(_shell->accounts_.begin() +
                             _shell->active_account_index_);
 
@@ -4964,6 +4992,14 @@ void MacShell::apply_cached_messages_(
             _shell->server_info_.supports_msc3030);
     if (_mainAppSurface)
         _mainAppSurface->relayout();
+}
+
+- (void)_updateTrayUnread:(bool)hasUnread highlight:(bool)hasHighlight
+{
+    if (_tray)
+    {
+        _tray->set_unread(hasUnread, hasHighlight);
+    }
 }
 
 - (void)_maybeShowRecoveryBanner

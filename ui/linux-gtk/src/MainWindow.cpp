@@ -1974,6 +1974,10 @@ void MainWindow::start_tray_if_needed_()
     {
         // Keep the GApplication alive when the window is hidden.
         g_application_hold(G_APPLICATION(app_));
+        // Seed the new tray with the current aggregate so an already-unread
+        // state shows immediately rather than waiting for the next sync tick
+        // to flip on_tray_unread_changed_.
+        tray_->set_unread(last_tray_unread_, last_tray_highlight_);
     }
     else
     {
@@ -2936,6 +2940,14 @@ void MainWindow::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+}
+
+void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
+{
+    if (tray_)
+    {
+        tray_->set_unread(has_unread, has_highlight);
+    }
 }
 
 void MainWindow::handle_reconnect(const std::string& user_id)
