@@ -223,6 +223,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     case tesseract::EventType::Redacted:
         row.kind = Kind::Redacted;
         break;
+    case tesseract::EventType::Utd:
+        row.kind = Kind::Utd;
+        break;
     case tesseract::EventType::Unhandled:
         row.kind = Kind::Unhandled;
         break;
@@ -908,7 +911,8 @@ public:
                 btn_right -= w + chip_gap();
             };
 
-            if (m.is_own && m.kind != MessageRowData::Kind::Redacted)
+            if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd)
             {
                 paint_btn(static_cache_.trash.get(),
                           owner_.hovered_row_geom_.delete_button);
@@ -920,7 +924,12 @@ public:
             }
             paint_btn(static_cache_.reply.get(),
                       owner_.hovered_row_geom_.reply_button);
-            if (const auto* l = static_cache_.plus.get())
+            // Reaction-add pill is suppressed on UTD rows — reacting to an
+            // unreadable body is meaningless.
+            const tk::TextLayout* plus_lo =
+                m.kind == MessageRowData::Kind::Utd ? nullptr
+                                                     : static_cache_.plus.get();
+            if (const auto* l = plus_lo)
             {
                 tk::Size sz = l->measure();
                 float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
@@ -1161,7 +1170,8 @@ public:
                                     owner_.hovered_row_geom_.edit_button,
                                     false);
                 }
-                if (m.is_own && m.kind != MessageRowData::Kind::Redacted)
+                if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
+                    m.kind != MessageRowData::Kind::Utd)
                 {
                     paint_strip_btn(static_cache_.trash.get(),
                                     owner_.hovered_row_geom_.delete_button,
@@ -1573,6 +1583,9 @@ private:
                        m.body.empty() ? std::string("(empty message)") : m.body,
                        ctx, col_w);
 
+        case MessageRowData::Kind::Utd:
+            return quote_h + measure_text_height(m.body, ctx, col_w);
+
         case MessageRowData::Kind::Image:
         {
             float max_w = std::min(col_w, kImageMaxW);
@@ -1811,6 +1824,15 @@ private:
         case MessageRowData::Kind::Redacted:
         {
             float h = paint_wrapped_text("Message deleted", ctx, x, y, col_w,
+                                         ctx.theme.palette.text_muted);
+            return y + h;
+        }
+        case MessageRowData::Kind::Utd:
+        {
+            // `body` already carries the cause-aware reason from the Rust
+            // converter (e.g. "🔒 Unable to decrypt"). Render muted, single
+            // line — same style as the redacted tombstone above.
+            float h = paint_wrapped_text(m.body, ctx, x, y, col_w,
                                          ctx.theme.palette.text_muted);
             return y + h;
         }

@@ -579,6 +579,19 @@ TEST_CASE("EventType enum values are correct", "[types]")
     CHECK(static_cast<int>(tesseract::EventType::Notice) == 8);
     CHECK(static_cast<int>(tesseract::EventType::Emote) == 9);
     CHECK(static_cast<int>(tesseract::EventType::Unhandled) == 10);
+    CHECK(static_cast<int>(tesseract::EventType::Utd) == 15);
+}
+
+TEST_CASE("UtdEvent default-initialised fields", "[types]")
+{
+    tesseract::UtdEvent ev{};
+    CHECK(ev.event_id.empty());
+    CHECK(ev.room_id.empty());
+    CHECK(ev.sender.empty());
+    // body carries the human-readable reason set by the Rust converter —
+    // empty by default.
+    CHECK(ev.body.empty());
+    CHECK(ev.type == tesseract::EventType::Utd);
 }
 
 // ---------------------------------------------------------------------------

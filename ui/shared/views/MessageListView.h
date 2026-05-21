@@ -42,6 +42,7 @@ struct MessageRowData
         Voice,
         Video,
         Redacted,
+        Utd,
         Notice,
         Emote,
         Unhandled,

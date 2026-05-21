@@ -41,9 +41,10 @@ use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
     sync_service::SyncService,
     timeline::{
-        EventSendState, MsgLikeContent, MsgLikeKind, RoomExt, TimelineDetails,
-        TimelineEventFocusThreadMode, TimelineEventItemId, TimelineFocus, TimelineItem,
-        TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+        EncryptedMessage, EventSendState, MsgLikeContent, MsgLikeKind, RoomExt,
+        TimelineDetails, TimelineEventFocusThreadMode, TimelineEventItemId,
+        TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind,
+        VirtualTimelineItem,
     },
 };
 #[cfg(not(test))]
@@ -64,6 +65,34 @@ fn err(msg: impl Into<String>) -> OpResult {
     OpResult {
         ok: false,
         message: msg.into(),
+    }
+}
+
+/// Map a UTD cause to a single-line user-facing message. Padlock glyph
+/// matches the system-message style already used for "Message deleted".
+/// Used by the timeline converter when matrix-sdk-ui surfaces an
+/// `UnableToDecrypt` item so the row can render a proper explanation
+/// instead of being silently dropped.
+fn utd_message_for_cause(
+    cause: matrix_sdk_base::crypto::types::events::UtdCause,
+) -> &'static str {
+    use matrix_sdk_base::crypto::types::events::UtdCause;
+    match cause {
+        UtdCause::SentBeforeWeJoined =>
+            "🔒 Sent before you joined this room",
+        UtdCause::VerificationViolation =>
+            "🔒 Sender's identity changed since you verified them",
+        UtdCause::UnsignedDevice => "🔒 Sender's device is not signed",
+        UtdCause::UnknownDevice => "🔒 Sender's device is unknown",
+        UtdCause::HistoricalMessageAndBackupIsDisabled =>
+            "🔒 History unavailable (key backup is off)",
+        UtdCause::WithheldForUnverifiedOrInsecureDevice =>
+            "🔒 Sender blocked this device",
+        UtdCause::WithheldBySender =>
+            "🔒 Key was not shared with this device",
+        UtdCause::HistoricalMessageAndDeviceIsUnverified =>
+            "🔒 Verify this device to access history",
+        UtdCause::Unknown => "🔒 Unable to decrypt",
     }
 }
 
@@ -6544,6 +6573,91 @@ async fn timeline_item_to_ffi(
             (String::new(), String::new(), false, String::new())
         };
 
+    // Undecryptable messages: matrix-sdk-ui surfaces them as a MsgLikeKind
+    // variant we'd otherwise drop with the rest of the fall-through. Map the
+    // crypto `UtdCause` to a single-line user-facing reason and emit an
+    // "m.utd" tombstone so the UI can paint a muted row instead of leaving
+    // a gap where a message exists on the server.
+    if let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::UnableToDecrypt(encrypted_message),
+        ..
+    }) = event_item.content()
+    {
+        use matrix_sdk_base::crypto::types::events::UtdCause;
+        let cause = match encrypted_message {
+            EncryptedMessage::MegolmV1AesSha2 { cause, .. } => *cause,
+            _ => UtdCause::Unknown,
+        };
+        let body = utd_message_for_cause(cause).to_owned();
+        let (sender_name, sender_avatar_url) =
+            if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                (
+                    p.display_name.clone().unwrap_or_default(),
+                    p.avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string())
+                        .unwrap_or_default(),
+                )
+            } else {
+                (String::new(), String::new())
+            };
+        return Some(TimelineEvent {
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            room_id: room_id.to_owned(),
+            sender: event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            body,
+            timestamp: event_item.timestamp().get().into(),
+            msg_type: "m.utd".to_owned(),
+            source_url: String::new(),
+            source_encrypted_json: String::new(),
+            width: 0u64,
+            height: 0u64,
+            file_url: String::new(),
+            file_encrypted_json: String::new(),
+            file_name: String::new(),
+            file_size: 0u64,
+            image_filename: String::new(),
+            audio_url: String::new(),
+            audio_encrypted_json: String::new(),
+            audio_duration_ms: 0u64,
+            audio_waveform: Vec::new(),
+            audio_mime: String::new(),
+            video_thumbnail_url: String::new(),
+            video_thumbnail_encrypted_json: String::new(),
+            image_thumbnail_url: String::new(),
+            image_thumbnail_encrypted_json: String::new(),
+            video_duration_ms: 0u64,
+            video_mime: String::new(),
+            video_autoplay: false,
+            video_loop: false,
+            video_no_audio: false,
+            video_hide_controls: false,
+            video_gif: false,
+            reactions: Vec::new(),
+            read_receipts: Vec::new(),
+            in_reply_to_id: String::new(),
+            in_reply_to_sender_name: String::new(),
+            in_reply_to_body: String::new(),
+            is_edited: false,
+            formatted_body: String::new(),
+            blurhash: String::new(),
+            sticker_info_json: String::new(),
+            image_animated: false,
+            pending_state: String::new(),
+            pending_error: String::new(),
+            pending_recoverable: false,
+            pending_txn_id: String::new(),
+            location_lat: 0.0,
+            location_lon: 0.0,
+            location_description: String::new(),
+        });
+    }
+
     // Redactions: matrix-sdk-ui replaces the original item with
     // MsgLikeKind::Redacted in place. Surface it as a tombstone (msg_type
     // "m.redacted") so the UI can swap the existing row to a placeholder
@@ -8684,6 +8798,41 @@ mod set_presence_tests {
             assert!(
                 r.message.starts_with("invalid presence state"),
                 "byte {byte} message was {:?}", r.message
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod utd_message_tests {
+    use super::utd_message_for_cause;
+    use matrix_sdk_base::crypto::types::events::UtdCause;
+
+    #[test]
+    fn every_known_cause_has_a_padlock_message() {
+        // Every UtdCause variant should map to a non-empty single-line
+        // string that starts with the padlock glyph so the row is
+        // visually recognisable as a crypto-failure.
+        for cause in [
+            UtdCause::Unknown,
+            UtdCause::SentBeforeWeJoined,
+            UtdCause::VerificationViolation,
+            UtdCause::UnsignedDevice,
+            UtdCause::UnknownDevice,
+            UtdCause::HistoricalMessageAndBackupIsDisabled,
+            UtdCause::WithheldForUnverifiedOrInsecureDevice,
+            UtdCause::WithheldBySender,
+            UtdCause::HistoricalMessageAndDeviceIsUnverified,
+        ] {
+            let m = utd_message_for_cause(cause);
+            assert!(!m.is_empty(), "cause {cause:?} had empty message");
+            assert!(
+                m.starts_with('🔒'),
+                "cause {cause:?} message {m:?} should start with padlock"
+            );
+            assert!(
+                !m.contains('\n'),
+                "cause {cause:?} message {m:?} must be single line"
             );
         }
     }

@@ -25,6 +25,8 @@ enum class EventType
     ReadMarker,
     TimelineStart,
     Location,
+    Utd,    // appended (not slotted near Redacted) so existing enum-int
+            // pinned tests stay valid
 };
 
 /// User presence state. Wire encoding (matches sdk/src/bridge.rs on_presence_changed):
@@ -174,6 +176,18 @@ struct RedactedEvent : public Event
     RedactedEvent()
     {
         type = EventType::Redacted;
+    }
+};
+
+/// Placeholder for an event the local crypto store can't decrypt. `body`
+/// carries the human-readable single-line reason (e.g. "🔒 Unable to
+/// decrypt"). No content fields are populated — UIs paint `body` muted,
+/// like the redacted tombstone.
+struct UtdEvent : public Event
+{
+    UtdEvent()
+    {
+        type = EventType::Utd;
     }
 };
 

@@ -20,8 +20,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 117 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 411 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 118 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 412 |
 
 ## Platforms
 

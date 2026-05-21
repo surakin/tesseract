@@ -235,6 +235,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.utd")
+    {
+        auto ev = std::make_unique<UtdEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     if (msg_type == "m.file")
     {
         auto ev = std::make_unique<FileEvent>();
