@@ -4025,6 +4025,53 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    #[cfg(not(test))]
+    pub fn set_display_name(&mut self, name: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let client = client.clone();
+        let name = name.to_owned();
+        match self.rt.block_on(client.account().set_display_name(Some(&name))) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn set_display_name(&mut self, _name: &str) -> OpResult { err("not logged in") }
+
+    #[cfg(not(test))]
+    pub fn upload_avatar(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let client = client.clone();
+        let data = bytes.to_vec();
+        let mime: mime::Mime = match mime_type.parse() {
+            Ok(m) => m,
+            Err(_) => return err(format!("invalid mime type: {mime_type}")),
+        };
+        let upload = self.rt.block_on(client.media().upload(&mime, data, None));
+        let mxc_uri = match upload {
+            Ok(r) => r.content_uri,
+            Err(e) => return err(format!("upload avatar: {e}")),
+        };
+        match self.rt.block_on(client.account().set_avatar_url(Some(&mxc_uri))) {
+            Ok(_) => ok(mxc_uri.to_string()),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn upload_avatar(&mut self, _bytes: &[u8], _mime_type: &str) -> OpResult { err("not logged in") }
+
+    #[cfg(not(test))]
+    pub fn remove_avatar(&mut self) -> OpResult {
+        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let client = client.clone();
+        match self.rt.block_on(client.account().set_avatar_url(None)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn remove_avatar(&mut self) -> OpResult { err("not logged in") }
+
     /// Return room ID of an existing DM with user_id, or create one.
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
