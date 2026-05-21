@@ -2207,6 +2207,20 @@ MainWindow::~MainWindow()
     // before we destroy pending_login_client_ and the accounts vector.
     login_view_.reset();
     pending_login_client_.reset();
+    // Second pass: explicitly destroy all accounts HERE, while workers_mu_ /
+    // workers_cv_ are still alive (destructor body, before ShellBase's
+    // member-destructor pass destroys workers_mu_ ahead of accounts_).
+    // Each ~Client() calls rt.drop() which kills the tokio I/O driver; any
+    // run_async_() thread still blocked in a block_on() will then unblock.
+    accounts_.clear();
+    {
+        std::unique_lock<std::mutex> lk(workers_mu_);
+        workers_cv_.wait_for(lk, std::chrono::seconds(5),
+                             [this]
+                             {
+                                 return workers_in_flight_ == 0;
+                             });
+    }
 }
 
 // ---------------------------------------------------------------------------

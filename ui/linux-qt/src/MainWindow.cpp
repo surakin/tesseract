@@ -1670,11 +1670,11 @@ MainWindow::~MainWindow()
     //     tracked by workers_in_flight_ / workers_cv_.
     //
     // Both flags must be flipped first so no new work is enqueued after the
-    // clear/drain calls.  stop_sync() is called before the waits so the
-    // Rust-side cancellation channel fires and any worker blocked inside a
-    // tokio block_on() returns promptly instead of waiting on a network hop.
-    // ~ClientFfi calls stop_sync() a second time as a no-op safety net
-    // (handler.take() returns None on repeated calls).
+    // clear/drain calls.  stop_sync() is called early to cancel the Rust sync
+    // loop; it does NOT cancel individual fetch_*() HTTP requests (those block
+    // on tokio block_on(), which only unblocks when rt.drop() kills the I/O
+    // driver inside ~Client()).  ~ClientFfi calls stop_sync() a second time as
+    // a no-op safety net (handler.take() returns None on repeated calls).
     shuttingDown_.store(true, std::memory_order_release);
     shutting_down_.store(true, std::memory_order_release);
     mediaPool_.clear();
@@ -1689,7 +1689,10 @@ MainWindow::~MainWindow()
     {
         pending_login_client_->stop_sync();
     }
-    // Drain ShellBase detached threads (avatar / media fetches).
+    // Drain ShellBase detached std::threads (avatar / media fetches).
+    // First pass: give threads already past the shutting_down_ check a chance
+    // to finish on their own (stop_sync() above cancels the sync loop, but
+    // does NOT cancel individual fetch_*() HTTP requests).
     {
         std::unique_lock<std::mutex> lk(workers_mu_);
         workers_cv_.wait_for(lk, std::chrono::seconds(5),
@@ -1711,6 +1714,34 @@ MainWindow::~MainWindow()
     // bound client. Tear it down here while everything is still alive.
     delete loginView_;
     loginView_ = nullptr;
+
+    // Second pass: explicitly destroy all accounts and the pending-login
+    // client HERE, while workers_mu_ / workers_cv_ are still alive (destructor
+    // body, before ShellBase's member-destructor pass).
+    //
+    // Why this matters: in ShellBase, workers_mu_ is declared after accounts_,
+    // so C++'s reverse-order member destruction destroys workers_mu_ BEFORE
+    // accounts_.  If the 5-second wait above timed out (a thread was blocked
+    // in a slow HTTP fetch that stop_sync() didn't cancel), the thread is still
+    // alive when member destruction runs.  Each ~Client() calls rt.drop() which
+    // shuts the tokio I/O driver; the blocked block_on() then unblocks and the
+    // thread tries to acquire workers_mu_ — but the mutex is already destroyed
+    // → heap corruption.
+    //
+    // By clearing accounts_ here, rt.drop() fires while workers_mu_ is still
+    // alive.  The second wait below gives those threads time to lock workers_mu_,
+    // decrement workers_in_flight_, and exit before the member-destructor pass
+    // runs.  After the second wait, workers_mu_ can be safely destroyed.
+    pending_login_client_.reset();
+    accounts_.clear();
+    {
+        std::unique_lock<std::mutex> lk(workers_mu_);
+        workers_cv_.wait_for(lk, std::chrono::seconds(5),
+                             [this]
+                             {
+                                 return workers_in_flight_ == 0;
+                             });
+    }
 }
 
 #ifdef HAVE_XDG_ACTIVATION
