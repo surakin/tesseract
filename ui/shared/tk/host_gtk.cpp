@@ -1090,6 +1090,7 @@ public:
 
     void on_pointer_down(double x, double y)
     {
+        fire_user_activity_();
         if (!root_)
         {
             return;
@@ -1196,6 +1197,7 @@ public:
 
     void on_wheel(double x, double y, double dx, double dy)
     {
+        fire_user_activity_();
         if (!root_)
         {
             return;

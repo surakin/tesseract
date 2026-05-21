@@ -846,6 +846,7 @@ public:
     // generic capture protocol — it's the minimum LoginView needs.
     void on_pointer_down(Point local)
     {
+        fire_user_activity_();
         if (!root_)
         {
             return;
@@ -952,6 +953,7 @@ public:
 
     void on_wheel(Point local, float dx, float dy)
     {
+        fire_user_activity_();
         if (!root_)
         {
             return;

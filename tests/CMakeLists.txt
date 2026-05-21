@@ -51,6 +51,7 @@ add_executable(tesseract_tests
     cpp/test_tk_account_section.cpp
     cpp/test_settings_controller.cpp
     cpp/test_tk_devices_section.cpp
+    cpp/test_presence_tracker.cpp
     cpp/test_tray_unread.cpp
 )
 

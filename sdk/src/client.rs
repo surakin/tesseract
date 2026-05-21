@@ -4331,6 +4331,41 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    // -----------------------------------------------------------------------
+    // Presence
+    // -----------------------------------------------------------------------
+
+    #[cfg(not(test))]
+    pub fn set_presence(&mut self, state: u8) -> OpResult {
+        use matrix_sdk::ruma::api::client::presence::set_presence::v3;
+        use matrix_sdk::ruma::presence::PresenceState;
+        let presence = match state {
+            1 => PresenceState::Online,
+            2 => PresenceState::Unavailable,
+            3 => PresenceState::Offline,
+            _ => return err(format!("invalid presence state {state}")),
+        };
+        let Some(client) = self.client.clone() else { return err("not logged in"); };
+        let Some(user_id) = client.user_id().map(|u| u.to_owned()) else {
+            return err("not logged in");
+        };
+        let result = self.rt.block_on(async move {
+            let req = v3::Request::new(user_id, presence);
+            client.send(req).await
+        });
+        match result {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+    #[cfg(test)]
+    pub fn set_presence(&mut self, state: u8) -> OpResult {
+        if !matches!(state, 1 | 2 | 3) {
+            return err(format!("invalid presence state {state}"));
+        }
+        err("not logged in")
+    }
+
     /// Return room ID of an existing DM with user_id, or create one.
     /// Returns empty string on error. Blocks — worker thread.
     #[cfg(not(test))]
@@ -8570,5 +8605,35 @@ mod uia_fallback_url_tests {
     #[test]
     fn encode_segment_keeps_unreserved() {
         assert_eq!(urlencoding_encode_segment("AZaz09-_.~"), "AZaz09-_.~");
+    }
+}
+
+#[cfg(test)]
+mod set_presence_tests {
+    use super::ClientFfi;
+
+    #[test]
+    fn valid_state_bytes_pass_validation() {
+        // No client → "not logged in", but the state byte is accepted.
+        let mut ffi = ClientFfi::new();
+        for byte in [1u8, 2, 3] {
+            let r = ffi.set_presence(byte);
+            assert!(!r.ok, "no client → must fail");
+            assert_eq!(r.message, "not logged in",
+                       "byte {byte} should pass validation");
+        }
+    }
+
+    #[test]
+    fn unknown_state_byte_is_rejected() {
+        let mut ffi = ClientFfi::new();
+        for byte in [0u8, 4, 5, 255] {
+            let r = ffi.set_presence(byte);
+            assert!(!r.ok);
+            assert!(
+                r.message.starts_with("invalid presence state"),
+                "byte {byte} message was {:?}", r.message
+            );
+        }
     }
 }

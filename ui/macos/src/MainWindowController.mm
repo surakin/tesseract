@@ -1403,6 +1403,7 @@ void MacShell::apply_cached_messages_(
 
     NSTimer* _animTimer;
     NSTimer* _markReadTimer;
+    NSTimer* _presenceTickTimer;
 
     // System-tray icon (menu-bar status item). Created after login; nil
     // until then. When non-nil and `is_available()`, closing the window
@@ -1490,6 +1491,24 @@ void MacShell::apply_cached_messages_(
 
     // ── Single surface hosting the full main-app widget tree ──────────
     _mainAppSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    // Feed pointer / wheel events into the PresenceTracker.
+    _mainAppSurface->host().set_on_user_activity(
+        [shell = _shell.get()] { if (shell) shell->notify_user_activity_(); });
+
+    // 30 s periodic tick for the idle-decay check.
+    __weak MainWindowController* weakSelf = self;
+    _presenceTickTimer =
+        [NSTimer scheduledTimerWithTimeInterval:30.0
+                                        repeats:YES
+                                          block:^(NSTimer*) {
+                                              MainWindowController* s = weakSelf;
+                                              if (s && s->_shell)
+                                              {
+                                                  s->_shell->notify_presence_tick_();
+                                              }
+                                          }];
+    [[NSRunLoop currentRunLoop] addTimer:_presenceTickTimer
+                                 forMode:NSRunLoopCommonModes];
     {
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
@@ -3152,6 +3171,11 @@ void MacShell::apply_cached_messages_(
         [NSEvent removeMonitor:_escapeMonitor];
         _escapeMonitor = nil;
     }
+    if (_presenceTickTimer)
+    {
+        [_presenceTickTimer invalidate];
+        _presenceTickTimer = nil;
+    }
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath
@@ -4358,6 +4382,7 @@ void MacShell::apply_cached_messages_(
         }
         _shell->current_room_id_.clear();
     }
+    _shell->notify_presence_logout_();
     session->client->logout();
     session->client->stop_sync();
     session->sync_started = false;
@@ -4453,6 +4478,19 @@ void MacShell::apply_cached_messages_(
     {
         [NSApp cancelUserAttentionRequest:_attentionRequestToken];
         _attentionRequestToken = 0;
+    }
+    if (_shell)
+    {
+        _shell->notify_window_active_(true);
+    }
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification
+{
+    (void)notification;
+    if (_shell)
+    {
+        _shell->notify_window_active_(false);
     }
 }
 

@@ -739,12 +739,16 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
 
     case WM_ACTIVATE:
-        if (LOWORD(wParam) != WA_INACTIVE)
+    {
+        const bool active = LOWORD(wParam) != WA_INACTIVE;
+        if (active)
         {
             FLASHWINFO fwi{sizeof(fwi), hwnd, FLASHW_STOP, 0, 0};
             FlashWindowEx(&fwi);
         }
+        self->notify_window_active_(active);
         return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
 
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED)
@@ -1047,6 +1051,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->mark_room_read_(self->current_room_id_);
             return 0;
         }
+        if (wParam == kPresenceTickTimerId)
+        {
+            // Periodic (30 s); auto-reschedules — do not kill.
+            self->notify_presence_tick_();
+            return 0;
+        }
         if (wParam == kSyncStatusDebounceTimerId)
         {
             KillTimer(hwnd, kSyncStatusDebounceTimerId);
@@ -1193,6 +1203,13 @@ void MainWindow::on_create(HWND hwnd)
         main_app_surface_ = std::make_unique<tk::win32::Surface>(
             hInst_, hwnd, tk::Theme::light());
         main_app_surface_->set_root(std::move(mainAppRoot));
+
+        // Feed input into the PresenceTracker.
+        main_app_surface_->host().set_on_user_activity(
+            [this] { notify_user_activity_(); });
+
+        // 30 s periodic tick — paired with WM_TIMER below.
+        SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
 
         // Share the DWrite font fallback built by the Surface with TextRenderer
         // so the room header draws flag emoji the same way.
@@ -5077,6 +5094,7 @@ void MainWindow::logout_active_account()
     }
 
     std::string uid = accounts_[active_account_index_]->user_id;
+    notify_presence_logout_();
     accounts_[active_account_index_]->client->logout();
     accounts_[active_account_index_]->client->stop_sync();
     accounts_.erase(accounts_.begin() + active_account_index_);

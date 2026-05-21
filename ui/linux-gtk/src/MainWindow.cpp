@@ -429,6 +429,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
 
     // Single surface hosting the full main-app widget tree.
     main_app_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
+    // Feed pointer / wheel events into the PresenceTracker. Focus + tick are
+    // wired separately via notify::is-active + g_timeout_add.
+    main_app_surface_->host().set_on_user_activity(
+        [this] { notify_user_activity_(); });
     {
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
@@ -1916,14 +1920,29 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                      G_CALLBACK(+[](GtkWindow* w, GParamSpec*, gpointer data)
                                 {
                                     auto* self = static_cast<MainWindow*>(data);
-                                    if (gtk_window_is_active(w) && self->app_)
+                                    const bool active = gtk_window_is_active(w);
+                                    if (active && self->app_)
                                     {
                                         g_application_withdraw_notification(
                                             G_APPLICATION(self->app_),
                                             kAttentionNotifId);
                                     }
+                                    self->notify_window_active_(active);
                                 }),
                      this);
+
+    // 30 s periodic tick — granular enough for a 5 min idle threshold without
+    // burning CPU. Returns G_SOURCE_CONTINUE to auto-reschedule; the source
+    // id is stashed so ~MainWindow can g_source_remove() it (matching the
+    // existing tk_anim_tick_id_ / mark_read_timer_id_ pattern).
+    presence_tick_id_ = g_timeout_add_seconds(
+        30,
+        +[](gpointer data) -> gboolean
+        {
+            static_cast<MainWindow*>(data)->notify_presence_tick_();
+            return G_SOURCE_CONTINUE;
+        },
+        this);
 
     // Load saved theme preference and apply it.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
@@ -2093,6 +2112,11 @@ MainWindow::~MainWindow()
     {
         g_source_remove(tk_anim_tick_id_);
         tk_anim_tick_id_ = 0;
+    }
+    if (presence_tick_id_)
+    {
+        g_source_remove(presence_tick_id_);
+        presence_tick_id_ = 0;
     }
     if (sync_status_debounce_id_)
     {
@@ -5394,6 +5418,7 @@ void MainWindow::logout_active_account()
     {
         sess.up_connector->logout();
     }
+    notify_presence_logout_();
     auto res = client_->logout();
     client_->stop_sync();
 

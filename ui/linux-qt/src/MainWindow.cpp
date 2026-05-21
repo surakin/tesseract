@@ -120,6 +120,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     mainAppSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
     contentStack_->addWidget(mainAppSurface_);
 
+    // Feed pointer / wheel events into the PresenceTracker so we stay "Online"
+    // while the user is engaging with the app. Focus + timer ticks are wired
+    // separately below (changeEvent + QTimer).
+    mainAppSurface_->host().set_on_user_activity(
+        [this] { notify_user_activity_(); });
+
+    // 30 s periodic tick — granular enough for a 5 min idle threshold without
+    // burning CPU. The tracker is lazily created on first activity once sync
+    // is up, so ticks before then are cheap no-ops.
+    presence_tick_timer_ = new QTimer(this);
+    connect(presence_tick_timer_, &QTimer::timeout, this,
+            [this] { notify_presence_tick_(); });
+    presence_tick_timer_->start(30000);
+
     {
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
@@ -1923,6 +1937,18 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
 void MainWindow::resizeEvent(QResizeEvent* ev)
 {
     QMainWindow::resizeEvent(ev);
+}
+
+void MainWindow::changeEvent(QEvent* ev)
+{
+    QMainWindow::changeEvent(ev);
+    if (ev->type() == QEvent::ActivationChange)
+    {
+        // Tell the PresenceTracker the window's foreground / background
+        // status — gaining focus forces Online; losing focus arms the idle
+        // decay (the periodic tick handles the actual transition).
+        notify_window_active_(isActiveWindow());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4310,6 +4336,7 @@ void MainWindow::logoutActiveAccount()
     {
         a.up_connector->logout();
     }
+    notify_presence_logout_();
     a.client->logout();
     a.client->stop_sync();
     tesseract::SessionStore::clear_account(uid);

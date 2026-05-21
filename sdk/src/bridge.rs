@@ -1067,6 +1067,14 @@ pub mod ffi {
             session: &str,
         ) -> OpResult;
 
+        // ----- Presence -----
+
+        /// Publish the current user's Matrix presence via
+        /// `PUT /presence/{userId}/status`. `state` is the same 1/2/3 wire
+        /// encoding the receive side uses: 1=Online, 2=Unavailable, 3=Offline.
+        /// Any other value is rejected with `ok=false`. Blocks — worker thread.
+        fn set_presence(self: &mut ClientFfi, state: u8) -> OpResult;
+
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;

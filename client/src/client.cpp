@@ -507,6 +507,20 @@ Result Client::complete_delete_device(const std::string& device_id,
     return from_ffi(impl_->ffi->complete_delete_device(device_id, session));
 }
 
+Result Client::set_presence(PresenceState state)
+{
+    // Map the C++ enum (Online=0, Unavailable=1, Offline=2) to the 1/2/3 wire
+    // encoding the Rust FFI accepts (matches event_handler_bridge's inverse).
+    std::uint8_t byte = 3;
+    switch (state)
+    {
+        case PresenceState::Online:      byte = 1; break;
+        case PresenceState::Unavailable: byte = 2; break;
+        case PresenceState::Offline:     byte = 3; break;
+    }
+    return from_ffi(impl_->ffi->set_presence(byte));
+}
+
 std::vector<uint8_t> Client::fetch_avatar_bytes(const std::string& room_id)
 {
     auto v = impl_->ffi->fetch_avatar_bytes(room_id);

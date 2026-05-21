@@ -1433,6 +1433,7 @@ public:
 
     void on_pointer_down(int x, int y)
     {
+        fire_user_activity_();
         if (!root_)
         {
             return;
@@ -1534,6 +1535,7 @@ public:
 
     void on_wheel(int screen_x, int screen_y, int delta_steps)
     {
+        fire_user_activity_();
         if (!root_ || !hwnd_)
         {
             return;

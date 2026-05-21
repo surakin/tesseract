@@ -436,6 +436,7 @@ private:
     static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
     static constexpr UINT_PTR kStatusClearTimerId = 7;
+    static constexpr UINT_PTR kPresenceTickTimerId = 8;
     static constexpr UINT kAnimTimerHz = 16; // ~60 fps
     bool anim_timer_running_ = false;
     std::string pending_search_text_;

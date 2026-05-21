@@ -528,6 +528,16 @@ public:
                                   const std::string& session);
 
     // ------------------------------------------------------------------
+    // Presence
+    // ------------------------------------------------------------------
+
+    /// Publish the current user's Matrix presence via
+    /// `PUT /presence/{userId}/status`. Reuses the same 1/2/3 wire encoding
+    /// as the receive-side `IEventHandler::on_presence_changed` path.
+    /// Blocks — call from a worker thread.
+    Result set_presence(PresenceState state);
+
+    // ------------------------------------------------------------------
     // Media
     // ------------------------------------------------------------------
 

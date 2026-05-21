@@ -351,6 +351,7 @@ private:
     std::unique_ptr<LinuxGtkTrayIcon> tray_;
 
     guint tk_anim_tick_id_ = 0;
+    guint presence_tick_id_ = 0;
 
     guint search_debounce_id_ = 0;
     guint scroll_debounce_id_ = 0;

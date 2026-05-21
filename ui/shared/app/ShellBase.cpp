@@ -1198,6 +1198,110 @@ PresenceState ShellBase::presence_for_(const std::string& user_id) const
     return it != user_presence_.end() ? it->second : PresenceState::Offline;
 }
 
+// ── Presence (send-side) ──────────────────────────────────────────────────────
+
+namespace
+{
+
+// Map PresenceTracker's enum to the Client::PresenceState the FFI accepts.
+tesseract::PresenceState to_client_presence(PresenceTracker::State s)
+{
+    switch (s)
+    {
+        case PresenceTracker::State::Online:      return PresenceState::Online;
+        case PresenceTracker::State::Unavailable: return PresenceState::Unavailable;
+        case PresenceTracker::State::Offline:     return PresenceState::Offline;
+    }
+    return PresenceState::Offline;
+}
+
+} // namespace
+
+void ShellBase::notify_user_activity_()
+{
+    if (!presence_tracker_)
+    {
+        // Lazily start tracking on the first activity we see *after* sync is
+        // up and running. This avoids publishing Online before the homeserver
+        // has acknowledged our access token via the sliding-sync handshake.
+        if (last_room_list_state_ == RoomListState::Running)
+        {
+            start_presence_tracking_();
+        }
+        else
+        {
+            return;
+        }
+    }
+    presence_tracker_->notify_input();
+}
+
+void ShellBase::notify_window_active_(bool active)
+{
+    if (presence_tracker_)
+    {
+        presence_tracker_->notify_window_active(active);
+    }
+}
+
+void ShellBase::notify_presence_tick_()
+{
+    if (presence_tracker_)
+    {
+        presence_tracker_->notify_tick();
+    }
+}
+
+void ShellBase::notify_presence_logout_()
+{
+    if (!presence_tracker_)
+    {
+        return;
+    }
+    // Tear down the tracker first so its on_state_change can't fire and
+    // spawn a worker that races with the shell's imminent
+    // accounts_.erase() / client destruction. Then PUT Offline
+    // *synchronously* on the UI thread: this is a user-initiated logout
+    // (already a high-latency action), the brief freeze is acceptable, and
+    // doing it inline guarantees we never hold a raw Client* across the
+    // destruction boundary.
+    presence_tracker_->on_state_change = nullptr;
+    presence_tracker_.reset();
+    if (client_)
+    {
+        (void) client_->set_presence(PresenceState::Offline);
+    }
+}
+
+void ShellBase::start_presence_tracking_()
+{
+    if (presence_tracker_)
+    {
+        return;
+    }
+    presence_tracker_ = std::make_unique<PresenceTracker>();
+    presence_tracker_->on_state_change =
+        [this](PresenceTracker::State s)
+    {
+        // Online ↔ Unavailable transitions: send the PUT through run_async_
+        // so app shutdown drains it (shutting_down_ + workers_in_flight_
+        // protect against accessing a destroyed Client during ~ShellBase).
+        // We access client_ inside the worker — same pattern as
+        // ensure_room_avatar_ — so it picks up the currently-active
+        // account, which is what we want.
+        const auto target = to_client_presence(s);
+        run_async_(
+            [this, target]
+            {
+                if (client_)
+                {
+                    (void) client_->set_presence(target);
+                }
+            });
+    };
+    presence_tracker_->notify_sync_started();
+}
+
 void ShellBase::handle_compose_text_changed_(const std::string& text)
 {
     bool typing = !text.empty();

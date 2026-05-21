@@ -9,6 +9,7 @@
 #include <tesseract/types.h>
 #include <tesseract/visual.h>
 #include <tesseract/waveform_cache.h>
+#include "app/PresenceTracker.h"
 #include "tk/anim_image_cache.h"
 #include "tk/audio_capture.h"
 #include "tk/canvas.h"
@@ -582,7 +583,7 @@ protected:
     {
     }
 
-    // ── Presence ──────────────────────────────────────────────────────────────
+    // ── Presence (receive-side) ───────────────────────────────────────────────
     // Maps bare Matrix user ID → last-received PresenceState.
     // Keyed only on IDs we've ever received a presence event for.
     std::unordered_map<std::string, PresenceState> user_presence_;
@@ -594,6 +595,34 @@ protected:
 
     // Look up the presence state for user_id. Returns Offline when unknown.
     PresenceState presence_for_(const std::string& user_id) const;
+
+    // ── Presence (send-side) ──────────────────────────────────────────────────
+    // Owned PresenceTracker. Constructed lazily on first
+    // `RoomListState::Running` so we only start publishing presence once we're
+    // actually synced. Shells feed it activity, focus, periodic ticks, and
+    // logout via the public notify_* helpers below.
+    std::unique_ptr<PresenceTracker> presence_tracker_;
+
+    // Called by the shell when the user does something in our window —
+    // either a Host input event (wired through Host::set_on_user_activity)
+    // or any other user-initiated action.
+    void notify_user_activity_();
+
+    // Called by the shell on window focus gained/lost.
+    void notify_window_active_(bool active);
+
+    // Called periodically (~every 30 s) by the shell. No-op when no tracker.
+    void notify_presence_tick_();
+
+    // Called from the shell's logout path before stop_sync(). Synchronously
+    // pushes Offline to the homeserver (best-effort, bounded by a short
+    // worker-thread timeout) so contacts see us go offline immediately.
+    void notify_presence_logout_();
+
+    // Construct presence_tracker_ and fire its initial sync_started transition.
+    // Idempotent. Called lazily from notify_user_activity_() once the sliding-
+    // sync handshake has settled (RoomListState::Running).
+    void start_presence_tracking_();
 
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,

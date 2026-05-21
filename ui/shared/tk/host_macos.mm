@@ -1386,6 +1386,7 @@ void Host::on_layout_changed()
 
 void Host::on_pointer_down(NSPoint p)
 {
+    fire_user_activity_();
     if (!root_)
     {
         return;
@@ -1482,6 +1483,7 @@ void Host::on_pointer_leave()
 
 void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy)
 {
+    fire_user_activity_();
     if (!root_)
     {
         return;

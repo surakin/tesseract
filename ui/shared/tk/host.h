@@ -204,6 +204,27 @@ public:
     // need to mutate widgets. Safe to call from any thread.
     virtual void post_to_ui(std::function<void()> task) = 0;
 
+    // Install a callback invoked on every pointer / keyboard / wheel event
+    // routed through this host. ShellBase wires this to feed activity into
+    // PresenceTracker so the user shows as Online while engaging with the
+    // app. Called on the UI thread; cheap implementations only — every
+    // event passes through this hook. Set to `{}` (empty std::function) to
+    // disable.
+    void set_on_user_activity(std::function<void()> cb)
+    {
+        on_user_activity_ = std::move(cb);
+    }
+
+protected:
+    // Each Host impl invokes this from its native input handlers — see
+    // host_qt.cpp / host_gtk.cpp / host_win32.cpp / host_macos.mm.
+    void fire_user_activity_()
+    {
+        if (on_user_activity_) on_user_activity_();
+    }
+
+public:
+
     // Run `fn` on the UI thread after at least `ms` milliseconds. One-shot;
     // coalescing not required. Used by the message-list room-switch gate to
     // bound how long the list is held invisible waiting for media to load.
@@ -247,6 +268,9 @@ public:
 
     // Write `text` to the system clipboard as plain text.
     virtual void set_clipboard_text(std::string_view text) = 0;
+
+private:
+    std::function<void()> on_user_activity_;
 };
 
 } // namespace tk

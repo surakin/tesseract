@@ -86,6 +86,7 @@ protected:
     void keyPressEvent(QKeyEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
     void closeEvent(QCloseEvent* ev) override;
+    void changeEvent(QEvent* ev) override;
 
 private slots:
     void onLoginSucceeded();
@@ -380,6 +381,7 @@ private:
     // Animated inline-media (GIF / WebP / APNG). `tk_anim_timer_` fires at
     // ~60 Hz and calls anim_cache_.advance(); a true return triggers repaint.
     QTimer* tk_anim_timer_ = nullptr;
+    QTimer* presence_tick_timer_ = nullptr;
 
     // ── Shortcode popup ──────────────────────────────────────────────────────
     tesseract::views::ShortcodeEngine shortcode_engine_;

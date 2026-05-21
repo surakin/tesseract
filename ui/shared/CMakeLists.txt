@@ -16,6 +16,8 @@ set(_tk_sources
     app/RoomWindowBase.cpp
     app/SettingsController.h
     app/SettingsController.cpp
+    app/PresenceTracker.h
+    app/PresenceTracker.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h
