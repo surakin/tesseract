@@ -244,6 +244,21 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             request_relayout();
             ensure_viewer_image_(src_tok);
         };
+
+        rv->on_avatar_clicked =
+            [this](std::string url, std::string name)
+        {
+            if (!img_viewer_ || url.empty())
+                return;
+            // Pass the avatar mxc URL as both source and display_key so the
+            // already-cached small avatar shows immediately while a full-res
+            // fetch runs. natural_{w,h}=0 lets the viewer pick a placeholder
+            // size until bytes arrive.
+            img_viewer_->open(url, url, name, 0, 0);
+            img_viewer_->set_visible(true);
+            request_relayout();
+            ensure_viewer_image_(url);
+        };
     }
 
     if (vid_viewer_)

@@ -264,6 +264,12 @@ private:
     /// bails before crossing the FFI boundary into `client_`.
     void runOnPool_(std::function<void()> fn);
 
+    /// Kick a full-resolution fetch for the image viewer (decoded at native
+    /// pixels, not the scaled inline thumbnail size). Idempotent — no-op if
+    /// already cached, animated (anim_cache_ has the original frames), or
+    /// already in flight. Shared by the image-click and avatar-click paths.
+    void ensureViewerFullres_(const std::string& url);
+
     /// Shutdown coordination. `~MainWindow` flips this flag, clears the
     /// pool of queued runnables, and waits (bounded) for in-flight
     /// workers to drain before calling `client_.stop_sync()`. Without

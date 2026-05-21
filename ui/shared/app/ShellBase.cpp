@@ -225,6 +225,23 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     };
     app->room_list_view()->set_presence_provider(presence_lookup);
     app->room_view()->room_info_panel()->set_presence_provider(presence_lookup);
+
+    // Avatar click in UserProfilePanel → open the image viewer with the
+    // (already-cached) avatar. The viewer's image_provider (wired in
+    // wire_main_app_viewers_) falls back to tk_avatars_, so passing the mxc
+    // URL is enough; no per-shell full-res fetch needed.
+    app->room_view()->on_avatar_clicked =
+        [app](std::string url, std::string name)
+    {
+        if (url.empty() || !app->image_viewer())
+            return;
+        app->image_viewer()->open(url, url, name, 0, 0);
+        app->show_image_viewer(true);
+        // Trigger the shell-wired relayout so the surface repaints with the
+        // viewer visible (mirrors the per-shell on_image_clicked path).
+        if (app->room_view()->on_layout_changed)
+            app->room_view()->on_layout_changed();
+    };
 }
 
 void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
@@ -235,7 +252,13 @@ void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
 {
     auto image_lookup = [this](const std::string& mxc) -> const tk::Image*
     {
-        return shell_sticker_no_fetch_(mxc);
+        if (const tk::Image* img = shell_sticker_no_fetch_(mxc))
+            return img;
+        // Avatars live in a separate cache from media/stickers; let the
+        // viewer find them so clicking an avatar in UserProfilePanel /
+        // RoomInfoPanel can show whatever resolution is already cached.
+        auto it = tk_avatars_.find(mxc);
+        return it == tk_avatars_.end() ? nullptr : it->second.get();
     };
 
     auto* iv = app->image_viewer();

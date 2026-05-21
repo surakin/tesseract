@@ -332,8 +332,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 {
                     return f;
                 }
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
+                if (auto it = tk_images_.find(url); it != tk_images_.end())
+                {
+                    return it->second.get();
+                }
+                // Avatars live in a separate cache — let the viewer find
+                // them so clicking a profile avatar shows the cached image.
+                auto av = tk_avatars_.find(url);
+                return av == tk_avatars_.end() ? nullptr : av->second.get();
             });
 
         // ---- Room view ----
@@ -833,47 +839,24 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             mainApp_->show_image_viewer(true);
             mainAppSurface_->relayout();
             mainAppSurface_->setFocus();
-            const std::string url = src_tok;
-            if (!url.empty() && !viewerFullresCache_.count(url) &&
-                !anim_cache_.has(url) &&
-                viewerFullresInFlight_.insert(url).second)
-            {
-                runOnPool_(
-                    [this, url]()
-                    {
-                        auto bytes = client_->fetch_source_bytes(url);
-                        QMetaObject::invokeMethod(
-                            this,
-                            [this, url, bytes = std::move(bytes)]() mutable
-                            {
-                                viewerFullresInFlight_.erase(url);
-                                if (bytes.empty() ||
-                                    viewerFullresCache_.count(url))
-                                {
-                                    return;
-                                }
-                                QByteArray qb(
-                                    reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<int>(bytes.size()));
-                                QBuffer buf(&qb);
-                                buf.open(QIODevice::ReadOnly);
-                                QImageReader reader(&buf);
-                                reader.setAutoTransform(true);
-                                QImage img;
-                                if (!reader.read(&img))
-                                {
-                                    return;
-                                }
-                                viewerFullresCache_.emplace(
-                                    url, tk::qt6::make_image(std::move(img)));
-                                if (mainAppSurface_)
-                                {
-                                    mainAppSurface_->update();
-                                }
-                            },
-                            Qt::QueuedConnection);
-                    });
-            }
+            ensureViewerFullres_(src_tok);
+        };
+
+        // Avatar click → open the lightbox with the *original* avatar mxc,
+        // not the 80×80 thumbnail stored in tk_avatars_. The shared
+        // wire_main_app_widget_ already wires a basic on_avatar_clicked
+        // that uses the thumbnail; override here so the Qt6 viewer gets
+        // the full-resolution decode via ensureViewerFullres_.
+        mainApp_->room_view()->on_avatar_clicked =
+            [this](std::string url, std::string name)
+        {
+            if (url.empty())
+                return;
+            mainApp_->image_viewer()->open(url, url, name, 0, 0);
+            mainApp_->show_image_viewer(true);
+            mainAppSurface_->relayout();
+            mainAppSurface_->setFocus();
+            ensureViewerFullres_(url);
         };
         mainApp_->image_viewer()->on_save =
             [this](std::string source_url, std::string filename_hint)
@@ -1894,6 +1877,52 @@ void MainWindow::runOnPool_(std::function<void()> fn)
             fn();
         });
     mediaPool_.start(runner);
+}
+
+void MainWindow::ensureViewerFullres_(const std::string& url)
+{
+    if (url.empty() || viewerFullresCache_.count(url) || anim_cache_.has(url))
+    {
+        return;
+    }
+    if (!viewerFullresInFlight_.insert(url).second)
+    {
+        return;
+    }
+    runOnPool_(
+        [this, url]()
+        {
+            auto bytes = client_->fetch_source_bytes(url);
+            QMetaObject::invokeMethod(
+                this,
+                [this, url, bytes = std::move(bytes)]() mutable
+                {
+                    viewerFullresInFlight_.erase(url);
+                    if (bytes.empty() || viewerFullresCache_.count(url))
+                    {
+                        return;
+                    }
+                    QByteArray qb(
+                        reinterpret_cast<const char*>(bytes.data()),
+                        static_cast<int>(bytes.size()));
+                    QBuffer buf(&qb);
+                    buf.open(QIODevice::ReadOnly);
+                    QImageReader reader(&buf);
+                    reader.setAutoTransform(true);
+                    QImage img;
+                    if (!reader.read(&img))
+                    {
+                        return;
+                    }
+                    viewerFullresCache_.emplace(
+                        url, tk::qt6::make_image(std::move(img)));
+                    if (mainAppSurface_)
+                    {
+                        mainAppSurface_->update();
+                    }
+                },
+                Qt::QueuedConnection);
+        });
 }
 
 // ---------------------------------------------------------------------------

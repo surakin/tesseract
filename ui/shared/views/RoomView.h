@@ -231,6 +231,8 @@ public:
     std::function<void(std::string room_id)>                on_leave_room;
     std::function<void(std::string user_id)>                on_open_dm;
     std::function<void(std::string user_id)>                on_ignore_user;
+    std::function<void(std::string avatar_url, std::string display_name)>
+                                                            on_avatar_clicked;
 
     // Fired when the pointer enters a topic text that was truncated (i.e. the
     // topic didn't fit and shows an ellipsis). Shell should show a tooltip with

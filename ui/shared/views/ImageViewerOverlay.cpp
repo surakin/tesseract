@@ -87,13 +87,32 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b)
 {
     const float avail_w = std::max(1.0f, b.w - kMarginX);
     const float avail_h = std::max(1.0f, b.h - kMarginY);
-    if (natural_w_ > 0 && natural_h_ > 0)
+    // When natural_w/h was unknown at open() (e.g. avatar clicks — Matrix
+    // m.room.member events don't carry width/height info), probe the
+    // image_provider for an already-decoded tk::Image and use its real
+    // pixel dimensions so the viewport doesn't stretch the placeholder
+    // to the surface width.
+    int nw = natural_w_;
+    int nh = natural_h_;
+    if ((nw <= 0 || nh <= 0) && image_provider_)
+    {
+        const tk::Image* probe = !media_url_.empty()
+                                     ? image_provider_(media_url_)
+                                     : nullptr;
+        if (!probe && !display_key_.empty())
+            probe = image_provider_(display_key_);
+        if (probe && probe->width() > 0 && probe->height() > 0)
+        {
+            nw = probe->width();
+            nh = probe->height();
+        }
+    }
+    if (nw > 0 && nh > 0)
     {
         // zoom 1.0 == native pixels (true 1:1). fit_zoom_ is the factor at
         // which the whole image fits the viewport (≤ 1.0; never upscale
         // the floor above 1:1).
-        base_ = {static_cast<float>(natural_w_),
-                 static_cast<float>(natural_h_)};
+        base_ = {static_cast<float>(nw), static_cast<float>(nh)};
         fit_zoom_ = std::min({1.0f, avail_w / base_.w, avail_h / base_.h});
     }
     else
@@ -104,9 +123,14 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b)
     }
     if (open_at_fit_)
     {
-        // First geometry pass after open(): start zoomed to fit.
+        // First geometry pass after open(): start zoomed to fit. If we don't
+        // know the real dimensions yet (open() was called with 0×0 and the
+        // image isn't cached), keep the latch armed so we re-fit once the
+        // image arrives — otherwise we'd lock to the placeholder zoom and
+        // the real image would draw at the wrong size on subsequent paints.
         zoom_ = fit_zoom_;
-        open_at_fit_ = false;
+        if (nw > 0 && nh > 0)
+            open_at_fit_ = false;
     }
     else
     {

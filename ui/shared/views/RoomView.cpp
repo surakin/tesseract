@@ -425,6 +425,12 @@ void RoomView::wire_internal_callbacks()
     {
         if (on_ignore_user) on_ignore_user(std::move(user_id));
     };
+    user_profile_panel_->on_avatar_clicked =
+        [this](std::string url, std::string name)
+    {
+        if (on_avatar_clicked)
+            on_avatar_clicked(std::move(url), std::move(name));
+    };
     user_profile_panel_->on_layout_changed = [this]()
     {
         if (on_layout_changed) on_layout_changed();

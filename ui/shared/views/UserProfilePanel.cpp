@@ -224,6 +224,16 @@ bool UserProfilePanel::on_pointer_down(tk::Point local)
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
 
+    // Avatar click: open lightbox with the full-size avatar. Only react when
+    // we actually have an avatar URL and a wired callback — otherwise fall
+    // through so the (initials-only) center of the card behaves like before.
+    if (rect_contains(avatar_rect_, w) && !avatar_url_.empty()
+        && on_avatar_clicked)
+    {
+        press_avatar_ = true;
+        return true;
+    }
+
     if (rect_contains(card_rect_, w))
     {
         // Let the child dispatch (buttons) handle events inside the card.
@@ -237,6 +247,20 @@ bool UserProfilePanel::on_pointer_down(tk::Point local)
 
 void UserProfilePanel::on_pointer_up(tk::Point local, bool inside_self)
 {
+    if (press_avatar_)
+    {
+        press_avatar_ = false;
+        if (inside_self)
+        {
+            const tk::Point w{local.x + bounds().x, local.y + bounds().y};
+            if (rect_contains(avatar_rect_, w) && on_avatar_clicked)
+            {
+                on_avatar_clicked(avatar_url_, display_name_);
+            }
+        }
+        return;
+    }
+
     if (!press_backdrop_)
     {
         return;
@@ -264,6 +288,7 @@ bool UserProfilePanel::on_pointer_move(tk::Point /*local*/)
 void UserProfilePanel::on_pointer_leave()
 {
     press_backdrop_ = false;
+    press_avatar_   = false;
 }
 
 } // namespace tesseract::views

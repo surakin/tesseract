@@ -30,6 +30,8 @@ public:
     std::function<void(std::string user_id)> on_open_dm;
     std::function<void(std::string user_id)> on_ignore;
     std::function<void()>                    on_close;
+    std::function<void(std::string avatar_url, std::string display_name)>
+                                             on_avatar_clicked;
 
     // Fires on open/close. RoomView routes this into the shared layout-
     // changed chain so the shells re-query rect accessors (specifically:
@@ -70,6 +72,7 @@ private:
     std::unique_ptr<tk::TextLayout> uid_layout_;
 
     bool press_backdrop_ = false;
+    bool press_avatar_   = false;
 
     static constexpr float kAvatarD    = 72.0f;
     static constexpr float kPadX       = 16.0f;
