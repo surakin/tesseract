@@ -211,6 +211,8 @@ public:
     using ShellBase::my_avatar_url_;
     using ShellBase::my_display_name_;
     using ShellBase::my_user_id_;
+    using ShellBase::notify_presence_logout_;
+    using ShellBase::notify_presence_tick_;
     using ShellBase::pagination_;
     using ShellBase::pending_login_client_;
     using ShellBase::pending_login_is_add_account_;
@@ -220,6 +222,8 @@ public:
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
     using ShellBase::notify_tray_unread_;
+    using ShellBase::notify_user_activity_;
+    using ShellBase::notify_window_active_;
     using ShellBase::push_rooms_;
     using ShellBase::recovery_banner_dismissed_;
     using ShellBase::reply_details_requested_;
