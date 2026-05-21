@@ -1733,11 +1733,15 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         return 0;
     case WM_SETCURSOR:
-        // Override the window-class arrow only inside our client area so
-        // resize borders and non-client regions of any parent still get
-        // their default cursor. We hand back the Host's currently-requested
-        // cursor — Surface::set_cursor() is what drives it (e.g. link hover).
-        if (host && LOWORD(lParam) == HTCLIENT)
+        // Override the window-class arrow only for the surface's own canvas
+        // pixels (wParam == this HWND, hit-test == HTCLIENT). When the
+        // cursor is over a child HWND — e.g. a Win32NativeTextField /
+        // NativeTextArea EDIT control — wParam is the child's HWND; we
+        // must NOT return TRUE there or the child's default WndProc never
+        // runs and the I-beam is suppressed. Falling through to
+        // DefWindowProc lets the message bubble back to the child.
+        if (host && reinterpret_cast<HWND>(wParam) == hwnd &&
+            LOWORD(lParam) == HTCLIENT)
         {
             SetCursor(host->current_cursor());
             return TRUE;
