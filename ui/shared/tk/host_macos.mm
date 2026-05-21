@@ -49,6 +49,7 @@ public:
     std::unique_ptr<VideoPlayer> make_video_player() override;
     EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
                                  bool compress) override;
+    void set_clipboard_text(std::string_view text) override;
 
     void set_root(std::unique_ptr<Widget> root)
     {

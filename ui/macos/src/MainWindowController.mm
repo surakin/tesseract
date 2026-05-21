@@ -238,6 +238,8 @@ public:
     using ShellBase::workers_cv_;
     using ShellBase::workers_in_flight_;
     using ShellBase::workers_mu_;
+    using ShellBase::reset_server_info_;
+    using ShellBase::server_info_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -2239,8 +2241,8 @@ void MacShell::apply_cached_messages_(
             s->_mainApp->show_image_viewer(true);
             s->_mainAppSurface->relayout();
             s->_shell->ensure_media_image_(src_tok,
-                                           visual::kMaxInlineImageWidth,
-                                           visual::kMaxInlineImageHeight);
+                                           tesseract::visual::kMaxInlineImageWidth,
+                                           tesseract::visual::kMaxInlineImageHeight);
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };
@@ -2694,7 +2696,6 @@ void MacShell::apply_cached_messages_(
         _roomTextArea->set_placeholder("Message…");
         // Topic-edit overlay (positioned by set_on_layout below).
         _topicTextArea = _mainAppSurface->host().make_text_area();
-        _topicTextArea->set_multiline(true);
         _topicTextArea->set_on_changed(
             [weakSelf](const std::string& t)
             {
@@ -5615,7 +5616,7 @@ void MacShell::apply_cached_messages_(
     return YES;
 }
 
-- (void)copy:(id)/*sender*/
+- (void)copy:(id)sender
 {
     auto* ml = _mainApp ? _mainApp->room_view()->message_list() : nullptr;
     if (ml)

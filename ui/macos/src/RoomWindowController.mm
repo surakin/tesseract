@@ -367,7 +367,7 @@ MacRoomWindow::preview_lookup_(const std::string& url)
     return YES;
 }
 
-- (void)copy:(id)/*sender*/
+- (void)copy:(id)sender
 {
     auto* rv = _cppWindow ? _cppWindow->room_view() : nullptr;
     auto* ml = rv ? rv->message_list() : nullptr;
