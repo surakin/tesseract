@@ -1322,6 +1322,24 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             ensure_media_image_(src_tok, 320, 200);
         };
 
+        // Avatar click → open the lightbox with the original avatar mxc.
+        // Overrides the basic wiring in ShellBase::wire_main_app_widget_
+        // (which only shows the cached thumbnail) so ensure_media_image_
+        // fetches the original bytes and decodes them at native size into
+        // tk_images_; the viewer's image_provider picks that up over the
+        // tk_avatars_ entry.
+        room_view_->on_avatar_clicked =
+            [this](std::string url, std::string name)
+        {
+            if (url.empty() || !img_viewer_)
+                return;
+            img_viewer_->open(url, url, name, 0, 0);
+            main_app_->show_image_viewer(true);
+            main_app_surface_->relayout();
+            gtk_widget_grab_focus(main_app_surface_->widget());
+            ensure_media_image_(url, 0, 0);
+        };
+
         img_viewer_->on_save =
             [this](std::string source_url, std::string filename_hint)
         {

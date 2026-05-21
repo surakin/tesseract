@@ -2177,6 +2177,29 @@ void MacShell::apply_cached_messages_(
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
             [view.window makeFirstResponder:view];
         };
+
+        // Avatar click → open the lightbox with the original avatar mxc.
+        // Overrides the thumbnail-only wiring from
+        // ShellBase::wire_main_app_widget_ so ensure_media_image_ fetches
+        // the native-resolution bytes into tk_images_; the viewer's
+        // image_provider prefers that over the resized tk_avatars_ entry.
+        _mainApp->room_view()->on_avatar_clicked =
+            [weakSelf](std::string url, std::string name)
+        {
+            MainWindowController* s = weakSelf;
+            if (!s || !s->_mainApp || !s->_mainAppSurface || url.empty())
+            {
+                return;
+            }
+            s->_imgViewer->open(url, url, name, 0, 0);
+            s->_mainApp->show_image_viewer(true);
+            s->_mainAppSurface->relayout();
+            s->_shell->ensure_media_image_(url,
+                                           tesseract::visual::kMaxInlineImageWidth,
+                                           tesseract::visual::kMaxInlineImageHeight);
+            NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
+            [view.window makeFirstResponder:view];
+        };
         _mainApp->room_view()->on_video_clicked =
             [weakSelf](const tesseract::views::MessageListView::VideoHit& hit)
         {
