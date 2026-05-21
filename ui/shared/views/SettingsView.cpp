@@ -92,6 +92,22 @@ SettingsView::SettingsView()
     // First tab is auto-selected by SideTabView::add_tab.
     tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
     tabs_ = add_child(std::move(tabs));
+
+    // AccountSection logout: open a confirmation dialog before firing on_logout.
+    account_->on_logout = [this]
+    {
+        confirm_dialog_->open(
+            {.title         = "Log out?",
+             .body          = "You will need to sign in again to access your messages.",
+             .confirm_label = "Log Out",
+             .cancel_label  = "Cancel",
+             .destructive   = true},
+            [this] { if (on_logout) on_logout(); });
+    };
+
+    // ConfirmDialog — painted last so it overlays the entire settings view.
+    auto dlg = std::make_unique<ConfirmDialog>();
+    confirm_dialog_ = add_child(std::move(dlg));
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +224,12 @@ void SettingsView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         tabs_->arrange(ctx, {bounds.x, tabs_y, bounds.w, tabs_h});
     }
+
+    // ConfirmDialog overlays the full view.
+    if (confirm_dialog_)
+    {
+        confirm_dialog_->arrange(ctx, bounds);
+    }
 }
 
 void SettingsView::paint(tk::PaintCtx& ctx)
@@ -234,6 +256,12 @@ void SettingsView::paint(tk::PaintCtx& ctx)
     if (tabs_ && tabs_->visible())
     {
         tabs_->paint(ctx);
+    }
+
+    // ConfirmDialog paints last so it overlays everything.
+    if (confirm_dialog_ && confirm_dialog_->visible())
+    {
+        confirm_dialog_->paint(ctx);
     }
 }
 

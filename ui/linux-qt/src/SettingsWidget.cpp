@@ -20,6 +20,11 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     {
         emit settingsClosed();
     };
+    settings_view_->on_logout = [this]
+    {
+        emit settingsClosed();
+        emit logoutRequested();
+    };
     settings_view_->on_theme_changed =
         [this](tesseract::Settings::ThemePreference pref)
     {

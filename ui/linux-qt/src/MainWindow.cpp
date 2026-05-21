@@ -3641,6 +3641,12 @@ void MainWindow::openSettings()
                 {
                     contentStack_->setCurrentWidget(mainAppSurface_);
                 });
+        connect(settingsWidget_, &SettingsWidget::logoutRequested, this,
+                [this]
+                {
+                    contentStack_->setCurrentWidget(mainAppSurface_);
+                    logoutActiveAccount();
+                });
         connect(settingsWidget_, &SettingsWidget::themeChanged, this,
                 [this](tesseract::Settings::ThemePreference pref)
                 {

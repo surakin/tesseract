@@ -3057,6 +3057,19 @@ void MacShell::apply_cached_messages_(
             mainAppView.hidden = NO;
             ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
         };
+        _settingsView->on_logout = [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            NSView* mainAppView =
+                (__bridge NSView*)s->_mainAppSurface->view_handle();
+            mainAppView.hidden = NO;
+            ((__bridge NSView*)s->_settingsSurface->view_handle()).hidden = YES;
+            [s _logoutActiveAccount];
+        };
         _settingsView->on_theme_changed =
             [ws](tesseract::Settings::ThemePreference pref)
         {

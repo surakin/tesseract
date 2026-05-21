@@ -1,5 +1,6 @@
 #include "AccountSection.h"
 
+#include "tk/controls.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
@@ -460,9 +461,10 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
 AccountSection::AccountSection()
 {
     // Content owns its own outer padding; zero out the page inset so the
-    // visuals match the pre-refactor build pixel-for-pixel.
+    // visuals match the pre-refactor build pixel-for-pixel. A spacing of
+    // kGroupSpacing separates Content from the Log Out button below it.
     set_padding(tk::Edges{});
-    set_spacing(0.0f);
+    set_spacing(20.0f);
 
     content_ = add_widget(std::make_unique<Content>());
     content_->on_avatar_upload_clicked = [this]
@@ -473,6 +475,11 @@ AccountSection::AccountSection()
     {
         if (on_avatar_remove_clicked) on_avatar_remove_clicked();
     };
+
+    add_widget(std::make_unique<tk::Button>(
+        "Log Out",
+        [this] { if (on_logout) on_logout(); },
+        tk::Button::Variant::Destructive));
 }
 
 AccountSection::~AccountSection() = default;

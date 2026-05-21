@@ -2530,6 +2530,11 @@ void MainWindow::on_create(HWND hwnd)
         {
             close_settings_();
         };
+        settings_view_->on_logout = [this]
+        {
+            close_settings_();
+            logout_active_account();
+        };
         settings_view_->on_theme_changed =
             [this](tesseract::Settings::ThemePreference pref)
         {

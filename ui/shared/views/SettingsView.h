@@ -20,6 +20,7 @@
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
 #include "views/settings/ServerSection.h"
+#include "views/ConfirmDialog.h"
 
 #include "app/SettingsController.h"
 
@@ -113,6 +114,9 @@ public:
     // Fired when the user clicks "← Back".
     std::function<void()> on_close;
 
+    // Fired after the user confirms the logout dialog.
+    std::function<void()> on_logout;
+
     // Fired when the user selects a different theme.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
 
@@ -147,7 +151,8 @@ private:
     NotificationsSection* notifications_ = nullptr;
     MediaSection* media_ = nullptr;
     ServerSection* server_section_ = nullptr;
-    DevicesSection* devices_ = nullptr;
+    DevicesSection*  devices_        = nullptr;
+    ConfirmDialog*   confirm_dialog_ = nullptr;
 
     std::function<void()> request_repaint_;
 };

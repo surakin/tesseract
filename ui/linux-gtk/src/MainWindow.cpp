@@ -1862,6 +1862,11 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         {
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
         };
+        settings_widget_->on_logout = [this]
+        {
+            gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
+            logout_active_account();
+        };
         settings_widget_->on_theme_changed =
             [this](tesseract::Settings::ThemePreference pref)
         {

@@ -1,10 +1,10 @@
 #pragma once
 
 // Settings panel section: signed-in user's profile (avatar + display name +
-// Matrix ID). The bespoke avatar disc / inline name editing / busy & error
-// rendering is kept verbatim in a private nested Content widget; this class
-// is a SettingsPage that holds that Content as a single un-grouped child and
-// forwards its public API to it.
+// Matrix ID) plus a Log Out button at the bottom. The bespoke avatar disc /
+// inline name editing / busy & error rendering is kept verbatim in a private
+// nested Content widget; this class is a SettingsPage that holds Content as
+// a child and forwards its public API to it.
 
 #include "SettingsPage.h"
 
@@ -53,6 +53,7 @@ public:
 
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
+    std::function<void()> on_logout;
 
 private:
     class Content; // defined in AccountSection.cpp

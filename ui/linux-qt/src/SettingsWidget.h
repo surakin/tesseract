@@ -42,6 +42,7 @@ public:
 
 signals:
     void settingsClosed();
+    void logoutRequested();
     void themeChanged(tesseract::Settings::ThemePreference pref);
     void notificationsChanged(bool enabled);
 
