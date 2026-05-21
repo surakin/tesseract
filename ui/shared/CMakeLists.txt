@@ -14,6 +14,8 @@ set(_tk_sources
     app/EventHandlerBase.cpp
     app/RoomWindowBase.h
     app/RoomWindowBase.cpp
+    app/SettingsController.h
+    app/SettingsController.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h
