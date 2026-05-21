@@ -220,11 +220,8 @@ void AccountSection::paint(tk::PaintCtx& ctx)
             ctx.canvas.fill_rect(disc_rect, tk::Color::rgba(0, 0, 0, 160));
             ctx.canvas.pop_clip();
             tk::TextStyle st;
-            st.role      = tk::FontRole::Title;
-            st.halign    = tk::TextHAlign::Center;
-            st.valign    = tk::TextVAlign::Center;
-            st.max_width = kAvatarDiameter;
-            auto lay = ctx.factory.build_text("…", st);
+            st.role = tk::FontRole::Title;
+            auto lay = ctx.factory.build_text("\xe2\x80\xa6", st);
             const tk::Size sz = lay->measure();
             ctx.canvas.draw_text(*lay,
                                  {centre.x - sz.w * 0.5f,
@@ -237,10 +234,7 @@ void AccountSection::paint(tk::PaintCtx& ctx)
             ctx.canvas.fill_rect(disc_rect, tk::Color::rgba(0, 0, 0, 128));
             ctx.canvas.pop_clip();
             tk::TextStyle st;
-            st.role      = tk::FontRole::Title;
-            st.halign    = tk::TextHAlign::Center;
-            st.valign    = tk::TextVAlign::Center;
-            st.max_width = kAvatarDiameter;
+            st.role = tk::FontRole::Title;
             auto lay = ctx.factory.build_text("+", st);
             const tk::Size sz = lay->measure();
             ctx.canvas.draw_text(*lay,
@@ -258,11 +252,8 @@ void AccountSection::paint(tk::PaintCtx& ctx)
                     kRemoveChipR,
                     tk::Color::rgba(40, 40, 40, 220));
                 tk::TextStyle xs;
-                xs.role      = tk::FontRole::Small;
-                xs.halign    = tk::TextHAlign::Center;
-                xs.valign    = tk::TextVAlign::Center;
-                xs.max_width = kRemoveChipR * 2.0f;
-                auto xlay = ctx.factory.build_text("×", xs);
+                xs.role = tk::FontRole::Small;
+                auto xlay = ctx.factory.build_text("\xc3\x97", xs);
                 const tk::Size xsz = xlay->measure();
                 ctx.canvas.draw_text(*xlay,
                                      {cx - xsz.w * 0.5f,

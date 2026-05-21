@@ -54,6 +54,7 @@ public:
         edit_->setAttribute(Qt::WA_StyledBackground, true);
         edit_->setFrame(false);
         edit_->setStyleSheet("QLineEdit { background: transparent; }");
+        edit_->setFocusPolicy(Qt::ClickFocus);
         edit_->show();
 
         QObject::connect(edit_, &QLineEdit::textChanged, edit_,
@@ -123,6 +124,10 @@ public:
         if (focused)
         {
             edit_->setFocus();
+        }
+        else
+        {
+            edit_->clearFocus();
         }
     }
     void set_visible(bool visible) override
