@@ -93,6 +93,10 @@ set(_tk_sources
     views/PopoutRoomWidget.cpp
     views/SettingsView.h
     views/SettingsView.cpp
+    views/settings/SettingsPage.h
+    views/settings/SettingsPage.cpp
+    views/settings/SettingsGroup.h
+    views/settings/SettingsGroup.cpp
     views/settings/AccountSection.h
     views/settings/AccountSection.cpp
     views/settings/AppearanceSection.h

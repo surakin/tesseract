@@ -1,8 +1,12 @@
 #include "AppearanceSection.h"
 
+#include "SettingsGroup.h"
+
 #include "tk/theme.h"
+#include "tk/widget.h"
 
 #include <algorithm>
+#include <memory>
 
 namespace tesseract::views
 {
@@ -10,44 +14,76 @@ namespace tesseract::views
 namespace
 {
 
-// Visual constants.
-constexpr float kPadX = 24.0f;         // horizontal outer padding
-constexpr float kPadY = 16.0f;         // vertical outer padding
+// Visual constants — the picker no longer paints the "Theme" header itself
+// (the enclosing SettingsGroup provides it), so kPadY / kHeaderH / kHeaderGap
+// drop out compared with the pre-refactor section.
 constexpr float kBtnHPad = 20.0f;      // text → button-edge horizontal inset
 constexpr float kBtnVPad = 8.0f;       // text → button-edge vertical inset
 constexpr float kBtnSpacing = 8.0f;    // gap between adjacent buttons
 constexpr float kBtnMinHeight = 36.0f; // minimum button height
 constexpr float kBtnRadius = 6.0f;     // corner radius
-
-// Approximate heights of a single UiSemibold glyph (used in measure()).
-constexpr float kGlyphH = 16.0f;
-constexpr float kHeaderH = 14.0f;     // UiSemibold section label (≈11 pt)
-constexpr float kHeaderGap = 10.0f;   // gap between header label and buttons
+constexpr float kGlyphH = 16.0f;       // approximate UiSemibold glyph height
 
 } // namespace
 
 // ---------------------------------------------------------------------------
+// ThemePicker — the three-radio row that drives theme selection.
+// ---------------------------------------------------------------------------
 
-AppearanceSection::AppearanceSection() = default;
-
-void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
+class AppearanceSection::ThemePicker : public tk::Widget
 {
-    selected_ = pref;
-}
+public:
+    static constexpr int kButtonCount = 3;
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
+    void set_selected(tesseract::Settings::ThemePreference pref)
+    {
+        selected_ = pref;
+    }
 
-tk::Size AppearanceSection::measure(tk::LayoutCtx&, tk::Size constraints)
+    std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
+
+private:
+    struct RadioButton
+    {
+        const char* label;
+        tesseract::Settings::ThemePreference pref;
+        tk::Rect bounds;
+        std::unique_ptr<tk::TextLayout> layout;
+    };
+
+    RadioButton buttons_[kButtonCount] = {
+        {"Light", tesseract::Settings::ThemePreference::Light, {}, nullptr},
+        {"Dark", tesseract::Settings::ThemePreference::Dark, {}, nullptr},
+        {"System", tesseract::Settings::ThemePreference::System, {}, nullptr},
+    };
+
+    tesseract::Settings::ThemePreference selected_ =
+        tesseract::Settings::instance().theme_pref;
+
+    int hovered_idx_ = -1;
+    int pressed_idx_ = -1;
+
+    int hit_button(tk::Point local) const;
+};
+
+tk::Size AppearanceSection::ThemePicker::measure(tk::LayoutCtx&,
+                                                 tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
     const float btn_h = std::max(kGlyphH + kBtnVPad * 2.0f, kBtnMinHeight);
-    const float h = kPadY + kHeaderH + kHeaderGap + btn_h + kPadY;
-    return {w, h};
+    return {w, btn_h};
 }
 
-void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+void AppearanceSection::ThemePicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
@@ -65,44 +101,22 @@ void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     const float btn_w = max_text_w + kBtnHPad * 2.0f;
     const float btn_h = std::max(kGlyphH + kBtnVPad * 2.0f, kBtnMinHeight);
-    const float btn_y = bounds.y + kPadY + kHeaderH + kHeaderGap;
 
     for (int i = 0; i < kButtonCount; ++i)
     {
         buttons_[i].bounds = {
-            bounds.x + kPadX + (btn_w + kBtnSpacing) * i,
-            btn_y,
+            bounds.x + (btn_w + kBtnSpacing) * i,
+            bounds.y,
             btn_w,
             btn_h,
         };
         buttons_[i].layout.reset();
     }
-    header_layout_.reset();
 }
 
-// ---------------------------------------------------------------------------
-// Paint
-// ---------------------------------------------------------------------------
-
-void AppearanceSection::paint(tk::PaintCtx& ctx)
+void AppearanceSection::ThemePicker::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
-
-    // -------- "Theme" section header ----------------------------------------
-    if (!header_layout_)
-    {
-        tk::TextStyle st;
-        st.role = tk::FontRole::UiSemibold;
-        st.halign = tk::TextHAlign::Leading;
-        st.max_width = -1.0f;
-        header_layout_ = ctx.factory.build_text("Theme", st);
-    }
-    if (header_layout_)
-    {
-        ctx.canvas.draw_text(*header_layout_,
-                             {bounds_.x + kPadX, bounds_.y + kPadY},
-                             pal.text_secondary);
-    }
 
     for (int i = 0; i < kButtonCount; ++i)
     {
@@ -111,7 +125,6 @@ void AppearanceSection::paint(tk::PaintCtx& ctx)
         const bool is_hovered = (i == hovered_idx_);
         const bool is_pressed = (i == pressed_idx_);
 
-        // -------- Background fill ----------------------------------------
         tk::Color fill;
         if (is_selected)
         {
@@ -146,13 +159,11 @@ void AppearanceSection::paint(tk::PaintCtx& ctx)
 
         ctx.canvas.fill_rounded_rect(btn.bounds, kBtnRadius, fill);
 
-        // Stroke for unselected buttons to give them a clear border.
         if (!is_selected)
         {
             ctx.canvas.stroke_rounded_rect(btn.bounds, kBtnRadius, pal.border);
         }
 
-        // -------- Label --------------------------------------------------
         if (!buttons_[i].layout)
         {
             tk::TextStyle st;
@@ -176,11 +187,7 @@ void AppearanceSection::paint(tk::PaintCtx& ctx)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pointer handling
-// ---------------------------------------------------------------------------
-
-int AppearanceSection::hit_button(tk::Point local) const
+int AppearanceSection::ThemePicker::hit_button(tk::Point local) const
 {
     const tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
     for (int i = 0; i < kButtonCount; ++i)
@@ -195,7 +202,7 @@ int AppearanceSection::hit_button(tk::Point local) const
     return -1;
 }
 
-bool AppearanceSection::on_pointer_down(tk::Point local)
+bool AppearanceSection::ThemePicker::on_pointer_down(tk::Point local)
 {
     int idx = hit_button(local);
     if (idx < 0)
@@ -206,7 +213,8 @@ bool AppearanceSection::on_pointer_down(tk::Point local)
     return true;
 }
 
-void AppearanceSection::on_pointer_up(tk::Point local, bool inside_self)
+void AppearanceSection::ThemePicker::on_pointer_up(tk::Point local,
+                                                   bool inside_self)
 {
     const int was_pressed = pressed_idx_;
     pressed_idx_ = -1;
@@ -222,7 +230,6 @@ void AppearanceSection::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
 
-    // Selection changed?
     if (buttons_[idx].pref != selected_)
     {
         selected_ = buttons_[idx].pref;
@@ -233,17 +240,39 @@ void AppearanceSection::on_pointer_up(tk::Point local, bool inside_self)
     }
 }
 
-bool AppearanceSection::on_pointer_move(tk::Point local)
+bool AppearanceSection::ThemePicker::on_pointer_move(tk::Point local)
 {
     int prev = hovered_idx_;
     hovered_idx_ = hit_button(local);
     return hovered_idx_ != prev;
 }
 
-void AppearanceSection::on_pointer_leave()
+void AppearanceSection::ThemePicker::on_pointer_leave()
 {
     hovered_idx_ = -1;
     pressed_idx_ = -1;
+}
+
+// ---------------------------------------------------------------------------
+// AppearanceSection — thin SettingsPage with one "Theme" group.
+// ---------------------------------------------------------------------------
+
+AppearanceSection::AppearanceSection()
+{
+    auto* group = add_group("Theme");
+    auto picker = std::make_unique<ThemePicker>();
+    picker->on_theme_changed = [this](tesseract::Settings::ThemePreference pref)
+    {
+        if (on_theme_changed) on_theme_changed(pref);
+    };
+    picker_ = group->add_widget(std::move(picker));
+}
+
+AppearanceSection::~AppearanceSection() = default;
+
+void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
+{
+    picker_->set_selected(pref);
 }
 
 } // namespace tesseract::views

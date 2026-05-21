@@ -1,20 +1,26 @@
 #pragma once
 
+// Settings panel section: signed-in user's profile (avatar + display name +
+// Matrix ID). The bespoke avatar disc / inline name editing / busy & error
+// rendering is kept verbatim in a private nested Content widget; this class
+// is a SettingsPage that holds that Content as a single un-grouped child and
+// forwards its public API to it.
+
+#include "SettingsPage.h"
+
 #include "tk/canvas.h"
-#include "tk/widget.h"
 
 #include <functional>
-#include <memory>
 #include <string>
 
 namespace tesseract::views
 {
 
-class AccountSection : public tk::Widget
+class AccountSection : public SettingsPage
 {
 public:
     AccountSection();
-    ~AccountSection() override = default;
+    ~AccountSection() override;
 
     // ----- Content ----------------------------------------------------------
 
@@ -48,41 +54,9 @@ public:
     std::function<void()> on_avatar_upload_clicked;
     std::function<void()> on_avatar_remove_clicked;
 
-    // ----- tk::Widget overrides ---------------------------------------------
-
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-
-    bool on_pointer_down(tk::Point local) override;
-    bool on_pointer_move(tk::Point local) override;
-    void on_pointer_leave() override;
-
 private:
-    void invalidate_text();
-
-    bool in_disc(tk::Point local) const;
-    bool in_remove_chip(tk::Point local) const;
-    tk::Point disc_centre() const;
-
-    std::string display_name_;
-    std::string user_id_;
-    std::string avatar_url_;
-    ImageProvider image_provider_;
-
-    bool name_editable_  = false;
-    bool name_busy_      = false;
-    std::string name_error_;
-
-    bool avatar_editable_ = false;
-    bool avatar_busy_     = false;
-    std::string avatar_error_;
-    bool avatar_hovered_  = false;
-
-    std::unique_ptr<tk::TextLayout> name_layout_;
-    std::unique_ptr<tk::TextLayout> uid_layout_;
-    std::unique_ptr<tk::TextLayout> name_error_layout_;
-    std::unique_ptr<tk::TextLayout> avatar_error_layout_;
+    class Content; // defined in AccountSection.cpp
+    Content* content_ = nullptr;
 };
 
 } // namespace tesseract::views

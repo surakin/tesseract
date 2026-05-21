@@ -125,8 +125,10 @@ TEST_CASE("AccountSection: avatar upload callback fires on disc click",
     int upload_count = 0;
     sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
 
-    // Click centre of disc (kPadX + kAvatarDiameter/2 = 24 + 32 = 56, kPadY + kAvatarRadius = 56)
-    sec.on_pointer_down({56.0f, 56.0f});
+    // Click centre of disc (kPadX + kAvatarDiameter/2 = 24 + 32 = 56, kPadY + kAvatarRadius = 56).
+    // Use dispatch_pointer_down so the click walks into the section's bespoke
+    // Content child — matches how the host delivers real pointer events.
+    sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 1);
 }
 
@@ -146,7 +148,7 @@ TEST_CASE("AccountSection: remove callback fires on X chip click",
 
     // The X chip sits at the top-right of the disc.
     // disc centre ~= (56, 56), radius = 32 -> top-right corner ~= (75, 37)
-    sec.on_pointer_down({75.0f, 37.0f});
+    sec.dispatch_pointer_down({75.0f, 37.0f});
     CHECK(remove_count == 1);
 }
 
@@ -162,7 +164,7 @@ TEST_CASE("AccountSection: avatar click ignored when not editable",
 
     int upload_count = 0;
     sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
-    sec.on_pointer_down({56.0f, 56.0f});
+    sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 0);
 }
 
@@ -179,6 +181,6 @@ TEST_CASE("AccountSection: avatar click ignored when busy",
 
     int upload_count = 0;
     sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
-    sec.on_pointer_down({56.0f, 56.0f});
+    sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 0);
 }

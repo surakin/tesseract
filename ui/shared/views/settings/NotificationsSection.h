@@ -1,11 +1,14 @@
 #pragma once
 
-// Settings panel section: two labelled checkbox rows —
+// Settings panel section: two labelled checkbox rows under a "Notifications"
+// header —
 //   1. "Enable notifications on this device"
 //   2. "Show image & sticker previews in notifications"
 // Reads initial state from Settings::instance() and fires the matching
-// callback when a row is toggled. (The lock-screen privacy gate is always
-// on regardless of row 2 — see ShellBase::notification_image_allowed_.)
+// callback when a row is toggled. (The lock-screen privacy gate is always on
+// regardless of row 2 — see ShellBase::notification_image_allowed_.)
+
+#include "SettingsPage.h"
 
 #include "tk/controls.h"
 
@@ -14,7 +17,7 @@
 namespace tesseract::views
 {
 
-class NotificationsSection : public tk::Widget
+class NotificationsSection : public SettingsPage
 {
 public:
     NotificationsSection();
@@ -27,12 +30,6 @@ public:
     // Fire with the new boolean state when the matching row is toggled.
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_image_previews_changed;
-
-    // ----- tk::Widget overrides ---------------------------------------------
-
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
 
 private:
     tk::CheckButton* notif_cb_    = nullptr; // row 1

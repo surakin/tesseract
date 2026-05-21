@@ -1,40 +1,33 @@
 #pragma once
 
-// Settings panel section: read-only display of the connected server.
-// Shows a single "Homeserver" label / URL row.  No interactivity — purely
-// informational.  Returns height 0 (and skips paint) when no server info has
-// been provided yet.
+// Settings panel section: read-only display of the connected server. Shows a
+// single "Homeserver" / URL row under a "Server" header. Purely informational;
+// the inner HomeserverRow widget hides itself (zero height) when no server
+// info has been provided yet.
 
-#include "tk/widget.h"
+#include "SettingsPage.h"
+
 #include "tesseract/client.h"
-
-#include <memory>
-#include <string>
-
-namespace tk
-{
-class TextLayout;
-}
 
 namespace tesseract::views
 {
 
-class ServerSection : public tk::Widget
+class ServerSection : public SettingsPage
 {
 public:
-    ServerSection() = default;
-    ~ServerSection() override = default;
+    ServerSection();
+    ~ServerSection() override;
 
     void set_server_info(const tesseract::ServerInfo& info);
 
+    // Reports zero height before set_server_info() supplies a URL — the
+    // page's own outer padding is suppressed in that state.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
 
 private:
-    std::string homeserver_url_;
-    std::unique_ptr<tk::TextLayout> label_layout_;
-    std::unique_ptr<tk::TextLayout> value_layout_;
+    class HomeserverRow; // defined in ServerSection.cpp
+    SettingsGroup* group_ = nullptr;
+    HomeserverRow* row_ = nullptr;
 };
 
 } // namespace tesseract::views

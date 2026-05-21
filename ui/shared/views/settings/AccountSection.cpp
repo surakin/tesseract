@@ -1,8 +1,13 @@
 #include "AccountSection.h"
 
 #include "tk/theme.h"
+#include "tk/widget.h"
 
 #include <algorithm>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -25,83 +30,147 @@ constexpr float kXChipTolerance   = kRemoveChipR + 4.0f;
 
 } // namespace
 
-AccountSection::AccountSection() = default;
+// ---------------------------------------------------------------------------
+// AccountSection::Content — the bespoke profile widget (avatar disc, inline
+// display-name editing, busy/error rendering). Kept verbatim from the
+// pre-SettingsPage version of this section — only the surrounding class
+// shape changed.
+// ---------------------------------------------------------------------------
 
-void AccountSection::set_display_name(std::string name)
+class AccountSection::Content : public tk::Widget
+{
+public:
+    using ImageProvider = AccountSection::ImageProvider;
+
+    void set_display_name(std::string name);
+    void set_user_id(std::string user_id);
+    void set_avatar_url(std::string mxc_url);
+    void set_image_provider(ImageProvider provider);
+
+    void set_editable(bool editable);
+    void set_avatar_editable(bool editable);
+
+    void set_name_busy(bool busy);
+    void set_name_error(std::string error);
+
+    void set_avatar_busy(bool busy);
+    void set_avatar_error(std::string error);
+
+    tk::Rect name_field_rect() const;
+
+    std::function<void()> on_avatar_upload_clicked;
+    std::function<void()> on_avatar_remove_clicked;
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+
+    bool on_pointer_down(tk::Point local) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
+
+private:
+    void invalidate_text();
+
+    bool in_disc(tk::Point local) const;
+    bool in_remove_chip(tk::Point local) const;
+    tk::Point disc_centre() const;
+
+    std::string display_name_;
+    std::string user_id_;
+    std::string avatar_url_;
+    ImageProvider image_provider_;
+
+    bool name_editable_  = false;
+    bool name_busy_      = false;
+    std::string name_error_;
+
+    bool avatar_editable_ = false;
+    bool avatar_busy_     = false;
+    std::string avatar_error_;
+    bool avatar_hovered_  = false;
+
+    std::unique_ptr<tk::TextLayout> name_layout_;
+    std::unique_ptr<tk::TextLayout> uid_layout_;
+    std::unique_ptr<tk::TextLayout> name_error_layout_;
+    std::unique_ptr<tk::TextLayout> avatar_error_layout_;
+};
+
+void AccountSection::Content::set_display_name(std::string name)
 {
     if (display_name_ == name) return;
     display_name_ = std::move(name);
     invalidate_text();
 }
 
-void AccountSection::set_user_id(std::string uid)
+void AccountSection::Content::set_user_id(std::string uid)
 {
     if (user_id_ == uid) return;
     user_id_ = std::move(uid);
     invalidate_text();
 }
 
-void AccountSection::set_avatar_url(std::string mxc_url)
+void AccountSection::Content::set_avatar_url(std::string mxc_url)
 {
     avatar_url_ = std::move(mxc_url);
 }
 
-void AccountSection::set_image_provider(ImageProvider p)
+void AccountSection::Content::set_image_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
 }
 
-void AccountSection::set_editable(bool editable)
+void AccountSection::Content::set_editable(bool editable)
 {
     name_editable_ = editable;
     invalidate_text();
 }
 
-void AccountSection::set_avatar_editable(bool editable)
+void AccountSection::Content::set_avatar_editable(bool editable)
 {
     avatar_editable_ = editable;
 }
 
-void AccountSection::set_name_busy(bool busy)
+void AccountSection::Content::set_name_busy(bool busy)
 {
     name_busy_ = busy;
     if (busy) name_error_.clear();
     invalidate_text();
 }
 
-void AccountSection::set_name_error(std::string error)
+void AccountSection::Content::set_name_error(std::string error)
 {
     name_error_ = std::move(error);
     name_error_layout_.reset();
 }
 
-void AccountSection::set_avatar_busy(bool busy)
+void AccountSection::Content::set_avatar_busy(bool busy)
 {
     avatar_busy_ = busy;
     if (busy) avatar_error_.clear();
     avatar_error_layout_.reset();
 }
 
-void AccountSection::set_avatar_error(std::string error)
+void AccountSection::Content::set_avatar_error(std::string error)
 {
     avatar_error_ = std::move(error);
     avatar_error_layout_.reset();
 }
 
-void AccountSection::invalidate_text()
+void AccountSection::Content::invalidate_text()
 {
     name_layout_.reset();
     uid_layout_.reset();
     name_error_layout_.reset();
 }
 
-tk::Point AccountSection::disc_centre() const
+tk::Point AccountSection::Content::disc_centre() const
 {
     return {bounds_.x + kPadX + kAvatarRadius,
             bounds_.y + kPadY + kAvatarRadius};
 }
 
-bool AccountSection::in_disc(tk::Point local) const
+bool AccountSection::Content::in_disc(tk::Point local) const
 {
     const float cx = kPadX + kAvatarRadius;
     const float cy = kPadY + kAvatarRadius;
@@ -110,7 +179,7 @@ bool AccountSection::in_disc(tk::Point local) const
     return (dx * dx + dy * dy) <= (kAvatarRadius * kAvatarRadius);
 }
 
-bool AccountSection::in_remove_chip(tk::Point local) const
+bool AccountSection::Content::in_remove_chip(tk::Point local) const
 {
     const float cx = kPadX + kAvatarDiameter - kRemoveChipR;
     const float cy = kPadY + kRemoveChipR;
@@ -119,7 +188,7 @@ bool AccountSection::in_remove_chip(tk::Point local) const
     return (dx * dx + dy * dy) <= (kXChipTolerance * kXChipTolerance);
 }
 
-tk::Rect AccountSection::name_field_rect() const
+tk::Rect AccountSection::Content::name_field_rect() const
 {
     if (!name_editable_ || name_busy_)
         return {};
@@ -132,7 +201,7 @@ tk::Rect AccountSection::name_field_rect() const
     return {text_x, col_top - 2.0f, text_w, kNameH + 4.0f};
 }
 
-tk::Size AccountSection::measure(tk::LayoutCtx&, tk::Size constraints)
+tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
     const float text_col_h = kNameH + kLineGap + kIdH;
@@ -144,12 +213,12 @@ tk::Size AccountSection::measure(tk::LayoutCtx&, tk::Size constraints)
     return {w, h};
 }
 
-void AccountSection::arrange(tk::LayoutCtx&, tk::Rect bounds)
+void AccountSection::Content::arrange(tk::LayoutCtx&, tk::Rect bounds)
 {
     bounds_ = bounds;
 }
 
-bool AccountSection::on_pointer_down(tk::Point local)
+bool AccountSection::Content::on_pointer_down(tk::Point local)
 {
     if (!avatar_editable_ || avatar_busy_)
         return false;
@@ -166,7 +235,7 @@ bool AccountSection::on_pointer_down(tk::Point local)
     return false;
 }
 
-bool AccountSection::on_pointer_move(tk::Point local)
+bool AccountSection::Content::on_pointer_move(tk::Point local)
 {
     if (!avatar_editable_) return false;
     const bool was = avatar_hovered_;
@@ -174,7 +243,7 @@ bool AccountSection::on_pointer_move(tk::Point local)
     return avatar_hovered_ != was;
 }
 
-void AccountSection::on_pointer_leave()
+void AccountSection::Content::on_pointer_leave()
 {
     if (avatar_hovered_)
     {
@@ -182,7 +251,7 @@ void AccountSection::on_pointer_leave()
     }
 }
 
-void AccountSection::paint(tk::PaintCtx& ctx)
+void AccountSection::Content::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
@@ -382,6 +451,85 @@ void AccountSection::paint(tk::PaintCtx& ctx)
                              {text_x, col_top + kNameH + kLineGap},
                              pal.text_secondary);
     }
+}
+
+// ---------------------------------------------------------------------------
+// AccountSection — thin SettingsPage wrapper around Content.
+// ---------------------------------------------------------------------------
+
+AccountSection::AccountSection()
+{
+    // Content owns its own outer padding; zero out the page inset so the
+    // visuals match the pre-refactor build pixel-for-pixel.
+    set_padding(tk::Edges{});
+    set_spacing(0.0f);
+
+    content_ = add_widget(std::make_unique<Content>());
+    content_->on_avatar_upload_clicked = [this]
+    {
+        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
+    };
+    content_->on_avatar_remove_clicked = [this]
+    {
+        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
+    };
+}
+
+AccountSection::~AccountSection() = default;
+
+void AccountSection::set_display_name(std::string name)
+{
+    content_->set_display_name(std::move(name));
+}
+
+void AccountSection::set_user_id(std::string uid)
+{
+    content_->set_user_id(std::move(uid));
+}
+
+void AccountSection::set_avatar_url(std::string mxc_url)
+{
+    content_->set_avatar_url(std::move(mxc_url));
+}
+
+void AccountSection::set_image_provider(ImageProvider p)
+{
+    content_->set_image_provider(std::move(p));
+}
+
+void AccountSection::set_editable(bool editable)
+{
+    content_->set_editable(editable);
+}
+
+void AccountSection::set_avatar_editable(bool editable)
+{
+    content_->set_avatar_editable(editable);
+}
+
+void AccountSection::set_name_busy(bool busy)
+{
+    content_->set_name_busy(busy);
+}
+
+void AccountSection::set_name_error(std::string error)
+{
+    content_->set_name_error(std::move(error));
+}
+
+void AccountSection::set_avatar_busy(bool busy)
+{
+    content_->set_avatar_busy(busy);
+}
+
+void AccountSection::set_avatar_error(std::string error)
+{
+    content_->set_avatar_error(std::move(error));
+}
+
+tk::Rect AccountSection::name_field_rect() const
+{
+    return content_->name_field_rect();
 }
 
 } // namespace tesseract::views
