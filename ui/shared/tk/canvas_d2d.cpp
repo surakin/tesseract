@@ -4,6 +4,7 @@
 
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
+#include <d2d1_3.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <dwrite_2.h>
@@ -735,6 +736,316 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+//  CubicEmojiTextRenderer — IDWriteTextRenderer that rasterises color
+//  bitmap (CBDT/PNG) glyphs via DrawBitmap with HIGH_QUALITY_CUBIC.
+//
+//  D2D's built-in DrawTextLayout (and DrawColorBitmapGlyphRun under the
+//  hood) hard-code D2D1_BITMAP_INTERPOLATION_MODE_LINEAR for bitmap colour
+//  glyphs, which makes Noto Color Emoji look blocky when its 136 px CBDT
+//  source is scaled down to ~19 px message-body size. Outline / COLR / SVG
+//  runs fall through to the default ID2D1RenderTarget::DrawGlyphRun path.
+// ─────────────────────────────────────────────────────────────────────────
+
+class CubicEmojiTextRenderer final : public IDWriteTextRenderer
+{
+public:
+    using BitmapCache = std::unordered_map<std::uint64_t, ComPtr<ID2D1Bitmap>>;
+
+    CubicEmojiTextRenderer(ID2D1RenderTarget* rt, ID2D1DeviceContext* dc,
+                           IDWriteFactory4* dw4, IWICImagingFactory* wic,
+                           BitmapCache* cache, ID2D1Brush* fg)
+        : rt_(rt), dc_(dc), dw4_(dw4), wic_(wic), cache_(cache), fg_(fg)
+    {
+    }
+
+    STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override
+    {
+        if (!ppv) return E_POINTER;
+        if (riid == __uuidof(IUnknown) ||
+            riid == __uuidof(IDWritePixelSnapping) ||
+            riid == __uuidof(IDWriteTextRenderer))
+        {
+            *ppv = static_cast<IDWriteTextRenderer*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return ++ref_; }
+    STDMETHODIMP_(ULONG) Release() override
+    {
+        ULONG r = --ref_;
+        if (r == 0) delete this;
+        return r;
+    }
+
+    // IDWritePixelSnapping
+    STDMETHODIMP IsPixelSnappingDisabled(void*, BOOL* disabled) override
+    {
+        *disabled = FALSE;
+        return S_OK;
+    }
+    STDMETHODIMP GetCurrentTransform(void*, DWRITE_MATRIX* m) override
+    {
+        D2D1_MATRIX_3X2_F t;
+        rt_->GetTransform(&t);
+        m->m11 = t._11; m->m12 = t._12;
+        m->m21 = t._21; m->m22 = t._22;
+        m->dx  = t.dx;  m->dy  = t.dy;
+        return S_OK;
+    }
+    STDMETHODIMP GetPixelsPerDip(void*, FLOAT* p) override
+    {
+        FLOAT dpix, dpiy;
+        rt_->GetDpi(&dpix, &dpiy);
+        *p = dpix / 96.0f;
+        return S_OK;
+    }
+
+    // IDWriteTextRenderer
+    STDMETHODIMP DrawGlyphRun(void*, FLOAT bx, FLOAT by,
+                               DWRITE_MEASURING_MODE mm,
+                               const DWRITE_GLYPH_RUN* run,
+                               const DWRITE_GLYPH_RUN_DESCRIPTION* desc,
+                               IUnknown*) override
+    {
+        // Without IDWriteFactory4 we can't enumerate colour runs — keep the
+        // default linear behaviour so the text still renders.
+        if (!dw4_)
+        {
+            rt_->DrawGlyphRun({bx, by}, run, fg_, mm);
+            return S_OK;
+        }
+
+        const DWRITE_GLYPH_IMAGE_FORMATS desired =
+            DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
+            DWRITE_GLYPH_IMAGE_FORMATS_CFF |
+            DWRITE_GLYPH_IMAGE_FORMATS_COLR |
+            DWRITE_GLYPH_IMAGE_FORMATS_PNG |
+            DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
+            DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
+            DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8 |
+            DWRITE_GLYPH_IMAGE_FORMATS_SVG;
+
+        ComPtr<IDWriteColorGlyphRunEnumerator1> en;
+        HRESULT hr = dw4_->TranslateColorGlyphRun(
+            {bx, by}, run, desc, desired, mm, nullptr, 0, &en);
+        if (hr == DWRITE_E_NOCOLOR || FAILED(hr) || !en)
+        {
+            rt_->DrawGlyphRun({bx, by}, run, fg_, mm);
+            return S_OK;
+        }
+
+        constexpr DWRITE_GLYPH_IMAGE_FORMATS bitmap_mask =
+            DWRITE_GLYPH_IMAGE_FORMATS_PNG |
+            DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
+            DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
+            DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
+
+        for (;;)
+        {
+            BOOL have = FALSE;
+            if (FAILED(en->MoveNext(&have)) || !have) break;
+            const DWRITE_COLOR_GLYPH_RUN1* cr = nullptr;
+            if (FAILED(en->GetCurrentRun(&cr)) || !cr) break;
+
+            if (cr->glyphImageFormat & bitmap_mask)
+            {
+                draw_bitmap_color_run_(cr);
+            }
+            else
+            {
+                // Outline (TrueType / CFF) or COLR overlay layer.
+                ID2D1Brush* brush = fg_;
+                ComPtr<ID2D1SolidColorBrush> palette_brush;
+                if (cr->paletteIndex != 0xFFFFu)
+                {
+                    if (SUCCEEDED(rt_->CreateSolidColorBrush(
+                            cr->runColor, &palette_brush)) &&
+                        palette_brush)
+                    {
+                        brush = palette_brush.Get();
+                    }
+                }
+                rt_->DrawGlyphRun({cr->baselineOriginX, cr->baselineOriginY},
+                                  &cr->glyphRun, brush, mm);
+            }
+        }
+        return S_OK;
+    }
+
+    STDMETHODIMP DrawUnderline(void*, FLOAT bx, FLOAT by,
+                                const DWRITE_UNDERLINE* u, IUnknown*) override
+    {
+        D2D1_RECT_F r{bx, by + u->offset,
+                      bx + u->width, by + u->offset + u->thickness};
+        rt_->FillRectangle(r, fg_);
+        return S_OK;
+    }
+    STDMETHODIMP DrawStrikethrough(void*, FLOAT bx, FLOAT by,
+                                    const DWRITE_STRIKETHROUGH* s,
+                                    IUnknown*) override
+    {
+        D2D1_RECT_F r{bx, by + s->offset,
+                      bx + s->width, by + s->offset + s->thickness};
+        rt_->FillRectangle(r, fg_);
+        return S_OK;
+    }
+    STDMETHODIMP DrawInlineObject(void* ctx, FLOAT bx, FLOAT by,
+                                   IDWriteInlineObject* o,
+                                   BOOL is_sw, BOOL is_rtl,
+                                   IUnknown* effect) override
+    {
+        return o ? o->Draw(ctx, this, bx, by, is_sw, is_rtl, effect) : S_OK;
+    }
+
+private:
+    void draw_bitmap_color_run_(const DWRITE_COLOR_GLYPH_RUN1* cr)
+    {
+        if (!cr->glyphRun.fontFace) return;
+        ComPtr<IDWriteFontFace4> face4;
+        if (FAILED(cr->glyphRun.fontFace->QueryInterface(
+                IID_PPV_ARGS(&face4))) ||
+            !face4)
+        {
+            return;
+        }
+
+        FLOAT x       = cr->baselineOriginX;
+        const FLOAT y = cr->baselineOriginY;
+        const float emSize = cr->glyphRun.fontEmSize;
+        const bool isRtl   = (cr->glyphRun.bidiLevel & 1) != 0;
+
+        for (UINT32 i = 0; i < cr->glyphRun.glyphCount; ++i)
+        {
+            const UINT16 g = cr->glyphRun.glyphIndices[i];
+            const FLOAT adv =
+                cr->glyphRun.glyphAdvances ? cr->glyphRun.glyphAdvances[i] : 0;
+            const FLOAT offX = cr->glyphRun.glyphOffsets
+                                   ? cr->glyphRun.glyphOffsets[i].advanceOffset
+                                   : 0;
+            const FLOAT offY = cr->glyphRun.glyphOffsets
+                                   ? cr->glyphRun.glyphOffsets[i].ascenderOffset
+                                   : 0;
+
+            const UINT32 requested =
+                static_cast<UINT32>(std::ceil(emSize));
+
+            DWRITE_GLYPH_IMAGE_DATA data{};
+            void* dataCtx = nullptr;
+            if (FAILED(face4->GetGlyphImageData(g, requested,
+                                                 cr->glyphImageFormat,
+                                                 &data, &dataCtx)) ||
+                !data.imageData || data.imageDataSize == 0 ||
+                data.pixelsPerEm == 0)
+            {
+                if (dataCtx) face4->ReleaseGlyphImageData(dataCtx);
+                x += isRtl ? -adv : adv;
+                continue;
+            }
+
+            ID2D1Bitmap* bmp =
+                get_or_make_bitmap_(data, cr->glyphImageFormat);
+            if (bmp)
+            {
+                const float scale =
+                    emSize / static_cast<float>(data.pixelsPerEm);
+                // horizontalLeftOrigin follows OpenType bearing convention:
+                // X is positive going right (same as D2D); Y is positive going
+                // up from baseline (opposite of D2D Y-down), so we subtract.
+                const float dstX = x + offX +
+                                   data.horizontalLeftOrigin.x * scale;
+                const float dstY = y - offY -
+                                   data.horizontalLeftOrigin.y * scale;
+                const float dstW = data.pixelSize.width  * scale;
+                const float dstH = data.pixelSize.height * scale;
+                const D2D1_RECT_F dstR{dstX, dstY, dstX + dstW, dstY + dstH};
+
+                if (dc_)
+                {
+                    dc_->DrawBitmap(
+                        bmp, dstR, 1.0f,
+                        D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                }
+                else
+                {
+                    rt_->DrawBitmap(
+                        bmp, dstR, 1.0f,
+                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                }
+            }
+
+            if (dataCtx) face4->ReleaseGlyphImageData(dataCtx);
+            x += isRtl ? -adv : adv;
+        }
+    }
+
+    ID2D1Bitmap*
+    get_or_make_bitmap_(const DWRITE_GLYPH_IMAGE_DATA& data,
+                         DWRITE_GLYPH_IMAGE_FORMATS format)
+    {
+        const std::uint64_t key =
+            (static_cast<std::uint64_t>(data.uniqueDataId) << 32) |
+            static_cast<std::uint64_t>(data.pixelsPerEm);
+
+        auto it = cache_->find(key);
+        if (it != cache_->end()) return it->second.Get();
+
+        ComPtr<ID2D1Bitmap> bitmap;
+        if (format == DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8)
+        {
+            D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                                   D2D1_ALPHA_MODE_PREMULTIPLIED));
+            rt_->CreateBitmap(
+                D2D1_SIZE_U{data.pixelSize.width, data.pixelSize.height},
+                data.imageData, data.pixelSize.width * 4, &props, &bitmap);
+        }
+        else if (wic_)
+        {
+            ComPtr<IWICStream> stream;
+            if (FAILED(wic_->CreateStream(&stream)) || !stream) return nullptr;
+            if (FAILED(stream->InitializeFromMemory(
+                    static_cast<BYTE*>(const_cast<void*>(data.imageData)),
+                    data.imageDataSize)))
+                return nullptr;
+            ComPtr<IWICBitmapDecoder> decoder;
+            if (FAILED(wic_->CreateDecoderFromStream(
+                    stream.Get(), nullptr,
+                    WICDecodeMetadataCacheOnLoad, &decoder)) ||
+                !decoder)
+                return nullptr;
+            ComPtr<IWICBitmapFrameDecode> frame;
+            if (FAILED(decoder->GetFrame(0, &frame)) || !frame) return nullptr;
+            ComPtr<IWICFormatConverter> converter;
+            if (FAILED(wic_->CreateFormatConverter(&converter)) ||
+                !converter)
+                return nullptr;
+            if (FAILED(converter->Initialize(
+                    frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                    WICBitmapDitherTypeNone, nullptr, 0.0,
+                    WICBitmapPaletteTypeMedianCut)))
+                return nullptr;
+            rt_->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &bitmap);
+        }
+
+        if (!bitmap) return nullptr;
+        auto* raw = bitmap.Get();
+        cache_->emplace(key, std::move(bitmap));
+        return raw;
+    }
+
+    ULONG ref_ = 1;
+    ID2D1RenderTarget* rt_;
+    ID2D1DeviceContext* dc_;     // may be null
+    IDWriteFactory4* dw4_;       // may be null (Win10 1607+ only)
+    IWICImagingFactory* wic_;
+    BitmapCache* cache_;
+    ID2D1Brush* fg_;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 //  D2DCanvas — tk::Canvas implementation
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -744,6 +1055,7 @@ public:
     D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt)
         : backend_(backend), rt_(rt)
     {
+        backend_.dwrite.As(&dw4_); // may be null on pre-1607 Windows 10
         update_dc(rt);
     }
 
@@ -752,6 +1064,7 @@ public:
         rt_ = rt;
         update_dc(rt);
         brush_cache_.clear();
+        emoji_bitmap_cache_.clear();
     }
 
     void clear(Color c) override
@@ -903,11 +1216,16 @@ public:
     void draw_text(const TextLayout& layout, Point origin, Color c) override
     {
         auto& dl = static_cast<const DWriteLayout&>(layout);
-        // D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT is the reason we use
-        // D2D + DWrite instead of GDI/GDI+. Without this flag, emoji
-        // render as monochrome outlines from the COLR base layer.
-        rt_->DrawTextLayout(to_d2d(origin), dl.raw(), brush(c),
-                            D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+        // Route through CubicEmojiTextRenderer so colour-bitmap (CBDT/PNG)
+        // emoji glyphs render with HIGH_QUALITY_CUBIC. D2D's native
+        // DrawTextLayout / DrawColorBitmapGlyphRun hard-code LINEAR, which
+        // looks blocky when Noto Color Emoji's 136-px source is scaled to
+        // ~19-px body size. Outline / COLR runs still use DrawGlyphRun.
+        ComPtr<IDWriteTextRenderer> renderer;
+        renderer.Attach(new CubicEmojiTextRenderer(
+            rt_, dc_, dw4_.Get(), backend_.wic.Get(),
+            &emoji_bitmap_cache_, brush(c)));
+        dl.raw()->Draw(nullptr, renderer.Get(), origin.x, origin.y);
     }
 
     void push_clip_rect(Rect r) override
@@ -999,8 +1317,14 @@ private:
     Backend::Impl& backend_;
     ID2D1RenderTarget* rt_;
     ID2D1DeviceContext* dc_ = nullptr; // non-owning; valid iff rt_ IS a DeviceContext
+    ComPtr<IDWriteFactory4> dw4_;      // null on pre-1607 Windows 10
     std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
         brush_cache_;
+    // Glyph-image bitmap cache for CubicEmojiTextRenderer, keyed by
+    // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap owned by rt_,
+    // so the cache must be cleared on rebind() — the bitmaps are tied to the
+    // old render target.
+    CubicEmojiTextRenderer::BitmapCache emoji_bitmap_cache_;
     std::vector<ClipKind> clip_stack_;
 };
 
