@@ -5840,9 +5840,13 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             .map(|n| n.to_string())
             .unwrap_or_else(|_| room.room_id().to_string());
         let is_space = room.is_space();
-        let counts = room.unread_notification_counts();
-        let notification_count = u64::from(counts.notification_count);
-        let highlight_count    = u64::from(counts.highlight_count);
+        // Prefer the client-side computed counts over the server-reported
+        // `unread_notification_counts()` because the latter is empty for
+        // encrypted rooms (the server can't apply push rules to ciphertext),
+        // which on E2EE-heavy accounts means every room reports 0 unreads.
+        // See matrix-sdk-base 0.17 docs on `Room::num_unread_notifications`.
+        let notification_count = room.num_unread_notifications();
+        let highlight_count    = room.num_unread_mentions();
         let last_activity_ts = room
             .latest_event_timestamp()
             .map(|t| u64::from(t.0))

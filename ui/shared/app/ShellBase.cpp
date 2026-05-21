@@ -13,6 +13,8 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <thread>
 
