@@ -44,6 +44,7 @@ void SettingsController::upload_avatar()
     struct FlagCleaner {
         std::atomic<bool>& flag;
         bool armed = true;
+        explicit FlagCleaner(std::atomic<bool>& f) : flag(f) {}
         ~FlagCleaner() { if (armed) flag.store(false); }
         void disarm() { armed = false; }
     };

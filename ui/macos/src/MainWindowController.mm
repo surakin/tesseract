@@ -30,7 +30,9 @@
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
 #import <UserNotifications/UserNotifications.h>
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#endif
 
 // Animated WebP properties landed in macOS 11 SDK; define them ourselves
 // when building against an older SDK so we can still attempt WebP delay
@@ -87,8 +89,10 @@ public:
     {
     }
 
-protected:
+public:
     void post_to_ui_(std::function<void()> fn) override;
+
+protected:
     void on_rooms_updated_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -3825,7 +3829,11 @@ void MacShell::apply_cached_messages_(
                 if (!s)
                     return;
                 NSOpenPanel* panel = [NSOpenPanel openPanel];
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
                 panel.allowedContentTypes = @[ UTTypeImage ];
+#else
+                panel.allowedFileTypes = @[ @"public.image" ];
+#endif
                 panel.canChooseFiles = YES;
                 panel.allowsMultipleSelection = NO;
                 __weak MainWindowController* ws2 = s;
