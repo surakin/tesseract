@@ -4038,18 +4038,21 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn upload_avatar(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
-        let Some(client) = self.client.as_ref() else { return err("not logged in"); };
+        let Some(client) = self.client.clone() else { return err("not logged in"); };
         let data = bytes.to_vec();
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
             Err(_) => return err(format!("invalid mime type: {mime_type}")),
         };
-        let upload = self.rt.block_on(client.media().upload(&mime, data, None));
+        let client2 = client.clone();
+        let upload = self.rt.block_on(async move {
+            client.media().upload(&mime, data, None).await
+        });
         let mxc_uri = match upload {
             Ok(r) => r.content_uri,
             Err(e) => return err(format!("upload avatar: {e}")),
         };
-        match self.rt.block_on(client.account().set_avatar_url(Some(&mxc_uri))) {
+        match self.rt.block_on(client2.account().set_avatar_url(Some(&mxc_uri))) {
             Ok(_) => ok(mxc_uri.to_string()),
             Err(e) => err(e.to_string()),
         }
