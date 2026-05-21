@@ -80,12 +80,17 @@ private:
     // Draws a vector calendar icon centred in `button`, tinted with `tint`.
     void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
                             tk::Color tint);
+    // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
+    void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
 
     bool condensed_ = false;
     bool show_calendar_btn_ = false;
     bool hover_calendar_ = false;
     bool press_calendar_ = false;
     tk::Rect calendar_btn_rect_{}; // updated each paint pass
+
+    bool encrypted_ = false;
+    tk::Rect lock_icon_rect_{};
 
     bool press_info_ = false; // true when header area (not calendar) is pressed
     bool hover_topic_ = false;

@@ -21,6 +21,10 @@ constexpr float kCalBtnSize = 28.0f;
 constexpr float kCalBtnMargin = 8.0f;
 constexpr float kCalBtnRadius = 6.0f;
 
+constexpr float kLockW   = 10.0f;
+constexpr float kLockH   = 12.0f;
+constexpr float kLockGap =  4.0f;
+
 // Vertical offsets for the name/topic block (from the top of the strip).
 // Two-line layout (with topic): name at 12 px, topic at 34 px.
 // One-line layout (name only):  name centred → 21 px.
@@ -50,6 +54,7 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
     topic_ = info.topic;
     topic_html_ = info.topic_html;
     avatar_url_ = info.effective_avatar_url();
+    encrypted_ = info.is_encrypted;
     // Drop the previous room's rich-topic layout; mark dirty so arrange()
     // rebuilds it and recomputes truncation before the next paint.
     topic_layout_.reset();
@@ -228,9 +233,19 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float name_y =
         has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
 
+    const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
+    lock_icon_rect_ = encrypted_
+                          ? tk::Rect{text_x,
+                                     name_y + (kNameH - kLockH) * 0.5f,
+                                     kLockW, kLockH}
+                          : tk::Rect{};
+
     if (name_label_)
     {
-        name_label_->arrange(ctx, {text_x, name_y, text_w, kNameH});
+        name_label_->arrange(
+            ctx,
+            {text_x + lock_reserve, name_y,
+             std::max(0.0f, text_w - lock_reserve), kNameH});
     }
 
     topic_rect_ = {text_x, bounds.y + kTopicY, text_w, kTopicH};
@@ -358,6 +373,12 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         name_label_->paint(ctx);
     }
 
+    if (encrypted_)
+    {
+        draw_lock_icon(ctx.canvas, lock_icon_rect_,
+                       ctx.theme.palette.text_secondary);
+    }
+
     // Topic: rich text (HTML) if present, plain label otherwise.
     // topic_layout_ is built and cached in arrange(); no rebuild needed here.
     if (!topic_spans_.empty())
@@ -424,6 +445,23 @@ void RoomHeader::draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
             canvas.fill_rect({cx - 0.8f, cy - 0.8f, 1.6f, 1.6f}, dot);
         }
     }
+}
+
+void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
+                                tk::Color tint)
+{
+    // 10×12 icon box, pixel-snapped and centred in `rect`.
+    const float ox = std::floor(rect.x + (rect.w - 10.0f) * 0.5f);
+    const float oy = std::floor(rect.y + (rect.h - 12.0f) * 0.5f);
+
+    // Shackle drawn first (stroke) so the filled body can overlap its lower
+    // half, giving a clean join without any background-colour dependency.
+    const tk::Rect shackle{ox + 2.0f, oy, 6.0f, 8.0f};
+    canvas.stroke_rounded_rect(shackle, 3.0f, tint, 2.0f);
+
+    // Padlock body — fills over the bottom portion of the shackle.
+    const tk::Rect body{ox, oy + 5.0f, 10.0f, 7.0f};
+    canvas.fill_rounded_rect(body, 1.5f, tint);
 }
 
 bool RoomHeader::on_pointer_down(tk::Point local)
