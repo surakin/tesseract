@@ -44,6 +44,13 @@ pub mod ffi {
         is_direct: bool,
         /// mxc:// URI of the room avatar, empty string if none.
         avatar_url: String,
+        /// Fallback avatar mxc:// URI for an avatar-less DM: the other
+        /// participant's avatar, with functional members (bridge bots, per
+        /// MSC4171 `io.element.functional_members`) excluded so bridged
+        /// DMs show the puppet user's avatar instead of the bot's. Empty
+        /// when the room is not a DM, when it has its own avatar, or when
+        /// no real counterpart could be identified.
+        dm_avatar_url: String,
         /// Body text of the most recent message (best-effort, may be empty).
         last_message_body: String,
         /// Display name of the last-message sender; empty when the sender is

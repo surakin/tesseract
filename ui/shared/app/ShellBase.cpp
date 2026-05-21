@@ -49,23 +49,28 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 {
     // Must be called on the UI thread — accesses tk_avatars_ and
     // media_fetches_in_flight_ without synchronization.
-    if (r.avatar_url.empty() || tk_avatars_.count(r.avatar_url))
+    const bool use_room_endpoint = !r.avatar_url.empty();
+    const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
+    if (mxc.empty() || tk_avatars_.count(mxc))
     {
         return;
     }
-    if (!media_fetches_in_flight_.insert(r.avatar_url).second)
+    if (!media_fetches_in_flight_.insert(mxc).second)
     {
         return;
     }
     const std::string room_id = r.id;
-    const std::string mxc = r.avatar_url;
     run_async_(
-        [this, room_id, mxc]()
+        [this, room_id, mxc, use_room_endpoint]()
         {
             auto bytes = media_disk_cache_.load(mxc);
             if (bytes.empty())
             {
-                bytes = client_->fetch_avatar_bytes(room_id);
+                // DM fallback avatars are user mxcs, not room avatars, so
+                // route them through the generic media endpoint.
+                bytes = use_room_endpoint
+                            ? client_->fetch_avatar_bytes(room_id)
+                            : client_->fetch_media_bytes(mxc);
                 if (!bytes.empty())
                 {
                     media_disk_cache_.store(mxc, bytes);

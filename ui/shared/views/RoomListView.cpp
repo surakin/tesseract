@@ -239,9 +239,10 @@ private:
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
-        if (owner_.avatar_provider_ && !room.avatar_url.empty())
+        const std::string& av_mxc = room.effective_avatar_url();
+        if (owner_.avatar_provider_ && !av_mxc.empty())
         {
-            avatar = owner_.avatar_provider_(room.avatar_url);
+            avatar = owner_.avatar_provider_(av_mxc);
         }
 
         if (avatar)

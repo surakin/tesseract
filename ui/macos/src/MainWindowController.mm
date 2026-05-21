@@ -1234,9 +1234,10 @@ void MacShell::on_tab_state_changed_ui_()
                     continue;
                 }
                 name = r.name;
-                if (!r.avatar_url.empty())
+                const std::string& av_mxc = r.effective_avatar_url();
+                if (!av_mxc.empty())
                 {
-                    auto it = tk_avatars_.find(r.avatar_url);
+                    auto it = tk_avatars_.find(av_mxc);
                     if (it != tk_avatars_.end())
                     {
                         avatar = it->second.get();

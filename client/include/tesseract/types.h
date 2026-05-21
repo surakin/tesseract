@@ -303,6 +303,12 @@ struct RoomInfo
     uint64_t highlight_count = 0;
     bool is_direct = false;
     std::string avatar_url;
+    /// Fallback avatar mxc for an avatar-less DM: the other participant's
+    /// avatar (with bridge bots filtered out via MSC4171). Empty when the
+    /// room is not a DM, when it already has its own avatar, or when no
+    /// real counterpart could be identified. Render sites should prefer
+    /// `effective_avatar_url()` rather than reading either field directly.
+    std::string dm_avatar_url;
     std::string last_message_body;
     /// Display name of the last-message sender; empty when the sender is the
     /// current user (render as "You"), or when there is no last message.
@@ -324,6 +330,14 @@ struct RoomInfo
     bool is_encrypted = false;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
+
+    /// Effective avatar mxc to render for this room: the room's own avatar
+    /// when set, otherwise the DM-counterpart fallback. May be empty (caller
+    /// should draw an initials disc in that case).
+    const std::string& effective_avatar_url() const
+    {
+        return avatar_url.empty() ? dm_avatar_url : avatar_url;
+    }
 };
 
 /// MSC3266 room summary — metadata about a room fetched without joining.

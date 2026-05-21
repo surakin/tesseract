@@ -90,6 +90,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .highlight_count    = r.highlight_count,
         .is_direct = r.is_direct,
         .avatar_url = std::string(r.avatar_url),
+        .dm_avatar_url = std::string(r.dm_avatar_url),
         .last_message_body = std::string(r.last_message_body),
         .last_message_sender_name = std::string(r.last_message_sender_name),
         .last_message_kind = std::string(r.last_message_kind),

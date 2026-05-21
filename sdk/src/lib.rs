@@ -28,6 +28,7 @@ pub mod ffi {
         pub highlight_count: u64,
         pub is_direct: bool,
         pub avatar_url: String,
+        pub dm_avatar_url: String,
         pub last_message_body: String,
         pub last_message_sender_name: String,
         pub last_message_kind: String,

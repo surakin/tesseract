@@ -80,7 +80,7 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
 
     room_id_            = info.id;
     display_name_       = info.name;
-    avatar_url_         = info.avatar_url;
+    avatar_url_         = info.effective_avatar_url();
     topic_              = info.topic;
     topic_html_         = info.topic_html;
     is_encrypted_       = info.is_encrypted;
@@ -115,7 +115,7 @@ void RoomInfoPanel::refresh_info(const tesseract::RoomInfo& info)
 {
     if (!open_) return;
     display_name_       = info.name;
-    avatar_url_         = info.avatar_url;
+    avatar_url_         = info.effective_avatar_url();
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
     if (topic_ != info.topic || topic_html_ != info.topic_html)

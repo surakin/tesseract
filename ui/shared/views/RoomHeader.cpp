@@ -49,7 +49,7 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
     display_name_ = info.name;
     topic_ = info.topic;
     topic_html_ = info.topic_html;
-    avatar_url_ = info.avatar_url;
+    avatar_url_ = info.effective_avatar_url();
     // Drop the previous room's rich-topic layout; mark dirty so arrange()
     // rebuilds it and recomputes truncation before the next paint.
     topic_layout_.reset();

@@ -1,14 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-20**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-21**.
 
-> **Server capabilities on login.**
-> After the sliding-sync state reaches `Running`, the client concurrently fetches
-> `/_matrix/client/versions` and `/_matrix/client/v3/capabilities`, assembles a
-> `tesseract::ServerInfo` struct (homeserver URL, spec versions, MSC3030 support,
-> capability bits, default room version), and stores it in `ShellBase::server_info_`
-> for feature-gating. A "Server" tab in Settings shows the homeserver URL. 363/363
-> C++ tests pass.
+> **DM-counterpart avatar fallback.**
+> Rooms with no avatar of their own now show the other participant's avatar in
+> the room list, room header, room-info panel, and tab strip. A new
+> `RoomInfo::dm_avatar_url` field is computed in `build_room_infos` and consumed
+> via the inline `effective_avatar_url()` accessor at every render site;
+> `ShellBase::ensure_room_avatar_` routes the fallback through
+> `fetch_media_bytes`. Functional members (`io.element.functional_members` /
+> MSC4171) are excluded so bridged 1:1s show the puppet's avatar, not the bot's;
+> `get_or_create_dm` applies the same filter so bridged DMs are recognised
+> instead of duplicated. 382/382 C++ tests pass.
 
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
@@ -17,7 +20,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 108 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 363 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 382 |
 
 ## Platforms
 
@@ -88,7 +91,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 ## Media
 
 - **`fetch_media_bytes(mxc)`** / **`fetch_source_bytes(source_json)`** — synchronous wrappers around matrix-sdk's media cache; the latter handles plain mxc + encrypted `EncryptedFile` transparently.
-- **Avatars** — sender avatars (24 px per row) + room avatars (36 px); circular crop via `draw_circle_image`; initials-disc fallback when bytes aren't yet cached.
+- **Avatars** — sender avatars (24 px per row) + room avatars (36 px); circular crop via `draw_circle_image`; initials-disc fallback when bytes aren't yet cached. Rooms without a custom avatar fall back to the *other participant's* avatar in 1:1 chats (`RoomInfo::dm_avatar_url`, populated in Rust by inspecting `m.direct` first and then filtering joined members by `service_members` per MSC4171); render sites read via the inline `effective_avatar_url()` accessor and `ShellBase::ensure_room_avatar_` routes the DM-fallback fetch through `fetch_media_bytes` so the cache key naturally dedupes with the user's avatar elsewhere.
 - **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome.
 - **File cards** — fixed 56-px-tall rounded card with filename (ellipsis-trimmed) + human-readable size.
 - **Inline stickers** — borderless 256 × 256 thumbnail; right-click context menu offers "Add to Saved Stickers" (Qt6 / GTK4 / macOS).

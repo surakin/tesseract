@@ -4082,13 +4082,20 @@ impl ClientFfi {
             return String::new();
         };
         self.rt.block_on(async {
-            // Look for an existing DM with this user
+            // Look for an existing DM with this user. Functional members
+            // (bridge bots, per MSC4171) are excluded from the member count
+            // so a bridged 1:1 (you + bot + puppet) still matches as a DM.
             for room in client.joined_rooms() {
                 if room.is_direct().await.unwrap_or(false) {
                     if let Ok(members) =
                         room.members(matrix_sdk::RoomMemberships::JOIN).await
                     {
-                        let ids: Vec<_> = members.iter().map(|m| m.user_id()).collect();
+                        let functional = room.service_members().unwrap_or_default();
+                        let ids: Vec<_> = members
+                            .iter()
+                            .map(|m| m.user_id())
+                            .filter(|id| !functional.contains(*id))
+                            .collect();
                         if ids.len() == 2
                             && ids.iter().any(|id| *id == uid)
                             && client
@@ -5751,6 +5758,75 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
     }
 }
 
+/// Pick the "other user" of a DM room, skipping the current user and any
+/// functional members (bridge bots, per MSC4171). Returns None when no real
+/// counterpart can be identified.
+///
+/// Performance: relies on matrix-sdk's in-memory `service_members()` and
+/// `active_members_count()` accessors to avoid the expensive
+/// `room.members(JOIN).await` for any room that obviously isn't a 1:1.
+#[cfg(test)]
+async fn dm_other_user(
+    _room: &matrix_sdk::Room,
+    _me: &matrix_sdk::ruma::UserId,
+) -> Option<crate::ffi::RoomMember> {
+    None
+}
+
+#[cfg(not(test))]
+async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi::RoomMember> {
+    let functional = room.service_members().unwrap_or_default();
+
+    let to_bridge = |m: &matrix_sdk::room::RoomMember| -> crate::ffi::RoomMember {
+        let uid = m.user_id();
+        let display_name = m
+            .display_name()
+            .map(str::to_owned)
+            .unwrap_or_else(|| uid.localpart().to_string());
+        let avatar_url = m.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        crate::ffi::RoomMember {
+            user_id: uid.to_string(),
+            display_name,
+            avatar_url,
+        }
+    };
+
+    // 1) Prefer m.direct: the puppet user is here, the bridge bot is not.
+    //    This path is cheap (in-memory) and works for properly-marked DMs.
+    for target in room.direct_targets() {
+        let Some(uid) = target.as_user_id() else {
+            continue; // 3PID / email / phone target — skip.
+        };
+        if uid == me || functional.contains(uid) {
+            continue;
+        }
+        if let Ok(Some(m)) = room.get_member_no_sync(uid).await {
+            return Some(to_bridge(&m));
+        }
+    }
+
+    // 2) Fallback for rooms that aren't tagged in m.direct: look at the
+    //    member list, but only after a cheap precheck that there are
+    //    exactly 2 real members (= me + counterpart). Skips the expensive
+    //    members() fetch on group rooms.
+    let active = room.active_members_count();
+    let service = room.active_service_members_count().unwrap_or(0);
+    if active.saturating_sub(service) != 2 {
+        return None;
+    }
+    if let Ok(members) = room.members(matrix_sdk::RoomMemberships::JOIN).await {
+        let mut real = members
+            .iter()
+            .filter(|m| m.user_id() != me && !functional.contains(m.user_id()));
+        if let Some(first) = real.next() {
+            if real.next().is_none() {
+                return Some(to_bridge(first));
+            }
+        }
+    }
+    None
+}
+
 async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     let mut result = Vec::new();
     for room in client.joined_rooms() {
@@ -5831,6 +5907,27 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
                 _ => "shared".to_string(),
             }
         };
+        let is_direct = room.is_direct().await.unwrap_or(false);
+        let avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        // Fallback avatar when the room has no avatar of its own: the other
+        // participant's mxc. Bridge bots (functional members) are excluded
+        // so bridged 1:1s show the puppet's avatar, not the bot's.
+        //
+        // We deliberately do NOT gate on `is_direct` — many rooms users
+        // treat as DMs aren't actually marked in m.direct account data, but
+        // dm_other_user already protects against false positives by only
+        // returning Some when there is exactly one real counterpart.
+        let dm_avatar_url = if avatar_url.is_empty() && !is_space {
+            match client.user_id() {
+                Some(me) => dm_other_user(&room, me)
+                    .await
+                    .map(|m| m.avatar_url)
+                    .unwrap_or_default(),
+                None => String::new(),
+            }
+        } else {
+            String::new()
+        };
         result.push(crate::ffi::RoomInfo {
             id: room.room_id().to_string(),
             name,
@@ -5838,8 +5935,9 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
             topic_html,
             notification_count,
             highlight_count,
-            is_direct: room.is_direct().await.unwrap_or(false),
-            avatar_url: room.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+            is_direct,
+            avatar_url,
+            dm_avatar_url,
             last_message_body,
             last_message_sender_name,
             last_message_kind,

@@ -67,6 +67,26 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]")
     CHECK(r.highlight_count == 0u);
     CHECK_FALSE(r.is_direct);
     CHECK_FALSE(r.is_space);
+    CHECK(r.dm_avatar_url.empty());
+    CHECK(r.effective_avatar_url().empty());
+}
+
+TEST_CASE("RoomInfo::effective_avatar_url prefers room avatar over DM fallback",
+          "[types]")
+{
+    tesseract::RoomInfo r{};
+    r.avatar_url    = "mxc://example.org/room";
+    r.dm_avatar_url = "mxc://example.org/user";
+    CHECK(r.effective_avatar_url() == "mxc://example.org/room");
+}
+
+TEST_CASE("RoomInfo::effective_avatar_url falls back to DM avatar when room "
+          "avatar is empty",
+          "[types]")
+{
+    tesseract::RoomInfo r{};
+    r.dm_avatar_url = "mxc://example.org/user";
+    CHECK(r.effective_avatar_url() == "mxc://example.org/user");
 }
 
 // ---------------------------------------------------------------------------
