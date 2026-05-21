@@ -38,6 +38,7 @@ using std::min;
 
 #include "views/AccountPicker.h"
 #include "views/SettingsView.h"
+#include "app/SettingsController.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -328,6 +329,8 @@ private:
     std::unique_ptr<tk::win32::Surface> settings_surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
     bool settings_visible_ = false;
+    std::unique_ptr<tesseract::SettingsController> settings_controller_;
+    std::unique_ptr<tk::NativeTextField> settings_name_field_;
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;

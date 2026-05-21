@@ -2622,6 +2622,17 @@ void MainWindow::on_create(HWND hwnd)
                 tesseract::config_dir());
         };
         settings_surface_->set_root(std::move(view));
+        settings_surface_->set_on_layout(
+            [this]
+            {
+                if (settings_name_field_ && settings_view_)
+                {
+                    const tk::Rect r = settings_view_->name_field_rect();
+                    settings_name_field_->set_visible(!r.empty());
+                    if (!r.empty())
+                        settings_name_field_->set_rect(r);
+                }
+            });
         settings_surface_->set_theme(current_theme_);
         if (settings_surface_->hwnd())
         {
@@ -2822,6 +2833,82 @@ void MainWindow::start_login()
         }
     }
     switch_active_account(active_idx);
+
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto cb)
+        {
+            wchar_t buf[MAX_PATH]{};
+            OPENFILENAMEW ofn{};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner   = hwnd_;
+            ofn.lpstrFile   = buf;
+            ofn.nMaxFile    = MAX_PATH;
+            ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.gif;*.webp\0\0";
+            ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+            if (!GetOpenFileNameW(&ofn))
+                return;
+
+            HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                    OPEN_EXISTING, 0, nullptr);
+            if (hf == INVALID_HANDLE_VALUE)
+                return;
+
+            LARGE_INTEGER sz{};
+            GetFileSizeEx(hf, &sz);
+            std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+            DWORD read_bytes = 0;
+            ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
+                     &read_bytes, nullptr);
+            CloseHandle(hf);
+
+            std::wstring wp(buf);
+            std::string mime = "image/jpeg";
+            if (wp.ends_with(L".png"))       mime = "image/png";
+            else if (wp.ends_with(L".gif"))  mime = "image/gif";
+            else if (wp.ends_with(L".webp")) mime = "image/webp";
+
+            post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
+                         mime]() mutable { cb(std::move(bytes), mime); });
+        });
+
+    if (settings_view_)
+    {
+        settings_view_->set_controller(settings_controller_.get());
+        settings_view_->on_avatar_upload_requested = [this]
+        { if (settings_controller_) settings_controller_->upload_avatar(); };
+        settings_view_->on_avatar_remove_requested = [this]
+        { if (settings_controller_) settings_controller_->remove_avatar(); };
+    }
+
+    settings_name_field_ = settings_surface_->host().make_text_field();
+    settings_name_field_->set_text(my_display_name_);
+    settings_name_field_->set_placeholder("Display name");
+    settings_name_field_->set_visible(false);
+
+    settings_name_field_->set_on_submit(
+        [this]
+        {
+            if (!settings_controller_) return;
+            settings_controller_->set_display_name(
+                settings_name_field_->text());
+            settings_view_->set_name_busy(true);
+            settings_surface_->relayout();
+        });
+
+    settings_controller_->on_name_changed = [this](std::string name)
+    {
+        settings_view_->set_display_name_text(name);
+        if (settings_name_field_) settings_name_field_->set_text(name);
+        settings_surface_->relayout();
+    };
+    settings_controller_->on_name_result = [this](bool ok, std::string error)
+    {
+        settings_view_->set_name_busy(false);
+        if (!ok) settings_view_->set_name_error(std::move(error));
+        settings_surface_->relayout();
+    };
 }
 
 void MainWindow::on_login_succeeded()
@@ -2939,6 +3026,82 @@ void MainWindow::on_login_succeeded()
     tesseract::SessionStore::save_account(user_id, json);
 
     switch_active_account(new_idx);
+
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto cb)
+        {
+            wchar_t buf[MAX_PATH]{};
+            OPENFILENAMEW ofn{};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner   = hwnd_;
+            ofn.lpstrFile   = buf;
+            ofn.nMaxFile    = MAX_PATH;
+            ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.gif;*.webp\0\0";
+            ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+            if (!GetOpenFileNameW(&ofn))
+                return;
+
+            HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                    OPEN_EXISTING, 0, nullptr);
+            if (hf == INVALID_HANDLE_VALUE)
+                return;
+
+            LARGE_INTEGER sz{};
+            GetFileSizeEx(hf, &sz);
+            std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
+            DWORD read_bytes = 0;
+            ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
+                     &read_bytes, nullptr);
+            CloseHandle(hf);
+
+            std::wstring wp(buf);
+            std::string mime = "image/jpeg";
+            if (wp.ends_with(L".png"))       mime = "image/png";
+            else if (wp.ends_with(L".gif"))  mime = "image/gif";
+            else if (wp.ends_with(L".webp")) mime = "image/webp";
+
+            post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
+                         mime]() mutable { cb(std::move(bytes), mime); });
+        });
+
+    if (settings_view_)
+    {
+        settings_view_->set_controller(settings_controller_.get());
+        settings_view_->on_avatar_upload_requested = [this]
+        { if (settings_controller_) settings_controller_->upload_avatar(); };
+        settings_view_->on_avatar_remove_requested = [this]
+        { if (settings_controller_) settings_controller_->remove_avatar(); };
+    }
+
+    settings_name_field_ = settings_surface_->host().make_text_field();
+    settings_name_field_->set_text(my_display_name_);
+    settings_name_field_->set_placeholder("Display name");
+    settings_name_field_->set_visible(false);
+
+    settings_name_field_->set_on_submit(
+        [this]
+        {
+            if (!settings_controller_) return;
+            settings_controller_->set_display_name(
+                settings_name_field_->text());
+            settings_view_->set_name_busy(true);
+            settings_surface_->relayout();
+        });
+
+    settings_controller_->on_name_changed = [this](std::string name)
+    {
+        settings_view_->set_display_name_text(name);
+        if (settings_name_field_) settings_name_field_->set_text(name);
+        settings_surface_->relayout();
+    };
+    settings_controller_->on_name_result = [this](bool ok, std::string error)
+    {
+        settings_view_->set_name_busy(false);
+        if (!ok) settings_view_->set_name_error(std::move(error));
+        settings_surface_->relayout();
+    };
 }
 
 void MainWindow::open_settings_()
@@ -2962,7 +3125,16 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
-    settings_surface_->relayout();
+
+    if (settings_controller_ && settings_name_field_)
+    {
+        settings_name_field_->set_text(my_display_name_);
+        settings_surface_->relayout();
+    }
+    else
+    {
+        settings_surface_->relayout();
+    }
 
     settings_visible_ = true;
     if (main_app_surface_ && main_app_surface_->hwnd())
@@ -4804,6 +4976,9 @@ void MainWindow::switch_active_account(int new_idx)
     my_display_name_ = sess->display_name;
     my_avatar_url_ = sess->avatar_url;
     pending_restore_room_ = sess->last_room;
+
+    if (settings_controller_)
+        settings_controller_->set_client(client_);
 
     current_room_id_.clear();
     space_stack_.clear();
