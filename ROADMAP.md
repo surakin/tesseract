@@ -33,7 +33,7 @@ Done: inline images, stickers, reply-to, message editing, voice messages (receiv
 
 ## Step 12 — Notifications, layer 2: server pushers
 
-Linux (Qt6 + GTK4) done — see CHANGES.md. Remaining:
+Linux (Qt6 + GTK4) done — the toggle is now also wired to `IUpConnector::set_enabled` so enabling/disabling notifications in Settings registers/removes the server pusher live. Remaining:
 
 - Windows: deferred (WNS needs Store registration; UnifiedPush distributors on Windows are an option).
 - macOS: deferred (APNs).
