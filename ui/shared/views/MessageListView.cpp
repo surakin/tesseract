@@ -2830,7 +2830,16 @@ private:
         const int bars = std::max(1, static_cast<int>(strip_w_avail / step));
 
         // Resample sender waveform → `bars` buckets. When empty, the loop
-        // below uses the placeholder height.
+        // below uses the placeholder height. Senders often record voice well
+        // below the spec's 0..=1024 ceiling (a normal-volume voice peaks at
+        // ~10% of full scale), so normalise by the per-message peak instead
+        // of the spec ceiling — otherwise quiet recordings collapse into a
+        // flat row of minimum-height bars.
+        std::uint16_t wf_peak = 0;
+        for (std::uint16_t v : m.waveform)
+            if (v > wf_peak) wf_peak = v;
+        const float wf_norm = wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak)
+                                          : 0.0f;
         auto amp_at = [&](int i) -> float
         {
             if (m.waveform.empty())
@@ -2842,7 +2851,7 @@ private:
                 n - 1, static_cast<std::size_t>(static_cast<double>(i) / bars *
                                                 static_cast<double>(n)));
             return std::min(1.0f,
-                            static_cast<float>(m.waveform[src]) / 1024.0f);
+                            static_cast<float>(m.waveform[src]) * wf_norm);
         };
 
         float cursor_frac = 0.0f;
