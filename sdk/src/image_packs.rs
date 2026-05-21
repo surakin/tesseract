@@ -455,15 +455,18 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn type_slices_prefer_stable_then_unstable() {
-        // Merged MSC2545: stable first, im.ponies.* unstable fallback.
+    fn type_slices_prefer_unstable_then_stable() {
+        // MSC2545: unstable `im.ponies.*` first, stable `m.image_pack.*` /
+        // `m.room.image_pack` as fallback. Read-side intentionally probes
+        // the unstable name first to avoid 404s on servers that don't yet
+        // recognise the stable name (see client.rs ROOM_PACK_TYPES loop).
         assert_eq!(
             EMOTE_ROOMS_TYPES,
-            ["m.image_pack.rooms", "im.ponies.emote_rooms"]
+            ["im.ponies.emote_rooms", "m.image_pack.rooms"]
         );
         assert_eq!(
             ROOM_PACK_TYPES,
-            ["m.room.image_pack", "im.ponies.room_emotes"]
+            ["im.ponies.room_emotes", "m.room.image_pack"]
         );
         // MSC2545 defines no personal pack → single de-facto identifier,
         // no stable name to prefer.
