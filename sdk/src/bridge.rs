@@ -974,6 +974,16 @@ pub mod ffi {
         /// Remove user_id from m.ignored_user_list. Blocks — worker thread.
         fn unignore_user(self: &mut ClientFfi, user_id: &str) -> OpResult;
 
+        /// Set the current user's display name. Blocks — worker thread.
+        fn set_display_name(self: &mut ClientFfi, name: &str) -> OpResult;
+
+        /// Upload an avatar for the current user. `bytes` is the image payload
+        /// (PNG/JPEG/etc.); `mime_type` specifies the image format. Blocks — worker thread.
+        fn upload_avatar(self: &mut ClientFfi, bytes: &[u8], mime_type: &str) -> OpResult;
+
+        /// Remove the current user's avatar. Blocks — worker thread.
+        fn remove_avatar(self: &mut ClientFfi) -> OpResult;
+
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;
