@@ -87,6 +87,10 @@ SettingsView::SettingsView()
     auto devices = std::make_unique<DevicesSection>();
     devices_ = devices.get();
 
+    // About section — pinned to the bottom of the sidebar.
+    auto about = std::make_unique<AboutSection>();
+    about_ = about.get();
+
     // SideTabView — owns the section widgets. "Sessions" sits next to
     // "Account" since both relate to the signed-in user's identity.
     auto tabs = std::make_unique<tk::SideTabView>();
@@ -96,6 +100,7 @@ SettingsView::SettingsView()
     tabs->add_tab("Notifications", std::move(notifications));
     tabs->add_tab("Media", std::move(media));
     tabs->add_tab("Server", std::move(server));
+    tabs->add_bottom_tab("About", std::move(about));
     // First tab is auto-selected by SideTabView::add_tab.
     tabs->on_tab_selected = [this](int) { if (on_tab_changed) on_tab_changed(); };
     tabs_ = add_child(std::move(tabs));

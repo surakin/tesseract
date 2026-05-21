@@ -14,6 +14,7 @@
 // set_notifications_enabled(), set_image_previews_enabled(), and
 // set_prefetch_enabled() to sync state with persisted settings.
 
+#include "views/settings/AboutSection.h"
 #include "views/settings/AccountSection.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
@@ -158,6 +159,7 @@ private:
     MediaSection* media_ = nullptr;
     ServerSection* server_section_ = nullptr;
     DevicesSection*  devices_        = nullptr;
+    AboutSection*    about_          = nullptr;
     ConfirmDialog*   confirm_dialog_ = nullptr;
 
     std::function<void()> request_repaint_;

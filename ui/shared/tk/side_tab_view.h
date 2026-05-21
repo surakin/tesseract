@@ -5,10 +5,16 @@
 // widget at a time. The selected tab button is highlighted with
 // palette.sidebar_selected; hover uses palette.sidebar_hover.
 //
+// Tabs may be added in two groups: regular tabs stack from the top of the
+// sidebar, and "bottom" tabs added via add_bottom_tab() pin to the bottom of
+// the sidebar with a separator line drawn above them. Bottom tabs must be
+// added after all regular tabs.
+//
 // Usage:
 //   auto tabs = std::make_unique<tk::SideTabView>();
 //   tabs->add_tab("General", std::make_unique<MyGeneralWidget>());
 //   tabs->add_tab("Privacy", std::make_unique<MyPrivacyWidget>());
+//   tabs->add_bottom_tab("About", std::make_unique<MyAboutWidget>());
 //   tabs->on_tab_selected = [](int idx) { … };
 //   tabs->select(0);
 
@@ -31,6 +37,13 @@ public:
     // Append a tab. The content widget is owned by SideTabView. This may be
     // called at any time; the first tab added automatically becomes selected.
     void add_tab(std::string label, std::unique_ptr<Widget> content);
+
+    // Append a tab that pins to the bottom of the sidebar. Bottom tabs are
+    // drawn anchored to the bottom of the column with a separator line above
+    // the group. Must be called after all add_tab() calls so that internal
+    // indices remain stable (top tabs occupy [0..num_top), bottom tabs occupy
+    // [num_top..size)).
+    void add_bottom_tab(std::string label, std::unique_ptr<Widget> content);
 
     // Switch the visible content to the tab at `idx`. No-op if `idx` is out
     // of range. Fires `on_tab_selected` when the selection actually changes.
@@ -66,6 +79,7 @@ private:
         float layout_max_w = -2.0f;
         Widget* content = nullptr; // borrowed; owned via add_child
         bool hovered = false;
+        bool bottom = false; // true when added via add_bottom_tab
     };
 
     // Pointer hit-testing for the sidebar column.
@@ -77,6 +91,10 @@ private:
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.
     int tab_at_y(float local_y) const;
+
+    // Count of regular (top-stacked) tabs. Bottom tabs always sit after.
+    int num_top_tabs_() const;
+    int num_bottom_tabs_() const;
 
     // Ensure the TextLayout for tab `i` is built for the given max width.
     // Called from both arrange (LayoutCtx) and paint (PaintCtx) paths;

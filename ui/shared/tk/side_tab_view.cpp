@@ -33,6 +33,27 @@ void SideTabView::add_tab(std::string label, std::unique_ptr<Widget> content)
     }
 }
 
+void SideTabView::add_bottom_tab(std::string label,
+                                 std::unique_ptr<Widget> content)
+{
+    Tab t;
+    t.label = std::move(label);
+    t.content = add_child(std::move(content));
+    t.bottom = true;
+
+    const bool first = tabs_.empty();
+    tabs_.push_back(std::move(t));
+    tabs_.back().content->set_visible(false);
+
+    // A bottom tab can be the very first tab added; in that case auto-select
+    // it so SideTabView always has something visible.
+    if (first)
+    {
+        selected_idx_ = 0;
+        tabs_[0].content->set_visible(true);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
@@ -130,18 +151,32 @@ void SideTabView::paint(PaintCtx& ctx)
     Rect sidebar{bounds_.x, bounds_.y, kSidebarWidth, bounds_.h};
     ctx.canvas.fill_rect(sidebar, pal.sidebar_bg);
 
-    // Draw each tab button.
     const float btn_x = bounds_.x + kTabInset;
     const float btn_w = kSidebarWidth - kTabInset * 2;
     const float label_w = btn_w - kTabHPad * 2;
 
-    for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    const int n_top = num_top_tabs_();
+    const int n_bot = num_bottom_tabs_();
+    const int n_total = static_cast<int>(tabs_.size());
+
+    auto button_y = [&](int i) -> float {
+        if (i < n_top)
+        {
+            return bounds_.y + static_cast<float>(i) * kTabHeight;
+        }
+        // Bottom group: lay out from the bottom of the sidebar upwards.
+        const int bot_idx = i - n_top; // 0..n_bot-1
+        const float group_top =
+            bounds_.y + bounds_.h - static_cast<float>(n_bot) * kTabHeight;
+        return group_top + static_cast<float>(bot_idx) * kTabHeight;
+    };
+
+    for (int i = 0; i < n_total; ++i)
     {
         auto& t = tabs_[i];
 
         Rect btn{btn_x,
-                 bounds_.y + static_cast<float>(i) * kTabHeight +
-                     kTabVPad * 0.5f,
+                 button_y(i) + kTabVPad * 0.5f,
                  btn_w, kTabHeight - kTabVPad};
 
         // Choose fill colour based on state.
@@ -170,6 +205,24 @@ void SideTabView::paint(PaintCtx& ctx)
             Color tc =
                 (i == selected_idx_) ? pal.text_primary : pal.text_secondary;
             ctx.canvas.draw_text(*t.layout, {tx, ty}, tc);
+        }
+    }
+
+    // Separator line above the bottom-tab group (when both groups exist and
+    // there is real space between them).
+    if (n_bot > 0 && n_top > 0)
+    {
+        const float group_top =
+            bounds_.y + bounds_.h - static_cast<float>(n_bot) * kTabHeight;
+        const float top_stack_bottom =
+            bounds_.y + static_cast<float>(n_top) * kTabHeight;
+        if (group_top > top_stack_bottom + kTabVPad)
+        {
+            Rect divider{bounds_.x + kTabInset,
+                         group_top - kTabVPad * 0.5f - 0.5f,
+                         kSidebarWidth - kTabInset * 2,
+                         1.0f};
+            ctx.canvas.fill_rect(divider, pal.separator);
         }
     }
 
@@ -258,12 +311,48 @@ int SideTabView::tab_at_y(float y) const
     {
         return -1;
     }
-    int idx = static_cast<int>(y / kTabHeight);
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+
+    const int n_top = num_top_tabs_();
+    const int n_bot = num_bottom_tabs_();
+
+    // Top group: occupies [0, n_top * kTabHeight).
+    const float top_extent = static_cast<float>(n_top) * kTabHeight;
+    if (y < top_extent)
     {
-        return -1;
+        return static_cast<int>(y / kTabHeight);
     }
-    return idx;
+
+    // Bottom group: anchored at the bottom of the column.
+    if (n_bot > 0)
+    {
+        const float group_top = bounds_.h - static_cast<float>(n_bot) * kTabHeight;
+        if (y >= group_top && y < bounds_.h)
+        {
+            const int bot_idx = static_cast<int>((y - group_top) / kTabHeight);
+            return n_top + bot_idx;
+        }
+    }
+
+    return -1;
+}
+
+int SideTabView::num_top_tabs_() const
+{
+    int n = 0;
+    for (const auto& t : tabs_)
+    {
+        if (t.bottom)
+        {
+            break;
+        }
+        ++n;
+    }
+    return n;
+}
+
+int SideTabView::num_bottom_tabs_() const
+{
+    return static_cast<int>(tabs_.size()) - num_top_tabs_();
 }
 
 template <typename Ctx>
