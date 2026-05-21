@@ -997,7 +997,8 @@ public:
                     }
                     continue;
                 }
-                tk::Size csz = count_layout->measure();
+                const bool show_count = (r.count > 1);
+                tk::Size csz = show_count ? count_layout->measure() : tk::Size{};
 
                 const tk::TextLayout* emoji_layout = nullptr;
                 tk::Size esz{};
@@ -1005,7 +1006,8 @@ public:
                 if (is_img)
                 {
                     float img_side = eff_chip_h - kImgPad * 2;
-                    content_w = img_side + kChipInnerGap + csz.w;
+                    content_w = img_side +
+                                (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
                 else
                 {
@@ -1019,7 +1021,8 @@ public:
                         continue;
                     }
                     esz = emoji_layout->measure();
-                    content_w = esz.w + kChipInnerGap + csz.w;
+                    content_w = esz.w +
+                                (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
                 float w =
                     std::max(content_w + kChipPadX * 2, eff_chip_h + 8.0f);
@@ -1063,9 +1066,12 @@ public:
                         ctx.canvas.fill_rect(img_dst,
                                              tk::Color{0xCC, 0xCC, 0xCC});
                     }
-                    ctx.canvas.draw_text(
-                        *count_layout,
-                        {left_x + img_side + kChipInnerGap, count_y}, text);
+                    if (show_count)
+                    {
+                        ctx.canvas.draw_text(
+                            *count_layout,
+                            {left_x + img_side + kChipInnerGap, count_y}, text);
+                    }
                 }
                 else
                 {
@@ -1077,9 +1083,12 @@ public:
                         pill.y + (pill.h - emoji_layout->ascent()) * 0.5f;
                     ctx.canvas.draw_text(*emoji_layout, {left_x, emoji_y},
                                          text);
-                    ctx.canvas.draw_text(
-                        *count_layout,
-                        {left_x + esz.w + kChipInnerGap, count_y}, text);
+                    if (show_count)
+                    {
+                        ctx.canvas.draw_text(
+                            *count_layout,
+                            {left_x + esz.w + kChipInnerGap, count_y}, text);
+                    }
                 }
                 if (hovered)
                 {
