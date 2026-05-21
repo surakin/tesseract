@@ -29,6 +29,7 @@
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
 #import <UserNotifications/UserNotifications.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 // Animated WebP properties landed in macOS 11 SDK; define them ourselves
 // when building against an older SDK so we can still attempt WebP delay
@@ -44,6 +45,7 @@
 
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "app/SettingsController.h"
 
 #include "views/AccountPicker.h"
 
@@ -260,6 +262,9 @@ public:
     tesseract::views::MainAppWidget* main_app_ = nullptr;
     tk::macos::Surface* app_surface_ = nullptr;
 
+    // SettingsController — created at login, reset on account switch.
+    std::unique_ptr<tesseract::SettingsController> settings_controller_;
+
     // Shortcode engine + transient state (owned here, accessed via _shell->).
     tesseract::views::ShortcodeEngine shortcode_engine_;
     tesseract::views::ShortcodeMatch shortcode_active_match_{};
@@ -306,6 +311,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                    description:(NSString*)desc
                     softLogout:(BOOL)soft;
 - (void)_switchActiveAccount:(int)idx;
+- (void)_buildSettingsController;
 - (void)_beginAddAccount;
 - (void)_logoutActiveAccount;
 - (void)_openSettings;
@@ -1351,6 +1357,9 @@ void MacShell::apply_cached_messages_(
     std::unique_ptr<tk::NativeTextArea> _roomTextArea;
     std::unique_ptr<tk::NativeTextArea> _topicTextArea;
     std::unique_ptr<tk::NativeTextField> _recoveryKeyField;
+
+    // Settings name field — positioned via _settingsSurface->set_on_layout().
+    std::unique_ptr<tk::NativeTextField> _settingsNameField;
 
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
@@ -3173,6 +3182,17 @@ void MacShell::apply_cached_messages_(
         };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
+        _settingsSurface->set_on_layout(
+            [ws]
+            {
+                MainWindowController* s = ws;
+                if (!s || !s->_settingsView || !s->_settingsNameField)
+                    return;
+                const tk::Rect r = s->_settingsView->name_field_rect();
+                s->_settingsNameField->set_visible(!r.empty());
+                if (!r.empty())
+                    s->_settingsNameField->set_rect(r);
+            });
     }
     NSView* settingsView = (__bridge NSView*)_settingsSurface->view_handle();
     settingsView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -3822,6 +3842,93 @@ void MacShell::apply_cached_messages_(
         }
     }
     [self _switchActiveAccount:firstActive];
+    [self _buildSettingsController];
+}
+
+- (void)_buildSettingsController
+{
+    __weak MainWindowController* ws = self;
+    _shell->settings_controller_ =
+        std::make_unique<tesseract::SettingsController>(
+            _shell->client_,
+            [ws](auto fn) {
+                MainWindowController* s = ws;
+                if (s)
+                    s->_shell->post_to_ui_(std::move(fn));
+            },
+            [ws](auto cb) {
+                MainWindowController* s = ws;
+                if (!s)
+                    return;
+                NSOpenPanel* panel = [NSOpenPanel openPanel];
+                panel.allowedContentTypes = @[ UTTypeImage ];
+                panel.canChooseFiles = YES;
+                panel.allowsMultipleSelection = NO;
+                __weak MainWindowController* ws2 = s;
+                [panel beginWithCompletionHandler:^(NSModalResponse result) {
+                    if (result != NSModalResponseOK)
+                        return;
+                    NSURL* url = panel.URLs.firstObject;
+                    if (!url)
+                        return;
+                    NSData* data = [NSData dataWithContentsOfURL:url];
+                    if (!data || data.length == 0)
+                        return;
+                    std::vector<uint8_t> bytes(
+                        static_cast<const uint8_t*>(data.bytes),
+                        static_cast<const uint8_t*>(data.bytes) + data.length);
+                    std::string mime = "image/jpeg";
+                    NSString* ext = url.pathExtension.lowercaseString;
+                    if ([ext isEqualToString:@"png"])
+                        mime = "image/png";
+                    else if ([ext isEqualToString:@"gif"])
+                        mime = "image/gif";
+                    else if ([ext isEqualToString:@"webp"])
+                        mime = "image/webp";
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        MainWindowController* s2 = ws2;
+                        if (!s2)
+                            return;
+                        auto callback = std::move(cb);
+                        callback(std::move(bytes), mime);
+                    });
+                }];
+            });
+
+    _settingsNameField = _settingsSurface->host().make_text_field();
+    _settingsNameField->set_text(_shell->my_display_name_);
+    _settingsNameField->set_placeholder("Display name");
+    _settingsNameField->set_visible(false);
+
+    _settingsNameField->set_on_submit(
+        [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_shell->settings_controller_)
+                return;
+            s->_shell->settings_controller_->set_display_name(
+                s->_settingsNameField->text());
+            s->_settingsView->set_name_busy(true);
+            s->_settingsSurface->relayout();
+        });
+
+    if (_settingsView)
+    {
+        _settingsView->set_controller(
+            _shell->settings_controller_.get());
+        _settingsView->on_avatar_upload_requested = [ws]
+        {
+            MainWindowController* s = ws;
+            if (s && s->_shell->settings_controller_)
+                s->_shell->settings_controller_->upload_avatar();
+        };
+        _settingsView->on_avatar_remove_requested = [ws]
+        {
+            MainWindowController* s = ws;
+            if (s && s->_shell->settings_controller_)
+                s->_shell->settings_controller_->remove_avatar();
+        };
+    }
 }
 
 - (void)loginViewDidSucceed:(LoginView*)view
@@ -3904,6 +4011,7 @@ void MacShell::apply_cached_messages_(
     _shell->add_account_return_idx_ = -1;
 
     [self _switchActiveAccount:newIdx];
+    [self _buildSettingsController];
 }
 
 - (void)loginViewDidCancel:(LoginView*)view
@@ -3931,6 +4039,9 @@ void MacShell::apply_cached_messages_(
     auto* session = _shell->accounts_[idx].get();
     _shell->client_ = session->client.get();
     _shell->event_handler_ = session->bridge.get();
+
+    if (_shell->settings_controller_)
+        _shell->settings_controller_->set_client(_shell->client_);
 
     _shell->my_user_id_ = session->user_id;
     _shell->my_display_name_ = session->display_name;
