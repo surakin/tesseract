@@ -2315,6 +2315,76 @@ void MainWindow::do_login()
                 first_active = 0;
             }
             switch_active_account(first_active);
+            settings_controller_ = std::make_unique<tesseract::SettingsController>(
+                client_,
+                [this](auto fn) { post_to_ui_(std::move(fn)); },
+                [this](auto cb)
+                {
+                    GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+                        "Select avatar image", GTK_WINDOW(window_),
+                        GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+                    GtkFileFilter* filt = gtk_file_filter_new();
+                    gtk_file_filter_set_name(filt, "Images");
+                    gtk_file_filter_add_mime_type(filt, "image/png");
+                    gtk_file_filter_add_mime_type(filt, "image/jpeg");
+                    gtk_file_filter_add_mime_type(filt, "image/gif");
+                    gtk_file_filter_add_mime_type(filt, "image/webp");
+                    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
+                    g_object_unref(filt);
+
+                    struct AvatarOpenCtx {
+                        std::function<void(std::vector<uint8_t>, std::string)> callback;
+                        MainWindow* self;
+                    };
+                    auto* ctx_ptr = new AvatarOpenCtx{std::move(cb), this};
+
+                    g_signal_connect(
+                        dlg, "response",
+                        G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+                        {
+                            auto* c = static_cast<AvatarOpenCtx*>(data);
+                            if (resp == GTK_RESPONSE_ACCEPT)
+                            {
+                                GFile* file =
+                                    gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                                gsize len = 0;
+                                char* raw = nullptr;
+                                GError* err = nullptr;
+                                g_file_load_contents(file, nullptr, &raw, &len,
+                                                     nullptr, &err);
+                                if (!err && raw && len > 0)
+                                {
+                                    std::vector<uint8_t> bytes(raw, raw + len);
+                                    g_free(raw);
+                                    char* path = g_file_get_path(file);
+                                    std::string mime = "image/jpeg";
+                                    if (path)
+                                    {
+                                        std::string p(path);
+                                        if (p.ends_with(".png"))       mime = "image/png";
+                                        else if (p.ends_with(".gif"))  mime = "image/gif";
+                                        else if (p.ends_with(".webp")) mime = "image/webp";
+                                        g_free(path);
+                                    }
+                                    auto callback = std::move(c->callback);
+                                    c->self->post_to_ui_(
+                                        [callback = std::move(callback),
+                                         bytes = std::move(bytes), mime]() mutable
+                                        { callback(std::move(bytes), mime); });
+                                }
+                                if (err) g_error_free(err);
+                                g_object_unref(file);
+                            }
+                            delete c;
+                            gtk_native_dialog_destroy(d);
+                        }),
+                        ctx_ptr);
+
+                    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+                });
+            if (settings_widget_)
+                settings_widget_->set_controller(settings_controller_.get(),
+                                                 my_display_name_);
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
             maybe_show_recovery_banner();
@@ -2461,6 +2531,76 @@ void MainWindow::on_login_succeeded()
     tesseract::SessionStore::save_index(index);
 
     switch_active_account(new_idx);
+    settings_controller_ = std::make_unique<tesseract::SettingsController>(
+        client_,
+        [this](auto fn) { post_to_ui_(std::move(fn)); },
+        [this](auto cb)
+        {
+            GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+                "Select avatar image", GTK_WINDOW(window_),
+                GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+            GtkFileFilter* filt = gtk_file_filter_new();
+            gtk_file_filter_set_name(filt, "Images");
+            gtk_file_filter_add_mime_type(filt, "image/png");
+            gtk_file_filter_add_mime_type(filt, "image/jpeg");
+            gtk_file_filter_add_mime_type(filt, "image/gif");
+            gtk_file_filter_add_mime_type(filt, "image/webp");
+            gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), filt);
+            g_object_unref(filt);
+
+            struct AvatarOpenCtx {
+                std::function<void(std::vector<uint8_t>, std::string)> callback;
+                MainWindow* self;
+            };
+            auto* ctx_ptr = new AvatarOpenCtx{std::move(cb), this};
+
+            g_signal_connect(
+                dlg, "response",
+                G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+                {
+                    auto* c = static_cast<AvatarOpenCtx*>(data);
+                    if (resp == GTK_RESPONSE_ACCEPT)
+                    {
+                        GFile* file =
+                            gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                        gsize len = 0;
+                        char* raw = nullptr;
+                        GError* err = nullptr;
+                        g_file_load_contents(file, nullptr, &raw, &len,
+                                             nullptr, &err);
+                        if (!err && raw && len > 0)
+                        {
+                            std::vector<uint8_t> bytes(raw, raw + len);
+                            g_free(raw);
+                            char* path = g_file_get_path(file);
+                            std::string mime = "image/jpeg";
+                            if (path)
+                            {
+                                std::string p(path);
+                                if (p.ends_with(".png"))       mime = "image/png";
+                                else if (p.ends_with(".gif"))  mime = "image/gif";
+                                else if (p.ends_with(".webp")) mime = "image/webp";
+                                g_free(path);
+                            }
+                            auto callback = std::move(c->callback);
+                            c->self->post_to_ui_(
+                                [callback = std::move(callback),
+                                 bytes = std::move(bytes), mime]() mutable
+                                { callback(std::move(bytes), mime); });
+                        }
+                        if (err) g_error_free(err);
+                        g_object_unref(file);
+                    }
+                    delete c;
+                    gtk_native_dialog_destroy(d);
+                }),
+                ctx_ptr);
+
+            gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+        });
+    if (settings_widget_)
+        settings_widget_->set_controller(settings_controller_.get(),
+                                         my_display_name_);
     gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
@@ -4543,6 +4683,9 @@ void MainWindow::open_settings_()
         },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
+    if (settings_controller_)
+        settings_widget_->set_controller(settings_controller_.get(),
+                                         my_display_name_);
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
 }
 
@@ -5192,6 +5335,9 @@ void MainWindow::switch_active_account(int new_idx)
     my_display_name_ = sess.display_name;
     my_avatar_url_ = sess.avatar_url;
     pending_restore_room_ = sess.last_room;
+
+    if (settings_controller_)
+        settings_controller_->set_client(client_);
 
     populate_user_strip();
 

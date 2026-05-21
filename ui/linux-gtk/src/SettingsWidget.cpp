@@ -50,6 +50,18 @@ SettingsWidget::SettingsWidget()
     };
 
     surface_->set_root(std::move(view));
+
+    surface_->set_on_layout(
+        [this]
+        {
+            if (name_field_ && settings_view_)
+            {
+                const tk::Rect r = settings_view_->name_field_rect();
+                name_field_->set_visible(!r.empty());
+                if (!r.empty())
+                    name_field_->set_rect(r);
+            }
+        });
 }
 
 GtkWidget* SettingsWidget::widget() const
@@ -83,6 +95,58 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    surface_->relayout();
+}
+
+void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
+                                    const std::string& current_display_name)
+{
+    controller_ = ctrl;
+
+    // Wire SettingsView (which wires AccountSection).
+    settings_view_->set_controller(ctrl);
+
+    // Wire SettingsView avatar callbacks to controller.
+    settings_view_->on_avatar_upload_requested = [this]
+    {
+        if (controller_) controller_->upload_avatar();
+    };
+    settings_view_->on_avatar_remove_requested = [this]
+    {
+        if (controller_) controller_->remove_avatar();
+    };
+
+    // Create (or recreate) the NativeTextField for name editing.
+    name_field_ = surface_->host().make_text_field();
+    name_field_->set_text(current_display_name);
+    name_field_->set_placeholder("Display name");
+    name_field_->set_visible(false);
+
+    name_field_->set_on_submit(
+        [this]
+        {
+            if (!controller_) return;
+            const std::string text = name_field_->text();
+            controller_->set_display_name(text);
+            settings_view_->set_name_busy(true);
+            surface_->relayout();
+        });
+
+    // Overwrite on_name_changed / on_name_result to also update the NativeTextField.
+    ctrl->on_name_changed = [this](std::string name)
+    {
+        settings_view_->set_display_name_text(name);
+        if (name_field_) name_field_->set_text(name);
+        surface_->relayout();
+    };
+
+    ctrl->on_name_result = [this](bool ok, std::string error)
+    {
+        settings_view_->set_name_busy(false);
+        if (!ok) settings_view_->set_name_error(std::move(error));
+        surface_->relayout();
+    };
+
     surface_->relayout();
 }
 

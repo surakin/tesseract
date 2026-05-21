@@ -10,8 +10,9 @@
 #include "LinuxUpConnectorGtk.h"
 #include "LinuxGtkTrayIcon.h"
 
-#include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "app/SettingsController.h"
+#include "app/ShellBase.h"
 #include "tk/anim_image_cache.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -262,6 +263,7 @@ private:
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;
     std::unique_ptr<LoginView> login_view_;
     std::unique_ptr<SettingsWidget> settings_widget_;
+    std::unique_ptr<tesseract::SettingsController> settings_controller_;
 
     // Single surface hosting the full main-app widget tree.
     std::unique_ptr<tk::gtk4::Surface> main_app_surface_;

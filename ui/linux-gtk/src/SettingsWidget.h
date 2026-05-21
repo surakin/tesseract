@@ -4,6 +4,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include "app/SettingsController.h"
+#include "tk/host.h"
 #include "tk/host_gtk.h"
 #include "views/settings/AccountSection.h"
 #include "views/SettingsView.h"
@@ -36,6 +38,10 @@ public:
     // Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    // Wire the SettingsController and create the NativeTextField for name editing.
+    void set_controller(tesseract::SettingsController* ctrl,
+                        const std::string& current_display_name);
+
     // Callbacks — set by MainWindow before use.
     std::function<void()> on_close;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
@@ -44,6 +50,8 @@ public:
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;
     tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
+    tesseract::SettingsController* controller_ = nullptr;
+    std::unique_ptr<tk::NativeTextField> name_field_;
 };
 
 } // namespace gtk4
