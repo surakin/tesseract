@@ -4028,9 +4028,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn set_display_name(&mut self, name: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
-        let client = client.clone();
-        let name = name.to_owned();
-        match self.rt.block_on(client.account().set_display_name(Some(&name))) {
+        match self.rt.block_on(client.account().set_display_name(Some(name))) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
         }
@@ -4041,7 +4039,6 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn upload_avatar(&mut self, bytes: &[u8], mime_type: &str) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
-        let client = client.clone();
         let data = bytes.to_vec();
         let mime: mime::Mime = match mime_type.parse() {
             Ok(m) => m,
@@ -4063,7 +4060,6 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn remove_avatar(&mut self) -> OpResult {
         let Some(client) = self.client.as_ref() else { return err("not logged in"); };
-        let client = client.clone();
         match self.rt.block_on(client.account().set_avatar_url(None)) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
