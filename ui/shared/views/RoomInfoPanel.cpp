@@ -430,6 +430,10 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                 topic_layout_ = ctx.factory.build_text(topic_, st);
             }
         }
+        // Topic text can exceed the 80px slot reserved by arrange() —
+        // neither QPainter::drawText nor QTextDocument honour max_height,
+        // so clip to the slot to keep overflow off the Members section.
+        ctx.canvas.push_clip_rect(topic_rect_);
         if (topic_layout_)
         {
             cv.draw_text(*topic_layout_,
@@ -449,6 +453,7 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
                              pal.text_muted);
             }
         }
+        ctx.canvas.pop_clip();
     }
 
     // 11. Save + Cancel when editing
