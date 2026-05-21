@@ -20,6 +20,8 @@
 #include "views/settings/NotificationsSection.h"
 #include "views/settings/ServerSection.h"
 
+#include "app/SettingsController.h"
+
 #include "tk/controls.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
@@ -69,6 +71,28 @@ public:
 
     // Populate the Server section with the connected server's info.
     void set_server_info(const tesseract::ServerInfo& info);
+
+    // Wire the controller: sets controller callbacks → AccountSection state,
+    // and AccountSection click callbacks → SettingsView output callbacks.
+    void set_controller(tesseract::SettingsController* controller);
+
+    // State-forwarding methods (called by shells via controller callbacks):
+    void set_name_busy(bool busy);
+    void set_name_error(std::string error);
+    void set_avatar_busy(bool busy);
+    void set_avatar_error(std::string error);
+    void set_avatar_url(std::string mxc);
+    void set_display_name_text(std::string name);
+
+    // Returns the world-coordinate rect for the host to position the
+    // name NativeTextField overlay. Empty when not editable.
+    tk::Rect name_field_rect() const;
+
+    // Fired when the user clicks the avatar disc (for shell to delegate to controller).
+    std::function<void()> on_avatar_upload_requested;
+
+    // Fired when the user clicks the X chip (for shell to delegate to controller).
+    std::function<void()> on_avatar_remove_requested;
 
     // ----- Callbacks wired by the shell -------------------------------------
 

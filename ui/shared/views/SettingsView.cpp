@@ -149,6 +149,8 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
     {
         server_section_->set_server_info(info);
     }
+    account_->set_editable(info.can_set_displayname);
+    account_->set_avatar_editable(info.can_set_avatar);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +217,55 @@ void SettingsView::paint(tk::PaintCtx& ctx)
     {
         tabs_->paint(ctx);
     }
+}
+
+void SettingsView::set_controller(tesseract::SettingsController* ctrl)
+{
+    // Wire controller result/changed callbacks → AccountSection state.
+    ctrl->on_avatar_result = [this](bool ok, std::string error)
+    {
+        account_->set_avatar_busy(false);
+        if (!ok)
+            account_->set_avatar_error(std::move(error));
+    };
+    ctrl->on_name_result = [this](bool ok, std::string error)
+    {
+        account_->set_name_busy(false);
+        if (!ok)
+            account_->set_name_error(std::move(error));
+    };
+    ctrl->on_avatar_changed = [this](std::string mxc)
+    {
+        account_->set_avatar_url(std::move(mxc));
+    };
+    ctrl->on_name_changed = [this](std::string name)
+    {
+        account_->set_display_name(std::move(name));
+    };
+
+    // Wire AccountSection click callbacks → SettingsView output callbacks.
+    account_->on_avatar_upload_clicked = [this]
+    {
+        if (on_avatar_upload_requested)
+            on_avatar_upload_requested();
+    };
+    account_->on_avatar_remove_clicked = [this]
+    {
+        if (on_avatar_remove_requested)
+            on_avatar_remove_requested();
+    };
+}
+
+void SettingsView::set_name_busy(bool busy)        { account_->set_name_busy(busy); }
+void SettingsView::set_name_error(std::string e)   { account_->set_name_error(std::move(e)); }
+void SettingsView::set_avatar_busy(bool busy)      { account_->set_avatar_busy(busy); }
+void SettingsView::set_avatar_error(std::string e) { account_->set_avatar_error(std::move(e)); }
+void SettingsView::set_avatar_url(std::string m)   { account_->set_avatar_url(std::move(m)); }
+void SettingsView::set_display_name_text(std::string n) { account_->set_display_name(std::move(n)); }
+
+tk::Rect SettingsView::name_field_rect() const
+{
+    return account_ ? account_->name_field_rect() : tk::Rect{};
 }
 
 } // namespace tesseract::views
