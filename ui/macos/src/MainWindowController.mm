@@ -97,6 +97,7 @@ public:
 
 protected:
     void on_rooms_updated_() override;
+    void on_space_children_cache_ready_ui_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_media_bytes_ready_(const std::string& key,
@@ -478,6 +479,14 @@ void MacShell::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+}
+
+void MacShell::on_space_children_cache_ready_ui_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _refreshRoomList];
+    }
 }
 
 void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -5492,15 +5501,16 @@ void MacShell::apply_cached_messages_(
     if (_shell->space_stack_.empty())
     {
         std::unordered_set<std::string> in_space;
-        if (_shell->client_)
+        for (const auto& r : _shell->rooms_)
         {
-            for (const auto& r : _shell->rooms_)
+            if (!r.is_space)
             {
-                if (!r.is_space)
-                {
-                    continue;
-                }
-                for (const auto& id : _shell->client_->space_children(r.id))
+                continue;
+            }
+            auto sc_it = _shell->space_children_cache_.find(r.id);
+            if (sc_it != _shell->space_children_cache_.end())
+            {
+                for (const auto& id : sc_it->second)
                 {
                     in_space.insert(id);
                 }
@@ -5528,10 +5538,12 @@ void MacShell::apply_cached_messages_(
     }
     else
     {
-        auto child_ids =
-            _shell->client_
-                ? _shell->client_->space_children(_shell->space_stack_.back())
-                : std::vector<std::string>{};
+        static const std::vector<std::string> kNoChildren;
+        const auto sc_it =
+            _shell->space_children_cache_.find(_shell->space_stack_.back());
+        const auto& child_ids =
+            sc_it != _shell->space_children_cache_.end() ? sc_it->second
+                                                         : kNoChildren;
         for (const auto& r : _shell->rooms_)
         {
             if (std::find(child_ids.begin(), child_ids.end(), r.id) !=

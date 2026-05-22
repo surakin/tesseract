@@ -3831,6 +3831,11 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_space_children_cache_ready_ui_()
+{
+    refresh_room_list();
+}
+
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 {
     if (tray_)
@@ -4126,9 +4131,13 @@ void MainWindow::refresh_room_list()
         {
             if (r.is_space)
             {
-                for (const auto& id : client_->space_children(r.id))
+                auto sc_it = space_children_cache_.find(r.id);
+                if (sc_it != space_children_cache_.end())
                 {
-                    in_space.insert(id);
+                    for (const auto& id : sc_it->second)
+                    {
+                        in_space.insert(id);
+                    }
                 }
             }
         }
@@ -4167,7 +4176,10 @@ void MainWindow::refresh_room_list()
             main_app_->set_space_nav(true, space_name, space_avatar);
         }
 
-        auto child_ids = client_->space_children(space_stack_.back());
+        static const std::vector<std::string> kNoChildren;
+        const auto sc_it = space_children_cache_.find(space_stack_.back());
+        const auto& child_ids =
+            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
         for (const auto& r : rooms_)
         {
             if (std::find(child_ids.begin(), child_ids.end(), r.id) !=

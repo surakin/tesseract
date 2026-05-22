@@ -136,6 +136,9 @@ protected:
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
+    // Populated asynchronously from update_space_children_cache_(); read
+    // synchronously in each shell's refresh_room_list().
+    std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
     std::string current_room_id_;
     // The room whose timeline the message view currently displays. Differs
     // from current_room_id_ between a room switch and the timeline-reset
@@ -561,6 +564,15 @@ protected:
     /// Called on the UI thread after `server_info_` has been populated.
     /// Override in shells that gate UI elements on server capabilities.
     virtual void on_server_info_ready_ui_() {}
+
+    // Called on the UI thread after space_children_cache_ has been refreshed.
+    // Each shell overrides to call its refresh_room_list().
+    virtual void on_space_children_cache_ready_ui_() {}
+
+    // Fetch space children for every space in rooms_ on a worker thread and
+    // post the result into space_children_cache_, then fire
+    // on_space_children_cache_ready_ui_(). Idempotent w.r.t. rooms_ contents.
+    void update_space_children_cache_();
 
     /// Reset server-info state on logout / account-switch. Call this instead of
     /// touching server_info_ and server_info_fetch_started_ directly from shells.

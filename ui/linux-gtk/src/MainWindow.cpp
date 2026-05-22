@@ -3076,6 +3076,11 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_space_children_cache_ready_ui_()
+{
+    refresh_room_list();
+}
+
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 {
     if (tray_)
@@ -3547,17 +3552,6 @@ void MainWindow::show_rooms(const std::vector<tesseract::RoomInfo>& rooms)
 
 void MainWindow::refresh_room_list()
 {
-    // Both branches dereference client_ (space_children). client_ is null
-    // after the last account logs out — render an empty list, don't crash.
-    if (!client_)
-    {
-        if (main_app_)
-        {
-            main_app_->set_space_nav(false);
-        }
-        show_rooms({});
-        return;
-    }
     if (space_stack_.empty())
     {
         if (!search_pending_text_.empty())
@@ -3576,9 +3570,13 @@ void MainWindow::refresh_room_list()
             {
                 continue;
             }
-            for (const auto& id : client_->space_children(r.id))
+            auto sc_it = space_children_cache_.find(r.id);
+            if (sc_it != space_children_cache_.end())
             {
-                in_space.insert(id);
+                for (const auto& id : sc_it->second)
+                {
+                    in_space.insert(id);
+                }
             }
         }
         std::vector<tesseract::RoomInfo> filtered;
@@ -3605,7 +3603,10 @@ void MainWindow::refresh_room_list()
     else
     {
         const std::string& space_id = space_stack_.back();
-        auto child_ids = client_->space_children(space_id);
+        static const std::vector<std::string> kNoChildren;
+        const auto sc_it = space_children_cache_.find(space_id);
+        const auto& child_ids =
+            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
         std::vector<tesseract::RoomInfo> filtered;
         for (const auto& r : rooms_)
         {

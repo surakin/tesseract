@@ -848,7 +848,49 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         return;
     }
     rooms_ = std::move(rooms);
+    update_space_children_cache_();
     on_rooms_updated_();
+}
+
+void ShellBase::update_space_children_cache_()
+{
+    if (!client_)
+    {
+        space_children_cache_.clear();
+        return;
+    }
+    std::vector<std::string> space_ids;
+    for (const auto& r : rooms_)
+    {
+        if (r.is_space)
+        {
+            space_ids.push_back(r.id);
+        }
+    }
+    if (space_ids.empty())
+    {
+        space_children_cache_.clear();
+        return;
+    }
+    auto* c = client_;
+    run_async_(
+        [this, c, space_ids = std::move(space_ids)]()
+        {
+            std::unordered_map<std::string, std::vector<std::string>> fresh;
+            for (const auto& id : space_ids)
+            {
+                fresh[id] = c->space_children(id);
+            }
+            post_to_ui_(
+                [this, fresh = std::move(fresh)]() mutable
+                {
+                    if (fresh != space_children_cache_)
+                    {
+                        space_children_cache_ = std::move(fresh);
+                        on_space_children_cache_ready_ui_();
+                    }
+                });
+        });
 }
 
 std::pair<bool, bool> ShellBase::compute_tray_unread(
