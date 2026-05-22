@@ -12,6 +12,17 @@ TEST_CASE("config_dir returns a non-empty path", "[paths]")
     CHECK(p.is_absolute());
 }
 
+TEST_CASE("data_dir returns a non-empty absolute path", "[paths]")
+{
+    auto p = tesseract::data_dir();
+    CHECK_FALSE(p.empty());
+    CHECK(p.is_absolute());
+#if defined(_WIN32) || defined(__APPLE__)
+    // No XDG-style data/config split on these platforms.
+    CHECK(p == tesseract::config_dir());
+#endif
+}
+
 TEST_CASE("SessionStore::path lives under config_dir", "[paths][session]")
 {
     auto cfg = tesseract::config_dir();

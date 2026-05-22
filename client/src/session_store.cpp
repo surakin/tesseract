@@ -375,7 +375,7 @@ std::string SessionStore::sanitize_user_id(const std::string& user_id)
 
 fs::path SessionStore::account_dir(const std::string& user_id)
 {
-    return config_dir() / "accounts" / sanitize_user_id(user_id);
+    return data_dir() / "accounts" / sanitize_user_id(user_id);
 }
 
 fs::path SessionStore::sdk_store_dir(const std::string& user_id)
@@ -387,7 +387,7 @@ SessionStore::AccountIndex SessionStore::load_index()
 {
     AccountIndex idx;
     std::error_code ec;
-    fs::path p = config_dir() / "accounts.json";
+    fs::path p = data_dir() / "accounts.json";
     std::ifstream in(p, std::ios::binary);
     if (!in)
     {
@@ -435,7 +435,7 @@ static std::string serialize_index(const SessionStore::AccountIndex& idx)
 
 bool SessionStore::save_index(const AccountIndex& idx)
 {
-    return atomic_write(config_dir() / "accounts.json", serialize_index(idx));
+    return atomic_write(data_dir() / "accounts.json", serialize_index(idx));
 }
 
 std::optional<std::string>
@@ -571,14 +571,61 @@ static bool move_path(const fs::path& src, const fs::path& dst)
     return true;
 }
 
+/// Relocate an already-multi-account layout (`accounts/` tree + `accounts.json`)
+/// from `config_dir()` to `data_dir()`. Older builds stored account data under
+/// the config directory; this lifts it into the XDG data directory. A no-op when
+/// `data_dir() == config_dir()` (Windows/macOS) — callers guard on that.
+static bool migrate_config_accounts_to_data()
+{
+    std::error_code ec;
+    const fs::path src_dir = config_dir() / "accounts";
+    const fs::path src_index = config_dir() / "accounts.json";
+    const fs::path dst_dir = data_dir() / "accounts";
+    const fs::path dst_index = data_dir() / "accounts.json";
+
+    fs::create_directories(data_dir(), ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    // Move the per-account tree first; accounts.json is the completion sentinel
+    // (the data-dir existence check above), so it must land LAST — a crash
+    // mid-move leaves the config-side index in place and the move retries
+    // cleanly next launch.
+    if (fs::exists(src_dir, ec) && !move_path(src_dir, dst_dir))
+    {
+        return false;
+    }
+
+    if (!move_path(src_index, dst_index))
+    {
+        // Roll the accounts tree back so the next launch retries cleanly.
+        if (fs::exists(dst_dir, ec))
+        {
+            move_path(dst_dir, src_dir);
+        }
+        return false;
+    }
+    return true;
+}
+
 bool SessionStore::migrate_legacy_layout()
 {
     std::error_code ec;
 
-    // (1) Already migrated? Bail.
-    if (fs::exists(config_dir() / "accounts.json", ec))
+    // (0) Already migrated to the data dir? Bail.
+    if (fs::exists(data_dir() / "accounts.json", ec))
     {
         return true;
+    }
+
+    // (1) Multi-account layout still under config_dir (older build)? Relocate
+    //     the whole accounts/ tree + index into data_dir.
+    if (data_dir() != config_dir() &&
+        fs::exists(config_dir() / "accounts.json", ec))
+    {
+        return migrate_config_accounts_to_data();
     }
 
     // (2) Fresh install? Nothing to do.

@@ -55,6 +55,25 @@ fs::path config_dir()
 #endif
 }
 
+fs::path data_dir()
+{
+#if defined(_WIN32) || defined(__APPLE__)
+    // No XDG-style data/config split on these platforms; account data and app
+    // config share the per-user app directory.
+    return config_dir();
+#else // Linux / *BSD: XDG basedir — data lives under XDG_DATA_HOME.
+    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg)
+    {
+        return fs::path(xdg) / "tesseract";
+    }
+    if (const char* home = std::getenv("HOME"); home && *home)
+    {
+        return fs::path(home) / ".local" / "share" / "tesseract";
+    }
+    return fs::temp_directory_path() / "tesseract";
+#endif
+}
+
 fs::path cache_dir()
 {
 #if defined(_WIN32)

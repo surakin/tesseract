@@ -25,10 +25,15 @@ struct TmpConfig
     {
         fs::create_directories(dir);
         ::setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
+        // Account data (account_dir / save_account / load_account) lives under
+        // XDG_DATA_HOME now; point it at the temp dir too so these tests stay
+        // isolated from the real ~/.local/share.
+        ::setenv("XDG_DATA_HOME", dir.string().c_str(), 1);
     }
     ~TmpConfig()
     {
         ::unsetenv("XDG_CONFIG_HOME");
+        ::unsetenv("XDG_DATA_HOME");
         std::error_code ec;
         fs::remove_all(dir, ec);
     }

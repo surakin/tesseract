@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include "tesseract/paths.h"
 #include "tesseract/session_store.h"
 
 #include <atomic>
@@ -38,11 +39,14 @@ struct SessionFixture
         }
         setenv("HOME", dir.c_str(), 1);
 #else
-        setenv("XDG_CONFIG_HOME", dir.c_str(), 1);
-        // legacy_sdk_store_dir() in session_store.cpp consults XDG_DATA_HOME
-        // (or $HOME/.local/share). Point it at the same temp dir so migration
-        // tests can drop a fake legacy matrix-store/ where the code expects.
-        setenv("XDG_DATA_HOME", dir.c_str(), 1);
+        // Account data lives under XDG_DATA_HOME (data_dir()), app config under
+        // XDG_CONFIG_HOME (config_dir()). Keep them in *distinct* subdirs so the
+        // data/config split is actually exercised. legacy_sdk_store_dir() also
+        // consults XDG_DATA_HOME.
+        const std::string cfg = (fs::path(dir) / "config").string();
+        const std::string data = (fs::path(dir) / "data").string();
+        setenv("XDG_CONFIG_HOME", cfg.c_str(), 1);
+        setenv("XDG_DATA_HOME", data.c_str(), 1);
 #endif
     }
 
@@ -78,7 +82,9 @@ struct SessionFixture
         return fs::path(dir) / "Library" / "Application Support" / "tesseract" /
                "matrix-store";
 #else
-        return fs::path(dir) / "tesseract" / "matrix-store";
+        // Mirrors legacy_sdk_store_dir(): $XDG_DATA_HOME/tesseract/matrix-store,
+        // where XDG_DATA_HOME is the "data" subdir set in the constructor.
+        return fs::path(dir) / "data" / "tesseract" / "matrix-store";
 #endif
     }
 };
@@ -366,4 +372,93 @@ TEST_CASE("migrate_legacy_layout is a no-op when accounts.json already exists",
     // The legacy session.json is still on disk (we don't silently delete it
     // on a normal startup).
     CHECK(fs::exists(tesseract::SessionStore::path()));
+}
+
+TEST_CASE("migrate_legacy_layout relocates a config-dir accounts tree into the "
+          "data dir",
+          "[session_store][migration]")
+{
+    SessionFixture f;
+    if (tesseract::data_dir() == tesseract::config_dir())
+    {
+        SUCCEED("config and data dirs coincide on this platform; the "
+                "config→data relocation is a no-op");
+        return;
+    }
+
+    const std::string uid = "@dave:example.org";
+    const std::string body = R"({"user_id":"@dave:example.org","token":"z"})";
+
+    // Plant a multi-account layout under config_dir() — where builds that
+    // predate the data/config split used to store it.
+    const fs::path cfg_accounts = tesseract::config_dir() / "accounts";
+    const fs::path cfg_acct =
+        cfg_accounts / tesseract::SessionStore::sanitize_user_id(uid);
+    fs::create_directories(cfg_acct / "matrix-store");
+    { std::ofstream(cfg_acct / "session.json", std::ios::binary) << body; }
+    {
+        std::ofstream(cfg_acct / "matrix-store" / "matrix.sqlite",
+                      std::ios::binary)
+            << "sentinel-bytes";
+    }
+    {
+        std::ofstream(tesseract::config_dir() / "accounts.json",
+                      std::ios::binary)
+            << R"({"active_user_id":"@dave:example.org",)"
+               R"("user_ids":["@dave:example.org"]})";
+    }
+
+    REQUIRE(tesseract::SessionStore::migrate_legacy_layout());
+
+    // The config-dir copies are gone.
+    CHECK_FALSE(fs::exists(cfg_accounts));
+    CHECK_FALSE(fs::exists(tesseract::config_dir() / "accounts.json"));
+
+    // The data-dir layout is populated bit-for-bit.
+    auto migrated = tesseract::SessionStore::load_account(uid);
+    REQUIRE(migrated.has_value());
+    CHECK(*migrated == body);
+    CHECK(fs::exists(tesseract::SessionStore::sdk_store_dir(uid) /
+                     "matrix.sqlite"));
+
+    auto idx = tesseract::SessionStore::load_index();
+    CHECK(idx.active_user_id == uid);
+    REQUIRE(idx.user_ids.size() == 1);
+    CHECK(idx.user_ids[0] == uid);
+}
+
+TEST_CASE("migrate_legacy_layout is a no-op when the data dir is already "
+          "populated, leaving a stale config tree untouched",
+          "[session_store][migration]")
+{
+    SessionFixture f;
+    if (tesseract::data_dir() == tesseract::config_dir())
+    {
+        SUCCEED("config and data dirs coincide on this platform");
+        return;
+    }
+
+    // Canonical data-dir index already present.
+    tesseract::SessionStore::AccountIndex idx;
+    idx.active_user_id = "@erin:example.org";
+    idx.user_ids = {"@erin:example.org"};
+    REQUIRE(tesseract::SessionStore::save_index(idx));
+
+    // A stale config-dir accounts.json from a half-finished older migration.
+    fs::create_directories(tesseract::config_dir());
+    {
+        std::ofstream(tesseract::config_dir() / "accounts.json",
+                      std::ios::binary)
+            << R"({"active_user_id":"@stale:x","user_ids":["@stale:x"]})";
+    }
+
+    REQUIRE(tesseract::SessionStore::migrate_legacy_layout());
+
+    // The data-dir index wins and is unchanged; the stale config copy is left
+    // alone (step 0 short-circuits before the config→data relocation).
+    auto loaded = tesseract::SessionStore::load_index();
+    CHECK(loaded.active_user_id == "@erin:example.org");
+    REQUIRE(loaded.user_ids.size() == 1);
+    CHECK(loaded.user_ids[0] == "@erin:example.org");
+    CHECK(fs::exists(tesseract::config_dir() / "accounts.json"));
 }
