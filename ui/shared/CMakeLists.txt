@@ -253,6 +253,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
         "-framework ImageIO"
         "-framework AppKit"
         "-framework Foundation"
+        "-framework UniformTypeIdentifiers"
         # MSC3245 voice playback (audio_macos.mm) uses AVAudioPlayer.
         "-framework AVFoundation"
         "-framework AudioToolbox"

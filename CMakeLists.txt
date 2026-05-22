@@ -57,6 +57,21 @@ if(TESSERACT_UI STREQUAL "macos")
     if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
         set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "" FORCE)
     endif()
+    # The CommandLineTools install ships a stale libc++ (version 8000, pre-C++20)
+    # that lacks <ranges> and other C++20 standard library headers. The macOS SDK
+    # carries a modern libc++ that does. Clang searches the CLT copy first, so we
+    # strip the built-in C++ system include (-nostdinc++) and substitute the SDK's.
+    execute_process(
+        COMMAND xcrun --sdk macosx --show-sdk-path
+        OUTPUT_VARIABLE _MACOS_SDK_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>
+        $<$<COMPILE_LANGUAGE:CXX>:-isystem${_MACOS_SDK_PATH}/usr/include/c++/v1>
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-nostdinc++>
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-isystem${_MACOS_SDK_PATH}/usr/include/c++/v1>
+    )
 endif()
 
 # ---------------------------------------------------------------------------

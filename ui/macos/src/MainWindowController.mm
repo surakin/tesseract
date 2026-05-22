@@ -1966,14 +1966,14 @@ void MacShell::apply_cached_messages_(
             {
                 return;
             }
-            bool ok =
+            auto res =
                 msg.formatted_body.empty()
                     ? s->_shell->client_->send_message(
                           s->_shell->current_room_id_, msg.body)
                     : s->_shell->client_->send_message(
                           s->_shell->current_room_id_, msg.body,
                           msg.formatted_body);
-            if (ok)
+            if (res)
             {
                 if (s->_roomTextArea)
                 {
@@ -4081,7 +4081,7 @@ void MacShell::apply_cached_messages_(
 
     if (_shell->accounts_.empty())
     {
-        _shell->pending_login_temp_dir_ = {};
+        _shell->pending_login_temp_dir_.clear();
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         [_loginView setClient:_shell->pending_login_client_.get()];
         __weak MainWindowController* weakSelf = self;
@@ -4258,7 +4258,7 @@ void MacShell::apply_cached_messages_(
             _shell->pending_login_client_.reset();
             std::error_code ec;
             std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
-            _shell->pending_login_temp_dir_ = {};
+            _shell->pending_login_temp_dir_.clear();
             _shell->pending_login_is_add_account_ = false;
             int returnIdx = _shell->add_account_return_idx_;
             _shell->add_account_return_idx_ = -1;
@@ -4282,7 +4282,7 @@ void MacShell::apply_cached_messages_(
             _shell->pending_login_temp_dir_; // EXDEV fallback: keep as-is
     }
     _shell->pending_login_client_.reset(); // close SQLite handles before reopen
-    _shell->pending_login_temp_dir_ = {};
+    _shell->pending_login_temp_dir_.clear();
 
     auto session = std::make_unique<tesseract::AccountSession>();
     session->client = std::make_unique<tesseract::Client>();
@@ -4331,7 +4331,7 @@ void MacShell::apply_cached_messages_(
     {
         std::error_code ec;
         std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
-        _shell->pending_login_temp_dir_ = {};
+        _shell->pending_login_temp_dir_.clear();
     }
     _shell->pending_login_is_add_account_ = false;
     int returnIdx = _shell->add_account_return_idx_;
@@ -4449,7 +4449,7 @@ void MacShell::apply_cached_messages_(
 {
     _shell->pending_login_is_add_account_ = true;
     _shell->add_account_return_idx_ = _shell->active_account_index_;
-    _shell->pending_login_temp_dir_ = {};
+    _shell->pending_login_temp_dir_.clear();
     _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
     [_loginView setClient:_shell->pending_login_client_.get()];
     __weak MainWindowController* weakSelf = self;
@@ -4717,7 +4717,7 @@ void MacShell::apply_cached_messages_(
         }
         [self _relayoutChatSurface];
 
-        _shell->pending_login_temp_dir_ = {};
+        _shell->pending_login_temp_dir_.clear();
         _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
         [_loginView setClient:_shell->pending_login_client_.get()];
         __weak MainWindowController* weakSelf = self;
