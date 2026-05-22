@@ -20,6 +20,7 @@ namespace tesseract
 {
 
 class ShellBase;
+class Client;
 
 // Base class for secondary (pop-out) room windows. Each instance owns the
 // per-window state for one room: the borrowed RoomView pointer, compose
@@ -106,7 +107,12 @@ protected:
 
     // SDK operation helpers — forward to shell_->client_ (accessible via
     // friend class ShellBase). All must be called on the UI thread.
+    // The shell's Client (for member fetches in the mention controller etc.).
+    tesseract::Client* shell_client_() const;
+
     void send_message_(const std::string& body);
+    void send_message_(const std::string& body,
+                       const std::string& formatted_body);
     void send_reply_(const std::string& reply_event_id,
                      const std::string& body);
     void send_edit_(const std::string& event_id, const std::string& new_body);

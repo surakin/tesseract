@@ -13,6 +13,7 @@
 
 #include <tesseract/account_session.h>
 #include <tesseract/emoji.h>
+#include <tesseract/mentions.h>
 #include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
 #include <tesseract/paths.h>
@@ -337,6 +338,10 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(current_theme_);
+    }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(current_theme_);
     }
     if (join_room_surface_)
     {
@@ -1344,12 +1349,33 @@ void MainWindow::on_create(HWND hwnd)
 
         room_view_->on_send = [this](const std::string& body)
         {
-            std::string trimmed = tesseract::text::trim(body);
-            if (trimmed.empty() || current_room_id_.empty())
+            if (current_room_id_.empty())
             {
                 return;
             }
-            auto res = client_->send_message(current_room_id_, trimmed);
+            // Build from the composer's mention draft so mentions become
+            // matrix.to links + m.mentions; fall back to the plain body.
+            std::vector<tesseract::MentionSeg> draft =
+                room_text_area_ ? room_text_area_->mention_draft()
+                                : std::vector<tesseract::MentionSeg>{};
+            bool has_mention = false;
+            for (const auto& seg : draft)
+            {
+                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
+                    has_mention = true;
+            }
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
+            std::string trimmed = tesseract::text::trim(msg.body);
+            if (trimmed.empty() && !has_mention)
+            {
+                return;
+            }
+            auto res = msg.formatted_body.empty()
+                           ? client_->send_message(current_room_id_, msg.body)
+                           : client_->send_message(current_room_id_, msg.body,
+                                                   msg.formatted_body);
             if (res)
             {
                 if (room_text_area_)
@@ -2001,7 +2027,7 @@ void MainWindow::on_create(HWND hwnd)
                 }
 
                 // ── Shortcode detection ─────────────────────────────────────────
-                int cursor = (int)s.size();
+                int cursor = room_text_area_->cursor_byte_pos();
 
                 auto complete = shortcode_engine_.find_complete(s, cursor);
                 if (complete)
@@ -2015,12 +2041,14 @@ void MainWindow::on_create(HWND hwnd)
                     room_text_area_->replace_range(complete->start,
                                                    complete->end, r);
                     hide_shortcode_popup_();
+                    hide_mention_popup_();
                     return;
                 }
 
                 auto prefix_match = shortcode_engine_.find_prefix(s, cursor);
                 if (prefix_match && prefix_match->prefix.size() >= 2)
                 {
+                    hide_mention_popup_();
                     shortcode_current_suggestions_ = shortcode_engine_.lookup(
                         prefix_match->prefix, cached_emoticons_);
                     if (!shortcode_current_suggestions_.empty())
@@ -2102,12 +2130,24 @@ void MainWindow::on_create(HWND hwnd)
                         return;
                     }
                 }
+                // ── @mention popup ──────────────────────────────────────────
+                if (mention_controller_ &&
+                    mention_controller_->on_text_changed(
+                        s, room_text_area_->cursor_byte_pos()))
+                {
+                    return;
+                }
                 hide_shortcode_popup_();
+                hide_mention_popup_();
                 // ── End shortcode detection ─────────────────────────────────────
             });
         room_text_area_->set_on_submit(
             [this]
             {
+                if (mention_controller_ && mention_controller_->on_submit())
+                {
+                    return;
+                }
                 if (shortcode_popup_visible_())
                 {
                     int sel = shortcode_popup_widget_->selected_index();
@@ -2153,6 +2193,39 @@ void MainWindow::on_create(HWND hwnd)
                         std::move(bytes), std::move(mime));
                 }
             });
+
+        // ── @mention autocomplete popup + controller ─────────────────────
+        {
+            mention_popup_hwnd_ = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
+                int(tesseract::views::MentionPopup::kWidth),
+                int(tesseract::views::MentionPopup::kRowHeight), nullptr,
+                nullptr, hInst_, nullptr);
+            mention_popup_surface_ = std::make_unique<tk::win32::Surface>(
+                hInst_, mention_popup_hwnd_, main_app_surface_->theme());
+            auto pw = std::make_unique<tesseract::views::MentionPopup>();
+            mention_popup_widget_ = pw.get();
+            mention_popup_surface_->set_root(std::move(pw));
+
+            tesseract::views::MentionController::Hooks hooks;
+            hooks.show = [this](tk::Rect cursor, int rows)
+            { show_mention_popup_(cursor, rows); };
+            hooks.hide = [this] { hide_mention_popup_(); };
+            hooks.repaint = [this]
+            {
+                if (mention_popup_surface_)
+                    mention_popup_surface_->host().request_repaint();
+            };
+            hooks.room_id = [this] { return current_room_id_; };
+            hooks.run_async = [this](std::function<void()> fn)
+            { run_async_(std::move(fn)); };
+            hooks.post_to_ui = [this](std::function<void()> fn)
+            { post_to_ui_(std::move(fn)); };
+            mention_controller_ =
+                std::make_unique<tesseract::views::MentionController>(
+                    room_text_area_.get(), client_, mention_popup_widget_,
+                    std::move(hooks));
+        }
 
         topic_text_area_ = main_app_surface_->host().make_text_area();
         topic_text_area_->set_on_changed(
@@ -5713,6 +5786,60 @@ void MainWindow::hide_shortcode_popup_()
     if (shortcode_popup_hwnd_)
     {
         ShowWindow(shortcode_popup_hwnd_, SW_HIDE);
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_on_popup_nav(nullptr);
+    }
+}
+
+// ── @mention popup ─────────────────────────────────────────────────────────
+
+void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
+{
+    if (!mention_popup_hwnd_ || !main_app_surface_)
+    {
+        return;
+    }
+    int w = int(tesseract::views::MentionPopup::kWidth);
+    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+
+    HWND parent = main_app_surface_->hwnd();
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    ClientToScreen(parent, &pt);
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+    int x = pt.x;
+    int y_above = pt.y - h - 4;
+    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+
+    SetWindowPos(mention_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    if (HWND s = mention_popup_surface_->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    mention_popup_surface_->relayout();
+
+    // Route keyboard nav to the controller while the popup is up (re-installed
+    // each show; mutually exclusive with the shortcode popup).
+    room_text_area_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        {
+            return mention_controller_ && mention_controller_->on_nav(nk);
+        });
+}
+
+void MainWindow::hide_mention_popup_()
+{
+    if (mention_popup_hwnd_)
+    {
+        ShowWindow(mention_popup_hwnd_, SW_HIDE);
     }
     if (room_text_area_)
     {

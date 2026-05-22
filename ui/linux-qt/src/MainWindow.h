@@ -28,6 +28,8 @@
 #include "views/MainAppWidget.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
+#include "views/MentionEngine.h"
+#include "views/MentionPopup.h"
 
 #include <atomic>
 #include <filesystem>
@@ -407,6 +409,29 @@ private:
     {
         return shortcode_popup_frame_ && shortcode_popup_frame_->isVisible();
     }
+
+    // ── @mention popup ───────────────────────────────────────────────────────
+    tesseract::views::MentionEngine mention_engine_;
+    tesseract::views::MentionMatch mention_active_match_{};
+    std::vector<tesseract::views::MentionCandidate> mention_current_candidates_;
+    std::vector<tesseract::RoomMember> cached_room_members_;
+    std::string cached_members_room_;
+    std::string members_fetching_room_;
+
+    QWidget* mention_popup_frame_ = nullptr;
+    std::unique_ptr<tk::qt6::Surface> mention_popup_surface_ = nullptr;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+
+    void show_mention_popup_(
+        const std::vector<tesseract::views::MentionCandidate>& candidates,
+        tk::Rect cursor_rect);
+    void hide_mention_popup_();
+    bool mention_popup_visible_() const
+    {
+        return mention_popup_frame_ && mention_popup_frame_->isVisible();
+    }
+    void accept_mention_(const tesseract::views::MentionCandidate& c);
+    bool handle_mention_on_changed_(const std::string& s, int cursor);
 
     void read_portal_color_scheme_();
 

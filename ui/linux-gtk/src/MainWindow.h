@@ -27,6 +27,8 @@
 #include "views/JoinRoomView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
+#include "views/MentionEngine.h"
+#include "views/MentionPopup.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -303,6 +305,29 @@ private:
     {
         return shortcode_popover_ && gtk_widget_get_visible(shortcode_popover_);
     }
+
+    // ── @mention popup ────────────────────────────────────────────────────
+    tesseract::views::MentionEngine mention_engine_;
+    tesseract::views::MentionMatch mention_active_match_{};
+    std::vector<tesseract::views::MentionCandidate> mention_current_candidates_;
+    std::vector<tesseract::RoomMember> cached_room_members_;
+    std::string cached_members_room_;
+    std::string members_fetching_room_;
+
+    GtkWidget* mention_popover_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+
+    void show_mention_popup_(
+        const std::vector<tesseract::views::MentionCandidate>& candidates,
+        tk::Rect cursor_rect);
+    void hide_mention_popup_();
+    bool mention_popup_visible_() const
+    {
+        return mention_popover_ && gtk_widget_get_visible(mention_popover_);
+    }
+    void accept_mention_(const tesseract::views::MentionCandidate& c);
+    bool handle_mention_on_changed_(const std::string& s, int cursor);
 
     GtkWidget* topic_tooltip_popover_ = nullptr;
     GtkWidget* topic_tooltip_label_ = nullptr;

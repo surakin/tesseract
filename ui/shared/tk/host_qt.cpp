@@ -16,7 +16,11 @@
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QTextEdit>
 #include <QtGui/QTextDocument>
+#include <QtGui/QTextBlock>
+#include <QtGui/QTextCursor>
+#include <QtGui/QTextFormat>
 #include <QtGui/QFont>
+#include <QtGui/QFontMetrics>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QImage>
@@ -188,6 +192,15 @@ private:
 // Multi-line variant for the compose bar. Enter submits; Shift+Enter
 // inserts a newline. Auto-grow is reported via on_height_changed using
 // the document's `documentLayout()->documentSize()` height.
+
+// Custom char-format properties tagging an inline mention pill image so the
+// composer can recover {user_id, display_name, is_room} from the document.
+enum MentionProp
+{
+    PropMentionUserId = QTextFormat::UserProperty + 1,
+    PropMentionDisplay,
+    PropMentionIsRoom,
+};
 
 class ComposeTextEdit : public QTextEdit
 {
@@ -601,6 +614,125 @@ public:
         }
     }
 
+    int cursor_byte_pos() const override
+    {
+        if (!edit_)
+        {
+            return 0;
+        }
+        int pos = edit_->textCursor().position();
+        QString full = edit_->toPlainText();
+        return full.left(pos).toUtf8().size();
+    }
+
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override
+    {
+        if (!edit_)
+        {
+            return;
+        }
+        const QSignalBlocker block(edit_);
+        QString full = edit_->toPlainText();
+        int qs = utf8_byte_to_qt_cursor(full, start);
+        int qe = utf8_byte_to_qt_cursor(full, end);
+        QTextCursor cur(edit_->document());
+        cur.setPosition(qs);
+        cur.setPosition(qe, QTextCursor::KeepAnchor);
+
+        QString disp = QString::fromStdString(display_name);
+        QString visual =
+            is_room ? QStringLiteral("@room") : (QStringLiteral("@") + disp);
+
+        QString res = QStringLiteral("tesseract-mention://%1")
+                          .arg(mention_counter_++);
+        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
+                                       QVariant(render_pill(visual)));
+        QTextImageFormat fmt;
+        fmt.setName(res);
+        fmt.setVerticalAlignment(QTextCharFormat::AlignBaseline);
+        fmt.setProperty(PropMentionUserId, QString::fromStdString(user_id));
+        fmt.setProperty(PropMentionDisplay, disp);
+        fmt.setProperty(PropMentionIsRoom, is_room);
+        cur.insertImage(fmt);
+        // Reset to a plain char format so the trailing space and any text the
+        // user types next do NOT inherit the image format (which carries the
+        // mention properties — otherwise mention_draft() would report the
+        // mention repeatedly and the message would render it multiple times).
+        QTextCharFormat plain;
+        cur.insertText(QStringLiteral(" "), plain);
+        edit_->setTextCursor(cur);
+        edit_->setCurrentCharFormat(plain);
+        if (on_changed_)
+        {
+            on_changed_(edit_->toPlainText().toStdString());
+        }
+    }
+
+    std::vector<tesseract::MentionSeg> mention_draft() const override
+    {
+        std::vector<tesseract::MentionSeg> segs;
+        if (!edit_)
+        {
+            return segs;
+        }
+        std::string pending;
+        auto flush_text = [&]()
+        {
+            if (!pending.empty())
+            {
+                tesseract::MentionSeg s;
+                s.kind = tesseract::MentionSeg::Kind::Text;
+                s.text = pending;
+                segs.push_back(std::move(s));
+                pending.clear();
+            }
+        };
+        bool first_block = true;
+        for (QTextBlock block = edit_->document()->begin(); block.isValid();
+             block = block.next())
+        {
+            if (!first_block)
+            {
+                pending += "\n";
+            }
+            first_block = false;
+            for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
+            {
+                QTextFragment frag = it.fragment();
+                if (!frag.isValid())
+                {
+                    continue;
+                }
+                QTextCharFormat cf = frag.charFormat();
+                if (cf.hasProperty(PropMentionDisplay))
+                {
+                    flush_text();
+                    tesseract::MentionSeg s;
+                    s.kind = tesseract::MentionSeg::Kind::Mention;
+                    s.user_id =
+                        cf.property(PropMentionUserId).toString().toStdString();
+                    s.display_name =
+                        cf.property(PropMentionDisplay).toString().toStdString();
+                    s.is_room = cf.property(PropMentionIsRoom).toBool();
+                    segs.push_back(std::move(s));
+                }
+                else
+                {
+                    pending += frag.text().toStdString();
+                }
+            }
+        }
+        flush_text();
+        return segs;
+    }
+
+    void set_mention_colors(Color bg, Color fg) override
+    {
+        mention_bg_ = QColor(bg.r, bg.g, bg.b, bg.a);
+        mention_fg_ = QColor(fg.r, fg.g, fg.b, fg.a);
+    }
+
 private:
     static int utf8_byte_to_qt_cursor(const QString& qs, int byte_offset)
     {
@@ -609,10 +741,40 @@ private:
         return QString::fromUtf8(full.left(byte_offset)).size();
     }
 
+    QImage render_pill(const QString& text) const
+    {
+        QFont f = edit_ ? edit_->font() : QFont();
+        QFontMetrics fm(f);
+        const int pad_x = 8;
+        const int pad_y = 2;
+        const int w = fm.horizontalAdvance(text) + pad_x * 2;
+        const int h = fm.height() + pad_y * 2;
+        qreal dpr = edit_ ? edit_->devicePixelRatioF() : 1.0;
+        QImage img(QSize(int(w * dpr), int(h * dpr)),
+                   QImage::Format_ARGB32_Premultiplied);
+        img.setDevicePixelRatio(dpr);
+        img.fill(Qt::transparent);
+        QPainter p(&img);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        QRectF pill(0.5, 0.5, w - 1.0, h - 1.0);
+        const qreal r = pill.height() * 0.5;
+        p.setPen(Qt::NoPen);
+        p.setBrush(mention_bg_);
+        p.drawRoundedRect(pill, r, r);
+        p.setPen(mention_fg_);
+        p.setFont(f);
+        p.drawText(QRectF(0, 0, w, h), Qt::AlignCenter, text);
+        p.end();
+        return img;
+    }
+
     QPointer<ComposeTextEdit> edit_;
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
+    QColor mention_bg_{0x2E, 0x3B, 0x5E};
+    QColor mention_fg_{0xA8, 0xC5, 0xFF};
+    int mention_counter_ = 0;
     float last_height_ = 0.f;
     // Tracks the last value passed to set_visible(). Construction-time
     // default mirrors a freshly-created QPlainTextEdit, which is visible

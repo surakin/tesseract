@@ -30,6 +30,27 @@ static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
     return out;
 }
 
+// If `url` is a matrix.to *user* permalink, return the Matrix user id
+// (e.g. "@alice:example.org"); otherwise return "". Trailing query/fragment
+// (?via=…) is dropped and a leading percent-encoded '@' (%40) is decoded.
+static std::string mention_user_id_from_url(const std::string& url)
+{
+    static const std::string kHttps = "https://matrix.to/#/";
+    static const std::string kHttp = "http://matrix.to/#/";
+    std::string rest;
+    if (url.rfind(kHttps, 0) == 0)
+        rest = url.substr(kHttps.size());
+    else if (url.rfind(kHttp, 0) == 0)
+        rest = url.substr(kHttp.size());
+    else
+        return {};
+    if (auto q = rest.find('?'); q != std::string::npos)
+        rest = rest.substr(0, q);
+    if (rest.rfind("%40", 0) == 0)
+        rest = "@" + rest.substr(3);
+    return (!rest.empty() && rest.front() == '@') ? rest : std::string{};
+}
+
 static std::pair<int, int> word_range_in_text(const std::string& text,
                                                int byte_offset)
 {
@@ -2467,6 +2488,30 @@ private:
                     ctx.factory.build_rich_text(spans, body_style(w, eo));
                 if (layout)
                 {
+                    // Mention pills: fill a rounded background behind each
+                    // mention run before the (selection +) text is painted.
+                    // When the mentioned user's avatar resolves, draw it in a
+                    // small left-extension of the pill (the text run itself is
+                    // unchanged — the extension reaches into the preceding
+                    // space).
+                    int boff = 0;
+                    for (const auto& sp : spans)
+                    {
+                        int len = static_cast<int>(sp.text.size());
+                        if (sp.is_mention && sp.has_background && len > 0)
+                        {
+                            for (const tk::Rect& r :
+                                 layout->selection_rects(boff, boff + len))
+                            {
+                                tk::Rect pill{r.x + x - 2.0f, r.y + y,
+                                              r.w + 4.0f, r.h};
+                                float radius = std::min(7.0f, pill.h * 0.5f);
+                                ctx.canvas.fill_rounded_rect(pill, radius,
+                                                             sp.background);
+                            }
+                        }
+                        boff += len;
+                    }
                     std::string plain_spans = spans_to_plain(spans);
                     draw_with_selection(*layout, x, y,
                                         static_cast<int>(plain_spans.size()));
@@ -5500,9 +5545,19 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     {
         std::string url = std::move(press_link_url_);
         press_link_url_.clear();
-        if (inside_self && on_link_clicked)
+        if (inside_self)
         {
-            on_link_clicked(url);
+            // A matrix.to user link is a mention pill — open the profile panel
+            // instead of a browser.
+            std::string uid = mention_user_id_from_url(url);
+            if (!uid.empty() && on_mention_clicked)
+            {
+                on_mention_clicked(uid);
+            }
+            else if (on_link_clicked)
+            {
+                on_link_clicked(url);
+            }
         }
         return;
     }

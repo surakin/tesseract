@@ -20,6 +20,7 @@
 #include <QVideoSink>
 #include <QVideoFrame>
 
+#include <tesseract/mentions.h>
 #include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
 #include <tesseract/settings.h>
@@ -353,6 +354,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return shortcode_for_mxc_(mxc);
             });
+        // Avatar inside received mention pills: resolve user id → member avatar
+        // mxc → cached image (kicking a fetch on miss; the row repaints when
+        // the bytes arrive).
+        mainApp_->room_view()->message_list()->set_mention_avatar_provider(
+            [this](const std::string& user_id) -> const tk::Image*
+            {
+                for (const auto& m : cached_room_members_)
+                {
+                    if (m.user_id != user_id)
+                        continue;
+                    if (m.avatar_url.empty())
+                        return nullptr;
+                    ensure_user_avatar_(m.avatar_url);
+                    auto it = tk_avatars_.find(m.avatar_url);
+                    return it == tk_avatars_.end() ? nullptr
+                                                   : it->second.get();
+                }
+                return nullptr;
+            });
         if (auto player = mainAppSurface_->host().make_audio_player())
         {
             mainApp_->room_view()->set_audio_player(std::move(player));
@@ -572,13 +592,33 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             {
                 return;
             }
+            // Build the message from the composer's mention draft so inline
+            // pills become matrix.to links + m.mentions. Falls back to the
+            // passed-in body when the native area has no draft.
+            std::vector<tesseract::MentionSeg> draft =
+                roomTextArea_ ? roomTextArea_->mention_draft()
+                              : std::vector<tesseract::MentionSeg>{};
+            bool has_mention = false;
+            for (const auto& seg : draft)
+            {
+                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
+                {
+                    has_mention = true;
+                }
+            }
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
             std::string trimmed =
-                QString::fromStdString(body).trimmed().toStdString();
-            if (trimmed.empty())
+                QString::fromStdString(msg.body).trimmed().toStdString();
+            if (trimmed.empty() && !has_mention)
             {
                 return;
             }
-            auto res = client_->send_message(current_room_id_, trimmed);
+            auto res = msg.formatted_body.empty()
+                           ? client_->send_message(current_room_id_, msg.body)
+                           : client_->send_message(current_room_id_, msg.body,
+                                                   msg.formatted_body);
             if (res)
             {
                 if (roomTextArea_)
@@ -962,12 +1002,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     auto members = c->get_room_members(room_id);
                     QMetaObject::invokeMethod(
                         this,
-                        [this, members = std::move(members)]() mutable
+                        [this, room_id, members = std::move(members)]() mutable
                         {
                             if (mainApp_)
                             {
                                 for (const auto& m : members)
                                     ensure_user_avatar_(m.avatar_url);
+                                // Cache for the mention popup + pill avatars.
+                                cached_room_members_ = members;
+                                cached_members_room_ = room_id;
                                 mainApp_->room_view()->set_room_members(
                                     std::move(members));
                             }
@@ -1109,6 +1152,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     roomTextArea_->set_font_role(tk::FontRole::Body);
     roomTextArea_->set_text_color(
         mainAppSurface_->theme().palette.text_primary);
+    roomTextArea_->set_mention_colors(
+        mainAppSurface_->theme().palette.accent,
+        mainAppSurface_->theme().palette.text_on_accent);
     roomTextArea_->set_placeholder(tr("Message\xe2\x80\xa6").toStdString());
     roomTextArea_->set_on_changed(
         [this](const std::string& s)
@@ -1118,7 +1164,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 mainApp_->room_view()->set_current_text(s);
             }
 
-            int cursor = (int)s.size();
+            int cursor = roomTextArea_->cursor_byte_pos();
 
             // Auto-expand: ":smile:" + space → replace with glyph
             auto complete = shortcode_engine_.find_complete(s, cursor);
@@ -1131,6 +1177,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                                     : ":" + complete->prefix + ":";
                 roomTextArea_->replace_range(complete->start, complete->end, r);
                 hide_shortcode_popup_();
+                hide_mention_popup_();
                 return;
             }
 
@@ -1142,6 +1189,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     prefix_match->prefix, cached_emoticons_);
                 if (!shortcode_current_suggestions_.empty())
                 {
+                    hide_mention_popup_();
                     shortcode_active_match_ = *prefix_match;
                     for (const auto& sugg : shortcode_current_suggestions_)
                     {
@@ -1215,11 +1263,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     return;
                 }
             }
+            // @mention popup
+            if (handle_mention_on_changed_(s, cursor))
+            {
+                return;
+            }
             hide_shortcode_popup_();
+            hide_mention_popup_();
         });
     roomTextArea_->set_on_submit(
         [this]
         {
+            if (mention_popup_visible_())
+            {
+                int sel = mention_popup_widget_->selected_index();
+                if (sel >= 0 &&
+                    sel < (int)mention_current_candidates_.size())
+                {
+                    accept_mention_(mention_current_candidates_[sel]);
+                    return;
+                }
+                hide_mention_popup_();
+            }
             if (shortcode_popup_visible_())
             {
                 int sel = shortcode_popup_widget_->selected_index();
@@ -2533,6 +2598,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     }
 
     hide_shortcode_popup_();
+    hide_mention_popup_();
     handle_compose_room_leaving_(current_room_id_);
     if (!current_room_id_.empty() && current_room_id_ != room_id &&
         room_subscription_refs_.count(current_room_id_) == 0)
@@ -2541,6 +2607,12 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     }
 
     current_room_id_ = room_id;
+    // Prefetch members so mention pills (avatar) and mention clicks (name +
+    // avatar) resolve without needing the room-info panel opened first.
+    if (mainApp_ && mainApp_->room_view()->on_fetch_room_members)
+    {
+        mainApp_->room_view()->on_fetch_room_members(room_id);
+    }
     clear_focused_state_(room_id);
     if (!markReadTimer_)
     {
@@ -2837,6 +2909,10 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         if (mainAppSurface_)
         {
             mainAppSurface_->update();
+        }
+        if (mention_popup_visible_() && mention_popup_surface_)
+        {
+            mention_popup_surface_->update();
         }
         return;
     }
@@ -3787,6 +3863,16 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
                 shortcode_popup_frame_->mapFromGlobal(global)))
         {
             hide_shortcode_popup_();
+        }
+    }
+    if (mention_popup_visible_() && event->type() == QEvent::MouseButtonPress)
+    {
+        auto* me = static_cast<QMouseEvent*>(event);
+        QPoint global = me->globalPosition().toPoint();
+        if (!mention_popup_frame_->rect().contains(
+                mention_popup_frame_->mapFromGlobal(global)))
+        {
+            hide_mention_popup_();
         }
     }
     return QMainWindow::eventFilter(obj, event);
@@ -4877,6 +4963,215 @@ void MainWindow::hide_shortcode_popup_()
     }
 }
 
+// ── @mention popup ─────────────────────────────────────────────────────────
+
+bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
+{
+    auto m = mention_engine_.find_prefix(s, cursor);
+    if (!m)
+    {
+        return false;
+    }
+    // Member list must be fetched off the UI thread (get_room_members blocks).
+    // When the cache is stale, kick off an async fetch and re-run once it lands
+    // — the popup appears on the next tick rather than stalling input.
+    if (cached_members_room_ != current_room_id_)
+    {
+        if (members_fetching_room_ != current_room_id_ && client_)
+        {
+            members_fetching_room_ = current_room_id_;
+            auto* c = client_;
+            std::string rid = current_room_id_;
+            run_async_(
+                [this, c, rid]
+                {
+                    auto members = c->get_room_members(rid);
+                    post_to_ui_(
+                        [this, rid, members = std::move(members)]() mutable
+                        {
+                            cached_room_members_ = std::move(members);
+                            cached_members_room_ = rid;
+                            members_fetching_room_.clear();
+                            if (roomTextArea_)
+                            {
+                                handle_mention_on_changed_(
+                                    roomTextArea_->text(),
+                                    roomTextArea_->cursor_byte_pos());
+                            }
+                        });
+                });
+        }
+        return false;
+    }
+    mention_current_candidates_ =
+        mention_engine_.lookup(m->prefix, cached_room_members_, 8, true);
+    if (mention_current_candidates_.empty())
+    {
+        return false;
+    }
+    mention_active_match_ = *m;
+    hide_shortcode_popup_(); // clears popup_nav_ — must reinstall below
+    show_mention_popup_(mention_current_candidates_,
+                        roomTextArea_->cursor_rect());
+    // Reinstall every time: hide_shortcode_popup_() above (and a prior
+    // keystroke) clear popup_nav_, so a conditional install would leave nav
+    // dead after the first character following the popup appearing.
+    {
+        roomTextArea_->set_on_popup_nav(
+            [this](tk::NativeTextArea::NavKey nk) -> bool
+            {
+                if (!mention_popup_visible_())
+                {
+                    return false;
+                }
+                int cur = mention_popup_widget_->selected_index();
+                int n = mention_popup_widget_->visible_rows();
+                if (n <= 0)
+                {
+                    return true;
+                }
+                int next = cur;
+                switch (nk)
+                {
+                case tk::NativeTextArea::NavKey::Up:
+                    next = std::max(0, cur - 1);
+                    break;
+                case tk::NativeTextArea::NavKey::Down:
+                    next = std::min(n - 1, cur + 1);
+                    break;
+                case tk::NativeTextArea::NavKey::Tab:
+                {
+                    int sel = mention_popup_widget_->selected_index();
+                    if (sel >= 0 &&
+                        sel < (int)mention_current_candidates_.size())
+                    {
+                        accept_mention_(mention_current_candidates_[sel]);
+                    }
+                    else
+                    {
+                        hide_mention_popup_();
+                    }
+                    return true;
+                }
+                case tk::NativeTextArea::NavKey::ShiftTab:
+                    return false;
+                case tk::NativeTextArea::NavKey::Escape:
+                    hide_mention_popup_();
+                    return true;
+                }
+                mention_popup_widget_->set_selected_index(next);
+                mention_popup_surface_->update();
+                return true;
+            });
+    }
+    return true;
+}
+
+void MainWindow::accept_mention_(const tesseract::views::MentionCandidate& c)
+{
+    if (roomTextArea_)
+    {
+        roomTextArea_->insert_mention(mention_active_match_.start,
+                                      mention_active_match_.end, c.user_id,
+                                      c.display_name, c.is_room);
+    }
+    hide_mention_popup_();
+}
+
+void MainWindow::show_mention_popup_(
+    const std::vector<tesseract::views::MentionCandidate>& candidates,
+    tk::Rect cursor_local)
+{
+    if (!mention_popup_frame_)
+    {
+        mention_popup_frame_ = new QWidget(this);
+        mention_popup_frame_->setFocusPolicy(Qt::NoFocus);
+
+        mention_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+            mention_popup_frame_,
+            /*transparent=*/false);
+        mention_popup_surface_->setFocusPolicy(Qt::NoFocus);
+
+        auto widget = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = widget.get();
+        mention_popup_surface_->set_root(std::move(widget));
+
+        mention_popup_widget_->on_accepted =
+            [this](tesseract::views::MentionCandidate c)
+        {
+            accept_mention_(c);
+        };
+        mention_popup_widget_->on_dismissed = [this] { hide_mention_popup_(); };
+        mention_popup_widget_->set_image_provider(
+            [this](const std::string& url) -> const tk::Image*
+            {
+                auto it = tk_avatars_.find(url);
+                return it == tk_avatars_.end() ? nullptr : it->second.get();
+            });
+
+        auto* lay = new QVBoxLayout(mention_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(mention_popup_surface_.get());
+    }
+
+    // Kick off avatar fetches; they appear on a later repaint once decoded.
+    for (const auto& cand : candidates)
+    {
+        if (!cand.is_room && !cand.avatar_url.empty())
+        {
+            ensure_user_avatar_(cand.avatar_url);
+        }
+    }
+
+    mention_popup_widget_->set_candidates(candidates);
+
+    int rows = std::min((int)candidates.size(),
+                        (int)tesseract::views::MentionPopup::kMaxRows);
+    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+    int w = int(tesseract::views::MentionPopup::kWidth);
+
+    QPoint parent_cursor = mainAppSurface_->mapTo(
+        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
+
+    QRect work = rect();
+    int x = parent_cursor.x();
+    int y_above = parent_cursor.y() - h - 4;
+    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
+    int y = (y_above >= work.top()) ? y_above : y_below;
+    x = std::clamp(x, work.left(), work.right() - w);
+    y = std::clamp(y, work.top(), work.bottom() - h);
+
+    const bool was_hidden = !mention_popup_frame_->isVisible();
+    mention_popup_frame_->setGeometry(x, y, w, h);
+    mention_popup_surface_->resize(w, h);
+    mention_popup_frame_->show();
+    mention_popup_frame_->raise();
+    mention_popup_surface_->relayout();
+    if (was_hidden)
+    {
+        qApp->installEventFilter(this);
+    }
+}
+
+void MainWindow::hide_mention_popup_()
+{
+    if (!mention_popup_visible_())
+    {
+        return;
+    }
+    qApp->removeEventFilter(this);
+    if (mention_popup_frame_)
+    {
+        mention_popup_frame_->hide();
+    }
+    if (roomTextArea_)
+    {
+        roomTextArea_->set_on_popup_nav(nullptr);
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 void MainWindow::apply_theme_ui_(const tk::Theme& t)
@@ -4896,6 +5191,15 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+    }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(t);
+    }
+    if (roomTextArea_)
+    {
+        roomTextArea_->set_mention_colors(t.palette.accent,
+                                          t.palette.text_on_accent);
     }
     if (settingsWidget_)
     {

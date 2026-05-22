@@ -956,8 +956,22 @@ public:
                     QString::fromUtf8(sp.url.data(),
                                       static_cast<int>(sp.url.size()))
                         .toHtmlEscaped();
-                t = QLatin1String("<a href=\"") + href + QLatin1String("\">") +
-                    t + QLatin1String("</a>");
+                if (sp.is_mention)
+                {
+                    // Keep the anchor for hit-testing but drop the link
+                    // underline; the accent colour comes from has_color and the
+                    // pill background is drawn by the view.
+                    QString col = sp.has_color ? to_qcolor(sp.color).name()
+                                               : QStringLiteral("#1B4AC2");
+                    t = QLatin1String("<a href=\"") + href +
+                        QLatin1String("\" style=\"text-decoration:none;color:") +
+                        col + QLatin1String(";\">") + t + QLatin1String("</a>");
+                }
+                else
+                {
+                    t = QLatin1String("<a href=\"") + href +
+                        QLatin1String("\">") + t + QLatin1String("</a>");
+                }
             }
             html += t;
         }

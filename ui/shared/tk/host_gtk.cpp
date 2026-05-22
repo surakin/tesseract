@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <utility>
@@ -242,6 +243,17 @@ public:
         paste_id_ =
             g_signal_connect(view_, "paste-clipboard",
                              G_CALLBACK(&GtkNativeTextArea::on_paste_cb), this);
+
+        // Per-display CSS for inline mention pills. Re-themed via
+        // set_mention_colors(); the rule targets labels added at child anchors.
+        pill_css_ = gtk_css_provider_new();
+        reload_pill_css();
+        if (GdkDisplay* dpy = gdk_display_get_default())
+        {
+            gtk_style_context_add_provider_for_display(
+                dpy, GTK_STYLE_PROVIDER(pill_css_),
+                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+        }
     }
 
     ~GtkNativeTextArea() override
@@ -262,6 +274,16 @@ public:
         {
             gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
                                        placeholder_label_);
+        }
+        if (pill_css_)
+        {
+            if (GdkDisplay* dpy = gdk_display_get_default())
+            {
+                gtk_style_context_remove_provider_for_display(
+                    dpy, GTK_STYLE_PROVIDER(pill_css_));
+            }
+            g_object_unref(pill_css_);
+            pill_css_ = nullptr;
         }
     }
 
@@ -322,7 +344,11 @@ public:
         }
         GtkTextIter begin, end;
         gtk_text_buffer_get_bounds(buffer_, &begin, &end);
-        gchar* raw = gtk_text_buffer_get_text(buffer_, &begin, &end, FALSE);
+        // get_slice (not get_text) keeps the U+FFFC placeholder for each
+        // mention-pill child anchor, so byte offsets stay consistent with
+        // cursor_byte_pos() and insert_mention(). Identical to get_text when
+        // there are no pills.
+        gchar* raw = gtk_text_buffer_get_slice(buffer_, &begin, &end, FALSE);
         std::string out = raw ? raw : "";
         g_free(raw);
         return out;
@@ -430,7 +456,7 @@ public:
         GtkTextIter si, ej;
         gtk_text_buffer_get_start_iter(buffer_, &si);
         gtk_text_buffer_get_end_iter(buffer_, &ej);
-        gchar* buf_text = gtk_text_buffer_get_text(buffer_, &si, &ej, FALSE);
+        gchar* buf_text = gtk_text_buffer_get_slice(buffer_, &si, &ej, FALSE);
         int char_start = utf8_byte_to_char_offset(buf_text, start);
         int char_end = utf8_byte_to_char_offset(buf_text, end);
         g_free(buf_text);
@@ -450,7 +476,164 @@ public:
         on_edit_last_ = std::move(fn);
     }
 
+    int cursor_byte_pos() const override
+    {
+        if (!buffer_)
+        {
+            return 0;
+        }
+        GtkTextMark* ins = gtk_text_buffer_get_insert(buffer_);
+        GtkTextIter it, start;
+        gtk_text_buffer_get_iter_at_mark(buffer_, &it, ins);
+        gtk_text_buffer_get_start_iter(buffer_, &start);
+        gchar* slice = gtk_text_buffer_get_slice(buffer_, &start, &it, FALSE);
+        int n = slice ? (int)std::strlen(slice) : 0;
+        g_free(slice);
+        return n;
+    }
+
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override
+    {
+        if (!buffer_)
+        {
+            return;
+        }
+        g_signal_handler_block(buffer_, changed_id_);
+
+        GtkTextIter b0, b1;
+        gtk_text_buffer_get_bounds(buffer_, &b0, &b1);
+        gchar* slice = gtk_text_buffer_get_slice(buffer_, &b0, &b1, FALSE);
+        int cs = utf8_byte_to_char_offset(slice, start);
+        int ce = utf8_byte_to_char_offset(slice, end);
+        g_free(slice);
+
+        GtkTextIter a, c;
+        gtk_text_buffer_get_iter_at_offset(buffer_, &a, cs);
+        gtk_text_buffer_get_iter_at_offset(buffer_, &c, ce);
+        gtk_text_buffer_delete(buffer_, &a, &c);
+
+        GtkTextChildAnchor* anchor =
+            gtk_text_buffer_create_child_anchor(buffer_, &a);
+        auto* data = new MentionData{user_id, display_name, is_room};
+        g_object_set_data_full(G_OBJECT(anchor), "tesseract-mention", data,
+                               &GtkNativeTextArea::free_mention_data);
+
+        std::string visual = is_room ? std::string("@room") : ("@" + display_name);
+        GtkWidget* label = gtk_label_new(visual.c_str());
+        gtk_widget_add_css_class(label, "tesseract-mention-pill");
+        gtk_text_view_add_child_at_anchor(GTK_TEXT_VIEW(view_), label, anchor);
+
+        // Trailing space after the pill so typing continues as normal text.
+        GtkTextIter after;
+        gtk_text_buffer_get_iter_at_child_anchor(buffer_, &after, anchor);
+        gtk_text_iter_forward_char(&after); // step past the anchor
+        gtk_text_buffer_insert(buffer_, &after, " ", 1);
+        gtk_text_buffer_place_cursor(buffer_, &after);
+
+        g_signal_handler_unblock(buffer_, changed_id_);
+        std::string t = text();
+        if (placeholder_label_)
+        {
+            gtk_widget_set_visible(placeholder_label_, t.empty());
+        }
+        if (on_changed_)
+        {
+            on_changed_(t);
+        }
+    }
+
+    std::vector<tesseract::MentionSeg> mention_draft() const override
+    {
+        std::vector<tesseract::MentionSeg> segs;
+        if (!buffer_)
+        {
+            return segs;
+        }
+        std::string pending;
+        auto flush_text = [&]()
+        {
+            if (!pending.empty())
+            {
+                tesseract::MentionSeg s;
+                s.kind = tesseract::MentionSeg::Kind::Text;
+                s.text = pending;
+                segs.push_back(std::move(s));
+                pending.clear();
+            }
+        };
+        GtkTextIter it;
+        gtk_text_buffer_get_start_iter(buffer_, &it);
+        while (!gtk_text_iter_is_end(&it))
+        {
+            GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
+            if (a)
+            {
+                auto* d = static_cast<MentionData*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                if (d)
+                {
+                    flush_text();
+                    tesseract::MentionSeg s;
+                    s.kind = tesseract::MentionSeg::Kind::Mention;
+                    s.user_id = d->user_id;
+                    s.display_name = d->display_name;
+                    s.is_room = d->is_room;
+                    segs.push_back(std::move(s));
+                }
+            }
+            else
+            {
+                gunichar ch = gtk_text_iter_get_char(&it);
+                if (ch)
+                {
+                    char buf[6];
+                    int n = g_unichar_to_utf8(ch, buf);
+                    pending.append(buf, n);
+                }
+            }
+            gtk_text_iter_forward_char(&it);
+        }
+        flush_text();
+        return segs;
+    }
+
+    void set_mention_colors(Color bg, Color fg) override
+    {
+        mention_bg_hex_ = to_hex(bg);
+        mention_fg_hex_ = to_hex(fg);
+        if (pill_css_)
+        {
+            reload_pill_css();
+        }
+    }
+
 private:
+    struct MentionData
+    {
+        std::string user_id;
+        std::string display_name;
+        bool is_room;
+    };
+    static void free_mention_data(gpointer p)
+    {
+        delete static_cast<MentionData*>(p);
+    }
+    static std::string to_hex(Color c)
+    {
+        char b[8];
+        std::snprintf(b, sizeof(b), "#%02X%02X%02X", c.r, c.g, c.b);
+        return b;
+    }
+    void reload_pill_css()
+    {
+        std::string css = ".tesseract-mention-pill{background-color:" +
+                          mention_bg_hex_ + ";color:" + mention_fg_hex_ +
+                          ";border-radius:9px;padding:0 6px;margin:0 1px;"
+                          "font-weight:500;}";
+        gtk_css_provider_load_from_string(pill_css_, css.c_str());
+    }
+
     static int utf8_byte_to_char_offset(const gchar* utf8_str, int byte_offset)
     {
         const gchar* p = utf8_str;
@@ -645,6 +828,9 @@ private:
     GtkTextBuffer* buffer_ = nullptr;
     gulong changed_id_ = 0;
     gulong paste_id_ = 0;
+    GtkCssProvider* pill_css_ = nullptr;
+    std::string mention_bg_hex_ = "#2E3B5E";
+    std::string mention_fg_hex_ = "#A8C5FF";
     float last_height_ = 0.f;
     // Tracks the last value passed to set_visible(). Mirrors GtkWidget's
     // default-visible state on construction.

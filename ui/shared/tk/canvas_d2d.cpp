@@ -1755,7 +1755,13 @@ public:
             }
             if (!sp.url.empty())
             {
-                layout->SetUnderline(TRUE, tr);
+                // Mention pills keep their hit-test range but render without the
+                // link underline (accent colour via has_color, pill background
+                // drawn by the view).
+                if (!sp.is_mention)
+                {
+                    layout->SetUnderline(TRUE, tr);
+                }
                 url_ranges.push_back({wr.start, wr.end, sp.url});
             }
             if (sp.has_color)

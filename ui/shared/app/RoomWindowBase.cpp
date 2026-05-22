@@ -4,6 +4,7 @@
 #include "views/VideoViewerOverlay.h"
 #include "views/text_util.h"
 #include <tesseract/client.h>
+#include <tesseract/mentions.h>
 #include <tesseract/visual.h>
 
 #include <fstream>
@@ -124,12 +125,35 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
     // ── Compose callbacks ────────────────────────────────────────────────
     rv->on_send = [this](const std::string& body)
     {
-        std::string trimmed = tesseract::text::trim(body);
-        if (trimmed.empty())
+        // Build from the composer's mention draft when a native text area is
+        // present so inline pills become matrix.to links + m.mentions; fall
+        // back to the plain body otherwise.
+        std::string out_body = body;
+        std::string formatted;
+        bool has_mention = false;
+        if (auto* ta = compose_text_area_())
+        {
+            auto draft = ta->mention_draft();
+            for (const auto& seg : draft)
+            {
+                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
+                {
+                    has_mention = true;
+                }
+            }
+            if (!draft.empty())
+            {
+                auto msg = tesseract::build_mention_message(draft);
+                out_body = msg.body;
+                formatted = msg.formatted_body;
+            }
+        }
+        std::string trimmed = tesseract::text::trim(out_body);
+        if (trimmed.empty() && !has_mention)
         {
             return;
         }
-        send_message_(trimmed);
+        send_message_(out_body, formatted);
         if (auto* ta = compose_text_area_())
         {
             ta->set_text("");
@@ -426,6 +450,28 @@ void RoomWindowBase::send_message_(const std::string& body)
         return;
     }
     shell_->client_->send_message(room_id_, body);
+}
+
+tesseract::Client* RoomWindowBase::shell_client_() const
+{
+    return shell_->client_;
+}
+
+void RoomWindowBase::send_message_(const std::string& body,
+                                   const std::string& formatted_body)
+{
+    if (room_id_.empty() || !shell_->client_)
+    {
+        return;
+    }
+    if (formatted_body.empty())
+    {
+        shell_->client_->send_message(room_id_, body);
+    }
+    else
+    {
+        shell_->client_->send_message(room_id_, body, formatted_body);
+    }
 }
 
 void RoomWindowBase::send_reply_(const std::string& reply_event_id,

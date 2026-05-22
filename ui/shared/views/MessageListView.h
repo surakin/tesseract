@@ -344,6 +344,22 @@ public:
     // Fires when the user clicks a URL preview card or an inline hyperlink.
     std::function<void(const std::string& url)> on_link_clicked;
 
+    // Fires when the user clicks an inline mention pill (a matrix.to user
+    // link). The shell should open that user's profile panel rather than a
+    // browser. `user_id` is the parsed Matrix id (e.g. "@alice:example.org").
+    std::function<void(const std::string& user_id)> on_mention_clicked;
+
+    // Resolves a mentioned user's avatar image by Matrix user id, for drawing
+    // a small avatar inside the mention pill. Returns nullptr when unknown
+    // (the pill then renders without an avatar). May trigger an async fetch;
+    // the view repaints when bytes arrive.
+    using MentionAvatarProvider =
+        std::function<const tk::Image*(const std::string& user_id)>;
+    void set_mention_avatar_provider(MentionAvatarProvider p)
+    {
+        mention_avatar_provider_ = std::move(p);
+    }
+
     // Fires when the pointer enters or leaves an inline hyperlink. url is
     // non-empty while hovering, empty when the pointer leaves. Used by the
     // shell to switch the cursor to/from a pointing-hand cursor.
@@ -604,6 +620,7 @@ private:
     std::string typing_text_;
     ImageProvider avatar_provider_;
     ImageProvider image_provider_;
+    MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
 

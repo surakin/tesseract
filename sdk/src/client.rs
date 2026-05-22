@@ -694,6 +694,140 @@ fn build_media_reply(
     }))
 }
 
+/// Strip the `https://matrix.to/#/` (or `http://`) prefix from an href and
+/// return the permalink target (e.g. `@user:server` or `@room`). Trailing
+/// query/fragment params (`?via=…`) are dropped. Returns `None` for non
+/// matrix.to links.
+fn matrix_to_target(href: &str) -> Option<&str> {
+    for prefix in ["https://matrix.to/#/", "http://matrix.to/#/"] {
+        if let Some(rest) = href.strip_prefix(prefix) {
+            return Some(rest.split('?').next().unwrap_or(rest));
+        }
+    }
+    None
+}
+
+/// Find the next `<a` opening-tag start (the tag name must be exactly `a`,
+/// i.e. followed by whitespace or `>` — not `<abbr` etc.).
+fn find_anchor_open(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut i = 0usize;
+    while i + 1 < b.len() {
+        if b[i] == b'<' && (b[i + 1] == b'a' || b[i + 1] == b'A') {
+            match b.get(i + 2).copied() {
+                Some(c)
+                    if c == b' '
+                        || c == b'\t'
+                        || c == b'\n'
+                        || c == b'\r'
+                        || c == b'>' =>
+                {
+                    return Some(i)
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Extract the `href` attribute value from an `<a …>` opening tag.
+fn extract_href(open_tag: &str) -> Option<String> {
+    let idx = open_tag.find("href=")?;
+    let after = &open_tag[idx + 5..];
+    let q = after.chars().next()?;
+    if q == '"' || q == '\'' {
+        let end = after[1..].find(q)?;
+        Some(after[1..1 + end].to_string())
+    } else {
+        let end = after
+            .find(|c: char| c == ' ' || c == '>' || c == '\t')
+            .unwrap_or(after.len());
+        Some(after[..end].to_string())
+    }
+}
+
+/// Derive the intentional `m.mentions` (MSC3952 / spec §user-and-room-mentions)
+/// from an outgoing HTML `formatted_body`, and return the (possibly rewritten)
+/// HTML.
+///
+/// - `matrix.to/#/@user:server` anchors contribute their user id to
+///   `mentions.user_ids` and are kept verbatim.
+/// - The `@room` sentinel anchor (`matrix.to/#/@room`, no domain) sets
+///   `mentions.room = true` AND is rewritten to its plain inner text, so
+///   receivers get spec-standard `@room` output rather than a bogus link.
+///
+/// This runs on HTML *we* generated (lowercase tags), so anchor matching is
+/// case-sensitive on the closing `</a>`.
+fn derive_mentions(
+    formatted_body: &str,
+) -> (Option<matrix_sdk::ruma::events::Mentions>, String) {
+    use matrix_sdk::ruma::UserId;
+    use std::collections::BTreeSet;
+
+    let mut user_ids: BTreeSet<matrix_sdk::ruma::OwnedUserId> = BTreeSet::new();
+    let mut room = false;
+    let mut out = String::with_capacity(formatted_body.len());
+    let mut rest = formatted_body;
+
+    while let Some(start) = find_anchor_open(rest) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        let Some(gt) = after.find('>') else {
+            out.push_str(after);
+            return (finish(user_ids, room), out);
+        };
+        let open_tag = &after[..=gt];
+        let inner_and_rest = &after[gt + 1..];
+        let Some(close_rel) = inner_and_rest.find("</a>") else {
+            // Malformed (no closing tag): keep the open tag, continue scanning.
+            out.push_str(open_tag);
+            rest = inner_and_rest;
+            continue;
+        };
+        let inner = &inner_and_rest[..close_rel];
+        let after_close = &inner_and_rest[close_rel + "</a>".len()..];
+
+        match extract_href(open_tag).as_deref().and_then(matrix_to_target) {
+            Some("@room") => {
+                room = true;
+                out.push_str(inner); // strip the sentinel anchor
+            }
+            Some(target) => {
+                if let Ok(uid) = UserId::parse(target) {
+                    user_ids.insert(uid);
+                }
+                out.push_str(open_tag);
+                out.push_str(inner);
+                out.push_str("</a>");
+            }
+            None => {
+                out.push_str(open_tag);
+                out.push_str(inner);
+                out.push_str("</a>");
+            }
+        }
+        rest = after_close;
+    }
+    out.push_str(rest);
+    (finish(user_ids, room), out)
+}
+
+/// Assemble a `Mentions` from collected ids/room flag, or `None` when empty.
+fn finish(
+    user_ids: std::collections::BTreeSet<matrix_sdk::ruma::OwnedUserId>,
+    room: bool,
+) -> Option<matrix_sdk::ruma::events::Mentions> {
+    if user_ids.is_empty() && !room {
+        return None;
+    }
+    let mut m = matrix_sdk::ruma::events::Mentions::new();
+    m.user_ids = user_ids;
+    m.room = room;
+    Some(m)
+}
+
 /// Build an `m.room.message` content object carrying an `m.thread` relation.
 /// `thread_root` is the thread root event id. When `in_reply_to` is non-empty
 /// the relation also carries an `m.in_reply_to` (a reply to a specific message
@@ -704,13 +838,19 @@ fn build_thread_message_content(
     thread_root: &str,
     in_reply_to: &str,
 ) -> serde_json::Value {
+    let (mentions, html) = derive_mentions(formatted_body);
     let mut content = serde_json::json!({
         "msgtype": "m.text",
         "body": body,
     });
-    if !formatted_body.is_empty() {
+    if !html.is_empty() {
         content["format"] = serde_json::json!("org.matrix.custom.html");
-        content["formatted_body"] = serde_json::json!(formatted_body);
+        content["formatted_body"] = serde_json::json!(html);
+    }
+    if let Some(m) = mentions {
+        if let Ok(v) = serde_json::to_value(&m) {
+            content["m.mentions"] = v;
+        }
     }
     let mut relates = serde_json::json!({
         "rel_type": "m.thread",
@@ -3039,11 +3179,13 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let content = if formatted_body.is_empty() {
+        let (mentions, html) = derive_mentions(formatted_body);
+        let mut content = if html.is_empty() {
             RoomMessageEventContent::text_plain(body)
         } else {
-            RoomMessageEventContent::text_html(body, formatted_body)
+            RoomMessageEventContent::text_html(body, &html)
         };
+        content.mentions = mentions;
         // Use the live timeline if subscribed — local echo fires immediately.
         #[cfg(not(test))]
         if let Some(handle) = self.timelines.get(&room_id) {
@@ -3163,11 +3305,13 @@ impl ClientFfi {
         let Some(room) = client.get_room(&room_id) else {
             return err("room not found");
         };
-        let mut content = if formatted_body.is_empty() {
+        let (mentions, html) = derive_mentions(formatted_body);
+        let mut content = if html.is_empty() {
             RoomMessageEventContent::text_plain(body)
         } else {
-            RoomMessageEventContent::text_html(body, formatted_body)
+            RoomMessageEventContent::text_html(body, &html)
         };
+        content.mentions = mentions;
         content.relates_to = Some(Relation::Reply(Reply::new(InReplyTo::new(event_id))));
         match self.rt.block_on(async move { room.send(content).await }) {
             Ok(_) => ok(""),
@@ -8817,6 +8961,104 @@ mod tests {
         let r = err("failure");
         assert!(!r.ok);
         assert_eq!(r.message, "failure");
+    }
+
+    // --- derive_mentions -------------------------------------------------
+
+    #[test]
+    fn derive_mentions_none_for_plain_html() {
+        let (m, html) = derive_mentions("<p>hello <strong>world</strong></p>");
+        assert!(m.is_none());
+        assert_eq!(html, "<p>hello <strong>world</strong></p>");
+    }
+
+    #[test]
+    fn derive_mentions_single_user_link() {
+        let src = r#"hi <a href="https://matrix.to/#/@alice:example.org">Alice</a>!"#;
+        let (m, html) = derive_mentions(src);
+        let m = m.expect("mentions");
+        assert!(!m.room);
+        assert_eq!(m.user_ids.len(), 1);
+        assert!(m
+            .user_ids
+            .iter()
+            .any(|u| u.as_str() == "@alice:example.org"));
+        // User anchors are preserved verbatim.
+        assert_eq!(html, src);
+    }
+
+    #[test]
+    fn derive_mentions_multiple_users() {
+        let src = concat!(
+            r#"<a href="https://matrix.to/#/@alice:example.org">Alice</a> "#,
+            r#"<a href="https://matrix.to/#/@bob:example.org">Bob</a>"#
+        );
+        let (m, _) = derive_mentions(src);
+        let m = m.expect("mentions");
+        assert_eq!(m.user_ids.len(), 2);
+    }
+
+    #[test]
+    fn derive_mentions_room_sentinel_rewritten() {
+        let src = r#"<a href="https://matrix.to/#/@room">@room</a> heads up"#;
+        let (m, html) = derive_mentions(src);
+        let m = m.expect("mentions");
+        assert!(m.room);
+        assert!(m.user_ids.is_empty());
+        // The sentinel anchor is replaced with its plain inner text.
+        assert_eq!(html, "@room heads up");
+    }
+
+    #[test]
+    fn derive_mentions_mixed_user_and_room() {
+        let src = concat!(
+            r#"<a href="https://matrix.to/#/@room">@room</a> and "#,
+            r#"<a href="https://matrix.to/#/@alice:example.org">Alice</a>"#
+        );
+        let (m, html) = derive_mentions(src);
+        let m = m.expect("mentions");
+        assert!(m.room);
+        assert_eq!(m.user_ids.len(), 1);
+        assert_eq!(
+            html,
+            r#"@room and <a href="https://matrix.to/#/@alice:example.org">Alice</a>"#
+        );
+    }
+
+    #[test]
+    fn derive_mentions_ignores_plain_links() {
+        let src = r#"see <a href="https://example.com/foo">this</a>"#;
+        let (m, html) = derive_mentions(src);
+        assert!(m.is_none());
+        assert_eq!(html, src);
+    }
+
+    #[test]
+    fn derive_mentions_strips_via_params() {
+        let src =
+            r#"<a href="https://matrix.to/#/@alice:example.org?via=example.org">A</a>"#;
+        let (m, _) = derive_mentions(src);
+        let m = m.expect("mentions");
+        assert!(m
+            .user_ids
+            .iter()
+            .any(|u| u.as_str() == "@alice:example.org"));
+    }
+
+    #[test]
+    fn derive_mentions_malformed_anchor_no_panic() {
+        let (m, html) = derive_mentions(r#"<a href="https://matrix.to/#/@x:y">oops"#);
+        // No closing tag: nothing is derived, input is preserved.
+        assert!(m.is_none());
+        assert!(html.contains("oops"));
+    }
+
+    #[test]
+    fn derive_mentions_does_not_match_abbr_tag() {
+        let src = "<abbr>nope</abbr>";
+        let (m, html) = derive_mentions(src);
+        assert!(m.is_none());
+        assert_eq!(html, src);
     }
 
     #[test]

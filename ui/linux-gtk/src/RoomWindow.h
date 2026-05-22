@@ -2,6 +2,8 @@
 #include <gtk/gtk.h>
 #include "app/RoomWindowBase.h"
 #include "tk/host_gtk.h"
+#include "views/MentionController.h"
+#include "views/MentionPopup.h"
 #include <memory>
 
 namespace gtk4
@@ -27,8 +29,14 @@ public:
 
 protected:
     void surface_repaint_() override;
+    tk::NativeTextArea* compose_text_area_() override
+    {
+        return room_text_area_.get();
+    }
 
 private:
+    void show_mention_popup_(tk::Rect cursor_local, int rows);
+
     static void on_destroy_(GtkWidget* widget, gpointer self);
     static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
                                     guint, GdkModifierType, gpointer self);
@@ -40,6 +48,12 @@ private:
     std::unique_ptr<tk::gtk4::Surface> surface_;
     GtkWidget* copy_ctx_menu_ = nullptr;
     GSimpleActionGroup* copy_ctx_actions_ = nullptr;
+
+    std::unique_ptr<tk::NativeTextArea> room_text_area_;
+    GtkWidget* mention_popover_ = nullptr;
+    std::unique_ptr<tk::gtk4::Surface> mention_popup_surface_;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 };
 
 } // namespace gtk4

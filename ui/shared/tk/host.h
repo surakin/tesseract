@@ -16,6 +16,8 @@
 #include "canvas.h"
 #include "video.h"
 
+#include <tesseract/mentions.h> // tesseract::MentionSeg
+
 #include <cstdint>
 #include <cstddef>
 #include <functional>
@@ -134,6 +136,49 @@ public:
     /// Replace the UTF-8 byte range [start, end) with `text`.
     /// Preserves undo history.
     virtual void replace_range(int start, int end, std::string text) = 0;
+
+    /// Byte offset of the caret within text(), where each inline mention pill
+    /// counts as its placeholder codepoint (3 UTF-8 bytes, U+FFFC). Backends
+    /// that don't track the caret fall back to end-of-text. Use this — not
+    /// `text().size()` — when locating an `@`-prefix so mid-text mentions work.
+    virtual int cursor_byte_pos() const
+    {
+        return static_cast<int>(text().size());
+    }
+
+    /// Replace the UTF-8 byte range [start, end) with an atomic inline mention
+    /// pill rendered as a chip showing `display_name`. The pill behaves as a
+    /// single character for caret movement / backspace and is reported by
+    /// mention_draft(). For an @room mention pass `is_room = true` (the
+    /// `user_id` is ignored). The default inserts plain text — backends
+    /// override to draw a real chip.
+    virtual void insert_mention(int start, int end, const std::string& user_id,
+                                const std::string& display_name, bool is_room)
+    {
+        (void)user_id;
+        replace_range(start, end, is_room ? "@room" : display_name);
+    }
+
+    /// The composer content as ordered segments (typed text + mention pills),
+    /// for building the outgoing message via `tesseract::build_mention_message`.
+    /// The default (no pill support) returns the whole text as one Text segment.
+    virtual std::vector<tesseract::MentionSeg> mention_draft() const
+    {
+        std::vector<tesseract::MentionSeg> segs;
+        tesseract::MentionSeg s;
+        s.kind = tesseract::MentionSeg::Kind::Text;
+        s.text = text();
+        segs.push_back(std::move(s));
+        return segs;
+    }
+
+    /// Theme the inline mention pills (background + text colour). Call once
+    /// after creation and again when the theme changes. Default no-op.
+    virtual void set_mention_colors(Color bg, Color fg)
+    {
+        (void)bg;
+        (void)fg;
+    }
 
     /// Install a navigation callback for when the shortcode popup is open.
     /// Return true from the callback to suppress default key handling.

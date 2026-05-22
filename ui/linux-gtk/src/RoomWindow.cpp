@@ -164,6 +164,91 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
     };
 
+    // ── Compose text area overlay + @mention autocomplete ─────────────────
+    room_text_area_ = surface_->host().make_text_area();
+    room_text_area_->set_mention_colors(surface_->theme().palette.accent,
+                                        surface_->theme().palette.text_on_accent);
+    room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
+    room_text_area_->set_on_changed(
+        [this](const std::string& s)
+        {
+            if (room_view_)
+                room_view_->set_current_text(s);
+            if (mention_controller_)
+                mention_controller_->on_text_changed(
+                    s, room_text_area_->cursor_byte_pos());
+        });
+    room_text_area_->set_on_submit(
+        [this]
+        {
+            if (mention_controller_ && mention_controller_->on_submit())
+                return;
+            if (room_view_)
+                room_view_->compose_bar()->trigger_send();
+        });
+    room_text_area_->set_on_height_changed(
+        [this](float h)
+        {
+            if (room_view_)
+                room_view_->set_text_area_natural_height(h);
+            if (surface_)
+                surface_->relayout();
+        });
+    room_text_area_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        { return mention_controller_ && mention_controller_->on_nav(nk); });
+    room_text_area_->set_on_edit_last(
+        [this] { return room_view_ && room_view_->edit_last_own(); });
+
+    mention_popover_ = gtk_popover_new();
+    gtk_widget_set_parent(mention_popover_, surface_->widget());
+    gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
+    gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
+    gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), TRUE);
+    mention_popup_surface_ =
+        std::make_unique<tk::gtk4::Surface>(surface_->theme());
+    {
+        auto w = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = w.get();
+        mention_popup_surface_->set_root(std::move(w));
+        gtk_popover_set_child(GTK_POPOVER(mention_popover_),
+                              mention_popup_surface_->widget());
+    }
+
+    tesseract::views::MentionController::Hooks hooks;
+    hooks.show = [this](tk::Rect cursor, int rows)
+    { show_mention_popup_(cursor, rows); };
+    hooks.hide = [this]
+    {
+        if (mention_popover_)
+            gtk_popover_popdown(GTK_POPOVER(mention_popover_));
+    };
+    hooks.repaint = [this]
+    {
+        if (mention_popup_surface_)
+            mention_popup_surface_->host().request_repaint();
+    };
+    hooks.room_id = [this] { return room_id_; };
+    hooks.run_async = [this](std::function<void()> fn)
+    { run_async_(std::move(fn)); };
+    hooks.post_to_ui = [this](std::function<void()> fn)
+    { post_to_ui_(std::move(fn)); };
+    mention_controller_ = std::make_unique<tesseract::views::MentionController>(
+        room_text_area_.get(), shell_client_(), mention_popup_widget_,
+        std::move(hooks));
+
+    surface_->set_on_layout(
+        [this]
+        {
+            if (room_view_ && room_text_area_)
+            {
+                const tk::Rect ta = room_view_->compose_text_area_rect();
+                room_text_area_->set_visible(!ta.empty());
+                if (!ta.empty())
+                    room_text_area_->set_rect(ta);
+            }
+        });
+
     // "destroy" fires when the GtkWindow is destroyed (user clicks X or
     // gtk_window_destroy is called). At that point the GtkWidget tree is
     // already gone; schedule the C++ object deletion for next idle.
@@ -281,6 +366,30 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     {
         surface_->set_theme(t);
     }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(t);
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_mention_colors(t.palette.accent,
+                                            t.palette.text_on_accent);
+    }
+}
+
+void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
+{
+    if (!mention_popover_)
+    {
+        return;
+    }
+    int w = int(tesseract::views::MentionPopup::kWidth);
+    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+    gtk_widget_set_size_request(mention_popup_surface_->widget(), w, h);
+    GdkRectangle r{int(cursor_local.x), int(cursor_local.y),
+                   int(cursor_local.w), int(cursor_local.h)};
+    gtk_popover_set_pointing_to(GTK_POPOVER(mention_popover_), &r);
+    gtk_popover_popup(GTK_POPOVER(mention_popover_));
 }
 
 void RoomWindow::surface_repaint_()

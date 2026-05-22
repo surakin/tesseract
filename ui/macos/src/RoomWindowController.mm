@@ -6,6 +6,10 @@
 #include "views/PopoutRoomWidget.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/MessageListView.h"
+#include "views/MentionController.h"
+#include "views/MentionPopup.h"
+
+#include <algorithm>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Forward declaration — lets @interface reference MacRoomWindow before the
@@ -68,10 +72,17 @@ protected:
         return text_area_.get();
     }
 
+    void show_mention_popup_(tk::Rect cursor, int rows);
+    void hide_mention_popup_();
+
 private:
     __strong RoomWindowController* controller_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
+    NSPanel* mention_panel_ = nil;
+    std::unique_ptr<tk::macos::Surface> mention_popup_surface_;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
     bool window_closed_ = false;
 };
 
@@ -190,6 +201,8 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     // ── NativeTextArea overlay ────────────────────────────────────────────────
     text_area_ = surface_->host().make_text_area();
     text_area_->set_placeholder("Message\xe2\x80\xa6");
+    text_area_->set_mention_colors(surface_->theme().palette.accent,
+                                   surface_->theme().palette.text_on_accent);
     text_area_->set_on_changed(
         [this](const std::string& s)
         {
@@ -203,15 +216,27 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
             {
                 room_view_->set_current_text(s);
             }
+            if (mention_controller_)
+            {
+                mention_controller_->on_text_changed(
+                    s, text_area_->cursor_byte_pos());
+            }
         });
     text_area_->set_on_submit(
         [this]
         {
+            if (mention_controller_ && mention_controller_->on_submit())
+            {
+                return;
+            }
             if (room_view_)
             {
                 room_view_->compose_bar()->trigger_send();
             }
         });
+    text_area_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        { return mention_controller_ && mention_controller_->on_nav(nk); });
     text_area_->set_on_height_changed(
         [this](float h)
         {
@@ -232,6 +257,47 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                 text_area_->set_rect(room_view_->compose_text_area_rect());
             }
         });
+
+    // ── @mention autocomplete popup + controller ──────────────────────────
+    {
+        NSRect mf = NSMakeRect(0, 0, tesseract::views::MentionPopup::kWidth,
+                               tesseract::views::MentionPopup::kRowHeight);
+        mention_panel_ = [[NSPanel alloc]
+            initWithContentRect:mf
+                      styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                NSWindowStyleMaskBorderless
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        mention_panel_.floatingPanel = YES;
+        mention_panel_.hidesOnDeactivate = NO;
+        mention_panel_.becomesKeyOnlyIfNeeded = YES;
+        mention_popup_surface_ =
+            std::make_unique<tk::macos::Surface>(surface_->theme());
+        auto mw = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = mw.get();
+        mention_popup_surface_->set_root(std::move(mw));
+        [mention_panel_ setContentView:(__bridge NSView*)
+                                           mention_popup_surface_->view_handle()];
+
+        tesseract::views::MentionController::Hooks hooks;
+        hooks.show = [this](tk::Rect cursor, int rows)
+        { show_mention_popup_(cursor, rows); };
+        hooks.hide = [this] { hide_mention_popup_(); };
+        hooks.repaint = [this]
+        {
+            if (mention_popup_surface_)
+                mention_popup_surface_->relayout();
+        };
+        hooks.room_id = [this] { return room_id_; };
+        hooks.run_async = [this](std::function<void()> fn)
+        { run_async_(std::move(fn)); };
+        hooks.post_to_ui = [this](std::function<void()> fn)
+        { post_to_ui_(std::move(fn)); };
+        mention_controller_ =
+            std::make_unique<tesseract::views::MentionController>(
+                text_area_.get(), shell_client_(), mention_popup_widget_,
+                std::move(hooks));
+    }
 
     // Wire up the ObjC window controller.
     controller_ = [[RoomWindowController alloc] initWithWindow:win];
@@ -282,11 +348,56 @@ void MacRoomWindow::update_window_title_(const std::string& name)
     }
 }
 
+void MacRoomWindow::show_mention_popup_(tk::Rect cursor, int rows)
+{
+    if (!mention_panel_ || !surface_)
+    {
+        return;
+    }
+    NSSize size = NSMakeSize(tesseract::views::MentionPopup::kWidth,
+                             rows * tesseract::views::MentionPopup::kRowHeight);
+    [mention_panel_ setContentSize:size];
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->relayout();
+    }
+    NSView* hostView = (__bridge NSView*)surface_->view_handle();
+    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
+    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
+    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
+    NSRect sf = mention_panel_.screen ? mention_panel_.screen.visibleFrame
+                                      : [NSScreen mainScreen].visibleFrame;
+    CGFloat panelH = size.height;
+    CGFloat y_above = screenPt.y + 4;
+    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
+    CGFloat x = screenPt.x;
+    CGFloat y = (y_above + panelH <= sf.origin.y + sf.size.height) ? y_above
+                                                                   : y_below;
+    x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - size.width);
+    y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - size.height);
+    [mention_panel_ setFrameOrigin:NSMakePoint(x, y)];
+    [mention_panel_ orderFront:nil];
+}
+
+void MacRoomWindow::hide_mention_popup_()
+{
+    [mention_panel_ orderOut:nil];
+}
+
 void MacRoomWindow::apply_theme(const tk::Theme& t)
 {
     if (surface_)
     {
         surface_->set_theme(t);
+    }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(t);
+    }
+    if (text_area_)
+    {
+        text_area_->set_mention_colors(t.palette.accent,
+                                       t.palette.text_on_accent);
     }
     // Window chrome follows the app-wide NSApp.appearance set by the main
     // controller's -_applyTheme:, but pin it on this window too so a

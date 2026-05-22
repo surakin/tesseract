@@ -354,6 +354,23 @@ void RoomView::wire_internal_callbacks()
         show_user_profile(std::move(uid), std::move(name), std::move(av));
     };
 
+    // Clicking an inline mention pill opens that user's profile panel,
+    // resolving the display name + avatar from the current room's members.
+    message_list_->on_mention_clicked = [this](const std::string& uid)
+    {
+        std::string name, avatar;
+        for (const auto& m : room_members_)
+        {
+            if (m.user_id == uid)
+            {
+                name = m.display_name;
+                avatar = m.avatar_url;
+                break;
+            }
+        }
+        show_user_profile(uid, name, avatar);
+    };
+
     // Wire room info panel callbacks.
     room_info_panel_->on_close = [this]()
     {
@@ -765,6 +782,7 @@ tk::Rect RoomView::compose_text_area_rect() const
 
 void RoomView::set_room_members(std::vector<tesseract::RoomMember> members)
 {
+    room_members_ = members;
     if (room_info_panel_)
         room_info_panel_->set_members(std::move(members));
 }

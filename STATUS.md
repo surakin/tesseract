@@ -2,6 +2,28 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
 
+> **@mentions.**
+> Typing `@` in the composer opens an autocomplete popup (mirroring the emoji
+> shortcode popup) that filters the room's members as you type, with an `@room`
+> entry pinned on top, keyboard nav (up/down/Tab/Esc) and click-to-accept.
+> Selecting a candidate inserts an inline **pill**: a native rounded chip on
+> Qt6 (`QTextImageFormat`), GTK4 (`GtkTextChildAnchor` label) and macOS
+> (`NSTextAttachment`); Win32 inserts plain `@Name` text tracked in a registry
+> (a styled chip there needs an EDIT→RichEdit migration — deferred). On send the
+> draft becomes a plain `body` (display names), an HTML `formatted_body` with
+> `matrix.to` mention links, and the intentional-mentions `m.mentions` field —
+> auto-derived in the Rust SDK by scanning the outgoing HTML for `matrix.to`
+> user anchors (`@room` sets `mentions.room` and is rewritten to plain text).
+> Received mentions render as pills: `matrix.to` user links (and a literal
+> `@room`) get a themed rounded background via a new `TextSpan` background
+> field, drawn in `MessageListView` for all four canvas backends; clicking a
+> pill opens the user's profile panel (resolved from room members) rather than a
+> browser. Shared logic lives in `MentionEngine`, `MentionPopup`,
+> `MentionController`, and `client/build_mention_message`; wired into the main
+> window + pop-out on all four shells. Verified on **Qt6**; GTK4 builds clean;
+> **macOS + Win32 are written but unverified** (no toolchain in the dev env).
+> 144 Rust tests + 465 C++ tests.
+
 > **Account registration (OIDC `prompt=create`).**
 > The login screen offers a capability-gated "New here? Create an account" link
 > below Sign in. It reuses the existing OAuth browser-loopback flow with the OIDC

@@ -675,6 +675,11 @@ public:
 
     tk::Rect cursor_rect() const override;
     void replace_range(int start, int end, std::string text) override;
+    int cursor_byte_pos() const override;
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override;
+    std::vector<tesseract::MentionSeg> mention_draft() const override;
+    void set_mention_colors(Color bg, Color fg) override;
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
     {
         popup_nav_ = std::move(fn);
@@ -703,6 +708,8 @@ private:
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
     ImagePasteHandler on_image_paste_;
+    NSColor* mention_bg_ = nil;
+    NSColor* mention_fg_ = nil;
 };
 
 } // namespace tk::macos
@@ -811,6 +818,57 @@ private:
     return NO;
 }
 
+@end
+
+// Inline mention pill: an atomic NSTextAttachment carrying the mention's
+// metadata, drawn as a rounded chip by its cell. AppKit treats the attachment
+// as a single character (U+FFFC), so caret movement / backspace are atomic.
+@interface TKMentionAttachment : NSTextAttachment
+@property(nonatomic, copy) NSString* userId;
+@property(nonatomic, copy) NSString* displayName;
+@property(nonatomic, assign) BOOL isRoom;
+@end
+
+@implementation TKMentionAttachment
+@end
+
+@interface TKMentionCell : NSTextAttachmentCell
+@property(nonatomic, copy) NSString* label;
+@property(nonatomic, strong) NSColor* bgColor;
+@property(nonatomic, strong) NSColor* fgColor;
+@end
+
+@implementation TKMentionCell
+- (NSDictionary*)textAttrs
+{
+    return @{
+        NSFontAttributeName : [NSFont systemFontOfSize:[NSFont systemFontSize]],
+        NSForegroundColorAttributeName :
+            (self.fgColor ?: [NSColor controlTextColor])
+    };
+}
+- (NSSize)cellSize
+{
+    NSSize ts = [(self.label ?: @"") sizeWithAttributes:[self textAttrs]];
+    return NSMakeSize(ceil(ts.width) + 16.0, ceil(ts.height) + 4.0);
+}
+- (void)drawWithFrame:(NSRect)frame inView:(NSView*)controlView
+{
+    (void)controlView;
+    NSRect r = NSInsetRect(frame, 0.5, 0.5);
+    CGFloat radius = r.size.height * 0.5;
+    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:r
+                                                        xRadius:radius
+                                                        yRadius:radius];
+    [(self.bgColor ?: [NSColor selectedControlColor]) setFill];
+    [path fill];
+    NSDictionary* attrs = [self textAttrs];
+    NSSize ts = [(self.label ?: @"") sizeWithAttributes:attrs];
+    NSPoint o = NSMakePoint(frame.origin.x + (frame.size.width - ts.width) * 0.5,
+                            frame.origin.y +
+                                (frame.size.height - ts.height) * 0.5);
+    [(self.label ?: @"") drawAtPoint:o withAttributes:attrs];
+}
 @end
 
 namespace tk::macos
@@ -1047,6 +1105,139 @@ void NSTextViewNative::replace_range(int start, int end, std::string text)
         NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
     [view_ insertText:[NSString stringWithUTF8String:text.c_str()]
         replacementRange:range];
+}
+
+int NSTextViewNative::cursor_byte_pos() const
+{
+    if (!view_)
+    {
+        return 0;
+    }
+    NSString* s = view_.string ?: @"";
+    NSUInteger loc = std::min((NSUInteger)view_.selectedRange.location,
+                              (NSUInteger)s.length);
+    NSString* prefix = [s substringToIndex:loc];
+    NSData* d = [prefix dataUsingEncoding:NSUTF8StringEncoding];
+    return (int)d.length;
+}
+
+void NSTextViewNative::insert_mention(int start, int end,
+                                      const std::string& user_id,
+                                      const std::string& display_name,
+                                      bool is_room)
+{
+    if (!view_)
+    {
+        return;
+    }
+    NSString* ns = view_.string;
+    NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
+    int bs = std::min(start, (int)utf8.length);
+    int be = std::min(end, (int)utf8.length);
+    NSString* ps = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
+            encoding:NSUTF8StringEncoding];
+    NSString* pe = [[NSString alloc]
+        initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
+            encoding:NSUTF8StringEncoding];
+    NSRange range = NSMakeRange(ps.length, pe.length - ps.length);
+
+    TKMentionAttachment* att = [[TKMentionAttachment alloc] init];
+    att.userId = [NSString stringWithUTF8String:user_id.c_str()];
+    att.displayName = [NSString stringWithUTF8String:display_name.c_str()];
+    att.isRoom = is_room ? YES : NO;
+    TKMentionCell* cell = [[TKMentionCell alloc] init];
+    cell.label = is_room ? @"@room"
+                         : [@"@" stringByAppendingString:att.displayName];
+    cell.bgColor = mention_bg_;
+    cell.fgColor = mention_fg_;
+    att.attachmentCell = cell;
+
+    NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
+        initWithAttributedString:[NSAttributedString
+                                     attributedStringWithAttachment:att]];
+    // Trailing space (with the view's font) so typing continues normally.
+    NSDictionary* fontAttrs =
+        view_.font ? @{NSFontAttributeName : view_.font} : @{};
+    [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
+                                                              attributes:fontAttrs]];
+
+    if ([view_ shouldChangeTextInRange:range replacementString:a.string])
+    {
+        [view_.textStorage replaceCharactersInRange:range
+                               withAttributedString:a];
+        NSUInteger caret = range.location + a.length;
+        [view_ setSelectedRange:NSMakeRange(caret, 0)];
+        [view_ didChangeText];
+    }
+    notify_changed();
+}
+
+std::vector<tesseract::MentionSeg> NSTextViewNative::mention_draft() const
+{
+    std::vector<tesseract::MentionSeg> segs;
+    if (!view_)
+    {
+        return segs;
+    }
+    NSAttributedString* a = view_.textStorage;
+    NSString* str = a.string;
+    std::string pending;
+    auto flush = [&]()
+    {
+        if (!pending.empty())
+        {
+            tesseract::MentionSeg s;
+            s.kind = tesseract::MentionSeg::Kind::Text;
+            s.text = pending;
+            segs.push_back(std::move(s));
+            pending.clear();
+        }
+    };
+    NSUInteger i = 0;
+    NSUInteger n = a.length;
+    while (i < n)
+    {
+        NSRange eff;
+        id att = [a attribute:NSAttachmentAttributeName
+                      atIndex:i
+               effectiveRange:&eff];
+        if ([att isKindOfClass:[TKMentionAttachment class]])
+        {
+            flush();
+            TKMentionAttachment* m = (TKMentionAttachment*)att;
+            tesseract::MentionSeg s;
+            s.kind = tesseract::MentionSeg::Kind::Mention;
+            s.user_id = m.userId.UTF8String ? m.userId.UTF8String : "";
+            s.display_name =
+                m.displayName.UTF8String ? m.displayName.UTF8String : "";
+            s.is_room = m.isRoom;
+            segs.push_back(std::move(s));
+        }
+        else
+        {
+            NSString* sub = [str substringWithRange:eff];
+            if (sub.UTF8String)
+            {
+                pending += sub.UTF8String;
+            }
+        }
+        i = eff.location + eff.length;
+    }
+    flush();
+    return segs;
+}
+
+void NSTextViewNative::set_mention_colors(Color bg, Color fg)
+{
+    mention_bg_ = [NSColor colorWithSRGBRed:bg.r / 255.0
+                                      green:bg.g / 255.0
+                                       blue:bg.b / 255.0
+                                      alpha:bg.a / 255.0];
+    mention_fg_ = [NSColor colorWithSRGBRed:fg.r / 255.0
+                                      green:fg.g / 255.0
+                                       blue:fg.b / 255.0
+                                      alpha:fg.a / 255.0];
 }
 
 bool NSTextViewNative::maybe_handle_paste()

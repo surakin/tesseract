@@ -574,6 +574,7 @@ public:
         std::wstring w = utf8_to_wide(text);
         SetWindowTextW(hwnd_, w.c_str());
         suppress_changed_ = false;
+        mentions_.clear();
         float h = natural_height();
         if (h != last_height_ && on_height_changed_)
         {
@@ -816,6 +817,80 @@ public:
         on_edit_last_ = std::move(fn);
     }
 
+    int cursor_byte_pos() const override
+    {
+        if (!hwnd_)
+        {
+            return 0;
+        }
+        DWORD sel_start = 0, sel_end = 0;
+        SendMessageW(hwnd_, EM_GETSEL, reinterpret_cast<WPARAM>(&sel_start),
+                     reinterpret_cast<LPARAM>(&sel_end));
+        int len = GetWindowTextLengthW(hwnd_);
+        if (len <= 0)
+        {
+            return 0;
+        }
+        std::wstring w(len, L'\0');
+        GetWindowTextW(hwnd_, w.data(), len + 1);
+        int caret = (int)std::min<DWORD>(sel_end, (DWORD)len);
+        int bytes = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), caret, nullptr,
+                                        0, nullptr, nullptr);
+        return bytes;
+    }
+
+    // The Win32 EDIT control cannot render a styled inline chip, so a mention
+    // is inserted as plain "@DisplayName" text and tracked in a registry; the
+    // outgoing message is reconstructed in mention_draft(). (A true chip needs
+    // an EDIT→RichEdit migration.)
+    void insert_mention(int start, int end, const std::string& user_id,
+                        const std::string& display_name, bool is_room) override
+    {
+        std::string visual = is_room ? "@room" : ("@" + display_name);
+        replace_range(start, end, visual + " ");
+        mentions_.push_back({visual, user_id, display_name, is_room});
+    }
+
+    std::vector<tesseract::MentionSeg> mention_draft() const override
+    {
+        std::vector<tesseract::MentionSeg> segs;
+        std::string t = text();
+        std::size_t pos = 0;
+        auto push_text = [&](const std::string& s)
+        {
+            if (!s.empty())
+            {
+                tesseract::MentionSeg seg;
+                seg.kind = tesseract::MentionSeg::Kind::Text;
+                seg.text = s;
+                segs.push_back(std::move(seg));
+            }
+        };
+        for (const auto& e : mentions_)
+        {
+            std::size_t at = t.find(e.visual, pos);
+            if (at == std::string::npos)
+            {
+                continue; // mention text was edited/removed by the user
+            }
+            push_text(t.substr(pos, at - pos));
+            tesseract::MentionSeg seg;
+            seg.kind = tesseract::MentionSeg::Kind::Mention;
+            seg.user_id = e.user_id;
+            seg.display_name = e.display_name;
+            seg.is_room = e.is_room;
+            segs.push_back(std::move(seg));
+            pos = at + e.visual.size();
+        }
+        push_text(t.substr(pos));
+        return segs;
+    }
+
+    void set_mention_colors(Color, Color) override
+    {
+        // EDIT control has no per-run styling; no-op (functional mentions only).
+    }
+
     void notify_changed()
     {
         if (suppress_changed_)
@@ -971,6 +1046,18 @@ private:
     ImagePasteHandler on_image_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<bool()> on_edit_last_;
+
+    // Inserted mentions, in document order. `visual` is the plain text shown in
+    // the EDIT control (e.g. "@Alice"); mention_draft() reconstructs the
+    // outgoing segments by matching these against the current text.
+    struct MentionEntry
+    {
+        std::string visual;
+        std::string user_id;
+        std::string display_name;
+        bool is_room;
+    };
+    std::vector<MentionEntry> mentions_;
 };
 
 // Defined in audio_win32.cpp — wired here so Host::make_audio_player() can

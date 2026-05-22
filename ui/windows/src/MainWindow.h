@@ -35,6 +35,8 @@ using std::min;
 #include "views/JoinRoomView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
+#include "views/MentionController.h"
+#include "views/MentionPopup.h"
 
 #include "views/AccountPicker.h"
 #include "views/SettingsView.h"
@@ -363,6 +365,19 @@ private:
     bool shortcode_popup_visible_() const
     {
         return shortcode_popup_hwnd_ && IsWindowVisible(shortcode_popup_hwnd_);
+    }
+
+    // ── @mention popup ────────────────────────────────────────────────────
+    std::vector<tesseract::RoomMember> cached_room_members_;
+    HWND mention_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
+    void show_mention_popup_(tk::Rect cursor_rect, int rows);
+    void hide_mention_popup_();
+    bool mention_popup_visible_() const
+    {
+        return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
     }
 
     HWND hEmojiPicker_ = nullptr; // floating WS_POPUP host

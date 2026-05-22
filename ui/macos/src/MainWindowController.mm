@@ -26,6 +26,9 @@
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
+#include "views/MentionController.h"
+#include "views/MentionPopup.h"
+#include <tesseract/mentions.h>
 
 #include <ImageIO/ImageIO.h>
 #import <AVFoundation/AVFoundation.h>
@@ -351,6 +354,10 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                                cursorRect:(tk::Rect)cursor;
 - (void)hideShortcodePopup;
 - (BOOL)shortcodePopupVisible;
+- (void)showMentionPopupAtCursor:(tk::Rect)cursor rows:(int)rows;
+- (void)hideMentionPopup;
+- (BOOL)mentionPopupVisible;
+- (void)_relayoutMentionPopupIfVisible;
 - (void)showEmojiPickerAtRect:(tk::Rect)anchor;
 - (void)_sendComposedImage:(std::vector<std::uint8_t>)bytes
                       mime:(std::string)mime
@@ -1401,6 +1408,13 @@ void MacShell::apply_cached_messages_(
     tesseract::views::ShortcodePopup*
         _shortcodePopupWidget; // borrowed from root
 
+    // @mention autocomplete popup — NSPanel hosting a tk::macos::Surface,
+    // driven by the shared MentionController.
+    NSPanel* _mentionPanel;
+    std::unique_ptr<tk::macos::Surface> _mentionPopupSurface;
+    tesseract::views::MentionPopup* _mentionPopupWidget; // borrowed from root
+    std::unique_ptr<tesseract::views::MentionController> _mentionController;
+
     // AppKit chrome.
     LoginView* _loginView;
 
@@ -1933,13 +1947,33 @@ void MacShell::apply_cached_messages_(
             {
                 return;
             }
-            std::string trimmed = trim(body);
-            if (trimmed.empty())
+            // Build from the composer's mention draft so inline pills become
+            // matrix.to links + m.mentions; fall back to the plain body.
+            std::vector<tesseract::MentionSeg> draft =
+                s->_roomTextArea ? s->_roomTextArea->mention_draft()
+                                 : std::vector<tesseract::MentionSeg>{};
+            bool has_mention = false;
+            for (const auto& seg : draft)
+            {
+                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
+                    has_mention = true;
+            }
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
+            std::string trimmed = trim(msg.body);
+            if (trimmed.empty() && !has_mention)
             {
                 return;
             }
-            if (s->_shell->client_->send_message(s->_shell->current_room_id_,
-                                                 trimmed))
+            bool ok =
+                msg.formatted_body.empty()
+                    ? s->_shell->client_->send_message(
+                          s->_shell->current_room_id_, msg.body)
+                    : s->_shell->client_->send_message(
+                          s->_shell->current_room_id_, msg.body,
+                          msg.formatted_body);
+            if (ok)
             {
                 if (s->_roomTextArea)
                 {
@@ -2656,6 +2690,69 @@ void MacShell::apply_cached_messages_(
         // Native overlays.
         _roomTextArea = _mainAppSurface->host().make_text_area();
         _roomTextArea->set_placeholder("Message…");
+        _roomTextArea->set_mention_colors(
+            _mainAppSurface->theme().palette.accent,
+            _mainAppSurface->theme().palette.text_on_accent);
+        {
+            // Eagerly build the mention popup panel + controller so the
+            // controller has its borrowed popup widget from the start.
+            NSRect mf = NSMakeRect(0, 0,
+                                   tesseract::views::MentionPopup::kWidth,
+                                   tesseract::views::MentionPopup::kRowHeight);
+            _mentionPanel = [[NSPanel alloc]
+                initWithContentRect:mf
+                          styleMask:NSWindowStyleMaskNonactivatingPanel |
+                                    NSWindowStyleMaskBorderless
+                            backing:NSBackingStoreBuffered
+                              defer:NO];
+            _mentionPanel.floatingPanel = YES;
+            _mentionPanel.hidesOnDeactivate = NO;
+            _mentionPanel.becomesKeyOnlyIfNeeded = YES;
+            _mentionPopupSurface =
+                std::make_unique<tk::macos::Surface>(_mainAppSurface->theme());
+            auto mw = std::make_unique<tesseract::views::MentionPopup>();
+            _mentionPopupWidget = mw.get();
+            _mentionPopupSurface->set_root(std::move(mw));
+            [_mentionPanel setContentView:(__bridge NSView*)
+                                              _mentionPopupSurface->view_handle()];
+
+            __weak MainWindowController* mc = self;
+            tesseract::views::MentionController::Hooks hooks;
+            hooks.show = [mc](tk::Rect cursor, int rows)
+            {
+                if (MainWindowController* c = mc)
+                    [c showMentionPopupAtCursor:cursor rows:rows];
+            };
+            hooks.hide = [mc]
+            {
+                if (MainWindowController* c = mc)
+                    [c hideMentionPopup];
+            };
+            hooks.repaint = [mc]
+            {
+                if (MainWindowController* c = mc)
+                    [c _relayoutMentionPopupIfVisible];
+            };
+            hooks.room_id = [mc]() -> std::string
+            {
+                MainWindowController* c = mc;
+                return c ? c->_shell->current_room_id_ : std::string{};
+            };
+            hooks.run_async = [mc](std::function<void()> fn)
+            {
+                if (MainWindowController* c = mc)
+                    c->_shell->run_async_(std::move(fn));
+            };
+            hooks.post_to_ui = [mc](std::function<void()> fn)
+            {
+                if (MainWindowController* c = mc)
+                    c->_shell->post_to_ui_(std::move(fn));
+            };
+            _mentionController =
+                std::make_unique<tesseract::views::MentionController>(
+                    _roomTextArea.get(), _shell->client_, _mentionPopupWidget,
+                    std::move(hooks));
+        }
         // Topic-edit overlay (positioned by set_on_layout below).
         _topicTextArea = _mainAppSurface->host().make_text_area();
         _topicTextArea->set_on_changed(
@@ -2681,7 +2778,7 @@ void MacShell::apply_cached_messages_(
                 }
 
                 // ── Shortcode detection ─────────────────────────────────────────
-                int cursor = (int)s.size();
+                int cursor = c->_roomTextArea->cursor_byte_pos();
 
                 auto complete =
                     c->_shell->shortcode_engine_.find_complete(s, cursor);
@@ -2696,6 +2793,7 @@ void MacShell::apply_cached_messages_(
                     c->_roomTextArea->replace_range(complete->start,
                                                     complete->end, r);
                     [c hideShortcodePopup];
+                    [c hideMentionPopup];
                     return;
                 }
 
@@ -2708,6 +2806,7 @@ void MacShell::apply_cached_messages_(
                             prefix_match->prefix, c->_shell->cached_emoticons_);
                     if (!c->_shell->shortcode_current_suggestions_.empty())
                     {
+                        [c hideMentionPopup];
                         c->_shell->shortcode_active_match_ = *prefix_match;
                         for (const auto& sugg :
                              c->_shell->shortcode_current_suggestions_)
@@ -2794,7 +2893,14 @@ void MacShell::apply_cached_messages_(
                         return;
                     }
                 }
+                // ── @mention popup ──────────────────────────────────────────
+                if (c->_mentionController &&
+                    c->_mentionController->on_text_changed(s, cursor))
+                {
+                    return;
+                }
                 [c hideShortcodePopup];
+                [c hideMentionPopup];
                 // ── End shortcode detection ─────────────────────────────────────
             });
         _roomTextArea->set_on_submit(
@@ -2802,6 +2908,10 @@ void MacShell::apply_cached_messages_(
             {
                 MainWindowController* c = weakSelf;
                 if (!c)
+                {
+                    return;
+                }
+                if (c->_mentionController && c->_mentionController->on_submit())
                 {
                     return;
                 }
@@ -3315,6 +3425,15 @@ void MacShell::apply_cached_messages_(
     {
         _shortcodePopupSurface->set_theme(t);
     }
+    if (_mentionPopupSurface)
+    {
+        _mentionPopupSurface->set_theme(t);
+    }
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_mention_colors(t.palette.accent,
+                                          t.palette.text_on_accent);
+    }
     if (_loginView)
     {
         [_loginView setTheme:t];
@@ -3589,6 +3708,77 @@ void MacShell::apply_cached_messages_(
     {
         _roomTextArea->set_on_popup_nav(nullptr);
     }
+}
+
+- (BOOL)mentionPopupVisible
+{
+    return _mentionPanel && _mentionPanel.isVisible;
+}
+
+- (void)_relayoutMentionPopupIfVisible
+{
+    if ([self mentionPopupVisible] && _mentionPopupSurface)
+    {
+        _mentionPopupSurface->relayout();
+    }
+}
+
+- (void)hideMentionPopup
+{
+    [_mentionPanel orderOut:nil];
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_on_popup_nav(nullptr);
+    }
+}
+
+- (void)showMentionPopupAtCursor:(tk::Rect)cursor rows:(int)rows
+{
+    if (!_mentionPanel || !_mainAppSurface)
+    {
+        return;
+    }
+    NSSize size = NSMakeSize(tesseract::views::MentionPopup::kWidth,
+                             rows * tesseract::views::MentionPopup::kRowHeight);
+    [_mentionPanel setContentSize:size];
+    if (_mentionPopupSurface)
+    {
+        _mentionPopupSurface->relayout();
+    }
+
+    NSView* hostView = (__bridge NSView*)_mainAppSurface->view_handle();
+    NSPoint localPt = NSMakePoint(cursor.x, cursor.y);
+    NSPoint windowPt = [hostView convertPoint:localPt toView:nil];
+    NSPoint screenPt = [hostView.window convertPointToScreen:windowPt];
+
+    NSRect screenFrame = _mentionPanel.screen
+                             ? _mentionPanel.screen.visibleFrame
+                             : [NSScreen mainScreen].visibleFrame;
+    CGFloat panelH = size.height;
+    CGFloat y_above = screenPt.y + 4;
+    CGFloat y_below = screenPt.y - (CGFloat)cursor.h - 4 - panelH;
+    CGFloat x = screenPt.x;
+    CGFloat y =
+        (y_above + panelH <= screenFrame.origin.y + screenFrame.size.height)
+            ? y_above
+            : y_below;
+    x = std::clamp(x, screenFrame.origin.x,
+                   screenFrame.origin.x + screenFrame.size.width - size.width);
+    y = std::clamp(y, screenFrame.origin.y,
+                   screenFrame.origin.y + screenFrame.size.height - size.height);
+    [_mentionPanel setFrameOrigin:NSMakePoint(x, y)];
+    [_mentionPanel orderFront:nil];
+
+    // Route keyboard nav to the controller while the popup is up (mirrors the
+    // shortcode popup; mutually exclusive so re-installing on each show is ok).
+    __weak MainWindowController* weakSelf = self;
+    _roomTextArea->set_on_popup_nav(
+        [weakSelf](tk::NativeTextArea::NavKey nk) -> bool
+        {
+            MainWindowController* c = weakSelf;
+            return c && c->_mentionController &&
+                   c->_mentionController->on_nav(nk);
+        });
 }
 
 // ---------------------------------------------------------------------------

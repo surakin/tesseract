@@ -429,7 +429,107 @@ struct FmtState
     bool italic = false;
     bool code = false;
     bool strikethrough = false;
+    bool is_mention = false;
 };
+
+// A matrix.to *user* permalink — `https://matrix.to/#/@user:server` (or the
+// `@room` sentinel). Room (`!`/`#`) and event (`$`) permalinks are excluded:
+// only `@`-prefixed entities render as mention pills.
+static bool is_matrix_to_user_link(const std::string& url)
+{
+    static const std::string kHttps = "https://matrix.to/#/";
+    static const std::string kHttp = "http://matrix.to/#/";
+    const std::string* pfx = nullptr;
+    if (url.rfind(kHttps, 0) == 0)
+    {
+        pfx = &kHttps;
+    }
+    else if (url.rfind(kHttp, 0) == 0)
+    {
+        pfx = &kHttp;
+    }
+    if (pfx == nullptr)
+    {
+        return false;
+    }
+    const std::size_t n = pfx->size();
+    if (url.size() > n && url[n] == '@')
+    {
+        return true;
+    }
+    // Tolerate a percent-encoded leading '@' (%40user:server).
+    return url.size() >= n + 3 && url.compare(n, 3, "%40") == 0;
+}
+
+// Split plain (non-link, non-code) spans on a word-bounded literal "@room"
+// token, flagging that token as a mention pill. `@room` mentions arrive as
+// plain text (per spec — the SDK rewrites the sentinel anchor to text and sets
+// m.mentions.room), so there is no link to key off; this is a heuristic.
+static std::vector<tk::TextSpan>
+split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
+{
+    auto is_word = [](unsigned char ch)
+    { return std::isalnum(ch) != 0 || ch == '_'; };
+    std::vector<tk::TextSpan> out;
+    out.reserve(spans.size());
+    for (auto& sp : spans)
+    {
+        if (sp.is_mention || sp.code || !sp.url.empty() ||
+            sp.text.find("@room") == std::string::npos)
+        {
+            out.push_back(std::move(sp));
+            continue;
+        }
+        const std::string t = sp.text;
+        std::size_t i = 0;
+        std::size_t emitted = 0;
+        while (true)
+        {
+            std::size_t pos = t.find("@room", i);
+            if (pos == std::string::npos)
+            {
+                break;
+            }
+            std::size_t after = pos + 5;
+            bool left_ok = (pos == 0) || !is_word((unsigned char)t[pos - 1]);
+            bool right_ok =
+                (after >= t.size()) || !is_word((unsigned char)t[after]);
+            if (left_ok && right_ok)
+            {
+                if (pos > emitted)
+                {
+                    tk::TextSpan pre = sp;
+                    pre.text = t.substr(emitted, pos - emitted);
+                    out.push_back(std::move(pre));
+                }
+                tk::TextSpan m = sp;
+                m.text = "@room";
+                m.url.clear();
+                m.is_mention = true;
+                m.has_color = true;
+                m.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
+                               : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+                m.has_background = true;
+                m.background = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
+                                    : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+                out.push_back(std::move(m));
+                emitted = after;
+                i = after;
+            }
+            else
+            {
+                i = pos + 1;
+            }
+        }
+        if (emitted < t.size())
+        {
+            tk::TextSpan rest = sp;
+            rest.text = t.substr(emitted);
+            out.push_back(std::move(rest));
+        }
+    }
+    return out;
+}
 
 } // namespace
 
@@ -471,7 +571,8 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             if (prev.url == s.url && prev.spoiler == s.spoiler &&
                 prev.spoiler_reason == s.spoiler_reason &&
                 prev.bold == s.bold && prev.italic == s.italic &&
-                prev.code == s.code && prev.strikethrough == s.strikethrough)
+                prev.code == s.code && prev.strikethrough == s.strikethrough &&
+                prev.is_mention == s.is_mention)
             {
                 prev.text += cur_text;
                 cur_text.clear();
@@ -487,6 +588,18 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         sp.italic = s.italic;
         sp.code = s.code;
         sp.strikethrough = s.strikethrough;
+        if (s.is_mention)
+        {
+            // A mention pill: themed accent text on a rounded background. The
+            // run keeps its `url` for hit-testing; backends skip the underline.
+            sp.is_mention = true;
+            sp.has_color = true;
+            sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
+                            : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+            sp.has_background = true;
+            sp.background = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
+                                 : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        }
         spans.push_back(std::move(sp));
         cur_text.clear();
     };
@@ -601,6 +714,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 else if (tag.name == "a" && !tag.href.empty())
                 {
                     ns.url = tag.href;
+                    if (is_matrix_to_user_link(tag.href))
+                    {
+                        ns.is_mention = true;
+                    }
                 }
                 else if (tag.name == "span" && tag.has_spoiler)
                 {
@@ -686,7 +803,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
     }
 
-    return spans;
+    return split_room_mentions(std::move(spans), dark);
 }
 
 // ── URL extraction helpers ────────────────────────────────────────────────

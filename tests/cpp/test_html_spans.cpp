@@ -3,6 +3,19 @@
 #include "views/html_spans.h"
 
 using tesseract::views::autolink_plain_to_spans;
+using tesseract::views::html_to_spans;
+
+namespace
+{
+// Find the span whose text matches `needle` (or the first mention span).
+const tk::TextSpan* mention_span(const std::vector<tk::TextSpan>& spans)
+{
+    for (const auto& s : spans)
+        if (s.is_mention)
+            return &s;
+    return nullptr;
+}
+} // namespace
 
 // autolink_plain_to_spans turns bare http(s):// URLs in a plain-text body
 // into hyperlink spans (url set) so MessageListView can hit-test and fire
@@ -87,4 +100,104 @@ TEST_CASE("autolink: multiple URLs each become their own span",
     CHECK(s[1].text == " and ");
     CHECK(s[1].url.empty());
     CHECK(s[2].url == "https://b.org");
+}
+
+// --- mention pills ------------------------------------------------------
+
+TEST_CASE("mention: matrix.to user link is flagged as a mention pill",
+          "[html_spans][mention]")
+{
+    auto s = html_to_spans(
+        "hi <a href=\"https://matrix.to/#/@alice:example.org\">Alice</a>",
+        false);
+    const tk::TextSpan* m = mention_span(s);
+    REQUIRE(m != nullptr);
+    // The display name is present (a leading NBSP avatar-slot pad may prefix it).
+    CHECK(m->text.find("Alice") != std::string::npos);
+    CHECK(m->is_mention);
+    CHECK(m->has_background);
+    CHECK(m->has_color);
+    // The url is retained for hit-testing.
+    CHECK(m->url == "https://matrix.to/#/@alice:example.org");
+}
+
+TEST_CASE("mention: @room sentinel link is a mention pill",
+          "[html_spans][mention]")
+{
+    auto s = html_to_spans(
+        "<a href=\"https://matrix.to/#/@room\">@room</a>", false);
+    const tk::TextSpan* m = mention_span(s);
+    REQUIRE(m != nullptr);
+    CHECK(m->is_mention);
+}
+
+TEST_CASE("mention: room/event/alias permalinks are NOT mentions",
+          "[html_spans][mention]")
+{
+    // Room id (!), alias (#) and event ($) links must stay plain links.
+    auto room = html_to_spans(
+        "<a href=\"https://matrix.to/#/!abc:example.org\">room</a>", false);
+    CHECK(mention_span(room) == nullptr);
+
+    auto alias = html_to_spans(
+        "<a href=\"https://matrix.to/#/#general:example.org\">#general</a>",
+        false);
+    CHECK(mention_span(alias) == nullptr);
+
+    auto ev = html_to_spans(
+        "<a href=\"https://matrix.to/#/!r:e.org/$evt\">link</a>", false);
+    CHECK(mention_span(ev) == nullptr);
+}
+
+TEST_CASE("mention: ordinary http links are NOT mentions",
+          "[html_spans][mention]")
+{
+    auto s = html_to_spans(
+        "see <a href=\"https://example.org/x\">this</a>", false);
+    const tk::TextSpan* m = mention_span(s);
+    CHECK(m == nullptr);
+    // But it's still a link span.
+    bool has_link = false;
+    for (const auto& sp : s)
+        if (sp.url == "https://example.org/x")
+            has_link = true;
+    CHECK(has_link);
+}
+
+TEST_CASE("mention: literal @room becomes a mention pill", "[html_spans][mention]")
+{
+    auto s = html_to_spans("heads up @room please", false);
+    const tk::TextSpan* m = mention_span(s);
+    REQUIRE(m != nullptr);
+    CHECK(m->text == "@room");
+    CHECK(m->is_mention);
+    CHECK(m->has_background);
+    // Surrounding text is preserved as separate, non-mention spans.
+    std::string joined;
+    for (const auto& sp : s)
+        joined += sp.text;
+    CHECK(joined == "heads up @room please");
+}
+
+TEST_CASE("mention: @room inside a word is NOT a pill", "[html_spans][mention]")
+{
+    auto s = html_to_spans("my @roommate is here", false);
+    CHECK(mention_span(s) == nullptr);
+}
+
+TEST_CASE("mention: dark theme uses different pill colours than light",
+          "[html_spans][mention]")
+{
+    const char* html =
+        "<a href=\"https://matrix.to/#/@a:b.org\">A</a>";
+    auto light = html_to_spans(html, false);
+    auto dark = html_to_spans(html, true);
+    const tk::TextSpan* lm = mention_span(light);
+    const tk::TextSpan* dm = mention_span(dark);
+    REQUIRE(lm != nullptr);
+    REQUIRE(dm != nullptr);
+    bool differ = lm->background.r != dm->background.r ||
+                  lm->background.g != dm->background.g ||
+                  lm->background.b != dm->background.b;
+    CHECK(differ);
 }

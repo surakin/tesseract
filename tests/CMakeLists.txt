@@ -34,6 +34,7 @@ add_executable(tesseract_tests
     cpp/test_tk_sticker_picker.cpp
     cpp/test_shortcode_engine.cpp
     cpp/test_tk_shortcode_popup.cpp
+    cpp/test_mention_engine.cpp
     cpp/test_tk_image_viewer.cpp
     cpp/test_tk_video_viewer.cpp
     cpp/test_tk_reply.cpp
@@ -46,6 +47,7 @@ add_executable(tesseract_tests
     cpp/test_map_tiles.cpp
     cpp/test_location_events.cpp
     cpp/test_markdown.cpp
+    cpp/test_mentions.cpp
     cpp/test_picker_image_cache.cpp
     cpp/test_session_store_migration.cpp
     cpp/test_server_info.cpp

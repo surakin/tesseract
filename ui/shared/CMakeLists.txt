@@ -83,6 +83,12 @@ set(_tk_sources
     views/ShortcodeEngine.cpp
     views/ShortcodePopup.h
     views/ShortcodePopup.cpp
+    views/MentionEngine.h
+    views/MentionEngine.cpp
+    views/MentionPopup.h
+    views/MentionPopup.cpp
+    views/MentionController.h
+    views/MentionController.cpp
     views/JoinRoomView.h
     views/JoinRoomView.cpp
     views/UserProfilePanel.h

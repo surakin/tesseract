@@ -290,6 +290,10 @@ private:
     ComposeBar* compose_bar_ = nullptr;
     RoomInfoPanel*    room_info_panel_    = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
+    // Current room's members (mirrors what was last passed to
+    // set_room_members) — used to resolve a clicked mention's display name
+    // and avatar for the profile panel.
+    std::vector<tesseract::RoomMember> room_members_;
 };
 
 } // namespace tesseract::views

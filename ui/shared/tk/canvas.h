@@ -243,10 +243,17 @@ struct TextSpan
     bool code = false; // render in monospace
     bool strikethrough = false;
     bool spoiler = false;
-    // Explicit foreground colour for this run (syntax-highlighted code).
-    // When has_color is false, backends paint with the draw_text() colour.
+    // Explicit foreground colour for this run (syntax-highlighted code, or a
+    // mention's accent text). When has_color is false, backends paint with the
+    // draw_text() colour.
     bool  has_color = false;
     Color color{};
+    // Mention pill: an intentional mention (matrix.to user link or @room). The
+    // run keeps its `url` for hit-testing but is drawn without the link
+    // underline; `background` is filled as a rounded pill behind the text.
+    bool  is_mention = false;
+    bool  has_background = false;
+    Color background{};
 };
 
 // Per-platform factory for backend-owned resources. The platform host

@@ -896,8 +896,14 @@ public:
             }
             if (!sp.url.empty())
             {
-                t = "<span underline=\"single\" foreground=\"#2563EB\">" + t +
-                    "</span>";
+                // Mention pills keep their hit-test range but render without the
+                // link underline/colour (the accent colour comes from has_color
+                // and the pill background is drawn by the view).
+                if (!sp.is_mention)
+                {
+                    t = "<span underline=\"single\" foreground=\"#2563EB\">" + t +
+                        "</span>";
+                }
                 url_ranges.push_back(
                     {byte_offset,
                      byte_offset + static_cast<int>(sp.text.size()), sp.url});

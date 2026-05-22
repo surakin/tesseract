@@ -12,6 +12,7 @@
 #include <thread>
 
 #include <tesseract/emoji.h>
+#include <tesseract/mentions.h>
 #include <tesseract/prefs.h>
 #include <tesseract/session_store.h>
 #include <tesseract/paths.h>
@@ -584,6 +585,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         // Compose text area overlay.
         room_text_area_ = main_app_surface_->host().make_text_area();
         room_text_area_->set_placeholder(_("Message\xe2\x80\xa6"));
+        room_text_area_->set_mention_colors(
+            main_app_surface_->theme().palette.accent,
+            main_app_surface_->theme().palette.text_on_accent);
         room_text_area_->set_on_changed(
             [this](const std::string& s)
             {
@@ -591,7 +595,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 room_view_->set_current_text(s);
 
                 // ── Shortcode detection ─────────────────────────────────────────
-                int cursor = (int)s.size();
+                int cursor = room_text_area_->cursor_byte_pos();
 
                 auto complete = shortcode_engine_.find_complete(s, cursor);
                 if (complete)
@@ -605,6 +609,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                     room_text_area_->replace_range(complete->start,
                                                    complete->end, r);
                     hide_shortcode_popup_();
+                    hide_mention_popup_();
                     return;
                 }
 
@@ -615,6 +620,7 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         prefix_match->prefix, cached_emoticons_);
                     if (!shortcode_current_suggestions_.empty())
                     {
+                        hide_mention_popup_();
                         shortcode_active_match_ = *prefix_match;
                         for (const auto& sugg : shortcode_current_suggestions_)
                         {
@@ -692,12 +698,29 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                         return;
                     }
                 }
+                // ── @mention popup ──────────────────────────────────────────
+                if (handle_mention_on_changed_(s, cursor))
+                {
+                    return;
+                }
                 hide_shortcode_popup_();
+                hide_mention_popup_();
                 // ── End shortcode detection ─────────────────────────────────────
             });
         room_text_area_->set_on_submit(
             [this]
             {
+                if (mention_popup_visible_())
+                {
+                    int sel = mention_popup_widget_->selected_index();
+                    if (sel >= 0 &&
+                        sel < (int)mention_current_candidates_.size())
+                    {
+                        accept_mention_(mention_current_candidates_[sel]);
+                        return;
+                    }
+                    hide_mention_popup_();
+                }
                 if (shortcode_popup_visible_())
                 {
                     int sel = shortcode_popup_widget_->selected_index();
@@ -808,12 +831,31 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             {
                 return;
             }
-            std::string trimmed = tesseract::text::trim(body);
-            if (trimmed.empty())
+            // Build from the composer's mention draft so inline pills become
+            // matrix.to links + m.mentions; fall back to the plain body.
+            std::vector<tesseract::MentionSeg> draft =
+                room_text_area_ ? room_text_area_->mention_draft()
+                                : std::vector<tesseract::MentionSeg>{};
+            bool has_mention = false;
+            for (const auto& seg : draft)
+            {
+                if (seg.kind == tesseract::MentionSeg::Kind::Mention)
+                {
+                    has_mention = true;
+                }
+            }
+            tesseract::MarkdownResult msg =
+                draft.empty() ? tesseract::MarkdownResult{body, ""}
+                              : tesseract::build_mention_message(draft);
+            std::string trimmed = tesseract::text::trim(msg.body);
+            if (trimmed.empty() && !has_mention)
             {
                 return;
             }
-            auto res = client_->send_message(current_room_id_, trimmed);
+            auto res = msg.formatted_body.empty()
+                           ? client_->send_message(current_room_id_, msg.body)
+                           : client_->send_message(current_room_id_, msg.body,
+                                                   msg.formatted_body);
             if (res)
             {
                 if (room_text_area_)
@@ -2102,6 +2144,15 @@ void MainWindow::apply_theme_ui_(const tk::Theme& t)
     if (shortcode_popup_surface_)
     {
         shortcode_popup_surface_->set_theme(t);
+    }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(t);
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_mention_colors(t.palette.accent,
+                                            t.palette.text_on_accent);
     }
     if (login_view_)
     {
@@ -4779,6 +4830,174 @@ void MainWindow::hide_shortcode_popup_()
     if (shortcode_popover_)
     {
         gtk_popover_popdown(GTK_POPOVER(shortcode_popover_));
+    }
+    if (room_text_area_)
+    {
+        room_text_area_->set_on_popup_nav(nullptr);
+    }
+}
+
+// ── @mention popup ─────────────────────────────────────────────────────────
+
+bool MainWindow::handle_mention_on_changed_(const std::string& s, int cursor)
+{
+    auto m = mention_engine_.find_prefix(s, cursor);
+    if (!m)
+    {
+        return false;
+    }
+    // Member list must be fetched off the UI thread (get_room_members blocks).
+    // When the cache is stale, kick off an async fetch and re-run once it lands
+    // — the popup appears on the next tick rather than stalling input.
+    if (cached_members_room_ != current_room_id_)
+    {
+        if (members_fetching_room_ != current_room_id_ && client_)
+        {
+            members_fetching_room_ = current_room_id_;
+            auto* c = client_;
+            std::string rid = current_room_id_;
+            run_async_(
+                [this, c, rid]
+                {
+                    auto members = c->get_room_members(rid);
+                    post_to_ui_(
+                        [this, rid, members = std::move(members)]() mutable
+                        {
+                            cached_room_members_ = std::move(members);
+                            cached_members_room_ = rid;
+                            members_fetching_room_.clear();
+                            if (room_text_area_)
+                            {
+                                handle_mention_on_changed_(
+                                    room_text_area_->text(),
+                                    room_text_area_->cursor_byte_pos());
+                            }
+                        });
+                });
+        }
+        return false;
+    }
+    mention_current_candidates_ =
+        mention_engine_.lookup(m->prefix, cached_room_members_, 8, true);
+    if (mention_current_candidates_.empty())
+    {
+        return false;
+    }
+    mention_active_match_ = *m;
+    hide_shortcode_popup_(); // clears popup_nav_ — must reinstall below
+    show_mention_popup_(mention_current_candidates_,
+                        room_text_area_->cursor_rect());
+    // Reinstall every time: hide_shortcode_popup_() above (and a prior
+    // keystroke) clear popup_nav_, so a conditional install would leave nav
+    // dead after the first character following the popup appearing.
+    {
+        room_text_area_->set_on_popup_nav(
+            [this](tk::NativeTextArea::NavKey nk) -> bool
+            {
+                if (!mention_popup_visible_())
+                {
+                    return false;
+                }
+                int cur = mention_popup_widget_->selected_index();
+                int n = mention_popup_widget_->visible_rows();
+                if (n <= 0)
+                {
+                    return true;
+                }
+                int next = cur;
+                switch (nk)
+                {
+                case tk::NativeTextArea::NavKey::Up:
+                    next = std::max(0, cur - 1);
+                    break;
+                case tk::NativeTextArea::NavKey::Down:
+                    next = std::min(n - 1, cur + 1);
+                    break;
+                case tk::NativeTextArea::NavKey::Tab:
+                {
+                    int sel = mention_popup_widget_->selected_index();
+                    if (sel >= 0 &&
+                        sel < (int)mention_current_candidates_.size())
+                    {
+                        accept_mention_(mention_current_candidates_[sel]);
+                    }
+                    else
+                    {
+                        hide_mention_popup_();
+                    }
+                    return true;
+                }
+                case tk::NativeTextArea::NavKey::ShiftTab:
+                    return false;
+                case tk::NativeTextArea::NavKey::Escape:
+                    hide_mention_popup_();
+                    return true;
+                }
+                mention_popup_widget_->set_selected_index(next);
+                mention_popup_surface_->host().request_repaint();
+                return true;
+            });
+    }
+    return true;
+}
+
+void MainWindow::accept_mention_(const tesseract::views::MentionCandidate& c)
+{
+    if (room_text_area_)
+    {
+        room_text_area_->insert_mention(mention_active_match_.start,
+                                        mention_active_match_.end, c.user_id,
+                                        c.display_name, c.is_room);
+    }
+    hide_mention_popup_();
+}
+
+void MainWindow::show_mention_popup_(
+    const std::vector<tesseract::views::MentionCandidate>& candidates,
+    tk::Rect cursor_local)
+{
+    if (!mention_popover_)
+    {
+        mention_popover_ = gtk_popover_new();
+        gtk_widget_set_parent(mention_popover_, main_app_surface_->widget());
+        gtk_popover_set_position(GTK_POPOVER(mention_popover_), GTK_POS_TOP);
+        gtk_popover_set_has_arrow(GTK_POPOVER(mention_popover_), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(mention_popover_), TRUE);
+
+        mention_popup_surface_ =
+            std::make_unique<tk::gtk4::Surface>(main_app_surface_->theme());
+
+        auto popup_widget = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = popup_widget.get();
+        mention_popup_surface_->set_root(std::move(popup_widget));
+
+        mention_popup_widget_->on_accepted =
+            [this](tesseract::views::MentionCandidate c) { accept_mention_(c); };
+        mention_popup_widget_->on_dismissed = [this] { hide_mention_popup_(); };
+
+        GtkWidget* surface_widget = mention_popup_surface_->widget();
+        gtk_popover_set_child(GTK_POPOVER(mention_popover_), surface_widget);
+    }
+
+    mention_popup_widget_->set_candidates(candidates);
+
+    int rows = std::min((int)candidates.size(),
+                        (int)tesseract::views::MentionPopup::kMaxRows);
+    int w = int(tesseract::views::MentionPopup::kWidth);
+    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+    gtk_widget_set_size_request(mention_popup_surface_->widget(), w, h);
+
+    GdkRectangle rect{int(cursor_local.x), int(cursor_local.y),
+                      int(cursor_local.w), int(cursor_local.h)};
+    gtk_popover_set_pointing_to(GTK_POPOVER(mention_popover_), &rect);
+    gtk_popover_popup(GTK_POPOVER(mention_popover_));
+}
+
+void MainWindow::hide_mention_popup_()
+{
+    if (mention_popover_)
+    {
+        gtk_popover_popdown(GTK_POPOVER(mention_popover_));
     }
     if (room_text_area_)
     {

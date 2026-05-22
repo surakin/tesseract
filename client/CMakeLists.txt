@@ -7,6 +7,7 @@ add_library(tesseract_client STATIC
     src/client.cpp
     src/media_source.cpp
     src/markdown.cpp
+    src/mentions.cpp
     src/event_handler_bridge.cpp
     src/session_store.cpp
     src/paths.cpp

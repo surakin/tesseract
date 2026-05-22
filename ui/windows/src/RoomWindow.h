@@ -9,6 +9,8 @@
 
 #include "app/RoomWindowBase.h"
 #include "tk/host_win32.h"
+#include "views/MentionController.h"
+#include "views/MentionPopup.h"
 
 #include <memory>
 #include <string>
