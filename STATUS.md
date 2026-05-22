@@ -1,6 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-21**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
+
+> **Group inactive rooms.**
+> Appearance settings gain a "Room list" group with a "Group inactive rooms"
+> toggle and an inactivity-period selector (1 week–6 months, default 1 month;
+> a local `app_settings.json` preference). When enabled, the room list shows a
+> fifth, default-collapsed "Inactive" section holding DMs and Rooms with no
+> activity past the threshold; favorites and spaces are never grouped, the
+> section is hidden when empty, and a room reclassifies out of it automatically
+> when new activity arrives. Classification is a pure, unit-tested
+> `classify_room_section()` helper in the shared `RoomListView`; the toggle is
+> wired through all four shells (Qt6 / GTK4 / Win32 / macOS).
 
 > **Outgoing Matrix presence.**
 > The app now publishes its own presence (`PUT /presence/{userId}/status`),
@@ -20,8 +31,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 118 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 412 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 130 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 422 |
 
 ## Platforms
 
