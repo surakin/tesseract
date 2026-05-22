@@ -751,6 +751,11 @@ bool RoomView::edit_last_own()
 
 tk::Rect RoomView::compose_text_area_rect() const
 {
+    // No active room → brand view is shown and the compose bar is not arranged,
+    // so its cached rect is stale. Return empty to tell the shell to hide the
+    // native text-area overlay.
+    if (!has_room_)
+        return {};
     // text_area_rect() inside ComposeBar is computed from bounds_ (world
     // coords) so the rect is already in surface space — no offset needed.
     return compose_bar_ ? compose_bar_->text_area_rect() : tk::Rect{};
