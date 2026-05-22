@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod client;
+mod highlight;
 mod image_packs;
 mod oauth;
 mod recent_emoji;
@@ -40,6 +41,14 @@ pub mod ffi {
         pub is_favorite: bool,
         pub is_encrypted: bool,
         pub history_visibility: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct HighlightSpan {
+        pub text: String,
+        pub r: u8,
+        pub g: u8,
+        pub b: u8,
     }
 
     #[derive(Debug, PartialEq, Default)]

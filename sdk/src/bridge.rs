@@ -24,6 +24,10 @@ pub fn evict_voice_waveform(mxc_uri: &str) {
     super::waveform_store::evict(mxc_uri)
 }
 
+pub fn highlight_code(code: &str, lang: &str, dark: bool) -> Vec<ffi::HighlightSpan> {
+    super::highlight::highlight_code(code, lang, dark)
+}
+
 #[cxx::bridge(namespace = "tesseract_ffi")]
 pub mod ffi {
     // -------------------------------------------------------------------------
@@ -80,6 +84,16 @@ pub mod ffi {
         is_encrypted: bool,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
         history_visibility: String,
+    }
+
+    /// One colored run of a syntax-highlighted code block. `text` may contain
+    /// newlines; concatenating every span's `text` reproduces the input code.
+    /// `r`/`g`/`b` are the run's foreground color from the active syntect theme.
+    struct HighlightSpan {
+        text: String,
+        r: u8,
+        g: u8,
+        b: u8,
     }
 
     /// One aggregated reaction key on a `TimelineEvent`.
@@ -611,6 +625,14 @@ pub mod ffi {
 
         /// Remove the cached waveform for `mxc_uri` (e.g. after media eviction).
         fn evict_voice_waveform(mxc_uri: &str);
+
+        // ----- Code-block syntax highlighting -----
+
+        /// Syntax-highlight `code` as language `lang` (a markdown fence token
+        /// like "rust" or "py") for the given light/dark mode. Returns colored
+        /// runs whose concatenated text equals `code`; an empty vec means the
+        /// language was not recognized and the caller should render plain text.
+        fn highlight_code(code: &str, lang: &str, dark: bool) -> Vec<HighlightSpan>;
 
         // ----- Data directory -----
 

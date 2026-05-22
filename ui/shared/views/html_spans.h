@@ -14,12 +14,20 @@ namespace tesseract::views
 //   <span data-mx-spoiler[="reason"]> (MSC2010; spoiler+spoiler_reason set),
 //   <u> (no underline yet, text kept).
 // Block tags: <p> (paragraph break as '\n'), <br> (line break as '\n'),
-//   <pre> (treated as code block; inner <code> is redundant but harmless).
+//   <pre> (code block; an inner <code class="language-X"> selects the syntax
+//   highlighter — see below).
 // Unknown tags are stripped; their text content is preserved.
 // HTML entities decoded: &amp; &lt; &gt; &quot; &apos; &#N; &#xN;
 //
+// Code blocks: when a <pre>/<code> carries class="language-X" and the language
+// is recognized, the block is tokenized and emitted as per-token colored spans
+// (TextSpan::has_color/color set). `dark` selects the light vs dark highlight
+// palette. Unknown/absent languages fall back to a single uncolored monospace
+// span. Topic/non-message callers may leave `dark` at its default.
+//
 // Returns a single plain-text span when `html` is empty.
-std::vector<tk::TextSpan> html_to_spans(std::string_view html);
+std::vector<tk::TextSpan> html_to_spans(std::string_view html,
+                                        bool             dark = false);
 
 // Return the first http(s) URL found in an HTML formatted_body (the href
 // of the first <a> tag whose href starts with http:// or https://).

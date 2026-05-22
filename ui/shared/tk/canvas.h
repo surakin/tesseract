@@ -243,6 +243,10 @@ struct TextSpan
     bool code = false; // render in monospace
     bool strikethrough = false;
     bool spoiler = false;
+    // Explicit foreground colour for this run (syntax-highlighted code).
+    // When has_color is false, backends paint with the draw_text() colour.
+    bool  has_color = false;
+    Color color{};
 };
 
 // Per-platform factory for backend-owned resources. The platform host

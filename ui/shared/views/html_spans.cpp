@@ -1,5 +1,7 @@
 #include "html_spans.h"
 
+#include "tesseract/highlight.h"
+
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -176,10 +178,59 @@ struct Tag
     std::string name;           // lower-cased tag name
     std::string href;           // non-empty only for <a href="http(s)://...">
     std::string spoiler_reason; // value of data-mx-spoiler (may be empty)
+    std::string code_lang; // language token from class="language-X" on pre/code
     bool has_spoiler = false;   // true when data-mx-spoiler attribute present
     bool closing = false;
     bool self_closing = false;
 };
+
+// Extract the language token from a class attribute value, e.g.
+// "language-rust" or "lang-py hljs" → "rust"/"py". The class may carry several
+// space-separated tokens. The result is lower-cased and restricted to a safe
+// charset so it is never interpreted as markup downstream.
+static std::string lang_from_class(std::string_view cls)
+{
+    std::size_t i = 0;
+    while (i < cls.size())
+    {
+        while (i < cls.size() && std::isspace(static_cast<unsigned char>(cls[i])))
+        {
+            ++i;
+        }
+        std::size_t j = i;
+        while (j < cls.size() &&
+               !std::isspace(static_cast<unsigned char>(cls[j])))
+        {
+            ++j;
+        }
+        std::string_view tok = cls.substr(i, j - i);
+        std::string_view prefix;
+        if (tok.rfind("language-", 0) == 0)
+        {
+            prefix = "language-";
+        }
+        else if (tok.rfind("lang-", 0) == 0)
+        {
+            prefix = "lang-";
+        }
+        if (!prefix.empty())
+        {
+            std::string out;
+            for (char c : tok.substr(prefix.size()))
+            {
+                unsigned char uc = static_cast<unsigned char>(c);
+                if (std::isalnum(uc) || c == '+' || c == '#' || c == '.' ||
+                    c == '-' || c == '_')
+                {
+                    out += static_cast<char>(std::tolower(uc));
+                }
+            }
+            return out;
+        }
+        i = j;
+    }
+    return {};
+}
 
 // Scan [p, end) for the attribute named `target` (case-insensitive).
 // Returns the attribute value when found (empty string for boolean attributes
@@ -353,6 +404,17 @@ Tag parse_tag(const char*& p, const char* end)
         }
     }
 
+    // For opening <pre>/<code> tags read the highlight language from
+    // class="language-X" (the Matrix convention is on the inner <code>).
+    if ((t.name == "pre" || t.name == "code") && !t.closing)
+    {
+        auto cls = extract_attr(attr_start, attr_end, "class");
+        if (cls.has_value())
+        {
+            t.code_lang = lang_from_class(*cls);
+        }
+    }
+
     return t;
 }
 
@@ -373,7 +435,7 @@ struct FmtState
 
 // ── Main parser ───────────────────────────────────────────────────────────
 
-std::vector<tk::TextSpan> html_to_spans(std::string_view html)
+std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 {
     std::vector<tk::TextSpan> spans;
     if (html.empty())
@@ -429,8 +491,74 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html)
         cur_text.clear();
     };
 
+    // Code-block capture: between <pre> and </pre> we collect the raw (entity-
+    // decoded) source text and, if a language is known, run it through the
+    // syntax highlighter to emit per-token colored spans. Unknown/empty
+    // language → a single uncolored monospace span (the legacy behaviour).
+    bool        in_code_block = false;
+    std::string code_buf;
+    std::string code_lang;
+
+    auto emit_code_block = [&]()
+    {
+        std::vector<tesseract::HighlightSpan> hl;
+        if (!code_lang.empty())
+        {
+            hl = tesseract::highlight_code(code_buf, code_lang, dark);
+        }
+        if (hl.empty())
+        {
+            tk::TextSpan sp;
+            sp.text = code_buf;
+            sp.code = true;
+            spans.push_back(std::move(sp));
+        }
+        else
+        {
+            for (auto& h : hl)
+            {
+                tk::TextSpan sp;
+                sp.text      = std::move(h.text);
+                sp.code      = true;
+                sp.has_color = true;
+                sp.color     = tk::Color{h.r, h.g, h.b, 255};
+                spans.push_back(std::move(sp));
+            }
+        }
+        code_buf.clear();
+        code_lang.clear();
+    };
+
     while (p < end)
     {
+        if (in_code_block)
+        {
+            if (*p == '<')
+            {
+                Tag tag = parse_tag(p, end);
+                if (tag.closing && tag.name == "pre")
+                {
+                    emit_code_block();
+                    in_code_block = false;
+                }
+                else if (!tag.closing && tag.name == "code" &&
+                         code_lang.empty())
+                {
+                    // Language carried on the inner <code class="language-X">.
+                    code_lang = tag.code_lang;
+                }
+                // Any other tag inside a code block is ignored.
+                continue;
+            }
+            if (*p == '&')
+            {
+                decode_entity(p, end, code_buf);
+                continue;
+            }
+            code_buf += *p++;
+            continue;
+        }
+
         if (*p == '<')
         {
             Tag tag = parse_tag(p, end);
@@ -457,7 +585,13 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html)
                 }
                 else if (tag.name == "pre")
                 {
-                    ns.code = true;
+                    // Enter code-block capture instead of pushing a formatting
+                    // frame; the matching </pre> emits the (highlighted) span(s).
+                    flush();
+                    in_code_block = true;
+                    code_buf.clear();
+                    code_lang = tag.code_lang; // inner <code> may set it later
+                    continue;
                 }
                 else if (tag.name == "del" || tag.name == "s" ||
                          tag.name == "strike")
@@ -528,6 +662,12 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html)
         {
             cur_text += *p++;
         }
+    }
+
+    // Emit a code block left open by malformed HTML (missing </pre>).
+    if (in_code_block)
+    {
+        emit_code_block();
     }
 
     flush();

@@ -95,6 +95,34 @@ TEST_CASE("markdown: fenced code block escapes content")
     CHECK(contains(r.formatted_body, "</code></pre>"));
 }
 
+TEST_CASE("markdown: fenced code block records the language as a class")
+{
+    auto r = markdown_to_html("```rust\nfn main() {}\n```");
+    CHECK(contains(r.formatted_body, "<pre><code class=\"language-rust\">"));
+}
+
+TEST_CASE("markdown: fence language is lower-cased and first-token only")
+{
+    auto r = markdown_to_html("```Python title=foo\nx = 1\n```");
+    CHECK(contains(r.formatted_body, "<pre><code class=\"language-python\">"));
+    CHECK_FALSE(contains(r.formatted_body, "title"));
+}
+
+TEST_CASE("markdown: fence language cannot inject markup (sanitized class)")
+{
+    // A hostile info string must not break out of the class attribute.
+    auto r = markdown_to_html("```js\"><img src=x>\nx\n```");
+    CHECK(contains(r.formatted_body, "<pre><code class=\"language-js\">"));
+    CHECK_FALSE(contains(r.formatted_body, "<img"));
+}
+
+TEST_CASE("markdown: a language-less fence still emits a bare code block")
+{
+    auto r = markdown_to_html("```\nplain\n```");
+    CHECK(contains(r.formatted_body, "<pre><code>"));
+    CHECK_FALSE(contains(r.formatted_body, "class=\"language-"));
+}
+
 TEST_CASE("markdown: deep nesting is bounded (no crash/hang)")
 {
     std::string s(200, '*'); // pathological run of emphasis markers

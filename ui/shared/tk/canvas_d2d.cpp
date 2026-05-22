@@ -598,12 +598,20 @@ public:
         std::string url;
     };
 
+    struct ColorRange
+    {
+        UINT32 start, end;
+        Color  color;
+    };
+
     DWriteLayout(ComPtr<IDWriteTextLayout> layout,
                  std::wstring wtext,
                  std::string utf8,
-                 std::vector<UrlRange> url_ranges = {})
+                 std::vector<UrlRange> url_ranges = {},
+                 std::vector<ColorRange> color_ranges = {})
         : layout_(std::move(layout)), wtext_(std::move(wtext)),
-          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges))
+          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges)),
+          color_ranges_(std::move(color_ranges))
     {
         DWRITE_TEXT_METRICS m{};
         layout_->GetMetrics(&m);
@@ -705,6 +713,11 @@ public:
         return layout_.Get();
     }
 
+    const std::vector<ColorRange>& color_ranges() const
+    {
+        return color_ranges_;
+    }
+
 private:
     // Convert a UTF-8 byte offset into the number of UTF-16 code units that
     // precede it (i.e. the UTF-16 position DWrite expects).
@@ -734,6 +747,7 @@ private:
     std::wstring wtext_;
     std::string  utf8_;
     std::vector<UrlRange> url_ranges_;
+    std::vector<ColorRange> color_ranges_;
     Size size_{};
     int line_count_ = 0;
     float ascent_ = 0;
@@ -812,13 +826,24 @@ public:
                                DWRITE_MEASURING_MODE mm,
                                const DWRITE_GLYPH_RUN* run,
                                const DWRITE_GLYPH_RUN_DESCRIPTION* desc,
-                               IUnknown*) override
+                               IUnknown* effect) override
     {
+        // A per-range drawing effect (set by draw_text for syntax-highlighted
+        // code) overrides the default foreground brush for plain glyph runs.
+        ID2D1Brush* fg = fg_;
+        ComPtr<ID2D1SolidColorBrush> effect_brush;
+        if (effect &&
+            SUCCEEDED(effect->QueryInterface(IID_PPV_ARGS(&effect_brush))) &&
+            effect_brush)
+        {
+            fg = effect_brush.Get();
+        }
+
         // Without IDWriteFactory4 we can't enumerate colour runs — keep the
         // default linear behaviour so the text still renders.
         if (!dw4_)
         {
-            rt_->DrawGlyphRun({bx, by}, run, fg_, mm);
+            rt_->DrawGlyphRun({bx, by}, run, fg, mm);
             return S_OK;
         }
 
@@ -837,7 +862,7 @@ public:
             {bx, by}, run, desc, desired, mm, nullptr, 0, &en);
         if (hr == DWRITE_E_NOCOLOR || FAILED(hr) || !en)
         {
-            rt_->DrawGlyphRun({bx, by}, run, fg_, mm);
+            rt_->DrawGlyphRun({bx, by}, run, fg, mm);
             return S_OK;
         }
 
@@ -861,7 +886,7 @@ public:
             else
             {
                 // Outline (TrueType / CFF) or COLR overlay layer.
-                ID2D1Brush* brush = fg_;
+                ID2D1Brush* brush = fg;
                 ComPtr<ID2D1SolidColorBrush> palette_brush;
                 if (cr->paletteIndex != 0xFFFFu)
                 {
@@ -1225,6 +1250,14 @@ public:
         // DrawTextLayout / DrawColorBitmapGlyphRun hard-code LINEAR, which
         // looks blocky when Noto Color Emoji's 136-px source is scaled to
         // ~19-px body size. Outline / COLR runs still use DrawGlyphRun.
+        // Per-span syntax-highlight colours: attach a solid brush as the
+        // drawing effect on each coloured range so DrawGlyphRun can pick it up.
+        for (const auto& cr : dl.color_ranges())
+        {
+            dl.raw()->SetDrawingEffect(
+                brush(cr.color), DWRITE_TEXT_RANGE{cr.start, cr.end - cr.start});
+        }
+
         ComPtr<IDWriteTextRenderer> renderer;
         renderer.Attach(new CubicEmojiTextRenderer(
             rt_, dc_, dw4_.Get(), backend_.wic.Get(),
@@ -1699,6 +1732,7 @@ public:
 
         // Apply per-span formatting.
         std::vector<DWriteLayout::UrlRange> url_ranges;
+        std::vector<DWriteLayout::ColorRange> color_ranges;
         for (const auto& wr : ranges)
         {
             const TextSpan& sp = *wr.sp;
@@ -1724,6 +1758,12 @@ public:
                 layout->SetUnderline(TRUE, tr);
                 url_ranges.push_back({wr.start, wr.end, sp.url});
             }
+            if (sp.has_color)
+            {
+                // Foreground applied at draw time via SetDrawingEffect, so the
+                // brush can be created from the live render target.
+                color_ranges.push_back({wr.start, wr.end, sp.color});
+            }
         }
 
         layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -1742,7 +1782,8 @@ public:
         return std::make_unique<DWriteLayout>(std::move(layout),
                                               std::move(wide),
                                               std::move(plain_utf8),
-                                              std::move(url_ranges));
+                                              std::move(url_ranges),
+                                              std::move(color_ranges));
     }
 
 private:

@@ -55,6 +55,7 @@ add_executable(tesseract_tests
     cpp/test_presence_tracker.cpp
     cpp/test_tray_unread.cpp
     cpp/test_find_existing_dm.cpp
+    cpp/test_code_highlight.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

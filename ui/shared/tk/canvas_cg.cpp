@@ -1209,6 +1209,9 @@ public:
         std::string plain_utf8;
         for (const auto& sp : spans) plain_utf8 += sp.text;
 
+        // Reused for per-span syntax-highlight colors (created lazily below).
+        CFRetained<CGColorSpaceRef> rgb_cs{CGColorSpaceCreateDeviceRGB()};
+
         for (const auto& span : spans)
         {
             if (span.text.empty())
@@ -1260,14 +1263,32 @@ public:
 
             CFTypeRef st_flag =
                 span.strikethrough ? kCFBooleanTrue : kCFBooleanFalse;
+
+            // Syntax-highlighted runs carry an explicit foreground color;
+            // everything else inherits the context color set by draw_text().
+            CFTypeRef               fg_key = kCTForegroundColorFromContextAttributeName;
+            CFTypeRef               fg_val = kCFBooleanTrue;
+            CFRetained<CGColorRef>  fg_color;
+            if (span.has_color)
+            {
+                CGFloat comps[4] = {span.color.r / 255.0, span.color.g / 255.0,
+                                    span.color.b / 255.0, span.color.a / 255.0};
+                fg_color = CFRetained<CGColorRef>{
+                    CGColorCreate(rgb_cs.get(), comps)};
+                if (fg_color.get())
+                {
+                    fg_key = kCTForegroundColorAttributeName;
+                    fg_val = fg_color.get();
+                }
+            }
+
             CFTypeRef keys[] = {
                 kCTFontAttributeName,
                 kCTParagraphStyleAttributeName,
-                kCTForegroundColorFromContextAttributeName,
+                fg_key,
                 tk_strikethrough_key(),
             };
-            CFTypeRef vals[] = {span_font.get(), para.get(), kCFBooleanTrue,
-                                st_flag};
+            CFTypeRef vals[] = {span_font.get(), para.get(), fg_val, st_flag};
             CFRetained<CFDictionaryRef> attrs{
                 CFDictionaryCreate(kCFAllocatorDefault, keys, vals, 4,
                                    &kCFTypeDictionaryKeyCallBacks,

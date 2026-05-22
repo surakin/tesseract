@@ -36,14 +36,27 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-22
 > homeserver PUT is fired from a detached worker so input handling never
 > blocks. 114 Rust tests + 411 C++ tests.
 
+> **Code-block syntax highlighting.**
+> Fenced code blocks in messages now render with syntax colors. A new Rust
+> `highlight_code(code, lang, dark)` FFI (the `syntect` crate, pure-Rust
+> `fancy-regex` engine) tokenizes the block and returns per-run RGB from a
+> light/dark theme; results are memoized in a bounded LRU in the C++ client
+> wrapper since the renderer rebuilds spans on every paint. `markdown_to_html`
+> now emits `<pre><code class="language-X">` (sanitized to an injection-safe
+> charset) and the shared `html_to_spans` parses that class, decodes the
+> source, and emits per-token colored `tk::TextSpan`s (new `has_color` / `color`
+> fields). Unknown or absent languages fall back to plain monospace. Per-span
+> foreground color is honored in all four canvas backends (Qt6 `QPainter`,
+> GTK4 Pango, macOS CoreText, Win32 Direct2D `SetDrawingEffect`).
+
 For build instructions, architectural overview, and the open-roadmap items, see [CLAUDE.md](CLAUDE.md). For tracked open issues / known gaps, see the "Known gaps" section at the bottom of CLAUDE.md.
 
 ## Test coverage
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 130 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 422 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 135 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 438 |
 
 ## Platforms
 

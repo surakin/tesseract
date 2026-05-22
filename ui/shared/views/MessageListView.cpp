@@ -1656,7 +1656,8 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = build_emote_spans(m, revealed);
+            auto spans = build_emote_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             float th = 0.0f;
             if (!spans.empty())
             {
@@ -1780,7 +1781,8 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = build_emote_spans(m, revealed);
+            auto spans = build_emote_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             float end_y = y;
             if (!spans.empty())
             {
@@ -2313,9 +2315,9 @@ private:
     // Pre-process spans for rendering: when unrevealed, replace hidden spoiler
     // text with a bold label so the content is hidden but the span is visible.
     std::vector<tk::TextSpan> prepare_spans(const MessageRowData& m,
-                                            bool revealed) const
+                                            bool revealed, bool dark) const
     {
-        auto spans = html_to_spans(m.formatted_body);
+        auto spans = html_to_spans(m.formatted_body, dark);
         if (!revealed)
         {
             for (auto& sp : spans)
@@ -2339,14 +2341,14 @@ private:
     // Build italic TextSpan vector for an m.emote row:
     // "* SenderName body_text" with every span forced italic.
     std::vector<tk::TextSpan> build_emote_spans(const MessageRowData& m,
-                                                bool revealed) const
+                                                bool revealed, bool dark) const
     {
         const std::string prefix =
             "* " + (m.sender_name.empty() ? m.sender : m.sender_name) + " ";
         std::vector<tk::TextSpan> result;
         if (!m.formatted_body.empty())
         {
-            auto body = prepare_spans(m, revealed);
+            auto body = prepare_spans(m, revealed, dark);
             tk::TextSpan pfx;
             pfx.text = prefix;
             pfx.italic = true;
@@ -2376,7 +2378,8 @@ private:
         if (!m.formatted_body.empty())
         {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = prepare_spans(m, revealed);
+            auto spans = prepare_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             if (!spans.empty())
             {
                 auto layout =
@@ -2456,7 +2459,8 @@ private:
         if (!m.formatted_body.empty())
         {
             bool revealed = owner_.revealed_spoilers_.count(m.event_id) > 0;
-            auto spans = prepare_spans(m, revealed);
+            auto spans = prepare_spans(
+                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark);
             if (!spans.empty())
             {
                 auto layout =

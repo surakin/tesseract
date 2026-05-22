@@ -867,6 +867,17 @@ public:
         for (const auto& sp : spans)
         {
             std::string t = pango_escape(sp.text);
+            if (sp.has_color)
+            {
+                static const char* kHex = "0123456789ABCDEF";
+                std::string col = "#";
+                for (std::uint8_t v : {sp.color.r, sp.color.g, sp.color.b})
+                {
+                    col += kHex[v >> 4];
+                    col += kHex[v & 0x0F];
+                }
+                t = "<span foreground=\"" + col + "\">" + t + "</span>";
+            }
             if (sp.code)
             {
                 t = "<tt>" + t + "</tt>";

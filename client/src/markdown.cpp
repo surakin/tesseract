@@ -36,6 +36,35 @@ static void html_escape_to(std::string_view s, std::string& out)
     }
 }
 
+// Extract the first token of a fenced-code info string (the text after ```),
+// lower-cased and restricted to a safe class-attribute charset. Returns empty
+// when no usable language token is present. Keeps the value injection-proof
+// since it is emitted unquoted-escaped into class="language-...".
+static std::string sanitize_fence_lang(std::string_view info)
+{
+    std::size_t i = 0;
+    while (i < info.size() && (info[i] == ' ' || info[i] == '\t'))
+    {
+        ++i;
+    }
+    std::string lang;
+    for (; i < info.size(); ++i)
+    {
+        char          c  = info[i];
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == '+' || c == '#' || c == '.' || c == '-' ||
+            c == '_')
+        {
+            lang += static_cast<char>(std::tolower(uc));
+        }
+        else
+        {
+            break;
+        }
+    }
+    return lang;
+}
+
 // ---------------------------------------------------------------------------
 // Fast-path: check whether text has any markdown markers worth parsing
 // ---------------------------------------------------------------------------
@@ -362,7 +391,20 @@ MarkdownResult markdown_to_html(std::string_view text)
             else
             {
                 close_block();
-                html += "<pre><code>";
+                // The fence info string (text after ```) names the language.
+                // Take its first token, sanitized to a safe class charset, and
+                // emit class="language-X" so the renderer can highlight it.
+                std::string lang = sanitize_fence_lang(line.substr(3));
+                if (lang.empty())
+                {
+                    html += "<pre><code>";
+                }
+                else
+                {
+                    html += "<pre><code class=\"language-";
+                    html += lang;
+                    html += "\">";
+                }
                 mode = BlockMode::Code;
                 in_fence = true;
             }

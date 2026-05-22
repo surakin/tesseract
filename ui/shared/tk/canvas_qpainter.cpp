@@ -928,6 +928,12 @@ public:
                                           static_cast<int>(sp.text.size()))
                             .toHtmlEscaped();
             t.replace(QLatin1Char('\n'), QLatin1String("<br>"));
+            if (sp.has_color)
+            {
+                t = QLatin1String("<span style=\"color:") +
+                    to_qcolor(sp.color).name() + QLatin1String(";\">") + t +
+                    QLatin1String("</span>");
+            }
             if (sp.code)
             {
                 t = QLatin1String("<code>") + t + QLatin1String("</code>");
