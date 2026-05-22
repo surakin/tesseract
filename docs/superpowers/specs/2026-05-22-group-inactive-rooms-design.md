@@ -4,8 +4,10 @@
 **Scope:** Add a "Room list" group to the Appearance settings with a "Group
 inactive rooms" toggle and an inactivity-period selector. When enabled, the room
 list shows a fifth section, **Inactive**, holding DMs and Rooms with no activity
-for the configured period (default 1 month). All work is in `ui/shared` plus the
-`Settings` struct — no per-shell changes.
+for the configured period (default 1 month). Most work is in `ui/shared` plus the
+`Settings` struct; the four shells each get a small settings-wiring edit (routing
+the two new callbacks + seeding), exactly mirroring how they already wire the
+theme preference.
 
 ## Goal
 
@@ -160,19 +162,41 @@ acceptable staleness; a polling timer is out of scope (YAGNI).
 
 ### 4. Wiring
 
-In `ui/shared/app/ShellBase`:
+`ShellBase` does not retain the `MainAppWidget`, and each shell already owns and
+feeds its own `RoomListView` (`set_rooms` is called per-shell). So persistence and
+refresh are per-shell, inline — mirroring the existing self-contained
+`on_prefetch_changed` handler (which writes `Settings` + `save_to_disk` in the
+lambda) — plus a call to a new shared `RoomListView::refresh()` primitive
+(re-runs `rebuild_items()` + `invalidate_data()`).
 
-- Connect `SettingsView::on_group_inactive_changed` and
-  `on_inactive_period_changed` to a handler that writes the field on
-  `Settings::instance()`, calls `save_to_disk(config_dir())`, then calls a new
-  `RoomListView::refresh()` (re-runs `rebuild_items()` + `invalidate_data()`) so
-  the room list updates immediately.
-- On settings-panel open, seed the controls from the singleton via
-  `SettingsView::set_group_inactive_pref` / `set_inactive_period_pref` (alongside
-  the existing `set_theme_pref` seeding).
+**Shared UI seeding:** `AppearanceSection` self-seeds its checkbox + combobox from
+`Settings::instance()` in its constructor (the pattern `NotificationsSection`
+uses), and exposes `set_group_inactive` / `set_inactive_period` setters that
+`SettingsView::set_group_inactive_pref` / `set_inactive_period_pref` forward to,
+so shells can re-seed on panel re-show (mirroring `set_theme_pref`).
 
-No per-shell (`ui/windows`, `ui/macos`, `ui/linux-qt`, `ui/linux-gtk`) changes —
-the shells already mount the shared `SettingsView` and `RoomListView`.
+**Shared callbacks:** `AppearanceSection` fires `on_group_inactive_changed(bool)`
+and `on_inactive_period_changed(int days)` (the combobox parses its value string
+to days); `SettingsView` forwards both.
+
+**Per-shell wiring (unavoidable — this is how every settings toggle works
+today).** Each shell routes the two callbacks to a lambda that writes
+`Settings::instance()`, calls `save_to_disk(config_dir())`, and refreshes that
+shell's room list, then seeds the two controls — parallel to the existing theme /
+prefetch lines:
+
+- `ui/linux-qt/src/SettingsWidget.cpp` — the lambda writes Settings + saves and
+  emits a new `roomListGroupingChanged()` Qt signal; `MainWindow` (around the
+  existing `themeChanged` connect) connects it to
+  `mainApp_->room_list_view()->refresh()`. Seed in `SettingsWidget::setInitialValues`
+  beside `set_theme_pref`.
+- `ui/linux-gtk/src/MainWindow.cpp` and `ui/windows/src/MainWindow.cpp` — the
+  `MainWindow` is the shell and owns `room_list_view_`; the lambda writes Settings
+  + saves + `room_list_view_->refresh()`. Seed beside the existing `set_theme_pref`.
+- `ui/macos/src/MainWindowController.mm` — lambda writes Settings + saves +
+  `_roomListView->refresh()`. Seed beside the existing `set_theme_pref`.
+
+The room list and settings view themselves stay shared; no `ShellBase` change.
 
 ## Testing
 
@@ -209,6 +233,10 @@ the shells already mount the shared `SettingsView` and `RoomListView`.
 - `ui/shared/views/SettingsView.{h,cpp}` — forward callbacks + silent seeders.
 - `ui/shared/views/RoomListView.{h,cpp}` — fifth section, `classify_room_section`
   helper, `now_ms`, default-collapsed Inactive, `refresh()`.
-- `ui/shared/app/ShellBase.{h,cpp}` — wire callbacks + seed on open.
-- `tests/cpp/test_room_list_sections.cpp` (new), `tests/cpp/test_settings.cpp`
-  (extend), plus `tests/CMakeLists.txt` if a new test file must be registered.
+- Per-shell settings wiring (route 2 callbacks → write Settings + save + refresh
+  that shell's room list; seed 2 controls — mirroring the theme/prefetch wiring):
+  `ui/linux-qt/src/SettingsWidget.{h,cpp}` (+ its `MainWindow.cpp` signal/slot for
+  the refresh), `ui/linux-gtk/src/MainWindow.cpp`, `ui/windows/src/MainWindow.cpp`,
+  `ui/macos/src/MainWindowController.mm`.
+- `tests/cpp/test_room_list_sections.cpp` (new) registered in
+  `tests/CMakeLists.txt`, `tests/cpp/test_settings.cpp` (extend).
