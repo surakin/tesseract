@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.25)
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
-qt_standard_project_setup()
+# qt_standard_project_setup() requires Qt >= 6.3; Ubuntu 22.04 ships 6.2.4.
+# Set the equivalent properties manually so the build works on both.
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
 
 # ---------------------------------------------------------------------------
 # Optional: xdg-activation-v1 Wayland protocol binding.
