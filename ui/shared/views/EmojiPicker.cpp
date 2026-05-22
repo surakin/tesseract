@@ -137,7 +137,7 @@ public:
         const std::string& glyph = owner_.current_glyphs_[index];
 
         tk::TextStyle st{};
-        st.role = tk::FontRole::Title; // 15 pt — big enough for emoji
+        st.role = tk::FontRole::EmojiPickerCell;
         st.halign = tk::TextHAlign::Center;
         st.valign = tk::TextVAlign::Center;
         st.max_width = bounds.w;

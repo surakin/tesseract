@@ -37,7 +37,8 @@ public:
     int font_unread_badge = 10;
     int font_title = 14;
     int font_ui_semibold = 10;
-    int font_big_emoji = 24; // 2× body — emoji-only messages
+    int font_big_emoji = 24;         // 2× body — emoji-only messages
+    int font_emoji_picker_cell = 17; // emoji picker grid (≈ 1.2× title)
 
     // ── Reaction chip ────────────────────────────────────────────────
     int reaction_chip_height = 28;

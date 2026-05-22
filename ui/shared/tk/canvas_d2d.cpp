@@ -162,6 +162,10 @@ static FontDesc desc_for(FontRole r)
     case FontRole::BigEmoji:
         return {L"Segoe UI Variable Text", static_cast<float>(s.font_big_emoji),
                 DWRITE_FONT_WEIGHT_REGULAR};
+    case FontRole::EmojiPickerCell:
+        return {L"Segoe UI Variable Text",
+                static_cast<float>(s.font_emoji_picker_cell),
+                DWRITE_FONT_WEIGHT_REGULAR};
     }
     return {L"Segoe UI", static_cast<float>(s.font_body),
             DWRITE_FONT_WEIGHT_REGULAR};

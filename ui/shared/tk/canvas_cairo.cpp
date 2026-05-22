@@ -72,6 +72,10 @@ PangoFontDescription* desc_for(FontRole role)
         pt = s.font_big_emoji;
         w = PANGO_WEIGHT_NORMAL;
         break;
+    case FontRole::EmojiPickerCell:
+        pt = s.font_emoji_picker_cell;
+        w = PANGO_WEIGHT_NORMAL;
+        break;
     default:
         pt = s.font_body;
         w = PANGO_WEIGHT_NORMAL;

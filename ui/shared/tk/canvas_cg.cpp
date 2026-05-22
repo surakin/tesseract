@@ -145,6 +145,8 @@ FontDesc desc_for(FontRole role)
         return {static_cast<CGFloat>(s.font_ui_semibold), true};
     case FontRole::BigEmoji:
         return {static_cast<CGFloat>(s.font_big_emoji), false};
+    case FontRole::EmojiPickerCell:
+        return {static_cast<CGFloat>(s.font_emoji_picker_cell), false};
     }
     return {static_cast<CGFloat>(s.font_body), false};
 }

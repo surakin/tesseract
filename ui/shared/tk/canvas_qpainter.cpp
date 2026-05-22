@@ -94,6 +94,10 @@ QFont font_for(FontRole role)
         f.setPointSize(s.font_big_emoji);
         f.setWeight(QFont::Normal);
         break;
+    case FontRole::EmojiPickerCell:
+        f.setPointSize(s.font_emoji_picker_cell);
+        f.setWeight(QFont::Normal);
+        break;
     }
     return f;
 }
@@ -742,14 +746,14 @@ private:
 class QtFactory : public CanvasFactory
 {
     static constexpr std::size_t kNumRoles =
-        static_cast<std::size_t>(FontRole::BigEmoji) + 1;
+        static_cast<std::size_t>(FontRole::EmojiPickerCell) + 1;
     std::array<QFont, kNumRoles> font_cache_;
 
 public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::BigEmoji) == 9,
+            static_cast<int>(FontRole::EmojiPickerCell) == 10,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {

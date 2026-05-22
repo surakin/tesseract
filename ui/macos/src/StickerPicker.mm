@@ -46,8 +46,6 @@ static StickerPickerPanel* g_stickerPanel = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSWindowStyleMask mask =
-            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-            NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow |
             NSWindowStyleMaskNonactivatingPanel;
         NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
         g_stickerPanel = [[StickerPickerPanel alloc]
@@ -182,6 +180,11 @@ static StickerPickerPanel* g_stickerPanel = nil;
 
 - (void)popupAboveView:(NSView*)anchor
 {
+    if (self.isVisible)
+    {
+        [self orderOut:nil];
+        return;
+    }
     if (!anchor || !anchor.window)
     {
         return;
@@ -235,6 +238,11 @@ static StickerPickerPanel* g_stickerPanel = nil;
 
 - (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor
 {
+    if (self.isVisible)
+    {
+        [self orderOut:nil];
+        return;
+    }
     if (!anchor || !anchor.window)
     {
         return;

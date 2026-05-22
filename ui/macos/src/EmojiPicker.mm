@@ -47,8 +47,6 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSWindowStyleMask mask =
-            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-            NSWindowStyleMaskUtilityWindow | NSWindowStyleMaskHUDWindow |
             NSWindowStyleMaskNonactivatingPanel;
         NSRect frame = NSMakeRect(0, 0, kPanelWidth, kPanelHeight);
         g_emojiPanel =
@@ -190,6 +188,11 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 
 - (void)popupAboveView:(NSView*)anchor
 {
+    if (self.isVisible)
+    {
+        [self orderOut:nil];
+        return;
+    }
     if (!anchor || !anchor.window)
     {
         return;
@@ -244,6 +247,11 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 
 - (void)popupAtRect:(tk::Rect)localRect inView:(NSView*)anchor
 {
+    if (self.isVisible)
+    {
+        [self orderOut:nil];
+        return;
+    }
     if (!anchor || !anchor.window)
     {
         return;

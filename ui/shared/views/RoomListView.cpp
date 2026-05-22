@@ -357,7 +357,7 @@ private:
         {
             float name_y =
                 has_preview
-                    ? bounds.y + kPadY
+                    ? bounds.y + (bounds.h * 0.5f - name_layout->measure().h) * 0.5f
                     : bounds.y + (bounds.h - name_layout->measure().h) * 0.5f;
             ctx.canvas.draw_text(*name_layout, {text_x, name_y},
                                  ctx.theme.palette.text_primary);
@@ -410,7 +410,8 @@ private:
                 if (prev_layout)
                 {
                     float prev_y =
-                        bounds.y + bounds.h - kPadY - prev_layout->measure().h;
+                        bounds.y + bounds.h * 0.5f +
+                        (bounds.h * 0.5f - prev_layout->measure().h) * 0.5f;
                     ctx.canvas.draw_text(*prev_layout, {text_x, prev_y},
                                          ctx.theme.palette.text_secondary);
                 }
