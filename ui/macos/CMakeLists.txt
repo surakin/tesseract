@@ -58,6 +58,13 @@ set_target_properties(tesseract_macos PROPERTIES
     OUTPUT_NAME "Tesseract"
 )
 
+# opus: audiopus_sys (the Rust crate) emits a link-lib=opus directive that
+# the C++ linker must satisfy. Homebrew installs opus to a non-standard
+# prefix, so find_library locates it before the exe link step runs.
+find_library(OPUS_LIB NAMES opus
+    HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
+    REQUIRED)
+
 # All three archives have circular dependencies through the FFI; link them
 # with WHOLE_ARCHIVE so every symbol is present regardless of order.
 target_link_libraries(tesseract_macos PRIVATE
