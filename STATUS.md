@@ -2,6 +2,17 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
 
+> **Account registration (OIDC `prompt=create`).**
+> The login screen offers a capability-gated "New here? Create an account" link
+> below Sign in. It reuses the existing OAuth browser-loopback flow with the OIDC
+> `prompt=create` parameter so the homeserver's provider shows its signup page;
+> the same `/callback` listener completes it and the user ends up logged in. The
+> link appears only when the resolved homeserver advertises registration support
+> (`prompt_values_supported` contains `create`), detected via a
+> generation-guarded probe fired when discovery resolves. Driven entirely in the
+> shared `LoginView` (no per-shell wiring); legacy `/register` / non-OAuth
+> homeservers are out of scope.
+
 > **Group inactive rooms.**
 > Appearance settings gain a "Room list" group with a "Group inactive rooms"
 > toggle and an inactivity-period selector (1 week–6 months, default 1 month;
