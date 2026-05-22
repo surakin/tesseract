@@ -178,6 +178,16 @@ const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc) cons
     return it == tk_images_.end() ? nullptr : it->second.get();
 }
 
+void ShellBase::set_room_notification_mode_(const std::string& room_id,
+                                             const std::string& mode)
+{
+    if (!client_) return;
+    auto* c = client_;
+    run_async_([c, room_id, mode]() {
+        c->set_room_notification_mode(room_id, mode);
+    });
+}
+
 void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
 {
     auto avatar_lookup = [this](const std::string& mxc) -> const tk::Image*
@@ -241,6 +251,25 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         // viewer visible (mirrors the per-shell on_image_clicked path).
         if (app->room_view()->on_layout_changed)
             app->room_view()->on_layout_changed();
+    };
+
+    app->room_view()->on_fetch_notification_mode =
+        [this, app](std::string room_id)
+    {
+        if (!client_) return;
+        auto* c = client_;
+        run_async_([this, app, c, room_id = std::move(room_id)]() mutable {
+            auto mode = c->get_room_notification_mode(room_id);
+            post_to_ui_([app, mode = std::move(mode)]() mutable {
+                app->room_view()->room_info_panel()->set_notification_mode(
+                    std::move(mode));
+            });
+        });
+    };
+    app->room_view()->on_notification_mode_changed =
+        [this](std::string room_id, std::string mode)
+    {
+        set_room_notification_mode_(room_id, mode);
     };
 }
 

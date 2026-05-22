@@ -360,6 +360,17 @@ void RoomView::wire_internal_callbacks()
         room_info_panel_->close();
         if (repaint_requester_) repaint_requester_();
     };
+    room_info_panel_->on_fetch_notification_mode = [this](std::string room_id)
+    {
+        if (on_fetch_notification_mode)
+            on_fetch_notification_mode(std::move(room_id));
+    };
+    room_info_panel_->on_notification_mode_changed =
+        [this](std::string room_id, std::string mode)
+    {
+        if (on_notification_mode_changed)
+            on_notification_mode_changed(std::move(room_id), std::move(mode));
+    };
     room_info_panel_->on_fetch_members = [this](std::string room_id)
     {
         if (on_fetch_room_members) on_fetch_room_members(std::move(room_id));

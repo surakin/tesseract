@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tk/canvas.h"
+#include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/widget.h"
 
@@ -29,6 +30,9 @@ public:
 
     void set_members(std::vector<tesseract::RoomMember> members);
 
+    // Set the current per-room notification mode. No-op when the panel is closed.
+    void set_notification_mode(std::string mode);
+
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
     void set_avatar_provider(ImageProvider p);
@@ -46,6 +50,8 @@ public:
     std::function<void()> on_layout_changed;
 
     // Shell callbacks
+    std::function<void(std::string room_id)>                on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
@@ -87,7 +93,8 @@ private:
     std::string topic_edit_text_;
     tk::Rect    topic_edit_rect_{}; // world-space rect for NativeTextArea
 
-    // Child buttons (borrowed pointers from add_child)
+    // Child widgets (borrowed pointers from add_child)
+    tk::ComboBox* notification_combo_ = nullptr;
     tk::Button* close_btn_      = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
     tk::Button* save_btn_       = nullptr;
@@ -113,6 +120,8 @@ private:
         std::unique_ptr<tk::TextLayout> uid;
     };
     std::vector<MemberLayout> member_layouts_;
+
+    float notif_sep_y_ = 0.0f; // world-space y of the Notifications separator
 
     bool  press_backdrop_  = false;
     bool  press_avatar_    = false;

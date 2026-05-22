@@ -967,6 +967,16 @@ Result Client::set_room_topic(const std::string& room_id, const std::string& top
     return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
 }
 
+std::string Client::get_room_notification_mode(std::string room_id) const
+{
+    return std::string(impl_->ffi->get_room_notification_mode(room_id));
+}
+
+void Client::set_room_notification_mode(std::string room_id, std::string mode)
+{
+    impl_->ffi->set_room_notification_mode(room_id, mode);
+}
+
 Result Client::ignore_user(const std::string& user_id)
 {
     return from_ffi(impl_->ffi->ignore_user(user_id));

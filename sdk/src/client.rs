@@ -8578,6 +8578,143 @@ use matrix_sdk::encryption::verification::SasVerification;
 // Server pushers (Step 12)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Per-room notification mode (push rules)
+// ---------------------------------------------------------------------------
+
+#[cfg(not(test))]
+impl ClientFfi {
+    pub fn get_room_notification_mode(&self, room_id: &str) -> String {
+        use matrix_sdk::ruma::events::GlobalAccountDataEventType;
+        use matrix_sdk::ruma::push::{Action, PushCondition, Ruleset};
+        use serde_json::Value;
+
+        let Some(client) = self.client.clone() else {
+            return "default".to_owned();
+        };
+        let room_id = room_id.to_owned();
+
+        self.rt.block_on(async move {
+            let et = GlobalAccountDataEventType::from("m.push_rules");
+            let Some(raw) = client
+                .account()
+                .account_data_raw(et)
+                .await
+                .ok()
+                .flatten()
+            else {
+                return "default".to_owned();
+            };
+            let Ok(content) = serde_json::from_str::<Value>(raw.json().get()) else {
+                return "default".to_owned();
+            };
+            let global = content.get("global").cloned().unwrap_or_default();
+            let Ok(ruleset) = serde_json::from_value::<Ruleset>(global) else {
+                return "default".to_owned();
+            };
+
+            // Check override rules for a room_id EventMatch condition with empty
+            // actions — that is the "Off" (suppress all, including mentions) mode.
+            for rule in &ruleset.override_ {
+                if !rule.enabled {
+                    continue;
+                }
+                let has_room_match = rule.conditions.iter().any(|c| {
+                    if let PushCondition::EventMatch(data) = c {
+                        data.key == "room_id" && data.pattern == room_id
+                    } else {
+                        false
+                    }
+                });
+                if has_room_match && rule.actions.is_empty() {
+                    return "off".to_owned();
+                }
+            }
+
+            // Check room rules for this room_id.
+            for rule in &ruleset.room {
+                if rule.rule_id.as_str() != room_id {
+                    continue;
+                }
+                if !rule.enabled {
+                    continue;
+                }
+                if rule.actions.iter().any(|a| matches!(a, Action::Notify)) {
+                    return "all".to_owned();
+                }
+                return "mentions".to_owned();
+            }
+
+            "default".to_owned()
+        })
+    }
+
+    pub fn set_room_notification_mode(&mut self, room_id: &str, mode: &str) {
+        use matrix_sdk::ruma::api::client::push::{
+            delete_pushrule::v3::Request as DeletePushRule,
+            set_pushrule::v3::Request as SetPushRule,
+            RuleKind,
+        };
+        use matrix_sdk::ruma::push::{
+            Action, EventMatchConditionData, NewConditionalPushRule, NewPushRule,
+            NewSimplePushRule, PushCondition,
+        };
+        use matrix_sdk::ruma::OwnedRoomId;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let mode    = mode.to_owned();
+        let room_id = room_id.to_owned();
+
+        self.rt.block_on(async move {
+            match mode.as_str() {
+                "default" => {
+                    let _ = client
+                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
+                        .await;
+                    let _ = client
+                        .send(DeletePushRule::new(RuleKind::Room, room_id))
+                        .await;
+                }
+                "all" => {
+                    let _ = client
+                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
+                        .await;
+                    let Ok(rid) = room_id.parse::<OwnedRoomId>() else { return; };
+                    let rule =
+                        NewPushRule::Room(NewSimplePushRule::new(rid, vec![Action::Notify]));
+                    let _ = client.send(SetPushRule::new(rule)).await;
+                }
+                "mentions" => {
+                    let _ = client
+                        .send(DeletePushRule::new(RuleKind::Override, room_id.clone()))
+                        .await;
+                    let Ok(rid) = room_id.parse::<OwnedRoomId>() else { return; };
+                    let rule = NewPushRule::Room(NewSimplePushRule::new(rid, vec![]));
+                    let _ = client.send(SetPushRule::new(rule)).await;
+                }
+                "off" => {
+                    let _ = client
+                        .send(DeletePushRule::new(RuleKind::Room, room_id.clone()))
+                        .await;
+                    let cond = PushCondition::EventMatch(EventMatchConditionData::new(
+                        "room_id".to_owned(),
+                        room_id.clone(),
+                    ));
+                    let rule = NewPushRule::Override(NewConditionalPushRule::new(
+                        room_id,
+                        vec![cond],
+                        vec![],
+                    ));
+                    let _ = client.send(SetPushRule::new(rule)).await;
+                }
+                _ => {}
+            }
+        });
+    }
+}
+
 #[cfg(not(test))]
 impl ClientFfi {
     pub fn register_pusher(
@@ -8641,6 +8778,12 @@ impl ClientFfi {
     pub fn hint_push_room(&mut self, _room_id: &str) -> OpResult {
         err("sync not started")
     }
+
+    pub fn get_room_notification_mode(&self, _room_id: &str) -> String {
+        "default".to_owned()
+    }
+
+    pub fn set_room_notification_mode(&mut self, _room_id: &str, _mode: &str) {}
 }
 
 // ---------------------------------------------------------------------------

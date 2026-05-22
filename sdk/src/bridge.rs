@@ -1311,6 +1311,18 @@ pub mod ffi {
         /// before the regular sync loop catches up.
         fn hint_push_room(self: &mut ClientFfi, room_id: &str) -> OpResult;
 
+        // ----- Per-room notification mode -----
+
+        /// Return the effective notification mode for a room from the local
+        /// push-rules cache. Returns "default" | "all" | "mentions" | "off".
+        /// Blocks — call from a worker thread.
+        fn get_room_notification_mode(self: &ClientFfi, room_id: &str) -> String;
+
+        /// Set the per-room notification mode by writing push rules to the
+        /// homeserver. `mode` must be "default" | "all" | "mentions" | "off".
+        /// Fire-and-forget; errors are logged. Blocks — worker thread.
+        fn set_room_notification_mode(self: &mut ClientFfi, room_id: &str, mode: &str);
+
         // ----- Session teardown -----
 
         fn logout(self: &mut ClientFfi) -> OpResult;

@@ -226,6 +226,8 @@ public:
     // Host::set_clipboard_text in the shell.
     std::function<void(std::string_view)> on_set_clipboard;
 
+    std::function<void(std::string room_id)>                on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
     std::function<void(std::string room_id)>                on_fetch_room_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;

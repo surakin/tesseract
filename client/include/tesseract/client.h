@@ -668,6 +668,15 @@ public:
     /// Blocks the calling thread — call from a worker thread.
     Result set_room_topic(const std::string& room_id, const std::string& topic);
 
+    /// Returns "default" | "all" | "mentions" | "off" from the local push-rule
+    /// cache. Blocks the calling thread — call from a worker thread.
+    std::string get_room_notification_mode(std::string room_id) const;
+
+    /// Set the per-room notification mode by writing push rules to the server.
+    /// mode must be "default" | "all" | "mentions" | "off". Fire-and-forget.
+    /// Blocks the calling thread — call from a worker thread.
+    void set_room_notification_mode(std::string room_id, std::string mode);
+
     /// Add user_id to m.ignored_user_list account data.
     /// Blocks the calling thread — call from a worker thread.
     Result ignore_user(const std::string& user_id);

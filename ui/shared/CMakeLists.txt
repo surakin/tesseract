@@ -31,6 +31,8 @@ set(_tk_sources
     tk/widget.cpp
     tk/layout.h
     tk/layout.cpp
+    tk/combobox.h
+    tk/combobox.cpp
     tk/controls.h
     tk/controls.cpp
     tk/image_view.h

@@ -833,6 +833,10 @@ public:
 
 protected:
 
+    // Fire-and-forget: write per-room notification mode push rules to the server.
+    void set_room_notification_mode_(const std::string& room_id,
+                                      const std::string& mode);
+
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
 

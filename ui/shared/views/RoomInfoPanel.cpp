@@ -33,6 +33,22 @@ RoomInfoPanel::RoomInfoPanel()
         std::make_unique<tk::Button>("Leave Room", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
 
+    // ComboBox is added last so it is dispatched first in reverse child order,
+    // ensuring its expanded dropdown captures pointer events before leave_btn_.
+    auto notif_combo = std::make_unique<tk::ComboBox>();
+    notif_combo->set_options({
+        {.label = "Default",      .value = "default"},
+        {.label = "All messages", .value = "all"},
+        {.label = "Mentions",     .value = "mentions"},
+        {.label = "Off",          .value = "off"},
+    });
+    notif_combo->set_selected_value("default");
+    notif_combo->on_changed = [this](std::string value) {
+        if (on_notification_mode_changed)
+            on_notification_mode_changed(room_id_, std::move(value));
+    };
+    notification_combo_ = add_child(std::move(notif_combo));
+
     close_btn_->set_on_click([this]() {
         if (on_close) on_close();
     });
@@ -104,6 +120,13 @@ void RoomInfoPanel::open(const tesseract::RoomInfo& info)
 
     expand_btn_->set_label("Show all \xE2\x96\xBE");
 
+    if (notification_combo_)
+    {
+        notification_combo_->collapse();
+        notification_combo_->set_selected_value("default");
+    }
+    if (on_fetch_notification_mode) on_fetch_notification_mode(room_id_);
+
     if (on_fetch_members) on_fetch_members(room_id_);
 
     // Fire the layout-changed callback so the shell hides native overlays
@@ -158,6 +181,12 @@ void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)
         std::string("Show all (") + std::to_string(total) + ") \xE2\x96\xBE");
 
     if (on_layout_changed) on_layout_changed();
+}
+
+void RoomInfoPanel::set_notification_mode(std::string mode)
+{
+    if (!open_) return;
+    if (notification_combo_) notification_combo_->set_selected_value(mode);
 }
 
 void RoomInfoPanel::set_topic_edit_text(std::string t)
@@ -276,6 +305,19 @@ void RoomInfoPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         {
             expand_btn_->arrange(lc, {px + kPadX, y, iw, kButtonH});
             y += kButtonH + kPadY;
+        }
+    }
+
+    // Notifications section — before Leave Room
+    {
+        notif_sep_y_ = y;
+        y += 1.0f + kPadY;
+        y += 12.0f + 6.0f; // section header
+        if (notification_combo_)
+        {
+            notification_combo_->arrange(lc, {px + kPadX, y, iw, 32.0f});
+            notification_combo_->set_popup_clip(panel_rect_);
+            y += 32.0f + kPadY;
         }
     }
 
@@ -621,8 +663,26 @@ void RoomInfoPanel::paint(tk::PaintCtx& ctx)
     // 14. Expand button
     if (expand_btn_ && expand_btn_->visible()) expand_btn_->paint(ctx);
 
-    // 15. Leave button
+    // 15. Notifications separator + section header
+    cv.fill_rect({panel_rect_.x + kPadX, notif_sep_y_, kPanelW - kPadX * 2.0f, 1.0f},
+                 pal.separator);
+    {
+        const float hdr_y = notif_sep_y_ + 1.0f + kPadY;
+        tk::TextStyle st{};
+        st.role      = tk::FontRole::Small;
+        st.halign    = tk::TextHAlign::Leading;
+        st.max_width = kPanelW - kPadX * 2.0f;
+        auto lbl = ctx.factory.build_text("Notifications", st);
+        if (lbl)
+            cv.draw_text(*lbl, {panel_rect_.x + kPadX, hdr_y}, pal.text_muted);
+    }
+
+    // 16. Leave button (painted before the notification combo so the combo's
+    //     expanded dropdown overlays it when open)
     if (leave_btn_) leave_btn_->paint(ctx);
+
+    // 17. Notification combo — painted last so its dropdown overlays leave btn
+    if (notification_combo_) notification_combo_->paint(ctx);
 
     ctx.canvas.pop_clip();
 

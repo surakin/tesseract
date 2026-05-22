@@ -102,6 +102,25 @@ void RoomWindowBase::wire_room_view_(views::RoomView* rv)
             surface_repaint_();
         });
 
+    // ── Per-room notification mode ────────────────────────────────────────
+    rv->on_fetch_notification_mode = [this, rv](std::string room_id) {
+        if (!shell_->client_) return;
+        auto* c = shell_->client_;
+        run_async_([this, rv, c, room_id = std::move(room_id),
+                    alive = alive_]() mutable {
+            auto mode = c->get_room_notification_mode(room_id);
+            post_to_ui_([rv, alive = std::move(alive),
+                         mode = std::move(mode)]() mutable {
+                if (!*alive) return;
+                rv->room_info_panel()->set_notification_mode(std::move(mode));
+            });
+        });
+    };
+    rv->on_notification_mode_changed = [this](std::string room_id,
+                                               std::string mode) {
+        shell_->set_room_notification_mode_(room_id, mode);
+    };
+
     // ── Compose callbacks ────────────────────────────────────────────────
     rv->on_send = [this](const std::string& body)
     {
