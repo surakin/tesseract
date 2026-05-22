@@ -1508,6 +1508,9 @@ void MacShell::apply_cached_messages_(
 
     // ── Single surface hosting the full main-app widget tree ──────────
     _mainAppSurface = std::make_unique<tk::macos::Surface>(tk::Theme::light());
+    // Let the animation timer repaint only the rects where animated images are
+    // drawn (see _animTick) instead of the whole surface.
+    _mainAppSurface->set_anim_cache(&_shell->anim_cache_);
     // Feed pointer / wheel events into the PresenceTracker.
     _mainAppSurface->host().set_on_user_activity(
         [shell = _shell.get()] { if (shell) shell->notify_user_activity_(); });
@@ -3498,6 +3501,7 @@ void MacShell::apply_cached_messages_(
                              if (auto* f = s->_shell->anim_cache_.current_frame(
                                      cache_key))
                              {
+                                 [s _startAnimTickIfNeeded];
                                  return f;
                              }
                              auto it = s->_shell->tk_images_.find(cache_key);
@@ -3805,6 +3809,7 @@ void MacShell::apply_cached_messages_(
                              if (auto* f = s->_shell->anim_cache_.current_frame(
                                      cache_key))
                              {
+                                 [s _startAnimTickIfNeeded];
                                  return f;
                              }
                              auto it = s->_shell->tk_images_.find(cache_key);
@@ -5875,7 +5880,10 @@ void MacShell::apply_cached_messages_(
 
 - (void)_animTick:(NSTimer*)timer
 {
-    if (_shell->anim_cache_.empty())
+    // Stop once nothing animated is on-screen — entries linger in the cache
+    // after scrolling away / switching rooms, so `empty()` would keep the
+    // 60 Hz timer (and full-window repaints) running forever.
+    if (!_shell->anim_cache_.any_visible())
     {
         [_animTimer invalidate];
         _animTimer = nil;
@@ -5885,7 +5893,12 @@ void MacShell::apply_cached_messages_(
         [[NSDate date] timeIntervalSince1970] * 1000.0);
     if (_shell->anim_cache_.advance(now))
     {
-        [self _relayoutChatSurface];
+        // Repaint only the animated-image rects, not the whole chat surface
+        // (and no per-frame relayout — frame swaps never change layout).
+        if (_mainAppSurface)
+        {
+            _mainAppSurface->update_anim_regions();
+        }
         StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
         if (panel.isVisible)
         {
@@ -5939,6 +5952,7 @@ void MacShell::apply_cached_messages_(
                              if (auto* f = s->_shell->anim_cache_.current_frame(
                                      cache_key))
                              {
+                                 [s _startAnimTickIfNeeded];
                                  return f;
                              }
                              auto it = s->_shell->tk_images_.find(cache_key);
@@ -5992,6 +6006,7 @@ void MacShell::apply_cached_messages_(
                              if (auto* f = s->_shell->anim_cache_.current_frame(
                                      cache_key))
                              {
+                                 [s _startAnimTickIfNeeded];
                                  return f;
                              }
                              auto it = s->_shell->tk_images_.find(cache_key);

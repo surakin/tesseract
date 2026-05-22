@@ -569,6 +569,7 @@ const tk::Image* RoomWindowBase::shell_image_(const std::string& mxc) const
 {
     if (auto* f = shell_->anim_cache_.current_frame(mxc))
     {
+        shell_->start_anim_tick_(); // visible animated frame → keep timer alive
         return f;
     }
     auto it = shell_->tk_images_.find(mxc);

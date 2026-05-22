@@ -157,6 +157,7 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 {
     if (const auto* f = anim_cache_.current_frame(mxc))
     {
+        start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
     auto it = tk_images_.find(mxc);
@@ -168,10 +169,11 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
     return nullptr;
 }
 
-const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc) const
+const tk::Image* ShellBase::shell_sticker_no_fetch_(const std::string& mxc)
 {
     if (const auto* f = anim_cache_.current_frame(mxc))
     {
+        start_anim_tick_(); // visible animated frame → keep the timer running
         return f;
     }
     auto it = tk_images_.find(mxc);

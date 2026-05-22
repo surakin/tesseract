@@ -1,4 +1,5 @@
 #include "host_macos.h"
+#include "anim_image_cache.h"
 #include "canvas_cg.h"
 #include "controls.h"
 
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace tk::macos
 {
@@ -30,7 +32,7 @@ namespace tk::macos
 //  Host — owns the tree, paints via CoreGraphics + CoreText
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host
+class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
     Host(TKSurfaceView* view, const Theme& theme, bool transparent = false)
@@ -40,6 +42,30 @@ public:
     }
 
     void request_repaint() override;
+
+    // Point the damage sink at the shell's animation cache so it can tell
+    // animated keys (worth partial-repainting) from static ones.
+    void set_anim_cache(const AnimImageCache* cache)
+    {
+        anim_cache_ = cache;
+    }
+
+    // AnimDamageSink: record the on-screen rect of an animated image drawn
+    // during the current paint pass. Static images are ignored.
+    void note_image(const std::string& key, Rect world) override
+    {
+        if (anim_cache_ && anim_cache_->has(key))
+        {
+            anim_damage_.push_back(world);
+        }
+    }
+
+    // Invalidate only the regions occupied by animated images on the last
+    // paint. setNeedsDisplayInRect: clips drawRect:'s CGContext to the union
+    // of these rects, so the whole tree is no longer rasterized per frame.
+    // Falls back to a full repaint when no animated rect was recorded.
+    // Defined out-of-line (uses TKSurfaceView, only forward-declared here).
+    void invalidate_anim_damage();
     void post_to_ui(std::function<void()> task) override;
     void post_delayed(int ms, std::function<void()> fn) override;
     std::unique_ptr<NativeTextField> make_text_field() override;
@@ -133,6 +159,8 @@ private:
     FileDropHandler on_file_drop_;
     std::function<void(tk::Point)> on_right_click_;
     bool drag_active_ = false;
+    const AnimImageCache* anim_cache_ = nullptr;
+    std::vector<Rect> anim_damage_;
 };
 
 } // namespace tk::macos
@@ -1306,6 +1334,26 @@ void Host::request_repaint()
     }
 }
 
+void Host::invalidate_anim_damage()
+{
+    if (!view_)
+    {
+        return;
+    }
+    if (anim_damage_.empty())
+    {
+        [view_ setNeedsDisplay:YES];
+        return;
+    }
+    for (const auto& r : anim_damage_)
+    {
+        // view_ is isFlipped (top-left origin), matching canvas coords.
+        // Pad by 1px so anti-aliased edges are not clipped.
+        [view_ setNeedsDisplayInRect:NSMakeRect(r.x - 1.0, r.y - 1.0,
+                                                r.w + 2.0, r.h + 2.0)];
+    }
+}
+
 void Host::post_to_ui(std::function<void()> task)
 {
     __block std::function<void()> captured = std::move(task);
@@ -1535,7 +1583,8 @@ void Host::on_draw(CGContextRef ctx)
     }
     auto canvas = cg::make_canvas(ctx);
     canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
-    PaintCtx pc{*canvas, *factory_, *theme_};
+    anim_damage_.clear();
+    PaintCtx pc{*canvas, *factory_, *theme_, this};
     root_->paint(pc);
 
     if (drag_active_ && view_)
@@ -1932,6 +1981,16 @@ Widget* Surface::root() const
 void Surface::relayout()
 {
     host_->relayout();
+}
+
+void Surface::set_anim_cache(const AnimImageCache* cache)
+{
+    host_->set_anim_cache(cache);
+}
+
+void Surface::update_anim_regions()
+{
+    host_->invalidate_anim_damage();
 }
 
 void Surface::set_theme(const Theme& t)

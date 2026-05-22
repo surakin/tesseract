@@ -18,6 +18,11 @@
 
 #include <memory>
 
+namespace tk
+{
+class AnimImageCache;
+}
+
 namespace tk::qt6
 {
 
@@ -44,6 +49,13 @@ public:
     // …). resizeEvent already does this automatically.
     void relayout();
     void set_theme(const Theme& t);
+
+    // Animated-image partial repaints. Point the surface at the shell's
+    // animation cache once at setup; then call update_anim_regions() from the
+    // animation timer instead of update() to invalidate only the rects where
+    // animated images were drawn on the last paint.
+    void set_anim_cache(const AnimImageCache* cache);
+    void update_anim_regions();
 
     // Callback fired at the tail of every relayout. Use this from
     // integration code to keep native overlays (QLineEdit, ...) aligned

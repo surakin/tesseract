@@ -182,12 +182,23 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
 
     // Image or placeholder.  Try full-res first; fall back to the thumbnail
     // cache key while the full-res fetch is still in flight.
-    const tk::Image* img = (image_provider_ && !media_url_.empty())
-                               ? image_provider_(media_url_)
-                               : nullptr;
+    const tk::Image* img = nullptr;
+    std::string drawn_key;
+    if (image_provider_ && !media_url_.empty())
+    {
+        img = image_provider_(media_url_);
+        if (img)
+        {
+            drawn_key = media_url_;
+        }
+    }
     if (!img && image_provider_ && !display_key_.empty())
     {
         img = image_provider_(display_key_);
+        if (img)
+        {
+            drawn_key = display_key_;
+        }
     }
     // is_loading_ is cleared here (in paint) rather than via a separate
     // callback because ImageViewerOverlay has no direct "image ready" hook —
@@ -199,6 +210,10 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         cv.push_clip_rounded_rect(image_rect_, 4.0f);
         cv.draw_image(*img, image_rect_);
         cv.pop_clip();
+        if (ctx.anim_damage)
+        {
+            ctx.anim_damage->note_image(drawn_key, image_rect_);
+        }
     }
     else
     {

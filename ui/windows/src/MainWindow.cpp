@@ -4262,7 +4262,10 @@ void MainWindow::try_load_animation(const std::string& url,
 
 void MainWindow::on_anim_tick()
 {
-    if (anim_cache_.empty())
+    // Stop once nothing animated is on-screen — entries linger in the cache
+    // after scrolling away / switching rooms, so `empty()` would keep the
+    // 60 Hz timer (and full-window repaints) running forever.
+    if (!anim_cache_.any_visible())
     {
         if (anim_timer_running_ && hwnd_)
         {
@@ -5572,6 +5575,7 @@ void MainWindow::ensure_emoji_picker_created()
         {
             if (auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto sit = tk_images_.find(cache_key);
@@ -6137,6 +6141,7 @@ void MainWindow::ensure_sticker_picker_created()
         {
             if (auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto sit = tk_images_.find(cache_key);

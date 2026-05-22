@@ -719,7 +719,9 @@ protected:
     // variant (used by RoomView's image_provider, where ensure_row_media_
     // has already kicked the fetch).
     const tk::Image* shell_sticker_(const std::string& mxc);
-    const tk::Image* shell_sticker_no_fetch_(const std::string& mxc) const;
+    // Non-const: an animated hit restarts the frame-tick timer (so a GIF that
+    // scrolled back into view resumes after the timer idled).
+    const tk::Image* shell_sticker_no_fetch_(const std::string& mxc);
 
     // Wire MainAppWidget-level + RoomListView/RoomView/UserInfo providers
     // that read from tk_avatars_, tk_images_, anim_cache_, and

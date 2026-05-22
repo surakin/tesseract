@@ -3467,7 +3467,10 @@ void MainWindow::invalidate_anim_consumers_()
 gboolean MainWindow::on_tk_anim_tick_(gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
-    if (self->anim_cache_.empty())
+    // Stop once nothing animated is on-screen — entries linger in the cache
+    // after scrolling away / switching rooms, so `empty()` would keep the
+    // 60 Hz timer (and full-window repaints) running forever.
+    if (!self->anim_cache_.any_visible())
     {
         self->tk_anim_tick_id_ = 0;
         return G_SOURCE_REMOVE;
@@ -3475,7 +3478,32 @@ gboolean MainWindow::on_tk_anim_tick_(gpointer user_data)
     const std::int64_t now_ms = g_get_monotonic_time() / 1000;
     if (self->anim_cache_.advance(now_ms))
     {
-        self->invalidate_anim_consumers_();
+        // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area
+        // was removed; the render-node model only supports whole-widget
+        // queue_draw), so we can't scope the repaint to the animated rects the
+        // way Qt6/macOS do. But we can still avoid the per-frame measure +
+        // arrange pass: a plain repaint is enough since frame swaps never
+        // change layout. Pickers keep their existing invalidation.
+        if (self->main_app_surface_)
+        {
+            self->main_app_surface_->host().request_repaint();
+        }
+        if (self->emoji_picker_shared_)
+        {
+            self->emoji_picker_shared_->invalidate_image_cache();
+        }
+        if (self->emoji_picker_surface_)
+        {
+            self->emoji_picker_surface_->relayout();
+        }
+        if (self->sticker_picker_shared_)
+        {
+            self->sticker_picker_shared_->invalidate_image_cache();
+        }
+        if (self->sticker_picker_surface_)
+        {
+            self->sticker_picker_surface_->relayout();
+        }
     }
     return G_SOURCE_CONTINUE;
 }
@@ -5042,6 +5070,7 @@ void MainWindow::build_emoji_popover()
         {
             if (const auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto it = tk_images_.find(cache_key);
@@ -5131,6 +5160,7 @@ void MainWindow::build_sticker_popover()
         {
             if (const auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto it = tk_images_.find(cache_key);

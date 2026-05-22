@@ -125,6 +125,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // Single surface hosting the MainAppWidget tree (sidebar + chat + overlays).
     mainAppSurface_ = new tk::qt6::Surface(tk::Theme::light(), contentStack_);
     contentStack_->addWidget(mainAppSurface_);
+    // Let the animation timer repaint only the rects where animated images are
+    // drawn (see onMessageAnimTick_) instead of the whole surface.
+    mainAppSurface_->set_anim_cache(&anim_cache_);
 
     // Feed pointer / wheel events into the PresenceTracker so we stay "Online"
     // while the user is engaging with the app. Focus + timer ticks are wired
@@ -336,6 +339,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 }
                 if (const auto* f = anim_cache_.current_frame(url))
                 {
+                    start_anim_tick_();
                     return f;
                 }
                 if (auto it = tk_images_.find(url); it != tk_images_.end())
@@ -1534,6 +1538,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (const auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto it = tk_images_.find(cache_key);
@@ -1617,6 +1622,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (const auto* f = anim_cache_.current_frame(cache_key))
             {
+                start_anim_tick_();
                 return f;
             }
             auto it = tk_images_.find(cache_key);
@@ -3271,7 +3277,10 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 
 void MainWindow::onMessageAnimTick_()
 {
-    if (anim_cache_.empty())
+    // Stop once nothing animated is on-screen — entries linger in the cache
+    // after scrolling away / switching rooms, so `empty()` would keep the
+    // 60 Hz timer (and full-window repaints) running forever.
+    if (!anim_cache_.any_visible())
     {
         if (tk_anim_timer_)
         {
@@ -3283,7 +3292,7 @@ void MainWindow::onMessageAnimTick_()
     {
         if (mainAppSurface_)
         {
-            mainAppSurface_->update();
+            mainAppSurface_->update_anim_regions();
         }
         if (emojiPicker_ && emojiPicker_->isVisible())
         {

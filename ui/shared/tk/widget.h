@@ -77,11 +77,23 @@ struct LayoutCtx
     CanvasFactory& factory;
     const Theme& theme;
 };
+// Optional per-paint sink for animated-image damage tracking. Views call
+// note_image() with the on-screen (surface-coordinate) rect of every animated
+// image they draw; the host collects these so the animation timer can repaint
+// just those regions instead of the whole surface. Null when the backing host
+// does not (yet) support partial animation repaints.
+struct AnimDamageSink
+{
+    virtual ~AnimDamageSink() = default;
+    virtual void note_image(const std::string& key, Rect world) = 0;
+};
+
 struct PaintCtx
 {
     Canvas& canvas;
     CanvasFactory& factory;
     const Theme& theme;
+    AnimDamageSink* anim_damage = nullptr;
 };
 
 class Widget

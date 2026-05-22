@@ -2574,6 +2574,10 @@ private:
             ctx.canvas.push_clip_rounded_rect(dst, 8.0f);
             ctx.canvas.draw_image(*img, dst);
             ctx.canvas.pop_clip();
+            if (ctx.anim_damage)
+            {
+                ctx.anim_damage->note_image(display_key, dst);
+            }
         }
         else
         {

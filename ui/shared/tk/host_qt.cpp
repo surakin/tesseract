@@ -1,8 +1,11 @@
 #include "host_qt.h"
+#include "anim_image_cache.h"
 #include "canvas_qpainter.h"
 #include "controls.h"
 
 #include <tesseract/settings.h>
+
+#include <cmath>
 
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
@@ -786,7 +789,7 @@ private:
 //  Host — tk::Host impl + glue between Surface QWidget and the tree
 // ─────────────────────────────────────────────────────────────────────────
 
-class Host : public tk::Host
+class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
     Host(Surface* surface, const Theme& theme, bool transparent = false)
@@ -800,6 +803,50 @@ public:
         if (surface_)
         {
             surface_->update();
+        }
+    }
+
+    // Point the damage sink at the shell's animation cache so it can tell
+    // animated keys (worth partial-repainting) from static ones.
+    void set_anim_cache(const AnimImageCache* cache)
+    {
+        anim_cache_ = cache;
+    }
+
+    // AnimDamageSink: record the on-screen rect of an animated image drawn
+    // during the current paint pass. Static images (not in the anim cache)
+    // are ignored — only animated content needs per-frame invalidation.
+    void note_image(const std::string& key, Rect world) override
+    {
+        if (anim_cache_ && anim_cache_->has(key))
+        {
+            anim_damage_.push_back(world);
+        }
+    }
+
+    // Invalidate just the regions occupied by animated images on the last
+    // paint, instead of the whole surface. Falls back to a full repaint when
+    // no animated rects were recorded (e.g. the first frame after a GIF is
+    // decoded, before it has been painted once).
+    void invalidate_anim_damage()
+    {
+        if (!surface_)
+        {
+            return;
+        }
+        if (anim_damage_.empty())
+        {
+            surface_->update();
+            return;
+        }
+        for (const auto& r : anim_damage_)
+        {
+            const int x = static_cast<int>(std::floor(r.x));
+            const int y = static_cast<int>(std::floor(r.y));
+            const int w = static_cast<int>(std::ceil(r.x + r.w)) - x;
+            const int h = static_cast<int>(std::ceil(r.y + r.h)) - y;
+            // Pad by 1px so anti-aliased edges are not clipped.
+            surface_->update(QRect(x - 1, y - 1, w + 2, h + 2));
         }
     }
 
@@ -999,7 +1046,8 @@ public:
         }
         auto canvas = make_canvas(painter);
         canvas->clear(transparent_ ? Color{0, 0, 0, 0} : theme_->palette.bg);
-        PaintCtx ctx{*canvas, *factory_, *theme_};
+        anim_damage_.clear();
+        PaintCtx ctx{*canvas, *factory_, *theme_, this};
         root_->paint(ctx);
     }
 
@@ -1143,6 +1191,8 @@ private:
     Widget* pressed_widget_ = nullptr;
     Button* hovered_btn_ = nullptr;
     Widget* hovered_widget_ = nullptr;
+    const AnimImageCache* anim_cache_ = nullptr;
+    std::vector<Rect> anim_damage_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1202,6 +1252,16 @@ void Surface::set_theme(const Theme& t)
 {
     host_->set_theme(t);
     relayout();
+}
+
+void Surface::set_anim_cache(const AnimImageCache* cache)
+{
+    host_->set_anim_cache(cache);
+}
+
+void Surface::update_anim_regions()
+{
+    host_->invalidate_anim_damage();
 }
 
 void Surface::set_on_layout(std::function<void()> cb)
