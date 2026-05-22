@@ -875,6 +875,28 @@ std::pair<bool, bool> ShellBase::compute_tray_unread(
     return {has_unread, has_highlight};
 }
 
+std::string ShellBase::find_existing_dm(const std::vector<RoomInfo>& rooms,
+                                        const std::string&           user_id)
+{
+    if (user_id.empty())
+    {
+        return {};
+    }
+    for (const auto& r : rooms)
+    {
+        if (r.is_direct && r.dm_counterpart_user_id == user_id)
+        {
+            return r.id;
+        }
+    }
+    return {};
+}
+
+std::string ShellBase::find_existing_dm_(const std::string& user_id) const
+{
+    return find_existing_dm(rooms_, user_id);
+}
+
 void ShellBase::notify_tray_unread_()
 {
     auto [u, h] = compute_tray_unread(per_account_rooms_);

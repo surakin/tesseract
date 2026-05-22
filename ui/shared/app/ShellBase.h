@@ -822,6 +822,9 @@ protected:
     // Called from push_rooms_ and mark_room_read_.
     void notify_tray_unread_();
 
+    // find_existing_dm() against the active account's cached rooms_.
+    std::string find_existing_dm_(const std::string& user_id) const;
+
 public:
     // Pure function: returns {has_unread, has_highlight} computed across every
     // account's room list. has_unread is true iff some room has
@@ -830,6 +833,14 @@ public:
     // exercise it without standing up a real shell.
     static std::pair<bool, bool> compute_tray_unread(
         const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account);
+
+    // Pure function: returns the room id of an existing 1:1 DM with `user_id`
+    // (the first room marked direct whose counterpart matches), or empty when
+    // none is found. Lets a shell switch to an already-open DM synchronously
+    // instead of waiting on the async get_or_create_dm round-trip. Exposed as a
+    // public static so the lookup can be unit-tested without a live shell.
+    static std::string find_existing_dm(const std::vector<RoomInfo>& rooms,
+                                        const std::string&           user_id);
 
 protected:
 

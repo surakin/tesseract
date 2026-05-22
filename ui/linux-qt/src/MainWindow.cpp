@@ -1034,6 +1034,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             if (!client_)
                 return;
+            // If a DM with this user is already open, switch to it immediately
+            // instead of waiting on the async get_or_create_dm round-trip.
+            if (auto existing = find_existing_dm_(user_id); !existing.empty())
+            {
+                navigate_to_room(existing);
+                return;
+            }
             auto* c = client_;
             runOnPool_(
                 [this, c, user_id]()

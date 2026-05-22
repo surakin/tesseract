@@ -196,6 +196,7 @@ public:
     using ShellBase::ensure_tile_async;
     using ShellBase::ensure_user_avatar_;
     using ShellBase::event_handler_;
+    using ShellBase::find_existing_dm_;
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
     using ShellBase::last_backup_state_;
@@ -2548,6 +2549,13 @@ void MacShell::apply_cached_messages_(
             MainWindowController* s = weakSelf;
             if (!s || !s->_shell->client_)
                 return;
+            // Already-open DM → switch immediately, skipping the async round-trip.
+            if (auto existing = s->_shell->find_existing_dm_(user_id);
+                !existing.empty())
+            {
+                s->_shell->tab_navigate_room(existing);
+                return;
+            }
             auto* c = s->_shell->client_;
             s->_shell->run_async_(
                 [weakSelf, c, user_id = std::move(user_id)]() mutable
