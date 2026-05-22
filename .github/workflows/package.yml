@@ -81,6 +81,12 @@ jobs:
       - name: Install build dependencies
         run: brew install go librsvg autoconf automake libtool opus
 
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
       - name: Install Rust (stable, aarch64 target)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -119,6 +125,12 @@ jobs:
 
       - name: Install build dependencies
         run: brew install go librsvg autoconf automake libtool opus
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable, x86_64 target)
         uses: dtolnay/rust-toolchain@stable
