@@ -757,6 +757,27 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         }
         return 0;
 
+    case WM_MOVING:
+    {
+        const auto* nr = reinterpret_cast<const RECT*>(lParam);
+        int dx = nr->left - self->picker_track_pos_.x;
+        int dy = nr->top  - self->picker_track_pos_.y;
+        self->picker_track_pos_ = {nr->left, nr->top};
+        self->reposition_visible_pickers_(dx, dy);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
+
+    case WM_MOVE:
+    {
+        RECT wrc{};
+        GetWindowRect(hwnd, &wrc);
+        int dx = wrc.left - self->picker_track_pos_.x;
+        int dy = wrc.top  - self->picker_track_pos_.y;
+        self->picker_track_pos_ = {wrc.left, wrc.top};
+        self->reposition_visible_pickers_(dx, dy);
+        return 0;
+    }
+
     case WM_COMMAND:
         // Compose bar Send / Emoji + recovery banner clicks go through
         // the shared widgets' callbacks now — no WM_COMMAND wiring. The
@@ -2622,6 +2643,12 @@ void MainWindow::on_create(HWND hwnd)
     branding_surface_ = std::make_unique<tk::win32::Surface>(
         hInst_, hwnd, tk::Theme::light());
     branding_surface_->set_root(std::make_unique<tesseract::views::BrandView>());
+
+    {
+        RECT wrc{};
+        GetWindowRect(hwnd_, &wrc);
+        picker_track_pos_ = {wrc.left, wrc.top};
+    }
 
     start_login();
 }
@@ -5494,6 +5521,23 @@ void MainWindow::ensure_emoji_picker_created()
                 emoji_picker_search_field_->set_rect(r);
             }
         });
+}
+
+void MainWindow::reposition_visible_pickers_(int dx, int dy)
+{
+    if (dx == 0 && dy == 0)
+        return;
+    auto move_if_visible = [&](HWND h)
+    {
+        if (!h || !IsWindowVisible(h))
+            return;
+        RECT r{};
+        GetWindowRect(h, &r);
+        SetWindowPos(h, nullptr, r.left + dx, r.top + dy, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    };
+    move_if_visible(hEmojiPicker_);
+    move_if_visible(hStickerPicker_);
 }
 
 void MainWindow::toggle_emoji_picker()
