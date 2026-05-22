@@ -31,13 +31,24 @@ jobs:
         run: choco install nsis --no-progress -y
 
       # opus is required by matrix-sdk-ui (MSC3245 voice messages).
-      # Use the static-md triplet to match the /MD CRT this project links.
-      - name: Install opus (vcpkg)
+      # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
+      # the rest of the project exactly — avoids vcpkg triplet and GITHUB_ENV
+      # encoding issues.
+      - name: Build opus from source
         run: |
-          vcpkg install opus:x64-windows-static-md
-          "OPUS_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static-md/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OPUS_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static-md/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OPUS_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
 
       # cmake, ninja, Go, and Strawberry Perl are pre-installed on
       # windows-latest; Go and Perl satisfy the aws-lc-sys CMake builder.
