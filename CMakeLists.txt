@@ -296,10 +296,7 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Installer packaging (CPack). Windows → NSIS .exe, macOS → DragNDrop .dmg.
-# Linux installer packaging is intentionally out of scope (two backends,
-# distro-native packaging is a separate effort).
+# Installer packaging (CPack). Windows → NSIS .exe, macOS → DragNDrop .dmg,
+# Linux → DEB + RPM (Qt6 backend only; GTK4 uses the same rules).
 # ---------------------------------------------------------------------------
-if(WIN32 OR APPLE)
-    include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/Installers.cmake)
