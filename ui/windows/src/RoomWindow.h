@@ -53,11 +53,21 @@ protected:
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
+    void show_mention_popup_(tk::Rect cursor_rect, int rows);
+    void hide_mention_popup_();
+    bool mention_popup_visible_() const
+    {
+        return mention_popup_hwnd_ && IsWindowVisible(mention_popup_hwnd_);
+    }
 
     MainWindow* parent_;
     HWND hwnd_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
     std::unique_ptr<tk::NativeTextArea> text_area_;
+    HWND mention_popup_hwnd_ = nullptr;
+    std::unique_ptr<tk::win32::Surface> mention_popup_surface_;
+    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
+    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
 
     static constexpr const wchar_t* kClassName = L"TesseractRoomWnd";
     static bool class_registered_;

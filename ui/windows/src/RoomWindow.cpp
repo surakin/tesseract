@@ -5,6 +5,7 @@
 
 #include "views/PopoutRoomWidget.h"
 
+#include <algorithm>
 #include <string>
 
 namespace win32
@@ -180,15 +181,62 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
                 send_typing_notice_(typing);
             }
             room_view_->set_current_text(s);
+            if (mention_controller_)
+            {
+                mention_controller_->on_text_changed(
+                    s, text_area_->cursor_byte_pos());
+            }
         });
     text_area_->set_on_submit(
         [this]
         {
+            if (mention_controller_ && mention_controller_->on_submit())
+            {
+                return;
+            }
             if (room_view_)
             {
                 room_view_->compose_bar()->trigger_send();
             }
         });
+    text_area_->set_on_popup_nav(
+        [this](tk::NativeTextArea::NavKey nk) -> bool
+        { return mention_controller_ && mention_controller_->on_nav(nk); });
+
+    // @mention popup + controller (mirrors the main window).
+    {
+        HINSTANCE inst = reinterpret_cast<HINSTANCE>(
+            GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
+        mention_popup_hwnd_ = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
+            int(tesseract::views::MentionPopup::kWidth),
+            int(tesseract::views::MentionPopup::kRowHeight), nullptr, nullptr,
+            inst, nullptr);
+        mention_popup_surface_ = std::make_unique<tk::win32::Surface>(
+            inst, mention_popup_hwnd_, surface_->theme());
+        auto pw = std::make_unique<tesseract::views::MentionPopup>();
+        mention_popup_widget_ = pw.get();
+        mention_popup_surface_->set_root(std::move(pw));
+
+        tesseract::views::MentionController::Hooks hooks;
+        hooks.show = [this](tk::Rect cursor, int rows)
+        { show_mention_popup_(cursor, rows); };
+        hooks.hide = [this] { hide_mention_popup_(); };
+        hooks.repaint = [this]
+        {
+            if (mention_popup_surface_)
+                mention_popup_surface_->host().request_repaint();
+        };
+        hooks.room_id = [this] { return room_id_; };
+        hooks.run_async = [this](std::function<void()> fn)
+        { run_async_(std::move(fn)); };
+        hooks.post_to_ui = [this](std::function<void()> fn)
+        { post_to_ui_(std::move(fn)); };
+        mention_controller_ =
+            std::make_unique<tesseract::views::MentionController>(
+                text_area_.get(), shell_client_(), mention_popup_widget_,
+                std::move(hooks));
+    }
     text_area_->set_on_height_changed(
         [this](float h)
         {
@@ -282,6 +330,49 @@ void RoomWindow::apply_theme(const tk::Theme& t)
     if (surface_)
     {
         surface_->set_theme(t);
+    }
+    if (mention_popup_surface_)
+    {
+        mention_popup_surface_->set_theme(t);
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+void RoomWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
+{
+    if (!mention_popup_hwnd_ || !surface_)
+    {
+        return;
+    }
+    int w = int(tesseract::views::MentionPopup::kWidth);
+    int h = int(rows * tesseract::views::MentionPopup::kRowHeight);
+    POINT pt{LONG(cursor_local.x), LONG(cursor_local.y)};
+    ClientToScreen(surface_->hwnd(), &pt);
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfo(mon, &mi);
+    int x = pt.x;
+    int y_above = pt.y - h - 4;
+    int y_below = pt.y + int(cursor_local.h) + 4;
+    int y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+    x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
+    y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+    SetWindowPos(mention_popup_hwnd_, HWND_TOPMOST, x, y, w, h,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    if (HWND s = mention_popup_surface_->hwnd())
+    {
+        SetWindowPos(s, nullptr, 0, 0, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    mention_popup_surface_->relayout();
+}
+
+void RoomWindow::hide_mention_popup_()
+{
+    if (mention_popup_hwnd_)
+    {
+        ShowWindow(mention_popup_hwnd_, SW_HIDE);
     }
 }
 
