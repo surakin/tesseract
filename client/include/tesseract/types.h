@@ -102,6 +102,16 @@ struct Event
     /// True when the body has been superseded by an m.replace edit.
     /// Only set for TextEvent; always false for other types.
     bool is_edited = false;
+    /// MSC3440 threads. Non-empty when this event is an in-thread reply.
+    std::string thread_root_id;
+    /// True when this event roots a thread.
+    bool is_thread_root = false;
+    /// Replies in the thread excluding the root; 0 when not a root.
+    uint64_t thread_reply_count = 0;
+    /// Latest thread reply preview (for a "N replies" affordance on the root).
+    std::string thread_latest_sender_name;
+    std::string thread_latest_body;
+    uint64_t thread_latest_ts = 0;
     /// Local-echo send state. "" = server event; "sending" = in-flight;
     /// "failed" = delivery failed.
     std::string pending_state;
@@ -318,6 +328,21 @@ struct TimelineStartEvent : public Event
 /// Ordered list of timeline events (oldest-first), as passed to
 /// IEventHandler::on_timeline_reset and the handle_*_ui_ virtuals.
 using EventList = std::vector<std::unique_ptr<Event>>;
+
+/// One thread in a room. `latest_*` fields are empty/0 when no reply summary
+/// is available. Mirror of the FFI ThreadInfo.
+struct ThreadInfo
+{
+    std::string root_event_id;
+    std::string root_sender_name;
+    std::string root_body;
+    uint64_t root_timestamp = 0;
+    std::string latest_event_id;
+    std::string latest_sender_name;
+    std::string latest_body;
+    uint64_t latest_timestamp = 0;
+    uint64_t num_replies = 0;
+};
 
 struct RoomInfo
 {

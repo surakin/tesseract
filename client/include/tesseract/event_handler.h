@@ -50,6 +50,31 @@ public:
     virtual void on_message_removed(const std::string& room_id,
                                     std::size_t index) = 0;
 
+    /// Thread-timeline twins of the four room-timeline callbacks. `thread_root`
+    /// is the thread root event id. Default no-ops so shells opt in later.
+    virtual void on_thread_reset(const std::string& /*room_id*/,
+                                 const std::string& /*thread_root*/,
+                                 EventList /*snapshot*/)
+    {
+    }
+    virtual void on_thread_inserted(const std::string& /*room_id*/,
+                                    const std::string& /*thread_root*/,
+                                    std::size_t /*index*/,
+                                    std::unique_ptr<Event> /*event*/)
+    {
+    }
+    virtual void on_thread_updated(const std::string& /*room_id*/,
+                                   const std::string& /*thread_root*/,
+                                   std::size_t /*index*/,
+                                   std::unique_ptr<Event> /*event*/)
+    {
+    }
+    virtual void on_thread_removed(const std::string& /*room_id*/,
+                                   const std::string& /*thread_root*/,
+                                   std::size_t /*index*/)
+    {
+    }
+
     /// The `rooms` reference is only valid for the duration of the call —
     /// it points at a bridge-owned temporary. Implementations that need to
     /// keep the data must copy it (the standard pattern is to copy/move it
@@ -92,6 +117,12 @@ public:
     /// referenced room). UIs re-query via `Client::list_image_packs` and
     /// repaint any open StickerPicker / EmojiPicker custom tabs.
     virtual void on_image_packs_updated()
+    {
+    }
+
+    /// Fired when the cached thread list for `room_id` changes. Re-query via
+    /// Client::list_room_threads. Default no-op.
+    virtual void on_threads_updated(const std::string& /*room_id*/)
     {
     }
 

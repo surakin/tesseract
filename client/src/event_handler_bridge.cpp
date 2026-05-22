@@ -124,6 +124,82 @@ void EventHandlerBridge::on_message_removed(rust::Str room_id,
           });
 }
 
+void EventHandlerBridge::on_thread_reset(
+    rust::Str room_id, rust::Str thread_root,
+    const rust::Vec<TimelineEvent>& snapshot) const
+{
+    guard("on_thread_reset",
+          [&]
+          {
+              if (!handler_)
+              {
+                  return;
+              }
+              std::vector<std::unique_ptr<tesseract::Event>> events;
+              events.reserve(snapshot.size());
+              for (const auto& ev : snapshot)
+              {
+                  events.push_back(tesseract::make_event(ev));
+              }
+              handler_->on_thread_reset(std::string(room_id),
+                                        std::string(thread_root),
+                                        std::move(events));
+          });
+}
+
+void EventHandlerBridge::on_thread_inserted(rust::Str room_id,
+                                            rust::Str thread_root,
+                                            std::uint64_t index,
+                                            const TimelineEvent& ev) const
+{
+    guard("on_thread_inserted",
+          [&]
+          {
+              if (!handler_ || !index_fits(index))
+              {
+                  return;
+              }
+              handler_->on_thread_inserted(
+                  std::string(room_id), std::string(thread_root),
+                  static_cast<std::size_t>(index), tesseract::make_event(ev));
+          });
+}
+
+void EventHandlerBridge::on_thread_updated(rust::Str room_id,
+                                           rust::Str thread_root,
+                                           std::uint64_t index,
+                                           const TimelineEvent& ev) const
+{
+    guard("on_thread_updated",
+          [&]
+          {
+              if (!handler_ || !index_fits(index))
+              {
+                  return;
+              }
+              handler_->on_thread_updated(
+                  std::string(room_id), std::string(thread_root),
+                  static_cast<std::size_t>(index), tesseract::make_event(ev));
+          });
+}
+
+void EventHandlerBridge::on_thread_removed(rust::Str room_id,
+                                           rust::Str thread_root,
+                                           std::uint64_t index) const
+{
+    guard("on_thread_removed",
+          [&]
+          {
+              if (!handler_ || !index_fits(index))
+              {
+                  return;
+              }
+              handler_->on_thread_removed(std::string(room_id),
+                                          std::string(thread_root),
+                                          static_cast<std::size_t>(index));
+          });
+}
+
 void EventHandlerBridge::on_rooms_updated(
     const rust::Vec<RoomInfo>& rooms) const
 {
@@ -218,6 +294,19 @@ void EventHandlerBridge::on_image_packs_updated() const
                   return;
               }
               handler_->on_image_packs_updated();
+          });
+}
+
+void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
+{
+    guard("on_threads_updated",
+          [&]
+          {
+              if (!handler_)
+              {
+                  return;
+              }
+              handler_->on_threads_updated(std::string(room_id));
           });
 }
 

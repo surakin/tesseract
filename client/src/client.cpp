@@ -208,6 +208,51 @@ PaginateResult Client::paginate_forward(const std::string& room_id,
     return from_ffi(impl_->ffi->paginate_forward(room_id, count));
 }
 
+Result Client::subscribe_thread(const std::string& room_id,
+                                const std::string& root_event_id)
+{
+    return from_ffi(impl_->ffi->subscribe_thread(room_id, root_event_id));
+}
+
+void Client::unsubscribe_thread(const std::string& room_id,
+                                const std::string& root_event_id)
+{
+    impl_->ffi->unsubscribe_thread(room_id, root_event_id);
+}
+
+PaginateResult Client::paginate_thread_back(const std::string& room_id,
+                                            const std::string& root_event_id,
+                                            std::uint16_t count)
+{
+    return from_ffi(
+        impl_->ffi->paginate_thread_back(room_id, root_event_id, count));
+}
+
+Result Client::subscribe_room_threads(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->subscribe_room_threads(room_id));
+}
+
+void Client::unsubscribe_room_threads(const std::string& room_id)
+{
+    impl_->ffi->unsubscribe_room_threads(room_id);
+}
+
+std::vector<ThreadInfo> Client::list_room_threads(const std::string& room_id)
+{
+    std::vector<ThreadInfo> out;
+    auto ffi_threads = impl_->ffi->list_room_threads(room_id);
+    out.reserve(ffi_threads.size());
+    for (const auto& t : ffi_threads)
+        out.push_back(from_ffi(t));
+    return out;
+}
+
+PaginateResult Client::paginate_room_threads(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->paginate_room_threads(room_id));
+}
+
 Result
 Client::start_background_backfill(const std::vector<std::string>& room_ids)
 {
@@ -264,12 +309,13 @@ Result Client::send_image(const std::string& room_id,
                           const std::string& caption, std::uint32_t width,
                           std::uint32_t height,
                           bool is_animated,
-                          const std::string& reply_event_id)
+                          const std::string& reply_event_id,
+                          const std::string& thread_root)
 {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_image(room_id, slice, mime_type, filename,
                                            caption, width, height, is_animated,
-                                           reply_event_id));
+                                           reply_event_id, thread_root));
 }
 
 Result Client::send_video(const std::string& room_id,
@@ -281,7 +327,8 @@ Result Client::send_video(const std::string& room_id,
                           const std::vector<uint8_t>& thumb_bytes,
                           std::uint32_t thumb_width, std::uint32_t thumb_height,
                           std::uint64_t duration_ms,
-                          const std::string& reply_event_id)
+                          const std::string& reply_event_id,
+                          const std::string& thread_root)
 {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(),
@@ -289,7 +336,8 @@ Result Client::send_video(const std::string& room_id,
     return from_ffi(impl_->ffi->send_video(room_id, slice, mime_type, filename,
                                            caption, width, height, thumb_slice,
                                            thumb_width, thumb_height,
-                                           duration_ms, reply_event_id));
+                                           duration_ms, reply_event_id,
+                                           thread_root));
 }
 
 Result Client::send_audio(const std::string& room_id,
@@ -298,22 +346,24 @@ Result Client::send_audio(const std::string& room_id,
                           const std::string& filename,
                           const std::string& caption,
                           std::uint64_t duration_ms,
-                          const std::string& reply_event_id)
+                          const std::string& reply_event_id,
+                          const std::string& thread_root)
 {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_audio(room_id, slice, mime_type, filename,
                                            caption, duration_ms,
-                                           reply_event_id));
+                                           reply_event_id, thread_root));
 }
 
 Result
 Client::send_file(const std::string& room_id, const std::vector<uint8_t>& bytes,
                   const std::string& mime_type, const std::string& filename,
-                  const std::string& caption, const std::string& reply_event_id)
+                  const std::string& caption, const std::string& reply_event_id,
+                  const std::string& thread_root)
 {
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     return from_ffi(impl_->ffi->send_file(room_id, slice, mime_type, filename,
-                                          caption, reply_event_id));
+                                          caption, reply_event_id, thread_root));
 }
 
 Result Client::send_voice(const std::string& room_id,
@@ -321,13 +371,14 @@ Result Client::send_voice(const std::string& room_id,
                           std::uint64_t duration_ms,
                           const std::vector<std::uint16_t>& waveform,
                           const std::string& caption,
-                          const std::string& reply_event_id)
+                          const std::string& reply_event_id,
+                          const std::string& thread_root)
 {
     rust::Slice<const std::uint8_t> pcm_slice{pcm, pcm_size};
     rust::Slice<const std::uint16_t> wf_slice{waveform.data(), waveform.size()};
     return from_ffi(impl_->ffi->send_voice(room_id, pcm_slice, duration_ms,
                                             wf_slice, caption,
-                                            reply_event_id));
+                                            reply_event_id, thread_root));
 }
 
 std::uint64_t Client::media_upload_limit()
@@ -375,6 +426,26 @@ Result Client::send_reply(const std::string& room_id,
 {
     return from_ffi(impl_->ffi->send_reply(
         room_id, event_id, body, derive_formatted(body, formatted_body)));
+}
+
+Result Client::send_thread_message(const std::string& room_id,
+                                   const std::string& thread_root,
+                                   const std::string& body,
+                                   const std::string& formatted_body)
+{
+    return from_ffi(impl_->ffi->send_thread_message(
+        room_id, thread_root, body, derive_formatted(body, formatted_body)));
+}
+
+Result Client::send_thread_reply(const std::string& room_id,
+                                 const std::string& thread_root,
+                                 const std::string& in_reply_to_event_id,
+                                 const std::string& body,
+                                 const std::string& formatted_body)
+{
+    return from_ffi(impl_->ffi->send_thread_reply(
+        room_id, thread_root, in_reply_to_event_id, body,
+        derive_formatted(body, formatted_body)));
 }
 
 Result Client::fetch_reply_details(const std::string& room_id,

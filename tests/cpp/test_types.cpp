@@ -765,3 +765,55 @@ TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]")
     tesseract::Client c;
     CHECK(c.get_avatar_url().empty());
 }
+
+// ---------------------------------------------------------------------------
+// MSC3440 thread fields on Event (Task 2)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Event thread fields default-initialise", "[types][thread]")
+{
+    tesseract::TextEvent ev;
+    CHECK(ev.thread_root_id.empty());
+    CHECK_FALSE(ev.is_thread_root);
+    CHECK(ev.thread_reply_count == 0);
+    CHECK(ev.thread_latest_sender_name.empty());
+    CHECK(ev.thread_latest_body.empty());
+    CHECK(ev.thread_latest_ts == 0);
+}
+
+TEST_CASE("Event thread fields are settable", "[types][thread]")
+{
+    tesseract::TextEvent ev;
+    ev.thread_root_id = "$root:server";
+    ev.is_thread_root = true;
+    ev.thread_reply_count = 5;
+    ev.thread_latest_sender_name = "Bob";
+    ev.thread_latest_body = "latest";
+    ev.thread_latest_ts = 99;
+    CHECK(ev.is_thread_root);
+    CHECK(ev.thread_reply_count == 5);
+    CHECK(ev.thread_latest_body == "latest");
+}
+
+// ---------------------------------------------------------------------------
+// tesseract::ThreadInfo (Task 12)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ThreadInfo default-initialises", "[types][thread]")
+{
+    tesseract::ThreadInfo ti;
+    CHECK(ti.root_event_id.empty());
+    CHECK(ti.num_replies == 0);
+    CHECK(ti.latest_event_id.empty());
+}
+
+TEST_CASE("ThreadInfo fields are settable", "[types][thread]")
+{
+    tesseract::ThreadInfo ti;
+    ti.root_event_id = "$root:server";
+    ti.num_replies = 7;
+    ti.latest_sender_name = "Carol";
+    CHECK(ti.root_event_id == "$root:server");
+    CHECK(ti.num_replies == 7);
+    CHECK(ti.latest_sender_name == "Carol");
+}

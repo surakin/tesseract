@@ -52,6 +52,7 @@ public:
     void on_backup_progress(const BackupProgress& progress) const;
     void on_room_list_state(std::uint8_t state) const;
     void on_image_packs_updated() const;
+    void on_threads_updated(rust::Str room_id) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,
                          rust::Str sender, rust::Str body, bool is_mention,
@@ -70,6 +71,17 @@ public:
                            const rust::Vec<rust::String>& user_ids) const;
 
     void on_presence_changed(rust::Str user_id, std::uint8_t state) const;
+
+    /// Thread-timeline callbacks — mirror of the four room-timeline callbacks
+    /// above with an additional `thread_root` parameter.
+    void on_thread_reset(rust::Str room_id, rust::Str thread_root,
+                         const rust::Vec<TimelineEvent>& snapshot) const;
+    void on_thread_inserted(rust::Str room_id, rust::Str thread_root,
+                            std::uint64_t index, const TimelineEvent& ev) const;
+    void on_thread_updated(rust::Str room_id, rust::Str thread_root,
+                           std::uint64_t index, const TimelineEvent& ev) const;
+    void on_thread_removed(rust::Str room_id, rust::Str thread_root,
+                           std::uint64_t index) const;
 
 private:
     // `const`: set once at construction and never reassigned. Rust calls the

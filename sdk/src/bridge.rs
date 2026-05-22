@@ -144,6 +144,11 @@ pub mod ffi {
     ///                   replied-to event's display name and body snippet (populated
     ///                   only when the replied-to item is present in the local cache;
     ///                   both are empty strings when the cache doesn't have it yet).
+    /// Thread fields  → thread_root_id is non-empty when this event is an in-thread
+    ///                   reply (MSC3440). is_thread_root is true when this event roots
+    ///                   a thread; only then are thread_reply_count and the
+    ///                   thread_latest_* preview fields meaningful (they describe the
+    ///                   most recent reply and stay empty/0 until the summary resolves).
     struct TimelineEvent {
         event_id: String,
         room_id: String,
@@ -258,6 +263,23 @@ pub mod ffi {
         location_lat: f64,
         location_lon: f64,
         location_description: String,
+        // ----- MSC3440 threads -----
+        /// Event ID of the thread root when this event is an in-thread reply
+        /// (`content().thread_root()`); empty otherwise.
+        thread_root_id: String,
+        /// True when this event roots a thread (`content().thread_summary().is_some()`).
+        is_thread_root: bool,
+        /// Replies in the thread excluding the root (`ThreadSummary.num_replies`).
+        /// 0 when this event is not a thread root.
+        thread_reply_count: u64,
+        /// Display name of the latest thread reply's sender (resolved profile,
+        /// bare Matrix ID fallback). Empty when not a root or summary not ready.
+        thread_latest_sender_name: String,
+        /// Snippet of the latest thread reply ("(image)" etc. for non-text).
+        /// Empty when not a root or summary not ready.
+        thread_latest_body: String,
+        /// Unix-ms timestamp of the latest thread reply. 0 when unavailable.
+        thread_latest_ts: u64,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -364,6 +386,20 @@ pub mod ffi {
         is_current: bool,
     }
 
+    /// One thread in a room, flattened from matrix-sdk-ui's ThreadListItem.
+    /// `latest_*` fields are empty/0 when no reply summary is available.
+    struct ThreadInfo {
+        root_event_id: String,
+        root_sender_name: String,
+        root_body: String,
+        root_timestamp: u64,
+        latest_event_id: String,
+        latest_sender_name: String,
+        latest_body: String,
+        latest_timestamp: u64,
+        num_replies: u64,
+    }
+
     /// Result of `begin_delete_device`. On a clean success `needs_uia` is
     /// false. When the homeserver requires User-Interactive Auth, `needs_uia`
     /// is true and `fallback_url` is a homeserver URL the UI must open in a
@@ -420,6 +456,36 @@ pub mod ffi {
         );
         /// Remove the event at visible-index `index`.
         fn on_message_removed(self: &EventHandlerBridge, room_id: &str, index: u64);
+
+        /// Thread-timeline twins of the four room-timeline callbacks. `room_id`
+        /// is the host room; `thread_root` is the thread root event id. Indices
+        /// follow the same visible-index VectorDiff semantics.
+        fn on_thread_reset(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            snapshot: &Vec<TimelineEvent>,
+        );
+        fn on_thread_inserted(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            index: u64,
+            event: &TimelineEvent,
+        );
+        fn on_thread_updated(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            index: u64,
+            event: &TimelineEvent,
+        );
+        fn on_thread_removed(
+            self: &EventHandlerBridge,
+            room_id: &str,
+            thread_root: &str,
+            index: u64,
+        );
 
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
@@ -512,6 +578,11 @@ pub mod ffi {
         /// Fired when a presence event arrives for `user_id`. `state` encodes:
         ///   1 = Online  2 = Unavailable  3 = Offline
         fn on_presence_changed(self: &EventHandlerBridge, user_id: &str, state: u8);
+
+        /// Fired when the cached thread list for `room_id` changes. The UI
+        /// re-queries via list_room_threads (re-query ping, like
+        /// on_image_packs_updated).
+        fn on_threads_updated(self: &EventHandlerBridge, room_id: &str);
     }
 
     // -------------------------------------------------------------------------
@@ -631,6 +702,53 @@ pub mod ffi {
         /// reached and the UI should switch back to a live subscription.
         fn paginate_forward(self: &mut ClientFfi, room_id: &str, count: u16) -> PaginateResult;
 
+        // ----- Thread timeline subscription -----
+
+        /// Subscribe to the thread rooted at `root_event_id` in `room_id`.
+        /// Fires `on_thread_reset` (empty) immediately, then live
+        /// `on_thread_inserted` / `on_thread_updated` / `on_thread_removed`
+        /// callbacks as replies arrive. Call `paginate_thread_back` for older
+        /// replies.
+        fn subscribe_thread(
+            self: &mut ClientFfi,
+            room_id: &str,
+            root_event_id: &str,
+        ) -> OpResult;
+
+        /// Unsubscribe from a thread timeline and cancel its background tasks.
+        fn unsubscribe_thread(
+            self: &mut ClientFfi,
+            room_id: &str,
+            root_event_id: &str,
+        );
+
+        /// Paginate backwards in a subscribed thread timeline. Older replies
+        /// arrive as `on_thread_inserted` callbacks at the front of the thread.
+        /// `reached_start` is `true` when there are no more replies to fetch.
+        fn paginate_thread_back(
+            self: &mut ClientFfi,
+            room_id: &str,
+            root_event_id: &str,
+            count: u16,
+        ) -> PaginateResult;
+
+        // ----- Thread list subscription -----
+
+        /// Start watching the thread list for `room_id`: builds a
+        /// ThreadListService, kicks an initial pagination, and fires
+        /// on_threads_updated when the list changes.
+        fn subscribe_room_threads(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Stop watching the thread list for `room_id`.
+        fn unsubscribe_room_threads(self: &mut ClientFfi, room_id: &str);
+
+        /// Snapshot of the current thread list for `room_id` (most-recent
+        /// first). Empty when not subscribed or none known yet.
+        fn list_room_threads(self: &ClientFfi, room_id: &str) -> Vec<ThreadInfo>;
+
+        /// Paginate older threads. reached_start == true means list exhausted.
+        fn paginate_room_threads(self: &mut ClientFfi, room_id: &str) -> PaginateResult;
+
         /// Kick off a background pass that paginates every joined room not
         /// currently subscribed, up to ~50 events each, with bounded
         /// concurrency. Idempotent — safe to call from every room-open
@@ -678,6 +796,27 @@ pub mod ffi {
             formatted_body: &str,
         ) -> OpResult;
 
+        /// Send `body` as a message into the thread rooted at `thread_root`
+        /// (MSC3440 `m.thread` relation). Does not require `subscribe_room`.
+        fn send_thread_message(
+            self: &mut ClientFfi,
+            room_id: &str,
+            thread_root: &str,
+            body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
+
+        /// Send `body` as a reply to `in_reply_to_event_id` *within* the thread
+        /// rooted at `thread_root`. Does not require `subscribe_room`.
+        fn send_thread_reply(
+            self: &mut ClientFfi,
+            room_id: &str,
+            thread_root: &str,
+            in_reply_to_event_id: &str,
+            body: &str,
+            formatted_body: &str,
+        ) -> OpResult;
+
         /// Trigger an async fetch of the details of the event referenced by
         /// `m.in_reply_to`. Requires `subscribe_room`. Returns immediately;
         /// the result arrives via `on_message_updated` for every message in
@@ -711,6 +850,8 @@ pub mod ffi {
             is_animated: bool,
             /// When non-empty, adds an `m.in_reply_to` relation.
             reply_event_id: &str,
+            /// When non-empty, sends the media into this thread root (MSC3440).
+            thread_root: &str,
         ) -> OpResult;
 
         /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes`
@@ -730,6 +871,8 @@ pub mod ffi {
             caption: &str,
             /// When non-empty, adds an `m.in_reply_to` relation.
             reply_event_id: &str,
+            /// When non-empty, sends the media into this thread root (MSC3440).
+            thread_root: &str,
         ) -> OpResult;
 
         /// Send an audio file to `room_id` as a plain `m.audio` event (not
@@ -746,6 +889,8 @@ pub mod ffi {
             duration_ms: u64,
             /// When non-empty, adds an `m.in_reply_to` relation.
             reply_event_id: &str,
+            /// When non-empty, sends the media into this thread root (MSC3440).
+            thread_root: &str,
         ) -> OpResult;
 
         /// Send a video file to `room_id` as an `m.video` event. `width`/`height`
@@ -768,6 +913,8 @@ pub mod ffi {
             thumb_height: u32,
             duration_ms: u64,
             reply_event_id: &str,
+            /// When non-empty, sends the media into this thread root (MSC3440).
+            thread_root: &str,
         ) -> OpResult;
 
         /// Encode raw signed 16-bit mono 48 kHz PCM (`pcm` byte slice,
@@ -785,6 +932,8 @@ pub mod ffi {
             caption: &str,
             /// When non-empty, adds an `m.in_reply_to` relation.
             reply_event_id: &str,
+            /// When non-empty, sends the media into this thread root (MSC3440).
+            thread_root: &str,
         ) -> OpResult;
 
         /// Edit `event_id` in `room_id` replacing its body with `new_body`.

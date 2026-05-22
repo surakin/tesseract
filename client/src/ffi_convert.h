@@ -80,6 +80,21 @@ inline ImagePackImage from_ffi(const tesseract_ffi::ImageEntryFfi& e)
     };
 }
 
+inline tesseract::ThreadInfo from_ffi(const tesseract_ffi::ThreadInfo& t)
+{
+    tesseract::ThreadInfo out;
+    out.root_event_id = std::string(t.root_event_id);
+    out.root_sender_name = std::string(t.root_sender_name);
+    out.root_body = std::string(t.root_body);
+    out.root_timestamp = t.root_timestamp;
+    out.latest_event_id = std::string(t.latest_event_id);
+    out.latest_sender_name = std::string(t.latest_sender_name);
+    out.latest_body = std::string(t.latest_body);
+    out.latest_timestamp = t.latest_timestamp;
+    out.num_replies = t.num_replies;
+    return out;
+}
+
 inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
 {
     return {
@@ -167,6 +182,12 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.in_reply_to_sender_name = std::string(e.in_reply_to_sender_name);
     ev.in_reply_to_body = std::string(e.in_reply_to_body);
     ev.is_edited = e.is_edited;
+    ev.thread_root_id = std::string(e.thread_root_id);
+    ev.is_thread_root = e.is_thread_root;
+    ev.thread_reply_count = e.thread_reply_count;
+    ev.thread_latest_sender_name = std::string(e.thread_latest_sender_name);
+    ev.thread_latest_body = std::string(e.thread_latest_body);
+    ev.thread_latest_ts = e.thread_latest_ts;
     ev.pending_state = std::string(e.pending_state);
     ev.pending_error = std::string(e.pending_error);
     ev.pending_recoverable = e.pending_recoverable;

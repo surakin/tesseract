@@ -224,6 +224,28 @@ public:
     PaginateResult paginate_forward(const std::string& room_id,
                                     std::uint16_t count);
 
+    /// Subscribe to the thread rooted at `root_event_id` in `room_id`. Fires
+    /// IEventHandler::on_thread_* callbacks.
+    Result subscribe_thread(const std::string& room_id,
+                            const std::string& root_event_id);
+
+    /// Unsubscribe from a thread timeline.
+    void unsubscribe_thread(const std::string& room_id,
+                            const std::string& root_event_id);
+
+    /// Paginate backwards in a subscribed thread timeline.
+    PaginateResult paginate_thread_back(const std::string& room_id,
+                                        const std::string& root_event_id,
+                                        std::uint16_t count);
+
+    /// Start watching the thread list for `room_id` (fires
+    /// IEventHandler::on_threads_updated on changes).
+    Result subscribe_room_threads(const std::string& room_id);
+    void unsubscribe_room_threads(const std::string& room_id);
+    /// Snapshot of the current thread list for `room_id`.
+    std::vector<ThreadInfo> list_room_threads(const std::string& room_id);
+    PaginateResult paginate_room_threads(const std::string& room_id);
+
     /// Kick off a background pass that paginates the given rooms (those
     /// currently visible in the room list), up to ~50 events each, with
     /// bounded concurrency. Idempotent — safe to call from every room-open
@@ -271,13 +293,16 @@ public:
     /// carrying the MSC4230 `org.matrix.msc4230.is_animated` flag and the
     /// `fi.mau.video.gif` vendor hint so animated GIFs/WebPs autoplay and
     /// loop on capable clients (the standard upload path strips these fields).
+    ///
+    /// When non-empty, sends into this thread root (MSC3440).
     Result send_image(const std::string& room_id,
                       const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
                       const std::string& caption, std::uint32_t width,
                       std::uint32_t height,
                       bool is_animated,
-                      const std::string& reply_event_id = "");
+                      const std::string& reply_event_id = "",
+                      const std::string& thread_root = std::string{});
 
     /// Send a video to `room_id` as an `m.video` event. `width`/`height` are
     /// the video source dimensions; `thumb_bytes` is a JPEG first-frame
@@ -287,6 +312,8 @@ public:
     /// MSC2530 / m.in_reply_to framing as send_image(). The SDK uploads the
     /// thumbnail as a separate media item and sets `info.thumbnail_url`.
     /// E2EE rooms are handled transparently.
+    ///
+    /// When non-empty, sends into this thread root (MSC3440).
     Result send_video(const std::string& room_id,
                       const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
@@ -295,19 +322,23 @@ public:
                       const std::vector<uint8_t>& thumb_bytes,
                       std::uint32_t thumb_width, std::uint32_t thumb_height,
                       std::uint64_t duration_ms,
-                      const std::string& reply_event_id = "");
+                      const std::string& reply_event_id = "",
+                      const std::string& thread_root = std::string{});
 
     /// Send an audio file to `room_id` as a plain `m.audio` event (not an
     /// MSC3245 voice message). `duration_ms` populates `info.duration` (pass
     /// 0 when unknown). `caption`/`reply_event_id` follow the same MSC2530 /
     /// m.in_reply_to framing as send_image(). E2EE rooms are handled
     /// transparently.
+    ///
+    /// When non-empty, sends into this thread root (MSC3440).
     Result send_audio(const std::string& room_id,
                       const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
                       const std::string& caption,
                       std::uint64_t duration_ms,
-                      const std::string& reply_event_id = "");
+                      const std::string& reply_event_id = "",
+                      const std::string& thread_root = std::string{});
 
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
     /// the raw file payload (no re-encoding); `mime_type` is best-effort —
@@ -315,22 +346,28 @@ public:
     /// is non-empty the event follows MSC2530 framing (`body` = caption,
     /// dedicated `filename` field carries the file name). E2EE rooms are
     /// handled transparently by matrix-sdk.
+    ///
+    /// When non-empty, sends into this thread root (MSC3440).
     Result send_file(const std::string& room_id,
                      const std::vector<uint8_t>& bytes,
                      const std::string& mime_type, const std::string& filename,
                      const std::string& caption,
-                     const std::string& reply_event_id = "");
+                     const std::string& reply_event_id = "",
+                     const std::string& thread_root = std::string{});
 
     /// Encode `pcm_size` bytes of 48kHz/16-bit/mono PCM as an Opus/OGG voice
     /// message and send it to `room_id` as an MSC3245 m.audio event.
     /// `waveform` provides MSC1767 amplitude samples (clamped to 256 server-side).
     /// `caption` and `reply_event_id` follow the same semantics as send_image().
+    ///
+    /// When non-empty, sends into this thread root (MSC3440).
     Result send_voice(const std::string& room_id,
                       const std::uint8_t* pcm, std::size_t pcm_size,
                       std::uint64_t duration_ms,
                       const std::vector<std::uint16_t>& waveform,
                       const std::string& caption,
-                      const std::string& reply_event_id);
+                      const std::string& reply_event_id,
+                      const std::string& thread_root = std::string{});
 
     /// Homeserver-reported maximum upload size, in bytes. Cached after the
     /// first successful call. Returns 0 when not yet fetched, the server
@@ -380,6 +417,21 @@ public:
     Result send_reply(const std::string& room_id, const std::string& event_id,
                       const std::string& body,
                       const std::string& formatted_body = "");
+
+    /// Send `body` into the thread rooted at `thread_root` (MSC3440). Does not
+    /// require subscribe_room.
+    Result send_thread_message(const std::string& room_id,
+                               const std::string& thread_root,
+                               const std::string& body,
+                               const std::string& formatted_body);
+
+    /// Reply to `in_reply_to_event_id` within the thread rooted at
+    /// `thread_root`. Does not require subscribe_room.
+    Result send_thread_reply(const std::string& room_id,
+                             const std::string& thread_root,
+                             const std::string& in_reply_to_event_id,
+                             const std::string& body,
+                             const std::string& formatted_body);
 
     /// Request async resolution of the replied-to event whose ID is
     /// `event_id` in `room_id`. Requires `subscribe_room`. Returns

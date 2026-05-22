@@ -117,6 +117,12 @@ pub mod ffi {
         pub location_lat: f64,
         pub location_lon: f64,
         pub location_description: String,
+        pub thread_root_id: String,
+        pub is_thread_root: bool,
+        pub thread_reply_count: u64,
+        pub thread_latest_sender_name: String,
+        pub thread_latest_body: String,
+        pub thread_latest_ts: u64,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -190,18 +196,36 @@ pub mod ffi {
         pub session: String,
     }
 
+    #[derive(Debug, PartialEq, Default)]
+    pub struct ThreadInfo {
+        pub root_event_id: String,
+        pub root_sender_name: String,
+        pub root_body: String,
+        pub root_timestamp: u64,
+        pub latest_event_id: String,
+        pub latest_sender_name: String,
+        pub latest_body: String,
+        pub latest_timestamp: u64,
+        pub num_replies: u64,
+    }
+
     pub struct EventHandlerBridge;
     impl EventHandlerBridge {
         pub fn on_timeline_reset(&self, _room_id: &str, _snapshot: &Vec<TimelineEvent>) {}
         pub fn on_message_inserted(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
         pub fn on_message_updated(&self, _room_id: &str, _index: u64, _event: &TimelineEvent) {}
         pub fn on_message_removed(&self, _room_id: &str, _index: u64) {}
+        pub fn on_thread_reset(&self, _room_id: &str, _thread_root: &str, _snapshot: &Vec<TimelineEvent>) {}
+        pub fn on_thread_inserted(&self, _room_id: &str, _thread_root: &str, _index: u64, _event: &TimelineEvent) {}
+        pub fn on_thread_updated(&self, _room_id: &str, _thread_root: &str, _index: u64, _event: &TimelineEvent) {}
+        pub fn on_thread_removed(&self, _room_id: &str, _thread_root: &str, _index: u64) {}
         pub fn on_rooms_updated(&self, _rooms: &Vec<RoomInfo>) {}
         pub fn on_error(&self, _ctx: &str, _msg: &str, _soft_logout: bool) {}
         pub fn on_session_refreshed(&self, _json: &str) {}
         pub fn on_backup_progress(&self, _progress: &BackupProgress) {}
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
+        pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_notification(
             &self,
             _room_id: &str,

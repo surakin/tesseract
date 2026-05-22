@@ -17,7 +17,7 @@ use crate::oauth;
 
 #[cfg(not(test))]
 use crate::ffi::{
-    EventHandlerBridge, ReactionGroup, ReadReceipt, TimelineEvent, VerificationEmoji,
+    EventHandlerBridge, ReactionGroup, ReadReceipt, ThreadInfo, TimelineEvent, VerificationEmoji,
 };
 #[cfg(not(test))]
 use cxx::UniquePtr;
@@ -267,6 +267,12 @@ struct TimelineHandle {
     is_focused: bool,
 }
 
+#[cfg(not(test))]
+struct ThreadListHandle {
+    service: std::sync::Arc<matrix_sdk_ui::timeline::ThreadListService>,
+    abort: tokio::task::AbortHandle,
+}
+
 /// Serialisable wrapper for a full OAuth session (client_id + user session).
 #[derive(Serialize, Deserialize)]
 struct PersistedSession {
@@ -290,6 +296,17 @@ pub struct ClientFfi {
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
     timelines: HashMap<OwnedRoomId, TimelineHandle>,
+    /// Active thread-focused timelines keyed by (room_id, thread_root_event_id).
+    /// Each entry holds the same `TimelineHandle` structure used by `timelines`.
+    #[cfg(not(test))]
+    thread_timelines: HashMap<
+        (OwnedRoomId, matrix_sdk::ruma::OwnedEventId),
+        TimelineHandle,
+    >,
+    /// Active thread-list subscriptions keyed by room_id. Each entry holds a
+    /// `ThreadListService` and an abort handle for the items-watcher task.
+    #[cfg(not(test))]
+    thread_lists: HashMap<OwnedRoomId, ThreadListHandle>,
     /// Background backfill orchestrator handle. Aborting it tears down both
     /// the orchestrator and every per-room silent backfill it spawned (the
     /// children live inside a `JoinSet` owned by the orchestrator future).
@@ -383,6 +400,16 @@ impl Drop for ClientFfi {
                 for h in th.abort_tasks {
                     h.abort();
                 }
+            }
+            #[cfg(not(test))]
+            for (_, th) in self.thread_timelines.drain() {
+                for h in th.abort_tasks {
+                    h.abort();
+                }
+            }
+            #[cfg(not(test))]
+            for (_, h) in self.thread_lists.drain() {
+                h.abort.abort();
             }
             // Explicit take: matrix_sdk::Client drops here (runtime in TLS)
             // rather than in the implicit field-drop pass after this fn returns.
@@ -565,7 +592,9 @@ pub(crate) fn encode_voice_ogg(
 /// filename; the dedicated MSC2530 `filename` field is only added when a
 /// caption is present (matching the rest of the send path). `width`/`height`
 /// of 0 are omitted from `info`. A non-empty `reply_event_id` adds an
-/// `m.in_reply_to` relation.
+/// `m.in_reply_to` relation. When `thread_root` is non-empty the relation is
+/// emitted as a full MSC3440 `m.thread` block instead of a bare
+/// `m.in_reply_to`.
 fn build_animated_image_content(
     mxc_uri: &str,
     filename: &str,
@@ -575,6 +604,7 @@ fn build_animated_image_content(
     height: u32,
     size: usize,
     reply_event_id: &str,
+    thread_root: &str,
 ) -> serde_json::Value {
     let body = if caption.is_empty() { filename } else { caption };
     let mut info = serde_json::json!({
@@ -598,11 +628,101 @@ fn build_animated_image_content(
     if !caption.is_empty() {
         content["filename"] = serde_json::json!(filename);
     }
-    if !reply_event_id.is_empty() {
+    if !thread_root.is_empty() {
+        // MSC3440 thread relation.
+        let in_reply_to_id = if reply_event_id.is_empty() { thread_root } else { reply_event_id };
+        let mut relates = serde_json::json!({
+            "rel_type": "m.thread",
+            "event_id": thread_root,
+            "m.in_reply_to": { "event_id": in_reply_to_id },
+        });
+        if reply_event_id.is_empty() {
+            relates["is_falling_back"] = serde_json::json!(true);
+        }
+        content["m.relates_to"] = relates;
+    } else if !reply_event_id.is_empty() {
         content["m.relates_to"] = serde_json::json!({
             "m.in_reply_to": { "event_id": reply_event_id }
         });
     }
+    content
+}
+
+/// Compute the optional `Reply` to attach to a media send. Returns `Ok(None)`
+/// when neither `reply_event_id` nor `thread_root` is set (no reply needed),
+/// `Ok(Some(reply))` with the appropriate `EnforceThread` variant, or
+/// `Err(message)` when an event ID fails to parse.
+///
+/// Semantics:
+/// - `thread_root` empty → same as before: reply only when `reply_event_id`
+///   is set, and it uses `EnforceThread::Unthreaded`.
+/// - `thread_root` non-empty → always attach a reply:
+///   `event_id = reply_event_id` (when non-empty) or `thread_root`,
+///   `enforce_thread = EnforceThread::Threaded(ReplyWithinThread::Yes/No)`.
+#[cfg(not(test))]
+fn build_media_reply(
+    reply_event_id: &str,
+    thread_root: &str,
+) -> Result<Option<matrix_sdk::room::reply::Reply>, String> {
+    use matrix_sdk::room::reply::{EnforceThread, Reply};
+    use matrix_sdk::ruma::events::room::message::{AddMentions, ReplyWithinThread};
+    if thread_root.is_empty() {
+        if reply_event_id.is_empty() {
+            return Ok(None);
+        }
+        let id = reply_event_id
+            .parse()
+            .map_err(|e| format!("invalid reply event id: {e}"))?;
+        return Ok(Some(Reply {
+            event_id: id,
+            enforce_thread: EnforceThread::Unthreaded,
+            add_mentions: AddMentions::No,
+        }));
+    }
+    let (target, within) = if reply_event_id.is_empty() {
+        (thread_root, ReplyWithinThread::No)
+    } else {
+        (reply_event_id, ReplyWithinThread::Yes)
+    };
+    let id = target
+        .parse()
+        .map_err(|e| format!("invalid reply event id: {e}"))?;
+    Ok(Some(Reply {
+        event_id: id,
+        enforce_thread: EnforceThread::Threaded(within),
+        add_mentions: AddMentions::No,
+    }))
+}
+
+/// Build an `m.room.message` content object carrying an `m.thread` relation.
+/// `thread_root` is the thread root event id. When `in_reply_to` is non-empty
+/// the relation also carries an `m.in_reply_to` (a reply to a specific message
+/// within the thread); otherwise it is a plain thread message.
+fn build_thread_message_content(
+    body: &str,
+    formatted_body: &str,
+    thread_root: &str,
+    in_reply_to: &str,
+) -> serde_json::Value {
+    let mut content = serde_json::json!({
+        "msgtype": "m.text",
+        "body": body,
+    });
+    if !formatted_body.is_empty() {
+        content["format"] = serde_json::json!("org.matrix.custom.html");
+        content["formatted_body"] = serde_json::json!(formatted_body);
+    }
+    let mut relates = serde_json::json!({
+        "rel_type": "m.thread",
+        "event_id": thread_root,
+    });
+    if in_reply_to.is_empty() {
+        relates["m.in_reply_to"] = serde_json::json!({ "event_id": thread_root });
+        relates["is_falling_back"] = serde_json::json!(true);
+    } else {
+        relates["m.in_reply_to"] = serde_json::json!({ "event_id": in_reply_to });
+    }
+    content["m.relates_to"] = relates;
     content
 }
 
@@ -626,6 +746,10 @@ impl ClientFfi {
             sync_service: None,
             #[cfg(not(test))]
             timelines: HashMap::new(),
+            #[cfg(not(test))]
+            thread_timelines: HashMap::new(),
+            #[cfg(not(test))]
+            thread_lists: HashMap::new(),
             #[cfg(not(test))]
             backfill_task: None,
             #[cfg(not(test))]
@@ -1960,6 +2084,7 @@ impl ClientFfi {
         handler: &Arc<Mutex<SendHandler>>,
         client: &Client,
         rt: &tokio::runtime::Runtime,
+        channel: TimelineChannel,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
@@ -1967,6 +2092,7 @@ impl ClientFfi {
         let room_clone = room.clone();
         let me = client.user_id().map(|u| u.to_owned());
         let client_ref = client.clone();
+        let ch = channel;
 
         let abort = rt
             .spawn(async move {
@@ -1988,7 +2114,7 @@ impl ClientFfi {
                     }
                 }
                 if let Ok(guard) = h.lock() {
-                    guard.on_timeline_reset(&rid, &snapshot);
+                    emit_reset(&guard, &ch, &rid, &snapshot);
                 }
                 drop(snapshot);
 
@@ -2002,6 +2128,7 @@ impl ClientFfi {
                             &room_clone,
                             me.as_deref(),
                             &client_ref,
+                            &ch,
                         )
                         .await;
                     }
@@ -2083,7 +2210,7 @@ impl ClientFfi {
         }
 
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt);
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
 
         self.timelines.insert(
             room_id,
@@ -2120,7 +2247,12 @@ impl ClientFfi {
         let Some(svc) = self.sync_service.clone() else {
             return;
         };
-        let ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        let mut ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        for (rid, _root) in self.thread_timelines.keys() {
+            if !ids.contains(rid) {
+                ids.push(rid.clone());
+            }
+        }
         self.rt.spawn(async move {
             let refs: Vec<&matrix_sdk::ruma::RoomId> =
                 ids.iter().map(OwnedRoomId::as_ref).collect();
@@ -2350,7 +2482,7 @@ impl ClientFfi {
         }
 
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt);
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
 
         self.timelines.insert(
             room_id,
@@ -2451,6 +2583,347 @@ impl ClientFfi {
         PaginateResult {
             ok: false,
             message: "not in focused mode".into(),
+            reached_start: false,
+            reached_end: false,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Thread timeline subscription
+    // -----------------------------------------------------------------------
+
+    /// Subscribe to the thread rooted at `root_event_id` in `room_id`. Tears
+    /// down any previous subscription for this (room, root) pair, builds a
+    /// `TimelineFocus::Thread` timeline, fires an immediate `on_thread_reset`
+    /// (empty), then live `on_thread_*` callbacks as replies arrive.
+    /// Call `paginate_thread_back` for older replies.
+    #[cfg(not(test))]
+    pub fn subscribe_thread(
+        &mut self,
+        room_id: &str,
+        root_event_id: &str,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.clone() else {
+            return err("sync not started");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let root: matrix_sdk::ruma::OwnedEventId = match root_event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid thread root id: {e}")),
+        };
+        let key = (room_id.clone(), root.clone());
+        if let Some(prev) = self.thread_timelines.remove(&key) {
+            for h in prev.abort_tasks {
+                h.abort();
+            }
+        }
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        let focus = TimelineFocus::Thread {
+            root_event_id: root.clone(),
+        };
+        let room_for_build = room.clone();
+        let timeline = match self.rt.block_on(self.rt.spawn(async move {
+            room_for_build
+                .timeline_builder()
+                .with_focus(focus)
+                .build()
+                .await
+        })) {
+            Ok(Ok(t)) => Arc::new(t),
+            Ok(Err(e)) => return err(format!("build thread timeline: {e}")),
+            Err(e) => return err(format!("build thread timeline task: {e}")),
+        };
+        let room_id_str = room_id.to_string();
+        let root_str = root.to_string();
+        if let Ok(guard) = handler.lock() {
+            let empty: Vec<TimelineEvent> = Vec::new();
+            guard.on_thread_reset(&room_id_str, &root_str, &empty);
+        }
+        let (abort, fetch_abort) = Self::spawn_timeline_tasks(
+            &timeline,
+            &room,
+            room_id_str,
+            &handler,
+            &client,
+            &self.rt,
+            TimelineChannel::Thread(root_str),
+        );
+        self.thread_timelines.insert(
+            key,
+            TimelineHandle {
+                timeline,
+                abort_tasks: vec![abort, fetch_abort],
+                is_focused: true,
+            },
+        );
+        self.sync_room_subscriptions();
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn subscribe_thread(
+        &mut self,
+        _room_id: &str,
+        _root_event_id: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Unsubscribe from a thread timeline and cancel its background tasks.
+    #[cfg(not(test))]
+    pub fn unsubscribe_thread(&mut self, room_id: &str, root_event_id: &str) {
+        if let (Ok(rid), Ok(root)) = (
+            room_id.parse::<OwnedRoomId>(),
+            root_event_id.parse::<matrix_sdk::ruma::OwnedEventId>(),
+        ) {
+            if let Some(h) = self.thread_timelines.remove(&(rid, root)) {
+                for abort in h.abort_tasks {
+                    abort.abort();
+                }
+            }
+        }
+        self.sync_room_subscriptions();
+    }
+
+    #[cfg(test)]
+    pub fn unsubscribe_thread(&mut self, _room_id: &str, _root_event_id: &str) {}
+
+    /// Paginate backwards in a subscribed thread timeline. Older replies
+    /// arrive as `on_thread_inserted` callbacks at the front of the thread.
+    /// `reached_start` is `true` when there are no more replies to fetch.
+    #[cfg(not(test))]
+    pub fn paginate_thread_back(
+        &mut self,
+        room_id: &str,
+        root_event_id: &str,
+        count: u16,
+    ) -> PaginateResult {
+        let rid: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                return PaginateResult {
+                    ok: false,
+                    message: format!("invalid room id: {e}"),
+                    reached_start: false,
+                    reached_end: false,
+                }
+            }
+        };
+        let root: matrix_sdk::ruma::OwnedEventId = match root_event_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                return PaginateResult {
+                    ok: false,
+                    message: format!("invalid thread root id: {e}"),
+                    reached_start: false,
+                    reached_end: false,
+                }
+            }
+        };
+        let Some(handle) = self.thread_timelines.get(&(rid, root)) else {
+            return PaginateResult {
+                ok: false,
+                message: "thread not subscribed".to_owned(),
+                reached_start: false,
+                reached_end: false,
+            };
+        };
+        let tl = Arc::clone(&handle.timeline);
+        match self
+            .rt
+            .block_on(async move { tl.paginate_backwards(count).await })
+        {
+            Ok(reached_start) => PaginateResult {
+                ok: true,
+                message: String::new(),
+                reached_start,
+                reached_end: false,
+            },
+            Err(e) => PaginateResult {
+                ok: false,
+                message: e.to_string(),
+                reached_start: false,
+                reached_end: false,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn paginate_thread_back(
+        &mut self,
+        _room_id: &str,
+        _root_event_id: &str,
+        _count: u16,
+    ) -> PaginateResult {
+        PaginateResult {
+            ok: false,
+            message: "not logged in".into(),
+            reached_start: false,
+            reached_end: false,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Thread list subscription (ThreadListService)
+    // -----------------------------------------------------------------------
+
+    /// Subscribe to the thread list for `room_id`. Spawns an initial pagination
+    /// and a watcher task that fires `on_threads_updated` on every change.
+    #[cfg(not(test))]
+    pub fn subscribe_room_threads(&mut self, room_id: &str) -> OpResult {
+        use matrix_sdk_ui::timeline::ThreadListService;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let Some(handler) = self.handler.clone() else {
+            return err("sync not started");
+        };
+        let rid: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&rid) else {
+            return err("room not found");
+        };
+        // Abort any previous subscription for this room.
+        if let Some(prev) = self.thread_lists.remove(&rid) {
+            prev.abort.abort();
+        }
+        let service = std::sync::Arc::new(ThreadListService::new(room));
+        // Kick an initial pagination so the first list is populated.
+        {
+            let svc = std::sync::Arc::clone(&service);
+            self.rt.spawn(async move {
+                let _ = svc.paginate().await;
+            });
+        }
+        // Watcher task: fire on_threads_updated once immediately, then on
+        // every subsequent change to the items vector.
+        let rid_str = rid.to_string();
+        let svc_for_watch = std::sync::Arc::clone(&service);
+        let h = handler.clone();
+        let abort = self
+            .rt
+            .spawn(async move {
+                let (_initial, mut stream) =
+                    svc_for_watch.subscribe_to_items_updates();
+                if let Ok(g) = h.lock() {
+                    g.on_threads_updated(&rid_str);
+                }
+                while stream.next().await.is_some() {
+                    if let Ok(g) = h.lock() {
+                        g.on_threads_updated(&rid_str);
+                    }
+                }
+            })
+            .abort_handle();
+        self.thread_lists
+            .insert(rid, ThreadListHandle { service, abort });
+        ok("")
+    }
+
+    #[cfg(test)]
+    pub fn subscribe_room_threads(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Unsubscribe from the thread list for `room_id` and cancel the watcher.
+    #[cfg(not(test))]
+    pub fn unsubscribe_room_threads(&mut self, room_id: &str) {
+        if let Ok(rid) = room_id.parse::<OwnedRoomId>() {
+            if let Some(h) = self.thread_lists.remove(&rid) {
+                h.abort.abort();
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn unsubscribe_room_threads(&mut self, _room_id: &str) {}
+
+    /// Snapshot of the current thread list for `room_id` (order as returned
+    /// by the SDK). Empty when not subscribed or no threads known yet.
+    #[cfg(not(test))]
+    pub fn list_room_threads(&self, room_id: &str) -> Vec<ThreadInfo> {
+        let Ok(rid) = room_id.parse::<OwnedRoomId>() else {
+            return Vec::new();
+        };
+        let Some(handle) = self.thread_lists.get(&rid) else {
+            return Vec::new();
+        };
+        handle
+            .service
+            .items()
+            .iter()
+            .map(thread_info_from_item)
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn list_room_threads(&self, _room_id: &str) -> Vec<crate::ffi::ThreadInfo> {
+        Vec::new()
+    }
+
+    /// Paginate older threads for `room_id`. `reached_start == true` means the
+    /// server reports no further pages.
+    #[cfg(not(test))]
+    pub fn paginate_room_threads(&mut self, room_id: &str) -> PaginateResult {
+        let rid: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                return PaginateResult {
+                    ok: false,
+                    message: format!("invalid room id: {e}"),
+                    reached_start: false,
+                    reached_end: false,
+                }
+            }
+        };
+        let Some(handle) = self.thread_lists.get(&rid) else {
+            return PaginateResult {
+                ok: false,
+                message: "room threads not subscribed".to_owned(),
+                reached_start: false,
+                reached_end: false,
+            };
+        };
+        let svc = std::sync::Arc::clone(&handle.service);
+        match self.rt.block_on(async move { svc.paginate().await }) {
+            Ok(()) => {
+                use matrix_sdk_ui::timeline::ThreadListPaginationState;
+                let reached_start = matches!(
+                    handle.service.pagination_state(),
+                    ThreadListPaginationState::Idle { end_reached: true }
+                );
+                PaginateResult {
+                    ok: true,
+                    message: String::new(),
+                    reached_start,
+                    reached_end: false,
+                }
+            }
+            Err(e) => PaginateResult {
+                ok: false,
+                message: e.to_string(),
+                reached_start: false,
+                reached_end: false,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn paginate_room_threads(&mut self, _room_id: &str) -> PaginateResult {
+        PaginateResult {
+            ok: false,
+            message: "room threads not subscribed".to_owned(),
             reached_start: false,
             reached_end: false,
         }
@@ -2708,6 +3181,99 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    #[cfg(not(test))]
+    pub fn send_thread_message(
+        &mut self,
+        room_id: &str,
+        thread_root: &str,
+        body: &str,
+        formatted_body: &str,
+    ) -> OpResult {
+        self.send_thread_inner(room_id, thread_root, "", body, formatted_body)
+    }
+
+    #[cfg(not(test))]
+    pub fn send_thread_reply(
+        &mut self,
+        room_id: &str,
+        thread_root: &str,
+        in_reply_to_event_id: &str,
+        body: &str,
+        formatted_body: &str,
+    ) -> OpResult {
+        if in_reply_to_event_id.is_empty() {
+            return err("in_reply_to_event_id required");
+        }
+        self.send_thread_inner(
+            room_id,
+            thread_root,
+            in_reply_to_event_id,
+            body,
+            formatted_body,
+        )
+    }
+
+    #[cfg(not(test))]
+    fn send_thread_inner(
+        &mut self,
+        room_id: &str,
+        thread_root: &str,
+        in_reply_to: &str,
+        body: &str,
+        formatted_body: &str,
+    ) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        if thread_root.parse::<matrix_sdk::ruma::OwnedEventId>().is_err() {
+            return err("invalid thread root id");
+        }
+        if !in_reply_to.is_empty()
+            && in_reply_to.parse::<matrix_sdk::ruma::OwnedEventId>().is_err()
+        {
+            return err("invalid in_reply_to id");
+        }
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        let content =
+            build_thread_message_content(body, formatted_body, thread_root, in_reply_to);
+        match self
+            .rt
+            .block_on(async move { room.send_raw("m.room.message", content).await })
+        {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_thread_message(
+        &mut self,
+        _room_id: &str,
+        _thread_root: &str,
+        _body: &str,
+        _formatted_body: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    #[cfg(test)]
+    pub fn send_thread_reply(
+        &mut self,
+        _room_id: &str,
+        _thread_root: &str,
+        _in_reply_to_event_id: &str,
+        _body: &str,
+        _formatted_body: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
     /// Trigger an async fetch of the replied-to event's details for all
     /// timeline items in `room_id` that reference `event_id` via
     /// `m.in_reply_to`. When the data arrives, the SDK re-emits every
@@ -2762,10 +3328,9 @@ impl ClientFfi {
         height: u32,
         is_animated: bool,
         reply_event_id: &str,
+        thread_root: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseImageInfo};
-        use matrix_sdk::room::reply::{EnforceThread, Reply};
-        use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::ruma::UInt;
 
@@ -2794,6 +3359,7 @@ impl ClientFfi {
             let filename = filename.to_owned();
             let caption = caption.to_owned();
             let reply_event_id = reply_event_id.to_owned();
+            let thread_root = thread_root.to_owned();
             let size = bytes.len();
             let bytes_owned = bytes.to_vec();
             return match self.rt.block_on(async move {
@@ -2811,6 +3377,7 @@ impl ClientFfi {
                     height,
                     size,
                     &reply_event_id,
+                    &thread_root,
                 );
                 room.send_raw("m.room.message", content).await
             }) {
@@ -2838,16 +3405,10 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
-        if !reply_event_id.is_empty() {
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
-                Ok(id) => id,
-                Err(e) => return err(format!("invalid reply event id: {e}")),
-            };
-            config = config.reply(Some(Reply {
-                event_id: reply_id,
-                enforce_thread: EnforceThread::Unthreaded,
-                add_mentions: AddMentions::No,
-            }));
+        match build_media_reply(reply_event_id, thread_root) {
+            Ok(Some(reply)) => config = config.reply(Some(reply)),
+            Ok(None) => {}
+            Err(e) => return err(e),
         }
 
         let data = bytes.to_vec();
@@ -2874,6 +3435,7 @@ impl ClientFfi {
         _height: u32,
         _is_animated: bool,
         _reply_event_id: &str,
+        _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -2891,10 +3453,9 @@ impl ClientFfi {
         filename: &str,
         caption: &str,
         reply_event_id: &str,
+        thread_root: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseFileInfo};
-        use matrix_sdk::room::reply::{EnforceThread, Reply};
-        use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::ruma::UInt;
 
@@ -2920,16 +3481,10 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
-        if !reply_event_id.is_empty() {
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
-                Ok(id) => id,
-                Err(e) => return err(format!("invalid reply event id: {e}")),
-            };
-            config = config.reply(Some(Reply {
-                event_id: reply_id,
-                enforce_thread: EnforceThread::Unthreaded,
-                add_mentions: AddMentions::No,
-            }));
+        match build_media_reply(reply_event_id, thread_root) {
+            Ok(Some(reply)) => config = config.reply(Some(reply)),
+            Ok(None) => {}
+            Err(e) => return err(e),
         }
 
         let data = bytes.to_vec();
@@ -2953,6 +3508,7 @@ impl ClientFfi {
         _filename: &str,
         _caption: &str,
         _reply_event_id: &str,
+        _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -2971,10 +3527,9 @@ impl ClientFfi {
         caption: &str,
         duration_ms: u64,
         reply_event_id: &str,
+        thread_root: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
-        use matrix_sdk::room::reply::{EnforceThread, Reply};
-        use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
@@ -3007,16 +3562,10 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
-        if !reply_event_id.is_empty() {
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
-                Ok(id) => id,
-                Err(e) => return err(format!("invalid reply event id: {e}")),
-            };
-            config = config.reply(Some(Reply {
-                event_id: reply_id,
-                enforce_thread: EnforceThread::Unthreaded,
-                add_mentions: AddMentions::No,
-            }));
+        match build_media_reply(reply_event_id, thread_root) {
+            Ok(Some(reply)) => config = config.reply(Some(reply)),
+            Ok(None) => {}
+            Err(e) => return err(e),
         }
 
         let data = bytes.to_vec();
@@ -3041,6 +3590,7 @@ impl ClientFfi {
         _caption: &str,
         _duration_ms: u64,
         _reply_event_id: &str,
+        _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -3066,10 +3616,9 @@ impl ClientFfi {
         thumb_height: u32,
         duration_ms: u64,
         reply_event_id: &str,
+        thread_root: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseVideoInfo, Thumbnail};
-        use matrix_sdk::room::reply::{EnforceThread, Reply};
-        use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
@@ -3113,16 +3662,10 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
-        if !reply_event_id.is_empty() {
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
-                Ok(id) => id,
-                Err(e) => return err(format!("invalid reply event id: {e}")),
-            };
-            config = config.reply(Some(Reply {
-                event_id: reply_id,
-                enforce_thread: EnforceThread::Unthreaded,
-                add_mentions: AddMentions::No,
-            }));
+        match build_media_reply(reply_event_id, thread_root) {
+            Ok(Some(reply)) => config = config.reply(Some(reply)),
+            Ok(None) => {}
+            Err(e) => return err(e),
         }
 
         let data = bytes.to_vec();
@@ -3152,6 +3695,7 @@ impl ClientFfi {
         _thumb_height: u32,
         _duration_ms: u64,
         _reply_event_id: &str,
+        _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -3172,10 +3716,9 @@ impl ClientFfi {
         waveform: &[u16],
         caption: &str,
         reply_event_id: &str,
+        thread_root: &str,
     ) -> OpResult {
         use matrix_sdk::attachment::{AttachmentConfig, AttachmentInfo, BaseAudioInfo};
-        use matrix_sdk::room::reply::{EnforceThread, Reply};
-        use matrix_sdk::ruma::events::room::message::AddMentions;
         use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
         use matrix_sdk::ruma::UInt;
         use std::time::Duration;
@@ -3237,16 +3780,10 @@ impl ClientFfi {
         if !caption.is_empty() {
             config = config.caption(Some(TextMessageEventContent::plain(caption)));
         }
-        if !reply_event_id.is_empty() {
-            let reply_id: matrix_sdk::ruma::OwnedEventId = match reply_event_id.parse() {
-                Ok(id) => id,
-                Err(e) => return err(format!("invalid reply event id: {e}")),
-            };
-            config = config.reply(Some(Reply {
-                event_id: reply_id,
-                enforce_thread: EnforceThread::Unthreaded,
-                add_mentions: AddMentions::No,
-            }));
+        match build_media_reply(reply_event_id, thread_root) {
+            Ok(Some(reply)) => config = config.reply(Some(reply)),
+            Ok(None) => {}
+            Err(e) => return err(e),
         }
 
         let mime: mime::Mime = "audio/ogg; codecs=opus".parse().unwrap();
@@ -3269,6 +3806,7 @@ impl ClientFfi {
         _waveform: &[u16],
         _caption: &str,
         _reply_event_id: &str,
+        _thread_root: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -6480,6 +7018,106 @@ fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
     Some((lat, lon))
 }
 
+/// Shared so the in-reply-to quote block and the thread latest-event preview
+/// emit identical snippet text.
+#[cfg(not(test))]
+fn msglike_snippet(content: &TimelineItemContent) -> String {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    match content {
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Message(m),
+            ..
+        }) => match m.msgtype() {
+            MessageType::Text(t) => t.body.clone(),
+            MessageType::Image(_) => "(image)".to_owned(),
+            MessageType::File(_) => "(file)".to_owned(),
+            MessageType::Audio(a) => {
+                if a.voice.is_some() {
+                    "(voice)".to_owned()
+                } else {
+                    "(audio)".to_owned()
+                }
+            }
+            MessageType::Video(_) => "(video)".to_owned(),
+            _ => "(message)".to_owned(),
+        },
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Sticker(_),
+            ..
+        }) => "(sticker)".to_owned(),
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Redacted,
+            ..
+        }) => "(deleted)".to_owned(),
+        _ => String::new(),
+    }
+}
+
+/// Extract (sender_display_name, body_snippet, timestamp_ms) from an embedded
+/// event (a thread's latest reply, or an in-reply-to target).
+#[cfg(not(test))]
+fn embedded_event_preview(
+    embedded: &matrix_sdk_ui::timeline::EmbeddedEvent,
+) -> (String, String, u64) {
+    let name = match &embedded.sender_profile {
+        TimelineDetails::Ready(p) => p
+            .display_name
+            .clone()
+            .unwrap_or_else(|| embedded.sender.to_string()),
+        _ => embedded.sender.to_string(),
+    };
+    let body = msglike_snippet(&embedded.content);
+    let ts: u64 = embedded.timestamp.get().into();
+    (name, body, ts)
+}
+
+/// Extract (event_id_str, sender_name, body_snippet, timestamp_ms) from a
+/// `ThreadListItemEvent`. Used by both root and latest-event fields.
+#[cfg(not(test))]
+fn thread_list_event_preview(
+    ev: &matrix_sdk_ui::timeline::thread_list_service::ThreadListItemEvent,
+) -> (String, String, String, u64) {
+    let name = match &ev.sender_profile {
+        TimelineDetails::Ready(p) => p
+            .display_name
+            .clone()
+            .unwrap_or_else(|| ev.sender.to_string()),
+        _ => ev.sender.to_string(),
+    };
+    let body = match &ev.content {
+        Some(content) => msglike_snippet(content),
+        None => String::new(),
+    };
+    let ts: u64 = ev.timestamp.get().into();
+    (ev.event_id.to_string(), name, body, ts)
+}
+
+/// Convert a `ThreadListItem` into the flat `ThreadInfo` FFI struct.
+#[cfg(not(test))]
+fn thread_info_from_item(
+    item: &matrix_sdk_ui::timeline::thread_list_service::ThreadListItem,
+) -> crate::ffi::ThreadInfo {
+    use crate::ffi::ThreadInfo;
+    let (root_event_id, root_sender_name, root_body, root_timestamp) =
+        thread_list_event_preview(&item.root_event);
+    let (latest_event_id, latest_sender_name, latest_body, latest_timestamp) =
+        match &item.latest_event {
+            Some(ev) => thread_list_event_preview(ev),
+            None => (String::new(), String::new(), String::new(), 0),
+        };
+    ThreadInfo {
+        root_event_id,
+        root_sender_name,
+        root_body,
+        root_timestamp,
+        latest_event_id,
+        latest_sender_name,
+        latest_body,
+        latest_timestamp,
+        num_replies: item.num_replies as u64,
+    }
+}
+
 #[cfg(not(test))]
 async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
@@ -6548,6 +7186,12 @@ async fn timeline_item_to_ffi(
                 location_lat: 0.0,
                 location_lon: 0.0,
                 location_description: String::new(),
+                thread_root_id: String::new(),
+                is_thread_root: false,
+                thread_reply_count: 0,
+                thread_latest_sender_name: String::new(),
+                thread_latest_body: String::new(),
+                thread_latest_ts: 0,
             });
         }
     };
@@ -6655,6 +7299,12 @@ async fn timeline_item_to_ffi(
             location_lat: 0.0,
             location_lon: 0.0,
             location_description: String::new(),
+            thread_root_id: String::new(),
+            is_thread_root: false,
+            thread_reply_count: 0,
+            thread_latest_sender_name: String::new(),
+            thread_latest_body: String::new(),
+            thread_latest_ts: 0,
         });
     }
 
@@ -6736,6 +7386,12 @@ async fn timeline_item_to_ffi(
             location_lat: 0.0,
             location_lon: 0.0,
             location_description: String::new(),
+            thread_root_id: String::new(),
+            is_thread_root: false,
+            thread_reply_count: 0,
+            thread_latest_sender_name: String::new(),
+            thread_latest_body: String::new(),
+            thread_latest_ts: 0,
         });
     }
 
@@ -6829,6 +7485,12 @@ async fn timeline_item_to_ffi(
             location_lat: 0.0,
             location_lon: 0.0,
             location_description: String::new(),
+            thread_root_id: String::new(),
+            is_thread_root: false,
+            thread_reply_count: 0,
+            thread_latest_sender_name: String::new(),
+            thread_latest_body: String::new(),
+            thread_latest_ts: 0,
         });
     }
 
@@ -7340,44 +8002,7 @@ async fn timeline_item_to_ffi(
                 let id = details.event_id.to_string();
                 let (rname, rbody) = match &details.event {
                     TimelineDetails::Ready(replied) => {
-                        let name = match &replied.sender_profile {
-                            TimelineDetails::Ready(p) => p
-                                .display_name
-                                .clone()
-                                .unwrap_or_else(|| replied.sender.to_string()),
-                            _ => replied.sender.to_string(),
-                        };
-                        let snippet = match &replied.content {
-                            TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Message(m),
-                                ..
-                            }) => {
-                                use matrix_sdk::ruma::events::room::message::MessageType;
-                                match m.msgtype() {
-                                    MessageType::Text(t) => t.body.clone(),
-                                    MessageType::Image(_) => "(image)".to_owned(),
-                                    MessageType::File(_) => "(file)".to_owned(),
-                                    MessageType::Audio(a) => {
-                                        if a.voice.is_some() {
-                                            "(voice)".to_owned()
-                                        } else {
-                                            "(audio)".to_owned()
-                                        }
-                                    }
-                                    MessageType::Video(_) => "(video)".to_owned(),
-                                    _ => "(message)".to_owned(),
-                                }
-                            }
-                            TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Sticker(_),
-                                ..
-                            }) => "(sticker)".to_owned(),
-                            TimelineItemContent::MsgLike(MsgLikeContent {
-                                kind: MsgLikeKind::Redacted,
-                                ..
-                            }) => "(deleted)".to_owned(),
-                            _ => String::new(),
-                        };
+                        let (name, snippet, _ts) = embedded_event_preview(replied);
                         (name, snippet)
                     }
                     _ => (String::new(), String::new()),
@@ -7398,6 +8023,30 @@ async fn timeline_item_to_ffi(
 
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
+
+    // MSC3440 thread metadata.
+    let thread_root_id = event_item
+        .content()
+        .thread_root()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let (
+        is_thread_root,
+        thread_reply_count,
+        thread_latest_sender_name,
+        thread_latest_body,
+        thread_latest_ts,
+    ) = match event_item.content().thread_summary() {
+        None => (false, 0u64, String::new(), String::new(), 0u64),
+        Some(summary) => {
+            let count = summary.num_replies as u64;
+            let (name, body, ts) = match &summary.latest_event {
+                TimelineDetails::Ready(embedded) => embedded_event_preview(embedded),
+                _ => (String::new(), String::new(), 0u64),
+            };
+            (true, count, name, body, ts)
+        }
+    };
 
     Some(TimelineEvent {
         event_id: event_item
@@ -7453,6 +8102,12 @@ async fn timeline_item_to_ffi(
         location_lat,
         location_lon,
         location_description,
+        thread_root_id,
+        is_thread_root,
+        thread_reply_count,
+        thread_latest_sender_name,
+        thread_latest_body,
+        thread_latest_ts,
     })
 }
 
@@ -7571,6 +8226,42 @@ async fn evaluate_push_rules(client: &Client, room: &Room, source_json: &str) ->
 }
 
 #[cfg(not(test))]
+#[derive(Clone)]
+enum TimelineChannel {
+    Room,
+    Thread(String), // thread root event id
+}
+
+#[cfg(not(test))]
+fn emit_reset(g: &SendHandler, ch: &TimelineChannel, id: &str, snap: &Vec<TimelineEvent>) {
+    match ch {
+        TimelineChannel::Room => g.on_timeline_reset(id, snap),
+        TimelineChannel::Thread(root) => g.on_thread_reset(id, root, snap),
+    }
+}
+#[cfg(not(test))]
+fn emit_inserted(g: &SendHandler, ch: &TimelineChannel, id: &str, idx: u64, ev: &TimelineEvent) {
+    match ch {
+        TimelineChannel::Room => g.on_message_inserted(id, idx, ev),
+        TimelineChannel::Thread(root) => g.on_thread_inserted(id, root, idx, ev),
+    }
+}
+#[cfg(not(test))]
+fn emit_updated(g: &SendHandler, ch: &TimelineChannel, id: &str, idx: u64, ev: &TimelineEvent) {
+    match ch {
+        TimelineChannel::Room => g.on_message_updated(id, idx, ev),
+        TimelineChannel::Thread(root) => g.on_thread_updated(id, root, idx, ev),
+    }
+}
+#[cfg(not(test))]
+fn emit_removed(g: &SendHandler, ch: &TimelineChannel, id: &str, idx: u64) {
+    match ch {
+        TimelineChannel::Room => g.on_message_removed(id, idx),
+        TimelineChannel::Thread(root) => g.on_thread_removed(id, root, idx),
+    }
+}
+
+#[cfg(not(test))]
 async fn handle_timeline_diff(
     diff: VectorDiff<Arc<TimelineItem>>,
     visible: &mut Vec<bool>,
@@ -7579,6 +8270,7 @@ async fn handle_timeline_diff(
     room: &Room,
     me: Option<&UserId>,
     _client: &Client,
+    channel: &TimelineChannel,
 ) {
     match diff {
         VectorDiff::Append { values } => {
@@ -7588,7 +8280,7 @@ async fn handle_timeline_diff(
                     let idx = visible_len(visible);
                     visible.push(true);
                     if let Ok(g) = handler.lock() {
-                        g.on_message_inserted(room_id, idx, &ev);
+                        emit_inserted(&g, channel, room_id, idx, &ev);
                     }
                 } else {
                     visible.push(false);
@@ -7601,7 +8293,7 @@ async fn handle_timeline_diff(
                 let idx = visible_len(visible);
                 visible.push(true);
                 if let Ok(g) = handler.lock() {
-                    g.on_message_inserted(room_id, idx, &ev);
+                    emit_inserted(&g, channel, room_id, idx, &ev);
                 }
             } else {
                 visible.push(false);
@@ -7612,7 +8304,7 @@ async fn handle_timeline_diff(
             if let Some(ev) = ev {
                 visible.insert(0, true);
                 if let Ok(g) = handler.lock() {
-                    g.on_message_inserted(room_id, 0, &ev);
+                    emit_inserted(&g, channel, room_id, 0, &ev);
                 }
             } else {
                 visible.insert(0, false);
@@ -7628,7 +8320,7 @@ async fn handle_timeline_diff(
                 let v_idx = visible_index_of(visible, index);
                 visible.insert(index, true);
                 if let Ok(g) = handler.lock() {
-                    g.on_message_inserted(room_id, v_idx, &ev);
+                    emit_inserted(&g, channel, room_id, v_idx, &ev);
                 }
             } else {
                 visible.insert(index, false);
@@ -7657,7 +8349,7 @@ async fn handle_timeline_diff(
                 (true, Some(ev)) => {
                     let v_idx = visible_index_of(visible, index);
                     if let Ok(g) = handler.lock() {
-                        g.on_message_updated(room_id, v_idx, &ev);
+                        emit_updated(&g, channel, room_id, v_idx, &ev);
                     }
                 }
                 (false, Some(ev)) => {
@@ -7666,7 +8358,7 @@ async fn handle_timeline_diff(
                         *slot = true;
                     }
                     if let Ok(g) = handler.lock() {
-                        g.on_message_inserted(room_id, v_idx, &ev);
+                        emit_inserted(&g, channel, room_id, v_idx, &ev);
                     }
                 }
                 (true, None) => {
@@ -7675,7 +8367,7 @@ async fn handle_timeline_diff(
                         *slot = false;
                     }
                     if let Ok(g) = handler.lock() {
-                        g.on_message_removed(room_id, v_idx);
+                        emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
                 (false, None) => {}
@@ -7687,7 +8379,7 @@ async fn handle_timeline_diff(
                 let v_idx = visible_index_of(visible, index);
                 visible.remove(index);
                 if let Ok(g) = handler.lock() {
-                    g.on_message_removed(room_id, v_idx);
+                    emit_removed(&g, channel, room_id, v_idx);
                 }
             } else if index < visible.len() {
                 visible.remove(index);
@@ -7703,7 +8395,7 @@ async fn handle_timeline_diff(
                 if was {
                     let v_idx = visible_len(visible);
                     if let Ok(g) = handler.lock() {
-                        g.on_message_removed(room_id, v_idx);
+                        emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
             }
@@ -7713,7 +8405,7 @@ async fn handle_timeline_diff(
                 if was {
                     let v_idx = visible_len(visible);
                     if let Ok(g) = handler.lock() {
-                        g.on_message_removed(room_id, v_idx);
+                        emit_removed(&g, channel, room_id, v_idx);
                     }
                 }
             }
@@ -7723,7 +8415,7 @@ async fn handle_timeline_diff(
                 let was = visible.remove(0);
                 if was {
                     if let Ok(g) = handler.lock() {
-                        g.on_message_removed(room_id, 0);
+                        emit_removed(&g, channel, room_id, 0);
                     }
                 }
             }
@@ -7732,12 +8424,12 @@ async fn handle_timeline_diff(
             visible.clear();
             if let Ok(g) = handler.lock() {
                 let empty: Vec<TimelineEvent> = Vec::new();
-                g.on_timeline_reset(room_id, &empty);
+                emit_reset(&g, channel, room_id, &empty);
             }
         }
         VectorDiff::Reset { values } => {
             // Atomic snapshot replace. Build the new visibility mirror +
-            // snapshot in one pass before the single `on_timeline_reset`
+            // snapshot in one pass before the single `emit_reset`
             // call so the UI rebuilds in one shot.
             visible.clear();
             visible.reserve(values.len());
@@ -7750,7 +8442,7 @@ async fn handle_timeline_diff(
                 }
             }
             if let Ok(g) = handler.lock() {
-                g.on_timeline_reset(room_id, &snapshot);
+                emit_reset(&g, channel, room_id, &snapshot);
             }
         }
     }
@@ -8268,6 +8960,46 @@ mod tests {
     }
 
     #[test]
+    fn thread_relation_message_shape() {
+        let val = build_thread_message_content("body", "", "$root:server", "");
+        assert_eq!(val["msgtype"], "m.text");
+        assert_eq!(val["body"], "body");
+        assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
+        assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
+        // No explicit in-thread reply target: fall back to the root and flag it.
+        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$root:server");
+        assert_eq!(val["m.relates_to"]["is_falling_back"], true);
+    }
+
+    #[test]
+    fn thread_relation_reply_shape() {
+        let val = build_thread_message_content("body", "", "$root:server", "$reply:server");
+        assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
+        assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
+        assert_eq!(
+            val["m.relates_to"]["m.in_reply_to"]["event_id"],
+            "$reply:server"
+        );
+        // A real in-thread reply is not a fallback.
+        assert!(val["m.relates_to"]["is_falling_back"].is_null());
+    }
+
+    #[test]
+    fn send_thread_message_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.send_thread_message("!room:server", "$root:server", "hi", "");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn send_thread_reply_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r =
+            c.send_thread_reply("!room:server", "$root:server", "$reply:server", "hi", "");
+        assert!(!r.ok);
+    }
+
+    #[test]
     fn send_edit_not_logged_in() {
         let mut c = ClientFfi::new();
         let r = c.send_edit("!room:example.com", "$event:example.com", "new body", "");
@@ -8319,7 +9051,7 @@ mod tests {
     #[test]
     fn send_audio_not_logged_in() {
         let mut c = ClientFfi::new();
-        let r = c.send_audio("!room:server", &[], "audio/ogg", "voice.ogg", "", 0, "");
+        let r = c.send_audio("!room:server", &[], "audio/ogg", "voice.ogg", "", 0, "", "");
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
     }
@@ -8329,7 +9061,7 @@ mod tests {
         let mut c = ClientFfi::new();
         let r = c.send_video(
             "!room:server", &[], "video/mp4", "clip.mp4", "",
-            0, 0, &[], 0, 0, 0, "",
+            0, 0, &[], 0, 0, 0, "", "",
         );
         assert!(!r.ok);
         assert!(r.message.contains("not logged in"), "got: {}", r.message);
@@ -8346,6 +9078,7 @@ mod tests {
             240,
             2048,
             "", // no reply
+            "", // no thread
         );
         assert_eq!(val["msgtype"], "m.image");
         assert_eq!(val["body"], "anim.gif");
@@ -8371,10 +9104,35 @@ mod tests {
             0,
             512,
             "$reply:server",
+            "", // no thread
         );
         assert_eq!(val["body"], "Look at this");
         assert_eq!(val["filename"], "cat.gif");
         assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$reply:server");
+    }
+
+    #[test]
+    fn animated_image_content_threaded() {
+        let val = build_animated_image_content(
+            "mxc://server/abc", "a.gif", "", "image/gif", 1, 1, 10, "", "$root:server",
+        );
+        assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
+        assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
+        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$root:server");
+        assert_eq!(val["m.relates_to"]["is_falling_back"], true);
+    }
+
+    #[test]
+    fn animated_image_content_threaded_reply() {
+        let val = build_animated_image_content(
+            "mxc://server/abc", "a.gif", "", "image/gif", 1, 1, 10, "$reply:server",
+            "$root:server",
+        );
+        assert_eq!(val["m.relates_to"]["rel_type"], "m.thread");
+        assert_eq!(val["m.relates_to"]["event_id"], "$root:server");
+        // Explicit in-thread reply target: point at it, not the root, and no fallback flag.
+        assert_eq!(val["m.relates_to"]["m.in_reply_to"]["event_id"], "$reply:server");
+        assert!(val["m.relates_to"]["is_falling_back"].is_null());
     }
 
     #[test]
@@ -8407,6 +9165,23 @@ mod tests {
         let big_waveform: Vec<u16> = vec![500; 512];
         let result = encode_voice_ogg(&samples, &big_waveform, 20);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn timeline_event_has_thread_fields() {
+        let ev = crate::ffi::TimelineEvent {
+            thread_root_id: "$root:server".to_owned(),
+            is_thread_root: true,
+            thread_reply_count: 3,
+            thread_latest_sender_name: "Alice".to_owned(),
+            thread_latest_body: "hi".to_owned(),
+            thread_latest_ts: 42,
+            ..Default::default()
+        };
+        assert!(ev.is_thread_root);
+        assert_eq!(ev.thread_reply_count, 3);
+        assert_eq!(ev.thread_root_id, "$root:server");
+        assert_eq!(ev.thread_latest_ts, 42);
     }
 }
 
@@ -8804,6 +9579,25 @@ mod set_presence_tests {
 }
 
 #[cfg(test)]
+mod thread_timeline_tests {
+    use super::ClientFfi;
+
+    #[test]
+    fn subscribe_thread_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.subscribe_thread("!room:server", "$root:server");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn paginate_thread_back_not_subscribed() {
+        let mut c = ClientFfi::new();
+        let r = c.paginate_thread_back("!room:server", "$root:server", 20);
+        assert!(!r.ok);
+    }
+}
+
+#[cfg(test)]
 mod utd_message_tests {
     use super::utd_message_for_cause;
     use matrix_sdk_base::crypto::types::events::UtdCause;
@@ -8864,5 +9658,35 @@ mod presence_polling_tests {
         // Network errors / non-matrix-API errors surface as None — must
         // not be treated as a permanent stop.
         assert!(!is_presence_forbidden(None));
+    }
+}
+
+#[cfg(test)]
+mod thread_list_tests {
+    use super::ClientFfi;
+
+    #[test]
+    fn subscribe_room_threads_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.subscribe_room_threads("!room:server");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn list_room_threads_empty_when_not_subscribed() {
+        let c = ClientFfi::new();
+        assert!(c.list_room_threads("!room:server").is_empty());
+    }
+
+    #[test]
+    fn thread_info_default_shape() {
+        let ti = crate::ffi::ThreadInfo {
+            root_event_id: "$root:server".to_owned(),
+            num_replies: 4,
+            ..Default::default()
+        };
+        assert_eq!(ti.root_event_id, "$root:server");
+        assert_eq!(ti.num_replies, 4);
+        assert!(ti.latest_event_id.is_empty());
     }
 }
