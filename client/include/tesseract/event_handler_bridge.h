@@ -91,4 +91,13 @@ private:
     tesseract::IEventHandler* const handler_; // non-owning
 };
 
+/// Synchronously persist a refreshed OAuth session blob to the platform
+/// secret store (see SessionStore::save_account). Invoked by matrix-sdk's
+/// save_session_callback through the cxx bridge on a worker thread; `user_id`
+/// is the full MXID the session belongs to. Unlike the EventHandlerBridge
+/// callbacks this is a free function: it has no dependence on a live
+/// IEventHandler, so it stays valid across sync start/stop and during the
+/// runtime teardown the synchronous callback exists to survive.
+void persist_session(rust::Str user_id, rust::Str session_json);
+
 } // namespace tesseract_ffi

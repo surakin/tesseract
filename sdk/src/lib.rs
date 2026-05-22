@@ -245,4 +245,6 @@ pub mod ffi {
         ) {
         }
     }
+
+    pub fn persist_session(_user_id: &str, _session_json: &str) {}
 }

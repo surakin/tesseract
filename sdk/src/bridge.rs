@@ -504,6 +504,15 @@ pub mod ffi {
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
+        /// Synchronously persist a refreshed OAuth session blob to the
+        /// platform-authoritative secret store (SessionStore::save_account ->
+        /// SecretStore: Credential Manager / Keychain / libsecret, with a
+        /// plaintext fallback when the backend is unavailable). Called from
+        /// matrix-sdk's save_session_callback on a worker thread so a rotated
+        /// refresh token survives an unclean shutdown even when the async
+        /// TokensRefreshed watcher is aborted mid-flight. `user_id` is the full
+        /// MXID the session belongs to.
+        fn persist_session(user_id: &str, session_json: &str);
         /// Fired when the key-backup state changes or when imported-key
         /// counters advance during a recover() call.
         fn on_backup_progress(self: &EventHandlerBridge, progress: &BackupProgress);

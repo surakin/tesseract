@@ -1,5 +1,6 @@
 #include "tesseract/event_handler_bridge.h"
 #include "ffi_convert.h"
+#include "tesseract/session_store.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -245,6 +246,21 @@ void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const
                   return;
               }
               handler_->on_session_saved(std::string(session_json));
+          });
+}
+
+void persist_session(rust::Str user_id, rust::Str session_json)
+{
+    // Routes matrix-sdk's synchronous save_session_callback to the same
+    // authoritative store load_account() reads on the next launch. Best-effort
+    // and idempotent with the async on_session_refreshed path: whichever runs
+    // last simply rewrites the same blob. guard() keeps any exception from
+    // unwinding across the FFI boundary.
+    guard("persist_session",
+          [&]
+          {
+              tesseract::SessionStore::save_account(std::string(user_id),
+                                                    std::string(session_json));
           });
 }
 
