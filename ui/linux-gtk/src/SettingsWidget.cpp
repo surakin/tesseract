@@ -41,6 +41,16 @@ SettingsWidget::SettingsWidget()
             on_notifications_changed(e);
         }
     };
+    settings_view_->on_group_inactive_changed = [this](bool v)
+    {
+        if (on_group_inactive_changed)
+            on_group_inactive_changed(v);
+    };
+    settings_view_->on_inactive_period_changed = [this](int days)
+    {
+        if (on_inactive_period_changed)
+            on_inactive_period_changed(days);
+    };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
     settings_view_->on_hide_content_changed = [](bool e)
@@ -172,6 +182,16 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
     };
 
     surface_->relayout();
+}
+
+void SettingsWidget::set_group_inactive_pref(bool enabled)
+{
+    settings_view_->set_group_inactive_pref(enabled);
+}
+
+void SettingsWidget::set_inactive_period_pref(int days)
+{
+    settings_view_->set_inactive_period_pref(days);
 }
 
 } // namespace gtk4

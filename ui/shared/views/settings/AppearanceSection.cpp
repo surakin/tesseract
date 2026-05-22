@@ -2,11 +2,13 @@
 
 #include "SettingsGroup.h"
 
+#include "tesseract/settings.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
 #include <algorithm>
 #include <memory>
+#include <string>
 
 namespace tesseract::views
 {
@@ -266,6 +268,38 @@ AppearanceSection::AppearanceSection()
         if (on_theme_changed) on_theme_changed(pref);
     };
     picker_ = group->add_widget(std::move(picker));
+
+    {
+        const auto& s = tesseract::Settings::instance();
+        auto* rl_group = add_group("Room list");
+
+        auto cb = std::make_unique<tk::CheckButton>(
+            "Group inactive rooms", s.group_inactive_rooms);
+        group_inactive_cb_ = rl_group->add_widget(std::move(cb));
+        group_inactive_cb_->on_change = [this](bool v)
+        {
+            if (on_group_inactive_changed) on_group_inactive_changed(v);
+        };
+
+        auto combo = std::make_unique<tk::ComboBox>();
+        combo->set_options({
+            {"1 week",   "7"},
+            {"2 weeks",  "14"},
+            {"1 month",  "30"},
+            {"3 months", "90"},
+            {"6 months", "180"},
+        });
+        combo->set_selected_value(
+            std::to_string(s.inactive_room_threshold_days));
+        period_combo_ = rl_group->add_widget(std::move(combo));
+        period_combo_->on_changed = [this](std::string value)
+        {
+            if (on_inactive_period_changed)
+            {
+                on_inactive_period_changed(std::stoi(value));
+            }
+        };
+    }
 }
 
 AppearanceSection::~AppearanceSection() = default;
@@ -273,6 +307,27 @@ AppearanceSection::~AppearanceSection() = default;
 void AppearanceSection::set_selected(tesseract::Settings::ThemePreference pref)
 {
     picker_->set_selected(pref);
+}
+
+void AppearanceSection::set_group_inactive(bool enabled)
+{
+    if (group_inactive_cb_) group_inactive_cb_->set_checked(enabled);
+}
+
+void AppearanceSection::set_inactive_period(int days)
+{
+    if (period_combo_) period_combo_->set_selected_value(std::to_string(days));
+}
+
+void AppearanceSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+{
+    SettingsPage::arrange(ctx, bounds);
+    // Constrain the combobox dropdown popup to the page bounds so it does not
+    // paint outside the settings panel (mirrors RoomInfoPanel).
+    if (period_combo_)
+    {
+        period_combo_->set_popup_clip(bounds);
+    }
 }
 
 } // namespace tesseract::views

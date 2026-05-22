@@ -3161,6 +3161,30 @@ void MacShell::apply_cached_messages_(
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        _settingsView->on_group_inactive_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().group_inactive_rooms = enabled;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+            if (s->_roomListView) s->_roomListView->refresh();
+        };
+        _settingsView->on_inactive_period_changed = [ws](int days)
+        {
+            MainWindowController* s = ws;
+            if (!s)
+            {
+                return;
+            }
+            tesseract::Settings::instance().inactive_room_threshold_days = days;
+            tesseract::Settings::instance().save_to_disk(
+                tesseract::config_dir());
+            if (s->_roomListView) s->_roomListView->refresh();
+        };
         _settingsView->on_tab_changed = [ws] {
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
@@ -4282,6 +4306,10 @@ void MacShell::apply_cached_messages_(
         tesseract::Settings::instance().notification_image_previews);
     _settingsView->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    _settingsView->set_group_inactive_pref(
+        tesseract::Settings::instance().group_inactive_rooms);
+    _settingsView->set_inactive_period_pref(
+        tesseract::Settings::instance().inactive_room_threshold_days);
     _settingsSurface->relayout();
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();

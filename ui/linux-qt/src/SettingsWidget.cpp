@@ -54,6 +54,20 @@ SettingsWidget::SettingsWidget(QWidget* parent)
         s.prefetch_full_media = enabled;
         s.save_to_disk(tesseract::config_dir());
     };
+    settings_view_->on_group_inactive_changed = [this](bool enabled)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.group_inactive_rooms = enabled;
+        s.save_to_disk(tesseract::config_dir());
+        emit roomListGroupingChanged();
+    };
+    settings_view_->on_inactive_period_changed = [this](int days)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.inactive_room_threshold_days = days;
+        s.save_to_disk(tesseract::config_dir());
+        emit roomListGroupingChanged();
+    };
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 
@@ -88,6 +102,10 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    settings_view_->set_group_inactive_pref(
+        tesseract::Settings::instance().group_inactive_rooms);
+    settings_view_->set_inactive_period_pref(
+        tesseract::Settings::instance().inactive_room_threshold_days);
     surface_->relayout();
 }
 

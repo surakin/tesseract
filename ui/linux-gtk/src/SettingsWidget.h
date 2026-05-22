@@ -47,6 +47,11 @@ public:
     std::function<void()> on_logout;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
+    std::function<void(bool)> on_group_inactive_changed;
+    std::function<void(int)>  on_inactive_period_changed;
+
+    void set_group_inactive_pref(bool enabled);
+    void set_inactive_period_pref(int days);
 
 private:
     std::unique_ptr<tk::gtk4::Surface> surface_;

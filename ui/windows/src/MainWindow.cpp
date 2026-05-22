@@ -2616,6 +2616,20 @@ void MainWindow::on_create(HWND hwnd)
             tesseract::Settings::instance().save_to_disk(
                 tesseract::config_dir());
         };
+        settings_view_->on_group_inactive_changed = [this](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.group_inactive_rooms = enabled;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
+        settings_view_->on_inactive_period_changed = [this](int days)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.inactive_room_threshold_days = days;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
         settings_surface_->set_root(std::move(view));
         settings_surface_->set_on_layout(
@@ -3139,6 +3153,10 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    settings_view_->set_group_inactive_pref(
+        tesseract::Settings::instance().group_inactive_rooms);
+    settings_view_->set_inactive_period_pref(
+        tesseract::Settings::instance().inactive_room_threshold_days);
 
     if (settings_controller_ && settings_name_field_)
     {

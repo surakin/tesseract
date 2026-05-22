@@ -1,8 +1,9 @@
 #pragma once
 
-// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as four
-// collapsible sections — Favorites / Direct Messages / Rooms / Spaces —
-// each showing avatar + name + last-message preview + unread badge per row.
+// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as five
+// collapsible sections — Favorites / Direct Messages / Rooms / Spaces /
+// Inactive — each showing avatar + name + last-message preview + unread badge
+// per row.
 //
 // Composition: this widget owns a child `tk::ListView` and an optional
 // search header strip that the host overlays a `NativeTextField` on
@@ -21,6 +22,7 @@
 
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -108,18 +110,22 @@ public:
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
-private:
-    class Adapter;
-
     // Section indices (matches array positions throughout the class).
     static constexpr int kSecFavorites = 0;
     static constexpr int kSecDMs = 1;
     static constexpr int kSecRooms = 2;
     static constexpr int kSecSpaces = 3;
-    static constexpr int kNumSections = 4;
+    static constexpr int kSecInactive = 4;
+    static constexpr int kNumSections = 5;
 
     static constexpr const char* kSectionTitles[kNumSections] = {
-        "Favorites", "Direct Messages", "Rooms", "Spaces"};
+        "Favorites", "Direct Messages", "Rooms", "Spaces", "Inactive"};
+
+    // Re-run section classification (e.g. after a settings change) and repaint.
+    void refresh();
+
+private:
+    class Adapter;
 
     // Flat item list fed to the inner ListView. Each item is either a
     // collapsible section header or a pointer into section_rooms_[s].
@@ -130,11 +136,11 @@ private:
             Header,
             Room
         } kind = Kind::Room;
-        int section = 0;  // which section (0-3)
+        int section = 0;  // which section (0-4)
         int room_idx = 0; // index within section_rooms_[section] (Room only)
     };
 
-    // Rebuild section_rooms_[4] from rooms_ + search filter, then
+    // Rebuild section_rooms_[kNumSections] from rooms_ + search filter, then
     // rebuild items_ from those buckets + collapsed_[] state.
     void rebuild_items();
 
@@ -167,5 +173,12 @@ private:
     // when the selection is temporarily hidden.
     std::string selected_room_id_cache_;
 };
+
+// Pure room→section classifier. Favorites and Spaces are never grouped; when
+// `group_inactive` is true, DMs and Rooms whose `last_activity_ts` is more than
+// `threshold_days` before `now_ms` go to kSecInactive. `last_activity_ts == 0`
+// (no known activity) counts as inactive.
+int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
+                          int threshold_days, std::uint64_t now_ms);
 
 } // namespace tesseract::views

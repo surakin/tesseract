@@ -1898,6 +1898,20 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             if (settings_controller_)
                 settings_controller_->set_notifications_enabled(enabled);
         };
+        settings_widget_->on_group_inactive_changed = [this](bool enabled)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.group_inactive_rooms = enabled;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
+        settings_widget_->on_inactive_period_changed = [this](int days)
+        {
+            auto& s = tesseract::Settings::instance();
+            s.inactive_room_threshold_days = days;
+            s.save_to_disk(tesseract::config_dir());
+            if (room_list_view_) room_list_view_->refresh();
+        };
     }
 
     // Escape key: close viewer overlays. Attached to the window so it fires
@@ -4676,6 +4690,10 @@ void MainWindow::open_settings_()
         },
         tesseract::Settings::instance().theme_pref,
         tesseract::Settings::instance().notifications_enabled);
+    settings_widget_->set_group_inactive_pref(
+        tesseract::Settings::instance().group_inactive_rooms);
+    settings_widget_->set_inactive_period_pref(
+        tesseract::Settings::instance().inactive_room_threshold_days);
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);

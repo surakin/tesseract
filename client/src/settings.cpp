@@ -71,6 +71,35 @@ static bool extract_bool(const std::string& json, const std::string& key,
     return default_value;
 }
 
+// Extractor for a bare JSON integer by key. Returns `default_value` when the
+// key is absent or no digits follow.
+static int extract_int(const std::string& json, const std::string& key,
+                       int default_value)
+{
+    std::string needle = "\"" + key + "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string::npos)
+    {
+        return default_value;
+    }
+    pos += needle.size();
+    while (pos < json.size() &&
+           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
+    {
+        ++pos;
+    }
+    std::size_t end = pos;
+    while (end < json.size() && json[end] >= '0' && json[end] <= '9')
+    {
+        ++end;
+    }
+    if (end == pos)
+    {
+        return default_value;
+    }
+    return std::stoi(json.substr(pos, end - pos));
+}
+
 void Settings::load_from_disk(const std::filesystem::path& config_dir)
 {
     auto path = config_dir / "app_settings.json";
@@ -103,6 +132,9 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     notification_hide_content =
         extract_bool(json, "notification_hide_content", false);
     prefetch_full_media = extract_bool(json, "prefetch_full_media", false);
+    group_inactive_rooms = extract_bool(json, "group_inactive_rooms", false);
+    inactive_room_threshold_days =
+        extract_int(json, "inactive_room_threshold_days", 30);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -135,7 +167,11 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
       << ",\"notification_hide_content\":"
       << (notification_hide_content ? "true" : "false")
       << ",\"prefetch_full_media\":"
-      << (prefetch_full_media ? "true" : "false") << "}";
+      << (prefetch_full_media ? "true" : "false")
+      << ",\"group_inactive_rooms\":"
+      << (group_inactive_rooms ? "true" : "false")
+      << ",\"inactive_room_threshold_days\":" << inactive_room_threshold_days
+      << "}";
 }
 
 } // namespace tesseract

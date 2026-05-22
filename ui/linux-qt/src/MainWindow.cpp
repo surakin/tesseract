@@ -3728,6 +3728,14 @@ void MainWindow::openSettings()
                     if (settings_controller_)
                         settings_controller_->set_notifications_enabled(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::roomListGroupingChanged, this,
+                [this]
+                {
+                    if (mainApp_ && mainApp_->room_list_view())
+                    {
+                        mainApp_->room_list_view()->refresh();
+                    }
+                });
 
         // server_info_ may have already arrived before this lazy widget was
         // created — apply it now so capability gating is correct on first open.

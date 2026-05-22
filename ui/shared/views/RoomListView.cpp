@@ -1,10 +1,12 @@
 #include "RoomListView.h"
 
 #include "tk/theme.h"
+#include <tesseract/settings.h>
 #include <tesseract/visual.h>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -81,6 +83,43 @@ bool name_matches(const std::string& name, const std::string& query)
 }
 
 } // namespace
+
+// ─────────────────────────────────────────────────────────────────────────
+
+int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
+                          int threshold_days, std::uint64_t now_ms)
+{
+    // Favorites and Spaces are never grouped. Keep the original
+    // favorite → DM → Room → Space precedence so the non-grouped result is
+    // byte-for-byte unchanged; the inactivity branch only diverts DMs and
+    // regular Rooms (the `!r.is_space` guard keeps spaces out of Inactive).
+    if (r.is_favorite)
+    {
+        return RoomListView::kSecFavorites;
+    }
+    if (group_inactive && !r.is_space)
+    {
+        std::uint64_t threshold_ms =
+            static_cast<std::uint64_t>(threshold_days) * 86'400'000ULL;
+        // last_activity_ts == 0 → now_ms - 0 > threshold ⇒ inactive. The
+        // `<= now_ms` guard avoids unsigned underflow treating a future-dated
+        // timestamp (clock skew) as inactive.
+        if (r.last_activity_ts <= now_ms &&
+            now_ms - r.last_activity_ts > threshold_ms)
+        {
+            return RoomListView::kSecInactive;
+        }
+    }
+    if (r.is_direct)
+    {
+        return RoomListView::kSecDMs;
+    }
+    if (!r.is_space)
+    {
+        return RoomListView::kSecRooms;
+    }
+    return RoomListView::kSecSpaces;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -464,6 +503,8 @@ RoomListView::~RoomListView() = default;
 
 RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 {
+    collapsed_[kSecInactive] = true; // Inactive starts collapsed to declutter.
+
     auto list = std::make_unique<tk::ListView>();
     list->set_adapter(adapter_.get());
     list->on_row_clicked = [this](int idx)
@@ -510,6 +551,16 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
     rooms_ = std::move(rooms);
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+    set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::refresh()
+{
     rebuild_items();
     if (list_)
     {
@@ -676,6 +727,14 @@ void RoomListView::rebuild_items()
     }
 
     // 2. Classify each room into a section, applying the search filter.
+    const auto& settings = tesseract::Settings::instance();
+    const bool group_inactive = settings.group_inactive_rooms;
+    const int threshold_days = settings.inactive_room_threshold_days;
+    const std::uint64_t now_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
     for (const auto& r : rooms_)
     {
         const std::string& hay = r.name.empty() ? r.id : r.name;
@@ -684,23 +743,7 @@ void RoomListView::rebuild_items()
             continue;
         }
 
-        int sec;
-        if (r.is_favorite)
-        {
-            sec = kSecFavorites;
-        }
-        else if (r.is_direct)
-        {
-            sec = kSecDMs;
-        }
-        else if (!r.is_space)
-        {
-            sec = kSecRooms;
-        }
-        else
-        {
-            sec = kSecSpaces;
-        }
+        int sec = classify_room_section(r, group_inactive, threshold_days, now_ms);
         section_rooms_[sec].push_back(&r);
     }
 

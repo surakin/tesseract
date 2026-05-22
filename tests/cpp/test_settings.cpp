@@ -199,3 +199,24 @@ TEST_CASE("Settings notifications_enabled missing key keeps default true")
 
     fs::remove_all(dir);
 }
+
+TEST_CASE("Settings persist group_inactive_rooms + threshold", "[settings]")
+{
+    auto dir = std::filesystem::temp_directory_path() /
+               "tess_settings_inactive_test";
+    std::filesystem::remove_all(dir);
+
+    auto& s = tesseract::Settings::instance();
+    s.group_inactive_rooms = true;
+    s.inactive_room_threshold_days = 90;
+    s.save_to_disk(dir);
+
+    s.group_inactive_rooms = false;
+    s.inactive_room_threshold_days = 30;
+    s.load_from_disk(dir);
+
+    CHECK(s.group_inactive_rooms == true);
+    CHECK(s.inactive_room_threshold_days == 90);
+
+    std::filesystem::remove_all(dir);
+}

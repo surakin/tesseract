@@ -45,6 +45,7 @@ signals:
     void logoutRequested();
     void themeChanged(tesseract::Settings::ThemePreference pref);
     void notificationsChanged(bool enabled);
+    void roomListGroupingChanged();
 
 protected:
     void resizeEvent(QResizeEvent* e) override;

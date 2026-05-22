@@ -2,17 +2,19 @@
 
 // Full-window settings screen. Composes:
 //   • A fixed-height top bar with a "← Back" button.
-//   • A tk::SideTabView below it with four sections:
+//   • A tk::SideTabView below it with sections:
 //       – Account (avatar, display name, Matrix ID)
-//       – Appearance (theme selection)
+//       – Appearance (theme selection + room-list grouping)
 //       – Notifications (enable/disable toggle)
 //       – Media (full-media prefetch toggle)
+//       – Server / Sessions / About
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
 // showing, call set_account_info(), set_theme_pref(),
-// set_notifications_enabled(), set_image_previews_enabled(), and
-// set_prefetch_enabled() to sync state with persisted settings.
+// set_notifications_enabled(), set_image_previews_enabled(),
+// set_prefetch_enabled(), set_group_inactive_pref(), and
+// set_inactive_period_pref() to sync state with persisted settings.
 
 #include "views/settings/AboutSection.h"
 #include "views/settings/AccountSection.h"
@@ -56,6 +58,10 @@ public:
 
     // Silently initialise the theme radio buttons from persisted settings.
     void set_theme_pref(tesseract::Settings::ThemePreference pref);
+
+    // Room list grouping (forwarded from AppearanceSection).
+    void set_group_inactive_pref(bool enabled);
+    void set_inactive_period_pref(int days);
 
     // ----- Notifications section --------------------------------------------
 
@@ -123,6 +129,12 @@ public:
 
     // Fired when the user selects a different theme.
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
+
+    // Fired when the user toggles room-list grouping of inactive rooms.
+    std::function<void(bool)> on_group_inactive_changed;
+
+    // Fired when the user changes the inactivity threshold (days).
+    std::function<void(int)>  on_inactive_period_changed;
 
     // Fired when the user toggles notifications.
     std::function<void(bool)> on_notifications_changed;

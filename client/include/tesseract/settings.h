@@ -100,6 +100,12 @@ public:
     // default), full media is fetched on demand when the viewer is opened.
     bool prefetch_full_media = false;
 
+    // ── Room list ─────────────────────────────────────────────────────
+    // Group rooms with no activity for `inactive_room_threshold_days` into a
+    // separate "Inactive" room-list section (DMs + Rooms only). Default off.
+    bool group_inactive_rooms = false;
+    int inactive_room_threshold_days = 30;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.
