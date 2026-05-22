@@ -241,6 +241,7 @@ public:
     using ShellBase::set_theme_preference_;
     using ShellBase::shortcode_for_mxc_;
     using ShellBase::shutting_down_;
+    using ShellBase::space_children_cache_;
     using ShellBase::space_stack_;
     using ShellBase::sticker_fetches_in_flight_;
     using ShellBase::sync_progress_shown_;
