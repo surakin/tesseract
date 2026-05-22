@@ -172,7 +172,9 @@ void MainAppWidget::show_video_viewer(bool show)
 bool MainAppWidget::any_modal_open_() const
 {
     return (confirm_dialog_ && confirm_dialog_->is_open()) ||
-           (room_view_      && room_view_->is_overlay_open());
+           (room_view_      && room_view_->is_overlay_open()) ||
+           (img_viewer_     && img_viewer_->is_open()) ||
+           (vid_viewer_     && vid_viewer_->is_open());
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
