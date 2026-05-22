@@ -1593,6 +1593,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     apply_current_theme_();
 
     // Re-apply when the OS switches light/dark (only relevant in System mode).
+    // colorSchemeChanged was added in Qt 6.5; on older Qt the XDG portal
+    // signal already handles this via on_portal_setting_changed_.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
             this,
             [this]
@@ -1603,6 +1606,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                     apply_current_theme_();
                 }
             });
+#endif
 
     // Room selection is delivered through RoomListView's on_room_selected
     // callback wired in the surface-construction block above.
@@ -4706,14 +4710,16 @@ void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const auto qt_scheme = QGuiApplication::styleHints()->colorScheme();
     if (qt_scheme != Qt::ColorScheme::Unknown)
     {
         return qt_scheme == Qt::ColorScheme::Dark ? tk::ThemeMode::Dark
                                                   : tk::ThemeMode::Light;
     }
+#endif
     // Qt could not determine the OS color scheme (common on GNOME without
-    // QGnomePlatform / Qt < 6.6). Fall back to the XDG portal value.
+    // QGnomePlatform / Qt < 6.5). Fall back to the XDG portal value.
     return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark
                                      : tk::ThemeMode::Light;
 }
