@@ -22,7 +22,7 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-22
 > `MentionController`, and `client/build_mention_message`; wired into the main
 > window + pop-out on all four shells. Verified on **Qt6**; GTK4 builds clean;
 > **macOS + Win32 are written but unverified** (no toolchain in the dev env).
-> 144 Rust tests + 465 C++ tests.
+> 144 Rust tests + 468 C++ tests.
 
 > **Account registration (OIDC `prompt=create`).**
 > The login screen offers a capability-gated "New here? Create an account" link
@@ -95,7 +95,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 - **OAuth 2.0 (RFC 8252) loopback flow** — two-phase `begin_oauth` / `await_oauth` API, ephemeral loopback HTTP server, mDNS-safe redirect URI.
 - **Secure token storage** — per-platform `SecretStore` backend: Windows Credential Manager (`CredWriteW`/`CredReadW`), macOS Keychain (`SecItemAdd`/`SecItemCopyMatching`), Linux `libsecret` (probed at build time; plaintext stub fallback when absent). `SessionStore` migrates transparently from the legacy plaintext `session.json` on first load, writing a `{"v":2}` sentinel on success so subsequent starts bypass the migration path.
-- **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh (`%APPDATA%/Tesseract/` on Windows, `~/.config/tesseract/` on Linux, `~/Library/Application Support/Tesseract/` on macOS) and reloads it at launch.
+- **Session restore on startup** — `SessionStore` persists the full `PersistedSession` JSON on every token refresh and reloads it at launch.
+- **XDG data/config split** — account data (per-account `accounts/<uid>/` tree with `session.json` + the matrix-sdk SQLite store, plus the `accounts.json` index) lives under `data_dir()`: `~/.local/share/tesseract/` on Linux, `%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS. Only `app_settings.json` stays in `config_dir()` (`~/.config/tesseract/` on Linux); `data_dir()` equals `config_dir()` on Windows/macOS. `migrate_legacy_layout()` runs on startup and handles both the pre-multi-account single-account layout and a multi-account `accounts/` tree left under `config_dir()` by older builds (Linux), moving each into `data_dir()` crash-safely.
 - **`logout`** — wipes Rust session, C++ wrapper state, and the SQLite store; surfaces back through the FFI.
 - **Soft logout** — `SessionChange::UnknownToken` threaded through `on_error` with a `soft_logout` flag so the UI can retry restore without clearing the store.
 - **Recovery key / device verification (Step 6)** — `needs_recovery`, `recover(key_or_passphrase)`, `backup_state` FFI; `on_backup_progress` callback; per-platform `RecoveryBanner` (in-toolkit; not a modal dialog).
