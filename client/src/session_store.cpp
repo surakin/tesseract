@@ -14,6 +14,7 @@
 
 #if defined(_WIN32)
 #include <io.h>
+#include <share.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #else

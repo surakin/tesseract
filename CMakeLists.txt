@@ -101,6 +101,18 @@ if(APPLE)
     )
 endif()
 
+# audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
+# before the Rust archive, causing GNU ld to discard symbols before seeing
+# the undefined references.  Attach opus to the interface so it always
+# follows the archive in the link command.  Windows bundles opus into the
+# Rust archive directly and needs no separate library.
+if(NOT WIN32)
+    find_library(OPUS_LIB NAMES opus
+        HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
+        REQUIRED)
+    target_link_libraries(tesseract_sdk_ffi-static INTERFACE ${OPUS_LIB})
+endif()
+
 # MinGW cross-compilation on a case-sensitive host (Linux): Rust crates emit
 # Windows-style mixed-case link library names (e.g. "Bcrypt", "Ws2_32") via
 # `cargo:rustc-link-lib=`. MinGW's import stubs are lowercase on disk

@@ -87,19 +87,6 @@ target_link_libraries(tesseract_tests PRIVATE
     tesseract_sdk_ffi-static
     tesseract_tk
 )
-# On Linux/macOS audiopus uses the system libopus and emits
-# cargo:rustc-link-lib=opus; satisfy that here. On Windows audiopus
-# bundles opus into the Rust archive so no separate lib is needed.
-if(NOT WIN32)
-    # audiopus_sys emits cargo:rustc-link-lib=opus; satisfy it here.
-    # find_library is needed on macOS because Homebrew installs opus to a
-    # non-standard prefix (/opt/homebrew/lib on Apple Silicon).
-    find_library(OPUS_LIB NAMES opus
-        HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
-        REQUIRED)
-    target_link_libraries(tesseract_tests PRIVATE ${OPUS_LIB})
-endif()
-
 # Register each Catch2 TEST_CASE as an individual ctest test.
 include(Catch)
 catch_discover_tests(tesseract_tests)
