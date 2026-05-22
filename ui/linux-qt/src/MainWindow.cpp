@@ -1820,10 +1820,15 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
         if (token.empty())
         {
             // No externally-provided token (e.g. tray icon click).
-            // Request a self-issued token synchronously.
-            // We supply the last known input serial and seat so compositors
-            // that require it (GNOME Shell) have a chance to honour the
-            // request; KWin grants these regardless.
+            // Request a self-issued token synchronously, supplying the last
+            // known input serial and seat as proof of user intent. Without a
+            // valid serial (e.g. cold start with no prior input) compositors
+            // enforcing focus-stealing prevention deny the request: KWin hands
+            // back a "not-granted-*" token and only flags the window as
+            // demanding attention rather than raising it. Foregrounding on
+            // launch therefore relies on a granted XDG_ACTIVATION_TOKEN from
+            // the launcher; a token-less launch (terminal/IDE) cannot steal
+            // focus by design.
             TokenResult result;
             xdg_activation_token_v1* tok =
                 xdg_activation_v1_get_activation_token(s_xdgActivation);
