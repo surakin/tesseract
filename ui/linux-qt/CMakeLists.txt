@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Widgets Multimedia DBus Concurrent Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia DBus Concurrent Network)
 qt_standard_project_setup()
 
 # ---------------------------------------------------------------------------
@@ -14,11 +14,18 @@ qt_standard_project_setup()
 # The protocol glue (src/xdg-activation-v1-protocol.[ch]) was generated once
 # from wayland-protocols 1.25 and checked in; it only needs updating if the
 # protocol itself changes (it is stable at version 1).
+#
+# GuiPrivate (qt6-base-private-dev) is only needed for the native interface
+# calls used here; look for it separately so the build degrades gracefully
+# on systems that only have the public Qt6 dev packages.
 # ---------------------------------------------------------------------------
 find_library(WAYLAND_CLIENT_LIB wayland-client)
 set(_xdg_sources "")
 if(WAYLAND_CLIENT_LIB)
-    set(_xdg_sources src/xdg-activation-v1-protocol.c)
+    find_package(Qt6 OPTIONAL_COMPONENTS GuiPrivate)
+    if(Qt6GuiPrivate_FOUND)
+        set(_xdg_sources src/xdg-activation-v1-protocol.c)
+    endif()
 endif()
 
 qt_add_executable(tesseract_qt
@@ -65,7 +72,7 @@ target_link_libraries(tesseract_qt PRIVATE
     opus
 )
 
-if(WAYLAND_CLIENT_LIB)
+if(WAYLAND_CLIENT_LIB AND Qt6GuiPrivate_FOUND)
     # The root project only enables LANGUAGES CXX. Enable C here so we can
     # compile the wayland-scanner generated .c protocol glue.
     enable_language(C)
