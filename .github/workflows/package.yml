@@ -183,6 +183,12 @@ jobs:
             libwayland-dev \
             rpm
 
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -239,6 +245,12 @@ jobs:
             libopus-dev \
             golang perl \
             libwayland-dev
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
