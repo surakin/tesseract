@@ -81,6 +81,15 @@ void LoginView::rebuild_tree()
     hs_field_lbl_   = card->add_child(std::move(hs_field));
     discovery_lbl_  = card->add_child(std::move(discovery));
     sign_in_btn_    = card->add_child(std::move(sign_in));
+
+    auto register_link = std::make_unique<tk::Button>(
+        "New here? Create an account", std::function<void()>{},
+        tk::Button::Variant::Subtle);
+    register_link->set_min_size({0, kButtonHeight});
+    register_link->set_on_click([this] { start_oauth_(true); });
+    register_link->set_visible(false);
+    register_link_ = card->add_child(std::move(register_link));
+
     cancel_btn_     = card->add_child(std::move(cancel));
     status_lbl_     = card->add_child(std::move(status));
 
@@ -98,6 +107,8 @@ void LoginView::set_state(State s)
         return;
     sign_in_btn_->set_visible(s == State::Form);
     cancel_btn_->set_visible(mode_ == Mode::AddAccount);
+    if (register_link_)
+        register_link_->set_visible(s == State::Form && registration_supported_);
 }
 
 void LoginView::set_mode(Mode m)
@@ -138,10 +149,23 @@ void LoginView::set_homeserver_label(std::string url)
 void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
 {
     discovery_state_ = s;
+    ++registration_gen_;
+    if (s != DiscoveryState::Resolved)
+    {
+        registration_supported_ = false;
+        if (register_link_)
+            register_link_->set_visible(false);
+    }
+
     if (s == DiscoveryState::Resolved)
         resolved_base_url_ = detail;
     else if (s == DiscoveryState::Idle)
         resolved_base_url_.clear();
+
+    // Probe before the discovery-label guard so the registration gate is
+    // independent of that widget existing.
+    if (s == DiscoveryState::Resolved)
+        probe_registration_support_(resolved_base_url_);
 
     if (!discovery_lbl_)
         return;
@@ -208,6 +232,7 @@ void LoginView::set_status_message(const std::string& msg)
 void LoginView::shutdown()
 {
     ++discovery_gen_;
+    ++registration_gen_;
     cancelled_.store(true);
     if (client_)
         client_->cancel_oauth();
@@ -240,7 +265,7 @@ void LoginView::reset()
 // Controller implementations
 // ---------------------------------------------------------------------------
 
-void LoginView::sign_in_()
+void LoginView::start_oauth_(bool register_account)
 {
     if (!client_)
         return;
@@ -281,9 +306,9 @@ void LoginView::sign_in_()
 
     auto* c = client_; // snapshot: set_client() may race with this worker
     worker_ = std::thread(
-        [this, hs, c]
+        [this, hs, c, register_account]
         {
-            auto flow = c->begin_oauth(hs);
+            auto flow = c->begin_oauth(hs, register_account);
             if (cancelled_.load())
                 return;
             bool        ok      = static_cast<bool>(flow);
@@ -294,6 +319,43 @@ void LoginView::sign_in_()
                     begin_completed_(ok, payload);
                 });
         });
+}
+
+void LoginView::sign_in_()
+{
+    start_oauth_(false);
+}
+
+void LoginView::probe_registration_support_(const std::string& base_url)
+{
+    auto* snap = client_;
+    if (!snap || base_url.empty())
+        return;
+    uint32_t gen = registration_gen_.load();
+    auto body = [this, gen, snap, base_url]
+    {
+        if (gen != registration_gen_.load())
+            return;
+        bool supported = snap->homeserver_supports_registration(base_url);
+        if (gen != registration_gen_.load())
+            return;
+        post_to_ui_(
+            [this, gen, supported]
+            {
+                if (gen != registration_gen_.load())
+                    return;
+                registration_supported_ = supported;
+                if (register_link_)
+                    register_link_->set_visible(state_ == State::Form &&
+                                                supported);
+                if (relayout_)
+                    relayout_();
+            });
+    };
+    if (run_async_)
+        run_async_(std::move(body));
+    else
+        std::thread(std::move(body)).detach();
 }
 
 void LoginView::hs_changed_(const std::string& text)

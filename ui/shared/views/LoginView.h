@@ -204,6 +204,8 @@ private:
 
     // Controller implementations
     void sign_in_();
+    void start_oauth_(bool register_account);
+    void probe_registration_support_(const std::string& base_url);
     void hs_changed_(const std::string& text);
     void begin_completed_(bool ok, std::string url);
     void await_completed_(bool ok, std::string err);
@@ -244,7 +246,11 @@ private:
     tk::Label*  discovery_lbl_   = nullptr;
     tk::Button* sign_in_btn_     = nullptr;
     tk::Button* cancel_btn_      = nullptr;
+    tk::Button* register_link_   = nullptr;
     tk::Label*  status_lbl_      = nullptr;
+
+    bool                     registration_supported_ = false;
+    std::atomic<uint32_t>    registration_gen_{0};
 
     tk::Rect homeserver_field_rect_{};
 };

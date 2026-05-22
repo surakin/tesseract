@@ -623,7 +623,18 @@ pub mod ffi {
 
         // ----- OAuth -----
 
-        fn oauth_begin(self: &mut ClientFfi, homeserver: &str) -> OAuthBegin;
+        /// Begin the OAuth login (or, when `register_account` is true,
+        /// registration via OIDC prompt=create) flow. Returns the auth URL to
+        /// open in a browser.
+        fn oauth_begin(self: &mut ClientFfi, homeserver: &str, register_account: bool) -> OAuthBegin;
+
+        /// Best-effort: does `homeserver` advertise OIDC registration support
+        /// (`prompt_values_supported` contains `create`)? Blocks — worker thread.
+        fn homeserver_supports_registration(
+            self: &mut ClientFfi,
+            homeserver: &str,
+        ) -> bool;
+
         fn oauth_await_callback(self: &mut ClientFfi) -> OpResult;
         fn oauth_cancel(self: &mut ClientFfi);
 

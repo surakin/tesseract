@@ -97,7 +97,11 @@ pub struct BeginResult {
 }
 
 /// Phase 1 — bind the loopback socket, register the client, build the auth URL.
-pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::Result<BeginResult> {
+pub async fn begin(
+    homeserver: &str,
+    sqlite_path: &std::path::Path,
+    register: bool,
+) -> anyhow::Result<BeginResult> {
     // 1. Pick an ephemeral port. We bind first so we know the port number
     //    *before* asking the SDK to embed it in the redirect URI.
     let std_listener =
@@ -150,14 +154,17 @@ pub async fn begin(homeserver: &str, sqlite_path: &std::path::Path) -> anyhow::R
     // 5. Ask the SDK for the authorisation URL. PKCE verifier, state, and
     //    nonce are generated inside `OAuth::login()`; they're held in the
     //    `Client` until `finish_login` is called on the same instance.
-    let mut auth_data = client
-        .oauth()
-        .login(
-            redirect_url,
-            None, /* device_id */
-            Some(registration_data),
-            None, /* additional_scopes */
-        )
+    let mut login_builder = client.oauth().login(
+        redirect_url,
+        None, /* device_id */
+        Some(registration_data),
+        None, /* additional_scopes */
+    );
+    if register {
+        use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::Prompt;
+        login_builder = login_builder.prompt(vec![Prompt::Create]);
+    }
+    let mut auth_data = login_builder
         .build()
         .await
         .context("oauth login() — does the homeserver support OAuth?")?;
@@ -299,6 +306,27 @@ pub fn cancel(flow: &PendingFlow) {
             .spawn(move || {
                 let _ = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(250));
             });
+    }
+}
+
+/// Best-effort check whether `homeserver` allows account registration via the
+/// OIDC `prompt=create` flow. Builds a throwaway client and inspects the OAuth
+/// authorization-server metadata. Returns `false` on any error (non-OAuth
+/// server, network failure, missing metadata).
+pub async fn supports_registration(homeserver: &str) -> bool {
+    use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::Prompt;
+    let client = match Client::builder()
+        .server_name_or_homeserver_url(homeserver)
+        .user_agent(build_user_agent())
+        .build()
+        .await
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    match client.oauth().server_metadata().await {
+        Ok(meta) => meta.prompt_values_supported.contains(&Prompt::Create),
+        Err(_) => false,
     }
 }
 

@@ -57,15 +57,21 @@ void Client::set_data_dir(const std::string& path)
     impl_->ffi->set_data_dir(path);
 }
 
-Client::OAuthFlow Client::begin_oauth(const std::string& homeserver)
+Client::OAuthFlow Client::begin_oauth(const std::string& homeserver,
+                                      bool register_account)
 {
-    auto r = impl_->ffi->oauth_begin(homeserver);
+    auto r = impl_->ffi->oauth_begin(homeserver, register_account);
     return OAuthFlow{
         .ok = r.ok,
         .message = std::string(r.message),
         .auth_url = std::string(r.auth_url),
         .redirect_uri = std::string(r.redirect_uri),
     };
+}
+
+bool Client::homeserver_supports_registration(const std::string& homeserver)
+{
+    return impl_->ffi->homeserver_supports_registration(homeserver);
 }
 
 Result Client::await_oauth()

@@ -807,7 +807,7 @@ impl ClientFfi {
     // OAuth login
     // -----------------------------------------------------------------------
 
-    pub fn oauth_begin(&mut self, homeserver: &str) -> OAuthBegin {
+    pub fn oauth_begin(&mut self, homeserver: &str, register_account: bool) -> OAuthBegin {
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
         }
@@ -825,7 +825,7 @@ impl ClientFfi {
         }
         let _ = std::fs::create_dir_all(&path);
 
-        match self.rt.block_on(oauth::begin(&hs, &path)) {
+        match self.rt.block_on(oauth::begin(&hs, &path, register_account)) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;
@@ -839,6 +839,11 @@ impl ClientFfi {
             }
             Err(e) => oauth_err(e.to_string()),
         }
+    }
+
+    pub fn homeserver_supports_registration(&mut self, homeserver: &str) -> bool {
+        let hs = homeserver.to_owned();
+        self.rt.block_on(oauth::supports_registration(&hs))
     }
 
     pub fn oauth_await_callback(&mut self) -> OpResult {

@@ -150,7 +150,15 @@ public:
     /// Blocks the calling thread — invoke only from a worker thread.
     DiscoveryResult discover_homeserver(const std::string& server_name_or_mxid);
 
-    OAuthFlow begin_oauth(const std::string& homeserver);
+    /// Begin OAuth login, or account registration when `register_account` is
+    /// true (OIDC prompt=create). Returns the auth URL to open in a browser.
+    OAuthFlow begin_oauth(const std::string& homeserver,
+                          bool register_account = false);
+
+    /// Best-effort: does `homeserver` advertise OIDC registration support?
+    /// Blocks the calling thread — invoke from a worker thread.
+    bool homeserver_supports_registration(const std::string& homeserver);
+
     Result await_oauth();
     void cancel_oauth();
 
