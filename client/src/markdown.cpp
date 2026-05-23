@@ -326,6 +326,25 @@ enum class BlockMode
 
 MarkdownResult markdown_to_html(std::string_view text)
 {
+    // Normalise U+2028 LINE SEPARATOR (UTF-8: E2 80 A8) to '\n'.
+    // QTextEdit inserts U+2028 for Shift+Enter (soft return within a block);
+    // mention_draft() preserves it verbatim. The line-splitter and fence
+    // detector below only recognise '\n', so without normalisation a fenced
+    // code block entered with Shift+Enter arrives as one long line and is
+    // parsed as an empty code block.
+    std::string normalized_storage;
+    if (text.find('\xe2') != std::string_view::npos)
+    {
+        normalized_storage = std::string(text);
+        const std::string ls("\xe2\x80\xa8"); // U+2028 in UTF-8
+        for (std::size_t pos = 0;
+             (pos = normalized_storage.find(ls, pos)) != std::string::npos;)
+        {
+            normalized_storage.replace(pos, 3, "\n");
+        }
+        text = normalized_storage;
+    }
+
     std::string body(text);
     if (!has_markdown_markers(text))
     {

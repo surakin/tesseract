@@ -123,6 +123,24 @@ TEST_CASE("markdown: a language-less fence still emits a bare code block")
     CHECK_FALSE(contains(r.formatted_body, "class=\"language-"));
 }
 
+TEST_CASE("markdown: U+2028 line separator is treated as newline (QTextEdit Shift+Enter)")
+{
+    // QTextEdit inserts U+2028 (UTF-8: E2 80 A8) for Shift+Enter. Without
+    // normalisation the fence detector sees one long line and discards the code
+    // content entirely.
+    const char* ls = "\xe2\x80\xa8"; // U+2028 in UTF-8
+    std::string input;
+    input += "```python";
+    input += ls;
+    input += "x = 1";
+    input += ls;
+    input += "```";
+    auto r = markdown_to_html(input);
+    CHECK(contains(r.formatted_body, "<pre><code class=\"language-python\">"));
+    CHECK(contains(r.formatted_body, "x = 1"));
+    CHECK(contains(r.formatted_body, "</code></pre>"));
+}
+
 TEST_CASE("markdown: deep nesting is bounded (no crash/hang)")
 {
     std::string s(200, '*'); // pathological run of emphasis markers

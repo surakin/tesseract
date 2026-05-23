@@ -722,7 +722,15 @@ public:
                 }
                 else
                 {
-                    pending += frag.text().toStdString();
+                    // QTextEdit inserts U+2028 LINE SEPARATOR for Shift+Enter
+                    // (soft return within a block). toPlainText() normalises it
+                    // to '\n', but frag.text() returns the raw codepoint.
+                    // Normalise here so markdown_to_html's line-splitter (which
+                    // only recognises '\n') sees proper newlines.
+                    pending +=
+                        frag.text()
+                            .replace(QChar(0x2028), QLatin1Char('\n'))
+                            .toStdString();
                 }
             }
         }
