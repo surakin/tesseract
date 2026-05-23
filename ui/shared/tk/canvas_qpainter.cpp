@@ -12,6 +12,7 @@
 #include <QtGui/QPen>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextDocument>
+#include <QtGui/QStaticText>
 #include <QtGui/QTextLayout>
 #include <QtGui/QTextOption>
 #include <QtGui/QAbstractTextDocumentLayout>
@@ -235,6 +236,26 @@ public:
           max_height_(max_height), elide_single_line_(elide_single_line),
           ascent_(ascent)
     {
+        // Pre-build QStaticText for single-line (non-wrap) layouts so draw()
+        // submits pre-shaped glyph data instead of re-shaping on every frame.
+        if (option_.wrapMode() != QTextOption::WordWrap)
+        {
+            QString drawn;
+            if (elide_single_line_)
+            {
+                QFontMetricsF fm(font_);
+                const qreal draw_w =
+                    max_width_ > 0 ? max_width_ : measured_.width();
+                drawn = fm.elidedText(text_, Qt::ElideRight, draw_w);
+            }
+            else
+            {
+                drawn = text_;
+            }
+            static_text_ = QStaticText(drawn);
+            static_text_.setTextFormat(Qt::PlainText);
+            static_text_.setPerformanceHint(QStaticText::AggressiveCaching);
+        }
     }
 
     Size measure() const override
@@ -256,22 +277,30 @@ public:
         p.save();
         p.setFont(font_);
         p.setPen(to_qcolor(c));
-        // Lay out into the same logical rect we measured into. Width clamps
-        // wrap/elide; height is unlimited so descenders aren't clipped.
-        QRectF target(origin.x, origin.y,
-                      max_width_ > 0 ? max_width_ : measured_.width(),
-                      max_height_ > 0 ? max_height_ : measured_.height());
 
-        if (elide_single_line_)
+        if (!static_text_.text().isNull())
         {
-            QFontMetricsF fm(font_);
-            QString elided =
-                fm.elidedText(text_, Qt::ElideRight, target.width());
-            p.drawText(target, elided, option_);
+            // Non-wrap path: submit pre-shaped glyph data via QStaticText.
+            // Adjust x for non-leading horizontal alignment.
+            qreal draw_x = origin.x;
+            const Qt::Alignment halign =
+                option_.alignment() & Qt::AlignHorizontal_Mask;
+            if (halign == Qt::AlignHCenter || halign == Qt::AlignRight)
+            {
+                const qreal avail =
+                    max_width_ > 0 ? max_width_ : measured_.width();
+                const qreal tw = measured_.width();
+                draw_x += (halign == Qt::AlignHCenter) ? (avail - tw) * 0.5
+                                                       : (avail - tw);
+            }
+            p.drawStaticText(QPointF(draw_x, origin.y), static_text_);
         }
         else
         {
-            p.drawText(target, text_, option_);
+            // Wrap (multi-line) path: use the pre-built QTextLayout so line
+            // positions are not recomputed on every paint.
+            ensure_ql_();
+            ql_->draw(&p, QPointF(origin.x, origin.y));
         }
         p.restore();
     }
@@ -396,6 +425,7 @@ private:
     bool elide_single_line_ = false;
     qreal ascent_ = 0;
     mutable std::unique_ptr<QTextLayout> ql_;
+    QStaticText static_text_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
