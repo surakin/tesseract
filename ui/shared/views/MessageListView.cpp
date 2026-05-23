@@ -4009,6 +4009,12 @@ void MessageListView::start_inline_video(const MessageRowData& m)
         });
 }
 
+void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+{
+    set_near_top_threshold_px(bounds.h);
+    tk::ListView::arrange(ctx, bounds);
+}
+
 bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
 {
     if (gate_blocks_input_())

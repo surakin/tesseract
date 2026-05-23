@@ -488,8 +488,10 @@ public:
     // No-op when has_selection() is false or on_set_clipboard is unset.
     void copy_selection();
 
-    // Widget overrides — own pointer-move/down/up so we can hit-test
-    // reaction chips before the ListView base sees the event.
+    // Widget overrides
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    // Own pointer-move/down/up so we can hit-test reaction chips before the
+    // ListView base sees the event.
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
     bool on_pointer_move(tk::Point local) override;
