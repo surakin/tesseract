@@ -71,6 +71,8 @@ SettingsWidget::SettingsWidget(QWidget* parent)
 
     settings_view_->on_tab_changed = [this] { surface_->relayout(); };
 
+    settings_view_->on_clear_caches = [this] { emit clearCachesRequested(); };
+
     surface_->set_root(std::move(view));
 
     surface_->set_on_layout(
@@ -113,6 +115,12 @@ void SettingsWidget::set_server_info(const tesseract::ServerInfo& info)
 {
     if (settings_view_)
         settings_view_->set_server_info(info);
+}
+
+void SettingsWidget::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes)
+{
+    if (settings_view_)
+        settings_view_->set_cache_sizes(local_bytes, sdk_bytes);
 }
 
 void SettingsWidget::set_theme(const tk::Theme& t)

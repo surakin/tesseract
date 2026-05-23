@@ -3775,6 +3775,16 @@ void MainWindow::openSettings()
                     }
                 });
 
+        connect(settingsWidget_, &SettingsWidget::clearCachesRequested, this,
+                [this]
+                {
+                    clear_all_caches_([this](uint64_t local, uint64_t sdk)
+                    {
+                        if (settingsWidget_)
+                            settingsWidget_->set_cache_sizes(local, sdk);
+                    });
+                });
+
         // server_info_ may have already arrived before this lazy widget was
         // created — apply it now so capability gating is correct on first open.
         settingsWidget_->set_server_info(server_info_);
@@ -3793,6 +3803,13 @@ void MainWindow::openSettings()
     if (settings_controller_)
         settingsWidget_->set_controller(settings_controller_.get(),
                                         my_display_name_);
+
+    // Refresh storage sizes each time settings opens.
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    {
+        if (settingsWidget_)
+            settingsWidget_->set_cache_sizes(local, sdk);
+    });
 
     contentStack_->setCurrentWidget(settingsWidget_);
 }

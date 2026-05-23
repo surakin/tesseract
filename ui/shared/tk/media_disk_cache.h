@@ -31,6 +31,12 @@ public:
     // Intended to be called once per session from a background thread.
     void prune(std::uintmax_t max_bytes = 256ULL * 1024 * 1024) const;
 
+    // Sum of all cached file sizes, in bytes. Thread-safe.
+    std::uintmax_t size_bytes() const;
+
+    // Delete all cached files and recreate the (empty) cache directory.
+    void clear() const;
+
 private:
     std::filesystem::path path_for(const std::string& key) const;
     std::filesystem::path dir_;

@@ -955,6 +955,17 @@ protected:
     // find_existing_dm() against the active account's cached rooms_.
     std::string find_existing_dm_(const std::string& user_id) const;
 
+    // Async: compute cache directory sizes on a worker thread, then invoke
+    // callback(local_bytes, sdk_bytes) on the UI thread. No-op when not signed in.
+    void compute_cache_sizes_(
+        std::function<void(uint64_t local, uint64_t sdk)> callback);
+
+    // Async: delete all on-disk caches best-effort (media files, waveform DB,
+    // SDK event store), clear in-memory image maps, reinit the waveform store,
+    // then call recompute_callback with fresh sizes. No-op when not signed in.
+    void clear_all_caches_(
+        std::function<void(uint64_t local, uint64_t sdk)> recompute_callback);
+
 public:
     // Pure function: returns {has_unread, has_highlight} computed across every
     // account's room list. has_unread is true iff some room has

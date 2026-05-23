@@ -9,6 +9,7 @@
 #include "views/html_spans.h"
 #include "views/map_tiles.h"
 #include <tesseract/paths.h>
+#include <tesseract/session_store.h>
 #include <tesseract/prefs.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -2110,6 +2111,74 @@ void ShellBase::wire_voice_capture_(
         rv->compose_bar()->push_amplitude(amp);
         request_repaint();
     };
+}
+
+void ShellBase::compute_cache_sizes_(
+    std::function<void(uint64_t, uint64_t)> callback)
+{
+    if (my_user_id_.empty() || !callback)
+        return;
+    const auto uid = my_user_id_;
+    run_async_([this, uid, cb = std::move(callback)]
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+
+        uint64_t local = 0;
+        for (const auto& de :
+             fs::recursive_directory_iterator(tesseract::cache_dir(), ec))
+        {
+            if (de.is_regular_file(ec))
+                local += de.file_size(ec);
+        }
+
+        uint64_t sdk = 0;
+        const auto sdk_dir = tesseract::SessionStore::sdk_store_dir(uid);
+        for (const auto& de :
+             fs::recursive_directory_iterator(sdk_dir, ec))
+        {
+            if (de.is_regular_file(ec))
+                sdk += de.file_size(ec);
+        }
+
+        post_to_ui_([cb, local, sdk] { cb(local, sdk); });
+    });
+}
+
+void ShellBase::clear_all_caches_(
+    std::function<void(uint64_t, uint64_t)> recompute_callback)
+{
+    if (my_user_id_.empty())
+        return;
+    const auto uid = my_user_id_;
+    run_async_([this, uid, recalc = std::move(recompute_callback)]
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+
+        // Media disk cache — clear() removes all files and recreates the dir.
+        media_disk_cache_.clear();
+
+        // Waveform SQLite — best-effort (locked on Windows if WAL is open).
+        fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
+
+        // SDK event store — same best-effort semantics.
+        fs::remove_all(tesseract::SessionStore::sdk_store_dir(uid), ec);
+
+        // Clear in-memory image caches and reinit the waveform store.
+        post_to_ui_([this]
+        {
+            tk_avatars_.clear();
+            tk_images_.clear();
+            anim_cache_ = {};
+            tesseract::init_waveform_cache(
+                (tesseract::cache_dir() / "waveforms.db").string());
+        });
+
+        // Recompute sizes so the UI reflects the cleared state.
+        if (recalc)
+            compute_cache_sizes_(std::move(recalc));
+    });
 }
 
 } // namespace tesseract

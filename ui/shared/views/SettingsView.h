@@ -152,6 +152,14 @@ public:
     // native overlays whose visibility depends on the selected tab).
     std::function<void()> on_tab_changed;
 
+    // Fired after the user confirms "Clear all caches" in the About section.
+    // Wire to ShellBase::clear_all_caches_() in each shell's settings setup.
+    std::function<void()> on_clear_caches;
+
+    // Update the About section's storage size labels.
+    // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
+    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes);
+
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

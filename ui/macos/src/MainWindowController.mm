@@ -3320,6 +3320,17 @@ void MacShell::apply_cached_messages_(
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
         };
+        _settingsView->on_clear_caches = [ws]
+        {
+            MainWindowController* s = ws;
+            if (!s || !s->_shell) return;
+            s->_shell->clear_all_caches_([ws](uint64_t local, uint64_t sdk)
+            {
+                MainWindowController* s2 = ws;
+                if (s2 && s2->_settingsView)
+                    s2->_settingsView->set_cache_sizes(local, sdk);
+            });
+        };
         _settingsSurface->set_root(std::move(view));
         _settingsSurface->set_theme(_mainAppSurface->theme());
         _settingsSurface->set_on_layout(
@@ -4537,6 +4548,13 @@ void MacShell::apply_cached_messages_(
     _settingsView->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
     _settingsSurface->relayout();
+
+    _shell->compute_cache_sizes_([ws](uint64_t local, uint64_t sdk)
+    {
+        MainWindowController* s = ws;
+        if (s && s->_settingsView)
+            s->_settingsView->set_cache_sizes(local, sdk);
+    });
 
     NSView* mainAppView = (__bridge NSView*)_mainAppSurface->view_handle();
     mainAppView.hidden = YES;

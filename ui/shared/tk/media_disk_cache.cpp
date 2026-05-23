@@ -152,4 +152,21 @@ void MediaDiskCache::prune(std::uintmax_t max_bytes) const
     }
 }
 
+std::uintmax_t MediaDiskCache::size_bytes() const
+{
+    std::uintmax_t total = 0;
+    std::error_code ec;
+    for (const auto& de : fs::directory_iterator(dir_, ec))
+        if (de.is_regular_file(ec))
+            total += de.file_size(ec);
+    return total;
+}
+
+void MediaDiskCache::clear() const
+{
+    std::error_code ec;
+    fs::remove_all(dir_, ec);
+    fs::create_directories(dir_, ec);
+}
+
 } // namespace tk

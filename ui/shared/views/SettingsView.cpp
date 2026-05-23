@@ -3,6 +3,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 
 namespace tesseract::views
@@ -125,6 +126,20 @@ SettingsView::SettingsView()
             [this] { if (on_logout) on_logout(); });
     };
 
+    // AboutSection: route "Clear all caches" through the shared ConfirmDialog.
+    about_->on_clear_caches = [this]
+    {
+        confirm_dialog_->open(
+            {.title         = "Clear all caches?",
+             .body          = "Downloaded media, voice waveforms, and the local event "
+                              "cache will be deleted. Content reloads on demand; the "
+                              "event store rebuilds on next startup.",
+             .confirm_label = "Clear",
+             .cancel_label  = "Cancel",
+             .destructive   = true},
+            [this] { if (on_clear_caches) on_clear_caches(); });
+    };
+
     // ConfirmDialog — painted last so it overlays the entire settings view.
     auto dlg = std::make_unique<ConfirmDialog>();
     confirm_dialog_ = add_child(std::move(dlg));
@@ -218,6 +233,16 @@ void SettingsView::set_current_device_id(std::string id)
 {
     if (devices_)
         devices_->set_current_device_id(std::move(id));
+}
+
+void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes)
+{
+    if (about_)
+    {
+        about_->set_local_cache_size(local_bytes);
+        about_->set_sdk_store_size(sdk_bytes);
+    }
+    if (request_repaint_) request_repaint_();
 }
 
 void SettingsView::set_request_repaint(std::function<void()> cb)

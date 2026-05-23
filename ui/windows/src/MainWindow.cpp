@@ -2643,6 +2643,14 @@ void MainWindow::on_create(HWND hwnd)
             if (room_list_view_) room_list_view_->refresh();
         };
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
+        settings_view_->on_clear_caches = [this]
+        {
+            clear_all_caches_([this](uint64_t local, uint64_t sdk)
+            {
+                if (settings_view_)
+                    settings_view_->set_cache_sizes(local, sdk);
+            });
+        };
         settings_surface_->set_root(std::move(view));
         settings_surface_->set_on_layout(
             [this]
@@ -3174,6 +3182,12 @@ void MainWindow::open_settings_()
     {
         settings_surface_->relayout();
     }
+
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    {
+        if (settings_view_)
+            settings_view_->set_cache_sizes(local, sdk);
+    });
 
     settings_visible_ = true;
     if (main_app_surface_ && main_app_surface_->hwnd())

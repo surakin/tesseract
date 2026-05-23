@@ -1,6 +1,7 @@
 #pragma once
 #include <gtk/gtk.h>
 #include <tesseract/settings.h>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -38,6 +39,9 @@ public:
     // Forward server capability info into the shared SettingsView.
     void set_server_info(const tesseract::ServerInfo& info);
 
+    // Update the Storage size labels in the About section.
+    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes);
+
     // Wire the SettingsController and create the NativeTextField for name editing.
     void set_controller(tesseract::SettingsController* ctrl,
                         const std::string& current_display_name);
@@ -45,6 +49,7 @@ public:
     // Callbacks — set by MainWindow before use.
     std::function<void()> on_close;
     std::function<void()> on_logout;
+    std::function<void()> on_clear_caches;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
     std::function<void(bool)> on_group_inactive_changed;

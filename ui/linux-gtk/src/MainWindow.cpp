@@ -1923,6 +1923,14 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             s.save_to_disk(tesseract::config_dir());
             if (room_list_view_) room_list_view_->refresh();
         };
+        settings_widget_->on_clear_caches = [this]
+        {
+            clear_all_caches_([this](uint64_t local, uint64_t sdk)
+            {
+                if (settings_widget_)
+                    settings_widget_->set_cache_sizes(local, sdk);
+            });
+        };
     }
 
     // Escape key: close viewer overlays. Attached to the window so it fires
@@ -4652,6 +4660,14 @@ void MainWindow::open_settings_()
     if (settings_controller_)
         settings_widget_->set_controller(settings_controller_.get(),
                                          my_display_name_);
+
+    // Refresh storage sizes each time settings opens.
+    compute_cache_sizes_([this](uint64_t local, uint64_t sdk)
+    {
+        if (settings_widget_)
+            settings_widget_->set_cache_sizes(local, sdk);
+    });
+
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
 }
 
