@@ -120,17 +120,6 @@ private:
     void setupLocalServer_();
 
     // ── EventHandlerBase UI-thread hook overrides (Qt6) ──────────────────────
-    void handle_timeline_reset_ui_(
-        std::string room_id,
-        tesseract::EventList snapshot) override;
-    void
-    handle_message_inserted_ui_(std::string room_id, std::size_t index,
-                                std::unique_ptr<tesseract::Event> ev) override;
-    void
-    handle_message_updated_ui_(std::string room_id, std::size_t index,
-                               std::unique_ptr<tesseract::Event> ev) override;
-    void handle_message_removed_ui_(std::string room_id,
-                                    std::size_t index) override;
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;

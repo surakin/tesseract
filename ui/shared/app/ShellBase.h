@@ -477,25 +477,21 @@ protected:
     // Called on the UI thread by EventHandlerBase after marshaling. Default
     // implementations are no-ops; each shell overrides what it needs.
 
-    virtual void
-    handle_timeline_reset_ui_(std::string /*room_id*/,
-                              EventList /*snapshot*/)
-    {
-    }
-    virtual void handle_message_inserted_ui_(std::string /*room_id*/,
-                                             std::size_t /*index*/,
-                                             std::unique_ptr<Event> /*ev*/)
-    {
-    }
-    virtual void handle_message_updated_ui_(std::string /*room_id*/,
-                                            std::size_t /*index*/,
-                                            std::unique_ptr<Event> /*ev*/)
-    {
-    }
-    virtual void handle_message_removed_ui_(std::string /*room_id*/,
-                                            std::size_t /*index*/)
-    {
-    }
+    // Concrete: rebuild/insert/update/remove rows for the displayed room and
+    // dispatch to secondary windows. Drives the view through room_view_ +
+    // request_relayout_, so shells that own their RoomView directly (Qt6, GTK4)
+    // inherit this. Win32 (message-pump payloads) and macOS (ObjC view) keep
+    // their own overrides because they marshal through a platform layer.
+    virtual void handle_timeline_reset_ui_(std::string room_id,
+                                           EventList snapshot);
+    virtual void handle_message_inserted_ui_(std::string room_id,
+                                             std::size_t index,
+                                             std::unique_ptr<Event> ev);
+    virtual void handle_message_updated_ui_(std::string room_id,
+                                            std::size_t index,
+                                            std::unique_ptr<Event> ev);
+    virtual void handle_message_removed_ui_(std::string room_id,
+                                            std::size_t index);
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,

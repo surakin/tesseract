@@ -1334,6 +1334,102 @@ bool ShellBase::tick_anim_()
     return true;
 }
 
+void ShellBase::handle_timeline_reset_ui_(std::string room_id,
+                                          EventList snapshot)
+{
+    if (room_id == current_room_id_ && room_view_)
+    {
+        auto rows = build_rows_(snapshot);
+        // A genuine switch, OR a re-population of an emptied view (e.g.
+        // logout → login → same room): both warrant the display gate.
+        const auto* ml = room_view_->message_list();
+        const bool room_switch = view_displayed_room_id_ != room_id ||
+                                 (ml && ml->messages().empty());
+        view_displayed_room_id_ = room_id;
+        room_view_->set_messages(std::move(rows), room_switch);
+        request_relayout_();
+        if (auto* list = room_view_->message_list())
+        {
+            const auto& pstate = pagination_[room_id];
+            if (room_switch && pstate.is_focused)
+            {
+                list->begin_focused_gate(pstate.focus_event_id);
+            }
+            list->set_historical_mode(pstate.is_focused);
+            if (pstate.is_focused)
+            {
+                list->scroll_to_event_id(pstate.focus_event_id);
+            }
+            // Restore saved scroll offset when returning to a tab that had
+            // been scrolled up from the bottom.
+            if (room_switch && !pstate.is_focused &&
+                active_tab_idx_ < tabs_.size() &&
+                tabs_[active_tab_idx_].room_id == room_id &&
+                tabs_[active_tab_idx_].scroll_offset > 0.f)
+            {
+                list->scroll_to_offset(tabs_[active_tab_idx_].scroll_offset);
+            }
+        }
+    }
+
+    dispatch_timeline_reset_secondary_(room_id, snapshot);
+}
+
+void ShellBase::handle_message_inserted_ui_(std::string room_id,
+                                            std::size_t index,
+                                            std::unique_ptr<Event> ev)
+{
+    if (!ev || ev->type == tesseract::EventType::Unhandled)
+    {
+        return;
+    }
+    if (room_id == current_room_id_ && room_view_)
+    {
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        room_view_->insert_message(
+            index, tesseract::views::make_row_data(*ev, my_user_id_));
+        request_relayout_();
+    }
+    dispatch_message_inserted_secondary_(room_id, index, *ev);
+}
+
+void ShellBase::handle_message_updated_ui_(std::string room_id,
+                                           std::size_t index,
+                                           std::unique_ptr<Event> ev)
+{
+    if (!ev || ev->type == tesseract::EventType::Unhandled)
+    {
+        return;
+    }
+    if (room_id == current_room_id_ && room_view_)
+    {
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+        {
+            ensure_reply_details_(ev->event_id);
+        }
+        room_view_->update_message(
+            index, tesseract::views::make_row_data(*ev, my_user_id_));
+        request_relayout_();
+    }
+    dispatch_message_updated_secondary_(room_id, index, *ev);
+}
+
+void ShellBase::handle_message_removed_ui_(std::string room_id,
+                                           std::size_t index)
+{
+    if (room_id == current_room_id_ && room_view_)
+    {
+        room_view_->remove_message(index);
+        request_relayout_();
+    }
+    dispatch_message_removed_secondary_(room_id, index);
+}
+
 void ShellBase::handle_image_packs_updated_ui_()
 {
     refresh_pickers_packs_();

@@ -95,33 +95,6 @@ struct JumpDlgCtx
 // EventHandlerBase UI-thread hook implementations (GTK4)
 // ---------------------------------------------------------------------------
 
-void MainWindow::handle_timeline_reset_ui_(
-    std::string room_id,
-    tesseract::EventList snapshot)
-{
-    push_timeline_reset(std::move(room_id), std::move(snapshot));
-}
-
-void MainWindow::handle_message_inserted_ui_(
-    std::string room_id, std::size_t index,
-    std::unique_ptr<tesseract::Event> ev)
-{
-    push_message_inserted(std::move(room_id), index, std::move(ev));
-}
-
-void MainWindow::handle_message_updated_ui_(
-    std::string room_id, std::size_t index,
-    std::unique_ptr<tesseract::Event> ev)
-{
-    push_message_updated(std::move(room_id), index, std::move(ev));
-}
-
-void MainWindow::handle_message_removed_ui_(std::string room_id,
-                                            std::size_t index)
-{
-    push_message_removed(std::move(room_id), index);
-}
-
 void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
                                        std::string description,
                                        bool soft_logout)
@@ -2973,62 +2946,6 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data)
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::push_message_inserted(std::string room_id, std::size_t index,
-                                       std::unique_ptr<tesseract::Event> ev)
-{
-    if (!ev || ev->type == tesseract::EventType::Unhandled)
-    {
-        return;
-    }
-
-    if (room_id == current_room_id_)
-    {
-        ensure_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
-        {
-            ensure_reply_details_(ev->event_id);
-        }
-        room_view_->insert_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
-        main_app_surface_->relayout();
-    }
-
-    dispatch_message_inserted_secondary_(room_id, index, *ev);
-}
-
-void MainWindow::push_message_updated(std::string room_id, std::size_t index,
-                                      std::unique_ptr<tesseract::Event> ev)
-{
-    if (!ev || ev->type == tesseract::EventType::Unhandled)
-    {
-        return;
-    }
-
-    if (room_id == current_room_id_)
-    {
-        ensure_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
-        {
-            ensure_reply_details_(ev->event_id);
-        }
-        room_view_->update_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
-        main_app_surface_->relayout();
-    }
-
-    dispatch_message_updated_secondary_(room_id, index, *ev);
-}
-
-void MainWindow::push_message_removed(std::string room_id, std::size_t index)
-{
-    if (room_id == current_room_id_)
-    {
-        room_view_->remove_message(index);
-        main_app_surface_->relayout();
-    }
-    dispatch_message_removed_secondary_(room_id, index);
-}
-
 void MainWindow::push_rooms(std::string user_id,
                             std::vector<tesseract::RoomInfo> rooms)
 {
@@ -3165,43 +3082,6 @@ void MainWindow::push_error(std::string description)
     gtk_label_set_text(GTK_LABEL(status_bar_), description.c_str());
 }
 
-void MainWindow::push_timeline_reset(
-    std::string room_id,
-    tesseract::EventList snapshot)
-{
-    if (room_id == current_room_id_)
-    {
-        auto rows = build_rows_(snapshot);
-        // A genuine switch, OR a re-population of an emptied view (e.g.
-        // logout → login → same room): both warrant the display gate.
-        const auto* ml = room_view_ ? room_view_->message_list() : nullptr;
-        const bool room_switch = view_displayed_room_id_ != room_id ||
-                                 (ml && ml->messages().empty());
-        view_displayed_room_id_ = room_id;
-        if (room_view_)
-        {
-            room_view_->set_messages(std::move(rows), room_switch);
-        }
-        main_app_surface_->relayout();
-        if (room_view_ && room_view_->message_list())
-        {
-            const auto& pstate = pagination_[room_id];
-            if (room_switch && pstate.is_focused)
-            {
-                room_view_->message_list()->begin_focused_gate(
-                    pstate.focus_event_id);
-            }
-            room_view_->message_list()->set_historical_mode(pstate.is_focused);
-            if (pstate.is_focused)
-            {
-                room_view_->message_list()->scroll_to_event_id(
-                    pstate.focus_event_id);
-            }
-        }
-    }
-
-    dispatch_timeline_reset_secondary_(room_id, snapshot);
-}
 
 void MainWindow::clear_messages()
 {

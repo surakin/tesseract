@@ -70,17 +70,8 @@ public:
 
 private:
     // ── EventHandlerBase UI-thread hook overrides (GTK4) ──────────────────────
-    void handle_timeline_reset_ui_(
-        std::string room_id,
-        tesseract::EventList snapshot) override;
-    void
-    handle_message_inserted_ui_(std::string room_id, std::size_t index,
-                                std::unique_ptr<tesseract::Event> ev) override;
-    void
-    handle_message_updated_ui_(std::string room_id, std::size_t index,
-                               std::unique_ptr<tesseract::Event> ev) override;
-    void handle_message_removed_ui_(std::string room_id,
-                                    std::size_t index) override;
+    // timeline-reset + message insert/update/remove are now concrete in
+    // ShellBase (they drive room_view_ + request_relayout_ directly).
     void handle_sync_error_ui_(std::string context, std::string user_id,
                                std::string description,
                                bool soft_logout) override;
@@ -107,15 +98,6 @@ private:
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
 
-    // ── Internal push helpers (called from handle_*_ui_ and async workers) ────
-    void push_timeline_reset(
-        std::string room_id,
-        tesseract::EventList snapshot);
-    void push_message_inserted(std::string room_id, std::size_t index,
-                               std::unique_ptr<tesseract::Event> ev);
-    void push_message_updated(std::string room_id, std::size_t index,
-                              std::unique_ptr<tesseract::Event> ev);
-    void push_message_removed(std::string room_id, std::size_t index);
     // user_id identifies which account's snapshot this is (for caching).
     void push_rooms(std::string user_id,
                     std::vector<tesseract::RoomInfo> rooms);
