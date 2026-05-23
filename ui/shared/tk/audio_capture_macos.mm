@@ -208,8 +208,15 @@ namespace tk::macos
 std::unique_ptr<tk::AudioCapture>
 make_audio_capture_macos(tk::AudioCapturePostFn post)
 {
-    NSArray* devices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeAudio];
-    if (devices.count == 0)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    AVCaptureDeviceDiscoverySession* session = [AVCaptureDeviceDiscoverySession
+        discoverySessionWithDeviceTypes:@[ AVCaptureDeviceTypeBuiltInMicrophone,
+                                           AVCaptureDeviceTypeExternalUnknown ]
+                              mediaType:AVMediaTypeAudio
+                               position:AVCaptureDevicePositionUnspecified];
+#pragma clang diagnostic pop
+    if (session.devices.count == 0)
         return nullptr;
     return std::make_unique<AudioCaptureMacOS>(std::move(post));
 }

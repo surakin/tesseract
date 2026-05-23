@@ -22,7 +22,10 @@
             {
                 continue;
             }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+#pragma clang diagnostic pop
             [NSApp terminate:nil];
             return;
         }

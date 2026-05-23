@@ -17,9 +17,12 @@ public:
     {
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
         // kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast = RGBA
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
         ctx_ = CGBitmapContextCreate(
             nullptr, w, h, 8, static_cast<size_t>(w) * 4, cs,
             kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+#pragma clang diagnostic pop
         CGColorSpaceRelease(cs);
         if (!ctx_)
         {

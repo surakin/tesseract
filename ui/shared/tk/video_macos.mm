@@ -375,10 +375,13 @@ private:
 
         // Draw BGRA pixels into a CGBitmapContext to get a CGImage.
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
         CGContextRef ctx = CGBitmapContextCreate(
             nullptr, // let CG allocate its own buffer (safe copy)
             w, h, 8, w * 4, cs,
             kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+#pragma clang diagnostic pop
         CGColorSpaceRelease(cs);
 
         if (ctx)

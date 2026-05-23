@@ -1454,15 +1454,16 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     if (!compress)
     {
         out.bytes.assign(data, data + len);
-        if (src_type && UTTypeEqual(src_type, kUTTypePNG))
+        NSString* srcTypeStr = src_type ? (__bridge NSString*)src_type : nil;
+        if ([srcTypeStr isEqualToString:UTTypePNG.identifier])
         {
             out.mime = "image/png";
         }
-        else if (src_type && UTTypeEqual(src_type, kUTTypeJPEG))
+        else if ([srcTypeStr isEqualToString:UTTypeJPEG.identifier])
         {
             out.mime = "image/jpeg";
         }
-        else if (src_type && UTTypeEqual(src_type, kUTTypeGIF))
+        else if ([srcTypeStr isEqualToString:UTTypeGIF.identifier])
         {
             out.mime = "image/gif";
         }
@@ -1493,9 +1494,12 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     // Draw into a fresh BGRA bitmap context at the target size; CG handles
     // the downscale via the context's interpolation quality.
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
     CGContextRef bm = CGBitmapContextCreate(nullptr, dst_w, dst_h, 8, 0, cs,
                                             kCGImageAlphaPremultipliedFirst |
                                                 kCGBitmapByteOrder32Little);
+#pragma clang diagnostic pop
     CGColorSpaceRelease(cs);
     if (!bm)
     {
@@ -1516,7 +1520,8 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
 
     CFMutableDataRef out_data = CFDataCreateMutable(nullptr, 0);
     CGImageDestinationRef dst =
-        CGImageDestinationCreateWithData(out_data, kUTTypeJPEG, 1, nullptr);
+        CGImageDestinationCreateWithData(
+            out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1, nullptr);
     if (!dst)
     {
         CGImageRelease(scaled);

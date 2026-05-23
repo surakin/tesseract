@@ -96,10 +96,10 @@ public:
     void post_to_ui_(std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
+    void on_invites_updated_() override;
 
 protected:
     void on_rooms_updated_() override;
-    void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -651,9 +651,12 @@ void MacShell::generate_video_thumbnail_(const std::string& event_id,
             gen.appliesPreferredTrackTransform = YES;
             CMTime t = CMTimeMake(0, 1);
             NSError* err = nil;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             CGImageRef frame = [gen copyCGImageAtTime:t
                                            actualTime:nil
                                                 error:&err];
+#pragma clang diagnostic pop
             [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
             if (!frame)
             {
@@ -726,8 +729,11 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
             }
 
             // Video dimensions (apply preferred transform to handle rotation)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             NSArray<AVAssetTrack*>* vTracks =
                 [asset tracksWithMediaType:AVMediaTypeVideo];
+#pragma clang diagnostic pop
             if (vTracks.count > 0)
             {
                 AVAssetTrack* track = vTracks[0];
@@ -745,9 +751,12 @@ void MacShell::extract_media_info_(std::uint32_t pending_gen,
                 [[AVAssetImageGenerator alloc] initWithAsset:asset];
             gen.appliesPreferredTrackTransform = YES;
             NSError* err = nil;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             CGImageRef frame = [gen copyCGImageAtTime:kCMTimeZero
                                            actualTime:nil
                                                 error:&err];
+#pragma clang diagnostic pop
             if (frame)
             {
                 NSBitmapImageRep* rep =
