@@ -285,10 +285,15 @@ bool SideTabView::on_pointer_move(Point local)
 {
     const int hit =
         (local.x >= 0 && local.x < kSidebarWidth) ? tab_at_y(local.y) : -1;
+    if (hit == hovered_idx_)
+    {
+        return false;
+    }
     for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
     {
         tabs_[i].hovered = (i == hit);
     }
+    hovered_idx_ = hit;
     return true;
 }
 
@@ -298,6 +303,7 @@ void SideTabView::on_pointer_leave()
     {
         t.hovered = false;
     }
+    hovered_idx_ = -1;
 }
 
 // ---------------------------------------------------------------------------

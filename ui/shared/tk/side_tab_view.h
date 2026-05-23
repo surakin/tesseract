@@ -106,6 +106,7 @@ private:
     std::vector<Tab> tabs_;
     int selected_idx_ = -1;
     int pressed_idx_ = -1; // index of button currently held down
+    int hovered_idx_ = -1; // index of button under the pointer, or -1
 };
 
 } // namespace tk
