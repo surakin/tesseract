@@ -3550,95 +3550,116 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
     {
         return;
     }
-    if (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar)
+    const bool is_avatar =
+        (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
+
+    // Already decoded? Cheap early-out on the UI thread.
+    if (is_avatar ? (tk_avatars_.count(cache_key) != 0)
+                  : (tk_images_.count(cache_key) != 0 ||
+                     anim_cache_.has(cache_key)))
     {
-        if (tk_avatars_.count(cache_key))
-        {
-            return;
-        }
-        if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes))
-        {
-            auto img = tk::cairo_pango::make_image(surface);
-            cairo_surface_destroy(surface);
-            tk_avatars_.emplace(cache_key, std::move(img));
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        }
+        return;
     }
-    else if (kind == MediaKind::Tile)
-    {
-        if (tk_images_.count(cache_key))
+
+    // Decode OFF the UI thread. gdk-pixbuf now routes image loading through
+    // glycin, which decodes in a sandboxed subprocess and blocks the calling
+    // thread (block_on). Decoding many room avatars synchronously on the UI
+    // thread froze the window for seconds at startup. decode_animation /
+    // decode_image_to_cairo_surface are thread-safe; we hand the resulting
+    // cairo surfaces (raw pointers) back to the UI thread to wrap + store.
+    run_async_(
+        [this, cache_key, kind, is_avatar, bytes = std::move(bytes)]()
         {
-            return;
-        }
-        if (cairo_surface_t* surface = decode_image_to_cairo_surface(bytes))
-        {
-            auto img = tk::cairo_pango::make_image(surface);
-            cairo_surface_destroy(surface);
-            tk_images_.emplace(cache_key, std::move(img));
-            if (room_view_)
+            if (kind == MediaKind::MediaImage)
             {
-                room_view_->message_list()->invalidate_data();
-            }
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        }
-    }
-    else
-    { // MediaImage
-        if (tk_images_.count(cache_key) || anim_cache_.has(cache_key))
-        {
-            return;
-        }
-        if (auto anim = decode_animation(bytes))
-        {
-            std::vector<std::unique_ptr<tk::Image>> frames;
-            frames.reserve(anim->frames.size());
-            for (cairo_surface_t* s : anim->frames)
-            {
-                frames.push_back(tk::cairo_pango::make_image(s));
-                cairo_surface_destroy(s);
-            }
-            if (!frames.empty())
-            {
-                const gint64 now_ms = g_get_monotonic_time() / 1000;
-                anim_cache_.store(cache_key, std::move(frames),
-                                  std::move(anim->delays_ms), now_ms);
-                start_anim_tick_if_needed_();
-                if (room_view_)
+                if (auto anim = decode_animation(bytes))
                 {
-                    room_view_->notify_image_ready(cache_key);
-                }
-                if (main_app_surface_)
-                {
-                    main_app_surface_->relayout();
+                    post_to_ui_(
+                        [this, cache_key,
+                         frames_raw = std::move(anim->frames),
+                         delays = std::move(anim->delays_ms)]() mutable
+                        {
+                            if (tk_images_.count(cache_key) ||
+                                anim_cache_.has(cache_key))
+                            {
+                                for (cairo_surface_t* s : frames_raw)
+                                    cairo_surface_destroy(s);
+                                return;
+                            }
+                            std::vector<std::unique_ptr<tk::Image>> frames;
+                            frames.reserve(frames_raw.size());
+                            for (cairo_surface_t* s : frames_raw)
+                            {
+                                frames.push_back(tk::cairo_pango::make_image(s));
+                                cairo_surface_destroy(s);
+                            }
+                            if (frames.empty())
+                            {
+                                return;
+                            }
+                            const gint64 now_ms = g_get_monotonic_time() / 1000;
+                            anim_cache_.store(cache_key, std::move(frames),
+                                              std::move(delays), now_ms);
+                            start_anim_tick_if_needed_();
+                            if (room_view_)
+                            {
+                                room_view_->notify_image_ready(cache_key);
+                            }
+                            if (main_app_surface_)
+                            {
+                                main_app_surface_->relayout();
+                            }
+                        });
+                    return;
                 }
             }
-        }
-        else if (cairo_surface_t* surface =
-                     decode_image_to_cairo_surface(bytes))
-        {
-            auto img = tk::cairo_pango::make_image(surface);
-            cairo_surface_destroy(surface);
-            tk_images_.emplace(cache_key, std::move(img));
-            if (room_view_)
+
+            cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
+            if (!surface)
             {
-                room_view_->notify_image_ready(cache_key);
+                return;
             }
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-            if (shortcode_popup_visible_() && shortcode_popup_surface_)
-            {
-                shortcode_popup_surface_->relayout();
-            }
-        }
-    }
+            post_to_ui_(
+                [this, cache_key, kind, is_avatar, surface]()
+                {
+                    const bool present =
+                        is_avatar ? (tk_avatars_.count(cache_key) != 0)
+                                  : (tk_images_.count(cache_key) != 0 ||
+                                     anim_cache_.has(cache_key));
+                    if (present)
+                    {
+                        cairo_surface_destroy(surface);
+                        return;
+                    }
+                    auto img = tk::cairo_pango::make_image(surface);
+                    cairo_surface_destroy(surface);
+                    if (is_avatar)
+                    {
+                        tk_avatars_.emplace(cache_key, std::move(img));
+                    }
+                    else
+                    {
+                        tk_images_.emplace(cache_key, std::move(img));
+                        if (kind == MediaKind::Tile && room_view_)
+                        {
+                            room_view_->message_list()->invalidate_data();
+                        }
+                        else if (kind == MediaKind::MediaImage && room_view_)
+                        {
+                            room_view_->notify_image_ready(cache_key);
+                        }
+                    }
+                    if (main_app_surface_)
+                    {
+                        main_app_surface_->relayout();
+                    }
+                    if (kind == MediaKind::MediaImage &&
+                        shortcode_popup_visible_() && shortcode_popup_surface_)
+                    {
+                        shortcode_popup_surface_->relayout();
+                    }
+                });
+        });
 }
 
 MainWindow::DecodedImage
