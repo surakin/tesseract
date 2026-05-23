@@ -80,6 +80,13 @@ public:
     /// keep the data must copy it (the standard pattern is to copy/move it
     /// onto the UI thread), never store the reference or a pointer into it.
     virtual void on_rooms_updated(const std::vector<RoomInfo>& rooms) = 0;
+
+    /// Fired when the set of pending room invitations changes. `invites` is a
+    /// full snapshot — replace the cached list rather than diffing. The
+    /// reference is only valid for the duration of the call; copy before
+    /// marshalling to the UI thread.
+    virtual void on_invites_updated(const std::vector<InviteInfo>& /*invites*/) { }
+
     virtual void on_sync_error(const std::string& context,
                                const std::string& description,
                                bool soft_logout) = 0;

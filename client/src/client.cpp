@@ -163,6 +163,34 @@ std::vector<RoomInfo> Client::list_rooms() const
     return result;
 }
 
+std::vector<InviteInfo> Client::list_invites() const
+{
+    auto ffi_invites = impl_->ffi->list_invites();
+    std::vector<InviteInfo> result;
+    result.reserve(ffi_invites.size());
+    for (const auto& i : ffi_invites)
+    {
+        result.push_back(from_ffi(i));
+    }
+    return result;
+}
+
+Result Client::accept_invite(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->accept_invite(room_id));
+}
+
+Result Client::decline_invite(const std::string& room_id)
+{
+    return from_ffi(impl_->ffi->decline_invite(room_id));
+}
+
+Result Client::block_invite(const std::string& room_id,
+                            const std::string& inviter_user_id)
+{
+    return from_ffi(impl_->ffi->block_invite(room_id, inviter_user_id));
+}
+
 Result Client::subscribe_room(const std::string& room_id)
 {
     return from_ffi(impl_->ffi->subscribe_room(room_id));

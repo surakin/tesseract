@@ -14,6 +14,7 @@ namespace tesseract_ffi
 {
 struct TimelineEvent;
 struct RoomInfo;
+struct InviteInfo;
 struct BackupProgress;
 struct VerificationEmoji;
 } // namespace tesseract_ffi
@@ -47,6 +48,7 @@ public:
     void on_message_removed(rust::Str room_id, std::uint64_t index) const;
 
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
+    void on_invites_updated(const rust::Vec<InviteInfo>& invites) const;
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;

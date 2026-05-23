@@ -3759,6 +3759,18 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_invites_updated_()
+{
+    if (room_list_view_)
+    {
+        room_list_view_->set_invites(&invites_);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refresh_room_list();
@@ -5073,6 +5085,19 @@ void MainWindow::switch_active_account(int new_idx)
         rooms_.clear();
     }
 
+    // Restore the invite snapshot for the incoming account (parallel to rooms_).
+    auto inv_it = per_account_invites_.find(sess->user_id);
+    invites_ = (inv_it != per_account_invites_.end())
+                   ? inv_it->second
+                   : std::vector<tesseract::InviteInfo>{};
+    on_invites_updated_();
+
+    // Dismiss any stale InviteCard from the previous account.
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
+    if (main_app_)
+        main_app_->show_room();
+
     if (room_list_view_)
     {
         room_list_view_->set_rooms({});
@@ -5225,6 +5250,8 @@ void MainWindow::logout_active_account()
     accounts_.erase(accounts_.begin() + active_account_index_);
 
     tesseract::SessionStore::clear_account(uid);
+    per_account_rooms_.erase(uid);
+    per_account_invites_.erase(uid);
     auto index = tesseract::SessionStore::load_index();
     index.user_ids.erase(
         std::remove(index.user_ids.begin(), index.user_ids.end(), uid),
@@ -5235,6 +5262,9 @@ void MainWindow::logout_active_account()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
+    invites_.clear();
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
     message_cache_.clear();
     message_cache_lru_.clear();
     reset_server_info_();
@@ -5249,6 +5279,7 @@ void MainWindow::logout_active_account()
     }
     if (main_app_)
     {
+        main_app_->clear_content();
         main_app_->show_recovery_banner(false);
         main_app_->show_verif_banner(false);
     }

@@ -99,6 +99,7 @@ protected:
     IEventHandler* event_handler_ = nullptr; // non-owning alias
 
     std::unordered_map<std::string, std::vector<RoomInfo>> per_account_rooms_;
+    std::unordered_map<std::string, std::vector<InviteInfo>> per_account_invites_;
 
     // Last tray indicator state pushed to on_tray_unread_changed_().  Used to
     // suppress redundant hook calls (and the per-shell icon repaint they
@@ -137,10 +138,16 @@ protected:
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
+    // ── Invites ───────────────────────────────────────────────────────────────
+    std::vector<InviteInfo> invites_;
     // Populated asynchronously from update_space_children_cache_(); read
     // synchronously in each shell's refresh_room_list().
     std::unordered_map<std::string, std::vector<std::string>> space_children_cache_;
     std::string current_room_id_;
+    // Tracks the invite currently shown in the InviteCard so the action
+    // callbacks (on_accept / on_decline / on_block) can target the right room.
+    std::string current_invite_room_id_;
+    std::string current_invite_inviter_id_;
     // The room whose timeline the message view currently displays. Differs
     // from current_room_id_ between a room switch and the timeline-reset
     // that fills it. Used to tell a genuine switch (gate the display) from
@@ -342,6 +349,13 @@ protected:
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
+
+    // Called after invites_ is updated — shell refreshes the invite UI.
+    // Non-pure: shells are added in Task H; until then the default no-op
+    // prevents compilation errors across the four platform shells.
+    virtual void on_invites_updated_()
+    {
+    }
 
     // Called on the UI thread when the aggregate unread/highlight state across
     // all signed-in accounts changes. Each shell overrides to forward to its
@@ -756,6 +770,10 @@ protected:
     void ensure_user_avatar_(const std::string& mxc);
     void ensure_media_image_(const std::string& url, int max_w, int max_h);
 
+    // Prefetch avatars for every entry in invites_ (inviter avatar for DMs,
+    // room avatar for group invites) so the room-list invite rows render them.
+    void ensure_invite_avatars_();
+
     // Sticker / animated-media lookup: anim_cache_ → tk_images_ fallback.
     // shell_sticker_ kicks an ensure_media_image_(mxc, 64, 64) fetch on miss
     // (used by RoomListView's sticker_provider, where the row hasn't yet
@@ -913,6 +931,21 @@ protected:
 
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);
+
+    // Update the invites cache and call on_invites_updated_() for the active account.
+    void push_invites_(std::string user_id, std::vector<InviteInfo> invites);
+
+    // Return a pointer to the InviteInfo for room_id, or nullptr when not found.
+    const InviteInfo* find_invite_(const std::string& room_id) const;
+
+    // Accept / decline / block a pending invitation asynchronously.
+    // Each dispatches the SDK call on a worker thread and posts the result
+    // back to the UI thread. accept navigates to the room on success;
+    // decline and block remove the invite from the local list immediately.
+    void accept_invite_async_(const std::string& room_id);
+    void decline_invite_async_(const std::string& room_id);
+    void block_invite_async_(const std::string& room_id,
+                             const std::string& inviter_id);
 
     // Recompute the aggregate from per_account_rooms_ and fire
     // on_tray_unread_changed_ only when the value differs from the last call.

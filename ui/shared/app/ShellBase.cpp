@@ -273,6 +273,39 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     {
         set_room_notification_mode_(room_id, mode);
     };
+
+    // ── Invite selection and action wiring ────────────────────────────────
+    app->room_list_view()->on_invite_selected =
+        [this, app, avatar_lookup](const std::string& room_id)
+    {
+        const InviteInfo* inv = find_invite_(room_id);
+        if (!inv)
+            return;
+        current_invite_room_id_   = inv->room_id;
+        current_invite_inviter_id_ = inv->inviter_user_id;
+        app->show_invite(*inv, avatar_lookup);
+        app->room_list_view()->set_selected_room(""); // clear room highlight
+        request_relayout_();
+    };
+
+    app->invite_card()->on_accept = [this]
+    {
+        accept_invite_async_(current_invite_room_id_);
+    };
+    app->invite_card()->on_decline = [this]
+    {
+        decline_invite_async_(current_invite_room_id_);
+        if (main_app_)
+            main_app_->clear_content();
+        request_relayout_();
+    };
+    app->invite_card()->on_block = [this]
+    {
+        block_invite_async_(current_invite_room_id_, current_invite_inviter_id_);
+        if (main_app_)
+            main_app_->clear_content();
+        request_relayout_();
+    };
 }
 
 void ShellBase::wire_main_app_viewers_(views::MainAppWidget* app,
@@ -850,6 +883,138 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     rooms_ = std::move(rooms);
     update_space_children_cache_();
     on_rooms_updated_();
+}
+
+void ShellBase::push_invites_(std::string user_id, std::vector<InviteInfo> invites)
+{
+    per_account_invites_[user_id] = invites;
+    if (user_id != my_user_id_)
+    {
+        return;
+    }
+    invites_ = std::move(invites);
+    ensure_invite_avatars_();
+    on_invites_updated_();
+}
+
+void ShellBase::ensure_invite_avatars_()
+{
+    for (const auto& inv : invites_)
+    {
+        const std::string& mxc =
+            inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
+        ensure_user_avatar_(mxc);
+    }
+}
+
+const InviteInfo* ShellBase::find_invite_(const std::string& room_id) const
+{
+    for (const auto& inv : invites_)
+    {
+        if (inv.room_id == room_id)
+        {
+            return &inv;
+        }
+    }
+    return nullptr;
+}
+
+void ShellBase::accept_invite_async_(const std::string& room_id)
+{
+    if (room_id.empty() || !client_)
+    {
+        return;
+    }
+    auto* c = client_;
+    run_async_(
+        [this, c, room_id]()
+        {
+            auto res = c->accept_invite(room_id);
+            post_to_ui_(
+                [this, room_id, res]()
+                {
+                    if (res.ok)
+                    {
+                        tab_select_room(room_id);
+                    }
+                    else
+                    {
+                        std::fprintf(stderr, "[invite] accept failed for %s: %s\n",
+                                     room_id.c_str(), res.message.c_str());
+                    }
+                });
+        });
+}
+
+void ShellBase::decline_invite_async_(const std::string& room_id)
+{
+    if (room_id.empty() || !client_)
+    {
+        return;
+    }
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_invites_updated callback from sync will confirm or restore it.
+    invites_.erase(
+        std::remove_if(invites_.begin(), invites_.end(),
+                       [&room_id](const InviteInfo& inv)
+                       {
+                           return inv.room_id == room_id;
+                       }),
+        invites_.end());
+    on_invites_updated_();
+
+    auto* c = client_;
+    run_async_(
+        [this, c, room_id]()
+        {
+            auto res = c->decline_invite(room_id);
+            if (!res.ok)
+            {
+                post_to_ui_(
+                    [room_id, res]()
+                    {
+                        std::fprintf(stderr,
+                                     "[invite] decline failed for %s: %s\n",
+                                     room_id.c_str(), res.message.c_str());
+                    });
+            }
+        });
+}
+
+void ShellBase::block_invite_async_(const std::string& room_id,
+                                    const std::string& inviter_id)
+{
+    if (room_id.empty() || !client_)
+    {
+        return;
+    }
+    // Optimistically remove from the local list for immediate UX; the next
+    // on_invites_updated callback from sync will confirm or restore it.
+    invites_.erase(
+        std::remove_if(invites_.begin(), invites_.end(),
+                       [&room_id](const InviteInfo& inv)
+                       {
+                           return inv.room_id == room_id;
+                       }),
+        invites_.end());
+    on_invites_updated_();
+
+    auto* c = client_;
+    run_async_(
+        [this, c, room_id, inviter_id]()
+        {
+            auto res = c->block_invite(room_id, inviter_id);
+            if (!res.ok)
+            {
+                post_to_ui_(
+                    [room_id, res]()
+                    {
+                        std::fprintf(stderr,
+                                     "[invite] block failed for %s: %s\n",
+                                     room_id.c_str(), res.message.c_str());
+                    });
+            }
+        });
 }
 
 void ShellBase::update_space_children_cache_()
@@ -1760,6 +1925,9 @@ void ShellBase::tab_select_room(const std::string& room_id)
     {
         return;
     }
+    // Dismiss any visible InviteCard so the chat panel shows the room view.
+    if (main_app_)
+        main_app_->show_room();
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {

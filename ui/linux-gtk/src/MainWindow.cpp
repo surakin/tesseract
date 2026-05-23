@@ -2983,6 +2983,18 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_invites_updated_()
+{
+    if (room_list_view_)
+    {
+        room_list_view_->set_invites(&invites_);
+    }
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refresh_room_list();
@@ -5517,6 +5529,19 @@ void MainWindow::switch_active_account(int new_idx)
         refresh_room_list();
     }
 
+    // Restore the invite snapshot for the incoming account (parallel to rooms_).
+    auto inv_it = per_account_invites_.find(my_user_id_);
+    invites_ = (inv_it != per_account_invites_.end())
+                   ? inv_it->second
+                   : std::vector<tesseract::InviteInfo>{};
+    on_invites_updated_();
+
+    // Dismiss any stale InviteCard from the previous account.
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
+    if (main_app_)
+        main_app_->show_room();
+
     // Rewrite accounts.json active pointer.
     auto index = tesseract::SessionStore::load_index();
     index.active_user_id = my_user_id_;
@@ -5582,6 +5607,8 @@ void MainWindow::logout_active_account()
     client_->stop_sync();
 
     tesseract::SessionStore::clear_account(sess.user_id);
+    per_account_rooms_.erase(logged_out_uid);
+    per_account_invites_.erase(logged_out_uid);
 
     // Remove from the accounts vector.
     accounts_.erase(accounts_.begin() + active_account_index_);
@@ -5589,6 +5616,9 @@ void MainWindow::logout_active_account()
     // Reset UI state.
     clear_messages();
     rooms_.clear();
+    invites_.clear();
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
@@ -5598,6 +5628,7 @@ void MainWindow::logout_active_account()
     refresh_room_list();
     if (main_app_)
     {
+        main_app_->clear_content();
         main_app_->show_recovery_banner(false);
         if (main_app_surface_)
         {

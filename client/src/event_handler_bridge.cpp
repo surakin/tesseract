@@ -221,6 +221,26 @@ void EventHandlerBridge::on_rooms_updated(
           });
 }
 
+void EventHandlerBridge::on_invites_updated(
+    const rust::Vec<InviteInfo>& invites) const
+{
+    guard("on_invites_updated",
+          [&]
+          {
+              if (!handler_)
+              {
+                  return;
+              }
+              std::vector<tesseract::InviteInfo> cpp_invites;
+              cpp_invites.reserve(invites.size());
+              for (const auto& i : invites)
+              {
+                  cpp_invites.push_back(tesseract::from_ffi(i));
+              }
+              handler_->on_invites_updated(cpp_invites);
+          });
+}
+
 void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
                                   bool soft_logout) const
 {

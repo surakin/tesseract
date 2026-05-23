@@ -93,6 +93,8 @@ set(_tk_sources
     views/JoinRoomView.cpp
     views/UserProfilePanel.h
     views/UserProfilePanel.cpp
+    views/InviteCard.h
+    views/InviteCard.cpp
     views/RoomInfoPanel.h
     views/RoomInfoPanel.cpp
     views/ConfirmDialog.h

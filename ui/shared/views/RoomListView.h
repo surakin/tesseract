@@ -1,9 +1,10 @@
 #pragma once
 
-// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as five
-// collapsible sections — Favorites / Direct Messages / Rooms / Spaces /
-// Inactive — each showing avatar + name + last-message preview + unread badge
-// per row.
+// Shared room list. Renders a `std::vector<tesseract::RoomInfo>` as six
+// collapsible sections — Invitations / Favorites / Direct Messages / Rooms /
+// Spaces / Inactive — each showing avatar + name + last-message preview +
+// unread badge per row. The Invitations section is fed from a separate
+// `std::vector<tesseract::InviteInfo>` pointer and is hidden when null or empty.
 //
 // Composition: this widget owns a child `tk::ListView` and an optional
 // search header strip that the host overlays a `NativeTextField` on
@@ -111,15 +112,28 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Section indices (matches array positions throughout the class).
-    static constexpr int kSecFavorites = 0;
-    static constexpr int kSecDMs = 1;
-    static constexpr int kSecRooms = 2;
-    static constexpr int kSecSpaces = 3;
-    static constexpr int kSecInactive = 4;
-    static constexpr int kNumSections = 5;
+    // kSecInvites is fed from invites_; all others are fed from rooms_.
+    static constexpr int kSecInvites   = 0;
+    static constexpr int kSecFavorites = 1;
+    static constexpr int kSecDMs       = 2;
+    static constexpr int kSecRooms     = 3;
+    static constexpr int kSecSpaces    = 4;
+    static constexpr int kSecInactive  = 5;
+    static constexpr int kNumSections  = 6;
 
+    // kSectionTitles[kSecInvites] is a placeholder; the actual header label is
+    // "Invitations (N)" and is constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
-        "Favorites", "Direct Messages", "Rooms", "Spaces", "Inactive"};
+        "Invitations", "Favorites", "Direct Messages", "Rooms", "Spaces",
+        "Inactive"};
+
+    // Invitations data source. The pointer is not owned; the caller must
+    // keep it alive for the lifetime of the view (or until replaced / cleared).
+    // Passing nullptr hides the Invitations section entirely.
+    void set_invites(const std::vector<tesseract::InviteInfo>* invites);
+
+    // Fires when the user clicks an invite row.
+    std::function<void(const std::string& /*room_id*/)> on_invite_selected;
 
     // Re-run section classification (e.g. after a settings change) and repaint.
     void refresh();
@@ -128,16 +142,19 @@ private:
     class Adapter;
 
     // Flat item list fed to the inner ListView. Each item is either a
-    // collapsible section header or a pointer into section_rooms_[s].
+    // collapsible section header, a pointer into section_rooms_[s], or an
+    // invite row (index into *invites_).
     struct Item
     {
         enum class Kind : uint8_t
         {
             Header,
-            Room
+            Room,
+            Invite
         } kind = Kind::Room;
-        int section = 0;  // which section (0-4)
-        int room_idx = 0; // index within section_rooms_[section] (Room only)
+        int section  = 0; // which section (0–5)
+        int room_idx = 0; // index within section_rooms_[section] (Room);
+                          // index within *invites_ (Invite)
     };
 
     // Rebuild section_rooms_[kNumSections] from rooms_ + search filter, then
@@ -147,8 +164,11 @@ private:
     float search_header_h() const;
 
     std::vector<tesseract::RoomInfo> rooms_;
+    // Pending invitations. Not owned; null when no account is signed in or
+    // when the data has not yet been wired up.
+    const std::vector<tesseract::InviteInfo>* invites_ = nullptr;
     // Per-section filtered room pointers (into rooms_); rebuilt by
-    // rebuild_items(). Invalidated whenever rooms_ is replaced.
+    // rebuild_items(). kSecInvites slot is always empty (invites are separate).
     std::vector<const tesseract::RoomInfo*> section_rooms_[kNumSections];
     // Flat item list the adapter iterates over.
     std::vector<Item> items_;

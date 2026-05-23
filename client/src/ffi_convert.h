@@ -121,6 +121,21 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
     };
 }
 
+inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)
+{
+    return {
+        .room_id               = std::string(i.room_id),
+        .room_name             = std::string(i.room_name),
+        .room_avatar_url       = std::string(i.room_avatar_url),
+        .room_topic            = std::string(i.room_topic),
+        .is_direct             = i.is_direct,
+        .inviter_user_id       = std::string(i.inviter_user_id),
+        .inviter_display_name  = std::string(i.inviter_display_name),
+        .inviter_avatar_url    = std::string(i.inviter_avatar_url),
+        .invited_at_ts         = i.invited_at_ts,
+    };
+}
+
 /// Build a MediaSource from the split url/encrypted_json pair carried over
 /// the FFI.  Returns nullptr when url is empty (= absent source).
 inline MediaSourceRef make_source(rust::Str url,

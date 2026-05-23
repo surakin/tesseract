@@ -189,6 +189,29 @@ public:
     std::vector<RoomInfo> list_rooms() const;
 
     // ------------------------------------------------------------------
+    // Invitations
+    // ------------------------------------------------------------------
+
+    /// Snapshot of all pending room invitations. Reads the local SDK cache —
+    /// no network roundtrip. The list is refreshed whenever
+    /// `IEventHandler::on_invites_updated` fires.
+    std::vector<InviteInfo> list_invites() const;
+
+    /// Accept the pending invitation to `room_id`.
+    /// Blocks the calling thread — call from a worker thread.
+    Result accept_invite(const std::string& room_id);
+
+    /// Decline the pending invitation to `room_id`.
+    /// Blocks the calling thread — call from a worker thread.
+    Result decline_invite(const std::string& room_id);
+
+    /// Decline a room invitation and ignore the inviter. Calls leave() then
+    /// ignores `inviter_user_id` via m.ignored_user_list account data.
+    /// Blocks the calling thread — call from a worker thread.
+    Result block_invite(const std::string& room_id,
+                        const std::string& inviter_user_id);
+
+    // ------------------------------------------------------------------
     // Timeline subscription (Step 2)
     // ------------------------------------------------------------------
 

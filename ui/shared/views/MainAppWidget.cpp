@@ -58,6 +58,11 @@ MainAppWidget::MainAppWidget()
     auto rv = std::make_unique<RoomView>();
     room_view_ = add_child(std::move(rv));
 
+    // Chat panel: invite card (shown instead of room_view_ for pending invites).
+    auto ic = std::make_unique<InviteCard>();
+    invite_card_ = add_child(std::move(ic));
+    // InviteCard starts invisible (clear() is called in its constructor).
+
     // Full-surface lightbox overlays — added last so they win hit-testing
     // and are painted on top of everything else when visible.
     auto img = std::make_unique<ImageViewerOverlay>();
@@ -148,6 +153,34 @@ void MainAppWidget::set_tab_bar_visible(bool visible)
     if (room_view_ && room_view_->header())
     {
         room_view_->header()->set_condensed(visible);
+    }
+}
+
+void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
+                                InviteCard::ImageProvider provider)
+{
+    if (invite_card_)
+        invite_card_->set_invite(invite, std::move(provider));
+    if (room_view_)
+        room_view_->set_visible(false);
+}
+
+void MainAppWidget::show_room()
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_view_)
+        room_view_->set_visible(true);
+}
+
+void MainAppWidget::clear_content()
+{
+    if (invite_card_)
+        invite_card_->clear();
+    if (room_view_)
+    {
+        room_view_->clear_room();
+        room_view_->set_visible(true);
     }
 }
 
@@ -285,7 +318,12 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float room_h = std::max(0.0f, y + h - chat_y);
-    room_view_->arrange(ctx, {chat_x, chat_y, chat_w, room_h});
+    const tk::Rect chat_content_rect{chat_x, chat_y, chat_w, room_h};
+    room_view_->arrange(ctx, chat_content_rect);
+    if (invite_card_)
+    {
+        invite_card_->arrange(ctx, chat_content_rect);
+    }
 
     // ── Full-surface overlays (always at full widget bounds) ─────────────
 
@@ -377,9 +415,13 @@ void MainAppWidget::paint(tk::PaintCtx& ctx)
     {
         tab_bar_->paint(ctx);
     }
-    if (room_view_)
+    if (room_view_ && room_view_->visible())
     {
         room_view_->paint(ctx);
+    }
+    if (invite_card_ && invite_card_->visible())
+    {
+        invite_card_->paint(ctx);
     }
 
     // Lightbox overlays (painted last — on top of everything).

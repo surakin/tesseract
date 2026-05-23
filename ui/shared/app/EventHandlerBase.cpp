@@ -84,6 +84,16 @@ void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
         });
 }
 
+void EventHandlerBase::on_invites_updated(const std::vector<InviteInfo>& invites)
+{
+    auto inv = invites;  // one copy; moved into the lambda below
+    shell_->post_to_ui_(
+        [shell = shell_, uid = user_id_, inv = std::move(inv)]() mutable
+        {
+            shell->push_invites_(std::move(uid), std::move(inv));
+        });
+}
+
 void EventHandlerBase::on_sync_error(const std::string& context,
                                      const std::string& description,
                                      bool soft_logout)

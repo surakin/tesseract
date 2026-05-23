@@ -24,6 +24,7 @@
 
 #include "ConfirmDialog.h"
 #include "ImageViewerOverlay.h"
+#include "InviteCard.h"
 #include "RecoveryBanner.h"
 #include "RoomListView.h"
 #include "RoomView.h"
@@ -67,6 +68,18 @@ public:
     void show_recovery_banner(bool show);
     void show_verif_banner(bool show);
 
+    // ── Chat panel content switching ──────────────────────────────────────
+
+    // Show the invite card for a pending invitation, hiding RoomView.
+    void show_invite(const tesseract::InviteInfo& invite,
+                     InviteCard::ImageProvider provider);
+
+    // Show RoomView, hiding the invite card.
+    void show_room();
+
+    // Hide both RoomView and the invite card (nothing selected state).
+    void clear_content();
+
     // ── Lightbox overlays ─────────────────────────────────────────────────
 
     void show_image_viewer(bool show);
@@ -81,6 +94,10 @@ public:
     RoomView* room_view() const
     {
         return room_view_;
+    }
+    InviteCard* invite_card() const
+    {
+        return invite_card_;
     }
     RecoveryBanner* recovery_banner() const
     {
@@ -173,6 +190,7 @@ private:
     tk::TabBar* tab_bar_ = nullptr;
     bool tab_bar_visible_ = false;
     RoomView* room_view_ = nullptr;
+    InviteCard* invite_card_ = nullptr;
 
     // Full-surface lightbox overlays (painted last — highest z-order)
     ImageViewerOverlay* img_viewer_ = nullptr;

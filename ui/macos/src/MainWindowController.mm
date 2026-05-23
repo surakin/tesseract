@@ -99,6 +99,7 @@ public:
 
 protected:
     void on_rooms_updated_() override;
+    void on_invites_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
@@ -221,6 +222,9 @@ public:
     using ShellBase::pending_login_temp_dir_;
     using ShellBase::pending_restore_room_;
     using ShellBase::per_account_rooms_;
+    using ShellBase::per_account_invites_;
+    using ShellBase::current_invite_room_id_;
+    using ShellBase::current_invite_inviter_id_;
     using ShellBase::push_paginate_result_;
     using ShellBase::push_room_list_state_;
     using ShellBase::notify_tray_unread_;
@@ -232,6 +236,7 @@ public:
     using ShellBase::request_forward_history_;
     using ShellBase::return_to_live_;
     using ShellBase::room_subscription_refs_;
+    using ShellBase::invites_;
     using ShellBase::rooms_;
     using ShellBase::run_async_;
     using ShellBase::set_screen_lock_;
@@ -402,6 +407,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                 imageBytes:(const std::vector<std::uint8_t>&)imageBytes;
 - (void)_navigateToRoom:(std::string)roomId;
 - (void)_refreshRoomList;
+- (void)_refreshInviteList;
 - (void)_relayoutRoomSurface;
 - (void)_relayoutChatSurface;
 - (void)_onRoomListStateChanged;
@@ -496,6 +502,14 @@ void MacShell::on_rooms_updated_()
     }
 
     update_secondary_room_infos_();
+}
+
+void MacShell::on_invites_updated_()
+{
+    MainWindowController* c = ctrl_;
+    if (!c)
+        return;
+    [c _refreshInviteList];
 }
 
 void MacShell::on_space_children_cache_ready_ui_()
@@ -4364,6 +4378,19 @@ void MacShell::apply_cached_messages_(
                          ? it->second
                          : std::vector<tesseract::RoomInfo>{};
     [self _refreshRoomList];
+
+    // Restore the invite snapshot for the incoming account (parallel to rooms_).
+    auto inv_it = _shell->per_account_invites_.find(_shell->my_user_id_);
+    _shell->invites_ = (inv_it != _shell->per_account_invites_.end())
+                           ? inv_it->second
+                           : std::vector<tesseract::InviteInfo>{};
+    _shell->on_invites_updated_();
+
+    // Dismiss any stale InviteCard from the previous account.
+    _shell->current_invite_room_id_.clear();
+    _shell->current_invite_inviter_id_.clear();
+    if (_shell->main_app_)
+        _shell->main_app_->show_room();
     if (_roomView)
     {
         _roomView->clear_room();
@@ -4675,6 +4702,7 @@ void MacShell::apply_cached_messages_(
 
     tesseract::SessionStore::clear_account(uid);
     _shell->per_account_rooms_.erase(uid);
+    _shell->per_account_invites_.erase(uid);
     // Recompute the tray aggregate so the dot clears (or rolls over to the
     // surviving accounts) immediately; without this the indicator can stick
     // when the only account with unreads was the one we just signed out.
@@ -4696,10 +4724,14 @@ void MacShell::apply_cached_messages_(
         tesseract::SessionStore::save_index(idxData);
 
         _shell->rooms_.clear();
+        _shell->invites_.clear();
+        _shell->current_invite_room_id_.clear();
+        _shell->current_invite_inviter_id_.clear();
         _shell->space_stack_.clear();
         _shell->message_cache_.clear();
         _shell->message_cache_lru_.clear();
         [self _refreshRoomList];
+        [self _refreshInviteList];
         _shell->handle_compose_room_leaving_(_shell->current_room_id_);
         _shell->current_room_id_.clear();
         if (_roomView)
@@ -4707,6 +4739,8 @@ void MacShell::apply_cached_messages_(
             _roomView->clear_room();
             _roomView->set_messages({});
         }
+        if (_shell->main_app_)
+            _shell->main_app_->clear_content();
         [self _relayoutChatSurface];
 
         _shell->pending_login_temp_dir_.clear();
@@ -5556,6 +5590,18 @@ void MacShell::apply_cached_messages_(
     if (!_shell->current_room_id_.empty())
     {
         _roomListView->set_selected_room(_shell->current_room_id_);
+    }
+    if (_mainAppSurface)
+    {
+        _mainAppSurface->relayout();
+    }
+}
+
+- (void)_refreshInviteList
+{
+    if (_roomListView)
+    {
+        _roomListView->set_invites(&_shell->invites_);
     }
     if (_mainAppSurface)
     {

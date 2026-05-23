@@ -1651,6 +1651,10 @@ impl ClientFfi {
                 if let Ok(guard) = h.lock() {
                     guard.on_rooms_updated(&rooms);
                 }
+                let invites = build_invite_infos(&client_clone).await;
+                if let Ok(guard) = h.lock() {
+                    guard.on_invites_updated(&invites);
+                }
                 // Initial prefs snapshot — fired BEFORE on_rooms_updated so
                 // the UI has pendingRestoreRoom_ set when the room list
                 // arrives and can navigate immediately on first paint.
@@ -1682,6 +1686,10 @@ impl ClientFfi {
                             let rooms = build_room_infos(&client_clone).await;
                             if let Ok(guard) = h.lock() {
                                 guard.on_rooms_updated(&rooms);
+                            }
+                            let invites = build_invite_infos(&client_clone).await;
+                            if let Ok(guard) = h.lock() {
+                                guard.on_invites_updated(&invites);
                             }
                             // Refresh image packs on the same tick.
                             // Account-data and state-event changes that
@@ -4433,6 +4441,115 @@ impl ClientFfi {
         self.rt.block_on(build_room_infos(&client))
     }
 
+    /// Snapshot of all pending room invitations. Reads the local SDK cache —
+    /// no network roundtrip. Blocks — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn list_invites(&self) -> Vec<crate::ffi::InviteInfo> {
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        self.rt.block_on(build_invite_infos(&client))
+    }
+
+    #[cfg(test)]
+    pub fn list_invites(&self) -> Vec<crate::ffi::InviteInfo> {
+        Vec::new()
+    }
+
+    /// Accept a pending room invitation. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn accept_invite(&mut self, room_id: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        if room.state() != matrix_sdk::RoomState::Invited {
+            return err("room is not in invited state");
+        }
+        // Joining does not populate m.direct, so a DM invite would otherwise
+        // land in the regular room list. Capture the invite's DM flag (from the
+        // stripped m.room.member event) before joining, then persist it.
+        let was_direct = self.rt.block_on(room.is_direct()).unwrap_or(false);
+        match self.rt.block_on(room.join()) {
+            Ok(_) => {
+                if was_direct {
+                    let _ = self.rt.block_on(room.set_is_direct(true));
+                }
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn accept_invite(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Decline a pending room invitation. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn decline_invite(&mut self, room_id: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        match self.rt.block_on(room.leave()) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn decline_invite(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Decline a room invitation and ignore the inviter. Calls `room.leave()`
+    /// then `account().ignore_user(inviter_user_id)`. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn block_invite(&mut self, room_id: &str, inviter_user_id: &str) -> OpResult {
+        if inviter_user_id.is_empty() {
+            return err("inviter_user_id is empty; use decline_invite instead");
+        }
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else {
+            return err("invalid user id");
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        if let Err(e) = self.rt.block_on(room.leave()) {
+            return err(e.to_string());
+        }
+        match self.rt.block_on(client.account().ignore_user(&uid)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn block_invite(&mut self, _room_id: &str, _inviter_user_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
     pub fn space_children(&self, space_id: &str) -> Vec<String> {
         let Some(client) = self.client.as_ref() else {
             return vec![];
@@ -7031,6 +7148,70 @@ async fn build_room_infos(client: &Client) -> Vec<crate::ffi::RoomInfo> {
     result
 }
 
+/// Build a snapshot of all pending room invitations from the local SDK cache.
+/// For each invited room, the sender of the local user's m.room.member
+/// (Invited) stripped-state event is the inviter. `invited_at_ts` is 0
+/// because stripped state events do not carry origin_server_ts unless the
+/// homeserver implements MSC4319 (not in current ruma feature set).
+#[cfg(not(test))]
+async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::InviteInfo> {
+    let mut result = Vec::new();
+    for room in client.invited_rooms() {
+        let room_id = room.room_id().to_string();
+        let room_name = room
+            .display_name()
+            .await
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| room_id.clone());
+        let room_avatar_url = room.avatar_url().map(|u| u.to_string()).unwrap_or_default();
+        let room_topic = room.topic().unwrap_or_default();
+        let is_direct = room.is_direct().await.unwrap_or(false);
+
+        let (inviter_user_id, inviter_display_name, inviter_avatar_url, invited_at_ts) =
+            match room.invite_details().await {
+                Ok(details) => {
+                    let uid = details.inviter_id.to_string();
+                    // invited_at_ts: stripped-state events omit origin_server_ts;
+                    // use the invitee event's ts when available (Sync path), else 0.
+                    let ts = details
+                        .invitee
+                        .event()
+                        .origin_server_ts()
+                        .map(|t| u64::from(t.0))
+                        .unwrap_or(0);
+                    match details.inviter {
+                        Some(m) => {
+                            let dn = m
+                                .display_name()
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| details.inviter_id.localpart().to_string());
+                            let av = m
+                                .avatar_url()
+                                .map(|u| u.to_string())
+                                .unwrap_or_default();
+                            (uid, dn, av, ts)
+                        }
+                        None => (uid, details.inviter_id.localpart().to_string(), String::new(), ts),
+                    }
+                }
+                Err(_) => (String::new(), String::new(), String::new(), 0),
+            };
+
+        result.push(crate::ffi::InviteInfo {
+            room_id,
+            room_name,
+            room_avatar_url,
+            room_topic,
+            is_direct,
+            inviter_user_id,
+            inviter_display_name,
+            inviter_avatar_url,
+            invited_at_ts,
+        });
+    }
+    result
+}
+
 #[cfg(not(test))]
 async fn collect_reactions(
     event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
@@ -9074,6 +9255,26 @@ mod tests {
     fn list_rooms_is_empty_when_not_logged_in() {
         let c = ClientFfi::new();
         assert!(c.list_rooms().is_empty());
+    }
+
+    #[test]
+    fn list_invites_is_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert!(c.list_invites().is_empty());
+    }
+
+    #[test]
+    fn accept_invite_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.accept_invite("!room:example.com");
+        assert!(!r.ok);
+    }
+
+    #[test]
+    fn decline_invite_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.decline_invite("!room:example.com");
+        assert!(!r.ok);
     }
 
     #[test]

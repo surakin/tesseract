@@ -2862,6 +2862,18 @@ void MainWindow::on_rooms_updated_()
     update_secondary_room_infos_();
 }
 
+void MainWindow::on_invites_updated_()
+{
+    if (mainApp_)
+    {
+        mainApp_->room_list_view()->set_invites(&invites_);
+    }
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->relayout();
+    }
+}
+
 void MainWindow::on_space_children_cache_ready_ui_()
 {
     refreshRoomList();
@@ -4254,6 +4266,19 @@ void MainWindow::switchActiveAccount(int new_idx)
         refreshRoomList();
     }
 
+    // Restore the invite snapshot for the incoming account (parallel to rooms_).
+    auto inv_it = per_account_invites_.find(s.user_id);
+    invites_ = (inv_it != per_account_invites_.end())
+                   ? inv_it->second
+                   : std::vector<tesseract::InviteInfo>{};
+    on_invites_updated_();
+
+    // Dismiss any stale InviteCard from the previous account.
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
+    if (main_app_)
+        main_app_->show_room();
+
     // Persist the active selection.
     tesseract::SessionStore::AccountIndex idx;
     idx.active_user_id = s.user_id;
@@ -4318,6 +4343,7 @@ void MainWindow::logoutActiveAccount()
     a.client->stop_sync();
     tesseract::SessionStore::clear_account(uid);
     per_account_rooms_.erase(uid);
+    per_account_invites_.erase(uid);
     // Recompute the tray aggregate so the dot clears (or rolls over to the
     // surviving accounts) immediately; without this the indicator can stick
     // when the only account with unreads was the one we just signed out.
@@ -4336,6 +4362,9 @@ void MainWindow::logoutActiveAccount()
     my_display_name_.clear();
     my_avatar_url_.clear();
     rooms_.clear();
+    invites_.clear();
+    current_invite_room_id_.clear();
+    current_invite_inviter_id_.clear();
     message_cache_.clear();
     message_cache_lru_.clear();
     reset_server_info_();
@@ -4343,6 +4372,7 @@ void MainWindow::logoutActiveAccount()
     clearMessages();
     if (mainApp_)
     {
+        mainApp_->clear_content();
         mainApp_->show_recovery_banner(false);
         mainAppSurface_->relayout();
     }

@@ -41,6 +41,7 @@ public:
     void on_message_removed(const std::string& room_id,
                             std::size_t index) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
+    void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,
                        const std::string& description,
                        bool soft_logout) override;

@@ -396,6 +396,24 @@ struct RoomInfo
     }
 };
 
+/// Lightweight descriptor for a pending room invitation, returned by
+/// `Client::list_invites()` and carried by `IEventHandler::on_invites_updated()`.
+/// `invited_at_ts` is the Unix timestamp in milliseconds of the invite event;
+/// 0 when unavailable (stripped-state events omit the timestamp unless the
+/// homeserver implements MSC4319).
+struct InviteInfo
+{
+    std::string room_id;
+    std::string room_name;
+    std::string room_avatar_url;
+    std::string room_topic;
+    bool        is_direct = false;
+    std::string inviter_user_id;
+    std::string inviter_display_name;
+    std::string inviter_avatar_url;
+    uint64_t    invited_at_ts = 0;
+};
+
 /// MSC3266 room summary — metadata about a room fetched without joining.
 /// `room_id` is empty when the lookup failed (check before using).
 struct RoomSummary

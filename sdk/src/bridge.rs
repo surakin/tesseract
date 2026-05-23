@@ -86,6 +86,23 @@ pub mod ffi {
         history_visibility: String,
     }
 
+    /// Lightweight descriptor for a pending room invitation, returned by
+    /// `list_invites()` and carried by `on_invites_updated()` callbacks.
+    /// `invited_at_ts` is the Unix timestamp in milliseconds of the invite
+    /// event; 0 when unavailable (stripped-state events omit the timestamp
+    /// unless the homeserver implements MSC4319).
+    struct InviteInfo {
+        room_id: String,
+        room_name: String,
+        room_avatar_url: String,
+        room_topic: String,
+        is_direct: bool,
+        inviter_user_id: String,
+        inviter_display_name: String,
+        inviter_avatar_url: String,
+        invited_at_ts: u64,
+    }
+
     /// One colored run of a syntax-highlighted code block. `text` may contain
     /// newlines; concatenating every span's `text` reproduces the input code.
     /// `r`/`g`/`b` are the run's foreground color from the active syntect theme.
@@ -502,6 +519,11 @@ pub mod ffi {
         );
 
         fn on_rooms_updated(self: &EventHandlerBridge, rooms: &Vec<RoomInfo>);
+        /// Fired when the set of pending room invitations changes (first sync,
+        /// accept/decline, or a new invite arriving via push). The UI should
+        /// refresh its invitation list via `list_invites()` or use the snapshot
+        /// carried by this callback directly.
+        fn on_invites_updated(self: &EventHandlerBridge, invites: &Vec<InviteInfo>);
         fn on_error(self: &EventHandlerBridge, context: &str, message: &str, soft_logout: bool);
         fn on_session_refreshed(self: &EventHandlerBridge, session_json: &str);
         /// Synchronously persist a refreshed OAuth session blob to the
@@ -687,6 +709,28 @@ pub mod ffi {
         // ----- Room list -----
 
         fn list_rooms(self: &ClientFfi) -> Vec<RoomInfo>;
+
+        // ----- Invitations -----
+
+        /// Snapshot of all pending room invitations. Reads the local SDK
+        /// cache — no network roundtrip. The list updates when
+        /// `on_invites_updated` fires.
+        fn list_invites(self: &ClientFfi) -> Vec<InviteInfo>;
+
+        /// Accepts the pending invitation to the given room. Blocks — call from a worker thread.
+        fn accept_invite(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Declines the pending invitation to the given room. Blocks — call from a worker thread.
+        fn decline_invite(self: &mut ClientFfi, room_id: &str) -> OpResult;
+
+        /// Decline a room invitation and ignore the inviter. Calls
+        /// `room.leave()` then `account().ignore_user(inviter_user_id)`.
+        /// Blocks — call from a worker thread.
+        fn block_invite(
+            self: &mut ClientFfi,
+            room_id: &str,
+            inviter_user_id: &str,
+        ) -> OpResult;
 
         // ----- Timeline subscription (Step 2) -----
 

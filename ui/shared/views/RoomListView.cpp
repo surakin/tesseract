@@ -169,6 +169,29 @@ public:
         {
             paint_header(item, ctx, bounds, hovered);
         }
+        else if (item.kind == Item::Kind::Invite)
+        {
+            if (!owner_.invites_)
+            {
+                return;
+            }
+            const auto& inv = *owner_.invites_;
+            if (item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(inv.size()))
+            {
+                return;
+            }
+            paint_invite(inv[static_cast<std::size_t>(item.room_idx)], ctx,
+                         bounds, selected, hovered);
+
+            // 1px separator between consecutive invite rows.
+            if (index > 0 &&
+                owner_.items_[index - 1].kind == Item::Kind::Invite)
+            {
+                ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
+                                     ctx.theme.palette.separator);
+            }
+        }
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
@@ -209,6 +232,7 @@ private:
     struct HeaderRowCache
     {
         // key
+        std::string   title;            // full rendered title string
         bool          collapsed       = false;
         std::uint64_t section_unread  = 0;
         bool          section_mention = false;
@@ -226,13 +250,26 @@ private:
                                          ? ctx.theme.palette.sidebar_selected
                                          : ctx.theme.palette.sidebar_hover);
 
-        const char* title    = RoomListView::kSectionTitles[item.section];
-        bool        collapsed = owner_.collapsed_[item.section];
+        // Build the title string. For the Invitations section include the count.
+        std::string title_str;
+        if (item.section == RoomListView::kSecInvites)
+        {
+            const std::size_t n =
+                owner_.invites_ ? owner_.invites_->size() : 0u;
+            title_str = std::string("Invitations (") + std::to_string(n) + ")";
+        }
+        else
+        {
+            title_str = RoomListView::kSectionTitles[item.section];
+        }
+        const std::string& title  = title_str;
+        bool               collapsed = owner_.collapsed_[item.section];
 
         // Sum notification counts and check for mentions (badge when collapsed).
+        // Invitations have no unread badge.
         std::uint64_t section_unread  = 0;
         bool          section_mention = false;
-        if (collapsed)
+        if (collapsed && item.section != RoomListView::kSecInvites)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
@@ -243,10 +280,11 @@ private:
 
         // Rebuild layouts when any key field changes.
         auto& cache = header_cache_[item.section];
-        if (!cache.valid || cache.collapsed != collapsed ||
+        if (!cache.valid || cache.title != title || cache.collapsed != collapsed ||
             cache.section_unread != section_unread ||
             cache.section_mention != section_mention)
         {
+            cache.title           = title;
             cache.collapsed       = collapsed;
             cache.section_unread  = section_unread;
             cache.section_mention = section_mention;
@@ -562,6 +600,119 @@ private:
         }
     }
 
+    void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx,
+                      tk::Rect bounds, bool selected, bool hovered)
+    {
+        // Row background — same as room rows.
+        if (selected)
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
+        }
+        else if (hovered)
+        {
+            ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+        }
+
+        // Avatar circle (left-aligned, vertically centred).
+        float avatar_cx = bounds.x + kPadX + kAvatarSize * 0.5f;
+        float avatar_cy = bounds.y + bounds.h * 0.5f;
+
+        // DM invite: show inviter avatar. Group invite: show room avatar.
+        const std::string& av_mxc =
+            inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
+        // Fallback initials text: inviter name for DM, room name for group.
+        const std::string& initials_name =
+            inv.is_direct ? (inv.inviter_display_name.empty()
+                                 ? inv.inviter_user_id
+                                 : inv.inviter_display_name)
+                          : (inv.room_name.empty() ? inv.room_id : inv.room_name);
+
+        const tk::Image* avatar = nullptr;
+        if (owner_.avatar_provider_ && !av_mxc.empty())
+        {
+            avatar = owner_.avatar_provider_(av_mxc);
+        }
+
+        if (avatar)
+        {
+            ctx.canvas.draw_circle_image(*avatar, {avatar_cx, avatar_cy},
+                                         kAvatarSize);
+        }
+        else
+        {
+            ctx.canvas.draw_initials_circle(
+                initials_name, {avatar_cx, avatar_cy}, kAvatarSize,
+                ctx.theme.palette.avatar_initials_bg,
+                ctx.theme.palette.avatar_initials_text);
+        }
+
+        // Text column geometry (no badge reserved).
+        float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
+        float text_w = bounds.w - (text_x - bounds.x) - kPadX;
+        if (text_w < 0)
+        {
+            text_w = 0;
+        }
+
+        // Primary / secondary text.
+        // DM invite:    primary = inviter display name, secondary = @user_id
+        // Group invite: primary = room name, secondary = "Invited by <name>"
+        const std::string primary =
+            inv.is_direct
+                ? (inv.inviter_display_name.empty() ? inv.inviter_user_id
+                                                    : inv.inviter_display_name)
+                : (inv.room_name.empty() ? inv.room_id : inv.room_name);
+
+        const std::string secondary =
+            inv.is_direct
+                ? inv.inviter_user_id
+                : ("Invited by " + (inv.inviter_display_name.empty()
+                                        ? inv.inviter_user_id
+                                        : inv.inviter_display_name));
+
+        // Cache keyed on room_id.
+        auto& cache = room_cache_[inv.room_id];
+        if (cache.display_name != primary || cache.text_w != text_w ||
+            cache.preview != secondary)
+        {
+            cache.display_name = primary;
+            cache.text_w       = text_w;
+            cache.preview      = secondary;
+            cache.badge_text   = {};
+
+            tk::TextStyle name_style{};
+            name_style.role      = tk::FontRole::Body;
+            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.max_width = text_w;
+            cache.name_layout    = ctx.factory.build_text(primary, name_style);
+
+            tk::TextStyle prev_style{};
+            prev_style.role      = tk::FontRole::SidebarPreview;
+            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.max_width = text_w;
+            cache.preview_layout = ctx.factory.build_text(secondary, prev_style);
+
+            cache.badge_layout = nullptr;
+        }
+
+        if (cache.name_layout)
+        {
+            float name_y =
+                bounds.y +
+                (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
+                                 ctx.theme.palette.text_primary);
+        }
+        if (cache.preview_layout)
+        {
+            float prev_y =
+                bounds.y + bounds.h * 0.5f +
+                (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
+                                 ctx.theme.palette.text_secondary);
+        }
+    }
+
     RoomListView& owner_;
 
     // When the factory pointer changes (DPI migration to a new screen) all
@@ -601,6 +752,22 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
             return;
         }
 
+        if (item.kind == Item::Kind::Invite)
+        {
+            if (!invites_ || item.room_idx < 0 ||
+                item.room_idx >= static_cast<int>(invites_->size()))
+            {
+                return;
+            }
+            const std::string& rid =
+                (*invites_)[static_cast<std::size_t>(item.room_idx)].room_id;
+            if (on_invite_selected)
+            {
+                on_invite_selected(rid);
+            }
+            return;
+        }
+
         const auto& rooms = section_rooms_[item.section];
         if (item.room_idx < 0 ||
             item.room_idx >= static_cast<int>(rooms.size()))
@@ -626,6 +793,17 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
     rooms_ = std::move(rooms);
+    rebuild_items();
+    if (list_)
+    {
+        list_->invalidate_data();
+    }
+    set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites)
+{
+    invites_ = invites;
     rebuild_items();
     if (list_)
     {
@@ -724,7 +902,8 @@ int RoomListView::selected_index() const
     {
         return -1;
     }
-    if (items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Header)
+    if (items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Header ||
+        items_[static_cast<std::size_t>(flat)].kind == Item::Kind::Invite)
     {
         return -1;
     }
@@ -824,7 +1003,21 @@ void RoomListView::rebuild_items()
 
     // 3. Build flat item list.
     items_.clear();
-    for (int s = 0; s < kNumSections; ++s)
+
+    // Invitations section — always comes first, never collapsed, no search
+    // filter (invites are few and always shown in full).
+    if (invites_ && !invites_->empty())
+    {
+        items_.push_back({Item::Kind::Header, kSecInvites, 0});
+        for (int i = 0; i < static_cast<int>(invites_->size()); ++i)
+        {
+            items_.push_back({Item::Kind::Invite, kSecInvites, i});
+        }
+    }
+
+    // Room sections — kSecInvites slot is skipped (its section_rooms_ is
+    // always empty, but skip explicitly to be safe).
+    for (int s = kSecFavorites; s < kNumSections; ++s)
     {
         if (section_rooms_[s].empty())
         {
