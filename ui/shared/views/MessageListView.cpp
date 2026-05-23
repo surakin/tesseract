@@ -4799,6 +4799,10 @@ bool MessageListView::on_pointer_down(tk::Point local)
         return false; // list not painted yet
     }
 
+    // Scrollbar thumb wins any hit test — it overlaps row content visually.
+    if (thumb_hit(local))
+        return tk::ListView::on_pointer_down(local);
+
     // Any new press outside a text-body selection clears the old selection.
     if (sel_ && !press_sel_)
     {

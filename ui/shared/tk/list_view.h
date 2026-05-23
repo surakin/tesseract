@@ -289,6 +289,11 @@ protected:
         return {bounds_.x, bounds_.y + top - scroll_y_, bounds_.w, bot - top};
     }
 
+    // Returns true when `local` (widget-local coords) is over the scrollbar
+    // thumb. Subclasses that override on_pointer_down should test this first
+    // so the scrollbar wins over any message-content hit test underneath it.
+    bool thumb_hit(Point local) const;
+
 private:
     void rebuild_heights(LayoutCtx&, float width);
     void clamp_scroll();
@@ -296,15 +301,11 @@ private:
     void maybe_fire_near_top();
     void maybe_fire_near_bottom();
 
-    // Scrollbar geometry helpers. Return the thumb rect (in widget-local
-    // coords) and the visible scroll range, or 0-width thumb when there's
-    // no overflow.
     struct ThumbGeom
     {
         float track_top, track_h, thumb_h, thumb_top;
     };
     ThumbGeom thumb_geom() const;
-    bool thumb_hit(Point local) const;
 
     ListAdapter* adapter_ = nullptr;
 
