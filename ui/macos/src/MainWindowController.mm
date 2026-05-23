@@ -94,6 +94,8 @@ public:
 
 public:
     void post_to_ui_(std::function<void()> fn) override;
+    void request_relayout_() override;
+    void request_repaint_() override;
 
 protected:
     void on_rooms_updated_() override;
@@ -110,6 +112,8 @@ protected:
 
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
+    void stop_anim_tick_() override;
+    void repaint_anim_frame_() override;
     void repaint_pickers_() override;
 
     void handle_timeline_reset_ui_(
@@ -145,16 +149,9 @@ protected:
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
-    void handle_voice_waveform_ready_ui_(std::string room_id,
-                                         std::string event_id,
-                                         std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
-    void on_url_preview_ready_(
-        const std::string& url,
-        const tesseract::Client::UrlPreview& preview) override;
-    void on_url_preview_failed_(const std::string& url) override;
 
     tk::ThemeMode os_color_scheme_() const override;
     void apply_theme_ui_(const tk::Theme& t) override;
@@ -280,10 +277,11 @@ public:
                              std::string mime);
 
     // Borrowed pointers set by ObjC side after building the chat surface.
-    // Exposed here so MacShell C++ methods can call them without crossing
-    // the ObjC ivar boundary (which is private to @implementation).
-    tesseract::views::RoomView* room_view_ = nullptr;
-    tesseract::views::MainAppWidget* main_app_ = nullptr;
+    // main_app_ / room_view_ now live in ShellBase; re-export them so the ObjC
+    // side can keep reaching them through _shell. app_surface_ is the macOS
+    // native surface and stays here.
+    using ShellBase::main_app_;
+    using ShellBase::room_view_;
     tk::macos::Surface* app_surface_ = nullptr;
 
     // SettingsController — created at login, reset on account switch.
@@ -416,6 +414,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_showStickerContextMenuAt:(NSPoint)screenPt;
 - (void)_onStickerSave:(id)sender;
 - (void)_startAnimTickIfNeeded;
+- (void)_stopAnimTick;
 - (void)_animTick:(NSTimer*)timer;
 - (void)_ensureStickerImageAsync:(std::string)url;
 - (void)_ensureEmojiImageAsync:(std::string)url;
@@ -439,6 +438,22 @@ void MacShell::post_to_ui_(std::function<void()> fn)
         (*heap)();
         delete heap;
     });
+}
+
+void MacShell::request_relayout_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _relayoutChatSurface];
+    }
+}
+
+void MacShell::request_repaint_()
+{
+    if (app_surface_)
+    {
+        app_surface_->host().request_repaint();
+    }
 }
 
 void MacShell::on_rooms_updated_()
@@ -932,6 +947,29 @@ void MacShell::start_anim_tick_()
     }
 }
 
+void MacShell::stop_anim_tick_()
+{
+    if (ctrl_)
+    {
+        [ctrl_ _stopAnimTick];
+    }
+}
+
+void MacShell::repaint_anim_frame_()
+{
+    // Repaint only the animated-image rects, not the whole chat surface (and
+    // no per-frame relayout — frame swaps never change layout).
+    if (app_surface_)
+    {
+        app_surface_->update_anim_regions();
+    }
+    StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
+    if (panel.isVisible)
+    {
+        [panel invalidateImageCache];
+    }
+}
+
 void MacShell::repaint_pickers_()
 {
     if (ctrl_)
@@ -1129,16 +1167,6 @@ void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
     }
 }
 
-void MacShell::handle_voice_waveform_ready_ui_(
-    std::string room_id, std::string event_id,
-    std::vector<std::uint16_t> waveform)
-{
-    if (room_id != current_room_id_)
-        return;
-    if (auto* ml = room_view_->message_list())
-        ml->update_voice_waveform(event_id, std::move(waveform));
-}
-
 void MacShell::on_room_list_state_ui_()
 {
     MainWindowController* c = ctrl_;
@@ -1169,58 +1197,6 @@ void MacShell::update_typing_bar_(const std::string& text, bool /*visible*/)
     if (room_view_)
     {
         room_view_->set_typing_text(text);
-    }
-}
-
-void MacShell::on_url_preview_ready_(
-    const std::string& url, const tesseract::Client::UrlPreview& preview)
-{
-    tesseract::views::UrlPreviewData d;
-    d.title = preview.title;
-    d.description = preview.description;
-    d.image_mxc = preview.image_mxc;
-    d.image_w = preview.image_w;
-    d.image_h = preview.image_h;
-    url_preview_data_.emplace(url, std::move(d));
-
-    if (!preview.image_mxc.empty())
-    {
-        ensure_media_image_(preview.image_mxc, 64, 64);
-    }
-
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    if (ctrl_)
-    {
-        [ctrl_ _relayoutChatSurface];
-    }
-
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-            w->request_relayout();
-        }
-    }
-}
-
-void MacShell::on_url_preview_failed_(const std::string& url)
-{
-    // No card to show (height unchanged) — just release the room-switch
-    // gate so it doesn't wait the full timeout on a dead link.
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-        }
     }
 }
 
@@ -5893,31 +5869,16 @@ void MacShell::apply_cached_messages_(
 
 - (void)_animTick:(NSTimer*)timer
 {
-    // Stop once nothing animated is on-screen — entries linger in the cache
-    // after scrolling away / switching rooms, so `empty()` would keep the
-    // 60 Hz timer (and full-window repaints) running forever.
-    if (!_shell->anim_cache_.any_visible())
+    if (_shell)
     {
-        [_animTimer invalidate];
-        _animTimer = nil;
-        return;
+        _shell->tick_anim_();
     }
-    const std::int64_t now = static_cast<std::int64_t>(
-        [[NSDate date] timeIntervalSince1970] * 1000.0);
-    if (_shell->anim_cache_.advance(now))
-    {
-        // Repaint only the animated-image rects, not the whole chat surface
-        // (and no per-frame relayout — frame swaps never change layout).
-        if (_mainAppSurface)
-        {
-            _mainAppSurface->update_anim_regions();
-        }
-        StickerPickerPanel* panel = [StickerPickerPanel sharedPanel];
-        if (panel.isVisible)
-        {
-            [panel invalidateImageCache];
-        }
-    }
+}
+
+- (void)_stopAnimTick
+{
+    [_animTimer invalidate];
+    _animTimer = nil;
 }
 
 - (void)_ensureStickerImageAsync:(std::string)url

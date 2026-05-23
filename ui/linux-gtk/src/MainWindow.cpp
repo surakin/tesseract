@@ -161,16 +161,6 @@ void MainWindow::handle_notification_ui_(
                       std::move(avatar_bytes), std::move(image_bytes));
 }
 
-void MainWindow::handle_voice_waveform_ready_ui_(
-    std::string room_id, std::string event_id,
-    std::vector<std::uint16_t> waveform)
-{
-    if (room_id != current_room_id_)
-        return;
-    if (auto* ml = room_view_->message_list())
-        ml->update_voice_waveform(event_id, std::move(waveform));
-}
-
 void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();
@@ -3472,45 +3462,47 @@ void MainWindow::invalidate_anim_consumers_()
 gboolean MainWindow::on_tk_anim_tick_(gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
-    // Stop once nothing animated is on-screen — entries linger in the cache
-    // after scrolling away / switching rooms, so `empty()` would keep the
-    // 60 Hz timer (and full-window repaints) running forever.
-    if (!self->anim_cache_.any_visible())
+    // tick_anim_ returns false (and has called stop_anim_tick_, clearing the
+    // source id) when nothing animated remains on-screen.
+    return self->tick_anim_() ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+}
+
+void MainWindow::stop_anim_tick_()
+{
+    // Clear the id; the G_SOURCE_REMOVE returned by on_tk_anim_tick_ removes
+    // the GSource itself (calling g_source_remove from inside its own dispatch
+    // would double-remove).
+    tk_anim_tick_id_ = 0;
+}
+
+void MainWindow::repaint_anim_frame_()
+{
+    // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area was
+    // removed; the render-node model only supports whole-widget queue_draw),
+    // so we can't scope the repaint to the animated rects the way Qt6/macOS
+    // do. We still avoid the per-frame measure + arrange pass: a plain repaint
+    // is enough since frame swaps never change layout. Pickers keep their
+    // existing invalidation.
+    if (main_app_surface_)
     {
-        self->tk_anim_tick_id_ = 0;
-        return G_SOURCE_REMOVE;
+        main_app_surface_->host().request_repaint();
     }
-    const std::int64_t now_ms = g_get_monotonic_time() / 1000;
-    if (self->anim_cache_.advance(now_ms))
+    if (emoji_picker_shared_)
     {
-        // GTK4 has no partial-widget invalidation (gtk_widget_queue_draw_area
-        // was removed; the render-node model only supports whole-widget
-        // queue_draw), so we can't scope the repaint to the animated rects the
-        // way Qt6/macOS do. But we can still avoid the per-frame measure +
-        // arrange pass: a plain repaint is enough since frame swaps never
-        // change layout. Pickers keep their existing invalidation.
-        if (self->main_app_surface_)
-        {
-            self->main_app_surface_->host().request_repaint();
-        }
-        if (self->emoji_picker_shared_)
-        {
-            self->emoji_picker_shared_->invalidate_image_cache();
-        }
-        if (self->emoji_picker_surface_)
-        {
-            self->emoji_picker_surface_->relayout();
-        }
-        if (self->sticker_picker_shared_)
-        {
-            self->sticker_picker_shared_->invalidate_image_cache();
-        }
-        if (self->sticker_picker_surface_)
-        {
-            self->sticker_picker_surface_->relayout();
-        }
+        emoji_picker_shared_->invalidate_image_cache();
     }
-    return G_SOURCE_CONTINUE;
+    if (emoji_picker_surface_)
+    {
+        emoji_picker_surface_->relayout();
+    }
+    if (sticker_picker_shared_)
+    {
+        sticker_picker_shared_->invalidate_image_cache();
+    }
+    if (sticker_picker_surface_)
+    {
+        sticker_picker_surface_->relayout();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3635,6 +3627,22 @@ void MainWindow::refresh_room_list()
 // ---------------------------------------------------------------------------
 //  GTK4-specific ShellBase virtual hook implementations
 // ---------------------------------------------------------------------------
+
+void MainWindow::request_relayout_()
+{
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
+void MainWindow::request_repaint_()
+{
+    if (main_app_surface_)
+    {
+        main_app_surface_->host().request_repaint();
+    }
+}
 
 void MainWindow::post_to_ui_(std::function<void()> fn)
 {
@@ -4241,58 +4249,6 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
                 },
                 ctx);
         });
-}
-
-void MainWindow::on_url_preview_ready_(
-    const std::string& url, const tesseract::Client::UrlPreview& preview)
-{
-    tesseract::views::UrlPreviewData d;
-    d.title = preview.title;
-    d.description = preview.description;
-    d.image_mxc = preview.image_mxc;
-    d.image_w = preview.image_w;
-    d.image_h = preview.image_h;
-    url_preview_data_.emplace(url, std::move(d));
-
-    if (!preview.image_mxc.empty())
-    {
-        ensure_media_image_(preview.image_mxc, 64, 64);
-    }
-
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-            w->request_relayout();
-        }
-    }
-}
-
-void MainWindow::on_url_preview_failed_(const std::string& url)
-{
-    // No card to show (height unchanged) — just release the room-switch
-    // gate so it doesn't wait the full timeout on a dead link.
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-        }
-    }
 }
 
 void MainWindow::cache_rgba_image_(const std::string& key, int w, int h,

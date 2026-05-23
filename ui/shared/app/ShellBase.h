@@ -42,6 +42,7 @@ namespace tesseract
 namespace views
 {
 class MainAppWidget;
+class RoomView;
 }
 
 // ShellBase holds all state and platform-agnostic logic that is identical
@@ -159,6 +160,14 @@ protected:
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     bool media_disk_cache_pruned_ = false;
     bool waveform_store_inited_ = false;
+
+    // ── Shared view pointers ──────────────────────────────────────────────────
+    // The root MainAppWidget and its RoomView, set once by each shell right
+    // after it builds the widget tree and BEFORE sync starts. ShellBase's
+    // concrete handle_*_ui_ implementations drive the view through these (the
+    // per-shell native surface is repainted via request_relayout_/repaint_).
+    views::MainAppWidget* main_app_ = nullptr;
+    views::RoomView* room_view_ = nullptr;
 
     // MSC2545 emoticon flat list (shortcode popup source). Rebuilt on
     // handle_image_packs_updated_ui_.
@@ -321,6 +330,16 @@ protected:
     // GTK4: g_idle_add   Qt6: QueuedConnection   Win32: PostMessage   macOS: dispatch_async
     virtual void post_to_ui_(std::function<void()> fn) = 0;
 
+    // Repaint the main app surface. request_relayout_ also re-runs measure +
+    // arrange first (use after a change that affects layout — new/changed rows,
+    // shown/hidden widgets); request_repaint_ only schedules a redraw.
+    //   Qt6:  mainAppSurface_->relayout() / ->update()
+    //   GTK4: main_app_surface_->relayout() / host().request_repaint()
+    //   Win32: relayout() / InvalidateRect(...)
+    //   macOS: [self _relayoutChatSurface] / _mainAppSurface->host().request_repaint()
+    virtual void request_relayout_() = 0;
+    virtual void request_repaint_() = 0;
+
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
 
@@ -349,20 +368,16 @@ protected:
     }
 
     // Called on the UI thread when a URL preview fetch completes successfully.
-    // Default is a no-op; shells override to update their preview cache and
-    // request a repaint.
-    virtual void on_url_preview_ready_(const std::string& /*url*/,
-                                       const Client::UrlPreview& /*preview*/)
-    {
-    }
+    // Concrete: cache the preview, kick the image fetch, ping the message list
+    // (main + secondary windows) and relayout. Identical for every shell.
+    virtual void on_url_preview_ready_(const std::string& url,
+                                       const Client::UrlPreview& preview);
 
     // Called on the UI thread when a URL preview fetch finished but produced
-    // no usable card (failed / no metadata). Default no-op; shells override
-    // to ping the message list so its room-switch gate stops waiting on this
+    // no usable card (failed / no metadata). Concrete: ping the message list
+    // (main + secondary windows) so its room-switch gate stops waiting on this
     // URL (the row's height is unaffected — it never gained a preview card).
-    virtual void on_url_preview_failed_(const std::string& /*url*/)
-    {
-    }
+    virtual void on_url_preview_failed_(const std::string& url);
 
     // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.
@@ -389,6 +404,27 @@ protected:
     virtual void start_anim_tick_()
     {
     }
+
+    // Stop the animation frame-tick timer. Default no-op. (Counterpart of
+    // start_anim_tick_; called by tick_anim_ when nothing animated remains
+    // visible.)
+    virtual void stop_anim_tick_()
+    {
+    }
+
+    // Repaint the regions changed by an animation frame: the main app surface
+    // (partially, where the backend supports it) plus any visible picker
+    // surfaces. Default no-op; each shell with animated content overrides.
+    virtual void repaint_anim_frame_()
+    {
+    }
+
+    // Concrete shared body of every shell's 60 Hz animation timer callback:
+    // stop when nothing animated is on-screen, otherwise advance the frames
+    // and repaint. Returns false when the timer was stopped (GTK uses this to
+    // return G_SOURCE_REMOVE). Each shell's platform timer callback simply
+    // calls this.
+    bool tick_anim_();
 
     // Repaint whichever picker surfaces are visible (relayout + invalidate).
     // Default no-op.
@@ -505,11 +541,11 @@ protected:
     // Called on the UI thread when a locally generated waveform is ready for
     // a voice message that arrived without MSC1767 waveform data. Each shell
     // overrides to call room_view_->message_list()->update_voice_waveform().
-    virtual void handle_voice_waveform_ready_ui_(std::string /*room_id*/,
-                                                 std::string /*event_id*/,
-                                                 std::vector<std::uint16_t> /*waveform*/)
-    {
-    }
+    // Concrete: if the waveform is for the displayed room, push it to the
+    // message list. Same for every shell, so implemented in the base.
+    virtual void handle_voice_waveform_ready_ui_(std::string room_id,
+                                                 std::string event_id,
+                                                 std::vector<std::uint16_t> waveform);
 
     // Install the platform screen-lock probe (called once by the concrete
     // shell at startup, mirroring the per-account INotifier injection).

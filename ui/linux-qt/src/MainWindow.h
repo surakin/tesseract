@@ -153,9 +153,6 @@ private:
                                  std::string body, bool is_mention,
                                  std::vector<uint8_t> avatar_bytes,
                                  std::vector<uint8_t> image_bytes) override;
-    void handle_voice_waveform_ready_ui_(std::string room_id,
-                                         std::string event_id,
-                                         std::vector<std::uint16_t> waveform) override;
     void on_room_list_state_ui_() override;
     void on_server_info_ready_ui_() override;
     void update_typing_bar_(const std::string& text, bool visible) override;
@@ -214,6 +211,8 @@ private:
     tk::ThemeMode os_color_scheme_() const override;
 
     void post_to_ui_(std::function<void()> fn) override;
+    void request_relayout_() override;
+    void request_repaint_() override;
     void on_rooms_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_tray_unread_changed_(bool has_unread,
@@ -225,6 +224,8 @@ private:
                                int max_h) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
+    void stop_anim_tick_() override;
+    void repaint_anim_frame_() override;
     void repaint_pickers_() override;
 
     // Tab management hooks.
@@ -252,10 +253,6 @@ private:
     // compose_bar().
     void extract_drop_audio_(std::uint32_t pending_gen,
                              std::vector<std::uint8_t> bytes);
-    void on_url_preview_ready_(
-        const std::string& url,
-        const tesseract::Client::UrlPreview& preview) override;
-    void on_url_preview_failed_(const std::string& url) override;
     void cache_rgba_image_(const std::string& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     tesseract::RoomWindowBase*

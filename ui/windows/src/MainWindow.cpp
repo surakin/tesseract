@@ -606,16 +606,6 @@ void MainWindow::handle_notification_ui_(
     on_tesseract_notify(&p);
 }
 
-void MainWindow::handle_voice_waveform_ready_ui_(
-    std::string room_id, std::string event_id,
-    std::vector<std::uint16_t> waveform)
-{
-    if (room_id != current_room_id_)
-        return;
-    if (auto* ml = room_view_->message_list())
-        ml->update_voice_waveform(event_id, std::move(waveform));
-}
-
 void MainWindow::on_room_list_state_ui_()
 {
     refresh_sync_status();
@@ -637,63 +627,6 @@ void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
     if (room_view_)
     {
         room_view_->set_typing_text(text);
-    }
-}
-
-void MainWindow::on_url_preview_ready_(
-    const std::string& url, const tesseract::Client::UrlPreview& preview)
-{
-    tesseract::views::UrlPreviewData d;
-    d.title = preview.title;
-    d.description = preview.description;
-    d.image_mxc = preview.image_mxc;
-    d.image_w = preview.image_w;
-    d.image_h = preview.image_h;
-    url_preview_data_.emplace(url, std::move(d));
-
-    if (!preview.image_mxc.empty())
-    {
-        ensure_media_image_(preview.image_mxc, 64, 64);
-    }
-
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-        if (HWND s = main_app_surface_->hwnd())
-        {
-            InvalidateRect(s, nullptr, FALSE);
-        }
-    }
-
-    // Notify any secondary windows that may be showing messages with this URL.
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-            w->request_relayout();
-        }
-    }
-}
-
-void MainWindow::on_url_preview_failed_(const std::string& url)
-{
-    // No card to show (height unchanged) — just release the room-switch
-    // gate so it doesn't wait the full timeout on a dead link.
-    if (room_view_)
-    {
-        room_view_->notify_url_preview_ready(url);
-    }
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-        }
     }
 }
 
@@ -4274,23 +4207,20 @@ void MainWindow::try_load_animation(const std::string& url,
 
 void MainWindow::on_anim_tick()
 {
-    // Stop once nothing animated is on-screen — entries linger in the cache
-    // after scrolling away / switching rooms, so `empty()` would keep the
-    // 60 Hz timer (and full-window repaints) running forever.
-    if (!anim_cache_.any_visible())
+    tick_anim_();
+}
+
+void MainWindow::stop_anim_tick_()
+{
+    if (anim_timer_running_ && hwnd_)
     {
-        if (anim_timer_running_ && hwnd_)
-        {
-            KillTimer(hwnd_, kAnimTimerId);
-            anim_timer_running_ = false;
-        }
-        return;
+        KillTimer(hwnd_, kAnimTimerId);
+        anim_timer_running_ = false;
     }
-    const std::int64_t now = static_cast<std::int64_t>(GetTickCount64());
-    if (!anim_cache_.advance(now))
-    {
-        return;
-    }
+}
+
+void MainWindow::repaint_anim_frame_()
+{
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
@@ -4318,6 +4248,22 @@ void MainWindow::on_anim_tick()
 // ---------------------------------------------------------------------------
 // ShellBase virtual hook implementations
 // ---------------------------------------------------------------------------
+
+void MainWindow::request_relayout_()
+{
+    if (main_app_surface_)
+    {
+        main_app_surface_->relayout();
+    }
+}
+
+void MainWindow::request_repaint_()
+{
+    if (main_app_surface_ && main_app_surface_->hwnd())
+    {
+        InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
+    }
+}
 
 void MainWindow::post_to_ui_(std::function<void()> fn)
 {

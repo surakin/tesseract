@@ -31,6 +31,12 @@ struct TestShell : ShellBase
     {
         fn();
     }
+    void request_relayout_() override
+    {
+    }
+    void request_repaint_() override
+    {
+    }
     void on_rooms_updated_() override
     {
     }

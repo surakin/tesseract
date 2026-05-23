@@ -147,6 +147,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
         mainApp_ = main_app_owner.get();
+        // Populate the shared ShellBase view pointers (before sync starts) so
+        // hoisted handle_*_ui_ implementations can drive the view.
+        main_app_ = mainApp_;
+        room_view_ = mainApp_->room_view();
 
         mainApp_->on_space_back = [this]
         {
@@ -2844,6 +2848,23 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     QMetaObject::invokeMethod(this, std::move(fn), Qt::QueuedConnection);
 }
 
+void MainWindow::request_relayout_()
+{
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->relayout();
+        mainAppSurface_->update();
+    }
+}
+
+void MainWindow::request_repaint_()
+{
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->update();
+    }
+}
+
 void MainWindow::on_rooms_updated_()
 {
     refreshRoomList();
@@ -3282,86 +3303,30 @@ void MainWindow::generate_video_thumbnail_(const std::string& event_id,
 
 void MainWindow::onMessageAnimTick_()
 {
-    // Stop once nothing animated is on-screen — entries linger in the cache
-    // after scrolling away / switching rooms, so `empty()` would keep the
-    // 60 Hz timer (and full-window repaints) running forever.
-    if (!anim_cache_.any_visible())
+    tick_anim_();
+}
+
+void MainWindow::stop_anim_tick_()
+{
+    if (tk_anim_timer_)
     {
-        if (tk_anim_timer_)
-        {
-            tk_anim_timer_->stop();
-        }
-        return;
-    }
-    if (anim_cache_.advance(QDateTime::currentMSecsSinceEpoch()))
-    {
-        if (mainAppSurface_)
-        {
-            mainAppSurface_->update_anim_regions();
-        }
-        if (emojiPicker_ && emojiPicker_->isVisible())
-        {
-            emojiPicker_->invalidateImages();
-        }
-        if (stickerPicker_ && stickerPicker_->isVisible())
-        {
-            stickerPicker_->invalidateImages();
-        }
+        tk_anim_timer_->stop();
     }
 }
 
-void MainWindow::on_url_preview_ready_(
-    const std::string& url, const tesseract::Client::UrlPreview& preview)
+void MainWindow::repaint_anim_frame_()
 {
-    tesseract::views::UrlPreviewData d;
-    d.title = preview.title;
-    d.description = preview.description;
-    d.image_mxc = preview.image_mxc;
-    d.image_w = preview.image_w;
-    d.image_h = preview.image_h;
-    url_preview_data_.emplace(url, std::move(d));
-
-    if (!preview.image_mxc.empty())
-    {
-        ensure_media_image_(preview.image_mxc, 64, 64);
-    }
-
-    // Invalidate cached row heights so the preview card is included in the
-    // next measure pass, then relayout to apply the new heights.
-    if (mainApp_)
-    {
-        mainApp_->room_view()->notify_url_preview_ready(url);
-    }
     if (mainAppSurface_)
     {
-        mainAppSurface_->relayout();
-        mainAppSurface_->update();
+        mainAppSurface_->update_anim_regions();
     }
-
-    for (const auto& [rid, w] : secondary_windows_)
+    if (emojiPicker_ && emojiPicker_->isVisible())
     {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-            w->request_relayout();
-        }
+        emojiPicker_->invalidateImages();
     }
-}
-
-void MainWindow::on_url_preview_failed_(const std::string& url)
-{
-    // No card to show (height unchanged) — just release the room-switch
-    // gate so it doesn't wait the full timeout on a dead link.
-    if (mainApp_)
+    if (stickerPicker_ && stickerPicker_->isVisible())
     {
-        mainApp_->room_view()->notify_url_preview_ready(url);
-    }
-    for (const auto& [rid, w] : secondary_windows_)
-    {
-        if (w->room_view())
-        {
-            w->room_view()->notify_url_preview_ready(url);
-        }
+        stickerPicker_->invalidateImages();
     }
 }
 
@@ -4201,16 +4166,6 @@ void MainWindow::handle_notification_ui_(
         }
         return;
     }
-}
-
-void MainWindow::handle_voice_waveform_ready_ui_(
-    std::string room_id, std::string event_id,
-    std::vector<std::uint16_t> waveform)
-{
-    if (room_id != current_room_id_)
-        return;
-    if (auto* ml = mainApp_->room_view()->message_list())
-        ml->update_voice_waveform(event_id, std::move(waveform));
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────

@@ -1249,6 +1249,91 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     }
 }
 
+void ShellBase::handle_voice_waveform_ready_ui_(
+    std::string room_id, std::string event_id,
+    std::vector<std::uint16_t> waveform)
+{
+    if (room_id != current_room_id_)
+    {
+        return;
+    }
+    if (room_view_)
+    {
+        if (auto* ml = room_view_->message_list())
+        {
+            ml->update_voice_waveform(event_id, std::move(waveform));
+        }
+    }
+}
+
+void ShellBase::on_url_preview_ready_(const std::string& url,
+                                      const Client::UrlPreview& preview)
+{
+    tesseract::views::UrlPreviewData d;
+    d.title = preview.title;
+    d.description = preview.description;
+    d.image_mxc = preview.image_mxc;
+    d.image_w = preview.image_w;
+    d.image_h = preview.image_h;
+    url_preview_data_.emplace(url, std::move(d));
+
+    if (!preview.image_mxc.empty())
+    {
+        ensure_media_image_(preview.image_mxc, 64, 64);
+    }
+
+    // Invalidate cached row heights so the preview card is included in the
+    // next measure pass, then relayout to apply the new heights.
+    if (room_view_)
+    {
+        room_view_->notify_url_preview_ready(url);
+    }
+    request_relayout_();
+
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w->room_view())
+        {
+            w->room_view()->notify_url_preview_ready(url);
+            w->request_relayout();
+        }
+    }
+}
+
+void ShellBase::on_url_preview_failed_(const std::string& url)
+{
+    // No card to show (height unchanged) — just release the room-switch gate
+    // so it doesn't wait the full timeout on a dead link.
+    if (room_view_)
+    {
+        room_view_->notify_url_preview_ready(url);
+    }
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w->room_view())
+        {
+            w->room_view()->notify_url_preview_ready(url);
+        }
+    }
+}
+
+bool ShellBase::tick_anim_()
+{
+    // Stop once nothing animated is on-screen — entries linger in the cache
+    // after scrolling away / switching rooms, so checking emptiness would keep
+    // the 60 Hz timer (and its repaints) running forever.
+    if (!anim_cache_.any_visible())
+    {
+        stop_anim_tick_();
+        return false;
+    }
+    if (anim_cache_.advance(monotonic_ms_()))
+    {
+        repaint_anim_frame_();
+    }
+    return true;
+}
+
 void ShellBase::handle_image_packs_updated_ui_()
 {
     refresh_pickers_packs_();
