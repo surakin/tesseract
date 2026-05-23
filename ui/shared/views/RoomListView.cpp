@@ -9,6 +9,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace tesseract::views
 {
@@ -149,6 +150,15 @@ public:
     void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
                    bool selected, bool hovered) override
     {
+        // Flush all cached layouts when the factory changes (DPI migration).
+        if (&ctx.factory != factory_seen_)
+        {
+            factory_seen_ = &ctx.factory;
+            room_cache_.clear();
+            for (auto& h : header_cache_)
+                h = {};
+        }
+
         if (index >= owner_.items_.size())
         {
             return;
@@ -181,6 +191,34 @@ public:
     }
 
 private:
+    // ── Per-room text-layout cache ────────────────────────────────────────
+    struct RoomRowCache
+    {
+        // key — if any field differs the layouts are rebuilt
+        std::string display_name;
+        float       text_w     = -1.f;
+        std::string preview;
+        std::string badge_text;
+        // cached layouts (nullptr when not applicable for this row)
+        std::unique_ptr<tk::TextLayout> name_layout;
+        std::unique_ptr<tk::TextLayout> preview_layout;
+        std::unique_ptr<tk::TextLayout> badge_layout;
+    };
+
+    // ── Per-section header text-layout cache ─────────────────────────────
+    struct HeaderRowCache
+    {
+        // key
+        bool          collapsed       = false;
+        std::uint64_t section_unread  = 0;
+        bool          section_mention = false;
+        bool          valid           = false; // false forces rebuild on first use
+        // cached layouts
+        std::unique_ptr<tk::TextLayout> title_layout;
+        std::unique_ptr<tk::TextLayout> chevron_layout;
+        std::unique_ptr<tk::TextLayout> badge_layout; // nullptr when unread == 0
+    };
+
     void paint_header(const Item& item, tk::PaintCtx& ctx, tk::Rect bounds,
                       bool hovered)
     {
@@ -188,12 +226,12 @@ private:
                                          ? ctx.theme.palette.sidebar_selected
                                          : ctx.theme.palette.sidebar_hover);
 
-        const char* title = RoomListView::kSectionTitles[item.section];
-        bool collapsed = owner_.collapsed_[item.section];
+        const char* title    = RoomListView::kSectionTitles[item.section];
+        bool        collapsed = owner_.collapsed_[item.section];
 
         // Sum notification counts and check for mentions (badge when collapsed).
-        std::uint64_t section_unread   = 0;
-        bool          section_mention  = false;
+        std::uint64_t section_unread  = 0;
+        bool          section_mention = false;
         if (collapsed)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
@@ -203,45 +241,64 @@ private:
             }
         }
 
-        // Section name (left-aligned, vertically centred).
-        tk::TextStyle ts{};
-        ts.role = tk::FontRole::Small;
-        auto layout = ctx.factory.build_text(title, ts);
-        if (layout)
+        // Rebuild layouts when any key field changes.
+        auto& cache = header_cache_[item.section];
+        if (!cache.valid || cache.collapsed != collapsed ||
+            cache.section_unread != section_unread ||
+            cache.section_mention != section_mention)
         {
-            float ty = bounds.y + (bounds.h - layout->measure().h) * 0.5f;
-            ctx.canvas.draw_text(*layout, {bounds.x + kHeaderPadX, ty},
-                                 ctx.theme.palette.text_muted);
+            cache.collapsed       = collapsed;
+            cache.section_unread  = section_unread;
+            cache.section_mention = section_mention;
+            cache.valid           = true;
+
+            tk::TextStyle ts{};
+            ts.role            = tk::FontRole::Small;
+            cache.title_layout = ctx.factory.build_text(title, ts);
+
+            const char*   chevron = collapsed ? "\xE2\x96\xB8" : "\xE2\x96\xBE";
+            tk::TextStyle cs{};
+            cs.role              = tk::FontRole::Small;
+            cache.chevron_layout = ctx.factory.build_text(chevron, cs);
+
+            if (collapsed && section_unread > 0)
+            {
+                tk::TextStyle bs{};
+                bs.role           = tk::FontRole::UnreadBadge;
+                cache.badge_layout = ctx.factory.build_text(
+                    format_unread(section_unread), bs);
+            }
+            else
+            {
+                cache.badge_layout = nullptr;
+            }
         }
 
-        // Collapse chevron (right-aligned): ▾ expanded / ▸ collapsed.
-        const char* chevron = collapsed ? "\xE2\x96\xB8" : "\xE2\x96\xBE";
-        tk::TextStyle cs{};
-        cs.role = tk::FontRole::Small;
-        auto clayout = ctx.factory.build_text(chevron, cs);
+        // Draw from cache — same geometry as before.
         float chevron_x = bounds.x + bounds.w - kHeaderPadX;
-        if (clayout)
+        if (cache.title_layout)
         {
-            tk::Size csz = clayout->measure();
-            float cw = csz.w;
-            float cy = bounds.y + (bounds.h - csz.h) * 0.5f;
-            chevron_x -= cw;
-            ctx.canvas.draw_text(*clayout, {chevron_x, cy},
+            float ty = bounds.y +
+                       (bounds.h - cache.title_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.title_layout,
+                                 {bounds.x + kHeaderPadX, ty},
                                  ctx.theme.palette.text_muted);
         }
-
-        // Unread badge to the left of the chevron (collapsed sections only).
-        if (collapsed && section_unread > 0)
+        if (cache.chevron_layout)
         {
-            std::string badge_text = format_unread(section_unread);
-            tk::TextStyle bs{};
-            bs.role = tk::FontRole::UnreadBadge;
-            auto blayout = ctx.factory.build_text(badge_text, bs);
-            float tw = blayout ? blayout->measure().w : 0.0f;
-            float pill_w = std::max(kBadgeMinW, tw + kBadgePadX * 2);
+            tk::Size csz = cache.chevron_layout->measure();
+            float    cy  = bounds.y + (bounds.h - csz.h) * 0.5f;
+            chevron_x   -= csz.w;
+            ctx.canvas.draw_text(*cache.chevron_layout, {chevron_x, cy},
+                                 ctx.theme.palette.text_muted);
+        }
+        if (collapsed && section_unread > 0 && cache.badge_layout)
+        {
+            tk::Size ts2    = cache.badge_layout->measure();
+            float    pill_w = std::max(kBadgeMinW, ts2.w + kBadgePadX * 2);
             tk::Rect pill{chevron_x - kBadgePadX - pill_w,
-                          bounds.y + (bounds.h - kBadgeH) * 0.5f, pill_w,
-                          kBadgeH};
+                          bounds.y + (bounds.h - kBadgeH) * 0.5f,
+                          pill_w, kBadgeH};
             const tk::Color sec_pill_bg   = section_mention
                                               ? ctx.theme.palette.accent
                                               : ctx.theme.palette.unread_bg;
@@ -249,14 +306,10 @@ private:
                                               ? ctx.theme.palette.text_on_accent
                                               : ctx.theme.palette.unread_text;
             ctx.canvas.fill_rounded_rect(pill, kBadgeRadius, sec_pill_bg);
-            if (blayout)
-            {
-                tk::Size ts2 = blayout->measure();
-                ctx.canvas.draw_text(*blayout,
-                                     {pill.x + (pill.w - ts2.w) * 0.5f,
-                                      pill.y + (pill.h - ts2.h) * 0.5f},
-                                     sec_pill_text);
-            }
+            ctx.canvas.draw_text(*cache.badge_layout,
+                                 {pill.x + (pill.w - ts2.w) * 0.5f,
+                                  pill.y + (pill.h - ts2.h) * 0.5f},
+                                 sec_pill_text);
         }
     }
 
@@ -298,7 +351,6 @@ private:
         }
 
         // Presence dot — bottom-right of avatar, DM rooms only.
-        // Drawn for Online (green) and Unavailable (amber); Offline shows nothing.
         if (!room.dm_counterpart_user_id.empty() && owner_.presence_provider_)
         {
             const auto ps = owner_.presence_provider_(room.dm_counterpart_user_id);
@@ -321,7 +373,6 @@ private:
                 constexpr float kDotD = 8.0f;
                 constexpr float kRing = 2.0f;
                 const float outer_d   = kDotD + kRing * 2.0f;
-                // Centre on avatar's bottom-right edge: half inside, half outside.
                 const float dot_cx    = avatar_cx + kAvatarSize * 0.5f;
                 const float dot_cy    = avatar_cy + kAvatarSize * 0.5f;
                 const tk::Color ring_col = selected ? ctx.theme.palette.sidebar_selected
@@ -341,8 +392,10 @@ private:
         float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kPadX;
 
-        // Reserve space on the right for the notification badge (if any).
-        float badge_width = 0;
+        // Reserve space for the badge (heuristic width keeps text_w stable
+        // across frames so the name/preview layouts aren't rebuilt every time
+        // the notification count increments by 1).
+        float       badge_width = 0;
         std::string badge_text;
         if (room.notification_count > 0)
         {
@@ -359,8 +412,7 @@ private:
 
         bool has_preview = !room.last_message_kind.empty();
 
-        // Check if we have a thumbnail to show on the right side.
-        // "image" uses last_message_thumbnail_url; "sticker" uses sticker_url.
+        // Thumbnail lookup.
         const tk::Image* thumb = nullptr;
         if (has_preview && owner_.sticker_provider_)
         {
@@ -376,7 +428,6 @@ private:
             }
         }
 
-        // When a thumbnail is ready, shrink the text column to leave room for it.
         if (thumb)
         {
             text_w -= (kThumb + kThumbGap);
@@ -386,30 +437,14 @@ private:
             }
         }
 
-        tk::TextStyle name_style{};
-        name_style.role = tk::FontRole::Body;
-        name_style.trim = tk::TextTrim::Ellipsis;
-        name_style.max_width = text_w;
-        auto name_layout = ctx.factory.build_text(
-            room.name.empty() ? room.id : room.name, name_style);
-        if (name_layout)
-        {
-            float name_y =
-                has_preview
-                    ? bounds.y + (bounds.h * 0.5f - name_layout->measure().h) * 0.5f
-                    : bounds.y + (bounds.h - name_layout->measure().h) * 0.5f;
-            ctx.canvas.draw_text(*name_layout, {text_x, name_y},
-                                 ctx.theme.palette.text_primary);
-        }
-
+        // Build preview string (cheap string ops, no TextLayout allocation).
+        std::string preview;
         if (has_preview)
         {
-            const std::string& kind = room.last_message_kind;
-            const std::string sender = room.last_message_sender_name.empty()
-                                           ? std::string("You")
-                                           : room.last_message_sender_name;
-
-            std::string preview;
+            const std::string& kind   = room.last_message_kind;
+            const std::string  sender = room.last_message_sender_name.empty()
+                                            ? std::string("You")
+                                            : room.last_message_sender_name;
             if (kind == "text")
             {
                 preview = room.last_message_body;
@@ -418,83 +453,123 @@ private:
                     preview = sender + ": " + preview;
                 }
             }
-            else if (kind == "image")
-            {
-                preview = sender + " sent an image";
-            }
-            else if (kind == "video")
-            {
-                preview = sender + " sent a video";
-            }
-            else if (kind == "file")
-            {
-                preview = sender + " sent a file";
-            }
-            else if (kind == "audio")
-            {
-                preview = sender + " sent a voice message";
-            }
-            else if (kind == "sticker")
-            {
-                preview = sender + " sent a sticker";
-            }
+            else if (kind == "image")   { preview = sender + " sent an image"; }
+            else if (kind == "video")   { preview = sender + " sent a video"; }
+            else if (kind == "file")    { preview = sender + " sent a file"; }
+            else if (kind == "audio")   { preview = sender + " sent a voice message"; }
+            else if (kind == "sticker") { preview = sender + " sent a sticker"; }
+        }
+
+        // ── Text-layout cache lookup / rebuild ────────────────────────────
+        // build_text is expensive (font shaping + measurement); we rebuild
+        // only when the inputs that determine the layout actually change.
+        const std::string display_name =
+            room.name.empty() ? room.id : room.name;
+        auto& cache = room_cache_[room.id];
+
+        if (cache.display_name != display_name || cache.text_w != text_w ||
+            cache.preview != preview || cache.badge_text != badge_text)
+        {
+            cache.display_name = display_name;
+            cache.text_w       = text_w;
+            cache.preview      = preview;
+            cache.badge_text   = badge_text;
+
+            tk::TextStyle name_style{};
+            name_style.role      = tk::FontRole::Body;
+            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.max_width = text_w;
+            cache.name_layout    = ctx.factory.build_text(display_name, name_style);
 
             if (!preview.empty())
             {
                 tk::TextStyle prev_style{};
-                prev_style.role = tk::FontRole::SidebarPreview;
-                prev_style.trim = tk::TextTrim::Ellipsis;
+                prev_style.role      = tk::FontRole::SidebarPreview;
+                prev_style.trim      = tk::TextTrim::Ellipsis;
                 prev_style.max_width = text_w;
-                auto prev_layout = ctx.factory.build_text(preview, prev_style);
-                if (prev_layout)
-                {
-                    float prev_y =
-                        bounds.y + bounds.h * 0.5f +
-                        (bounds.h * 0.5f - prev_layout->measure().h) * 0.5f;
-                    ctx.canvas.draw_text(*prev_layout, {text_x, prev_y},
-                                         ctx.theme.palette.text_secondary);
-                }
+                cache.preview_layout = ctx.factory.build_text(preview, prev_style);
+            }
+            else
+            {
+                cache.preview_layout = nullptr;
+            }
+
+            if (!badge_text.empty())
+            {
+                tk::TextStyle badge_style{};
+                badge_style.role   = tk::FontRole::UnreadBadge;
+                cache.badge_layout = ctx.factory.build_text(badge_text, badge_style);
+            }
+            else
+            {
+                cache.badge_layout = nullptr;
+            }
+        }
+
+        // ── Draw from cache ───────────────────────────────────────────────
+        if (cache.name_layout)
+        {
+            float name_y =
+                has_preview
+                    ? bounds.y +
+                          (bounds.h * 0.5f - cache.name_layout->measure().h) * 0.5f
+                    : bounds.y +
+                          (bounds.h - cache.name_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
+                                 ctx.theme.palette.text_primary);
+        }
+
+        if (has_preview)
+        {
+            if (cache.preview_layout)
+            {
+                float prev_y =
+                    bounds.y + bounds.h * 0.5f +
+                    (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+                ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
+                                     ctx.theme.palette.text_secondary);
             }
 
             if (thumb)
             {
-                float thumb_right = bounds.x + bounds.w - kPadX -
-                                    (badge_width > 0 ? badge_width + kPadX : 0.0f);
+                float    thumb_right = bounds.x + bounds.w - kPadX -
+                                       (badge_width > 0 ? badge_width + kPadX : 0.0f);
                 tk::Rect dst{thumb_right - kThumb,
-                             bounds.y + (bounds.h - kThumb) * 0.5f, kThumb,
-                             kThumb};
+                             bounds.y + (bounds.h - kThumb) * 0.5f,
+                             kThumb, kThumb};
                 ctx.canvas.draw_image(*thumb, dst);
             }
         }
 
-        if (!badge_text.empty())
+        if (!badge_text.empty() && cache.badge_layout)
         {
-            tk::TextStyle badge_style{};
-            badge_style.role = tk::FontRole::UnreadBadge;
-            auto badge_layout = ctx.factory.build_text(badge_text, badge_style);
-            tk::Size badge_sz =
-                badge_layout ? badge_layout->measure() : tk::Size{};
-            float pill_w = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
+            tk::Size badge_sz = cache.badge_layout->measure();
+            float    pill_w   = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
             tk::Rect pill{bounds.x + bounds.w - kPadX - pill_w,
-                          bounds.y + (bounds.h - kBadgeH) * 0.5f, pill_w,
-                          kBadgeH};
-            const bool is_mention = room.highlight_count > 0;
-            const tk::Color pill_bg   = is_mention ? ctx.theme.palette.accent
-                                                   : ctx.theme.palette.unread_bg;
-            const tk::Color pill_text = is_mention ? ctx.theme.palette.text_on_accent
-                                                   : ctx.theme.palette.unread_text;
+                          bounds.y + (bounds.h - kBadgeH) * 0.5f,
+                          pill_w, kBadgeH};
+            const bool      is_mention = room.highlight_count > 0;
+            const tk::Color pill_bg    = is_mention ? ctx.theme.palette.accent
+                                                    : ctx.theme.palette.unread_bg;
+            const tk::Color pill_text  = is_mention
+                                             ? ctx.theme.palette.text_on_accent
+                                             : ctx.theme.palette.unread_text;
             ctx.canvas.fill_rounded_rect(pill, kBadgeRadius, pill_bg);
-            if (badge_layout)
-            {
-                ctx.canvas.draw_text(*badge_layout,
-                                     {pill.x + (pill.w - badge_sz.w) * 0.5f,
-                                      pill.y + (pill.h - badge_sz.h) * 0.5f},
-                                     pill_text);
-            }
+            ctx.canvas.draw_text(*cache.badge_layout,
+                                 {pill.x + (pill.w - badge_sz.w) * 0.5f,
+                                  pill.y + (pill.h - badge_sz.h) * 0.5f},
+                                 pill_text);
         }
     }
 
     RoomListView& owner_;
+
+    // When the factory pointer changes (DPI migration to a new screen) all
+    // cached TextLayout objects are invalid and must be rebuilt.
+    tk::CanvasFactory* factory_seen_ = nullptr;
+
+    std::unordered_map<std::string, RoomRowCache>           room_cache_;
+    HeaderRowCache header_cache_[RoomListView::kNumSections] = {};
 };
 
 // ─────────────────────────────────────────────────────────────────────────
