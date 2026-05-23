@@ -299,6 +299,13 @@ pub struct ClientFfi {
     /// children live inside a `JoinSet` owned by the orchestrator future).
     #[cfg(not(test))]
     backfill_task: Option<tokio::task::AbortHandle>,
+    /// Room-list previews derived from back-pagination, keyed by room ID.
+    /// `room.latest_event()` is only updated by the live sync loop; for rooms
+    /// whose latest event arrived only through back-pagination the sync-backed
+    /// field stays `None`. This cache is applied after every `build_room_infos`
+    /// call so previews persist even when a notable update overwrites the list.
+    #[cfg(not(test))]
+    backfill_previews: Arc<Mutex<HashMap<String, BackfillPreview>>>,
     /// Abort handles for every long-lived task spawned by `start_sync`
     /// (session-refresh watcher, room/pack watcher, backup watchers, sync
     /// monitor, …). These outlive `self.handler.take()`, so without explicit
@@ -879,6 +886,8 @@ impl ClientFfi {
             thread_lists: HashMap::new(),
             #[cfg(not(test))]
             backfill_task: None,
+            #[cfg(not(test))]
+            backfill_previews: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sync_tasks: Vec::new(),
             #[cfg(not(test))]
@@ -1633,6 +1642,7 @@ impl ClientFfi {
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
+            let previews = Arc::clone(&self.backfill_previews);
 
             self.spawn_tracked(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
@@ -1647,7 +1657,8 @@ impl ClientFfi {
                 // fresh login `joined_rooms()` is empty here and we
                 // emit an empty list, which is then overwritten by the
                 // first sync's notable update.
-                let rooms = build_room_infos(&client_clone).await;
+                let mut rooms = build_room_infos(&client_clone).await;
+                apply_backfill_previews(&mut rooms, &previews);
                 if let Ok(guard) = h.lock() {
                     guard.on_rooms_updated(&rooms);
                 }
@@ -1683,7 +1694,8 @@ impl ClientFfi {
                                 Err(RecvError::Lagged(_))  => {}
                                 Err(RecvError::Closed)     => break,
                             }
-                            let rooms = build_room_infos(&client_clone).await;
+                            let mut rooms = build_room_infos(&client_clone).await;
+                            apply_backfill_previews(&mut rooms, &previews);
                             if let Ok(guard) = h.lock() {
                                 guard.on_rooms_updated(&rooms);
                             }
@@ -3136,6 +3148,9 @@ impl ClientFfi {
             return ok("");
         }
 
+        let handler = self.handler.clone();
+        let preview_cache = Arc::clone(&self.backfill_previews);
+
         let abort = self
             .rt
             .spawn(async move {
@@ -3144,13 +3159,28 @@ impl ClientFfi {
 
                 for rid in to_backfill {
                     let client = client.clone();
+                    let handler = handler.clone();
                     let sem = semaphore.clone();
+                    let preview_cache = preview_cache.clone();
                     joinset.spawn(async move {
                         let _permit = match sem.acquire_owned().await {
                             Ok(p) => p,
                             Err(_) => return,
                         };
-                        let _ = backfill_room_silent(&client, &rid, 50).await;
+                        let preview =
+                            backfill_room_silent(&client, &rid, 50).await.ok().flatten();
+                        if let Some(ref bp) = preview {
+                            if let Ok(mut cache) = preview_cache.lock() {
+                                cache.insert(bp.room_id.clone(), bp.clone());
+                            }
+                        }
+                        if let Some(ref h) = handler {
+                            let mut rooms = build_room_infos(&client).await;
+                            apply_backfill_previews(&mut rooms, &preview_cache);
+                            if let Ok(guard) = h.lock() {
+                                guard.on_rooms_updated(&rooms);
+                            }
+                        }
                     });
                 }
 
@@ -6321,6 +6351,120 @@ async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
     }
 }
 
+/// Returned by `backfill_room_silent`: the preview extracted from the most
+/// recent timeline item after back-pagination, for rooms where
+/// `room.latest_event()` is still `None` (sync loop hasn't seen the event).
+#[cfg(not(test))]
+#[derive(Clone)]
+struct BackfillPreview {
+    room_id: String,
+    kind: String,
+    text: String,
+    sticker_url: String,
+    thumbnail_url: String,
+    sender_name: String,
+}
+
+/// Extract a room-list preview from a timeline item's content.
+/// Mirrors `latest_event_preview` but operates on `TimelineItemContent`
+/// instead of `LatestEventValue`, for use after back-pagination when the
+/// sync-backed `room.latest_event()` hasn't been populated yet.
+#[cfg(not(test))]
+fn preview_from_timeline_content(content: &TimelineItemContent) -> LatestPreview {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::room::MediaSource;
+
+    let text_kind = |body: &str, formatted: Option<&str>| -> LatestPreview {
+        let line = match formatted {
+            Some(html) if !html.trim().is_empty() => html_first_line(html),
+            _ => String::new(),
+        };
+        let line = if line.is_empty() { first_line(body) } else { line };
+        if line.is_empty() {
+            LatestPreview::default()
+        } else {
+            LatestPreview {
+                kind: "text".to_owned(),
+                text: line,
+                ..Default::default()
+            }
+        }
+    };
+
+    match content {
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Message(m),
+            ..
+        }) => match m.msgtype() {
+            MessageType::Text(t) => {
+                text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
+            }
+            MessageType::Notice(n) => {
+                text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str()))
+            }
+            MessageType::Emote(e) => {
+                text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
+            }
+            MessageType::Image(img) => {
+                let url = match &img.source {
+                    MediaSource::Plain(uri) => uri.to_string(),
+                    MediaSource::Encrypted(_) => {
+                        serde_json::to_string(&img.source).unwrap_or_default()
+                    }
+                };
+                LatestPreview {
+                    kind: "image".to_owned(),
+                    thumbnail_url: url,
+                    ..Default::default()
+                }
+            }
+            MessageType::Video(_) => LatestPreview {
+                kind: "video".to_owned(),
+                ..Default::default()
+            },
+            MessageType::File(_) => LatestPreview {
+                kind: "file".to_owned(),
+                ..Default::default()
+            },
+            MessageType::Audio(_) => LatestPreview {
+                kind: "audio".to_owned(),
+                ..Default::default()
+            },
+            _ => LatestPreview::default(),
+        },
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Sticker(_),
+            ..
+        }) => LatestPreview {
+            kind: "sticker".to_owned(),
+            ..Default::default()
+        },
+        _ => LatestPreview::default(),
+    }
+}
+
+/// Patch `rooms` in place: for any room whose `last_message_kind` is still
+/// empty (i.e. `room.latest_event()` returned `None` in `build_room_infos`),
+/// apply the cached preview from a previous back-pagination run.
+#[cfg(not(test))]
+fn apply_backfill_previews(
+    rooms: &mut Vec<crate::ffi::RoomInfo>,
+    cache: &Mutex<HashMap<String, BackfillPreview>>,
+) {
+    let Ok(guard) = cache.lock() else { return };
+    for ri in rooms.iter_mut() {
+        if ri.last_message_kind.is_empty() {
+            if let Some(bp) = guard.get(&ri.id) {
+                ri.last_message_kind = bp.kind.clone();
+                ri.last_message_body = bp.text.clone();
+                ri.last_message_sticker_url = bp.sticker_url.clone();
+                ri.last_message_thumbnail_url = bp.thumbnail_url.clone();
+                ri.last_message_sender_name = bp.sender_name.clone();
+            }
+        }
+    }
+}
+
 /// Warm the SDK's event-cache for one room without surfacing anything to
 /// the UI. Builds a temporary `Timeline`, drops the live diff stream, and
 /// paginates backwards in 50-event batches until either the room has at
@@ -6331,14 +6475,19 @@ async fn stop_fut(stop_rx: Option<watch::Receiver<bool>>) {
 /// event cache during pagination persist, so the next foreground
 /// `subscribe_room` for this room paints from cache without a /messages
 /// round-trip.
+///
+/// Returns a `BackfillPreview` for the room's most recent event if one could
+/// be extracted from the timeline items — needed because `room.latest_event()`
+/// is only updated by the live sync loop and stays `None` for rooms whose
+/// events arrived solely through back-pagination.
 #[cfg(not(test))]
 async fn backfill_room_silent(
     client: &Client,
     room_id: &OwnedRoomId,
     target_events: usize,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<BackfillPreview>> {
     let Some(room) = client.get_room(room_id) else {
-        return Ok(());
+        return Ok(None);
     };
 
     let timeline = room.timeline().await?;
@@ -6365,7 +6514,57 @@ async fn backfill_room_silent(
             .count();
     }
 
-    Ok(())
+    // Extract a preview from the most recent event in the timeline.
+    // Scope the items borrow so it ends before the get_member_no_sync await.
+    let preview_data = {
+        let items = timeline.items().await;
+        let mut found: Option<(LatestPreview, Option<String>, matrix_sdk::ruma::OwnedUserId)> =
+            None;
+        for item in items.iter().rev() {
+            if let TimelineItemKind::Event(ev) = item.kind() {
+                let preview = preview_from_timeline_content(ev.content());
+                if !preview.kind.is_empty() {
+                    let sender_id = ev.sender().to_owned();
+                    let profile_name = match ev.sender_profile() {
+                        TimelineDetails::Ready(p) => p.display_name.clone(),
+                        _ => None,
+                    };
+                    found = Some((preview, profile_name, sender_id));
+                    break;
+                }
+            }
+        }
+        found
+    };
+
+    let Some((preview, profile_name, sender_id)) = preview_data else {
+        return Ok(None);
+    };
+
+    let is_mine = client.user_id().is_some_and(|me| me == &*sender_id);
+    let sender_name = if is_mine {
+        String::new()
+    } else {
+        match profile_name.filter(|n| !n.is_empty()) {
+            Some(n) => n,
+            None => match room.get_member_no_sync(&sender_id).await {
+                Ok(Some(m)) => m
+                    .display_name()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| sender_id.localpart().to_owned()),
+                _ => sender_id.localpart().to_owned(),
+            },
+        }
+    };
+
+    Ok(Some(BackfillPreview {
+        room_id: room_id.to_string(),
+        kind: preview.kind,
+        text: preview.text,
+        sticker_url: preview.sticker_url,
+        thumbnail_url: preview.thumbnail_url,
+        sender_name,
+    }))
 }
 
 /// Convert an `ImageEntry` from the cache to the FFI shape, attaching the
