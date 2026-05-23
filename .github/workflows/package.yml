@@ -30,6 +30,13 @@ jobs:
       - name: Install NSIS
         run: choco install nsis --no-progress -y
 
+      # The Ninja generator does not auto-activate MSVC like the Visual Studio
+      # generator does. Without vcvars on PATH, CMake's compiler probe can't
+      # find cl.exe and silently falls back to the runner's bundled MinGW gcc.
+      # This step runs vcvars and exports INCLUDE/LIB/PATH so Ninja picks MSVC.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       # opus is required by matrix-sdk-ui (MSC3245 voice messages).
       # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
       # the rest of the project exactly — avoids vcpkg triplet and GITHUB_ENV
