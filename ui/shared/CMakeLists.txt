@@ -207,6 +207,8 @@ if(TESSERACT_UI STREQUAL "win32")
     )
     target_link_libraries(tesseract_tk PUBLIC
         d2d1
+        d3d11            # Direct3D device backing the D2D swap-chain surface
+        dxgi             # DXGI swap-chain (flip-model presentation)
         dwrite
         windowscodecs    # WIC: PNG/JPEG decode for tk::Image
         ole32

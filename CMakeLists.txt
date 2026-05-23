@@ -119,12 +119,21 @@ endif()
 # audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
 # before the Rust archive, causing GNU ld to discard symbols before seeing
 # the undefined references.  Attach opus to the interface so it always
-# follows the archive in the link command.  Windows bundles opus into the
-# Rust archive directly and needs no separate library.
-if(NOT WIN32)
+# follows the archive in the link command.  MSVC CI builds bundle opus into
+# the Rust archive via OPUS_STATIC=1; MinGW and non-Windows need it explicitly.
+if(NOT WIN32 OR MINGW)
+    if(MINGW)
+        # Prefer the static archive over the import library (.dll.a) so the
+        # binary is self-contained and does not need libopus-0.dll at runtime.
+        set(_saved_suffixes ${CMAKE_FIND_LIBRARY_SUFFIXES})
+        set(CMAKE_FIND_LIBRARY_SUFFIXES .a .dll.a)
+    endif()
     find_library(OPUS_LIB NAMES opus
         HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
         REQUIRED)
+    if(MINGW)
+        set(CMAKE_FIND_LIBRARY_SUFFIXES ${_saved_suffixes})
+    endif()
     target_link_libraries(tesseract_sdk_ffi-static INTERFACE ${OPUS_LIB})
 endif()
 

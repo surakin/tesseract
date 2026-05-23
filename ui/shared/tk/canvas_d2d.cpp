@@ -16,6 +16,7 @@
 static constexpr int kEmojiFontResourceId = 201;
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -296,13 +297,28 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // 4. Build a font set containing just Twemoji, then a font collection.
     //    IDWriteFactory5 inherits IDWriteFactory3, so we use it directly.
     ComPtr<IDWriteFontFaceReference> face_ref;
+#ifdef __MINGW32__
+    // MinGW renames the IDWriteFontFile* overload with a trailing underscore to
+    // avoid C++ ambiguity with the path-string overload; MSVC uses overloading.
+    if (FAILED(dwrite5->CreateFontFaceReference_(
+            font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
+#else
     if (FAILED(dwrite5->CreateFontFaceReference(
             font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
+#endif
     {
         return nullptr;
     }
 
+    // MinGW's IDWriteFactory5::CreateFontSetBuilder takes IDWriteFontSetBuilder1**
+    // (matching a newer SDK revision); MSVC inherits the IDWriteFactory3 version
+    // that takes IDWriteFontSetBuilder**. IDWriteFontSetBuilder1 : IDWriteFontSetBuilder,
+    // so AddFontFaceReference / CreateFontSet are available on both paths.
+#ifdef __MINGW32__
+    ComPtr<IDWriteFontSetBuilder1> set_builder;
+#else
     ComPtr<IDWriteFontSetBuilder> set_builder;
+#endif
     if (FAILED(dwrite5->CreateFontSetBuilder(&set_builder)))
     {
         return nullptr;
