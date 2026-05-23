@@ -95,4 +95,14 @@ target_link_libraries(tesseract_tests PRIVATE
 )
 # Register each Catch2 TEST_CASE as an individual ctest test.
 include(Catch)
-catch_discover_tests(tesseract_tests)
+# Keychain-touching tests share the OS credential store (libsecret /
+# Keychain / CredManager) and must not run concurrently; give them a
+# shared RESOURCE_LOCK so ctest serialises them even under -jN.
+catch_discover_tests(tesseract_tests
+    TEST_SPEC "[keychain]"
+    PROPERTIES RESOURCE_LOCK keychain
+)
+# All other tests have no shared global state and can run in parallel.
+catch_discover_tests(tesseract_tests
+    TEST_SPEC "~[keychain]"
+)

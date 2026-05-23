@@ -39,7 +39,7 @@ struct TmpConfig
     }
 };
 
-TEST_CASE("SecretStore stub: save does not crash", "[session][secret][stub]")
+TEST_CASE("SecretStore stub: save does not crash", "[session][secret][stub][keychain]")
 {
     const std::string uid = "@stub_test:example.org";
     // Result depends on whether a secret service daemon is running.
@@ -51,18 +51,18 @@ TEST_CASE("SecretStore stub: save does not crash", "[session][secret][stub]")
 }
 
 TEST_CASE("SecretStore stub: load returns nullopt for unknown user",
-          "[session][secret][stub]")
+          "[session][secret][stub][keychain]")
 {
     auto result = tesseract::SecretStore::load("@nonexistent_xyz:example.org");
     CHECK(!result.has_value());
 }
 
-TEST_CASE("SecretStore stub: remove is a no-op", "[session][secret][stub]")
+TEST_CASE("SecretStore stub: remove is a no-op", "[session][secret][stub][keychain]")
 {
     tesseract::SecretStore::remove("@nobody:example.org");
 }
 
-TEST_CASE("SecretStore round-trip: save and load", "[session][secret][roundtrip]")
+TEST_CASE("SecretStore round-trip: save and load", "[session][secret][roundtrip][keychain]")
 {
     const std::string uid  = "@roundtrip_test:example.org";
     const std::string json =
@@ -84,7 +84,7 @@ TEST_CASE("SecretStore round-trip: save and load", "[session][secret][roundtrip]
 }
 
 TEST_CASE("SessionStore: save_account and load_account round-trip",
-          "[session][integration]")
+          "[session][integration][keychain]")
 {
     TmpConfig cfg;
     const std::string uid  = "@alice:example.org";

@@ -3,10 +3,14 @@
 #include "tesseract/secret_store.h"
 #include "tesseract/session_store.h"
 
-#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#if defined(_WIN32)
+#  include <process.h>
+#else
+#  include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -44,10 +48,16 @@ struct SessionFixture
     {
         wipe_keychain();
 
-        static std::atomic<int> counter{0};
-        auto n = counter.fetch_add(1, std::memory_order_relaxed);
+        // Use the OS PID so every ctest process (ctest -jN spawns one
+        // process per test) gets a distinct temp directory even though the
+        // in-process counter always starts at 0.
+#if defined(_WIN32)
+        const auto pid = static_cast<unsigned long>(_getpid());
+#else
+        const auto pid = static_cast<unsigned long>(::getpid());
+#endif
         dir = (fs::temp_directory_path() /
-               ("tesseract_unit_tests_" + std::to_string(n)))
+               ("tesseract_unit_tests_" + std::to_string(pid)))
                   .string();
         fs::create_directories(dir);
 #if defined(_WIN32)
@@ -202,7 +212,7 @@ TEST_CASE("sanitize_user_id replaces awkward characters",
     CHECK(S::sanitize_user_id("").empty());
 }
 
-TEST_CASE("save_account + load_account round-trip", "[session_store][accounts]")
+TEST_CASE("save_account + load_account round-trip", "[session_store][accounts][keychain]")
 {
     SessionFixture f;
     const std::string uid = "@alice:example.org";
@@ -223,7 +233,7 @@ TEST_CASE("save_account + load_account round-trip", "[session_store][accounts]")
 }
 
 TEST_CASE("clear_account removes the entire account directory",
-          "[session_store][accounts]")
+          "[session_store][accounts][keychain]")
 {
     SessionFixture f;
     const std::string uid = "@alice:example.org";
@@ -264,7 +274,7 @@ TEST_CASE("load_index returns empty index when missing",
 // ---------------------------------------------------------------------------
 
 TEST_CASE("migrate_legacy_layout is a no-op on a fresh install",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
     CHECK(tesseract::SessionStore::migrate_legacy_layout());
@@ -275,7 +285,7 @@ TEST_CASE("migrate_legacy_layout is a no-op on a fresh install",
 
 TEST_CASE("migrate_legacy_layout moves session.json and matrix-store into the "
           "account directory",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
 
@@ -315,7 +325,7 @@ TEST_CASE("migrate_legacy_layout moves session.json and matrix-store into the "
 }
 
 TEST_CASE("migrate_legacy_layout handles session-only legacy installs",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
 
@@ -339,7 +349,7 @@ TEST_CASE("migrate_legacy_layout handles session-only legacy installs",
 }
 
 TEST_CASE("migrate_legacy_layout deletes corrupt legacy files",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
     // No "user_id" key → unparseable for our purposes.
@@ -359,7 +369,7 @@ TEST_CASE("migrate_legacy_layout deletes corrupt legacy files",
 
 TEST_CASE(
     "migrate_legacy_layout deletes an orphan store when no session is present",
-    "[session_store][migration]")
+    "[session_store][migration][keychain]")
 {
     SessionFixture f;
     auto legacy_store = f.legacy_store_dir();
@@ -372,7 +382,7 @@ TEST_CASE(
 }
 
 TEST_CASE("migrate_legacy_layout is a no-op when accounts.json already exists",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
 
@@ -399,7 +409,7 @@ TEST_CASE("migrate_legacy_layout is a no-op when accounts.json already exists",
 
 TEST_CASE("migrate_legacy_layout relocates a config-dir accounts tree into the "
           "data dir",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
     if (tesseract::data_dir() == tesseract::config_dir())
@@ -452,7 +462,7 @@ TEST_CASE("migrate_legacy_layout relocates a config-dir accounts tree into the "
 
 TEST_CASE("migrate_legacy_layout is a no-op when the data dir is already "
           "populated, leaving a stale config tree untouched",
-          "[session_store][migration]")
+          "[session_store][migration][keychain]")
 {
     SessionFixture f;
     if (tesseract::data_dir() == tesseract::config_dir())
