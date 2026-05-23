@@ -24,6 +24,16 @@ jobs:
         with:
           workspaces: sdk -> ../build/windows-release
 
+      # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
+      # The id lets us hand the exact interpreter to CMake below — otherwise
+      # find_package(Python3) picks the newest interpreter on the runner
+      # (3.14 in the hosted toolcache), which has no resvg_py installed.
+      - name: Set up Python (icon generation)
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install resvg-py (icon generation)
         run: pip install resvg-py
 
