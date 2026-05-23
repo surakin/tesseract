@@ -1536,23 +1536,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // `io.element.recent_emoji`), so no local-disk load is needed.
     emojiPicker_ = new EmojiPicker(this);
     emojiPicker_->setClient(client_);
-    emojiPicker_->setImageProvider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (const auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto it = tk_images_.find(cache_key);
-            if (it != tk_images_.end())
-            {
-                return it->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/false);
-            return nullptr;
-        });
+    emojiPicker_->setImageProvider(make_picker_image_provider_(false));
     emojiPicker_->onSelected = [this](const QString& glyph)
     {
         // Reaction mode: a message's "+" chip set pendingReactionEventId_
@@ -1620,23 +1604,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     // sdk encrypts transparently in E2EE rooms).
     stickerPicker_ = new StickerPicker(this);
     stickerPicker_->setClient(client_);
-    stickerPicker_->setImageProvider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (const auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto it = tk_images_.find(cache_key);
-            if (it != tk_images_.end())
-            {
-                return it->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/true);
-            return nullptr;
-        });
+    stickerPicker_->setImageProvider(make_picker_image_provider_(true));
     stickerPicker_->onSelected = [this](const tesseract::ImagePackImage& img)
     {
         if (current_room_id_.empty())
@@ -1650,12 +1618,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     joinRoomDialog_ = new JoinRoomDialog(this);
     joinRoomDialog_->setClient(client_);
-    joinRoomDialog_->setAvatarProvider(
-        [this](const std::string& mxc_url) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc_url);
-            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
-        });
+    joinRoomDialog_->setAvatarProvider(make_avatar_image_provider_());
     joinRoomDialog_->onJoined = [this](const std::string& room_id)
     {
         navigate_to_room(room_id);
@@ -4475,12 +4438,7 @@ void MainWindow::openAccountPicker(const QPoint& global_anchor)
             new tk::qt6::Surface(tk::Theme::light(), accountPickerPopover_);
         auto picker_owner = std::make_unique<tesseract::views::AccountPicker>();
         accountPicker_ = picker_owner.get();
-        accountPicker_->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it != tk_avatars_.end() ? it->second.get() : nullptr;
-            });
+        accountPicker_->set_image_provider(make_avatar_image_provider_());
         accountPicker_->on_select = [this](const std::string& uid)
         {
             onAccountSelected(uid);
@@ -4739,11 +4697,7 @@ void MainWindow::show_shortcode_popup_(
             hide_shortcode_popup_();
         };
         shortcode_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
+            make_static_image_provider_());
 
         auto* lay = new QVBoxLayout(shortcode_popup_frame_);
         lay->setContentsMargins(0, 0, 0, 0);
@@ -4937,11 +4891,7 @@ void MainWindow::show_mention_popup_(
         };
         mention_popup_widget_->on_dismissed = [this] { hide_mention_popup_(); };
         mention_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(url);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
+            make_avatar_image_provider_());
 
         auto* lay = new QVBoxLayout(mention_popup_frame_);
         lay->setContentsMargins(0, 0, 0, 0);

@@ -4666,11 +4666,7 @@ void MainWindow::show_shortcode_popup_(
             hide_shortcode_popup_();
         };
         shortcode_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
+            make_static_image_provider_());
 
         GtkWidget* surface_widget = shortcode_popup_surface_->widget();
         gtk_popover_set_child(GTK_POPOVER(shortcode_popover_), surface_widget);
@@ -4902,22 +4898,7 @@ void MainWindow::build_emoji_popover()
     };
     // Async fetch for custom emoticon images — mirrors the sticker picker.
     emoji_picker_shared_->set_image_provider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (const auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto it = tk_images_.find(cache_key);
-            if (it != tk_images_.end())
-            {
-                return it->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/false);
-            return nullptr;
-        });
+        make_picker_image_provider_(false));
     emoji_picker_surface_->set_root(std::move(shared));
 
     // Native GtkEntry overlay for the search row. The shared widget paints
@@ -4992,22 +4973,7 @@ void MainWindow::build_sticker_popover()
     // miss kick off an async fetch via the shared `ensure_picker_image_`
     // so the next paint after the worker posts back finds the bitmap.
     sticker_picker_shared_->set_image_provider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (const auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto it = tk_images_.find(cache_key);
-            if (it != tk_images_.end())
-            {
-                return it->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/true);
-            return nullptr;
-        });
+        make_picker_image_provider_(true));
     sticker_picker_surface_->set_root(std::move(shared));
 
     sticker_picker_search_field_ =
@@ -5715,12 +5681,7 @@ void MainWindow::open_account_picker(double /*ax*/, double /*ay*/)
             std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         account_picker_ = picker.get();
-        account_picker_->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
+        account_picker_->set_image_provider(make_avatar_image_provider_());
         account_picker_->on_select = [this](const std::string& uid)
         {
             if (account_picker_popover_)
@@ -5783,12 +5744,7 @@ void MainWindow::build_join_room_dialog()
     auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
     join_room_shared_ = jrv.get();
 
-    join_room_shared_->set_avatar_provider(
-        [this](const std::string& mxc_url) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc_url);
-            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
-        });
+    join_room_shared_->set_avatar_provider(make_avatar_image_provider_());
 
     join_room_shared_->on_lookup_requested = [this](const std::string& alias)
     {

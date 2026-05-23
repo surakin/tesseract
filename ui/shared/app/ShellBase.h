@@ -767,6 +767,57 @@ protected:
     // scrolled back into view resumes after the timer idled).
     const tk::Image* shell_sticker_no_fetch_(const std::string& mxc);
 
+    // Provider-lambda factories. Each shell wires these onto its native
+    // pickers / dialogs / popups instead of re-spelling the identical lookup
+    // bodies. All capture `this`; safe for the shell's lifetime.
+
+    // Avatar lookup: tk_avatars_ only (used by account picker, join-room
+    // dialog, mention popup, settings view).
+    std::function<const tk::Image*(const std::string&)>
+    make_avatar_image_provider_()
+    {
+        return [this](const std::string& mxc) -> const tk::Image*
+        {
+            auto it = tk_avatars_.find(mxc);
+            return it == tk_avatars_.end() ? nullptr : it->second.get();
+        };
+    }
+
+    // Static-image lookup: tk_images_ only (used by the shortcode popup).
+    std::function<const tk::Image*(const std::string&)>
+    make_static_image_provider_()
+    {
+        return [this](const std::string& url) -> const tk::Image*
+        {
+            auto it = tk_images_.find(url);
+            return it == tk_images_.end() ? nullptr : it->second.get();
+        };
+    }
+
+    // Emoji / sticker picker lookup: animated frame → static → kick an async
+    // fetch on miss. The (cache_key, source_token) signature matches the
+    // shared EmojiPicker/StickerPicker ImageProvider alias.
+    std::function<const tk::Image*(const std::string&, const std::string&)>
+    make_picker_image_provider_(bool is_sticker)
+    {
+        return [this, is_sticker](const std::string& cache_key,
+                                  const std::string&) -> const tk::Image*
+        {
+            if (const auto* f = anim_cache_.current_frame(cache_key))
+            {
+                start_anim_tick_();
+                return f;
+            }
+            auto it = tk_images_.find(cache_key);
+            if (it != tk_images_.end())
+            {
+                return it->second.get();
+            }
+            ensure_picker_image_(cache_key, is_sticker);
+            return nullptr;
+        };
+    }
+
     // Wire MainAppWidget-level + RoomListView/RoomView/UserInfo providers
     // that read from tk_avatars_, tk_images_, anim_cache_, and
     // url_preview_data_. Each shell calls this once during construction after

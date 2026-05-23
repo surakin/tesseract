@@ -3150,12 +3150,7 @@ void MainWindow::open_settings_()
     }
     settings_view_->set_account_info(my_display_name_, my_user_id_,
                                      my_avatar_url_);
-    settings_view_->set_image_provider(
-        [this](const std::string& mxc) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc);
-            return it == tk_avatars_.end() ? nullptr : it->second.get();
-        });
+    settings_view_->set_image_provider(make_avatar_image_provider_());
     settings_view_->set_theme_pref(tesseract::Settings::instance().theme_pref);
     settings_view_->set_notifications_enabled(
         tesseract::Settings::instance().notifications_enabled);
@@ -5351,12 +5346,7 @@ void MainWindow::rebuild_account_picker()
             hInst_, hAccountPicker_, tk::Theme::light());
         auto picker = std::make_unique<tesseract::views::AccountPicker>();
         account_picker_ = picker.get();
-        account_picker_->set_image_provider(
-            [this](const std::string& mxc) -> const tk::Image*
-            {
-                auto it = tk_avatars_.find(mxc);
-                return it == tk_avatars_.end() ? nullptr : it->second.get();
-            });
+        account_picker_->set_image_provider(make_avatar_image_provider_());
         account_picker_->on_select = [this](const std::string& uid)
         {
             if (hAccountPicker_)
@@ -5528,22 +5518,7 @@ void MainWindow::ensure_emoji_picker_created()
         pick_emoticon_at_cursor(img);
     };
     emoji_picker_shared_->set_image_provider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto sit = tk_images_.find(cache_key);
-            if (sit != tk_images_.end())
-            {
-                return sit->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/false);
-            return nullptr;
-        });
+        make_picker_image_provider_(false));
     emoji_picker_surface_->set_root(std::move(shared));
 
     if (HWND s = emoji_picker_surface_->hwnd())
@@ -5722,11 +5697,7 @@ void MainWindow::show_shortcode_popup_(
             hide_shortcode_popup_();
         };
         shortcode_popup_widget_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                auto it = tk_images_.find(url);
-                return it == tk_images_.end() ? nullptr : it->second.get();
-            });
+            make_static_image_provider_());
     }
 
     shortcode_popup_widget_->set_suggestions(suggestions);
@@ -6094,22 +6065,7 @@ void MainWindow::ensure_sticker_picker_created()
     // → repaint_pickers_) so the picker fills in stickers that haven't
     // appeared in any message yet.
     sticker_picker_shared_->set_image_provider(
-        [this](const std::string& cache_key,
-               const std::string& /*source_token*/) -> const tk::Image*
-        {
-            if (auto* f = anim_cache_.current_frame(cache_key))
-            {
-                start_anim_tick_();
-                return f;
-            }
-            auto sit = tk_images_.find(cache_key);
-            if (sit != tk_images_.end())
-            {
-                return sit->second.get();
-            }
-            ensure_picker_image_(cache_key, /*is_sticker=*/true);
-            return nullptr;
-        });
+        make_picker_image_provider_(true));
     sticker_picker_surface_->set_root(std::move(shared));
 
     if (HWND s = sticker_picker_surface_->hwnd())
@@ -6283,12 +6239,7 @@ void MainWindow::ensure_join_room_created()
     auto jrv = std::make_unique<tesseract::views::JoinRoomView>();
     join_room_shared_ = jrv.get();
 
-    join_room_shared_->set_avatar_provider(
-        [this](const std::string& mxc_url) -> const tk::Image*
-        {
-            auto it = tk_avatars_.find(mxc_url);
-            return (it != tk_avatars_.end()) ? it->second.get() : nullptr;
-        });
+    join_room_shared_->set_avatar_provider(make_avatar_image_provider_());
 
     join_room_shared_->on_lookup_requested = [this](const std::string& alias)
     {
