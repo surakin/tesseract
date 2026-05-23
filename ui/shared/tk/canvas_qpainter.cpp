@@ -575,6 +575,20 @@ public:
         p_.restore();
     }
 
+    Rect clip_rect() const override
+    {
+        if (!p_.hasClipping())
+        {
+            return {0.f, 0.f, 1e9f, 1e9f};
+        }
+        const QRectF r = p_.clipBoundingRect();
+        if (r.isEmpty())
+        {
+            return {0.f, 0.f, 1e9f, 1e9f};
+        }
+        return {float(r.x()), float(r.y()), float(r.width()), float(r.height())};
+    }
+
     float scale_factor() const override
     {
         return static_cast<float>(p_.device()->devicePixelRatioF());

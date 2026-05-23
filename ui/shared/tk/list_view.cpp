@@ -417,6 +417,13 @@ void ListView::paint(PaintCtx& ctx)
             ? 0
             : static_cast<std::size_t>(first_it - row_offsets_.begin() - 1);
 
+    // Snapshot the canvas clip once (after push_clip_rect above). For partial
+    // repaints such as animated-image ticks the clip is a small rect around the
+    // GIF; skipping rows that fall entirely outside it avoids all the per-row
+    // work (build_text, span iteration, image lookups) that QPainter would
+    // otherwise silently discard at pixel-write time.
+    const Rect clip = ctx.canvas.clip_rect();
+
     // Bound by row_offsets_ (size = count+1 as of the last rebuild), not the
     // live adapter count: if rows were appended without invalidate_data()
     // since the last rebuild, the two diverge and row_offsets_[i+1] would be
@@ -433,6 +440,10 @@ void ListView::paint(PaintCtx& ctx)
         }
         Rect row_bounds{bounds_.x, bounds_.y + (row_top - scroll_y_), bounds_.w,
                         row_bottom - row_top};
+        if (row_bounds.bottom() <= clip.y || row_bounds.y >= clip.bottom())
+        {
+            continue;
+        }
         bool selected = (static_cast<int>(i) == selected_index_);
         bool hovered = (static_cast<int>(i) == hovered_index_);
         adapter_->paint_row(i, ctx, row_bounds, selected, hovered);

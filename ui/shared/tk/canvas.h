@@ -385,6 +385,16 @@ public:
     virtual void push_clip_rounded_rect(Rect, float radius) = 0;
     virtual void pop_clip() = 0;
 
+    // Bounding rect of the current accumulated clip in surface coordinates.
+    // ListView uses this to skip paint_row() for rows that lie entirely
+    // outside the repainted region (e.g. a small partial-update from an
+    // animated-image tick). Default returns a full-coverage sentinel so
+    // backends that do not track clip state never cull rows incorrectly.
+    virtual Rect clip_rect() const
+    {
+        return {0.f, 0.f, 1e9f, 1e9f};
+    }
+
     virtual float scale_factor() const = 0;
 };
 

@@ -969,6 +969,17 @@ public:
         CGContextRestoreGState(ctx_);
     }
 
+    Rect clip_rect() const override
+    {
+        const CGRect r = CGContextGetClipBoundingBox(ctx_);
+        if (CGRectIsEmpty(r) || CGRectIsInfinite(r))
+        {
+            return {0.f, 0.f, 1e9f, 1e9f};
+        }
+        return {float(r.origin.x), float(r.origin.y),
+                float(r.size.width), float(r.size.height)};
+    }
+
     float scale_factor() const override
     {
         // The CTM scales logical → device. Read it back and assume the
