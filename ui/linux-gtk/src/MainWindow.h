@@ -8,7 +8,7 @@
 #include <tesseract/visual.h>
 #include "LinuxNotifier.h"
 #include "LinuxUpConnectorGtk.h"
-#include "LinuxGtkTrayIcon.h"
+#include "GtkSniTrayIcon.h"
 
 #include "app/EventHandlerBase.h"
 #include "app/SettingsController.h"
@@ -352,7 +352,7 @@ private:
 
     GtkCssProvider* theme_css_provider_ = nullptr;
 
-    std::unique_ptr<LinuxGtkTrayIcon> tray_;
+    std::unique_ptr<GtkSniTrayIcon> tray_;
 
     guint tk_anim_tick_id_ = 0;
     guint presence_tick_id_ = 0;

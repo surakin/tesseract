@@ -3,26 +3,13 @@ cmake_minimum_required(VERSION 3.25)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK4 REQUIRED gtk4)
 pkg_check_modules(GIO  REQUIRED gio-2.0)
-pkg_check_modules(AYATANA_APPINDICATOR REQUIRED IMPORTED_TARGET ayatana-appindicator3-0.1)
-
-# libayatana-appindicator3 is a GTK3 library. The tray code is compiled in
-# its own static library so the GTK3 include paths stay isolated from the
-# GTK4 translation units. See LinuxGtkTrayIcon.{h,cpp} for the type-erased
-# header used by the rest of the shell.
-add_library(tesseract_gtk_tray STATIC
-    src/LinuxGtkTrayIcon.cpp
-    src/LinuxGtkTrayIcon.h
-)
-target_compile_features(tesseract_gtk_tray PRIVATE cxx_std_20)
-target_include_directories(tesseract_gtk_tray PRIVATE
-    ${CMAKE_SOURCE_DIR}/client/include
-)
-target_link_libraries(tesseract_gtk_tray PRIVATE
-    PkgConfig::AYATANA_APPINDICATOR
-)
-target_compile_definitions(tesseract_gtk_tray PRIVATE
-    TESSERACT_ICON_SEARCH_PATH="${CMAKE_CURRENT_BINARY_DIR}/icons"
-)
+# gdk-pixbuf + cairo render the tray icon. Both are standalone (they do NOT
+# pull GTK), so the tray can live in-process. The system tray is a pure
+# org.kde.StatusNotifierItem implementation over GDBus — see GtkSniTrayIcon.
+# (The old libayatana-appindicator3 tray was dropped because it is GTK3 and
+# loading libgtk-3 into a GTK4 process makes gtk_init() abort.)
+pkg_check_modules(GDKPIXBUF REQUIRED gdk-pixbuf-2.0)
+pkg_check_modules(CAIRO     REQUIRED cairo)
 
 add_executable(tesseract_gtk
     src/main.cpp
@@ -33,6 +20,7 @@ add_executable(tesseract_gtk
     src/LinuxNotifier.cpp
     src/LinuxScreenLockGtk.cpp
     src/LinuxUpConnectorGtk.cpp
+    src/GtkSniTrayIcon.cpp
 )
 
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)
@@ -41,11 +29,15 @@ target_include_directories(tesseract_gtk PRIVATE
     src
     ${GTK4_INCLUDE_DIRS}
     ${GIO_INCLUDE_DIRS}
+    ${GDKPIXBUF_INCLUDE_DIRS}
+    ${CAIRO_INCLUDE_DIRS}
 )
 
 target_link_directories(tesseract_gtk PRIVATE
     ${GTK4_LIBRARY_DIRS}
     ${GIO_LIBRARY_DIRS}
+    ${GDKPIXBUF_LIBRARY_DIRS}
+    ${CAIRO_LIBRARY_DIRS}
 )
 
 target_compile_options(tesseract_gtk PRIVATE
@@ -59,10 +51,10 @@ target_link_libraries(tesseract_gtk PRIVATE
     # removing all ordering constraints between them. Mirrors ui/linux-qt.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
     tesseract_tk
-    tesseract_gtk_tray
-    PkgConfig::AYATANA_APPINDICATOR  # transitive runtime: appindicator + GTK3
     ${GTK4_LIBRARIES}
     ${GIO_LIBRARIES}
+    ${GDKPIXBUF_LIBRARIES}
+    ${CAIRO_LIBRARIES}
     opus
 )
 

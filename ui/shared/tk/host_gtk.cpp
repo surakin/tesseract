@@ -1014,6 +1014,28 @@ public:
             }
         }
 
+        // gdk-pixbuf's JPEG encoder fails outright on a pixbuf that carries an
+        // alpha channel (even a fully-opaque one). Flatten onto white first so
+        // PNGs (which always decode with alpha) can be compressed to JPEG.
+        if (gdk_pixbuf_get_has_alpha(scaled))
+        {
+            const int fw = gdk_pixbuf_get_width(scaled);
+            const int fh = gdk_pixbuf_get_height(scaled);
+            GdkPixbuf* flat =
+                gdk_pixbuf_new(GDK_COLORSPACE_RGB, /*has_alpha=*/FALSE, 8, fw,
+                               fh);
+            if (!flat)
+            {
+                g_object_unref(scaled);
+                return EncodedImage{};
+            }
+            gdk_pixbuf_fill(flat, 0xFFFFFFFF); // opaque white background
+            gdk_pixbuf_composite(scaled, flat, 0, 0, fw, fh, 0.0, 0.0, 1.0, 1.0,
+                                 GDK_INTERP_NEAREST, 255);
+            g_object_unref(scaled);
+            scaled = flat;
+        }
+
         gchar* buffer = nullptr;
         gsize buf_size = 0;
         err = nullptr;

@@ -2027,7 +2027,7 @@ void MainWindow::start_tray_if_needed_()
     {
         return;
     }
-    tray_ = std::make_unique<LinuxGtkTrayIcon>(
+    tray_ = std::make_unique<GtkSniTrayIcon>(
         [this]
         {
             gtk_window_present(GTK_WINDOW(window_));
@@ -5107,6 +5107,26 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
                                      double x, double y, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
+
+    // User strip (lower-left sidebar) → user context menu. The other shells
+    // hit-test this region in their native right-click handler and invoke
+    // UserInfo::on_secondary; GTK routes right-clicks here, so do the same.
+    if (self->main_app_ && self->main_app_->user_info() &&
+        self->main_app_->user_info()->on_secondary)
+    {
+        const int surf_h =
+            gtk_widget_get_height(self->main_app_surface_->widget());
+        if (x < tesseract::visual::kSidebarWidth &&
+            y >= surf_h - tesseract::visual::kUserStripHeight)
+        {
+            gtk_gesture_set_state(GTK_GESTURE(gesture),
+                                  GTK_EVENT_SEQUENCE_CLAIMED);
+            self->main_app_->user_info()->on_secondary(
+                tk::Point{static_cast<float>(x), static_cast<float>(y)});
+            return;
+        }
+    }
+
     if (!self->room_view_ || !self->sticker_ctx_menu_)
     {
         return;
