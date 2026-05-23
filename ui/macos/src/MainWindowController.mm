@@ -247,6 +247,7 @@ public:
     using ShellBase::tab_open_room;
     using ShellBase::tab_select_room;
     using ShellBase::tabs_;
+    using ShellBase::tick_anim_;
     using ShellBase::tk_avatars_;
     using ShellBase::tk_images_;
     using ShellBase::url_preview_data_;
