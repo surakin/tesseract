@@ -70,7 +70,10 @@ jobs:
       # cmake, ninja, Go, and Strawberry Perl are pre-installed on
       # windows-latest; Go and Perl satisfy the aws-lc-sys CMake builder.
       - name: Configure (Release)
-        run: cmake --preset windows-release
+        # Force CMake to use the same Python interpreter we installed
+        # resvg-py into; otherwise FindPython3 picks the newest version
+        # available on the runner (3.14) regardless of PATH.
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
 
       - name: Build
         run: cmake --build build/windows-release
