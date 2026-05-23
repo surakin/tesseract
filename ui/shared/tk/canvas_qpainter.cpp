@@ -843,8 +843,14 @@ public:
                                            const TextStyle& s) override
     {
         QFont f = font_cache_[static_cast<std::size_t>(s.role)];
+        // A wrap=false layout must stay on one line; QPainter::drawText honours
+        // hard breaks even under NoWrap, so fold them out first (see
+        // tk::fold_hard_breaks_utf8).
+        const std::string folded =
+            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
+        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
         QString text =
-            QString::fromUtf8(utf8.data(), static_cast<int>(utf8.size()));
+            QString::fromUtf8(src.data(), static_cast<int>(src.size()));
 
         QTextOption opt;
         Qt::Alignment a = Qt::AlignTop;

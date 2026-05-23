@@ -297,6 +297,13 @@ void ComposeBar::set_reply_to(std::string event_id, std::string sender_name,
 {
     reply_event_id_ = std::move(event_id);
     reply_sender_name_ = std::move(sender_name);
+    // Collapse newlines to spaces: the reply band has a fixed height, so a
+    // multiline original message must render as a single ellipsized line.
+    for (char& c : body_preview)
+    {
+        if (c == '\n' || c == '\r')
+            c = ' ';
+    }
     reply_body_preview_ = std::move(body_preview);
     recompute_height();
     if (on_size_changed)
@@ -1138,16 +1145,24 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         ctx.canvas.pop_clip();
 
         float text_x = reply_band_rect_.x + kAccentW + kReplyPadX;
+        // Keep text clear of the trailing "×" cancel button.
+        float text_w = std::max(0.0f, reply_cancel_rect_.x - text_x -
+                                          kReplyPadX);
 
         // Build both lines first so we can measure heights and centre the
-        // pair vertically within the band.
+        // pair vertically within the band. Both are single-line, ellipsized,
+        // and width-bounded so a multiline/long original can't overflow.
         tk::TextStyle label_style{};
         label_style.role = tk::FontRole::Small;
+        label_style.trim = tk::TextTrim::Ellipsis;
+        label_style.max_width = text_w;
         auto label_layout = ctx.factory.build_text(
             "Replying to " + reply_sender_name_, label_style);
 
         tk::TextStyle body_style{};
         body_style.role = tk::FontRole::Small;
+        body_style.trim = tk::TextTrim::Ellipsis;
+        body_style.max_width = text_w;
         auto body_layout =
             ctx.factory.build_text(reply_body_preview_, body_style);
 

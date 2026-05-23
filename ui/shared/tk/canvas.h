@@ -122,6 +122,49 @@ struct TextStyle
     float max_height = -1.0f;
 };
 
+// Replace every Unicode mandatory line/paragraph break in a UTF-8 string with
+// a space. A wrap=false layout must occupy exactly one line, but the native
+// text stacks (DirectWrite, CoreText, QPainter, Pango) all honour hard breaks
+// regardless of the no-wrap flag — so a "single line" style would otherwise
+// spill across several lines and overflow its fixed-height container. Each
+// backend folds its single-line input through this so measure and draw agree.
+// Covers LF, CR, VT, FF, NEL (U+0085), LINE SEPARATOR (U+2028) and PARAGRAPH
+// SEPARATOR (U+2029).
+inline std::string fold_hard_breaks_utf8(std::string_view in)
+{
+    std::string out;
+    out.reserve(in.size());
+    for (std::size_t i = 0; i < in.size();)
+    {
+        const unsigned char c = static_cast<unsigned char>(in[i]);
+        if (c == 0x0A || c == 0x0D || c == 0x0B || c == 0x0C)
+        {
+            out += ' ';
+            i += 1;
+        }
+        else if (c == 0xC2 && i + 1 < in.size() &&
+                 static_cast<unsigned char>(in[i + 1]) == 0x85)
+        {
+            out += ' '; // U+0085 NEL
+            i += 2;
+        }
+        else if (c == 0xE2 && i + 2 < in.size() &&
+                 static_cast<unsigned char>(in[i + 1]) == 0x80 &&
+                 (static_cast<unsigned char>(in[i + 2]) == 0xA8 ||
+                  static_cast<unsigned char>(in[i + 2]) == 0xA9))
+        {
+            out += ' '; // U+2028 LS / U+2029 PS
+            i += 3;
+        }
+        else
+        {
+            out += in[i];
+            i += 1;
+        }
+    }
+    return out;
+}
+
 // Opaque platform-decoded image. Outlives the Canvas that drew it.
 class Image
 {

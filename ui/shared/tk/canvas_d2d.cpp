@@ -1607,7 +1607,12 @@ public:
     std::unique_ptr<TextLayout> build_text(std::string_view utf8,
                                            const TextStyle& s) override
     {
-        std::wstring wide = utf8_to_wide(utf8);
+        // A wrap=false layout must stay on one line; DirectWrite honours hard
+        // breaks even with NO_WRAP, so fold them out first (see
+        // tk::fold_hard_breaks_utf8).
+        std::wstring wide =
+            s.wrap ? utf8_to_wide(utf8)
+                   : utf8_to_wide(fold_hard_breaks_utf8(utf8));
         IDWriteTextFormat* tf = backend_.text_format_for(s.role);
         if (!tf)
         {

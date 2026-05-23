@@ -806,7 +806,14 @@ public:
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
 
-        pango_layout_set_text(lay, utf8.data(), static_cast<int>(utf8.size()));
+        // A wrap=false layout must stay on one line; without folding, Pango's
+        // single_paragraph_mode would still render a visible glyph for each
+        // hard break. Fold them to spaces so all backends look identical (see
+        // tk::fold_hard_breaks_utf8).
+        const std::string folded =
+            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
+        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
+        pango_layout_set_text(lay, src.data(), static_cast<int>(src.size()));
 
         PangoAlignment a = PANGO_ALIGN_LEFT;
         switch (s.halign)

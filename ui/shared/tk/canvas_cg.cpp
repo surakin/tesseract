@@ -1158,7 +1158,13 @@ public:
             align = kCTTextAlignmentRight;
             break;
         }
-        CFAttributedStringRef attr = build_attr_string(utf8, font.get(), align);
+        // A wrap=false layout must stay on one line; CoreText honours hard
+        // breaks regardless, so fold them out first (see
+        // tk::fold_hard_breaks_utf8).
+        const std::string folded =
+            s.wrap ? std::string() : fold_hard_breaks_utf8(utf8);
+        const std::string_view src = s.wrap ? utf8 : std::string_view(folded);
+        CFAttributedStringRef attr = build_attr_string(src, font.get(), align);
         if (!attr)
         {
             return nullptr;
@@ -1168,7 +1174,7 @@ public:
         CGFloat max_w = s.max_width > 0 ? s.max_width : -1;
         CGFloat max_h = s.max_height > 0 ? s.max_height : -1;
         return std::make_unique<CTLayout>(attr, max_w, max_h, elide,
-                                          std::string(utf8));
+                                          std::string(src));
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
