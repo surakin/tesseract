@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "tesseract/paths.h"
+#include "tesseract/secret_store.h"
 #include "tesseract/session_store.h"
 
 #include <atomic>
@@ -21,8 +22,28 @@ struct SessionFixture
     std::string saved_home;
 #endif
 
+    // All user IDs written to the OS keychain by any test in this file.
+    // Wiped in both constructor and destructor so concurrent test processes
+    // that share the OS keychain do not interfere with each other.
+    static void wipe_keychain()
+    {
+        for (const char* uid : {
+                 "@alice:example.org",
+                 "@bob:matrix.org",
+                 "@carol:example.org",
+                 "@dave:example.org",
+                 "@erin:example.org",
+                 "@stale:x",
+             })
+        {
+            tesseract::SecretStore::remove(uid);
+        }
+    }
+
     SessionFixture()
     {
+        wipe_keychain();
+
         static std::atomic<int> counter{0};
         auto n = counter.fetch_add(1, std::memory_order_relaxed);
         dir = (fs::temp_directory_path() /
@@ -52,6 +73,8 @@ struct SessionFixture
 
     ~SessionFixture()
     {
+        wipe_keychain();
+
 #if defined(_WIN32)
         _putenv_s("APPDATA", "");
 #elif defined(__APPLE__)

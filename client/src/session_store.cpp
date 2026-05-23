@@ -707,6 +707,12 @@ bool SessionStore::migrate_legacy_layout()
         }
     }
 
+    // (6a) Refresh SecretStore so that load_account() (which checks the
+    // credential store first) sees the migrated content and not a stale
+    // pre-migration snapshot. Best-effort: if SecretStore is unavailable,
+    // load_account() falls back to the plaintext file moved in step (5).
+    SecretStore::save(uid, blob);
+
     // (7) Write accounts.json. If this fails after both moves succeeded the
     // app would loop forever on a half-migrated layout — undo the moves.
     AccountIndex idx;
