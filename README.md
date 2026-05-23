@@ -25,7 +25,8 @@ A stupid vibe-coded multiplatform matrix client, based on the matrix rust sdk
   shipped by Debian 12 and Ubuntu 24.04 LTS. Older distros work if a
   Qt ≥ 6.4 is provided.
 - **Linux (GTK4)** — needs GTK 4 plus GStreamer base/good plugins (for
-  voice-message playback) and an Ayatana AppIndicator for the system tray.
+  voice-message playback); the system tray is a built-in StatusNotifierItem
+  D-Bus implementation and needs no AppIndicator package.
   GTK 4 is available from Debian 12 / Ubuntu 22.04 onward.
 - **Building from source** requires Rust ≥ 1.75 on every platform (install
   via `rustup` on distros that ship an older toolchain). See

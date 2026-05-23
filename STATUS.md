@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-22**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-23**.
 
 > **@mentions.**
 > Typing `@` in the composer opens an autocomplete popup (mirroring the emoji
@@ -77,8 +77,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 135 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 438 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 144 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 475 |
 
 ## Platforms
 
@@ -219,7 +219,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **All four platforms** — system-tray icon with **Show App** / **Quit** popup menu. Closing the main window hides it (the SDK keeps running, sync stays warm); Quit on the tray menu does the real exit.
 - Cross-platform `tesseract::ITrayIcon` abstraction; per-platform impls created after login (mirrors `INotifier`).
 - **Qt6** — `QSystemTrayIcon`; `is_available()` from `QSystemTrayIcon::isSystemTrayAvailable`. Falls back to plain quit when no system tray is present.
-- **GTK4** — `libayatana-appindicator3` (probed via `org.kde.StatusNotifierWatcher`). Built in a separate `tesseract_gtk_tray` static lib so GTK3 headers stay isolated from the GTK4 shell. Requires `libayatana-appindicator3-dev`.
+- **GTK4** — pure `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` implementation over GDBus (`GtkSniTrayIcon`; icon rendered with gdk-pixbuf + cairo). Replaces the former `libayatana-appindicator3` tray, which pulled libgtk-3 into the GTK4 process and aborted `gtk_init()` with "GTK 2/3 symbols detected" — there is no longer any appindicator (GTK3) dependency.
 - **Win32** — `Shell_NotifyIcon` against a hidden helper HWND; `TrackPopupMenuEx` for the right-click menu; `WM_CLOSE` intercepted in `MainWindow`'s wnd_proc.
 - **macOS** — `NSStatusItem` with a template menu-bar icon; `windowShouldClose:` hides the window; Quit calls `[NSApp terminate:nil]`.
 - **Unread overlay** — when any signed-in account has rooms with notifications, the tray icon gets a small coloured dot in the bottom-right (accent blue for unread, destructive red for highlights / mentions). Aggregation lives in `ShellBase::compute_tray_unread` over `per_account_rooms_`; the `ITrayIcon::set_unread` hook is implemented per shell (QPainter overlay on Qt6, pre-rendered Cairo PNGs swapped via `app_indicator_set_icon_full` on GTK4, GDI+ ARGB compositing into `CreateIconIndirect` on Win32, `NSImage lockFocus`+`NSBezierPath` on macOS).
@@ -235,6 +235,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Image & sticker previews** — `m.image` / `m.sticker` notifications embed the message picture (SDK fetch, 2 MiB cap, E2EE-transparent; a dedicated `m.sticker` push handler — stickers are a distinct event type). Win32 large inline `<image>` + circular avatar `appLogoOverride`; macOS `UNNotificationAttachment`; Linux single image slot. Gated by the `notification_image_previews` setting.
 - **Lock-screen privacy gate** — cross-platform `tesseract::IScreenLock` (Win32 WTS, macOS `com.apple.screenIsLocked`, Linux logind `LockedHint`); `ShellBase::notification_image_allowed_()` strips the picture whenever the screen is locked (avatars are not gated).
 - **Wayland foreground activation** — Qt6 and GTK4 notifiers use `org.freedesktop.portal.Notification` whenever `WAYLAND_DISPLAY` is set; the portal's `ActionInvoked` signal carries an `xdg_activation_v1` token that is passed to the compositor before calling `activateWindow()` / `gtk_window_present()`, enabling reliable window focus on GNOME Shell and other strict Wayland compositors.
+- **Per-room notification settings** — a Notifications section in `RoomInfoPanel` with a four-option dropdown (Default / All messages / Mentions / Off) mapped to Matrix per-room push rules (`RuleKind::Override` + `EventMatch` for "off", `RuleKind::Room` for "all"/"mentions", no rule for "default"); backed by a new shared `tk::ComboBox` widget and wired through both the main window and pop-out room windows; Rust `client.rs` reads/writes `m.push_rules`.
 - All platforms suppress the notification when the window is focused and the target room is already open.
 
 ## Build & packaging

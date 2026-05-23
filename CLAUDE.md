@@ -17,10 +17,9 @@ sudo apt install qt6-base-dev qt6-multimedia-dev ninja-build cmake sqlite3 libsq
 # qt6-multimedia-dev powers MSC3245 voice-message playback via QMediaPlayer.
 # For GTK4 builds also install: libgtk-4-dev libgstreamer1.0-dev
 #                               libgstreamer-plugins-base1.0-dev
-#                               libayatana-appindicator3-dev
 # (gst-plugins-base provides the opus decoder voice messages use.)
-# (libayatana-appindicator3-dev powers the system tray; it transitively
-#  pulls GTK3 into the process.)
+# (the GTK4 system tray is a pure StatusNotifierItem D-Bus implementation,
+#  so no appindicator/GTK3 package is needed.)
 ```
 
 **Prerequisites (macOS / AppKit):**
