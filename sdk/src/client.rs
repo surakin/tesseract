@@ -4245,6 +4245,7 @@ impl ClientFfi {
 
     #[cfg(not(test))]
     pub fn send_read_receipt(&mut self, room_id: &str, event_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -4276,6 +4277,7 @@ impl ClientFfi {
     /// requiring the room to be subscribed via `subscribe_room`.
     #[cfg(not(test))]
     pub fn mark_room_as_read(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -4605,6 +4607,7 @@ impl ClientFfi {
     /// Accept a pending room invitation. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn accept_invite(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -4641,6 +4644,7 @@ impl ClientFfi {
     /// Decline a pending room invitation. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn decline_invite(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -4666,6 +4670,7 @@ impl ClientFfi {
     /// then `account().ignore_user(inviter_user_id)`. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn block_invite(&mut self, room_id: &str, inviter_user_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         if inviter_user_id.is_empty() {
             return err("inviter_user_id is empty; use decline_invite instead");
         }
@@ -5013,6 +5018,7 @@ impl ClientFfi {
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     #[cfg(not(test))]
     pub fn leave_room(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -5037,6 +5043,7 @@ impl ClientFfi {
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn get_room_members(&mut self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        let _enter = self.rt.enter();
         let Some(client) = self.client.as_ref() else {
             return Vec::new();
         };
@@ -5071,6 +5078,7 @@ impl ClientFfi {
     /// Send an m.room.topic state event. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn set_room_topic(&mut self, room_id: &str, topic: &str) -> OpResult {
+        let _enter = self.rt.enter();
         use matrix_sdk::ruma::events::room::topic::RoomTopicEventContent;
 
         let Some(client) = self.client.as_ref() else {
