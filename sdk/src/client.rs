@@ -2305,6 +2305,13 @@ impl ClientFfi {
         let client_ref = client.clone();
         let ch = channel;
 
+        // Extra clones for the receipt-refresh pass after fetch_members (below).
+        let h_for_receipts    = Arc::clone(handler);
+        let rid_for_receipts  = rid.clone();
+        let room_for_receipts = room_clone.clone();
+        let me_for_receipts   = me.clone();
+        let ch_for_receipts   = ch.clone();
+
         let abort = rt
             .spawn(async move {
                 let (initial_items, mut stream) = tl.subscribe().await;
@@ -2361,6 +2368,40 @@ impl ClientFfi {
         let fetch_abort = rt
             .spawn(async move {
                 tl_for_members.fetch_members().await;
+
+                // `fetch_members()` causes matrix-sdk-ui to emit VectorDiff::Set
+                // only for items whose *sender* profile was pending. Items whose
+                // sender was already resolved are not re-emitted, even when their
+                // read-receipt entries reference users whose profiles were missing
+                // at receipt-arrival time (get_member_no_sync returned None →
+                // fallback to user_id / empty avatar_url). Re-emit every visible
+                // item that carries receipts so the C++ chips pick up the
+                // now-available display names and avatar URLs.
+                let items = tl_for_members.items().await;
+                let mut visible_idx: u64 = 0;
+                for item in items.iter() {
+                    let ev = timeline_item_to_ffi(
+                        item,
+                        &rid_for_receipts,
+                        &room_for_receipts,
+                        me_for_receipts.as_deref(),
+                    )
+                    .await;
+                    if let Some(ev) = ev {
+                        if !ev.read_receipts.is_empty() {
+                            if let Ok(g) = h_for_receipts.lock() {
+                                emit_updated(
+                                    &g,
+                                    &ch_for_receipts,
+                                    &rid_for_receipts,
+                                    visible_idx,
+                                    &ev,
+                                );
+                            }
+                        }
+                        visible_idx += 1;
+                    }
+                }
             })
             .abort_handle();
 
