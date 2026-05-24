@@ -42,7 +42,7 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
     }
 
     std::vector<std::uint8_t> pixels(
-        static_cast<std::size_t>(target_px * target_px * 4));
+        static_cast<std::size_t>(target_px) * target_px * 4);
     nsvgRasterize(rast, svg, 0.0f, 0.0f, scale,
                   pixels.data(), target_px, target_px, target_px * 4);
 
