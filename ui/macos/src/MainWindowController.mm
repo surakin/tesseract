@@ -183,9 +183,11 @@ public:
     using ShellBase::begin_focused_subscription_;
     using ShellBase::build_rows_;
     using ShellBase::cached_emoticons_;
+    using ShellBase::clear_all_caches_;
     using ShellBase::clear_focused_state_;
     using ShellBase::client_;
     using ShellBase::compose_typing_active_;
+    using ShellBase::compute_cache_sizes_;
     using ShellBase::current_room_id_;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;

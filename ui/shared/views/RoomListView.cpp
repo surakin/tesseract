@@ -451,15 +451,15 @@ private:
         bool has_preview = !room.last_message_kind.empty();
 
         // Thumbnail lookup.
-        const tk::Image* thumb = nullptr;
+        const tk::Image* thumb     = nullptr;
+        std::string      thumb_url;
         if (has_preview && owner_.sticker_provider_)
         {
             const std::string& kind = room.last_message_kind;
-            const std::string& thumb_url =
-                kind == "sticker" ? room.last_message_sticker_url
-                                  : (kind == "image"
-                                         ? room.last_message_thumbnail_url
-                                         : std::string{});
+            thumb_url = kind == "sticker" ? room.last_message_sticker_url
+                                          : (kind == "image"
+                                                 ? room.last_message_thumbnail_url
+                                                 : std::string{});
             if (!thumb_url.empty())
             {
                 thumb = owner_.sticker_provider_(thumb_url);
@@ -576,6 +576,8 @@ private:
                              bounds.y + (bounds.h - kThumb) * 0.5f,
                              kThumb, kThumb};
                 ctx.canvas.draw_image(*thumb, dst);
+                if (ctx.anim_damage)
+                    ctx.anim_damage->note_image(thumb_url, dst);
             }
         }
 
