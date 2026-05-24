@@ -705,6 +705,7 @@ pub mod ffi {
 
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn stop_sync(self: &mut ClientFfi);
+        fn clear_caches(self: &mut ClientFfi) -> OpResult;
 
         // ----- Room list -----
 

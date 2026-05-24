@@ -962,9 +962,15 @@ protected:
 
     // Async: delete all on-disk caches best-effort (media files, waveform DB,
     // SDK event store), clear in-memory image maps, reinit the waveform store,
-    // then call recompute_callback with fresh sizes. No-op when not signed in.
+    // restart the SDK so it opens fresh SQLite stores, then call
+    // recompute_callback with fresh sizes. No-op when not signed in.
     void clear_all_caches_(
         std::function<void(uint64_t local, uint64_t sdk)> recompute_callback);
+
+    // Stop sync, rebuild the matrix-sdk Client against the on-disk session JSON
+    // (which reopens fresh SQLite stores), then restart sync. Must be called on
+    // the UI thread. No-op when not signed in or session JSON is missing.
+    void restart_sdk_();
 
 public:
     // Pure function: returns {has_unread, has_highlight} computed across every

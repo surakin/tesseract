@@ -181,6 +181,9 @@ public:
 
     void start_sync(IEventHandler* handler);
     void stop_sync();
+    /// Clear non-crypto SDK caches (event cache + state store file).
+    /// Call after stop_sync() and before restore_session().
+    Result clear_caches();
 
     // ------------------------------------------------------------------
     // Room list (utility — push pipeline drives UI updates via callbacks)

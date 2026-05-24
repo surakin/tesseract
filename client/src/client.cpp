@@ -151,6 +151,11 @@ void Client::stop_sync()
     impl_->ffi->stop_sync();
 }
 
+tesseract::Result Client::clear_caches()
+{
+    return from_ffi(impl_->ffi->clear_caches());
+}
+
 std::vector<RoomInfo> Client::list_rooms() const
 {
     auto ffi_rooms = impl_->ffi->list_rooms();

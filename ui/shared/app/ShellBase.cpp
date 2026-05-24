@@ -2162,10 +2162,9 @@ void ShellBase::clear_all_caches_(
         // Waveform SQLite — best-effort (locked on Windows if WAL is open).
         fs::remove(tesseract::cache_dir() / "waveforms.db", ec);
 
-        // SDK event store — same best-effort semantics.
-        fs::remove_all(tesseract::SessionStore::sdk_store_dir(uid), ec);
-
-        // Clear in-memory image caches and reinit the waveform store.
+        // Clear in-memory image caches, reinit the waveform store, and restart
+        // the SDK (which clears the SDK event cache + state store and starts a
+        // fresh sync).
         post_to_ui_([this]
         {
             tk_avatars_.clear();
@@ -2173,12 +2172,37 @@ void ShellBase::clear_all_caches_(
             anim_cache_ = {};
             tesseract::init_waveform_cache(
                 (tesseract::cache_dir() / "waveforms.db").string());
+            restart_sdk_();
         });
 
         // Recompute sizes so the UI reflects the cleared state.
         if (recalc)
             compute_cache_sizes_(std::move(recalc));
     });
+}
+
+void ShellBase::restart_sdk_()
+{
+    if (!client_ || my_user_id_.empty())
+        return;
+    auto json = tesseract::SessionStore::load_account(my_user_id_);
+    if (!json)
+        return;
+
+    // Deselect the active room — cached timeline data is about to be wiped.
+    current_room_id_.clear();
+    tabs_.clear();
+    space_stack_.clear();
+    pagination_.clear();
+    reply_details_requested_.clear();
+    message_cache_.clear();
+    message_cache_lru_.clear();
+    on_tab_state_changed_ui_();
+
+    client_->stop_sync();
+    client_->clear_caches();
+    if (client_->restore_session(*json))
+        client_->start_sync(event_handler_);
 }
 
 } // namespace tesseract
