@@ -3203,6 +3203,13 @@ impl ClientFfi {
         let handler = self.handler.clone();
         let preview_cache = Arc::clone(&self.backfill_previews);
 
+        // How many rooms finish before we emit the first intermediate update.
+        // Matches the semaphore width so the first wave of concurrent backfills
+        // triggers one early refresh; everything else is batched into a single
+        // final update. This keeps build_room_infos calls to O(1) per run
+        // instead of O(n) (one per completed room).
+        const FIRST_UPDATE_AT: usize = 3;
+
         let abort = self
             .rt
             .spawn(async move {
@@ -3211,7 +3218,6 @@ impl ClientFfi {
 
                 for rid in to_backfill {
                     let client = client.clone();
-                    let handler = handler.clone();
                     let sem = semaphore.clone();
                     let preview_cache = preview_cache.clone();
                     joinset.spawn(async move {
@@ -3226,6 +3232,14 @@ impl ClientFfi {
                                 cache.insert(bp.room_id.clone(), bp.clone());
                             }
                         }
+                    });
+                }
+
+                // Drive the joinset, emitting one early update and one final.
+                let mut completed: usize = 0;
+                while joinset.join_next().await.is_some() {
+                    completed += 1;
+                    if completed == FIRST_UPDATE_AT {
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
@@ -3233,10 +3247,19 @@ impl ClientFfi {
                                 guard.on_rooms_updated(&rooms);
                             }
                         }
-                    });
+                    }
                 }
-
-                while joinset.join_next().await.is_some() {}
+                // Final update — covers everything after the early update (or
+                // the whole run when fewer than FIRST_UPDATE_AT rooms backfilled).
+                if completed != FIRST_UPDATE_AT {
+                    if let Some(ref h) = handler {
+                        let mut rooms = build_room_infos(&client).await;
+                        apply_backfill_previews(&mut rooms, &preview_cache);
+                        if let Ok(guard) = h.lock() {
+                            guard.on_rooms_updated(&rooms);
+                        }
+                    }
+                }
             })
             .abort_handle();
 
