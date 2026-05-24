@@ -1678,7 +1678,16 @@ impl ClientFfi {
                 // room list: piggy-back on the same wakeup channel so
                 // both lists arrive together after every notable
                 // sync delta.
-                let pks = rebuild_image_packs(&client_clone).await;
+                //
+                // The HTTP fetch cache lives here so it persists across
+                // rebuilds for the lifetime of this sync session.  Each
+                // (room_id, state_key) pair is fetched at most once —
+                // subsequent notable-update rebuilds reuse the result.
+                let mut http_pack_cache: std::collections::HashMap<
+                    (OwnedRoomId, String),
+                    Option<serde_json::Value>,
+                > = std::collections::HashMap::new();
+                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
                 if let Ok(mut g) = packs_cache.lock() { *g = pks; }
                 if let Ok(guard) = h.lock() { guard.on_image_packs_updated(); }
 
@@ -1710,7 +1719,7 @@ impl ClientFfi {
                             // room updates; piggy-backing keeps us off
                             // a polling timer and out of the event
                             // handler machinery.
-                            let pks = rebuild_image_packs(&client_clone).await;
+                            let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache).await;
                             if let Ok(mut g) = packs_cache.lock() {
                                 use std::sync::atomic::Ordering;
                                 use crate::image_packs::PackSource;
@@ -6715,7 +6724,10 @@ async fn set_account_data_both(
 /// since most homeservers and rooms only carry those. Returns an empty Vec
 /// when not logged in.
 #[cfg(not(test))]
-async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePack> {
+async fn rebuild_image_packs(
+    client: &Client,
+    http_cache: &mut std::collections::HashMap<(OwnedRoomId, String), Option<serde_json::Value>>,
+) -> Vec<crate::image_packs::ImagePack> {
     use matrix_sdk::ruma::events::{GlobalAccountDataEventType, StateEventType};
     use serde_json::Value;
 
@@ -6800,34 +6812,44 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
 
         // HTTP fallback: SSS required_state does not include custom event types
         // (im.ponies.room_emotes / m.room.image_pack), so they are absent from
-        // the local cache. For explicitly subscribed rooms the number is small,
-        // so one HTTP round-trip per missing room is acceptable.
+        // the local cache on first subscription.  We fetch once per
+        // (room_id, state_key) per session and cache the result — subsequent
+        // notable-update rebuilds reuse it without hitting the server again.
         // Guard: only attempt when the user is currently joined — a stale
-        // subscription entry for a room the user has left/been kicked from
-        // produces a 403 "not in room" error.
-        // ROOM_PACK_TYPES is unstable-first, so we try im.ponies.room_emotes
-        // before m.room.image_pack, avoiding spurious 404s on servers that
-        // don't yet recognise the stable name.
+        // subscription entry for a room the user has left produces a 403.
         let is_joined = client
             .get_room(&room_id)
             .map(|r| r.state() == matrix_sdk::RoomState::Joined)
             .unwrap_or(false);
         if !found && is_joined {
-            use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
-            for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
-                let et = StateEventType::from(ev_type_str);
-                let req = get_state_event_for_key::v3::Request::new(
-                    room_id.clone(),
-                    et,
-                    state_key.clone(),
-                );
-                let Ok(response) = client.send(req).await else {
-                    continue;
-                };
-                let Ok(content) = serde_json::from_str::<Value>(response.event_or_content.get())
-                else {
-                    continue;
-                };
+            let cache_key = (room_id.clone(), state_key.clone());
+            let cached = http_cache.get(&cache_key).cloned();
+            let content_opt: Option<Value> = match cached {
+                Some(v) => v, // already fetched this session (may be None = not found)
+                None => {
+                    use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
+                    let mut fetched: Option<Value> = None;
+                    for ev_type_str in crate::image_packs::ROOM_PACK_TYPES {
+                        let et = StateEventType::from(ev_type_str);
+                        let req = get_state_event_for_key::v3::Request::new(
+                            room_id.clone(),
+                            et,
+                            state_key.clone(),
+                        );
+                        if let Ok(response) = client.send(req).await {
+                            if let Ok(content) = serde_json::from_str::<Value>(
+                                response.event_or_content.get(),
+                            ) {
+                                fetched = Some(content);
+                                break;
+                            }
+                        }
+                    }
+                    http_cache.insert(cache_key, fetched.clone());
+                    fetched
+                }
+            };
+            if let Some(content) = content_opt {
                 let source = crate::image_packs::PackSource::Room {
                     room_id: room_id_str.clone(),
                     state_key: state_key.clone(),
@@ -6835,7 +6857,6 @@ async fn rebuild_image_packs(client: &Client) -> Vec<crate::image_packs::ImagePa
                 let id = crate::image_packs::pack_id_for(&source);
                 if let Some(pack) = crate::image_packs::parse_pack_content(id, source, &content) {
                     packs.push(pack);
-                    break;
                 }
             }
         }
