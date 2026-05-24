@@ -197,7 +197,7 @@ private:
 // Pure room→section classifier. Favorites and Spaces are never grouped; when
 // `group_inactive` is true, DMs and Rooms whose `last_activity_ts` is more than
 // `threshold_days` before `now_ms` go to kSecInactive. `last_activity_ts == 0`
-// (no known activity) counts as inactive.
+// (timestamp not yet available from sync) is treated as active.
 int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
                           int threshold_days, std::uint64_t now_ms);
 

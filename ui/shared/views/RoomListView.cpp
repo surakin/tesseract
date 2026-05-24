@@ -98,12 +98,13 @@ int classify_room_section(const tesseract::RoomInfo& r, bool group_inactive,
     {
         return RoomListView::kSecFavorites;
     }
-    if (group_inactive && !r.is_space)
+    if (group_inactive && !r.is_space && r.last_activity_ts != 0)
     {
         std::uint64_t threshold_ms =
             static_cast<std::uint64_t>(threshold_days) * 86'400'000ULL;
-        // last_activity_ts == 0 → now_ms - 0 > threshold ⇒ inactive. The
-        // `<= now_ms` guard avoids unsigned underflow treating a future-dated
+        // last_activity_ts == 0 means the SDK hasn't returned a timestamp yet;
+        // skip the inactive check rather than treating epoch as ancient history.
+        // The `<= now_ms` guard avoids unsigned underflow treating a future-dated
         // timestamp (clock skew) as inactive.
         if (r.last_activity_ts <= now_ms &&
             now_ms - r.last_activity_ts > threshold_ms)

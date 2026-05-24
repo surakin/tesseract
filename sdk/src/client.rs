@@ -6415,6 +6415,7 @@ struct BackfillPreview {
     sticker_url: String,
     thumbnail_url: String,
     sender_name: String,
+    timestamp_ms: u64,
 }
 
 /// Extract a room-list preview from a timeline item's content.
@@ -6505,13 +6506,16 @@ fn apply_backfill_previews(
 ) {
     let Ok(guard) = cache.lock() else { return };
     for ri in rooms.iter_mut() {
-        if ri.last_message_kind.is_empty() {
-            if let Some(bp) = guard.get(&ri.id) {
+        if let Some(bp) = guard.get(&ri.id) {
+            if ri.last_message_kind.is_empty() && !bp.kind.is_empty() {
                 ri.last_message_kind = bp.kind.clone();
                 ri.last_message_body = bp.text.clone();
                 ri.last_message_sticker_url = bp.sticker_url.clone();
                 ri.last_message_thumbnail_url = bp.thumbnail_url.clone();
                 ri.last_message_sender_name = bp.sender_name.clone();
+            }
+            if ri.last_activity_ts == 0 && bp.timestamp_ms != 0 {
+                ri.last_activity_ts = bp.timestamp_ms;
             }
         }
     }
@@ -6568,45 +6572,60 @@ async fn backfill_room_silent(
 
     // Extract a preview from the most recent event in the timeline.
     // Scope the items borrow so it ends before the get_member_no_sync await.
-    let preview_data = {
+    // Also capture the most-recent event's timestamp (any event type) so it
+    // can be stored in last_activity_ts even for rooms with no previewable event.
+    let (preview_data, latest_ts) = {
         let items = timeline.items().await;
         let mut found: Option<(LatestPreview, Option<String>, matrix_sdk::ruma::OwnedUserId)> =
             None;
+        let mut first_ts: u64 = 0;
         for item in items.iter().rev() {
             if let TimelineItemKind::Event(ev) = item.kind() {
-                let preview = preview_from_timeline_content(ev.content());
-                if !preview.kind.is_empty() {
-                    let sender_id = ev.sender().to_owned();
-                    let profile_name = match ev.sender_profile() {
-                        TimelineDetails::Ready(p) => p.display_name.clone(),
-                        _ => None,
-                    };
-                    found = Some((preview, profile_name, sender_id));
+                if first_ts == 0 {
+                    first_ts = u64::from(ev.timestamp().0);
+                }
+                if found.is_none() {
+                    let preview = preview_from_timeline_content(ev.content());
+                    if !preview.kind.is_empty() {
+                        let sender_id = ev.sender().to_owned();
+                        let profile_name = match ev.sender_profile() {
+                            TimelineDetails::Ready(p) => p.display_name.clone(),
+                            _ => None,
+                        };
+                        found = Some((preview, profile_name, sender_id));
+                    }
+                }
+                if first_ts != 0 && found.is_some() {
                     break;
                 }
             }
         }
-        found
+        (found, first_ts)
     };
 
-    let Some((preview, profile_name, sender_id)) = preview_data else {
+    if latest_ts == 0 {
         return Ok(None);
-    };
+    }
 
-    let is_mine = client.user_id().is_some_and(|me| me == &*sender_id);
-    let sender_name = if is_mine {
-        String::new()
+    let (preview, sender_name) = if let Some((preview, profile_name, sender_id)) = preview_data {
+        let is_mine = client.user_id().is_some_and(|me| me == &*sender_id);
+        let name = if is_mine {
+            String::new()
+        } else {
+            match profile_name.filter(|n| !n.is_empty()) {
+                Some(n) => n,
+                None => match room.get_member_no_sync(&sender_id).await {
+                    Ok(Some(m)) => m
+                        .display_name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| sender_id.localpart().to_owned()),
+                    _ => sender_id.localpart().to_owned(),
+                },
+            }
+        };
+        (preview, name)
     } else {
-        match profile_name.filter(|n| !n.is_empty()) {
-            Some(n) => n,
-            None => match room.get_member_no_sync(&sender_id).await {
-                Ok(Some(m)) => m
-                    .display_name()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| sender_id.localpart().to_owned()),
-                _ => sender_id.localpart().to_owned(),
-            },
-        }
+        (LatestPreview::default(), String::new())
     };
 
     Ok(Some(BackfillPreview {
@@ -6616,6 +6635,7 @@ async fn backfill_room_silent(
         sticker_url: preview.sticker_url,
         thumbnail_url: preview.thumbnail_url,
         sender_name,
+        timestamp_ms: latest_ts,
     }))
 }
 

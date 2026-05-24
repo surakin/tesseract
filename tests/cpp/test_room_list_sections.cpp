@@ -48,11 +48,13 @@ TEST_CASE("classify: DMs and Rooms group when inactive", "[roomlist][inactive]")
           RoomListView::kSecRooms);
 }
 
-TEST_CASE("classify: zero last_activity_ts is inactive", "[roomlist][inactive]")
+TEST_CASE("classify: zero last_activity_ts is not classified as inactive", "[roomlist][inactive]")
 {
+    // 0 means the SDK hasn't returned a timestamp yet; don't hide the room.
+    auto dm = room(false, true, false, 0);
+    CHECK(classify_room_section(dm, true, 30, kNow) == RoomListView::kSecDMs);
     auto r = room(false, false, false, 0);
-    CHECK(classify_room_section(r, true, 30, kNow) ==
-          RoomListView::kSecInactive);
+    CHECK(classify_room_section(r, true, 30, kNow) == RoomListView::kSecRooms);
 }
 
 TEST_CASE("classify: grouping off keeps normal sections", "[roomlist][inactive]")
