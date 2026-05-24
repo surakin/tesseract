@@ -43,6 +43,7 @@ set(_tk_sources
     tk/tab_bar.cpp
     tk/side_tab_view.h
     tk/side_tab_view.cpp
+    tk/svg.cpp
     tk/blurhash.h
     tk/blurhash.cpp
     tk/media_disk_cache.h
@@ -182,6 +183,19 @@ if(EXISTS "${_icon_png}")
     )
     target_compile_definitions(tesseract_tk PRIVATE TESSERACT_HAS_BRAND_ICON=1)
 endif()
+
+# Embed compose-bar SVG icons as C byte arrays (rasterized at runtime by nanosvg).
+set(_ci "#pragma once\n#include <cstdint>\n\n")
+foreach(_entry "emoji|kEmojiSvg" "sticker|kStickerSvg" "voice|kVoiceSvg" "voice-stop|kVoiceStopSvg")
+    string(REPLACE "|" ";" _pair "${_entry}")
+    list(GET _pair 0 _name)
+    list(GET _pair 1 _var)
+    file(READ "${CMAKE_SOURCE_DIR}/ui/icons/${_name}.svg" _hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1, " _bytes "${_hex}")
+    string(APPEND _ci "static constexpr std::uint8_t ${_var}[] = { ${_bytes}};\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/compose_icons.h" "${_ci}")
+
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 target_compile_features(tesseract_tk PUBLIC cxx_std_20)
