@@ -203,6 +203,7 @@ public:
     using ShellBase::find_existing_dm_;
     using ShellBase::handle_compose_room_leaving_;
     using ShellBase::handle_compose_text_changed_;
+    using ShellBase::handle_send_presence_toggle_;
     using ShellBase::last_backup_state_;
     using ShellBase::last_imported_keys_;
     using ShellBase::last_room_list_state_;
