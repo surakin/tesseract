@@ -170,6 +170,16 @@ void RoomView::wire_internal_callbacks()
         if (on_cancel_voice)
             on_cancel_voice();
     };
+    compose_bar_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        if (on_show_tooltip)
+            on_show_tooltip(std::move(text), anchor);
+    };
+    compose_bar_->on_hide_tooltip = [this]
+    {
+        if (on_hide_tooltip)
+            on_hide_tooltip();
+    };
     compose_bar_->on_edit_cancelled = [this]
     {
         if (on_edit_cancelled)

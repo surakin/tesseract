@@ -1531,4 +1531,53 @@ void ComposeBar::on_pointer_up(tk::Point local, bool inside_self)
     tk::Widget::on_pointer_up(local, inside_self);
 }
 
+bool ComposeBar::on_pointer_move(tk::Point local)
+{
+    const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+
+    auto hit = [&](tk::Rect r) -> bool
+    {
+        return !r.empty() && world.x >= r.x && world.x < r.x + r.w &&
+               world.y >= r.y && world.y < r.y + r.h;
+    };
+
+    TooltipBtn next = TooltipBtn::None;
+    if (!recording_ && emoji_btn_ && hit(emoji_rect_))
+        next = TooltipBtn::Emoji;
+    else if (!recording_ && sticker_btn_ && hit(sticker_rect_))
+        next = TooltipBtn::Sticker;
+    else if (mic_btn_ && mic_available_ && hit(mic_btn_rect_))
+        next = TooltipBtn::Mic;
+
+    if (next != tooltip_hover_)
+    {
+        if (tooltip_hover_ != TooltipBtn::None && on_hide_tooltip)
+            on_hide_tooltip();
+        tooltip_hover_ = next;
+        if (next != TooltipBtn::None && on_show_tooltip)
+        {
+            const char* text =
+                next == TooltipBtn::Emoji   ? "Emoji"
+                : next == TooltipBtn::Sticker ? "Stickers"
+                : recording_                  ? "Stop recording"
+                                              : "Voice message";
+            tk::Rect anchor = next == TooltipBtn::Emoji   ? emoji_rect_
+                              : next == TooltipBtn::Sticker ? sticker_rect_
+                                                             : mic_btn_rect_;
+            on_show_tooltip(text, anchor);
+        }
+    }
+    return true;
+}
+
+void ComposeBar::on_pointer_leave()
+{
+    if (tooltip_hover_ != TooltipBtn::None)
+    {
+        if (on_hide_tooltip)
+            on_hide_tooltip();
+        tooltip_hover_ = TooltipBtn::None;
+    }
+}
+
 } // namespace tesseract::views

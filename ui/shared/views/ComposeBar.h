@@ -361,6 +361,10 @@ public:
     /// Fires when the × cancel button is clicked during recording.
     std::function<void()> on_cancel_voice;
 
+    /// Tooltip callbacks — wired through RoomView to the shell's native tooltip.
+    std::function<void(std::string text, tk::Rect anchor)> on_show_tooltip;
+    std::function<void()> on_hide_tooltip;
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -368,6 +372,8 @@ public:
     tk::Widget* hit_test(tk::Point world) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
 private:
     void refresh_send_enabled();
@@ -434,6 +440,10 @@ private:
     tk::Rect edit_band_rect_{};
     tk::Rect edit_cancel_rect_{};
     bool press_edit_cancel_ = false;
+
+    // Which compose button is currently showing a tooltip (None = none).
+    enum class TooltipBtn { None, Emoji, Sticker, Mic };
+    TooltipBtn tooltip_hover_ = TooltipBtn::None;
 
     // Voice recording state.
     bool recording_ = false;
