@@ -1,6 +1,17 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-23**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-24**.
+
+> **Storage size display and cache-clear in About settings.**
+> The About settings tab now shows a "Storage" section at the bottom-left (capped
+> to its natural width rather than filling the page) with "Local cache" and
+> "SDK store" size rows computed asynchronously when settings opens. A destructive
+> "Clear all caches" button (with confirm dialog) wipes the media disk cache,
+> waveform SQLite store, and the matrix-sdk event store, then refreshes the
+> displayed sizes; credentials and active sessions are unaffected. Wired on all
+> four shells (Qt6, GTK4, Win32, macOS).
+
+<!-- -->
 
 > **@mentions.**
 > Typing `@` in the composer opens an autocomplete popup (mirroring the emoji
@@ -24,6 +35,8 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-23
 > **macOS + Win32 are written but unverified** (no toolchain in the dev env).
 > 144 Rust tests + 468 C++ tests.
 
+<!-- -->
+
 > **Account registration (OIDC `prompt=create`).**
 > The login screen offers a capability-gated "New here? Create an account" link
 > below Sign in. It reuses the existing OAuth browser-loopback flow with the OIDC
@@ -34,6 +47,8 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-23
 > generation-guarded probe fired when discovery resolves. Driven entirely in the
 > shared `LoginView` (no per-shell wiring); legacy `/register` / non-OAuth
 > homeservers are out of scope.
+
+<!-- -->
 
 > **Group inactive rooms.**
 > Appearance settings gain a "Room list" group with a "Group inactive rooms"
@@ -46,6 +61,8 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-23
 > `classify_room_section()` helper in the shared `RoomListView`; the toggle is
 > wired through all four shells (Qt6 / GTK4 / Win32 / macOS).
 
+<!-- -->
+
 > **Outgoing Matrix presence.**
 > The app now publishes its own presence (`PUT /presence/{userId}/status`),
 > not just receives it. A platform-agnostic `PresenceTracker` runs an
@@ -57,6 +74,8 @@ Snapshot of every feature that has landed on `master`. Last updated **2026-05-23
 > `windowDidBecomeKey/Resign` on macOS) and a 30 s periodic tick. The
 > homeserver PUT is fired from a detached worker so input handling never
 > blocks. 114 Rust tests + 411 C++ tests.
+
+<!-- -->
 
 > **Code-block syntax highlighting.**
 > Fenced code blocks in messages now render with syntax colors. A new Rust
@@ -78,7 +97,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 144 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 475 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 476 |
 
 ## Platforms
 

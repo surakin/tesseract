@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(settings): storage size display and cache-clear in About tab — the About settings page now shows a "Storage" section at the bottom-left (natural width, not page-spanning) with "Local cache" and "SDK store" size rows computed asynchronously when settings opens, and a destructive "Clear all caches" button (with confirm dialog) that wipes the media disk cache, `waveforms.db`, and the matrix-sdk event store then refreshes the displayed sizes; in-process state is unaffected — credentials and active sessions survive. Wired on all four shells (Qt6, GTK4, Win32, macOS). 476 C++ tests, 144 Rust tests.
+
 ## v0.1.5 — 2026-05-23
 
 Changes since v0.1.4:
