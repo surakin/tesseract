@@ -821,6 +821,17 @@ public:
     }
 
     std::unique_ptr<Image>
+    create_image_rgba(const std::uint8_t* pixels, int w, int h) override
+    {
+        if (!pixels || w <= 0 || h <= 0)
+            return nullptr;
+        // QImage::Format_RGBA8888 matches nanosvg's RGBA output byte order.
+        // .copy() detaches from the caller's buffer before it's freed.
+        QImage img(pixels, w, h, w * 4, QImage::Format_RGBA8888);
+        return std::make_unique<QtImage>(img.copy());
+    }
+
+    std::unique_ptr<Image>
     scale_image(const Image& src, int max_w, int max_h) override
     {
         const auto& qi = static_cast<const QtImage&>(src);
