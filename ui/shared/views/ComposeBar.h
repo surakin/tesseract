@@ -388,12 +388,12 @@ private:
     tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::Button* send_btn_ = nullptr;    // borrowed
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
-    // Cached layouts for glyphs painted *over* the Icon-variant emoji and
-    // sticker buttons — same Title-size + ascent-centring as reaction
-    // chips, so the surfaces look consistent.
-    std::unique_ptr<tk::TextLayout> emoji_layout_;
-    std::unique_ptr<tk::TextLayout> sticker_layout_;
-    std::unique_ptr<tk::TextLayout> mic_layout_;
+    // Cached SVG icons for the emoji, sticker, and mic buttons — rasterized
+    // lazily on first paint via tk::rasterize_svg().
+    std::unique_ptr<tk::Image> emoji_icon_;
+    std::unique_ptr<tk::Image> sticker_icon_;
+    std::unique_ptr<tk::Image> mic_icon_;
+    std::unique_ptr<tk::Image> mic_stop_icon_;
     // × glyph for the remove-attachment button (Body size, hover-tinted).
     std::unique_ptr<tk::TextLayout> remove_layout_;
     tk::Rect text_area_rect_{};
