@@ -372,6 +372,7 @@ public:
     tk::Widget* hit_test(tk::Point world) override;
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
 

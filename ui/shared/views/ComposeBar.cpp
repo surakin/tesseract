@@ -1531,6 +1531,24 @@ void ComposeBar::on_pointer_up(tk::Point local, bool inside_self)
     tk::Widget::on_pointer_up(local, inside_self);
 }
 
+tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
+{
+    if (!visible_ || !contains_world(world))
+        return nullptr;
+    // Buttons are the deepest hit children; the default dispatch would return
+    // one of them and skip our on_pointer_move(), so tooltips would never fire.
+    // Mirror the RoomHeader fix: delegate first, then always call our own
+    // on_pointer_move() so we track hover across all button rects.
+    Widget* hit = Widget::dispatch_pointer_move(world, dirty);
+    if (hit && hit != this)
+    {
+        tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
+        if (on_pointer_move(local) && dirty)
+            *dirty = true;
+    }
+    return this;
+}
+
 bool ComposeBar::on_pointer_move(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
