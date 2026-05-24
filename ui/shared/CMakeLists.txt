@@ -124,6 +124,8 @@ set(_tk_sources
     views/settings/DevicesSection.cpp
     views/settings/AboutSection.h
     views/settings/AboutSection.cpp
+    views/settings/PrivacySection.h
+    views/settings/PrivacySection.cpp
 )
 
 if(TESSERACT_UI STREQUAL "win32")

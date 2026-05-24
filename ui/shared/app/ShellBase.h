@@ -708,6 +708,11 @@ protected:
     // sync handshake has settled (RoomListState::Running).
     void start_presence_tracking_();
 
+    // Called from each shell when the "Send and receive presence status" toggle
+    // changes. Persists the setting, enables/disables the Rust polling loop,
+    // and starts or stops the PresenceTracker accordingly.
+    void handle_send_presence_toggle_(bool enabled);
+
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.

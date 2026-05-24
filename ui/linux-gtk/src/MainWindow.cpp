@@ -1909,6 +1909,10 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             if (settings_controller_)
                 settings_controller_->set_notifications_enabled(enabled);
         };
+        settings_widget_->on_send_presence_changed = [this](bool enabled)
+        {
+            handle_send_presence_toggle_(enabled);
+        };
         settings_widget_->on_group_inactive_changed = [this](bool enabled)
         {
             auto& s = tesseract::Settings::instance();
@@ -2396,6 +2400,7 @@ void MainWindow::do_login()
 
                     gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
                 });
+            wire_key_dialog_callbacks_();
             if (active_account_index_ >= 0 &&
                 active_account_index_ < static_cast<int>(accounts_.size()))
             {
@@ -2619,6 +2624,7 @@ void MainWindow::on_login_succeeded()
 
             gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
         });
+    wire_key_dialog_callbacks_();
     if (active_account_index_ >= 0 &&
         active_account_index_ < static_cast<int>(accounts_.size()))
     {
@@ -2632,6 +2638,142 @@ void MainWindow::on_login_succeeded()
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     maybe_show_recovery_banner();
     start_tray_if_needed_();
+}
+
+void MainWindow::wire_key_dialog_callbacks_()
+{
+    settings_controller_->show_passphrase_prompt =
+        [this](std::string title, std::function<void(std::string)> cb)
+    {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GtkWidget* dlg = gtk_dialog_new_with_buttons(
+            title.c_str(), GTK_WINDOW(window_), GTK_DIALOG_MODAL,
+            "_Cancel", GTK_RESPONSE_CANCEL, "_OK", GTK_RESPONSE_OK, nullptr);
+        G_GNUC_END_IGNORE_DEPRECATIONS
+
+        GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dlg));
+        GtkWidget* entry = gtk_entry_new();
+        gtk_entry_set_visibility(GTK_ENTRY(entry), FALSE);
+        gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Passphrase");
+        gtk_widget_set_margin_start(entry, 12);
+        gtk_widget_set_margin_end(entry, 12);
+        gtk_widget_set_margin_top(entry, 8);
+        gtk_widget_set_margin_bottom(entry, 8);
+        gtk_box_append(GTK_BOX(content), entry);
+        gtk_widget_show(dlg);
+
+        struct PassphraseCtx {
+            std::function<void(std::string)> cb;
+            GtkWidget* entry;
+        };
+        auto* ctx = new PassphraseCtx{std::move(cb), entry};
+        g_signal_connect(
+            dlg, "response",
+            G_CALLBACK(+[](GtkDialog* d, int resp, gpointer data)
+            {
+                auto* c = static_cast<PassphraseCtx*>(data);
+                if (resp == GTK_RESPONSE_OK)
+                {
+                    const char* text =
+                        gtk_editable_get_text(GTK_EDITABLE(c->entry));
+                    if (text && text[0] != '\0')
+                        c->cb(std::string(text));
+                }
+                delete c;
+                gtk_window_destroy(GTK_WINDOW(d));
+            }),
+            ctx);
+    };
+
+    settings_controller_->show_save_file_dialog =
+        [this](std::string suggested_name, std::function<void(std::string)> cb)
+    {
+        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+            "Save room keys", GTK_WINDOW(window_),
+            GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg),
+                                          suggested_name.c_str());
+
+        struct SaveCtx { std::function<void(std::string)> cb; };
+        auto* ctx = new SaveCtx{std::move(cb)};
+        g_signal_connect(
+            dlg, "response",
+            G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+            {
+                auto* c = static_cast<SaveCtx*>(data);
+                if (resp == GTK_RESPONSE_ACCEPT)
+                {
+                    GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                    char* path = g_file_get_path(file);
+                    if (path) { c->cb(std::string(path)); g_free(path); }
+                    g_object_unref(file);
+                }
+                delete c;
+                gtk_native_dialog_destroy(d);
+            }),
+            ctx);
+        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+    };
+
+    settings_controller_->show_open_file_dialog =
+        [this](std::function<void(std::string)> cb)
+    {
+        GtkFileChooserNative* dlg = gtk_file_chooser_native_new(
+            "Open room keys", GTK_WINDOW(window_),
+            GTK_FILE_CHOOSER_ACTION_OPEN, "_Open", "_Cancel");
+
+        struct OpenCtx { std::function<void(std::string)> cb; };
+        auto* ctx = new OpenCtx{std::move(cb)};
+        g_signal_connect(
+            dlg, "response",
+            G_CALLBACK(+[](GtkNativeDialog* d, int resp, gpointer data)
+            {
+                auto* c = static_cast<OpenCtx*>(data);
+                if (resp == GTK_RESPONSE_ACCEPT)
+                {
+                    GFile* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+                    char* path = g_file_get_path(file);
+                    if (path) { c->cb(std::string(path)); g_free(path); }
+                    g_object_unref(file);
+                }
+                delete c;
+                gtk_native_dialog_destroy(d);
+            }),
+            ctx);
+        gtk_native_dialog_show(GTK_NATIVE_DIALOG(dlg));
+    };
+
+    settings_controller_->on_export_keys_result =
+        [this](bool ok, std::string error)
+    {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GtkWidget* dlg = gtk_message_dialog_new(
+            GTK_WINDOW(window_), GTK_DIALOG_MODAL,
+            ok ? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+            "%s", ok ? "Room keys exported successfully." : error.c_str());
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        g_signal_connect(dlg, "response",
+                         G_CALLBACK(+[](GtkDialog* d, int, gpointer)
+                         { gtk_window_destroy(GTK_WINDOW(d)); }),
+                         nullptr);
+        gtk_widget_show(dlg);
+    };
+
+    settings_controller_->on_import_keys_result =
+        [this](bool ok, std::string error)
+    {
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        GtkWidget* dlg = gtk_message_dialog_new(
+            GTK_WINDOW(window_), GTK_DIALOG_MODAL,
+            ok ? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+            "%s", ok ? "Room keys imported successfully." : error.c_str());
+        G_GNUC_END_IGNORE_DEPRECATIONS
+        g_signal_connect(dlg, "response",
+                         G_CALLBACK(+[](GtkDialog* d, int, gpointer)
+                         { gtk_window_destroy(GTK_WINDOW(d)); }),
+                         nullptr);
+        gtk_widget_show(dlg);
+    };
 }
 
 void MainWindow::on_send_clicked()

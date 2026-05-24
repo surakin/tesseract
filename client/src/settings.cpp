@@ -135,6 +135,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     group_inactive_rooms = extract_bool(json, "group_inactive_rooms", false);
     inactive_room_threshold_days =
         extract_int(json, "inactive_room_threshold_days", 30);
+    send_presence = extract_bool(json, "send_presence", true);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -171,6 +172,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
       << ",\"group_inactive_rooms\":"
       << (group_inactive_rooms ? "true" : "false")
       << ",\"inactive_room_threshold_days\":" << inactive_room_threshold_days
+      << ",\"send_presence\":"
+      << (send_presence ? "true" : "false")
       << "}";
 }
 

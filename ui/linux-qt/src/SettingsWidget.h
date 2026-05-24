@@ -49,6 +49,7 @@ signals:
     void logoutRequested();
     void themeChanged(tesseract::Settings::ThemePreference pref);
     void notificationsChanged(bool enabled);
+    void presenceChanged(bool enabled);
     void roomListGroupingChanged();
     void clearCachesRequested();
 

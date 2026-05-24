@@ -106,6 +106,11 @@ public:
     bool group_inactive_rooms = false;
     int inactive_room_threshold_days = 30;
 
+    // ── Privacy ───────────────────────────────────────────────────────
+    // When false, the app neither publishes its own presence status to the
+    // server nor polls other users' presence. Default on.
+    bool send_presence = true;
+
     // Persist / restore settings in <config_dir>/app_settings.json.
     // load_from_disk is a no-op when the file is missing.
     // save_to_disk creates the directory if needed.

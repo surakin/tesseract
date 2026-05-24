@@ -151,6 +151,7 @@ public:
     // Also called by RoomWindow for save dialogs in popout windows.
     std::wstring show_save_dialog_(const std::wstring& suggested,
                                    const wchar_t* filter);
+    void wire_key_dialog_callbacks_();
 
 private:
     void on_create(HWND hwnd);

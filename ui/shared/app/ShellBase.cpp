@@ -1744,6 +1744,10 @@ void ShellBase::start_presence_tracking_()
     {
         return;
     }
+    if (!tesseract::Settings::instance().send_presence)
+    {
+        return;
+    }
     presence_tracker_ = std::make_unique<PresenceTracker>();
     presence_tracker_->on_state_change =
         [this](PresenceTracker::State s)
@@ -1765,6 +1769,28 @@ void ShellBase::start_presence_tracking_()
             });
     };
     presence_tracker_->notify_sync_started();
+}
+
+void ShellBase::handle_send_presence_toggle_(bool enabled)
+{
+    auto& s = tesseract::Settings::instance();
+    s.send_presence = enabled;
+    s.save_to_disk(tesseract::config_dir());
+
+    if (client_)
+    {
+        client_->set_presence_polling_enabled(enabled);
+    }
+
+    if (enabled)
+    {
+        start_presence_tracking_();
+    }
+    else
+    {
+        notify_presence_logout_();
+        presence_tracker_.reset();
+    }
 }
 
 void ShellBase::handle_compose_text_changed_(const std::string& text)

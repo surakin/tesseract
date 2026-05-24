@@ -78,6 +78,101 @@ std::string wstr_to_utf8(const wchar_t* w)
     return s;
 }
 
+// Builds an in-memory DLGTEMPLATE and shows a modal password-entry dialog.
+// Returns the entered passphrase, or an empty string if cancelled.
+struct PassphraseCtx_ { HWND edit = nullptr; std::wstring result; };
+
+INT_PTR CALLBACK PassphraseDlgProc_(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    auto* ctx = reinterpret_cast<PassphraseCtx_*>(
+        GetWindowLongPtrW(dlg, GWLP_USERDATA));
+    switch (msg)
+    {
+    case WM_INITDIALOG:
+        SetWindowLongPtrW(dlg, GWLP_USERDATA, lp);
+        ctx = reinterpret_cast<PassphraseCtx_*>(lp);
+        ctx->edit = GetDlgItem(dlg, 100);
+        SetFocus(ctx->edit);
+        return FALSE;
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDOK && ctx)
+        {
+            wchar_t buf[512]{};
+            GetWindowTextW(ctx->edit, buf, 512);
+            ctx->result = buf;
+            SecureZeroMemory(buf, sizeof(buf));
+        }
+        if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)
+        {
+            EndDialog(dlg, LOWORD(wp));
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+std::wstring prompt_passphrase_w32(HWND parent, const wchar_t* title)
+{
+    alignas(DWORD) uint8_t tmpl[1024]{};
+    uint8_t* p = tmpl;
+
+    auto w16  = [&](WORD v)         { memcpy(p, &v, 2); p += 2; };
+    auto wstr = [&](const wchar_t* s)
+    {
+        size_t n = (wcslen(s) + 1) * 2;
+        memcpy(p, s, n);
+        p += n;
+    };
+    auto align4 = [&]()
+    {
+        auto off = static_cast<uintptr_t>(p - tmpl);
+        if (off & 2) { w16(0); }
+    };
+
+    // DLGTEMPLATE header (18 bytes).
+    auto* dt = reinterpret_cast<DLGTEMPLATE*>(p);
+    dt->style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER | DS_SETFONT;
+    dt->dwExtendedStyle = 0;
+    dt->cdit = 3;
+    dt->x = 0; dt->y = 0; dt->cx = 200; dt->cy = 58;
+    p += sizeof(DLGTEMPLATE);
+
+    w16(0);          // no menu
+    w16(0);          // predefined window class
+    wstr(title);     // dialog title
+    w16(9);          // DS_SETFONT: 9pt
+    wstr(L"Segoe UI");
+    align4();
+
+    auto item = [&](DWORD style, WORD id, short x, short y, short cx, short cy,
+                    WORD cls_atom, const wchar_t* text)
+    {
+        auto* di = reinterpret_cast<DLGITEMTEMPLATE*>(p);
+        di->style = style;
+        di->dwExtendedStyle = 0;
+        di->id = id;
+        di->x = x; di->y = y; di->cx = cx; di->cy = cy;
+        p += sizeof(DLGITEMTEMPLATE);
+        w16(0xFFFF); w16(cls_atom);
+        wstr(text);
+        w16(0);      // no creation data
+        align4();
+    };
+
+    item(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL,
+         100, 4, 4, 192, 14, 0x0081, L"");
+    item(WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, IDOK, 96, 40, 46, 14, 0x0080, L"OK");
+    item(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, IDCANCEL, 146, 40, 50, 14, 0x0080, L"Cancel");
+
+    PassphraseCtx_ ctx;
+    DialogBoxIndirectParamW(GetModuleHandleW(nullptr),
+                            reinterpret_cast<LPCDLGTEMPLATEW>(tmpl),
+                            parent, PassphraseDlgProc_,
+                            reinterpret_cast<LPARAM>(&ctx));
+    return ctx.result;
+}
+
 } // namespace
 
 namespace win32
@@ -2642,6 +2737,10 @@ void MainWindow::on_create(HWND hwnd)
             s.save_to_disk(tesseract::config_dir());
             if (room_list_view_) room_list_view_->refresh();
         };
+        settings_view_->on_send_presence_changed = [this](bool enabled)
+        {
+            handle_send_presence_toggle_(enabled);
+        };
         settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
         settings_view_->on_clear_caches = [this]
         {
@@ -2909,6 +3008,7 @@ void MainWindow::start_login()
             post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
                          mime]() mutable { cb(std::move(bytes), mime); });
         });
+    wire_key_dialog_callbacks_();
 
     if (settings_view_)
     {
@@ -3107,6 +3207,7 @@ void MainWindow::on_login_succeeded()
             post_to_ui_([cb = std::move(cb), bytes = std::move(bytes),
                          mime]() mutable { cb(std::move(bytes), mime); });
         });
+    wire_key_dialog_callbacks_();
 
     if (settings_view_)
     {
@@ -3172,6 +3273,8 @@ void MainWindow::open_settings_()
         tesseract::Settings::instance().group_inactive_rooms);
     settings_view_->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
+    settings_view_->set_send_presence_pref(
+        tesseract::Settings::instance().send_presence);
 
     if (settings_controller_ && settings_name_field_)
     {
@@ -6581,6 +6684,67 @@ void MainWindow::apply_cached_messages_(
     {
         main_app_surface_->relayout();
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MainWindow::wire_key_dialog_callbacks_()
+{
+    settings_controller_->show_passphrase_prompt =
+        [this](std::string title, std::function<void(std::string)> cb)
+    {
+        std::wstring pass =
+            prompt_passphrase_w32(hwnd_, utf8_to_wstr(title).c_str());
+        if (!pass.empty())
+            cb(wstr_to_utf8(pass.c_str()));
+    };
+
+    settings_controller_->show_save_file_dialog =
+        [this](std::string suggested_name, std::function<void(std::string)> cb)
+    {
+        std::wstring path = show_save_dialog_(
+            utf8_to_wstr(suggested_name),
+            L"Key files\0*.txt\0All files\0*.*\0\0");
+        if (!path.empty())
+            cb(wstr_to_utf8(path.c_str()));
+    };
+
+    settings_controller_->show_open_file_dialog =
+        [this](std::function<void(std::string)> cb)
+    {
+        wchar_t buf[MAX_PATH]{};
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner   = hwnd_;
+        ofn.lpstrFile   = buf;
+        ofn.nMaxFile    = MAX_PATH;
+        ofn.lpstrFilter = L"Key files\0*.txt\0All files\0*.*\0\0";
+        ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+        if (GetOpenFileNameW(&ofn))
+            cb(wstr_to_utf8(buf));
+    };
+
+    settings_controller_->on_export_keys_result =
+        [this](bool ok, std::string error)
+    {
+        if (ok)
+            MessageBoxW(hwnd_, L"Room keys exported successfully.",
+                        L"Export complete", MB_OK | MB_ICONINFORMATION);
+        else
+            MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
+                        L"Export failed", MB_OK | MB_ICONWARNING);
+    };
+
+    settings_controller_->on_import_keys_result =
+        [this](bool ok, std::string error)
+    {
+        if (ok)
+            MessageBoxW(hwnd_, L"Room keys imported successfully.",
+                        L"Import complete", MB_OK | MB_ICONINFORMATION);
+        else
+            MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
+                        L"Import failed", MB_OK | MB_ICONWARNING);
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

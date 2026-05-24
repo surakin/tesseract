@@ -52,6 +52,7 @@ public:
     std::function<void()> on_clear_caches;
     std::function<void(tesseract::Settings::ThemePreference)> on_theme_changed;
     std::function<void(bool)> on_notifications_changed;
+    std::function<void(bool)> on_send_presence_changed;
     std::function<void(bool)> on_group_inactive_changed;
     std::function<void(int)>  on_inactive_period_changed;
 

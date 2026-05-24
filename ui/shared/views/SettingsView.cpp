@@ -88,6 +88,16 @@ SettingsView::SettingsView()
     };
     media_ = media.get();
 
+    // Privacy section.
+    auto privacy = std::make_unique<PrivacySection>();
+    privacy->on_send_presence_changed = [this](bool v)
+    {
+        if (on_send_presence_changed) on_send_presence_changed(v);
+    };
+    // on_export_keys / on_import_keys are wired in set_controller()
+    // once the SettingsController is available.
+    privacy_ = privacy.get();
+
     // Server section.
     auto server = std::make_unique<ServerSection>();
     server_section_ = server.get();
@@ -108,6 +118,7 @@ SettingsView::SettingsView()
     tabs->add_tab("Appearance", std::move(appearance));
     tabs->add_tab("Notifications", std::move(notifications));
     tabs->add_tab("Media", std::move(media));
+    tabs->add_tab("Privacy", std::move(privacy));
     tabs->add_tab("Server", std::move(server));
     tabs->add_bottom_tab("About", std::move(about));
     // First tab is auto-selected by SideTabView::add_tab.
@@ -216,6 +227,14 @@ void SettingsView::set_prefetch_enabled(bool enabled)
     if (media_)
     {
         media_->set_prefetch_checked(enabled);
+    }
+}
+
+void SettingsView::set_send_presence_pref(bool enabled)
+{
+    if (privacy_)
+    {
+        privacy_->set_send_presence(enabled);
     }
 }
 
@@ -443,6 +462,13 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     }
     devices_->set_loading(true);
     ctrl->load_devices();
+
+    // Wire PrivacySection buttons → controller key export/import flows.
+    if (privacy_)
+    {
+        privacy_->on_export_keys = [ctrl] { ctrl->export_room_keys(); };
+        privacy_->on_import_keys = [ctrl] { ctrl->import_room_keys(); };
+    }
 }
 
 void SettingsView::set_name_busy(bool busy)        { account_->set_name_busy(busy); }

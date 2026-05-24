@@ -22,6 +22,7 @@
 #include "views/settings/DevicesSection.h"
 #include "views/settings/MediaSection.h"
 #include "views/settings/NotificationsSection.h"
+#include "views/settings/PrivacySection.h"
 #include "views/settings/ServerSection.h"
 #include "views/ConfirmDialog.h"
 
@@ -78,6 +79,11 @@ public:
 
     // Silently initialise the prefetch checkbox from persisted settings.
     void set_prefetch_enabled(bool enabled);
+
+    // ----- Privacy section --------------------------------------------------
+
+    // Silently initialise the presence checkbox from persisted settings.
+    void set_send_presence_pref(bool enabled);
 
     // ----- Server section ---------------------------------------------------
 
@@ -148,6 +154,9 @@ public:
     // Fired when the user toggles full-media pre-fetch.
     std::function<void(bool)> on_prefetch_changed;
 
+    // Fired when the user toggles the "Send and receive presence status" option.
+    std::function<void(bool)> on_send_presence_changed;
+
     // Fired when the active settings tab changes (so shells can relayout
     // native overlays whose visibility depends on the selected tab).
     std::function<void()> on_tab_changed;
@@ -177,6 +186,7 @@ private:
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
     MediaSection* media_ = nullptr;
+    PrivacySection*  privacy_        = nullptr;
     ServerSection* server_section_ = nullptr;
     DevicesSection*  devices_        = nullptr;
     AboutSection*    about_          = nullptr;

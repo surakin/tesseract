@@ -1,5 +1,8 @@
 #include "SettingsWidget.h"
 
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QResizeEvent>
 
 #include "tk/theme.h"
@@ -33,6 +36,10 @@ SettingsWidget::SettingsWidget(QWidget* parent)
     settings_view_->on_notifications_changed = [this](bool enabled)
     {
         emit notificationsChanged(enabled);
+    };
+    settings_view_->on_send_presence_changed = [this](bool enabled)
+    {
+        emit presenceChanged(enabled);
     };
     // Persisted directly here (self-contained — no extra wrapper/MainWindow
     // plumbing); the lock-screen privacy gate is always on regardless.
@@ -104,6 +111,8 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    settings_view_->set_send_presence_pref(
+        tesseract::Settings::instance().send_presence);
     settings_view_->set_group_inactive_pref(
         tesseract::Settings::instance().group_inactive_rooms);
     settings_view_->set_inactive_period_pref(
@@ -163,6 +172,51 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl,
     settings_view_->on_avatar_remove_requested = [this]
     {
         if (controller_) controller_->remove_avatar();
+    };
+
+    // Room key export/import dialog callbacks.
+    ctrl->show_passphrase_prompt =
+        [this](std::string title, std::function<void(std::string)> cb)
+    {
+        bool ok = false;
+        QString pass = QInputDialog::getText(
+            this, QString::fromStdString(title), "Passphrase:",
+            QLineEdit::Password, "", &ok);
+        if (ok && !pass.isEmpty())
+            cb(pass.toStdString());
+    };
+    ctrl->show_save_file_dialog =
+        [this](std::string suggested, std::function<void(std::string)> cb)
+    {
+        QString path = QFileDialog::getSaveFileName(
+            this, "Export Room Keys", QString::fromStdString(suggested));
+        if (!path.isEmpty())
+            cb(path.toStdString());
+    };
+    ctrl->show_open_file_dialog =
+        [this](std::function<void(std::string)> cb)
+    {
+        QString path = QFileDialog::getOpenFileName(this, "Import Room Keys");
+        if (!path.isEmpty())
+            cb(path.toStdString());
+    };
+    ctrl->on_export_keys_result = [this](bool ok, std::string error)
+    {
+        if (ok)
+            QMessageBox::information(this, "Export complete",
+                                     "Room keys exported successfully.");
+        else
+            QMessageBox::warning(this, "Export failed",
+                                 QString::fromStdString(error));
+    };
+    ctrl->on_import_keys_result = [this](bool ok, std::string error)
+    {
+        if (ok)
+            QMessageBox::information(this, "Import complete",
+                                     "Room keys imported successfully.");
+        else
+            QMessageBox::warning(this, "Import failed",
+                                 QString::fromStdString(error));
     };
 
     // Create (or recreate) the NativeTextField for name editing.

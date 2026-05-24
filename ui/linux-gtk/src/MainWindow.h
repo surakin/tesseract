@@ -178,6 +178,7 @@ private:
     void do_login();
     void do_logout();
     void on_login_succeeded();
+    void wire_key_dialog_callbacks_();
     void navigate_to_room(const std::string& room_id);
     void handle_notification(const std::string& user_id,
                              const std::string& room_id,

@@ -1190,6 +1190,23 @@ BackupProgress Client::backup_state() const
     return from_ffi(impl_->ffi->backup_state());
 }
 
+Result Client::export_room_keys(const std::string& path,
+                                const std::string& passphrase)
+{
+    return from_ffi(impl_->ffi->export_room_keys(path, passphrase));
+}
+
+Result Client::import_room_keys(const std::string& path,
+                                const std::string& passphrase)
+{
+    return from_ffi(impl_->ffi->import_room_keys(path, passphrase));
+}
+
+void Client::set_presence_polling_enabled(bool enabled)
+{
+    impl_->ffi->set_presence_polling_enabled(enabled);
+}
+
 Result Client::request_self_verification()
 {
     return from_ffi(impl_->ffi->request_self_verification());

@@ -358,9 +358,14 @@ pub struct ClientFfi {
     /// Created once so TLS root certificates are loaded only on startup and
     /// connection pools are reused across calls.
     http_client: reqwest::Client,
+    /// When `false`, the background presence polling loop skips every tick.
+    /// Controlled by `set_presence_polling_enabled`; stored as an `AtomicBool`
+    /// so it can be updated from the UI thread while the polling task runs on
+    /// a worker thread without requiring a lock or a full stop/restart.
+    presence_polling_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Maps verification `flow_id` → `user_id` for in-flight verification
     /// requests (both incoming and outgoing). Allows `accept_verification`,
-    /// `start_sas`, etc. to look up the right VerificationRequest via the
+    /// `start_sas`, etc. to look up the VerificationRequest via the
     /// SDK's internal map using (user_id, flow_id).
     #[cfg(not(test))]
     verification_flow_users: Arc<Mutex<HashMap<String, String>>>,
@@ -909,6 +914,7 @@ impl ClientFfi {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
+            presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
@@ -1543,6 +1549,7 @@ impl ClientFfi {
             // fresh (cheap: one 403 per session per puppet).
             let forbidden_presence: Arc<std::sync::Mutex<HashSet<matrix_sdk::ruma::OwnedUserId>>> =
                 Arc::new(std::sync::Mutex::new(HashSet::new()));
+            let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
             self.spawn_tracked(async move {
                 let mut interval =
                     tokio::time::interval(tokio::time::Duration::from_secs(30));
@@ -1553,6 +1560,9 @@ impl ClientFfi {
                     tokio::select! {
                         _ = stop_rx_presence.changed() => break,
                         _ = interval.tick() => {}
+                    }
+                    if !presence_enabled_p.load(std::sync::atomic::Ordering::Relaxed) {
+                        continue;
                     }
                     let Some(me) = client_p.user_id() else { continue };
                     let me = me.to_owned();
@@ -6158,6 +6168,69 @@ impl ClientFfi {
     }
 
     // -----------------------------------------------------------------------
+    // Room key file export / import (Megolm export format)
+    // -----------------------------------------------------------------------
+
+    /// Export all Megolm room keys to the passphrase-encrypted file at
+    /// `path`. The output uses the standard Matrix key-export format so the
+    /// file can be imported by any compatible Matrix client.
+    #[cfg(not(test))]
+    pub fn export_room_keys(&mut self, path: &str, passphrase: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        if passphrase.is_empty() {
+            return err("passphrase must not be empty");
+        }
+        let path_buf = std::path::PathBuf::from(path);
+        let pass = passphrase.to_owned();
+        match self.rt.block_on(async move {
+            client.encryption().export_room_keys(path_buf, &pass, |_| true).await
+        }) {
+            Ok(()) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn export_room_keys(&mut self, _path: &str, _passphrase: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Import Megolm room keys from the passphrase-encrypted file at `path`.
+    /// Returns an error string on failure (wrong passphrase, bad file, etc.).
+    #[cfg(not(test))]
+    pub fn import_room_keys(&mut self, path: &str, passphrase: &str) -> OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let path_buf = std::path::PathBuf::from(path);
+        let pass = passphrase.to_owned();
+        match self.rt.block_on(async move {
+            client.encryption().import_room_keys(path_buf, &pass).await
+        }) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn import_room_keys(&mut self, _path: &str, _passphrase: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    // -----------------------------------------------------------------------
+    // Presence polling toggle
+    // -----------------------------------------------------------------------
+
+    /// Enable or disable background presence polling. Thread-safe — may be
+    /// called from the UI thread while the polling task runs on a worker.
+    pub fn set_presence_polling_enabled(&mut self, enabled: bool) {
+        self.presence_polling_enabled
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // -----------------------------------------------------------------------
     // SAS device verification
     // -----------------------------------------------------------------------
 
@@ -9673,6 +9746,32 @@ mod tests {
         assert_eq!(s.state, BACKUP_STATE_UNKNOWN);
         assert_eq!(s.imported_keys, 0);
         assert_eq!(s.total_keys, 0);
+    }
+
+    #[test]
+    fn export_room_keys_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.export_room_keys("/tmp/keys.txt", "pass");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn import_room_keys_fails_when_not_logged_in() {
+        let mut c = ClientFfi::new();
+        let r = c.import_room_keys("/tmp/keys.txt", "pass");
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn set_presence_polling_enabled_roundtrips() {
+        let mut c = ClientFfi::new();
+        assert!(c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
+        c.set_presence_polling_enabled(false);
+        assert!(!c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
+        c.set_presence_polling_enabled(true);
+        assert!(c.presence_polling_enabled.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]

@@ -3318,6 +3318,11 @@ void MacShell::apply_cached_messages_(
                 tesseract::config_dir());
             if (s->_roomListView) s->_roomListView->refresh();
         };
+        _settingsView->on_send_presence_changed = [ws](bool enabled)
+        {
+            MainWindowController* s = ws;
+            if (s) s->_shell->handle_send_presence_toggle_(enabled);
+        };
         _settingsView->on_tab_changed = [ws] {
             MainWindowController* s = ws;
             if (s) s->_settingsSurface->relayout();
@@ -4207,6 +4212,88 @@ void MacShell::apply_cached_messages_(
                 }];
             });
 
+    // Key export/import dialog hooks.
+    _shell->settings_controller_->show_passphrase_prompt =
+        [ws](std::string title, std::function<void(std::string)> cb)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = [NSString stringWithUTF8String:title.c_str()];
+        alert.alertStyle = NSAlertStyleInformational;
+        NSSecureTextField* field = [[NSSecureTextField alloc]
+            initWithFrame:NSMakeRect(0, 0, 260, 24)];
+        field.placeholderString = @"Passphrase";
+        alert.accessoryView = field;
+        [alert addButtonWithTitle:@"OK"];
+        [alert addButtonWithTitle:@"Cancel"];
+        [alert beginSheetModalForWindow:s.window
+                      completionHandler:^(NSModalResponse resp) {
+            if (resp == NSAlertFirstButtonReturn) {
+                std::string pass = field.stringValue.UTF8String ?: "";
+                if (!pass.empty()) cb(std::move(pass));
+            }
+        }];
+    };
+
+    _shell->settings_controller_->show_save_file_dialog =
+        [ws](std::string suggested_name, std::function<void(std::string)> cb)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSSavePanel* panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue =
+            [NSString stringWithUTF8String:suggested_name.c_str()];
+        [panel beginSheetModalForWindow:s.window
+                      completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK && panel.URL)
+                cb(panel.URL.path.UTF8String ?: "");
+        }];
+    };
+
+    _shell->settings_controller_->show_open_file_dialog =
+        [ws](std::function<void(std::string)> cb)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        panel.canChooseFiles = YES;
+        panel.allowsMultipleSelection = NO;
+        [panel beginSheetModalForWindow:s.window
+                      completionHandler:^(NSModalResponse result) {
+            if (result == NSModalResponseOK && panel.URL)
+                cb(panel.URL.path.UTF8String ?: "");
+        }];
+    };
+
+    _shell->settings_controller_->on_export_keys_result =
+        [ws](bool ok, std::string error)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = ok ? @"Export complete" : @"Export failed";
+        alert.informativeText = ok
+            ? @"Room keys exported successfully."
+            : [NSString stringWithUTF8String:error.c_str()];
+        alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
+        [alert beginSheetModalForWindow:s.window completionHandler:nil];
+    };
+
+    _shell->settings_controller_->on_import_keys_result =
+        [ws](bool ok, std::string error)
+    {
+        MainWindowController* s = ws;
+        if (!s) return;
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = ok ? @"Import complete" : @"Import failed";
+        alert.informativeText = ok
+            ? @"Room keys imported successfully."
+            : [NSString stringWithUTF8String:error.c_str()];
+        alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
+        [alert beginSheetModalForWindow:s.window completionHandler:nil];
+    };
+
     _settingsNameField = _settingsSurface->host().make_text_field();
     _settingsNameField->set_text(_shell->my_display_name_);
     _settingsNameField->set_placeholder("Display name");
@@ -4549,6 +4636,8 @@ void MacShell::apply_cached_messages_(
         tesseract::Settings::instance().group_inactive_rooms);
     _settingsView->set_inactive_period_pref(
         tesseract::Settings::instance().inactive_room_threshold_days);
+    _settingsView->set_send_presence_pref(
+        tesseract::Settings::instance().send_presence);
     _settingsSurface->relayout();
 
     _shell->compute_cache_sizes_([ws](uint64_t local, uint64_t sdk)

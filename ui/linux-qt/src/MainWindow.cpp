@@ -3766,6 +3766,11 @@ void MainWindow::openSettings()
                     if (settings_controller_)
                         settings_controller_->set_notifications_enabled(enabled);
                 });
+        connect(settingsWidget_, &SettingsWidget::presenceChanged, this,
+                [this](bool enabled)
+                {
+                    handle_send_presence_toggle_(enabled);
+                });
         connect(settingsWidget_, &SettingsWidget::roomListGroupingChanged, this,
                 [this]
                 {

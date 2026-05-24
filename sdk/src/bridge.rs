@@ -1311,6 +1311,12 @@ pub mod ffi {
         /// Any other value is rejected with `ok=false`. Blocks — worker thread.
         fn set_presence(self: &mut ClientFfi, state: u8) -> OpResult;
 
+        /// Enable or disable background presence polling of DM counterparts.
+        /// When disabled the polling loop skips every tick; already-received
+        /// presence values are left unchanged. Thread-safe; may be called on
+        /// any thread.
+        fn set_presence_polling_enabled(self: &mut ClientFfi, enabled: bool);
+
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;
@@ -1345,6 +1351,14 @@ pub mod ffi {
 
         /// Current snapshot of the backup state and import counters.
         fn backup_state(self: &ClientFfi) -> BackupProgress;
+
+        /// Export all Megolm room keys to a passphrase-encrypted file at
+        /// `path` (standard Matrix key-export format). Blocks — worker thread.
+        fn export_room_keys(self: &mut ClientFfi, path: &str, passphrase: &str) -> OpResult;
+
+        /// Import Megolm room keys from the passphrase-encrypted file at
+        /// `path` (standard Matrix key-export format). Blocks — worker thread.
+        fn import_room_keys(self: &mut ClientFfi, path: &str, passphrase: &str) -> OpResult;
 
         // ----- SAS device verification -----
 

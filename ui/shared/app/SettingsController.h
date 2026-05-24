@@ -67,6 +67,39 @@ public:
     std::function<void(std::string device_id, bool ok, std::string error)>
                                                                  on_device_deleted;
 
+    // ── Room key export / import ─────────────────────────────────────────────
+    // These callbacks must be set by the platform shell before calling
+    // export_room_keys() / import_room_keys(). Each receives a completion
+    // callback it must invoke with the user's input (or call with an empty
+    // string to signal cancellation).
+
+    // Show a native password-entry dialog with `title`. Invoke `cb` with the
+    // entered passphrase, or with an empty string on cancel.
+    std::function<void(std::string                          title,
+                       std::function<void(std::string)>    cb)>
+        show_passphrase_prompt;
+
+    // Show a native save-file dialog with `suggested_name` as the default
+    // filename. Invoke `cb` with the chosen path, or empty on cancel.
+    std::function<void(std::string                          suggested_name,
+                       std::function<void(std::string)>    cb)>
+        show_save_file_dialog;
+
+    // Show a native open-file dialog. Invoke `cb` with the chosen path, or
+    // empty on cancel.
+    std::function<void(std::function<void(std::string)>    cb)>
+        show_open_file_dialog;
+
+    // Fired on the UI thread with the result of export_room_keys().
+    std::function<void(bool ok, std::string error)> on_export_keys_result;
+    // Fired on the UI thread with the result of import_room_keys().
+    std::function<void(bool ok, std::string error)> on_import_keys_result;
+
+    // Kick off the export flow: passphrase → save-file dialog → async SDK call.
+    void export_room_keys();
+    // Kick off the import flow: open-file dialog → passphrase → async SDK call.
+    void import_room_keys();
+
 private:
     bool acquire_device_op_(const std::string& device_id);
     void release_device_op_(const std::string& device_id);

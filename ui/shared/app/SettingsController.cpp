@@ -375,4 +375,79 @@ void SettingsController::set_display_name(std::string name)
         });
 }
 
+void SettingsController::export_room_keys()
+{
+    if (!show_passphrase_prompt || !show_save_file_dialog)
+        return;
+
+    show_passphrase_prompt(
+        "Export room keys",
+        [this](std::string passphrase)
+        {
+            if (passphrase.empty())
+                return;
+
+            show_save_file_dialog(
+                "room-keys.txt",
+                [this, passphrase = std::move(passphrase)](std::string path) mutable
+                {
+                    if (path.empty())
+                        return;
+
+                    auto* c = client_;
+                    run_async_(
+                        [this, c, path = std::move(path),
+                         passphrase = std::move(passphrase)]() mutable
+                        {
+                            auto result = c ? c->export_room_keys(path, passphrase)
+                                           : tesseract::Result{false, "not logged in"};
+                            post_to_ui_(
+                                [this, result = std::move(result)]()
+                                {
+                                    if (on_export_keys_result)
+                                        on_export_keys_result(result.ok,
+                                                              result.message);
+                                });
+                        });
+                });
+        });
+}
+
+void SettingsController::import_room_keys()
+{
+    if (!show_open_file_dialog || !show_passphrase_prompt)
+        return;
+
+    show_open_file_dialog(
+        [this](std::string path)
+        {
+            if (path.empty())
+                return;
+
+            show_passphrase_prompt(
+                "Import room keys",
+                [this, path = std::move(path)](std::string passphrase) mutable
+                {
+                    if (passphrase.empty())
+                        return;
+
+                    auto* c = client_;
+                    run_async_(
+                        [this, c, path = std::move(path),
+                         passphrase = std::move(passphrase)]() mutable
+                        {
+                            auto result = c ? c->import_room_keys(path, passphrase)
+                                           : tesseract::Result{false, "not logged in"};
+                            post_to_ui_(
+                                [this, result = std::move(result)]()
+                                {
+                                    if (on_import_keys_result)
+                                        on_import_keys_result(result.ok,
+                                                              result.message);
+                                });
+                        });
+                });
+        });
+}
+
 } // namespace tesseract

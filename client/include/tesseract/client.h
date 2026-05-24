@@ -803,6 +803,20 @@ public:
     /// counter. Cheap; reads atomics populated by the sync watcher.
     BackupProgress backup_state() const;
 
+    /// Export all Megolm room keys to a passphrase-encrypted file at `path`
+    /// (standard Matrix key-export format). Blocks — call from a worker thread.
+    Result export_room_keys(const std::string& path,
+                            const std::string& passphrase);
+
+    /// Import Megolm room keys from the passphrase-encrypted file at `path`.
+    /// Blocks — call from a worker thread.
+    Result import_room_keys(const std::string& path,
+                            const std::string& passphrase);
+
+    /// Enable or disable background presence polling. Thread-safe; may be
+    /// called from the UI thread.
+    void set_presence_polling_enabled(bool enabled);
+
     // ------------------------------------------------------------------
     // Cross-signing / SAS device verification
     // ------------------------------------------------------------------

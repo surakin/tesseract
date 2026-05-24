@@ -41,6 +41,11 @@ SettingsWidget::SettingsWidget()
             on_notifications_changed(e);
         }
     };
+    settings_view_->on_send_presence_changed = [this](bool e)
+    {
+        if (on_send_presence_changed)
+            on_send_presence_changed(e);
+    };
     settings_view_->on_group_inactive_changed = [this](bool v)
     {
         if (on_group_inactive_changed)
@@ -133,6 +138,8 @@ void SettingsWidget::populate(
         tesseract::Settings::instance().notification_image_previews);
     settings_view_->set_prefetch_enabled(
         tesseract::Settings::instance().prefetch_full_media);
+    settings_view_->set_send_presence_pref(
+        tesseract::Settings::instance().send_presence);
     surface_->relayout();
 }
 
