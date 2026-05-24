@@ -1047,6 +1047,36 @@ public:
     }
 
     std::unique_ptr<Image>
+    create_image_rgba(const std::uint8_t* pixels, int w, int h) override
+    {
+        if (!pixels || w <= 0 || h <= 0)
+            return nullptr;
+        // Copy into CFData so the provider owns the buffer lifetime.
+        CFRetained<CFDataRef> data{
+            CFDataCreate(kCFAllocatorDefault, pixels,
+                         static_cast<CFIndex>(w * h * 4))};
+        if (!data.get())
+            return nullptr;
+        CFRetained<CGDataProviderRef> provider{
+            CGDataProviderCreateWithCFData(data.get())};
+        if (!provider.get())
+            return nullptr;
+        CFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
+        CGImageRef img = CGImageCreate(
+            static_cast<size_t>(w), static_cast<size_t>(h),
+            8,                  // bits per component
+            32,                 // bits per pixel
+            static_cast<size_t>(w * 4),
+            cs.get(),
+            kCGImageAlphaLast | kCGBitmapByteOrderDefault, // straight RGBA
+            provider.get(),
+            nullptr, false, kCGRenderingIntentDefault);
+        if (!img)
+            return nullptr;
+        return std::make_unique<CGImageWrapper>(img);
+    }
+
+    std::unique_ptr<Image>
     scale_image(const Image& src, int max_w, int max_h) override
     {
         int sw = src.width(), sh = src.height();
