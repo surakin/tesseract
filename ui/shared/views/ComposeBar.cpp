@@ -1,6 +1,8 @@
 #include "ComposeBar.h"
 
+#include "compose_icons.h"
 #include "format.h"
+#include "tk/svg.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -416,7 +418,8 @@ void ComposeBar::set_recording(bool recording)
                 std::chrono::steady_clock::now().time_since_epoch()).count());
     }
     elapsed_layout_.reset();
-    mic_layout_.reset(); // glyph switches between 🎙️ and ⏹ on state change
+    mic_icon_.reset();      // icon switches between mic and stop on state change
+    mic_stop_icon_.reset();
     // Fire on_size_changed so the host relayouts and updates the NativeTextArea
     // visibility (hidden while recording, restored when done).
     if (on_size_changed)
@@ -1342,49 +1345,35 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Paint the icon glyphs over the Icon-variant buttons at the same
-    // size and centring as reaction chips so the icon surfaces match.
-    // Colour-emoji glyphs fill the ascent region and leave the descender
-    // empty, so box-centring leaves them visually high.
-    constexpr float kAscentRatio = 0.78f;
-    auto paint_glyph_over = [&](tk::Rect rect,
-                                std::unique_ptr<tk::TextLayout>& cache,
-                                const char* glyph)
+    // Paint SVG icons centred inside Icon-variant buttons.
+    // Icons are rasterized lazily on first paint and cached as tk::Image.
+    constexpr int kIconPx = 24; // fits inside the 40×40 button with 8 px margin
+    auto paint_icon = [&](tk::Rect rect,
+                          std::unique_ptr<tk::Image>& cache,
+                          std::span<const std::uint8_t> svg_bytes)
     {
         if (rect.empty())
-        {
             return;
-        }
         if (!cache)
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Title;
-            cache = ctx.factory.build_text(std::string(glyph), st);
-        }
+            cache = tk::rasterize_svg(ctx.factory, svg_bytes, kIconPx);
         if (!cache)
-        {
             return;
-        }
-        tk::Size sz = cache->measure();
-        float x = rect.x + (rect.w - sz.w) * 0.5f;
-        float y = rect.y + (rect.h - sz.h * kAscentRatio) * 0.5f;
-        ctx.canvas.draw_text(*cache, {x, y}, ctx.theme.palette.text_primary);
+        float x = rect.x + (rect.w - kIconPx) * 0.5f;
+        float y = rect.y + (rect.h - kIconPx) * 0.5f;
+        ctx.canvas.draw_image(*cache, {x, y, static_cast<float>(kIconPx),
+                                       static_cast<float>(kIconPx)});
     };
 
     if (emoji_btn_ && !recording_)
-    {
-        paint_glyph_over(emoji_rect_, emoji_layout_, "\xF0\x9F\x98\x80");
-    }
+        paint_icon(emoji_rect_, emoji_icon_, kEmojiSvg);
     if (sticker_btn_ && !recording_)
-    {
-        paint_glyph_over(sticker_rect_, sticker_layout_,
-                         "\xF0\x9F\x96\xBC\xEF\xB8\x8F");
-    }
+        paint_icon(sticker_rect_, sticker_icon_, kStickerSvg);
     if (mic_btn_ && mic_available_)
     {
-        // ⏹ U+23F9 while recording, 🎙️ U+1F399 otherwise.
-        paint_glyph_over(mic_btn_rect_, mic_layout_,
-                         recording_ ? "\xE2\x8F\xB9" : "\xF0\x9F\x8E\x99");
+        if (recording_)
+            paint_icon(mic_btn_rect_, mic_stop_icon_, kVoiceStopSvg);
+        else
+            paint_icon(mic_btn_rect_, mic_icon_, kVoiceSvg);
     }
 }
 
