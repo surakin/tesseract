@@ -752,6 +752,8 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
             // Re-apply selection — the selected room may have just been
             // hidden or revealed by the toggle.
             set_selected_room(selected_room_id_cache_);
+            if (on_scroll)
+                on_scroll();
             return;
         }
 
@@ -795,13 +797,22 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
+    auto prev_visible = visible_room_ids();
     rooms_ = std::move(rooms);
     rebuild_items();
+    // Sample BEFORE invalidate_data(): that call sets heights_dirty_, which
+    // makes visible_range() return {0,-1} and visible_room_ids() return {}.
+    // Capturing here means we read the rebuilt items_ with the pre-rebuild
+    // row offsets (still valid since heights haven't been remeasured yet),
+    // giving a correct comparison even when rows are uniform height.
+    bool layout_changed = on_scroll && (visible_room_ids() != prev_visible);
     if (list_)
     {
         list_->invalidate_data();
     }
     set_selected_room(selected_room_id_cache_);
+    if (layout_changed)
+        on_scroll();
 }
 
 void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites)
