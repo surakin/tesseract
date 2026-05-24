@@ -208,6 +208,7 @@ void LoginView::init_with_field(std::unique_ptr<tk::NativeTextField> field)
     hs_field_->set_on_submit([this] { sign_in_(); });
     hs_field_->set_on_changed(
         [this](const std::string& text) { hs_changed_(text); });
+    hs_changed_("matrix.org");
 }
 
 void LoginView::position_overlay()
@@ -256,6 +257,7 @@ void LoginView::reset()
         hs_field_->set_enabled(true);
         hs_field_->set_visible(true);
         hs_field_->set_focused(true);
+        hs_changed_(hs_field_->text());
     }
     if (relayout_)
         relayout_();

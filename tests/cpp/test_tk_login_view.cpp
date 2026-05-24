@@ -13,6 +13,26 @@ using tesseract::views::LoginView;
 namespace
 {
 
+struct StubTextField : public tk::NativeTextField
+{
+    void set_rect(tk::Rect) override {}
+    void set_text(std::string t) override { text_ = std::move(t); }
+    std::string text() const override { return text_; }
+    void set_placeholder(std::string) override {}
+    void set_focused(bool) override {}
+    void set_visible(bool) override {}
+    void set_enabled(bool) override {}
+    void set_password(bool) override {}
+    void set_on_changed(std::function<void(const std::string&)> f) override
+    {
+        on_changed = std::move(f);
+    }
+    void set_on_submit(std::function<void()>) override {}
+
+    std::string text_;
+    std::function<void(const std::string&)> on_changed;
+};
+
 struct Stage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
@@ -29,6 +49,36 @@ struct Stage
 };
 
 } // namespace
+
+TEST_CASE("LoginView starts discovery for default homeserver on init",
+          "[tk][view][login][discovery]")
+{
+    LoginView lv;
+    lv.set_relayout([] {});  // required: hs_changed_() calls relayout_()
+
+    auto stub = std::make_unique<StubTextField>();
+    lv.init_with_field(std::move(stub));
+
+    // Without the fix, discovery_state() is Idle after init — the default
+    // text is set but on_changed is never called for a pre-populated field.
+    CHECK(lv.discovery_state() == LoginView::DiscoveryState::Discovering);
+}
+
+TEST_CASE("LoginView re-triggers discovery after reset",
+          "[tk][view][login][discovery]")
+{
+    LoginView lv;
+    lv.set_relayout([] {});
+
+    auto stub = std::make_unique<StubTextField>();
+    lv.init_with_field(std::move(stub));
+
+    // Simulate what happens when the user clicks Add Account: reset() is called.
+    // Without the fix, discovery_state() goes back to Idle and stays there.
+    lv.reset();
+
+    CHECK(lv.discovery_state() == LoginView::DiscoveryState::Discovering);
+}
 
 TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
           "[tk][view][login][multi_account]")
