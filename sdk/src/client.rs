@@ -2244,17 +2244,18 @@ impl ClientFfi {
     }
 
     /// Clear the SDK's non-crypto caches: wipes all cached event chunks from
-    /// memory and the SQLite event cache, then deletes the state-store SQLite
-    /// file so the next `restore_session` + `start_sync` starts a clean full
-    /// sync.  The crypto store (`matrix-sdk-crypto.sqlite3`) is left intact so
-    /// E2EE keys and device identity are preserved.
+    /// memory and their SQLite backing rows.  The state store
+    /// (`matrix-sdk-state.sqlite3`) and crypto store
+    /// (`matrix-sdk-crypto.sqlite3`) are left intact so room membership, sync
+    /// position, and E2EE keys are preserved — `restore_session` can therefore
+    /// repopulate `joined_rooms()` immediately without waiting for a full
+    /// server re-sync.
     ///
     /// Must be called *after* `stop_sync` and *before* `restore_session`.
     pub fn clear_caches(&mut self) -> crate::ffi::OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let data_dir = std::path::PathBuf::from(&self.data_dir);
 
         let result = self.rt.block_on(async move {
             // Clear all in-memory event-cache chunks and their SQLite backing
@@ -2270,17 +2271,6 @@ impl ClientFfi {
 
         if let Err(e) = result {
             return err(e.to_string());
-        }
-
-        // Delete the state-store file and any WAL / SHM sidecars.  Do this
-        // after the async clear so the connection pool has already flushed its
-        // in-memory state to disk (and SQLite has checkpointed the WAL).
-        const DB: &str = "matrix-sdk-state.sqlite3";
-        for suffix in ["", "-wal", "-shm"] {
-            let path = data_dir.join(format!("{DB}{suffix}"));
-            if path.exists() {
-                let _ = std::fs::remove_file(&path);
-            }
         }
 
         ok(String::new())
