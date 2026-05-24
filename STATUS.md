@@ -2,6 +2,21 @@
 
 Snapshot of every feature that has landed on `master`. Last updated **2026-05-24**.
 
+> **Privacy settings tab — presence toggle and room key export/import.**
+> A new "Privacy" tab in Settings contains two groups. The "Presence" group has a
+> checkbox to enable or disable both outgoing presence publishing (`PresenceTracker`)
+> and the Rust-side 30 s receive-polling loop; the setting persists across restarts
+> via a new `send_presence` field in `app_settings.json`. The "Encryption" group
+> provides "Export room keys…" and "Import room keys…" buttons that walk the user
+> through a passphrase prompt → file-picker → async SDK call; the high-level
+> `matrix-sdk` `Encryption::export_room_keys` / `import_room_keys` APIs handle
+> the password-encrypted Megolm key file format. All four shells provide native
+> dialogs: `QInputDialog`/`QFileDialog` (Qt6), `GtkFileChooserNative`/
+> `gtk_dialog_new_with_buttons` (GTK4), in-memory `DLGTEMPLATE`/`OPENFILENAMEW`
+> (Win32), `NSAlert+NSSecureTextField`/`NSSavePanel` (macOS).
+
+<!-- -->
+
 > **Storage size display and cache-clear in About settings.**
 > The About settings tab now shows a "Storage" section at the bottom-left (capped
 > to its natural width rather than filling the page) with "Local cache" and
@@ -96,7 +111,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 | Suite | Count |
 | ----- | ----- |
-| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 144 |
+| Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
 | C++ Catch2 tests via ctest (Qt6 preset) | 476 |
 
 ## Platforms
