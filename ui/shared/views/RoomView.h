@@ -239,7 +239,7 @@ public:
     std::function<void(std::string room_id)>                on_leave_room;
     std::function<void(std::string user_id)>                on_open_dm;
     // Predicate: return true when a DM with user_id already exists.
-    // Wired by ShellBase::setup_dm_callbacks_() to find_existing_dm_.
+    // Set by the shell (ShellBase wires this to find_existing_dm_).
     std::function<bool(const std::string& user_id)>         on_has_dm;
     std::function<void(std::string user_id)>                on_ignore_user;
     std::function<void(std::string avatar_url, std::string display_name)>
