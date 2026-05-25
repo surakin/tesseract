@@ -3250,12 +3250,10 @@ impl ClientFfi {
         let preview_cache = Arc::clone(&self.backfill_previews);
         let db_conn = Arc::clone(&self.app_cache_db);
 
-        // How many rooms finish before we emit the first intermediate update.
-        // Matches the semaphore width so the first wave of concurrent backfills
-        // triggers one early refresh; everything else is batched into a single
-        // final update. This keeps build_room_infos calls to O(1) per run
-        // instead of O(n) (one per completed room).
-        const FIRST_UPDATE_AT: usize = 3;
+        // Emit on_rooms_updated every UPDATE_EVERY completions so the
+        // inactive-room count ticks up visibly during a long backfill run,
+        // plus once at completion if the total isn't an exact multiple.
+        const UPDATE_EVERY: usize = 5;
 
         let abort = self
             .rt
@@ -3299,11 +3297,13 @@ impl ClientFfi {
                     });
                 }
 
-                // Drive the joinset, emitting one early update and one final.
+                // Drive the joinset, emitting an update every UPDATE_EVERY rooms.
                 let mut completed: usize = 0;
+                let mut last_update_at: usize = 0;
                 while joinset.join_next().await.is_some() {
                     completed += 1;
-                    if completed == FIRST_UPDATE_AT {
+                    if completed - last_update_at >= UPDATE_EVERY {
+                        last_update_at = completed;
                         if let Some(ref h) = handler {
                             let mut rooms = build_room_infos(&client).await;
                             apply_backfill_previews(&mut rooms, &preview_cache);
@@ -3313,9 +3313,8 @@ impl ClientFfi {
                         }
                     }
                 }
-                // Final update — covers everything after the early update (or
-                // the whole run when fewer than FIRST_UPDATE_AT rooms backfilled).
-                if completed != FIRST_UPDATE_AT {
+                // Final update if the last batch didn't land on a boundary.
+                if completed != last_update_at {
                     if let Some(ref h) = handler {
                         let mut rooms = build_room_infos(&client).await;
                         apply_backfill_previews(&mut rooms, &preview_cache);

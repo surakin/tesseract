@@ -251,13 +251,18 @@ private:
                                          ? ctx.theme.palette.sidebar_selected
                                          : ctx.theme.palette.sidebar_hover);
 
-        // Build the title string. For the Invitations section include the count.
+        // Build the title string. Invitations and Inactive sections include counts.
         std::string title_str;
         if (item.section == RoomListView::kSecInvites)
         {
             const std::size_t n =
                 owner_.invites_ ? owner_.invites_->size() : 0u;
             title_str = std::string("Invitations (") + std::to_string(n) + ")";
+        }
+        else if (item.section == RoomListView::kSecInactive)
+        {
+            const std::size_t n = owner_.section_rooms_[kSecInactive].size();
+            title_str = std::string("Inactive (") + std::to_string(n) + ")";
         }
         else
         {
