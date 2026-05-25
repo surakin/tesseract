@@ -143,6 +143,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             [this] { notify_presence_tick_(); });
     presence_tick_timer_->start(30000);
 
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
     {
         auto main_app_owner =
             std::make_unique<tesseract::views::MainAppWidget>();
@@ -1626,8 +1628,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     statusBar()->showMessage(tr("Not logged in"));
 
-    // Load saved theme preference and apply it.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
     read_portal_color_scheme_();
     QDBusConnection::sessionBus().connect(
         QStringLiteral("org.freedesktop.portal.Desktop"),

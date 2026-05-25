@@ -1486,10 +1486,10 @@ void MacShell::apply_cached_messages_(
     _shell->set_screen_lock_(std::make_unique<mac::MacScreenLock>());
     _accountPickerShared = nullptr;
     window.delegate = self;
-    [self _buildChrome];
-
-    // Load saved theme preference and apply it to all surfaces.
+    // Load saved settings before _buildChrome wires the main app widget.
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    [self _buildChrome];
+    // Apply the loaded theme to all surfaces created by _buildChrome.
     _shell->apply_current_theme_();
 
     // Re-apply when the OS switches light/dark (only in System mode).
