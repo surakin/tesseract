@@ -105,8 +105,7 @@ MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
     b.statusItem = item;
     item.button.action = @selector(buttonClicked:);
     item.button.target = b;
-    item.button.sendActionOn =
-        NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp;
+    [item.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
     b.onShow = ^{
         if (on_show)
         {
