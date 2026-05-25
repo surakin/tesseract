@@ -120,6 +120,14 @@ MessageRowData make_row_data(const tesseract::Event& ev,
             flat += (c == '\n' || c == '\r') ? ' ' : c;
         row.in_reply_to_body = std::move(flat);
     }
+    if (!ev.in_reply_to_image_url.empty())
+    {
+        row.in_reply_to_image_source =
+            ev.in_reply_to_image_encrypted_json.empty()
+                ? tesseract::MediaSource::plain(ev.in_reply_to_image_url)
+                : tesseract::MediaSource::encrypted(ev.in_reply_to_image_url,
+                                                    ev.in_reply_to_image_encrypted_json);
+    }
     row.is_edited = ev.is_edited;
 
     if (ev.pending_state == "sending")
@@ -354,7 +362,8 @@ constexpr float kVoiceSpeedPillW = 30.0f; // "1×" / "1.5×" / "2×"
 constexpr float kVoiceSpeedPillH = 20.0f;
 
 // Reply quote block — painted above the body block when m.has_reply().
-constexpr float kQuoteBlockH = 44.0f; // total height of the quote band
+constexpr float kQuoteBlockH = 44.0f;          // total height of the quote band
+constexpr float kQuoteImageBlockH = kQuoteBlockH * 2.0f; // quote block for image replies
 constexpr float kQuoteAccentW = 3.0f; // left accent stripe width
 constexpr float kQuotePadX = 8.0f;
 constexpr float kQuoteGapAfter = 4.0f; // gap between quote and body
@@ -1573,7 +1582,8 @@ private:
     float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx,
                                     float col_w) const
     {
-        float quote_h = m.has_reply() ? (kQuoteBlockH + kQuoteGapAfter) : 0.0f;
+        const float qbh = m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH;
+        float quote_h = m.has_reply() ? (qbh + kQuoteGapAfter) : 0.0f;
         switch (m.kind)
         {
         case MessageRowData::Kind::Text:
@@ -2038,12 +2048,13 @@ private:
         return y;
     }
 
-    // Paint the reply quote block (left accent stripe + sender + snippet).
-    // Returns the y-coordinate directly below the block (y + kQuoteBlockH).
+    // Paint the reply quote block (left accent stripe + sender + snippet/image).
+    // Returns the y-coordinate directly below the block.
     float paint_quote_block(const MessageRowData& m, tk::PaintCtx& ctx, float x,
                             float y, float col_w) const
     {
-        tk::Rect card{x, y, col_w, kQuoteBlockH};
+        const float block_h = m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH;
+        tk::Rect card{x, y, col_w, block_h};
 
         // Record world-coord rect so on_pointer_down can hit-test it.
         owner_.quote_block_geom_[m.event_id] = card;
@@ -2055,58 +2066,110 @@ private:
                                        1.0f);
 
         // Left accent stripe (3 px, full height of the card, rounded left edge)
-        tk::Rect stripe{x, y, kQuoteAccentW, kQuoteBlockH};
+        tk::Rect stripe{x, y, kQuoteAccentW, block_h};
         ctx.canvas.fill_rounded_rect(stripe, 4.0f, ctx.theme.palette.accent);
 
         // Text column starts to the right of the stripe + gap
         float tx = x + kQuoteAccentW + kQuotePadX;
         float tw = std::max(0.0f, col_w - kQuoteAccentW - kQuotePadX * 2);
 
-        // Build both text layouts before drawing so we can measure their
-        // actual heights and vertically centre the pair within the card.
-        // When the replied-to event isn't in the local timeline cache the
-        // SDK sends empty sender_name + body — fall back to a single muted
-        // placeholder line instead of showing the raw event id.
         const bool unresolved = m.in_reply_to_sender_name.empty();
-        const std::string sname = unresolved ? std::string{}
-                                             : m.in_reply_to_sender_name;
-        const std::string sbody =
-            unresolved
-                ? std::string("Original message unavailable")
-                : m.in_reply_to_body;
 
-        tk::TextStyle name_st{};
-        name_st.role = tk::FontRole::UiSemibold;
-        name_st.trim = tk::TextTrim::Ellipsis;
-        name_st.max_width = tw;
-        auto name_lo =
-            sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
-
-        tk::TextStyle body_st{};
-        body_st.role = tk::FontRole::Body;
-        body_st.trim = tk::TextTrim::Ellipsis;
-        body_st.max_width = tw;
-        auto body_lo =
-            sbody.empty() ? nullptr : ctx.factory.build_text(sbody, body_st);
-
-        constexpr float kLineGap = 2.0f;
-        float name_h = name_lo ? name_lo->measure().h : 0.0f;
-        float body_h = body_lo ? body_lo->measure().h : 0.0f;
-        float total_h = name_h + (body_h > 0.0f ? kLineGap + body_h : 0.0f);
-        float text_y = y + (kQuoteBlockH - total_h) * 0.5f;
-
-        if (name_lo)
+        if (m.has_reply_image())
         {
-            ctx.canvas.draw_text(*name_lo, {tx, text_y},
-                                 ctx.theme.palette.text_secondary);
+            // Image reply: sender name at the top, image thumbnail below.
+            constexpr float kPadT = 8.0f;
+            constexpr float kGap  = 4.0f;
+            constexpr float kPadB = 6.0f;
+
+            const std::string sname =
+                unresolved ? std::string{} : m.in_reply_to_sender_name;
+            tk::TextStyle name_st{};
+            name_st.role      = tk::FontRole::UiSemibold;
+            name_st.trim      = tk::TextTrim::Ellipsis;
+            name_st.max_width = tw;
+            auto name_lo =
+                sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
+
+            float name_h = name_lo ? name_lo->measure().h : 0.0f;
+            if (name_lo)
+                ctx.canvas.draw_text(*name_lo, {tx, y + kPadT},
+                                     ctx.theme.palette.text_secondary);
+
+            float img_y = y + kPadT + name_h + kGap;
+            float img_h = std::max(0.0f, (y + block_h) - img_y - kPadB);
+            tk::Rect img_rect{tx, img_y, tw, img_h};
+
+            const auto* look = m.in_reply_to_image_source.get();
+            const std::string fetch_key = look ? look->fetch_token() : std::string{};
+            const tk::Image* img = nullptr;
+            if (owner_.image_provider_ && !fetch_key.empty())
+                img = owner_.image_provider_(fetch_key);
+
+            if (img)
+            {
+                float iw = static_cast<float>(img->width());
+                float ih = static_cast<float>(img->height());
+                float s  = (iw > 0.0f && ih > 0.0f)
+                               ? std::min(img_rect.w / iw, img_rect.h / ih)
+                               : 1.0f;
+                float dw = iw * s;
+                float dh = ih * s;
+                tk::Rect fit{img_rect.x,
+                             img_rect.y + (img_rect.h - dh) * 0.5f, dw, dh};
+                ctx.canvas.push_clip_rounded_rect(img_rect, 4.0f);
+                ctx.canvas.draw_image(*img, fit);
+                ctx.canvas.pop_clip();
+            }
+            else
+            {
+                ctx.canvas.fill_rounded_rect(img_rect, 4.0f,
+                                             ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(img_rect, 4.0f,
+                                               ctx.theme.palette.border, 1.0f);
+            }
         }
-        if (body_lo)
+        else
         {
-            ctx.canvas.draw_text(*body_lo, {tx, text_y + name_h + kLineGap},
-                                 ctx.theme.palette.text_muted);
+            // Text reply: vertically centre sender name + body snippet.
+            // When the replied-to event isn't in the local timeline cache the
+            // SDK sends empty sender_name + body — fall back to a single muted
+            // placeholder line instead of showing the raw event id.
+            const std::string sname =
+                unresolved ? std::string{} : m.in_reply_to_sender_name;
+            const std::string sbody =
+                unresolved ? std::string("Original message unavailable")
+                           : m.in_reply_to_body;
+
+            tk::TextStyle name_st{};
+            name_st.role      = tk::FontRole::UiSemibold;
+            name_st.trim      = tk::TextTrim::Ellipsis;
+            name_st.max_width = tw;
+            auto name_lo =
+                sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
+
+            tk::TextStyle body_st{};
+            body_st.role      = tk::FontRole::Body;
+            body_st.trim      = tk::TextTrim::Ellipsis;
+            body_st.max_width = tw;
+            auto body_lo =
+                sbody.empty() ? nullptr : ctx.factory.build_text(sbody, body_st);
+
+            constexpr float kLineGap = 2.0f;
+            float name_h  = name_lo ? name_lo->measure().h : 0.0f;
+            float body_h  = body_lo ? body_lo->measure().h : 0.0f;
+            float total_h = name_h + (body_h > 0.0f ? kLineGap + body_h : 0.0f);
+            float text_y  = y + (block_h - total_h) * 0.5f;
+
+            if (name_lo)
+                ctx.canvas.draw_text(*name_lo, {tx, text_y},
+                                     ctx.theme.palette.text_secondary);
+            if (body_lo)
+                ctx.canvas.draw_text(*body_lo, {tx, text_y + name_h + kLineGap},
+                                     ctx.theme.palette.text_muted);
         }
 
-        return y + kQuoteBlockH;
+        return y + block_h;
     }
 
     void paint_preview_card_(const MessageRowData& m, const UrlPreviewData& p,

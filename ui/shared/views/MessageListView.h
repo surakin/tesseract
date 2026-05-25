@@ -114,9 +114,12 @@ struct MessageRowData
     std::string in_reply_to_id;
     std::string in_reply_to_sender_name;
     std::string in_reply_to_body;
-    bool has_reply() const
+    // Non-null when the replied-to message is an m.image event in the local cache.
+    tesseract::MediaSourceRef in_reply_to_image_source;
+    bool has_reply() const { return !in_reply_to_id.empty(); }
+    bool has_reply_image() const
     {
-        return !in_reply_to_id.empty();
+        return has_reply() && bool(in_reply_to_image_source);
     }
 
     // Set when the message has been superseded by an m.replace edit.

@@ -127,6 +127,8 @@ pub mod ffi {
         pub in_reply_to_id: String,
         pub in_reply_to_sender_name: String,
         pub in_reply_to_body: String,
+        pub in_reply_to_image_url: String,
+        pub in_reply_to_image_encrypted_json: String,
         pub is_edited: bool,
         pub formatted_body: String,
         pub blurhash: String,

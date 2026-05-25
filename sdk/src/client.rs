@@ -8035,6 +8035,33 @@ fn embedded_event_preview(
     (name, body, ts)
 }
 
+/// Returns (url, encrypted_json) for the thumbnail (or full-res when no
+/// thumbnail is present) when the embedded event is an `m.image` message.
+/// Returns ("", "") for all other message types.
+#[cfg(not(test))]
+fn reply_image_source(
+    embedded: &matrix_sdk_ui::timeline::EmbeddedEvent,
+) -> (String, String) {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    match &embedded.content {
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Message(m),
+            ..
+        }) => match m.msgtype() {
+            MessageType::Image(i) => {
+                let thumb = i.info.as_ref().and_then(|info| info.thumbnail_source.as_ref());
+                if let Some(src) = thumb {
+                    split_source(src)
+                } else {
+                    split_source(&i.source)
+                }
+            }
+            _ => (String::new(), String::new()),
+        },
+        _ => (String::new(), String::new()),
+    }
+}
+
 /// Extract (event_id_str, sender_name, body_snippet, timestamp_ms) from a
 /// `ThreadListItemEvent`. Used by both root and latest-event fields.
 #[cfg(not(test))]
@@ -8138,6 +8165,8 @@ async fn timeline_item_to_ffi(
                 in_reply_to_id: String::new(),
                 in_reply_to_sender_name: String::new(),
                 in_reply_to_body: String::new(),
+                in_reply_to_image_url: String::new(),
+                in_reply_to_image_encrypted_json: String::new(),
                 is_edited: false,
                 formatted_body: String::new(),
                 blurhash: String::new(),
@@ -8251,6 +8280,8 @@ async fn timeline_item_to_ffi(
             in_reply_to_id: String::new(),
             in_reply_to_sender_name: String::new(),
             in_reply_to_body: String::new(),
+            in_reply_to_image_url: String::new(),
+            in_reply_to_image_encrypted_json: String::new(),
             is_edited: false,
             formatted_body: String::new(),
             blurhash: String::new(),
@@ -8338,6 +8369,8 @@ async fn timeline_item_to_ffi(
             in_reply_to_id: String::new(),
             in_reply_to_sender_name: String::new(),
             in_reply_to_body: String::new(),
+            in_reply_to_image_url: String::new(),
+            in_reply_to_image_encrypted_json: String::new(),
             is_edited: false,
             formatted_body: String::new(),
             blurhash: String::new(),
@@ -8437,6 +8470,8 @@ async fn timeline_item_to_ffi(
             in_reply_to_id: String::new(),
             in_reply_to_sender_name: String::new(),
             in_reply_to_body: String::new(),
+            in_reply_to_image_url: String::new(),
+            in_reply_to_image_encrypted_json: String::new(),
             is_edited: false,
             formatted_body: String::new(),
             blurhash: c.info.blurhash.as_deref().unwrap_or("").to_owned(),
@@ -8957,21 +8992,24 @@ async fn timeline_item_to_ffi(
         };
 
     // m.in_reply_to — extract the event_id and, when the replied-to item is
-    // present in the local timeline cache, its sender display name and a brief
-    // body snippet for the UI's quote block.
-    let (in_reply_to_id, in_reply_to_sender_name, in_reply_to_body) =
+    // present in the local timeline cache, its sender display name, a brief
+    // body snippet, and (for m.image replies) the image thumbnail source.
+    let (in_reply_to_id, in_reply_to_sender_name, in_reply_to_body,
+         in_reply_to_image_url, in_reply_to_image_encrypted_json) =
         match event_item.content().in_reply_to() {
-            None => (String::new(), String::new(), String::new()),
+            None => (String::new(), String::new(), String::new(),
+                     String::new(), String::new()),
             Some(details) => {
                 let id = details.event_id.to_string();
-                let (rname, rbody) = match &details.event {
+                let (rname, rbody, img_url, img_enc) = match &details.event {
                     TimelineDetails::Ready(replied) => {
                         let (name, snippet, _ts) = embedded_event_preview(replied);
-                        (name, snippet)
+                        let (iu, ie) = reply_image_source(replied);
+                        (name, snippet, iu, ie)
                     }
-                    _ => (String::new(), String::new()),
+                    _ => (String::new(), String::new(), String::new(), String::new()),
                 };
-                (id, rname, rbody)
+                (id, rname, rbody, img_url, img_enc)
             }
         };
 
@@ -9054,6 +9092,8 @@ async fn timeline_item_to_ffi(
         in_reply_to_id,
         in_reply_to_sender_name,
         in_reply_to_body,
+        in_reply_to_image_url,
+        in_reply_to_image_encrypted_json,
         is_edited: msg_content.is_edited(),
         formatted_body,
         blurhash,

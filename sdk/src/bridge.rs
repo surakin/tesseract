@@ -263,6 +263,13 @@ pub mod ffi {
         /// "(image)", "(file)", "(voice)", "(sticker)", or "(deleted)" for redacted.
         /// Empty when not a reply.
         in_reply_to_body: String,
+        /// mxc:// URI of the replied-to image thumbnail (or full-res when no
+        /// thumbnail exists). Non-empty only when the reply target is an m.image
+        /// event whose content is present in the local cache.
+        in_reply_to_image_url: String,
+        /// JSON-serialised EncryptedFile for in_reply_to_image_url when the
+        /// media is E2EE-encrypted. Empty for unencrypted media.
+        in_reply_to_image_encrypted_json: String,
         /// True when the body has been superseded by an `m.replace` edit.
         /// Only set for `msg_type == "m.text"`; always false for other types.
         is_edited: bool,

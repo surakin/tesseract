@@ -99,6 +99,11 @@ struct Event
     /// Short body snippet of the replied-to message. "(image)" / "(file)" /
     /// "(audio)" / "(voice)" / "(sticker)" / "(deleted)" for non-text / redacted originals.
     std::string in_reply_to_body;
+    /// mxc:// URI of the replied-to image thumbnail (full-res when no thumbnail).
+    /// Non-empty only when the reply target is an m.image event in the local cache.
+    std::string in_reply_to_image_url;
+    /// JSON-serialised EncryptedFile for in_reply_to_image_url when E2EE. Empty otherwise.
+    std::string in_reply_to_image_encrypted_json;
     /// True when the body has been superseded by an m.replace edit.
     /// Only set for TextEvent; always false for other types.
     bool is_edited = false;
