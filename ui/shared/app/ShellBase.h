@@ -91,6 +91,10 @@ public:
     // Close the tab for room_id. No-op when tabs_.size() <= 1.
     void tab_close(const std::string& room_id);
 
+    // Wire room_view_->on_open_dm and room_view_->on_has_dm.
+    // Call once per shell after main_app_ and room_view_ are set.
+    void setup_dm_callbacks();
+
 protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
@@ -190,6 +194,9 @@ protected:
     std::unordered_set<std::string> emoji_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetches_in_flight_;
     std::unordered_set<std::string> tile_fetch_failed_;
+
+    // DM creation in-flight guard. Keyed by target user_id.
+    std::unordered_set<std::string> dm_in_flight_user_ids_;
 
     // ── URL preview cache ─────────────────────────────────────────────────────
     std::unordered_map<std::string, tesseract::Client::UrlPreview>
@@ -318,6 +325,10 @@ protected:
                              std::function<std::string()> get_room_id,
                              std::function<void()>        clear_text_fn);
 
+    // Core handler: fast path (existing DM), in-flight dedup, loading state,
+    // async get_or_create_dm, navigate on success. Always called on UI thread.
+    void handle_open_dm_(const std::string& user_id);
+
     // Platform screen-lock probe for the notification-image privacy gate.
     // Defaults to the fail-safe Null impl until the concrete shell installs
     // a real one via set_screen_lock_().
@@ -346,6 +357,11 @@ protected:
     //   macOS: [self _relayoutChatSurface] / _mainAppSurface->host().request_repaint()
     virtual void request_relayout_() = 0;
     virtual void request_repaint_() = 0;
+
+    // Navigate the shell to room_id. Called on the UI thread.
+    // Qt6/GTK4/Win32: delegates to navigate_to_room(id).
+    // macOS (MacShell): delegates to tab_navigate_room(id).
+    virtual void navigate_to_room_(const std::string& room_id) = 0;
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;

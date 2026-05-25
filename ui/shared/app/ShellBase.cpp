@@ -1151,6 +1151,69 @@ std::string ShellBase::find_existing_dm_(const std::string& user_id) const
     return find_existing_dm(rooms_, user_id);
 }
 
+void ShellBase::setup_dm_callbacks()
+{
+    if (!room_view_) return;
+    room_view_->on_open_dm = [this](std::string user_id)
+    {
+        handle_open_dm_(std::move(user_id));
+    };
+    room_view_->on_has_dm = [this](const std::string& user_id)
+    {
+        return !find_existing_dm_(user_id).empty();
+    };
+}
+
+void ShellBase::handle_open_dm_(const std::string& user_id)
+{
+    if (user_id.empty() || !client_) return;
+
+    // Fast path: DM already in rooms_ — navigate immediately.
+    if (auto existing = find_existing_dm_(user_id); !existing.empty())
+    {
+        if (room_view_) room_view_->close_user_profile();
+        navigate_to_room_(existing);
+        return;
+    }
+
+    // In-flight guard: suppress duplicate async calls for the same user.
+    if (dm_in_flight_user_ids_.count(user_id)) return;
+    dm_in_flight_user_ids_.insert(user_id);
+
+    // Show loading state while the async call runs.
+    if (room_view_)
+    {
+        room_view_->set_dm_button_state(
+            views::UserProfilePanel::DmButtonState::Sending);
+        request_repaint_();
+    }
+
+    auto* c = client_;
+    run_async_([this, c, user_id]()
+    {
+        auto dm_id = c->get_or_create_dm(user_id);
+        post_to_ui_([this, user_id, dm_id = std::move(dm_id)]() mutable
+        {
+            dm_in_flight_user_ids_.erase(user_id);
+            if (!dm_id.empty())
+            {
+                if (room_view_) room_view_->close_user_profile();
+                navigate_to_room_(dm_id);
+            }
+            else
+            {
+                // Reset so the user can retry.
+                if (room_view_)
+                {
+                    room_view_->set_dm_button_state(
+                        views::UserProfilePanel::DmButtonState::Normal);
+                    request_repaint_();
+                }
+            }
+        });
+    });
+}
+
 void ShellBase::notify_tray_unread_()
 {
     auto [u, h] = compute_tray_unread(per_account_rooms_);

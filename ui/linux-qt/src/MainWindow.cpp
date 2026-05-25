@@ -1082,34 +1082,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                         Qt::QueuedConnection);
                 });
         };
-        mainApp_->room_view()->on_open_dm =
-            [this](const std::string& user_id)
-        {
-            if (!client_)
-                return;
-            // If a DM with this user is already open, switch to it immediately
-            // instead of waiting on the async get_or_create_dm round-trip.
-            if (auto existing = find_existing_dm_(user_id); !existing.empty())
-            {
-                navigate_to_room(existing);
-                return;
-            }
-            auto* c = client_;
-            runOnPool_(
-                [this, c, user_id]()
-                {
-                    auto dm_id = c->get_or_create_dm(user_id);
-                    QMetaObject::invokeMethod(
-                        this,
-                        [this, dm_id = std::move(dm_id)]() mutable
-                        {
-                            if (!mainApp_ || dm_id.empty())
-                                return;
-                            navigate_to_room(dm_id);
-                        },
-                        Qt::QueuedConnection);
-                });
-        };
+        setup_dm_callbacks();
         mainApp_->room_view()->on_ignore_user =
             [this](const std::string& user_id)
         {

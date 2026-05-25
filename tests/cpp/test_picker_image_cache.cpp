@@ -63,6 +63,9 @@ struct TestShell : ShellBase
     {
         ++repaints;
     }
+    void navigate_to_room_(const std::string&) override
+    {
+    }
 
     int anim_tick_starts = 0;
     int repaints = 0;

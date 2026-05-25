@@ -176,6 +176,10 @@ private:
     void rebuildAccountPicker();
 
     void navigate_to_room(const std::string& room_id);
+    void navigate_to_room_(const std::string& room_id) override
+    {
+        navigate_to_room(room_id);
+    }
     void populateUserStrip();
     void maybeShowRecoveryBanner();
     void showRooms(const std::vector<tesseract::RoomInfo>& rooms);
