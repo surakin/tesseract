@@ -1509,9 +1509,12 @@ void MacShell::apply_cached_messages_(
     if (_tray && _tray->is_available())
     {
         [sender orderOut:nil];
-        return NO;
     }
-    return YES;
+    else
+    {
+        [NSApp terminate:nil];
+    }
+    return NO;
 }
 
 - (void)_buildChrome

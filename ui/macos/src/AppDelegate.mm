@@ -122,7 +122,7 @@
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender
 {
-    return YES;
+    return NO;
 }
 
 // First-responder pass-through: when no other responder handles
