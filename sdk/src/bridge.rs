@@ -750,13 +750,13 @@ pub mod ffi {
         /// Paginate backwards in a subscribed room's timeline. Older items
         /// arrive as `on_message_inserted` callbacks at the front of the
         /// timeline (index 0, or wherever the cache grafts them in).
-        fn paginate_back(self: &mut ClientFfi, room_id: &str, count: u16) -> OpResult;
+        fn paginate_back(self: &ClientFfi, room_id: &str, count: u16) -> OpResult;
 
         /// Like `paginate_back` but also reports whether the timeline has
         /// reached its first event (no further pagination possible). UIs use
         /// `reached_start` to latch their scroll-up trigger off.
         fn paginate_back_with_status(
-            self: &mut ClientFfi,
+            self: &ClientFfi,
             room_id: &str,
             count: u16,
         ) -> PaginateResult;

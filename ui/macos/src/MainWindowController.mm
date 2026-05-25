@@ -5834,6 +5834,12 @@ void MacShell::apply_cached_messages_(
         _roomListView ? _roomListView->visible_room_ids()
                       : std::vector<std::string>{};
     std::string subRoom = _shell->current_room_id_;
+    {
+        auto& state = _shell->pagination_[subRoom];
+        if (state.in_flight)
+            return;
+        state.in_flight = true;
+    }
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         auto res = self->_shell->client_->subscribe_room(subRoom);
         BOOL reached = NO;

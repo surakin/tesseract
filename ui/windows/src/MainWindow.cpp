@@ -3647,6 +3647,12 @@ void MainWindow::on_room_selected(const std::string& room_id)
     }
     // subscribe_room + paginate_back both block inside the Rust runtime;
     // run them on a worker thread so the Win32 message pump stays responsive.
+    {
+        auto& state = pagination_[current_room_id_];
+        if (state.in_flight)
+            return;
+        state.in_flight = true;
+    }
     auto visible_ids = room_list_view_ ? room_list_view_->visible_room_ids()
                                        : std::vector<std::string>{};
     HWND hwnd = hwnd_;

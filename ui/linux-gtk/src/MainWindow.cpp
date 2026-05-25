@@ -2867,6 +2867,12 @@ void MainWindow::on_room_selected(const std::string& room_id)
     auto visible_ids = room_list_view_ ? room_list_view_->visible_room_ids()
                                        : std::vector<std::string>{};
     std::string sub_room = current_room_id_;
+    {
+        auto& state = pagination_[sub_room];
+        if (state.in_flight)
+            return;
+        state.in_flight = true;
+    }
     run_async_(
         [this, sub_room, visible_ids = std::move(visible_ids)]
         {

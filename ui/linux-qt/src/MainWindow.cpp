@@ -2647,6 +2647,12 @@ void MainWindow::onRoomSelected(const std::string& room_id)
     {
         return;
     }
+    {
+        auto& state = pagination_[sub_room];
+        if (state.in_flight)
+            return;
+        state.in_flight = true;
+    }
     runOnPool_(
         [this, c, sub_room, visible_ids = std::move(visible_ids)]
         {

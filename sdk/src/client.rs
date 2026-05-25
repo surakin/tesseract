@@ -282,7 +282,7 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     sync_service: Option<Arc<SyncService>>,
     #[cfg(not(test))]
-    timelines: HashMap<OwnedRoomId, TimelineHandle>,
+    timelines: std::sync::RwLock<HashMap<OwnedRoomId, TimelineHandle>>,
     /// Active thread-focused timelines keyed by (room_id, thread_root_event_id).
     /// Each entry holds the same `TimelineHandle` structure used by `timelines`.
     #[cfg(not(test))]
@@ -400,7 +400,7 @@ impl Drop for ClientFfi {
         {
             let _guard = self.rt.enter();
             #[cfg(not(test))]
-            for (_, th) in self.timelines.drain() {
+            for (_, th) in self.timelines.write().unwrap().drain() {
                 for h in th.abort_tasks {
                     h.abort();
                 }
@@ -889,7 +889,7 @@ impl ClientFfi {
             #[cfg(not(test))]
             sync_service: None,
             #[cfg(not(test))]
-            timelines: HashMap::new(),
+            timelines: std::sync::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             thread_timelines: HashMap::new(),
             #[cfg(not(test))]
@@ -2302,12 +2302,15 @@ impl ClientFfi {
         // Drop the open connection first so all WAL frames are checkpointed,
         // then delete the file and clear the in-memory preview cache so the
         // next backfill run starts from a clean slate.
-        if let Ok(mut db) = self.app_cache_db.lock() {
-            *db = None;
-        }
-        let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
-        if let Ok(mut cache) = self.backfill_previews.lock() {
-            cache.clear();
+        #[cfg(not(test))]
+        {
+            if let Ok(mut db) = self.app_cache_db.lock() {
+                *db = None;
+            }
+            let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
+            if let Ok(mut cache) = self.backfill_previews.lock() {
+                cache.clear();
+            }
         }
 
         ok(String::new())
@@ -2460,9 +2463,12 @@ impl ClientFfi {
         };
 
         // Drop any previous subscription for this room.
-        if let Some(prev) = self.timelines.remove(&room_id) {
-            for h in prev.abort_tasks {
-                h.abort();
+        {
+            let mut guard = self.timelines.write().unwrap();
+            if let Some(prev) = guard.remove(&room_id) {
+                for h in prev.abort_tasks {
+                    h.abort();
+                }
             }
         }
 
@@ -2501,7 +2507,7 @@ impl ClientFfi {
         let (abort, fetch_abort) =
             Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
 
-        self.timelines.insert(
+        self.timelines.write().unwrap().insert(
             room_id,
             TimelineHandle {
                 timeline,
@@ -2517,7 +2523,7 @@ impl ClientFfi {
     #[cfg(not(test))]
     pub fn unsubscribe_room(&mut self, room_id: &str) {
         if let Ok(id) = room_id.parse::<OwnedRoomId>() {
-            if let Some(h) = self.timelines.remove(&id) {
+            if let Some(h) = self.timelines.write().unwrap().remove(&id) {
                 for abort in h.abort_tasks {
                     abort.abort();
                 }
@@ -2536,7 +2542,7 @@ impl ClientFfi {
         let Some(svc) = self.sync_service.clone() else {
             return;
         };
-        let mut ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        let mut ids: Vec<OwnedRoomId> = self.timelines.read().unwrap().keys().cloned().collect();
         for (rid, _root) in self.thread_timelines.keys() {
             if !ids.contains(rid) {
                 ids.push(rid.clone());
@@ -2563,7 +2569,7 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        let mut ids: Vec<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        let mut ids: Vec<OwnedRoomId> = self.timelines.read().unwrap().keys().cloned().collect();
         if !ids.contains(&push_id) {
             ids.push(push_id);
         }
@@ -2576,7 +2582,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn paginate_back(&mut self, room_id: &str, count: u16) -> OpResult {
+    pub fn paginate_back(&self, room_id: &str, count: u16) -> OpResult {
         let result = self.paginate_back_with_status(room_id, count);
         OpResult {
             ok: result.ok,
@@ -2585,7 +2591,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn paginate_back_with_status(&mut self, room_id: &str, count: u16) -> PaginateResult {
+    pub fn paginate_back_with_status(&self, room_id: &str, count: u16) -> PaginateResult {
         let room_id: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => {
@@ -2598,16 +2604,18 @@ impl ClientFfi {
             }
         };
 
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return PaginateResult {
-                ok: false,
-                message: "room not subscribed; call subscribe_room first".into(),
-                reached_start: false,
-                reached_end: false,
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return PaginateResult {
+                    ok: false,
+                    message: "room not subscribed; call subscribe_room first".into(),
+                    reached_start: false,
+                    reached_end: false,
+                };
             };
+            Arc::clone(&handle.timeline)
         };
-
-        let tl = Arc::clone(&handle.timeline);
         let stop_rx = self.stop_rx.clone();
 
         // Race the network round-trip against the shutdown signal so that
@@ -2729,9 +2737,12 @@ impl ClientFfi {
         };
 
         // Drop any previous subscription for this room.
-        if let Some(prev) = self.timelines.remove(&room_id) {
-            for h in prev.abort_tasks {
-                h.abort();
+        {
+            let mut guard = self.timelines.write().unwrap();
+            if let Some(prev) = guard.remove(&room_id) {
+                for h in prev.abort_tasks {
+                    h.abort();
+                }
             }
         }
 
@@ -2773,7 +2784,7 @@ impl ClientFfi {
         let (abort, fetch_abort) =
             Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
 
-        self.timelines.insert(
+        self.timelines.write().unwrap().insert(
             room_id,
             TimelineHandle {
                 timeline,
@@ -2807,25 +2818,28 @@ impl ClientFfi {
             }
         };
 
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return PaginateResult {
-                ok: false,
-                message: "room not subscribed; call subscribe_room_at first".into(),
-                reached_start: false,
-                reached_end: false,
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return PaginateResult {
+                    ok: false,
+                    message: "room not subscribed; call subscribe_room_at first".into(),
+                    reached_start: false,
+                    reached_end: false,
+                };
             };
+
+            if !handle.is_focused {
+                return PaginateResult {
+                    ok: false,
+                    message: "not in focused mode".into(),
+                    reached_start: false,
+                    reached_end: false,
+                };
+            }
+
+            Arc::clone(&handle.timeline)
         };
-
-        if !handle.is_focused {
-            return PaginateResult {
-                ok: false,
-                message: "not in focused mode".into(),
-                reached_start: false,
-                reached_end: false,
-            };
-        }
-
-        let tl = Arc::clone(&handle.timeline);
         let stop_rx = self.stop_rx.clone();
 
         match self.rt.block_on(async move {
@@ -3350,7 +3364,8 @@ impl ClientFfi {
         // Snapshot the work set up-front so the orchestrator owns no
         // borrows of `self`. Skip rooms that already have a foreground
         // Timeline (the user-active one).
-        let skip: std::collections::HashSet<OwnedRoomId> = self.timelines.keys().cloned().collect();
+        let skip: std::collections::HashSet<OwnedRoomId> =
+            self.timelines.read().unwrap().keys().cloned().collect();
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
         for id_cxx in room_ids {
@@ -3404,7 +3419,7 @@ impl ClientFfi {
 
         // Skip the room currently open in the foreground timeline.
         let skip: std::collections::HashSet<OwnedRoomId> =
-            self.timelines.keys().cloned().collect();
+            self.timelines.read().unwrap().keys().cloned().collect();
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
         for room in client.joined_rooms() {
@@ -3455,15 +3470,20 @@ impl ClientFfi {
         content.mentions = mentions;
         // Use the live timeline if subscribed — local echo fires immediately.
         #[cfg(not(test))]
-        if let Some(handle) = self.timelines.get(&room_id) {
-            let timeline = handle.timeline.clone();
-            return match self
-                .rt
-                .block_on(async move { timeline.send(content.into()).await })
-            {
-                Ok(_) => ok(""),
-                Err(e) => err(e.to_string()),
+        {
+            let maybe_tl = {
+                let guard = self.timelines.read().unwrap();
+                guard.get(&room_id).map(|h| h.timeline.clone())
             };
+            if let Some(timeline) = maybe_tl {
+                return match self
+                    .rt
+                    .block_on(async move { timeline.send(content.into()).await })
+                {
+                    Ok(_) => ok(""),
+                    Err(e) => err(e.to_string()),
+                };
+            }
         }
         // Fallback: no timeline subscribed for this room.
         let Some(room) = client.get_room(&room_id) else {
@@ -3503,10 +3523,13 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid room id: {e}")),
         };
         let txn_id: matrix_sdk::ruma::OwnedTransactionId = txn_id.into();
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return err("no timeline for room");
+        let timeline = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return err("no timeline for room");
+            };
+            handle.timeline.clone()
         };
-        let timeline = handle.timeline.clone();
         let item_id = TimelineEventItemId::TransactionId(txn_id);
         match self
             .rt
@@ -3707,10 +3730,13 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return err("room not subscribed");
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return err("room not subscribed");
+            };
+            Arc::clone(&handle.timeline)
         };
-        let tl = Arc::clone(&handle.timeline);
         self.rt.spawn(async move {
             let _ = tl.fetch_details_for_event(&event_id).await;
         });
@@ -4282,10 +4308,13 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
 
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return err("room not subscribed; call subscribe_room first");
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return err("room not subscribed; call subscribe_room first");
+            };
+            Arc::clone(&handle.timeline)
         };
-        let tl = Arc::clone(&handle.timeline);
         let item_id = TimelineEventItemId::EventId(event_id);
         let key = key.to_owned();
 
@@ -4447,10 +4476,13 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
 
-        let Some(handle) = self.timelines.get(&room_id) else {
-            return err("room not subscribed; call subscribe_room first");
+        let tl = {
+            let guard = self.timelines.read().unwrap();
+            let Some(handle) = guard.get(&room_id) else {
+                return err("room not subscribed; call subscribe_room first");
+            };
+            Arc::clone(&handle.timeline)
         };
-        let tl = Arc::clone(&handle.timeline);
         let item_id = TimelineEventItemId::EventId(event_id);
         let reason_opt = if reason.is_empty() {
             None
@@ -6615,7 +6647,7 @@ impl ClientFfi {
         #[cfg(not(test))]
         {
             let _guard = self.rt.enter();
-            for (_, th) in self.timelines.drain() {
+            for (_, th) in self.timelines.write().unwrap().drain() {
                 for h in th.abort_tasks {
                     h.abort();
                 }
