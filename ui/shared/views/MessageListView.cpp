@@ -4542,8 +4542,6 @@ bool MessageListView::on_pointer_move(tk::Point local)
         hovered_row_geom_.chips.clear();
         hovered_row_geom_.receipt_discs.clear();
         hovered_row_geom_.add_visible = false;
-        hovered_row_geom_.retry_button = {};
-        hovered_row_geom_.abort_button = {};
     }
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
