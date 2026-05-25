@@ -306,6 +306,11 @@ pub struct ClientFfi {
     /// call so previews persist even when a notable update overwrites the list.
     #[cfg(not(test))]
     backfill_previews: Arc<Mutex<HashMap<String, BackfillPreview>>>,
+    /// Per-account SQLite database for persistent UI state (open for the
+    /// lifetime of the sync session; `None` before first `start_sync` or
+    /// after account switch).
+    #[cfg(not(test))]
+    app_cache_db: Arc<Mutex<Option<rusqlite::Connection>>>,
     /// Abort handles for every long-lived task spawned by `start_sync`
     /// (session-refresh watcher, room/pack watcher, backup watchers, sync
     /// monitor, …). These outlive `self.handler.take()`, so without explicit
@@ -893,6 +898,8 @@ impl ClientFfi {
             backfill_task: None,
             #[cfg(not(test))]
             backfill_previews: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            app_cache_db: Arc::new(Mutex::new(None)),
             #[cfg(not(test))]
             sync_tasks: Vec::new(),
             #[cfg(not(test))]
@@ -1652,6 +1659,25 @@ impl ClientFfi {
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
+            // Open the per-account app cache DB for this session.
+            // Load persisted timestamps now so the first on_rooms_updated()
+            // already classifies rooms correctly; the connection stays open
+            // until the next start_sync (account switch) or app exit.
+            {
+                // data_dir is already the per-account SDK store dir; only
+                // open if we're actually logged in (user_id is known).
+                if client.user_id().is_some() {
+                    if let Ok(mut db) = self.app_cache_db.lock() {
+                        *db = None; // close any previous session's connection
+                    }
+                    if let Some(conn) = open_app_cache_db(&self.data_dir) {
+                        load_backfill_ts_conn(&conn, &self.backfill_previews);
+                        if let Ok(mut db) = self.app_cache_db.lock() {
+                            *db = Some(conn);
+                        }
+                    }
+                }
+            }
             let previews = Arc::clone(&self.backfill_previews);
 
             self.spawn_tracked(async move {
@@ -2271,6 +2297,17 @@ impl ClientFfi {
 
         if let Err(e) = result {
             return err(e.to_string());
+        }
+
+        // Drop the open connection first so all WAL frames are checkpointed,
+        // then delete the file and clear the in-memory preview cache so the
+        // next backfill run starts from a clean slate.
+        if let Ok(mut db) = self.app_cache_db.lock() {
+            *db = None;
+        }
+        let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
+        if let Ok(mut cache) = self.backfill_previews.lock() {
+            cache.clear();
         }
 
         ok(String::new())
@@ -3243,6 +3280,7 @@ impl ClientFfi {
 
         let handler = self.handler.clone();
         let preview_cache = Arc::clone(&self.backfill_previews);
+        let db_conn = Arc::clone(&self.app_cache_db);
 
         // How many rooms finish before we emit the first intermediate update.
         // Matches the semaphore width so the first wave of concurrent backfills
@@ -3261,6 +3299,7 @@ impl ClientFfi {
                     let client = client.clone();
                     let sem = semaphore.clone();
                     let preview_cache = preview_cache.clone();
+                    let db_conn = Arc::clone(&db_conn);
                     joinset.spawn(async move {
                         let _permit = match sem.acquire_owned().await {
                             Ok(p) => p,
@@ -3271,6 +3310,22 @@ impl ClientFfi {
                         if let Some(ref bp) = preview {
                             if let Ok(mut cache) = preview_cache.lock() {
                                 cache.insert(bp.room_id.clone(), bp.clone());
+                            }
+                            // Write the timestamp immediately so it survives
+                            // even if the task is aborted before the batch update.
+                            if bp.timestamp_ms != 0 {
+                                if let Ok(db) = db_conn.lock() {
+                                    if let Some(ref conn) = *db {
+                                        let _ = conn.execute(
+                                            "INSERT OR REPLACE INTO backfill_ts \
+                                             (room_id, ts_ms) VALUES (?1, ?2)",
+                                            rusqlite::params![
+                                                &bp.room_id,
+                                                bp.timestamp_ms as i64
+                                            ],
+                                        );
+                                    }
+                                }
                             }
                         }
                     });
@@ -6471,6 +6526,20 @@ impl ClientFfi {
     pub fn logout(&mut self) -> OpResult {
         self.stop_sync();
 
+        // Close the app cache DB before remove_dir_all so WAL frames are
+        // checkpointed and the file handle is released (required on Windows).
+        // Also clear the in-memory backfill cache so nothing stale persists
+        // after a re-login on the same process.
+        #[cfg(not(test))]
+        {
+            if let Ok(mut db) = self.app_cache_db.lock() {
+                *db = None;
+            }
+            if let Ok(mut cache) = self.backfill_previews.lock() {
+                cache.clear();
+            }
+        }
+
         if let Some(flow) = self.oauth_flow.take() {
             oauth::cancel(&flow);
         }
@@ -6655,6 +6724,63 @@ fn apply_backfill_previews(
         }
     }
 }
+
+// ── App cache DB (per-account SQLite for persistent UI state) ─────────────
+
+/// Open (or create) the per-account app-cache database and ensure the schema
+/// exists. `data_dir` is already the per-account SDK store directory
+/// (`<data>/accounts/<uid>/matrix-store/`), so the file lands there directly.
+/// Returns `None` on any I/O or SQL error (treated as a soft failure).
+#[cfg(not(test))]
+fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::Connection> {
+    let path = data_dir.join("app_cache.db");
+    let conn = rusqlite::Connection::open(&path).ok()?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         CREATE TABLE IF NOT EXISTS backfill_ts (
+             room_id TEXT NOT NULL PRIMARY KEY,
+             ts_ms   INTEGER NOT NULL
+         );",
+    )
+    .ok()?;
+    Some(conn)
+}
+
+/// Populate `cache` from the already-open `conn`. Uses `or_insert` so a
+/// live-sync entry (with full preview content) is never overwritten by the
+/// leaner persisted-only entry.
+#[cfg(not(test))]
+fn load_backfill_ts_conn(
+    conn: &rusqlite::Connection,
+    cache: &Mutex<HashMap<String, BackfillPreview>>,
+) {
+    let Ok(mut stmt) = conn.prepare("SELECT room_id, ts_ms FROM backfill_ts") else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    }) else {
+        return;
+    };
+    let Ok(mut guard) = cache.lock() else { return };
+    for row in rows.flatten() {
+        let (room_id, ts_ms) = row;
+        if ts_ms <= 0 {
+            continue;
+        }
+        guard.entry(room_id.clone()).or_insert(BackfillPreview {
+            room_id,
+            kind: String::new(),
+            text: String::new(),
+            sticker_url: String::new(),
+            thumbnail_url: String::new(),
+            sender_name: String::new(),
+            timestamp_ms: ts_ms as u64,
+        });
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 
 /// Warm the SDK's event-cache for one room without surfacing anything to
 /// the UI. Builds a temporary `Timeline`, drops the live diff stream, and

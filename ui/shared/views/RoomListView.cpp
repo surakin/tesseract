@@ -797,6 +797,11 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 
 void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
 {
+    // heights_dirty_ is true until the first paint pass, so visible_range()
+    // returns {0,-1} and visible_room_ids() returns {} on the very first call.
+    // Track the empty→non-empty transition separately so the initial load
+    // always fires on_scroll() and triggers the first backfill pass.
+    bool first_load = rooms_.empty() && !rooms.empty();
     auto prev_visible = visible_room_ids();
     rooms_ = std::move(rooms);
     rebuild_items();
@@ -805,7 +810,8 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
     // Capturing here means we read the rebuilt items_ with the pre-rebuild
     // row offsets (still valid since heights haven't been remeasured yet),
     // giving a correct comparison even when rows are uniform height.
-    bool layout_changed = on_scroll && (visible_room_ids() != prev_visible);
+    bool layout_changed = on_scroll &&
+        (first_load || visible_room_ids() != prev_visible);
     if (list_)
     {
         list_->invalidate_data();
