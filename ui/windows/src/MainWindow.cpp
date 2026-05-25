@@ -1283,6 +1283,8 @@ void MainWindow::on_create(HWND hwnd)
             on_space_back();
         };
 
+        tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
         // TabBar callbacks.
         main_app_->tab_bar()->on_tab_selected =
             [this](const std::string& room_id)
@@ -2769,8 +2771,6 @@ void MainWindow::on_create(HWND hwnd)
         }
     }
 
-    // Load saved theme preference and apply it.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
     apply_current_theme_();
 
     branding_surface_ = std::make_unique<tk::win32::Surface>(

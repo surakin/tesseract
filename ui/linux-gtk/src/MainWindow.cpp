@@ -394,6 +394,8 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
     gtk_stack_add_named(GTK_STACK(content_stack_), login_view_->widget(),
                         "login");
 
+    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+
     // Single surface hosting the full main-app widget tree.
     main_app_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     // Feed pointer / wheel events into the PresenceTracker. Focus + tick are
@@ -2006,8 +2008,6 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
         },
         this);
 
-    // Load saved theme preference and apply it.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
     apply_current_theme_();
 
     // Re-apply when the OS dark-mode setting changes (System mode only).
