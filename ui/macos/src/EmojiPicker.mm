@@ -34,6 +34,11 @@ static EmojiPickerPanel* g_emojiPanel = nil;
     return g_emojiPanel;
 }
 
+- (BOOL)canBecomeKeyWindow
+{
+    return YES;
+}
+
 - (void)setTheme:(const tk::Theme&)t
 {
     if (_surface)
@@ -235,13 +240,22 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 
     [self setFrame:frame display:NO];
     [self orderFront:nil];
-    if (_searchField)
-    {
-        _searchField->set_focused(true);
-    }
     if (_surface)
     {
         _surface->relayout();
+    }
+    if (_searchField)
+    {
+        __weak EmojiPickerPanel* weakSelf = self;
+        auto* sf = _searchField.get();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            EmojiPickerPanel* s = weakSelf;
+            if (s && s.isVisible)
+            {
+                [s makeKeyWindow];
+                sf->set_focused(true);
+            }
+        });
     }
 }
 
@@ -305,13 +319,22 @@ static EmojiPickerPanel* g_emojiPanel = nil;
 
     [self setFrame:frame display:NO];
     [self orderFront:nil];
-    if (_searchField)
-    {
-        _searchField->set_focused(true);
-    }
     if (_surface)
     {
         _surface->relayout();
+    }
+    if (_searchField)
+    {
+        __weak EmojiPickerPanel* weakSelf = self;
+        auto* sf = _searchField.get();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            EmojiPickerPanel* s = weakSelf;
+            if (s && s.isVisible)
+            {
+                [s makeKeyWindow];
+                sf->set_focused(true);
+            }
+        });
     }
 }
 

@@ -2377,7 +2377,7 @@ void MacShell::apply_cached_messages_(
                 vc.view = cv;
                 NSPopover* pop = [[NSPopover alloc] init];
                 pop.contentViewController = vc;
-                pop.behavior = NSPopoverBehaviorTransient;
+                pop.behavior = NSPopoverBehaviorSemitransient;
                 pop.animates = NO;
                 s->_topicTooltipPopover = pop;
             }
@@ -2391,9 +2391,9 @@ void MacShell::apply_cached_messages_(
                 [s->_topicTooltipPopover.contentViewController
                         .view fittingSize];
             NSView* view = (__bridge NSView*)s->_mainAppSurface->view_handle();
-            CGFloat viewH = view.bounds.size.height;
-            NSRect anchorRect = NSMakeRect(
-                anchor.x, viewH - anchor.y - anchor.h, anchor.w, anchor.h);
+            // TKSurfaceView has isFlipped=YES so widget coords map directly.
+            NSRect anchorRect =
+                NSMakeRect(anchor.x, anchor.y, anchor.w, anchor.h);
             [s->_topicTooltipPopover showRelativeToRect:anchorRect
                                                  ofView:view
                                           preferredEdge:NSRectEdgeMinY];
