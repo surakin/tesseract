@@ -387,6 +387,13 @@ public:
                     : std::max(1,
                                static_cast<int>(std::ceil(size.height / lh)));
 
+            // When eliding to one line only one CTLine is drawn; clamp the
+            // measured height so callers' centering calculations are correct.
+            if (elide_single_line_)
+            {
+                measured_.h = static_cast<float>(lh);
+            }
+
             // Pre-build the CTFrame once so draw() never allocates.
             if (!elide_single_line_)
             {
@@ -1068,7 +1075,7 @@ public:
             32,                 // bits per pixel
             static_cast<size_t>(w * 4),
             cs.get(),
-            kCGImageAlphaLast | kCGBitmapByteOrderDefault, // straight RGBA
+            static_cast<CGBitmapInfo>(kCGImageAlphaLast) | kCGBitmapByteOrderDefault,
             provider.get(),
             nullptr, false, kCGRenderingIntentDefault);
         if (!img)
