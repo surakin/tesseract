@@ -1871,29 +1871,7 @@ void MainWindow::on_create(HWND hwnd)
                     }
                 });
         };
-        room_view_->on_open_dm = [this](std::string user_id)
-        {
-            // Already-open DM → switch immediately, skipping the async round-trip.
-            if (auto existing = find_existing_dm_(user_id); !existing.empty())
-            {
-                navigate_to_room(existing);
-                return;
-            }
-            auto* c = client_;
-            run_async_(
-                [this, c, user_id = std::move(user_id)]() mutable
-                {
-                    auto dm_room_id = c->get_or_create_dm(user_id);
-                    if (!dm_room_id.empty())
-                    {
-                        post_to_ui_(
-                            [this, dm_room_id = std::move(dm_room_id)]() mutable
-                            {
-                                navigate_to_room(dm_room_id);
-                            });
-                    }
-                });
-        };
+        setup_dm_callbacks();
         room_view_->on_ignore_user = [this](std::string user_id)
         {
             auto* c = client_;
