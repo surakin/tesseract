@@ -302,7 +302,8 @@ jobs:
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          QT_SELECT: "qt6"
+          QMAKE: /usr/bin/qmake6
+          EXTRA_QT_PLUGINS: "wayland-shell-integration;wayland-graphics-integration-client;wayland-decoration-client"
         run: |
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
