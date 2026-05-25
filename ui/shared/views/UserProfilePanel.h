@@ -16,6 +16,12 @@ class UserProfilePanel : public tk::Widget
 public:
     static constexpr float kCardW = 240.0f;
 
+    enum class DmButtonState { Normal, HasDM, Sending };
+
+    void        set_dm_button_state(DmButtonState state);
+    std::string dm_button_label() const;
+    bool        dm_button_enabled() const;
+
     UserProfilePanel();
     ~UserProfilePanel() override = default;
 
@@ -29,6 +35,11 @@ public:
     // Callbacks wired by shell
     std::function<void(std::string user_id)> on_open_dm;
     std::function<void(std::string user_id)> on_ignore;
+
+    // Called on open() to determine the initial DM button state. Return true
+    // if a DM room already exists for the given user_id (→ HasDM), false for
+    // Normal. Leave unset to default to Normal.
+    std::function<bool(const std::string& user_id)> on_check_has_dm;
     std::function<void()>                    on_close;
     std::function<void(std::string avatar_url, std::string display_name)>
                                              on_avatar_clicked;

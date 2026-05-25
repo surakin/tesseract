@@ -45,6 +45,12 @@ void UserProfilePanel::open(std::string user_id, std::string display_name,
     set_visible(true);
     name_layout_.reset();
     uid_layout_.reset();
+
+    // Reset DM button to Normal or HasDM each time the panel opens for a
+    // user, so stale Sending state from a prior open doesn't leak through.
+    const bool has_dm = on_check_has_dm && on_check_has_dm(user_id_);
+    set_dm_button_state(has_dm ? DmButtonState::HasDM : DmButtonState::Normal);
+
     // Tells the shell to re-query rect accessors so the compose textarea +
     // room-search NativeTextField overlays hide while the panel is up.
     if (!was_open && on_layout_changed) on_layout_changed();
@@ -61,6 +67,36 @@ void UserProfilePanel::close()
 void UserProfilePanel::set_avatar_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
+}
+
+void UserProfilePanel::set_dm_button_state(DmButtonState state)
+{
+    if (!dm_btn_) return;
+    switch (state)
+    {
+    case DmButtonState::Normal:
+        dm_btn_->set_label("Message");
+        dm_btn_->set_enabled(true);
+        break;
+    case DmButtonState::HasDM:
+        dm_btn_->set_label("Open DM");
+        dm_btn_->set_enabled(true);
+        break;
+    case DmButtonState::Sending:
+        dm_btn_->set_label("Sending\xe2\x80\xa6"); // "Sending…"
+        dm_btn_->set_enabled(false);
+        break;
+    }
+}
+
+std::string UserProfilePanel::dm_button_label() const
+{
+    return dm_btn_ ? dm_btn_->label() : std::string{};
+}
+
+bool UserProfilePanel::dm_button_enabled() const
+{
+    return dm_btn_ ? dm_btn_->enabled() : false;
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
