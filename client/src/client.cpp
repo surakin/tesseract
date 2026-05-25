@@ -298,6 +298,12 @@ Client::start_background_backfill(const std::vector<std::string>& room_ids)
     return from_ffi(impl_->ffi->start_background_backfill(room_ids));
 }
 
+Result
+Client::start_background_backfill_all_uncached()
+{
+    return from_ffi(impl_->ffi->start_background_backfill_all_uncached());
+}
+
 void Client::stop_background_backfill()
 {
     impl_->ffi->stop_background_backfill();

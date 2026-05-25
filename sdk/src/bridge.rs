@@ -851,6 +851,14 @@ pub mod ffi {
         /// running. Also called automatically from `stop_sync` and `Drop`.
         fn stop_background_backfill(self: &mut ClientFfi);
 
+        /// Like `start_background_backfill` but auto-selects every joined
+        /// room whose timestamp is absent from the in-memory backfill cache
+        /// and whose SDK event cache has no `latest_event_timestamp`. Called
+        /// when the "group inactive rooms" feature is active to ensure all
+        /// rooms get a classification timestamp, not just those visible in
+        /// the list.
+        fn start_background_backfill_all_uncached(self: &mut ClientFfi) -> OpResult;
+
         // ----- Messaging -----
 
         fn send_message(

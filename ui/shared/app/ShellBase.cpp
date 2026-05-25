@@ -921,6 +921,13 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     rooms_ = std::move(rooms);
     update_space_children_cache_();
     on_rooms_updated_();
+
+    // When inactive grouping is enabled, ensure every room (not just the
+    // visible slice) has its last_activity_ts populated so the inactive
+    // section can classify all rooms correctly. Idempotent: Rust skips rooms
+    // already in backfill_ts and returns immediately if a task is running.
+    if (client_ && tesseract::Settings::instance().group_inactive_rooms)
+        client_->start_background_backfill_all_uncached();
 }
 
 void ShellBase::push_invites_(std::string user_id, std::vector<InviteInfo> invites)

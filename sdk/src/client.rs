@@ -3233,49 +3233,17 @@ impl ClientFfi {
     // accounts with hundreds of rooms. Per-room timelines are dropped after
     // the loop completes; only the persistent event-cache rows remain.
 
+    // Shared orchestrator: spawn a bounded-concurrency backfill task for the
+    // given room list. Callers are responsible for the idempotency guard and
+    // for ensuring `to_backfill` is already filtered. No-op on empty input.
     #[cfg(not(test))]
-    pub fn start_background_backfill(
+    fn launch_backfill_task_(
         &mut self,
-        room_ids: &cxx::CxxVector<cxx::CxxString>,
-    ) -> OpResult {
-        // Idempotent: if a previous orchestrator is still running, leave it
-        // alone. Finished/aborted handles can be replaced.
-        if let Some(h) = self.backfill_task.as_ref() {
-            if !h.is_finished() {
-                return ok("");
-            }
-        }
-        self.backfill_task = None;
-
-        let Some(client) = self.client.clone() else {
-            return err("not logged in");
-        };
-
-        // Snapshot the work set up-front so the orchestrator owns no
-        // borrows of `self`. Skip rooms that already have a foreground
-        // Timeline (the user-active one).
-        let skip: std::collections::HashSet<OwnedRoomId> = self.timelines.keys().cloned().collect();
-
-        let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
-        for id_cxx in room_ids {
-            let Ok(id_str) = id_cxx.to_str() else {
-                continue;
-            };
-            let Ok(id) = OwnedRoomId::try_from(id_str) else {
-                continue;
-            };
-            if skip.contains(&id) {
-                continue;
-            }
-            if let Some(room) = client.get_room(&id) {
-                if !room.is_tombstoned() {
-                    to_backfill.push(id);
-                }
-            }
-        }
-
+        client: matrix_sdk::Client,
+        to_backfill: Vec<OwnedRoomId>,
+    ) {
         if to_backfill.is_empty() {
-            return ok("");
+            return;
         }
 
         let handler = self.handler.clone();
@@ -3360,6 +3328,103 @@ impl ClientFfi {
             .abort_handle();
 
         self.backfill_task = Some(abort);
+    }
+
+    #[cfg(not(test))]
+    pub fn start_background_backfill(
+        &mut self,
+        room_ids: &cxx::CxxVector<cxx::CxxString>,
+    ) -> OpResult {
+        // Idempotent: if a previous orchestrator is still running, leave it
+        // alone. Finished/aborted handles can be replaced.
+        if let Some(h) = self.backfill_task.as_ref() {
+            if !h.is_finished() {
+                return ok("");
+            }
+        }
+        self.backfill_task = None;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        // Snapshot the work set up-front so the orchestrator owns no
+        // borrows of `self`. Skip rooms that already have a foreground
+        // Timeline (the user-active one).
+        let skip: std::collections::HashSet<OwnedRoomId> = self.timelines.keys().cloned().collect();
+
+        let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
+        for id_cxx in room_ids {
+            let Ok(id_str) = id_cxx.to_str() else {
+                continue;
+            };
+            let Ok(id) = OwnedRoomId::try_from(id_str) else {
+                continue;
+            };
+            if skip.contains(&id) {
+                continue;
+            }
+            if let Some(room) = client.get_room(&id) {
+                if !room.is_tombstoned() {
+                    to_backfill.push(id);
+                }
+            }
+        }
+
+        self.launch_backfill_task_(client, to_backfill);
+        ok("")
+    }
+
+    /// Backfill every joined room whose timestamp is absent from the in-memory
+    /// backfill cache (`backfill_previews`) and whose SDK event cache has no
+    /// `latest_event_timestamp`. Used when the "group inactive rooms" feature
+    /// is active so that off-screen rooms get a `last_activity_ts` for correct
+    /// inactive-section classification.
+    #[cfg(not(test))]
+    pub fn start_background_backfill_all_uncached(&mut self) -> OpResult {
+        // Same idempotency guard as start_background_backfill.
+        if let Some(h) = self.backfill_task.as_ref() {
+            if !h.is_finished() {
+                return ok("");
+            }
+        }
+        self.backfill_task = None;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        // Rooms already in backfill_previews have a cached timestamp (either
+        // loaded from backfill_ts on startup or written during this session).
+        let cached: std::collections::HashSet<String> = {
+            let Ok(guard) = self.backfill_previews.lock() else {
+                return ok("");
+            };
+            guard.keys().cloned().collect()
+        };
+
+        // Skip the room currently open in the foreground timeline.
+        let skip: std::collections::HashSet<OwnedRoomId> =
+            self.timelines.keys().cloned().collect();
+
+        let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
+        for room in client.joined_rooms() {
+            let id = room.room_id().to_owned();
+            if skip.contains(&id) || room.is_tombstoned() {
+                continue;
+            }
+            // Already cached — timestamp known from backfill_ts or this session.
+            if cached.contains(id.as_str()) {
+                continue;
+            }
+            // SDK already has a timestamp from live sync — no backfill needed.
+            if room.latest_event_timestamp().is_some() {
+                continue;
+            }
+            to_backfill.push(id);
+        }
+
+        self.launch_backfill_task_(client, to_backfill);
         ok("")
     }
 

@@ -287,6 +287,11 @@ public:
     /// the SDK's persistent event cache is warmed.
     Result start_background_backfill(const std::vector<std::string>& room_ids);
 
+    /// Like `start_background_backfill` but selects all joined rooms not yet
+    /// cached in `backfill_ts`. Called when inactive-room grouping is enabled
+    /// to populate `last_activity_ts` for off-screen rooms. Idempotent.
+    Result start_background_backfill_all_uncached();
+
     /// Cancel an in-progress background backfill (also called automatically
     /// on stop_sync / destruction). No-op if none is running.
     void stop_background_backfill();
