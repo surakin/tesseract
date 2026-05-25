@@ -54,6 +54,7 @@ target_link_libraries(tesseract_client
     PRIVATE
         tesseract_sdk_ffi          # Corrosion target (Rust)
         tesseract_sdk_bridge_cxx   # cxx generated C++ glue (from corrosion_add_cxxbridge)
+        nlohmann_json::nlohmann_json
 )
 
 # Platform link requirements for the Rust static lib + the browser launcher.

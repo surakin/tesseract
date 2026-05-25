@@ -86,6 +86,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Corrosion)
 
+# nlohmann/json – header-only JSON library used by tesseract_client
+# ---------------------------------------------------------------------------
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 # Import the Cargo workspace.  Corrosion walks Cargo.toml and produces
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)

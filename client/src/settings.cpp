@@ -2,203 +2,85 @@
 
 #include <filesystem>
 #include <fstream>
-#include <string>
 #include <system_error>
+
+#include <nlohmann/json.hpp>
 
 namespace tesseract
 {
-
-// Minimal extractor for a single string value by key from a flat JSON object.
-// Handles {"theme":"system"} — values here never contain '"' or '\'.
-static std::string extract_string(const std::string& json,
-                                  const std::string& key)
-{
-    std::string needle = "\"" + key + "\"";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos)
-    {
-        return {};
-    }
-    pos += needle.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
-    {
-        ++pos;
-    }
-    if (pos >= json.size() || json[pos] != '"')
-    {
-        return {};
-    }
-    ++pos;
-    auto end = json.find('"', pos);
-    if (end == std::string::npos)
-    {
-        return {};
-    }
-    return json.substr(pos, end - pos);
-}
-
-// Extractor for a bare JSON boolean (true / false) by key.
-// Returns the default value when the key is absent or the token is unrecognized.
-static bool extract_bool(const std::string& json, const std::string& key,
-                         bool default_value = true)
-{
-    std::string needle = "\"" + key + "\"";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos)
-    {
-        return default_value;
-    }
-    pos += needle.size();
-    // Skip whitespace and the colon separator.
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
-    {
-        ++pos;
-    }
-    if (pos >= json.size())
-    {
-        return default_value;
-    }
-    if (json.compare(pos, 4, "true") == 0)
-    {
-        return true;
-    }
-    if (json.compare(pos, 5, "false") == 0)
-    {
-        return false;
-    }
-    return default_value;
-}
-
-// Extractor for a bare JSON integer by key. Returns `default_value` when the
-// key is absent or no digits follow.
-static int extract_int(const std::string& json, const std::string& key,
-                       int default_value)
-{
-    std::string needle = "\"" + key + "\"";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos)
-    {
-        return default_value;
-    }
-    pos += needle.size();
-    while (pos < json.size() &&
-           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':'))
-    {
-        ++pos;
-    }
-    std::size_t end = pos;
-    while (end < json.size() && json[end] >= '0' && json[end] <= '9')
-    {
-        ++end;
-    }
-    if (end == pos)
-    {
-        return default_value;
-    }
-    return std::stoi(json.substr(pos, end - pos));
-}
 
 void Settings::load_from_disk(const std::filesystem::path& config_dir)
 {
     auto path = config_dir / "app_settings.json";
     std::ifstream f(path);
     if (!f.is_open())
+        return;
+
+    nlohmann::json j;
+    try
     {
-        return; // missing file → keep defaults
+        f >> j;
+    }
+    catch (const nlohmann::json::parse_error&)
+    {
+        return;
     }
 
-    std::string json((std::istreambuf_iterator<char>(f)),
-                     std::istreambuf_iterator<char>());
-
-    auto theme = extract_string(json, "theme");
+    auto theme = j.value("theme", std::string("system"));
     if (theme == "light")
-    {
         theme_pref = ThemePreference::Light;
-    }
     else if (theme == "dark")
-    {
         theme_pref = ThemePreference::Dark;
-    }
     else
-    {
         theme_pref = ThemePreference::System;
-    }
 
-    notifications_enabled = extract_bool(json, "notifications_enabled", true);
-    notification_image_previews =
-        extract_bool(json, "notification_image_previews", true);
-    notification_hide_content =
-        extract_bool(json, "notification_hide_content", false);
-    prefetch_full_media = extract_bool(json, "prefetch_full_media", false);
-    group_inactive_rooms = extract_bool(json, "group_inactive_rooms", false);
-    inactive_room_threshold_days =
-        extract_int(json, "inactive_room_threshold_days", 30);
-    send_presence = extract_bool(json, "send_presence", true);
-    room_section_invites_collapsed =
-        extract_bool(json, "room_section_invites_collapsed",   false);
-    room_section_favorites_collapsed =
-        extract_bool(json, "room_section_favorites_collapsed", false);
-    room_section_dms_collapsed =
-        extract_bool(json, "room_section_dms_collapsed",       false);
-    room_section_rooms_collapsed =
-        extract_bool(json, "room_section_rooms_collapsed",     false);
-    room_section_spaces_collapsed =
-        extract_bool(json, "room_section_spaces_collapsed",    false);
-    room_section_inactive_collapsed =
-        extract_bool(json, "room_section_inactive_collapsed",  true);
+    notifications_enabled        = j.value("notifications_enabled",        true);
+    notification_image_previews  = j.value("notification_image_previews",  true);
+    notification_hide_content    = j.value("notification_hide_content",    false);
+    prefetch_full_media          = j.value("prefetch_full_media",          false);
+    group_inactive_rooms         = j.value("group_inactive_rooms",         false);
+    inactive_room_threshold_days = j.value("inactive_room_threshold_days", 30);
+    send_presence                = j.value("send_presence",                true);
+
+    room_section_invites_collapsed   = j.value("room_section_invites_collapsed",   false);
+    room_section_favorites_collapsed = j.value("room_section_favorites_collapsed", false);
+    room_section_dms_collapsed       = j.value("room_section_dms_collapsed",       false);
+    room_section_rooms_collapsed     = j.value("room_section_rooms_collapsed",     false);
+    room_section_spaces_collapsed    = j.value("room_section_spaces_collapsed",    false);
+    room_section_inactive_collapsed  = j.value("room_section_inactive_collapsed",  true);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
 {
     std::error_code ec;
     std::filesystem::create_directories(config_dir, ec);
-    // Ignore ec — if the directory doesn't exist the ofstream open-check catches it.
 
-    const char* theme_str = "system";
-    if (theme_pref == ThemePreference::Light)
-    {
-        theme_str = "light";
-    }
-    else if (theme_pref == ThemePreference::Dark)
-    {
-        theme_str = "dark";
-    }
+    const char* theme_str =
+        theme_pref == ThemePreference::Light ? "light" :
+        theme_pref == ThemePreference::Dark  ? "dark"  : "system";
+
+    nlohmann::json j = {
+        {"theme",                            theme_str},
+        {"notifications_enabled",            notifications_enabled},
+        {"notification_image_previews",      notification_image_previews},
+        {"notification_hide_content",        notification_hide_content},
+        {"prefetch_full_media",              prefetch_full_media},
+        {"group_inactive_rooms",             group_inactive_rooms},
+        {"inactive_room_threshold_days",     inactive_room_threshold_days},
+        {"send_presence",                    send_presence},
+        {"room_section_invites_collapsed",   room_section_invites_collapsed},
+        {"room_section_favorites_collapsed", room_section_favorites_collapsed},
+        {"room_section_dms_collapsed",       room_section_dms_collapsed},
+        {"room_section_rooms_collapsed",     room_section_rooms_collapsed},
+        {"room_section_spaces_collapsed",    room_section_spaces_collapsed},
+        {"room_section_inactive_collapsed",  room_section_inactive_collapsed},
+    };
 
     auto path = config_dir / "app_settings.json";
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open())
-    {
         return;
-    }
-    f << "{\"theme\":\"" << theme_str << "\""
-      << ",\"notifications_enabled\":"
-      << (notifications_enabled ? "true" : "false")
-      << ",\"notification_image_previews\":"
-      << (notification_image_previews ? "true" : "false")
-      << ",\"notification_hide_content\":"
-      << (notification_hide_content ? "true" : "false")
-      << ",\"prefetch_full_media\":"
-      << (prefetch_full_media ? "true" : "false")
-      << ",\"group_inactive_rooms\":"
-      << (group_inactive_rooms ? "true" : "false")
-      << ",\"inactive_room_threshold_days\":" << inactive_room_threshold_days
-      << ",\"send_presence\":"
-      << (send_presence ? "true" : "false")
-      << ",\"room_section_invites_collapsed\":"
-      << (room_section_invites_collapsed   ? "true" : "false")
-      << ",\"room_section_favorites_collapsed\":"
-      << (room_section_favorites_collapsed ? "true" : "false")
-      << ",\"room_section_dms_collapsed\":"
-      << (room_section_dms_collapsed       ? "true" : "false")
-      << ",\"room_section_rooms_collapsed\":"
-      << (room_section_rooms_collapsed     ? "true" : "false")
-      << ",\"room_section_spaces_collapsed\":"
-      << (room_section_spaces_collapsed    ? "true" : "false")
-      << ",\"room_section_inactive_collapsed\":"
-      << (room_section_inactive_collapsed  ? "true" : "false")
-      << "}";
+    f << j.dump(4) << '\n';
 }
 
 } // namespace tesseract
