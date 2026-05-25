@@ -4541,8 +4541,16 @@ void MacShell::apply_cached_messages_(
                     {
                         return;
                     }
-                    [strong.window makeKeyAndOrderFront:nil];
-                    [NSApp activateIgnoringOtherApps:YES];
+                    NSWindow* win = strong.window;
+                    if (win.isVisible && !win.isMiniaturized && [NSApp isActive])
+                    {
+                        [win orderOut:nil];
+                    }
+                    else
+                    {
+                        [win makeKeyAndOrderFront:nil];
+                        [NSApp activateIgnoringOtherApps:YES];
+                    }
                 });
             },
             []

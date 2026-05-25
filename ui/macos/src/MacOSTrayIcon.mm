@@ -5,6 +5,7 @@
 
 @interface TesseractTrayBridge : NSObject
 @property(nonatomic, strong) NSStatusItem* statusItem;
+@property(nonatomic, strong) NSMenu* menu_;
 // Cached base image so set_unread can composite without re-fetching
 // applicationIconImage every call.
 @property(nonatomic, strong) NSImage* baseImage;
@@ -12,6 +13,7 @@
 @property(nonatomic, copy) void (^onQuit)(void);
 - (void)showApp:(id)sender;
 - (void)quitApp:(id)sender;
+- (void)buttonClicked:(id)sender;
 @end
 
 @implementation TesseractTrayBridge
@@ -29,6 +31,29 @@
     if (self.onQuit)
     {
         self.onQuit();
+    }
+}
+- (void)buttonClicked:(id)sender
+{
+    (void)sender;
+    NSEvent* event = [NSApp currentEvent];
+    BOOL isRightClick =
+        event && (event.type == NSEventTypeRightMouseUp ||
+                  (event.modifierFlags & NSEventModifierFlagControl) != 0);
+    if (isRightClick)
+    {
+        // Temporarily assign the menu so AppKit shows it, then clear it so
+        // subsequent left-clicks don't auto-open the menu.
+        self.statusItem.menu = self.menu_;
+        [self.statusItem.button performClick:nil];
+        self.statusItem.menu = nil;
+    }
+    else
+    {
+        if (self.onShow)
+        {
+            self.onShow();
+        }
     }
 }
 @end
@@ -64,7 +89,7 @@ MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
     item.button.toolTip = @"Tesseract";
 
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-    NSMenuItem* showItem = [menu addItemWithTitle:@"Show App"
+    NSMenuItem* showItem = [menu addItemWithTitle:@"Show/Hide App"
                                            action:@selector(showApp:)
                                     keyEquivalent:@""];
     showItem.target = b;
@@ -74,8 +99,14 @@ MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
                                     keyEquivalent:@""];
     quitItem.target = b;
 
-    item.menu = menu;
+    // Store menu for right-click; don't assign it permanently so that
+    // left-clicks reach the button action instead of always opening the menu.
+    b.menu_ = menu;
     b.statusItem = item;
+    item.button.action = @selector(buttonClicked:);
+    item.button.target = b;
+    item.button.sendActionOn =
+        NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp;
     b.onShow = ^{
         if (on_show)
         {
