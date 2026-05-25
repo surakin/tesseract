@@ -1,6 +1,6 @@
 # Maintainer: Marco Antonio Alvarez <surakus@pm.me>
-pkgname=tesseract
-pkgver=0.1.0
+pkgname=tesseract-git
+pkgver=r1501.da23e72
 pkgrel=1
 pkgdesc="Cross-platform Matrix chat client"
 arch=('x86_64' 'aarch64')
@@ -21,28 +21,28 @@ makedepends=(
     'qt6-base'
     'qt6-multimedia'
 )
-# Update source and sha256sums when a versioned tag exists.
-# For development builds replace with:
-#   source=("git+$url.git")
-#   sha256sums=('SKIP')
-source=("$pkgname-$pkgver.tar.gz::$url/-/archive/v$pkgver/$pkgname-v$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=()
+sha256sums=()
+
+_repodir="$(realpath "${startdir}/../..")"
+
+pkgver() {
+    cd "$_repodir"
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
 
 build() {
-    cd "$srcdir/$pkgname-v$pkgver"
-    cmake -B build -G Ninja \
+    cmake -S "$_repodir" -B "$srcdir/build" -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr \
           -DTESSERACT_UI=qt6
-    cmake --build build
+    cmake --build "$srcdir/build"
 }
 
 check() {
-    cd "$srcdir/$pkgname-v$pkgver"
-    ctest --test-dir build --output-on-failure
+    ctest --test-dir "$srcdir/build" --output-on-failure
 }
 
 package() {
-    cd "$srcdir/$pkgname-v$pkgver"
-    DESTDIR="$pkgdir" cmake --install build
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build"
 }
