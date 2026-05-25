@@ -4,7 +4,14 @@ CompileFlags:
     - -std=c++20
     - -I/usr/include/gtk-4.0
     - -I/usr/include/glib-2.0
+    - -I/usr/include/gdk-pixbuf-2.0
+    - -I/usr/include/cairo
+    - -I/usr/include/pango-1.0
+    - -I/usr/include/harfbuzz
+    - -I/usr/include/graphene-1.0
     - -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+    - -I/usr/lib/glib-2.0/include
+    - -I/usr/lib/graphene-1.0/include
   Remove:
     - -mno-direct-extern-access
 
