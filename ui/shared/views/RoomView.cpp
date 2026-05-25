@@ -462,8 +462,11 @@ void RoomView::wire_internal_callbacks()
     };
     user_profile_panel_->on_open_dm = [this](std::string user_id)
     {
-        user_profile_panel_->close();
         if (on_open_dm) on_open_dm(std::move(user_id));
+    };
+    user_profile_panel_->on_check_has_dm = [this](const std::string& user_id)
+    {
+        return on_has_dm && on_has_dm(user_id);
     };
     user_profile_panel_->on_ignore = [this](std::string user_id)
     {
@@ -503,6 +506,21 @@ void RoomView::show_user_profile(std::string user_id, std::string display_name,
     user_profile_panel_->open(std::move(user_id), std::move(display_name),
                                std::move(avatar_url));
     if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::set_dm_button_state(UserProfilePanel::DmButtonState state)
+{
+    if (user_profile_panel_)
+        user_profile_panel_->set_dm_button_state(state);
+}
+
+void RoomView::close_user_profile()
+{
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
+        user_profile_panel_->close();
+        if (repaint_requester_) repaint_requester_();
+    }
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────

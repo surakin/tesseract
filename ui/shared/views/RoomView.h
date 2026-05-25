@@ -155,6 +155,12 @@ public:
     // overlays cover the canvas.
     bool is_overlay_open() const;
 
+    // Forward DM button state to the user profile panel.
+    void set_dm_button_state(UserProfilePanel::DmButtonState state);
+
+    // Close the user profile panel if open and trigger a repaint.
+    void close_user_profile();
+
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
     // Plain text send.
@@ -232,6 +238,9 @@ public:
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
     std::function<void(std::string user_id)>                on_open_dm;
+    // Predicate: return true when a DM with user_id already exists.
+    // Wired by ShellBase::setup_dm_callbacks_() to find_existing_dm_.
+    std::function<bool(const std::string& user_id)>         on_has_dm;
     std::function<void(std::string user_id)>                on_ignore_user;
     std::function<void(std::string avatar_url, std::string display_name)>
                                                             on_avatar_clicked;
