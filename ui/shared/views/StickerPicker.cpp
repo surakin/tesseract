@@ -193,7 +193,9 @@ void StickerPicker::refresh_packs()
         }
     }
     // Reclamp active tab so it points at a valid index.
-    if (active_tab_ < 0 || active_tab_ > tab_count() - 1)
+    // Skip the clamp on the Search page — active_tab_ is intentionally -1
+    // there and the search results should survive a pack reload.
+    if (page_ != Page::Search && (active_tab_ < 0 || active_tab_ > tab_count() - 1))
     {
         if (!packs_.empty())
         {
