@@ -136,6 +136,18 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     inactive_room_threshold_days =
         extract_int(json, "inactive_room_threshold_days", 30);
     send_presence = extract_bool(json, "send_presence", true);
+    room_section_invites_collapsed =
+        extract_bool(json, "room_section_invites_collapsed",   false);
+    room_section_favorites_collapsed =
+        extract_bool(json, "room_section_favorites_collapsed", false);
+    room_section_dms_collapsed =
+        extract_bool(json, "room_section_dms_collapsed",       false);
+    room_section_rooms_collapsed =
+        extract_bool(json, "room_section_rooms_collapsed",     false);
+    room_section_spaces_collapsed =
+        extract_bool(json, "room_section_spaces_collapsed",    false);
+    room_section_inactive_collapsed =
+        extract_bool(json, "room_section_inactive_collapsed",  true);
 }
 
 void Settings::save_to_disk(const std::filesystem::path& config_dir) const
@@ -174,6 +186,18 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
       << ",\"inactive_room_threshold_days\":" << inactive_room_threshold_days
       << ",\"send_presence\":"
       << (send_presence ? "true" : "false")
+      << ",\"room_section_invites_collapsed\":"
+      << (room_section_invites_collapsed   ? "true" : "false")
+      << ",\"room_section_favorites_collapsed\":"
+      << (room_section_favorites_collapsed ? "true" : "false")
+      << ",\"room_section_dms_collapsed\":"
+      << (room_section_dms_collapsed       ? "true" : "false")
+      << ",\"room_section_rooms_collapsed\":"
+      << (room_section_rooms_collapsed     ? "true" : "false")
+      << ",\"room_section_spaces_collapsed\":"
+      << (room_section_spaces_collapsed    ? "true" : "false")
+      << ",\"room_section_inactive_collapsed\":"
+      << (room_section_inactive_collapsed  ? "true" : "false")
       << "}";
 }
 

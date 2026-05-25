@@ -127,6 +127,15 @@ public:
         "Invitations", "Favorites", "Direct Messages", "Rooms", "Spaces",
         "Inactive"};
 
+    // Programmatically collapse or expand a section (e.g. to restore saved
+    // state on launch). No-op if section is out of range or already in the
+    // requested state.
+    void set_section_collapsed(int section, bool collapsed);
+
+    // Fired whenever the user toggles a section header. section is one of
+    // the kSec* constants; collapsed is the new state after the toggle.
+    std::function<void(int section, bool collapsed)> on_section_toggled;
+
     // Invitations data source. The pointer is not owned; the caller must
     // keep it alive for the lifetime of the view (or until replaced / cleared).
     // Passing nullptr hides the Invitations section entirely.

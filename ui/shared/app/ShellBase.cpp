@@ -207,6 +207,43 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             return shell_sticker_(mxc);
         });
 
+    // Restore section collapsed state from the previous session.
+    {
+        auto& s = tesseract::Settings::instance();
+        const bool init[views::RoomListView::kNumSections] = {
+            s.room_section_invites_collapsed,
+            s.room_section_favorites_collapsed,
+            s.room_section_dms_collapsed,
+            s.room_section_rooms_collapsed,
+            s.room_section_spaces_collapsed,
+            s.room_section_inactive_collapsed,
+        };
+        for (int sec = 0; sec < views::RoomListView::kNumSections; ++sec)
+            app->room_list_view()->set_section_collapsed(sec, init[sec]);
+    }
+    app->room_list_view()->on_section_toggled =
+        [](int section, bool collapsed)
+    {
+        auto& s = tesseract::Settings::instance();
+        switch (section)
+        {
+        case views::RoomListView::kSecInvites:
+            s.room_section_invites_collapsed   = collapsed; break;
+        case views::RoomListView::kSecFavorites:
+            s.room_section_favorites_collapsed = collapsed; break;
+        case views::RoomListView::kSecDMs:
+            s.room_section_dms_collapsed       = collapsed; break;
+        case views::RoomListView::kSecRooms:
+            s.room_section_rooms_collapsed     = collapsed; break;
+        case views::RoomListView::kSecSpaces:
+            s.room_section_spaces_collapsed    = collapsed; break;
+        case views::RoomListView::kSecInactive:
+            s.room_section_inactive_collapsed  = collapsed; break;
+        default: break;
+        }
+        s.save_to_disk(tesseract::config_dir());
+    };
+
     app->room_view()->set_avatar_provider(avatar_lookup);
     app->room_view()->set_image_provider(
         [this](const std::string& mxc) -> const tk::Image*

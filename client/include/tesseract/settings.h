@@ -106,6 +106,15 @@ public:
     bool group_inactive_rooms = false;
     int inactive_room_threshold_days = 30;
 
+    // Collapsed state of each room-list section; persisted across restarts.
+    // Defaults match the hardcoded initial state in RoomListView.
+    bool room_section_invites_collapsed   = false;
+    bool room_section_favorites_collapsed = false;
+    bool room_section_dms_collapsed       = false;
+    bool room_section_rooms_collapsed     = false;
+    bool room_section_spaces_collapsed    = false;
+    bool room_section_inactive_collapsed  = true;
+
     // ── Privacy ───────────────────────────────────────────────────────
     // When false, the app neither publishes its own presence status to the
     // server nor polls other users' presence. Default on.

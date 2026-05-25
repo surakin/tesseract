@@ -752,6 +752,8 @@ RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
         if (item.kind == Item::Kind::Header)
         {
             collapsed_[item.section] = !collapsed_[item.section];
+            if (on_section_toggled)
+                on_section_toggled(item.section, collapsed_[item.section]);
             rebuild_items();
             list_->invalidate_data();
             // Re-apply selection — the selected room may have just been
@@ -845,6 +847,20 @@ void RoomListView::refresh()
         list_->invalidate_data();
     }
     set_selected_room(selected_room_id_cache_);
+}
+
+void RoomListView::set_section_collapsed(int section, bool collapsed)
+{
+    if (section < 0 || section >= kNumSections)
+        return;
+    if (collapsed_[section] == collapsed)
+        return;
+    collapsed_[section] = collapsed;
+    rebuild_items();
+    if (list_)
+        list_->invalidate_data();
+    if (on_scroll)
+        on_scroll();
 }
 
 void RoomListView::set_avatar_provider(AvatarProvider p)

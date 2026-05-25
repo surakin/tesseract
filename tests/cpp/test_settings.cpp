@@ -220,3 +220,38 @@ TEST_CASE("Settings persist group_inactive_rooms + threshold", "[settings]")
 
     std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
+{
+    auto dir = make_tmp_dir("section_collapsed");
+
+    auto& s = tesseract::Settings::instance();
+    // Set all flags to their non-default values.
+    s.room_section_invites_collapsed   = true;
+    s.room_section_favorites_collapsed = true;
+    s.room_section_dms_collapsed       = true;
+    s.room_section_rooms_collapsed     = true;
+    s.room_section_spaces_collapsed    = true;
+    s.room_section_inactive_collapsed  = false; // default is true, flip it
+
+    s.save_to_disk(dir);
+
+    // Reset to defaults before reload.
+    s.room_section_invites_collapsed   = false;
+    s.room_section_favorites_collapsed = false;
+    s.room_section_dms_collapsed       = false;
+    s.room_section_rooms_collapsed     = false;
+    s.room_section_spaces_collapsed    = false;
+    s.room_section_inactive_collapsed  = true;
+
+    s.load_from_disk(dir);
+
+    CHECK(s.room_section_invites_collapsed   == true);
+    CHECK(s.room_section_favorites_collapsed == true);
+    CHECK(s.room_section_dms_collapsed       == true);
+    CHECK(s.room_section_rooms_collapsed     == true);
+    CHECK(s.room_section_spaces_collapsed    == true);
+    CHECK(s.room_section_inactive_collapsed  == false);
+
+    fs::remove_all(dir);
+}
