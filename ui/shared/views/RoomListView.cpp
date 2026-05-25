@@ -571,11 +571,16 @@ private:
 
             if (thumb)
             {
-                float    thumb_right = bounds.x + bounds.w - kPadX -
-                                       (badge_width > 0 ? badge_width + kPadX : 0.0f);
-                tk::Rect dst{thumb_right - kThumb,
-                             bounds.y + (bounds.h - kThumb) * 0.5f,
-                             kThumb, kThumb};
+                float thumb_right = bounds.x + bounds.w - kPadX -
+                                    (badge_width > 0 ? badge_width + kPadX : 0.0f);
+                float iw = thumb->width()  > 0 ? static_cast<float>(thumb->width())  : kThumb;
+                float ih = thumb->height() > 0 ? static_cast<float>(thumb->height()) : kThumb;
+                float s  = std::min(kThumb / iw, kThumb / ih);
+                float fw = iw * s;
+                float fh = ih * s;
+                tk::Rect dst{thumb_right - kThumb + (kThumb - fw) * 0.5f,
+                             bounds.y + (bounds.h - fh) * 0.5f,
+                             fw, fh};
                 ctx.canvas.draw_image(*thumb, dst);
                 if (ctx.anim_damage)
                     ctx.anim_damage->note_image(thumb_url, dst);
