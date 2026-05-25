@@ -51,20 +51,28 @@ RoomHeader::RoomHeader()
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
 {
     display_name_ = info.name;
-    topic_ = info.topic;
-    topic_html_ = info.topic_html;
     avatar_url_ = info.effective_avatar_url();
     encrypted_ = info.is_encrypted;
-    // Drop the previous room's rich-topic layout; mark dirty so arrange()
-    // rebuilds it and recomputes truncation before the next paint.
-    topic_layout_.reset();
-    topic_dirty_ = true;
-    topic_truncated_ = false;
-    topic_multiline_ = false;
     if (name_label_)
     {
         name_label_->set_text(display_name_);
     }
+
+    // Skip the expensive topic rebuild when topic content hasn't changed.
+    // Read receipts, typing indicators, and membership events fire this path
+    // frequently; guarding here eliminates redundant CTFramesetter work.
+    const bool topic_changed =
+        (info.topic != topic_) || (info.topic_html != topic_html_);
+    topic_ = info.topic;
+    topic_html_ = info.topic_html;
+    if (!topic_changed)
+        return;
+
+    topic_layout_.reset();
+    topic_dirty_ = true;
+    topic_truncated_ = false;
+    topic_multiline_ = false;
+    topic_natural_w_ = -1.0f;
     if (topic_label_)
     {
         if (!topic_html_.empty())
@@ -195,11 +203,15 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 }
                 else
                 {
-                    tk::TextStyle ts_nat{};
-                    ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat = ctx.factory.build_rich_text(topic_display_spans_,
-                                                           ts_nat);
-                    topic_truncated_ = nat && nat->measure().w > topic_rect_.w;
+                    if (topic_natural_w_ < 0.0f)
+                    {
+                        tk::TextStyle ts_nat{};
+                        ts_nat.role = tk::FontRole::SidebarPreview;
+                        auto nat = ctx.factory.build_rich_text(
+                            topic_display_spans_, ts_nat);
+                        topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                    }
+                    topic_truncated_ = topic_natural_w_ > topic_rect_.w;
                 }
             }
             else if (!topic_.empty())
@@ -210,10 +222,14 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 }
                 else
                 {
-                    tk::TextStyle ts_nat{};
-                    ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat = ctx.factory.build_text(topic_, ts_nat);
-                    topic_truncated_ = nat && nat->measure().w > topic_rect_.w;
+                    if (topic_natural_w_ < 0.0f)
+                    {
+                        tk::TextStyle ts_nat{};
+                        ts_nat.role = tk::FontRole::SidebarPreview;
+                        auto nat = ctx.factory.build_text(topic_, ts_nat);
+                        topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                    }
+                    topic_truncated_ = topic_natural_w_ > topic_rect_.w;
                 }
             }
         }
@@ -286,11 +302,16 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             }
             else
             {
-                tk::TextStyle ts_nat{};
-                ts_nat.role = tk::FontRole::SidebarPreview;
-                auto nat =
-                    ctx.factory.build_rich_text(topic_display_spans_, ts_nat);
-                topic_truncated_ = nat && nat->measure().w > text_w;
+                if (topic_natural_w_ < 0.0f)
+                {
+                    tk::TextStyle ts_nat{};
+                    ts_nat.role = tk::FontRole::SidebarPreview;
+                    auto nat =
+                        ctx.factory.build_rich_text(topic_display_spans_,
+                                                    ts_nat);
+                    topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                }
+                topic_truncated_ = topic_natural_w_ > text_w;
             }
         }
         else if (!topic_.empty())
@@ -302,10 +323,14 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             }
             else
             {
-                tk::TextStyle ts_nat{};
-                ts_nat.role = tk::FontRole::SidebarPreview;
-                auto nat = ctx.factory.build_text(topic_, ts_nat);
-                topic_truncated_ = nat && nat->measure().w > text_w;
+                if (topic_natural_w_ < 0.0f)
+                {
+                    tk::TextStyle ts_nat{};
+                    ts_nat.role = tk::FontRole::SidebarPreview;
+                    auto nat = ctx.factory.build_text(topic_, ts_nat);
+                    topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                }
+                topic_truncated_ = topic_natural_w_ > text_w;
             }
         }
     }

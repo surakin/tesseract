@@ -425,6 +425,10 @@ public:
         {
             CFRelease(attr_);
         }
+        if (elided_line_)
+        {
+            CFRelease(elided_line_);
+        }
     }
     CTLayout(const CTLayout&) = delete;
     CTLayout& operator=(const CTLayout&) = delete;
@@ -705,19 +709,17 @@ public:
     }
 
 private:
-    void draw_elided_line(CGContextRef ctx, Point origin, Color c) const
+    // Build the elided CTLine once and cache it. CTLayout is UI-thread-only
+    // and immutable after construction, so lazy mutable init is safe.
+    bool ensure_elided_line() const
     {
+        if (elided_line_)
+            return true;
         if (!attr_ || CFAttributedStringGetLength(attr_) == 0)
-        {
-            return;
-        }
+            return false;
         CFRetained<CTLineRef> raw{CTLineCreateWithAttributedString(attr_)};
         if (!raw.get())
-        {
-            return;
-        }
-
-        // Build a truncation token using the same attributes as the string.
+            return false;
         CFDictionaryRef attrs0 =
             CFAttributedStringGetAttributes(attr_, 0, nullptr);
         CFRetained<CFAttributedStringRef> token_attr;
@@ -733,21 +735,24 @@ private:
         CFRetained<CTLineRef> elided{CTLineCreateTruncatedLine(
             raw.get(), max_width_ > 0 ? max_width_ : measured_.w,
             kCTLineTruncationEnd, token.get())};
-
         CTLineRef out = elided.get() ? elided.get() : raw.get();
+        CFRetain(out);
+        elided_line_ = out;
+        CTLineGetTypographicBounds(elided_line_, &elided_ascent_, nullptr,
+                                   nullptr);
+        return true;
+    }
 
+    void draw_elided_line(CGContextRef ctx, Point origin, Color c) const
+    {
+        if (!ensure_elided_line())
+            return;
         CGContextSaveGState(ctx);
-        // Move to the text baseline. We measured measured_.h from the
-        // framesetter (line height); ascent positions baseline within that.
-        CGFloat ascent = 0;
-        CGFloat descent = 0;
-        CGFloat leading = 0;
-        CTLineGetTypographicBounds(out, &ascent, &descent, &leading);
-        CGContextTranslateCTM(ctx, origin.x, origin.y + ascent);
+        CGContextTranslateCTM(ctx, origin.x, origin.y + elided_ascent_);
         CGContextScaleCTM(ctx, 1, -1);
         CGContextSetTextPosition(ctx, 0, 0);
         set_fill(ctx, c);
-        CTLineDraw(out, ctx);
+        CTLineDraw(elided_line_, ctx);
         CGContextRestoreGState(ctx);
     }
 
@@ -815,6 +820,8 @@ private:
     CGFloat max_width_ = -1;
     CGFloat max_height_ = -1;
     bool elide_single_line_ = false;
+    mutable CTLineRef elided_line_ = nullptr;
+    mutable CGFloat   elided_ascent_ = 0;
     std::string utf8_;
     std::vector<UrlRange> url_ranges_;
 };

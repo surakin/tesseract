@@ -97,6 +97,7 @@ private:
     bool topic_truncated_ = false;
     bool topic_dirty_ = true;
     float last_topic_w_ = -1.0f;
+    float topic_natural_w_ = -1.0f;
 
     tk::Label* name_label_ = nullptr;
     tk::Label* topic_label_ = nullptr;
