@@ -1,7 +1,18 @@
 # Generate Tesseract.icns from the shared SVG at build time.
-set(_svg  "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg")
-set(_set  "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.iconset")
-set(_icns "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.icns")
+# Patch the viewBox at configure time to add 1.5/16-per-side transparent border
+# so the Dock icon matches the visual weight of other macOS app icons.
+set(_svg_src "${CMAKE_CURRENT_SOURCE_DIR}/../icons/tesseract.svg")
+set(_svg     "${CMAKE_CURRENT_BINARY_DIR}/tesseract_icon.svg")
+set(_set     "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.iconset")
+set(_icns    "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.icns")
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_svg_src}")
+file(READ "${_svg_src}" _svg_raw)
+string(REPLACE
+    "viewBox=\"0 0 512 512\""
+    "viewBox=\"-59.077 -59.077 630.154 630.154\""
+    _svg_patched "${_svg_raw}")
+file(WRITE "${_svg}" "${_svg_patched}")
 
 add_custom_command(
     OUTPUT "${_icns}"
