@@ -170,6 +170,11 @@ protected:
     void apply_cached_messages_(
         const std::vector<tesseract::views::MessageRowData>& msgs) override;
 
+    void navigate_to_room_(const std::string& room_id) override
+    {
+        tab_navigate_room(room_id);
+    }
+
     // Expose ShellBase protected members so MainWindowController ObjC++ code
     // can reach them through _shell (composition, not inheritance).
 public:
@@ -2596,35 +2601,7 @@ void MacShell::apply_cached_messages_(
                     }
                 });
         };
-        _mainApp->room_view()->on_open_dm =
-            [weakSelf](std::string user_id)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-                return;
-            // Already-open DM → switch immediately, skipping the async round-trip.
-            if (auto existing = s->_shell->find_existing_dm_(user_id);
-                !existing.empty())
-            {
-                s->_shell->tab_navigate_room(existing);
-                return;
-            }
-            auto* c = s->_shell->client_;
-            s->_shell->run_async_(
-                [weakSelf, c, user_id = std::move(user_id)]() mutable
-                {
-                    std::string dm_room = c->get_or_create_dm(user_id);
-                    if (!dm_room.empty())
-                    {
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            MainWindowController* s2 = weakSelf;
-                            if (!s2)
-                                return;
-                            s2->_shell->tab_navigate_room(dm_room);
-                        });
-                    }
-                });
-        };
+        _shell->setup_dm_callbacks();
         _mainApp->room_view()->on_ignore_user =
             [weakSelf](std::string user_id)
         {
