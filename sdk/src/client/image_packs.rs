@@ -223,9 +223,21 @@ impl ClientFfi {
                 .await
         });
 
+        // Refuse to proceed if the existing pack content fails to parse:
+        // upserting onto Value::Object({}) and writing it back would silently
+        // overwrite the user's whole sticker pack with `{}`. A transient
+        // server-side corruption or future schema we don't understand must
+        // not destroy the user's data — surface the error instead.
         let current_content: Value = match read_result {
-            Ok(Some(raw)) => serde_json::from_str(raw.json().get())
-                .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+            Ok(Some(raw)) => match serde_json::from_str(raw.json().get()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return err(format!(
+                        "existing user pack failed to parse — refusing to \
+                         overwrite (would destroy your saved stickers): {e}"
+                    ))
+                }
+            },
             Ok(None) => Value::Object(serde_json::Map::new()),
             Err(e) => return err(format!("read user pack: {e}")),
         };
@@ -413,9 +425,19 @@ impl ClientFfi {
             .rt
             .block_on(async move { client_for_read.account().account_data_raw(ev_type).await });
 
+        // Same data-preservation guard as save_sticker_to_user_pack: refuse
+        // to write if the existing content failed to parse, otherwise the
+        // toggle would silently overwrite the whole pack with `{}`.
         let current: Value = match read_result {
-            Ok(Some(raw)) => serde_json::from_str(raw.json().get())
-                .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+            Ok(Some(raw)) => match serde_json::from_str(raw.json().get()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return err(format!(
+                        "existing user pack failed to parse — refusing to \
+                         overwrite (would destroy your saved stickers): {e}"
+                    ))
+                }
+            },
             Ok(None) => return err("sticker is not saved; add it before favoriting"),
             Err(e) => return err(format!("read user pack: {e}")),
         };

@@ -381,6 +381,16 @@ pub struct ClientFfi {
     /// `get_sas_emojis()`.
     #[cfg(not(test))]
     pub(super) sas_emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
+    /// Abort handles for every verification/SAS watcher task. These spawns
+    /// outlive their initiating method, hold cloned `Arc<SendHandler>`
+    /// references, and would otherwise call back into a destroyed C++
+    /// handler on shutdown (the same UAF class as `sync_tasks`). Drained
+    /// and aborted by `stop_sync`. Shared via `Arc` because nested watchers
+    /// (`watch_verification_request` spawns a `watch_sas` on its own when
+    /// the flow transitions) need to register from inside the running
+    /// future where `&mut self` is unavailable.
+    #[cfg(not(test))]
+    pub(super) verification_tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -605,6 +615,8 @@ impl ClientFfi {
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            verification_tasks: Arc::new(Mutex::new(Vec::new())),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events

@@ -64,6 +64,7 @@ add_executable(tesseract_tests
     cpp/test_tk_message_list_threads.cpp
     cpp/test_tk_thread_list_view.cpp
     cpp/test_tk_thread_view.cpp
+    cpp/test_event_handler_bridge.cpp
     cpp/test_tk_room_header.cpp
     cpp/test_code_highlight.cpp
     cpp/test_tk_room_view.cpp
@@ -85,7 +86,13 @@ endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)
 
-target_include_directories(tesseract_tests PRIVATE cpp)
+target_include_directories(tesseract_tests
+    PRIVATE
+        cpp
+        # Allow tests to exercise the FFI conversion helpers that are
+        # otherwise PRIVATE to tesseract_client. The functions are header-only
+        # (inline) so no extra link is needed; just the include path.
+        ${CMAKE_CURRENT_SOURCE_DIR}/../client/src)
 
 # All three archives are mutually dependent (same WHOLE_ARCHIVE pattern used
 # by the UI executables) so every symbol is present regardless of link order.

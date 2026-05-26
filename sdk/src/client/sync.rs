@@ -774,6 +774,7 @@ impl ClientFfi {
             let h = Arc::clone(&handler);
             let flow_users = Arc::clone(&self.verification_flow_users);
             let emoji_cache = Arc::clone(&self.sas_emoji_cache);
+            let tasks = Arc::clone(&self.verification_tasks);
 
             self.event_handler_handles.push(client.add_event_handler(
                 move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
@@ -781,6 +782,7 @@ impl ClientFfi {
                     let h = Arc::clone(&h);
                     let flow_users = Arc::clone(&flow_users);
                     let emoji_cache = Arc::clone(&emoji_cache);
+                    let tasks = Arc::clone(&tasks);
                     async move {
                         let flow_id = ev.content.transaction_id.to_string();
                         let user_id = ev.sender.as_str().to_owned();
@@ -817,13 +819,16 @@ impl ClientFfi {
                             let flow_users2 = Arc::clone(&flow_users);
                             let emoji_cache2 = Arc::clone(&emoji_cache);
                             let flow_id2 = flow_id.clone();
-                            tokio::spawn(verification::watch_verification_request(
+                            let tasks2 = Arc::clone(&tasks);
+                            let handle = tokio::spawn(verification::watch_verification_request(
                                 req,
                                 flow_id2,
                                 h2,
                                 flow_users2,
                                 emoji_cache2,
+                                tasks,
                             ));
+                            lock_or_recover(&tasks2).push(handle.abort_handle());
                         } else {
                             tracing::warn!(
                                 "verification request {flow_id} from {user_id} \
@@ -942,6 +947,13 @@ impl ClientFfi {
         // the use-after-free window where a task could still call back into
         // the C++ handler after self.handler was taken.
         for h in self.sync_tasks.drain(..) {
+            h.abort();
+        }
+        // Verification watchers (and their nested SAS watchers) are spawned
+        // outside `sync_tasks` because nested spawns happen from inside the
+        // running future. Abort them here so an in-flight SAS does not call
+        // back into the C++ handler after shutdown.
+        for h in lock_or_recover(&self.verification_tasks).drain(..) {
             h.abort();
         }
         if let Some(svc) = self.sync_service.take() {

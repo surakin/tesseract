@@ -26,6 +26,16 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(test))]
 pub(super) const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 
+/// Upper bound on a single arbitrary-URL fetch (1 MiB). Used by
+/// `fetch_url_bytes` and `get_url_preview` to fetch OSM tiles and
+/// OpenGraph metadata from untrusted third-party servers. Bigger than this
+/// is almost certainly a misbehaving server (or worse, a deliberate DoS),
+/// so reject it early. Far tighter than `MAX_MEDIA_BYTES` because the
+/// content here is always small: a 256×256 PNG tile is ~30 KB; OG JSON
+/// metadata is a few KB at most.
+#[cfg(not(test))]
+pub(super) const MAX_URL_BYTES: usize = 1024 * 1024;
+
 #[cfg(not(test))]
 pub(super) fn cap_media_bytes(bytes: Vec<u8>) -> Vec<u8> {
     if bytes.len() > MAX_MEDIA_BYTES {
@@ -247,17 +257,45 @@ impl ClientFfi {
         self.rt.block_on(async move {
             tokio::select! {
                 result = async {
-                    match client.get(&url).send().await {
-                        Ok(resp) => {
-                            match resp.error_for_status() {
-                                Ok(resp) => resp.bytes().await
-                                    .map(|b| b.to_vec())
-                                    .unwrap_or_default(),
-                                Err(_) => Vec::new(),
-                            }
+                    use futures_util::StreamExt;
+                    let resp = match client.get(&url).send().await {
+                        Ok(r) => r,
+                        Err(_) => return Vec::new(),
+                    };
+                    let resp = match resp.error_for_status() {
+                        Ok(r) => r,
+                        Err(_) => return Vec::new(),
+                    };
+                    // Reject up-front when the server advertises a body
+                    // larger than the cap, before we allocate anything.
+                    if let Some(len) = resp.content_length() {
+                        if len as usize > MAX_URL_BYTES {
+                            tracing::warn!(
+                                "fetch_url_bytes: {url} declared {len} bytes \
+                                 > {MAX_URL_BYTES} cap; rejecting"
+                            );
+                            return Vec::new();
                         }
-                        Err(_) => Vec::new(),
                     }
+                    // Stream chunks and bail mid-flight if the body lies
+                    // about its length (or omits Content-Length entirely).
+                    let mut stream = resp.bytes_stream();
+                    let mut buf: Vec<u8> = Vec::new();
+                    while let Some(chunk) = stream.next().await {
+                        let chunk = match chunk {
+                            Ok(c) => c,
+                            Err(_) => return Vec::new(),
+                        };
+                        if buf.len().saturating_add(chunk.len()) > MAX_URL_BYTES {
+                            tracing::warn!(
+                                "fetch_url_bytes: {url} exceeded {MAX_URL_BYTES} \
+                                 byte cap mid-stream; aborting"
+                            );
+                            return Vec::new();
+                        }
+                        buf.extend_from_slice(&chunk);
+                    }
+                    buf
                 } => result,
                 _ = stop_fut(stop_rx) => Vec::new(),
             }
@@ -286,9 +324,23 @@ impl ClientFfi {
             tokio::select! {
                 result = async { client.send(req).await } => {
                     match result {
-                        Ok(resp) => resp.data
-                            .map(|v| v.get().to_owned())
-                            .unwrap_or_default(),
+                        Ok(resp) => {
+                            let json = resp.data
+                                .map(|v| v.get().to_owned())
+                                .unwrap_or_default();
+                            // OG metadata is always a few KB; anything
+                            // bigger is misconfigured / hostile and would
+                            // bloat the JSON parser downstream.
+                            if json.len() > MAX_URL_BYTES {
+                                tracing::warn!(
+                                    "get_url_preview: response {} bytes \
+                                     > {MAX_URL_BYTES} cap; discarding",
+                                    json.len()
+                                );
+                                return String::new();
+                            }
+                            json
+                        }
                         Err(_) => String::new(),
                     }
                 }

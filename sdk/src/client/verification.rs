@@ -38,6 +38,7 @@ pub(super) async fn watch_verification_request(
     handler: Arc<Mutex<SendHandler>>,
     flow_users: Arc<Mutex<HashMap<String, String>>>,
     emoji_cache: Arc<Mutex<HashMap<String, Vec<(String, String)>>>>,
+    tasks: Arc<Mutex<Vec<tokio::task::AbortHandle>>>,
 ) {
     use futures_util::StreamExt;
     use matrix_sdk::encryption::verification::{Verification, VerificationRequestState};
@@ -67,7 +68,8 @@ pub(super) async fn watch_verification_request(
                     let h2 = Arc::clone(&handler);
                     let flow_id2 = flow_id.clone();
                     let emoji_cache2 = Arc::clone(&emoji_cache);
-                    tokio::spawn(watch_sas(sas, flow_id2, h2, emoji_cache2));
+                    let handle = tokio::spawn(watch_sas(sas, flow_id2, h2, emoji_cache2));
+                    lock_or_recover(&tasks).push(handle.abort_handle());
                 }
                 break;
             }
@@ -164,6 +166,7 @@ impl ClientFfi {
         };
         let flow_users = Arc::clone(&self.verification_flow_users);
         let emoji_cache = Arc::clone(&self.sas_emoji_cache);
+        let tasks = Arc::clone(&self.verification_tasks);
 
         match self.rt.block_on(async move {
             let user_id = client
@@ -184,13 +187,16 @@ impl ClientFfi {
             let user_id = req.own_user_id().as_str().to_owned();
             lock_or_recover(&flow_users).insert(flow_id.clone(), user_id);
 
-            tokio::spawn(watch_verification_request(
+            let tasks_for_register = Arc::clone(&tasks);
+            let handle = tokio::spawn(watch_verification_request(
                 req,
                 flow_id,
                 handler,
                 flow_users,
                 emoji_cache,
+                tasks,
             ));
+            lock_or_recover(&tasks_for_register).push(handle.abort_handle());
             Ok::<(), anyhow::Error>(())
         }) {
             Ok(()) => ok(""),
@@ -259,6 +265,7 @@ impl ClientFfi {
             return err("not syncing");
         };
         let emoji_cache = Arc::clone(&self.sas_emoji_cache);
+        let tasks = Arc::clone(&self.verification_tasks);
 
         match self.rt.block_on(async move {
             use matrix_sdk::ruma::UserId;
@@ -272,7 +279,8 @@ impl ClientFfi {
                 .start_sas()
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("SAS not supported"))?;
-            tokio::spawn(watch_sas(sas, flow_id_str, handler, emoji_cache));
+            let handle = tokio::spawn(watch_sas(sas, flow_id_str, handler, emoji_cache));
+            lock_or_recover(&tasks).push(handle.abort_handle());
             Ok::<(), anyhow::Error>(())
         }) {
             Ok(()) => ok(""),
