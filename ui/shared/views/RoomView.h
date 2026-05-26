@@ -332,6 +332,9 @@ private:
     ComposeBar* compose_bar_ = nullptr;
     RoomInfoPanel*    room_info_panel_    = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
+    // Stored so they can be forwarded to the lazily-created thread view.
+    MessageListView::ImageProvider stored_avatar_provider_;
+    MessageListView::ImageProvider stored_image_provider_;
     // Lazily created when the thread panel first opens. Owned by the tk
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView*     thread_view_      = nullptr;

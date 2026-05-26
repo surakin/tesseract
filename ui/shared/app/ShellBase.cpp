@@ -1265,6 +1265,38 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start)
     state.reached_start = reached_start;
 }
 
+void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
+{
+    if (event_id.empty() || !room_view_ || current_room_id_.empty() || !client_)
+        return;
+    auto* ml = room_view_->message_list();
+    if (!ml)
+        return;
+
+    pending_scroll_room_event_id_ = event_id;
+    ml->set_pending_scroll_event_id(event_id);
+    request_repaint_();
+
+    // If the event is already in the loaded timeline the deferred scroll in
+    // arrange() will apply it on the next paint — nothing else needed.
+    for (const auto& m : ml->messages())
+    {
+        if (m.event_id == event_id)
+            return;
+    }
+
+    // Event is not in the current window. Use subscribe_room_at to rebuild
+    // the timeline centred on the target event (one /context fetch) rather
+    // than paginating backwards batch-by-batch, which would flood the UI with
+    // every intermediate event and can stall the main thread.
+    const auto rid = current_room_id_;
+    begin_focused_subscription_(rid, event_id);
+    run_async_([this, rid, event_id]()
+    {
+        client_->subscribe_room_at(rid, event_id);
+    });
+}
+
 void ShellBase::begin_focused_subscription_(const std::string& room_id,
                                             const std::string& event_id)
 {
@@ -1652,6 +1684,15 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
                                  (ml && ml->messages().empty());
         view_displayed_room_id_ = room_id;
         room_view_->set_messages(std::move(rows), room_switch);
+        // set_messages() clears MessageListView::pending_scroll_event_id_.
+        // Re-arm it so arrange() still applies the deferred scroll with
+        // up-to-date row_offsets_ (handles the subscribe_room_at reset path).
+        if (!pending_scroll_room_event_id_.empty() &&
+            room_view_->message_list())
+        {
+            room_view_->message_list()->set_pending_scroll_event_id(
+                pending_scroll_room_event_id_);
+        }
         request_relayout_();
         if (auto* list = room_view_->message_list())
         {
@@ -2637,6 +2678,15 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
     thread_panel_prev_    = t.new_prev;
     current_thread_root_  = t.new_root;
 
+    // Cancel any in-progress scroll-to-event when the thread panel closes or
+    // switches rooms; a new scroll will be requested below if opening a thread.
+    if (t.new_state != ThreadPanel::Open)
+    {
+        pending_scroll_room_event_id_.clear();
+        if (room_view_ && room_view_->message_list())
+            room_view_->message_list()->set_pending_scroll_event_id({});
+    }
+
     if (room_view_)
     {
         using S = views::RoomView::ThreadPanelState;
@@ -2646,6 +2696,12 @@ void ShellBase::apply_thread_transition_(const ThreadTransition& t)
         room_view_->set_thread_panel(vs, t.new_root);
         request_relayout_();
     }
+
+    // After set_thread_panel has synchronously re-laid out the message list
+    // (via on_layout_changed), scroll to and highlight the thread root.
+    // try_scroll_to_room_event_ paginates backwards if the event isn't loaded.
+    if (t.new_state == ThreadPanel::Open && !t.new_root.empty())
+        try_scroll_to_room_event_(t.new_root);
 
     if (client_ && t.new_state == ThreadPanel::List)
         apply_threads_list_(client_->list_room_threads(current_room_id_));
@@ -2694,7 +2750,10 @@ void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,
                                        bool room_switch)
 {
     if (room_view_ && room_view_->thread_view())
+    {
         room_view_->thread_view()->set_messages(std::move(rows), room_switch);
+        request_relayout_();
+    }
 }
 
 void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/,
@@ -2702,7 +2761,10 @@ void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/,
                                              views::MessageRowData row)
 {
     if (room_view_ && room_view_->thread_view())
+    {
         room_view_->thread_view()->insert_message(index, std::move(row));
+        request_relayout_();
+    }
 }
 
 void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/,
@@ -2710,20 +2772,29 @@ void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/,
                                              views::MessageRowData row)
 {
     if (room_view_ && room_view_->thread_view())
+    {
         room_view_->thread_view()->update_message(index, std::move(row));
+        request_relayout_();
+    }
 }
 
 void ShellBase::apply_thread_message_remove_(const std::string& /*thread_root*/,
                                              std::size_t index)
 {
     if (room_view_ && room_view_->thread_view())
+    {
         room_view_->thread_view()->remove_message(index);
+        request_relayout_();
+    }
 }
 
 void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
 {
     if (room_view_ && room_view_->thread_list_view())
+    {
         room_view_->thread_list_view()->set_threads(std::move(threads));
+        request_relayout_();
+    }
 }
 
 } // namespace tesseract

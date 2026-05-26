@@ -757,6 +757,13 @@ public:
                         const std::string& image_url,
                         const std::string& info_json);
 
+    /// Send `m.sticker` into the MSC3440 thread rooted at `thread_root`.
+    Result send_thread_sticker(const std::string& room_id,
+                               const std::string& thread_root,
+                               const std::string& body,
+                               const std::string& image_url,
+                               const std::string& info_json);
+
     /// Add a sticker to the user's MSC2545 personal pack
     /// (`im.ponies.user_emotes`). Creates the pack on first use with
     /// display_name "Saved Stickers". Shortcodes collide-resolve by

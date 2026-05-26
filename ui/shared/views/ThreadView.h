@@ -3,9 +3,9 @@
 // Right-panel widget showing one thread:
 //   - header (root sender + body preview + close "×" button)
 //   - embedded MessageListView showing thread replies
-//   - embedded ComposeBar at the bottom whose sends are forwarded
-//     through `on_send` (the shell wires this to
-//     `Client::send_thread_message` in Task 8).
+//
+// Sends are handled by the main room ComposeBar; when the thread panel is
+// open RoomView routes plain sends through on_thread_send → on_thread_send_requested.
 //
 // Note on the thread_root_id strip: MessageListView::{set,insert,update}_message
 // drop rows whose `thread_root_id` is non-empty as a defence-in-depth filter
@@ -16,7 +16,6 @@
 
 #include "tk/canvas.h"
 #include "tk/widget.h"
-#include "views/ComposeBar.h"
 #include "views/MessageListView.h"
 
 #include <functional>
@@ -46,16 +45,9 @@ public:
     void remove_message(std::size_t index);
 
     MessageListView* message_list() { return message_list_; }
-    ComposeBar* compose_bar() { return compose_bar_; }
 
     // Fires when the user clicks the header close button.
     std::function<void()> on_close;
-    // Fires when ComposeBar reports a plain send. `formatted_body` is the
-    // HTML-formatted body (currently always empty — wired through for
-    // future use). Shell forwards to `Client::send_thread_message`.
-    std::function<void(const std::string& body,
-                       const std::string& formatted_body)>
-        on_send;
 
     // tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -74,9 +66,8 @@ private:
     std::string thread_root_;
     MessageRowData root_preview_;
 
-    // Borrowed pointers — ownership is in the tk::Widget child list.
+    // Borrowed pointer — ownership is in the tk::Widget child list.
     MessageListView* message_list_ = nullptr;
-    ComposeBar*      compose_bar_  = nullptr;
 
     tk::Rect header_rect_{};
     tk::Rect close_rect_{};

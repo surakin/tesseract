@@ -528,6 +528,7 @@ public:
         tk::Rect add_button{}; // 0-area when not painted
         bool add_visible = false;
         tk::Rect reply_button{};  // 0-area when not painted
+        tk::Rect thread_button{}; // 0-area when not painted
         tk::Rect edit_button{};   // 0-area when not painted
         tk::Rect delete_button{}; // 0-area when not painted
         tk::Rect retry_button{};  // 0-area when not painted
@@ -575,6 +576,12 @@ public:
     // scrolled; false if event_id is not currently loaded.
     bool scroll_to_event_id(const std::string& event_id);
 
+    // Store `event_id` as a deferred scroll target. On each arrange() pass,
+    // after row_offsets_ are rebuilt and anchor adjustment has run, the
+    // pending scroll is applied. Cleared once the event is found and scrolled,
+    // or when set_messages() resets the list.
+    void set_pending_scroll_event_id(const std::string& event_id);
+
     // Show/hide historical mode. The pill stays visible regardless of scroll
     // position, and clicking it fires on_return_to_live instead of
     // scroll_to_bottom(). Calls invalidate_data(); the caller must also schedule
@@ -596,6 +603,8 @@ public:
     // remains visible above the dim.
     void set_dimmed(bool dimmed);
     bool dimmed() const { return dimmed_; }
+
+    void set_thread_button_visible(bool v) { thread_button_visible_ = v; }
 
     // Paint a coloured 2px outline around the row whose event_id matches.
     // Pass the empty string to clear the highlight.
@@ -621,6 +630,10 @@ public:
 private:
     class Adapter;
     friend class Adapter;
+
+    // Suppress the "start thread" hover button (set by ThreadView on its
+    // embedded list — replies inside a thread don't need to open sub-threads).
+    bool thread_button_visible_ = true;
 
     // Thread overlay state (see set_dimmed / set_highlighted_event).
     bool dimmed_ = false;
@@ -678,6 +691,7 @@ private:
     MentionAvatarProvider mention_avatar_provider_;
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
+    std::string pending_scroll_event_id_;
 
     // Per-frame chip geometry for the hovered row. Mutable so paint_row
     // can write into it from a const-ish paint pass.
@@ -718,6 +732,10 @@ private:
     // Delete button press state (own non-redacted messages).
     bool press_delete_btn_ = false;
     std::string press_delete_event_id_;
+
+    // Thread button press state.
+    bool press_thread_btn_ = false;
+    std::string press_thread_event_id_;
 
     // Retry / abort pending-send button press state (own failed messages).
     bool press_retry_btn_ = false;

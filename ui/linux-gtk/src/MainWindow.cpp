@@ -1226,6 +1226,9 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
             [this](const std::string& body, const std::string& formatted)
         {
             on_thread_send_requested(body, formatted);
+            if (room_text_area_)
+                room_text_area_->set_text("");
+            room_view_->set_current_text({});
         };
         room_view_->on_emoji = [this](tk::Rect btn)
         {
@@ -5159,7 +5162,12 @@ void MainWindow::build_sticker_popover()
             return;
         }
         std::string body = img.body.empty() ? img.shortcode : img.body;
-        client_->send_sticker(current_room_id_, body, img.url, img.info_json);
+        if (thread_panel_ == ThreadPanel::Open && !current_thread_root_.empty())
+            client_->send_thread_sticker(current_room_id_,
+                                         current_thread_root_, body,
+                                         img.url, img.info_json);
+        else
+            client_->send_sticker(current_room_id_, body, img.url, img.info_json);
         if (sticker_popover_)
         {
             gtk_popover_popdown(GTK_POPOVER(sticker_popover_));

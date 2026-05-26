@@ -1148,6 +1148,17 @@ Result Client::send_sticker(const std::string& room_id, const std::string& body,
         impl_->ffi->send_sticker(room_id, body, image_url, info_json));
 }
 
+Result Client::send_thread_sticker(const std::string& room_id,
+                                   const std::string& thread_root,
+                                   const std::string& body,
+                                   const std::string& image_url,
+                                   const std::string& info_json)
+{
+    return from_ffi(
+        impl_->ffi->send_thread_sticker(room_id, thread_root, body, image_url,
+                                        info_json));
+}
+
 Result Client::save_sticker_to_user_pack(const std::string& shortcode,
                                          const std::string& body,
                                          const std::string& image_url,

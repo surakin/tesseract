@@ -46,23 +46,8 @@ std::string truncate_utf8(std::string s, std::size_t max_bytes)
 ThreadView::ThreadView()
 {
     auto msg = std::make_unique<MessageListView>();
+    msg->set_thread_button_visible(false);
     message_list_ = add_child(std::move(msg));
-
-    auto compose = std::make_unique<ComposeBar>();
-    compose_bar_ = add_child(std::move(compose));
-
-    // ComposeBar fires `on_send` with the plain body for non-attachment,
-    // non-reply, non-edit sends. ThreadView forwards through `on_send`
-    // (with an empty `formatted_body` for now — markdown rendering is a
-    // separate concern; the signature leaves room for it).
-    compose_bar_->on_send =
-        [this](const std::string& body)
-    {
-        if (on_send)
-        {
-            on_send(body, std::string{});
-        }
-    };
 }
 
 void ThreadView::set_thread(std::string root_event_id,
@@ -74,14 +59,27 @@ void ThreadView::set_thread(std::string root_event_id,
     press_close_ = false;
 }
 
+namespace
+{
+
+void strip_thread_fields(MessageRowData& r)
+{
+    r.thread_root_id.clear();
+    r.is_thread_root              = false;
+    r.thread_reply_count          = 0;
+    r.thread_latest_sender_name.clear();
+    r.thread_latest_body.clear();
+    r.thread_latest_ts            = 0;
+}
+
+} // namespace
+
 void ThreadView::set_messages(std::vector<MessageRowData> rows,
                               bool room_switch)
 {
-    // Strip thread_root_id so MessageListView's defence-in-depth filter
-    // does not drop these rows. See file header.
     for (auto& r : rows)
     {
-        r.thread_root_id.clear();
+        strip_thread_fields(r);
     }
     if (message_list_)
     {
@@ -91,7 +89,7 @@ void ThreadView::set_messages(std::vector<MessageRowData> rows,
 
 void ThreadView::insert_message(std::size_t index, MessageRowData row)
 {
-    row.thread_root_id.clear();
+    strip_thread_fields(row);
     if (message_list_)
     {
         message_list_->insert_message(index, std::move(row));
@@ -100,7 +98,7 @@ void ThreadView::insert_message(std::size_t index, MessageRowData row)
 
 void ThreadView::update_message(std::size_t index, MessageRowData row)
 {
-    row.thread_root_id.clear();
+    strip_thread_fields(row);
     if (message_list_)
     {
         message_list_->update_message(index, std::move(row));
@@ -129,28 +127,17 @@ void ThreadView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     header_rect_ = {bounds.x, bounds.y, bounds.w, kHeaderH};
 
-    // Close button anchored to the right edge of the header, vertically
-    // centred.
+    // Close button anchored to the right edge of the header, vertically centred.
     const float close_x = bounds.x + bounds.w - kCloseSz - kPadX;
     const float close_y = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
     close_rect_ = {close_x, close_y, kCloseSz, kCloseSz};
 
-    const float compose_h =
-        compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
-
     const float list_top = bounds.y + kHeaderH;
-    const float list_bot = bounds.y + bounds.h - compose_h;
-    const float list_h   = std::max(0.0f, list_bot - list_top);
+    const float list_h   = std::max(0.0f, bounds.y + bounds.h - list_top);
 
     if (message_list_)
     {
         message_list_->arrange(lc, {bounds.x, list_top, bounds.w, list_h});
-    }
-
-    if (compose_bar_)
-    {
-        compose_bar_->arrange(
-            lc, {bounds.x, list_bot, bounds.w, compose_h});
     }
 }
 

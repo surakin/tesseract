@@ -976,6 +976,12 @@ public:
             }
             paint_btn(static_cache_.reply.get(),
                       owner_.hovered_row_geom_.reply_button);
+            if (m.kind != MessageRowData::Kind::Redacted &&
+                owner_.thread_button_visible_)
+            {
+                paint_btn(static_cache_.thread_btn.get(),
+                          owner_.hovered_row_geom_.thread_button);
+            }
             // Reaction-add pill is suppressed on UTD rows — reacting to an
             // unreadable body is meaningless.
             const tk::TextLayout* plus_lo =
@@ -1216,6 +1222,12 @@ public:
 
                 paint_strip_btn(static_cache_.reply.get(),
                                 owner_.hovered_row_geom_.reply_button, false);
+                if (m.kind != MessageRowData::Kind::Redacted &&
+                    owner_.thread_button_visible_)
+                {
+                    paint_strip_btn(static_cache_.thread_btn.get(),
+                                    owner_.hovered_row_geom_.thread_button, false);
+                }
                 if (m.is_own && m.kind == MessageRowData::Kind::Text)
                 {
                     paint_strip_btn(static_cache_.edit.get(),
@@ -3443,6 +3455,7 @@ private:
     {
         std::unique_ptr<tk::TextLayout> plus;
         std::unique_ptr<tk::TextLayout> reply;
+        std::unique_ptr<tk::TextLayout> thread_btn;
         std::unique_ptr<tk::TextLayout> edit;
         std::unique_ptr<tk::TextLayout> trash;
 
@@ -3454,15 +3467,17 @@ private:
             }
             tk::TextStyle st{};
             st.role = tk::FontRole::Title;
-            plus = f.build_text("+", st);
-            reply = f.build_text("\xE2\x86\xA9", st);     // ↩
-            edit = f.build_text("\xE2\x9C\x8F", st);      // ✏
-            trash = f.build_text("\xF0\x9F\x97\x91", st); // 🗑
+            plus       = f.build_text("+", st);
+            reply      = f.build_text("\xE2\x86\xA9", st);     // ↩
+            thread_btn = f.build_text("\xF0\x9F\x92\xAC", st); // 💬
+            edit       = f.build_text("\xE2\x9C\x8F", st);     // ✏
+            trash      = f.build_text("\xF0\x9F\x97\x91", st); // 🗑
         }
         void clear()
         {
             plus.reset();
             reply.reset();
+            thread_btn.reset();
             edit.reset();
             trash.reset();
         }
@@ -3616,6 +3631,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     sel_is_dragging_ = false;
     press_sel_ = false;
     messages_ = std::move(msgs);
+    pending_scroll_event_id_.clear();
     invalidate_data();
     scroll_to_bottom();
     // Start inline players for animated video rows near the bottom (most
@@ -4254,10 +4270,25 @@ void MessageListView::start_inline_video(const MessageRowData& m)
         });
 }
 
+void MessageListView::set_pending_scroll_event_id(const std::string& event_id)
+{
+    pending_scroll_event_id_ = event_id;
+}
+
 void MessageListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     set_near_top_threshold_px(bounds.h);
     tk::ListView::arrange(ctx, bounds);
+    // Apply any deferred scroll now that row_offsets_ are rebuilt and the
+    // anchor-adjustment (preserve_top_through) has run. Only clear on success
+    // so that if the event hasn't arrived yet (paginating in) we retry next pass.
+    if (!pending_scroll_event_id_.empty())
+    {
+        if (scroll_to_event_id(pending_scroll_event_id_))
+        {
+            pending_scroll_event_id_.clear();
+        }
+    }
 }
 
 bool MessageListView::on_wheel(tk::Point local, float dx, float dy)
@@ -5198,6 +5229,22 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
+    // Thread button hit-test.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        const tk::Rect& tb = hovered_row_geom_.thread_button;
+        if (tb.w > 0 && rect_contains(tb, world))
+        {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size())
+            {
+                press_thread_btn_ = true;
+                press_thread_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
     // Edit button hit-test.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -5689,6 +5736,26 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                         }
                         break;
                     }
+                }
+            }
+        }
+        return;
+    }
+    if (press_thread_btn_)
+    {
+        bool fire = inside_self && !press_thread_event_id_.empty();
+        std::string ev = std::move(press_thread_event_id_);
+        press_thread_btn_ = false;
+        press_thread_event_id_.clear();
+        if (fire)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            const tk::Rect& tb = hovered_row_geom_.thread_button;
+            if (tb.w > 0 && rect_contains(tb, world))
+            {
+                if (on_thread_preview_clicked)
+                {
+                    on_thread_preview_clicked(ev);
                 }
             }
         }

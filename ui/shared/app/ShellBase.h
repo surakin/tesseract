@@ -1117,6 +1117,14 @@ protected:
     // Mark pagination as complete for room_id.
     void push_paginate_result_(std::string room_id, bool reached_start);
 
+    // Scroll the room message list to event_id, paginating backwards until
+    // found. Stores a deferred scroll in the MessageListView so arrange()
+    // applies it after row_offsets_ are rebuilt each pass.
+    void try_scroll_to_room_event_(const std::string& event_id);
+
+    // Event ID we are currently paginating towards (empty when idle).
+    std::string pending_scroll_room_event_id_;
+
     // MSC3030: begin a focused-timeline subscription centred on event_id.
     void begin_focused_subscription_(const std::string& room_id,
                                      const std::string& event_id);

@@ -2501,6 +2501,9 @@ void MacShell::apply_cached_messages_(
             if (s)
             {
                 s->_shell->on_thread_send_requested(body, formatted);
+                if (s->_roomTextArea)
+                    s->_roomTextArea->set_text("");
+                s->_roomView->set_current_text({});
             }
         };
         _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn)
@@ -6144,7 +6147,17 @@ void MacShell::apply_cached_messages_(
         std::string u = url.UTF8String ?: "";
         std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
+        if (s->_shell->thread_panel_ == ThreadPanel::Open &&
+            !s->_shell->current_thread_root_.empty())
+        {
+            s->_shell->client_->send_thread_sticker(
+                s->_shell->current_room_id_, s->_shell->current_thread_root_,
+                b, u, j);
+        }
+        else
+        {
+            s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
+        }
         [weakPanel orderOut:nil];
     };
 
@@ -6198,7 +6211,17 @@ void MacShell::apply_cached_messages_(
         std::string u = url.UTF8String ?: "";
         std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
+        if (s->_shell->thread_panel_ == ThreadPanel::Open &&
+            !s->_shell->current_thread_root_.empty())
+        {
+            s->_shell->client_->send_thread_sticker(
+                s->_shell->current_room_id_, s->_shell->current_thread_root_,
+                b, u, j);
+        }
+        else
+        {
+            s->_shell->client_->send_sticker(s->_shell->current_room_id_, b, u, j);
+        }
         [weakPanel orderOut:nil];
     };
 

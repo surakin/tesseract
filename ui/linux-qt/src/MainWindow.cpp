@@ -571,6 +571,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             [this](const std::string& body, const std::string& formatted)
         {
             on_thread_send_requested(body, formatted);
+            if (roomTextArea_)
+                roomTextArea_->set_text("");
+            mainApp_->room_view()->clear_compose_text();
         };
         mainApp_->room_view()->on_delete_requested =
             [this](const std::string& event_id)
@@ -1605,7 +1608,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             return;
         }
         std::string body = img.body.empty() ? img.shortcode : img.body;
-        client_->send_sticker(current_room_id_, body, img.url, img.info_json);
+        if (thread_panel_ == ThreadPanel::Open && !current_thread_root_.empty())
+            client_->send_thread_sticker(current_room_id_,
+                                         current_thread_root_, body,
+                                         img.url, img.info_json);
+        else
+            client_->send_sticker(current_room_id_, body, img.url, img.info_json);
         stickerPicker_->hide();
     };
 

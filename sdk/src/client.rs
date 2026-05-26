@@ -2375,8 +2375,10 @@ impl ClientFfi {
                 let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
                 for item in initial_items.iter() {
-                    let ev = timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await;
-                    let ev = filter_for_channel(ev, &ch);
+                    let ev = filter_for_channel(
+                        timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
+                        &ch,
+                    );
                     visible.push(ev.is_some());
                     if let Some(ev) = ev {
                         snapshot.push(ev);
@@ -2503,8 +2505,15 @@ impl ClientFfi {
         // have the widened 8 MB stack configured on the runtime above.
         let room_for_build = room.clone();
         let timeline = match self.rt.block_on(
-            self.rt
-                .spawn(async move { room_for_build.timeline().await }),
+            self.rt.spawn(async move {
+                room_for_build
+                    .timeline_builder()
+                    .with_focus(TimelineFocus::Live {
+                        hide_threaded_events: true,
+                    })
+                    .build()
+                    .await
+            }),
         ) {
             Ok(Ok(t)) => Arc::new(t),
             Ok(Err(e)) => return err(format!("build timeline: {e}")),
@@ -2777,7 +2786,7 @@ impl ClientFfi {
             target,
             num_context_events: 50,
             thread_mode: TimelineEventFocusThreadMode::Automatic {
-                hide_threaded_events: false,
+                hide_threaded_events: true,
             },
         };
 
@@ -2987,11 +2996,18 @@ impl ClientFfi {
             TimelineChannel::Thread(root_str),
             Arc::clone(&cancelled),
         );
+        // Kick an initial backwards pagination so the thread view is populated
+        // immediately from the server. Results arrive as VectorDiff events in
+        // the streaming task above and are forwarded to C++ via on_thread_inserted.
+        let tl_for_paginate = Arc::clone(&timeline);
+        let paginate_abort = self.rt.spawn(async move {
+            let _ = tl_for_paginate.paginate_backwards(50).await;
+        }).abort_handle();
         self.thread_timelines.insert(
             key,
             TimelineHandle {
                 timeline,
-                abort_tasks: vec![abort, fetch_abort],
+                abort_tasks: vec![abort, fetch_abort, paginate_abort],
                 is_focused: true,
                 cancelled,
             },
@@ -3131,6 +3147,9 @@ impl ClientFfi {
         if let Some(prev) = self.thread_lists.remove(&rid) {
             prev.abort.abort();
         }
+        // ThreadListService::new spawns a background task via tokio::task::spawn,
+        // which requires a runtime context on the calling thread.
+        let _rt_guard = self.rt.enter();
         let service = std::sync::Arc::new(ThreadListService::new(room));
         // Kick an initial pagination so the first list is populated.
         {
@@ -3698,14 +3717,39 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid room id: {e}")),
         };
-        if thread_root.parse::<matrix_sdk::ruma::OwnedEventId>().is_err() {
-            return err("invalid thread root id");
-        }
+        let root: matrix_sdk::ruma::OwnedEventId = match thread_root.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid thread root id: {e}")),
+        };
         if !in_reply_to.is_empty()
             && in_reply_to.parse::<matrix_sdk::ruma::OwnedEventId>().is_err()
         {
             return err("invalid in_reply_to id");
         }
+        // For plain thread messages (no explicit in_reply_to), use the subscribed
+        // thread timeline so the local echo fires via on_thread_inserted immediately.
+        if in_reply_to.is_empty() {
+            let key = (room_id.clone(), root.clone());
+            if let Some(handle) = self.thread_timelines.get(&key) {
+                let timeline = handle.timeline.clone();
+                let (mentions, html) = derive_mentions(formatted_body);
+                let mut msg = if html.is_empty() {
+                    RoomMessageEventContent::text_plain(body)
+                } else {
+                    RoomMessageEventContent::text_html(body, &html)
+                };
+                msg.mentions = mentions;
+                return match self
+                    .rt
+                    .block_on(async move { timeline.send(msg.into()).await })
+                {
+                    Ok(_) => ok(""),
+                    Err(e) => err(e.to_string()),
+                };
+            }
+        }
+        // Fallback: no active timeline subscription or explicit in_reply_to —
+        // send raw with the manual thread relation already encoded in the JSON.
         let Some(room) = client.get_room(&room_id) else {
             return err("room not found");
         };
@@ -5892,6 +5936,99 @@ impl ClientFfi {
     pub fn send_sticker(
         &mut self,
         _room_id: &str,
+        _body: &str,
+        _image_url: &str,
+        _info_json: &str,
+    ) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Send `m.sticker` into the MSC3440 thread rooted at `thread_root`.
+    /// Uses the subscribed thread timeline when available (so the local echo
+    /// fires via `on_thread_inserted`, not the room timeline). Falls back to
+    /// `room.send_raw` with a manual `m.thread` relation when not subscribed.
+    #[cfg(not(test))]
+    pub fn send_thread_sticker(
+        &mut self,
+        room_id: &str,
+        thread_root: &str,
+        body: &str,
+        image_url: &str,
+        info_json: &str,
+    ) -> OpResult {
+        use matrix_sdk::ruma::events::room::ImageInfo;
+        use matrix_sdk::ruma::events::sticker::StickerEventContent;
+        use matrix_sdk::ruma::OwnedMxcUri;
+
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+        let room_id_parsed = match matrix_sdk::ruma::RoomId::parse(room_id) {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let root: matrix_sdk::ruma::OwnedEventId = match thread_root.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid thread root id: {e}")),
+        };
+        if image_url.is_empty() {
+            return err("image_url is empty");
+        }
+        let uri = OwnedMxcUri::from(image_url);
+        if !uri.is_valid() {
+            return err("image_url is not a valid mxc:// uri");
+        }
+        let info: ImageInfo = if info_json.is_empty() || info_json == "{}" {
+            ImageInfo::new()
+        } else {
+            match serde_json::from_str(info_json) {
+                Ok(i) => i,
+                Err(_) => ImageInfo::new(),
+            }
+        };
+
+        // Prefer the subscribed thread timeline so the local echo fires via
+        // on_thread_inserted (not the room timeline, which would show the
+        // sticker in the main message list instead of the thread view).
+        let key = (room_id_parsed.clone(), root.clone());
+        if let Some(handle) = self.thread_timelines.get(&key) {
+            let timeline = handle.timeline.clone();
+            let content = StickerEventContent::new(body.to_owned(), info, uri);
+            return match self.rt.block_on(async move {
+                timeline.send(content.into()).await
+            }) {
+                Ok(_) => ok(""),
+                Err(e) => err(e.to_string()),
+            };
+        }
+
+        // Fallback: send via room with manual m.thread relation.
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return err("room not found");
+        };
+        let info_val = serde_json::to_value(&info).unwrap_or(serde_json::json!({}));
+        let content = serde_json::json!({
+            "body": body,
+            "url": image_url,
+            "info": info_val,
+            "m.relates_to": {
+                "rel_type": "m.thread",
+                "event_id": thread_root,
+                "m.in_reply_to": { "event_id": thread_root },
+                "is_falling_back": true
+            }
+        });
+        match self.rt.block_on(async move { room.send_raw("m.sticker", content).await }) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn send_thread_sticker(
+        &mut self,
+        _room_id: &str,
+        _thread_root: &str,
         _body: &str,
         _image_url: &str,
         _info_json: &str,
@@ -9161,11 +9298,12 @@ fn visible_len(visible: &[bool]) -> u64 {
     visible.iter().filter(|b| **b).count() as u64
 }
 
-// Thread-reply events belong to the ThreadPanel (TimelineChannel::Thread),
-// not to the main room timeline. MessageListView's defence filter drops them
-// on the C++ side, so they must also be invisible in the Rust `visible`
-// mirror — otherwise every thread reply creates an index-desync that causes
-// local-echo triplication when a new message is sent.
+// `hide_threaded_events: true` prevents most thread replies from entering the
+// room timeline stream, but edge cases in matrix-sdk (initial snapshots, state
+// transitions) can still let some through. This filter is the safety net that
+// keeps the `visible` index mirror in sync with what C++ actually renders, so
+// VectorDiff::Set confirmations land on the right slot and local echoes
+// transition from "sending" to "sent" correctly.
 #[cfg(not(test))]
 fn filter_for_channel(
     ev: Option<TimelineEvent>,

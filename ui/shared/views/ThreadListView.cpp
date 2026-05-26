@@ -51,6 +51,17 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
     // point at a different thread (or nothing).
     press_row_   = -1;
     press_close_ = false;
+    // Rebuild row_rects_ immediately so paint() can safely index it even
+    // if arrange() hasn't run yet for this new thread count. arrange()
+    // will correct positions whenever the bounds change.
+    row_rects_.clear();
+    row_rects_.reserve(threads_.size());
+    float y = bounds_.y + kHeaderH;
+    for (std::size_t i = 0; i < threads_.size(); ++i)
+    {
+        row_rects_.push_back({bounds_.x, y, bounds_.w, kRowH});
+        y += kRowH;
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────

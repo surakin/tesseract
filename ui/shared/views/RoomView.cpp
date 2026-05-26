@@ -86,7 +86,11 @@ void RoomView::wire_internal_callbacks()
     };
     compose_bar_->on_send = [this](const std::string& body)
     {
-        if (on_send)
+        if (thread_panel_state_ == ThreadPanelState::Open)
+        {
+            if (on_thread_send) on_thread_send(body, std::string{});
+        }
+        else if (on_send)
         {
             on_send(body);
         }
@@ -542,9 +546,10 @@ void RoomView::close_user_profile()
 
 void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
 {
-    // The same provider goes to the header (room avatar), the panels, and the
-    // message list (per-sender avatars). Copy to all except the last recipient;
-    // move into the last one.
+    stored_avatar_provider_ = p;
+    // The same provider goes to the header (room avatar), the panels, the
+    // thread view (if already open), and the message list (per-sender avatars).
+    // Copy to all except the last recipient; move into the last one.
     if (header_)
     {
         header_->set_avatar_provider(p);
@@ -557,6 +562,10 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     {
         user_profile_panel_->set_avatar_provider(p);
     }
+    if (thread_view_ && thread_view_->message_list())
+    {
+        thread_view_->message_list()->set_avatar_provider(p);
+    }
     if (message_list_)
     {
         message_list_->set_avatar_provider(std::move(p));
@@ -565,6 +574,11 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
 
 void RoomView::set_image_provider(MessageListView::ImageProvider p)
 {
+    stored_image_provider_ = p;
+    if (thread_view_ && thread_view_->message_list())
+    {
+        thread_view_->message_list()->set_image_provider(p);
+    }
     if (message_list_)
     {
         message_list_->set_image_provider(std::move(p));
@@ -747,6 +761,11 @@ void RoomView::notify_image_ready(const std::string& url)
     {
         message_list_->notify_image_ready(url);
     }
+    if (thread_view_ && thread_view_->visible())
+    {
+        if (auto* ml = thread_view_->message_list())
+            ml->notify_image_ready(url);
+    }
 }
 
 void RoomView::notify_url_preview_ready(const std::string& url)
@@ -754,6 +773,11 @@ void RoomView::notify_url_preview_ready(const std::string& url)
     if (message_list_)
     {
         message_list_->notify_url_preview_ready(url);
+    }
+    if (thread_view_ && thread_view_->visible())
+    {
+        if (auto* ml = thread_view_->message_list())
+            ml->notify_url_preview_ready(url);
     }
 }
 
@@ -880,14 +904,17 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     {
         auto tv = std::make_unique<ThreadView>();
         thread_view_ = add_child(std::move(tv));
+        // Forward the providers that were set before this lazy creation.
+        if (auto* ml = thread_view_->message_list())
+        {
+            if (stored_avatar_provider_)
+                ml->set_avatar_provider(stored_avatar_provider_);
+            if (stored_image_provider_)
+                ml->set_image_provider(stored_image_provider_);
+        }
         thread_view_->on_close = [this]
         {
             if (on_thread_close_requested) on_thread_close_requested();
-        };
-        thread_view_->on_send =
-            [this](const std::string& body, const std::string& formatted)
-        {
-            if (on_thread_send) on_thread_send(body, formatted);
         };
     }
 
@@ -904,8 +931,6 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         message_list_->set_dimmed(state == ThreadPanelState::Open);
         message_list_->set_highlighted_event(
             state == ThreadPanelState::Open ? root_event_id : std::string{});
-        if (state == ThreadPanelState::Open && !root_event_id.empty())
-            message_list_->scroll_to_event_id(root_event_id);
     }
 
     if (on_layout_changed) on_layout_changed();
@@ -965,11 +990,12 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (compose_bar_)
     {
         compose_bar_->arrange(ctx,
-                              {bounds.x, compose_top, main_w, compose_h});
+                              {bounds.x, compose_top, bounds.w, compose_h});
     }
 
     // Right-side thread panel (only one of {list, view} is visible at a time).
-    const float panel_h = std::max(0.0f, bounds.y + bounds.h - header_bottom);
+    // Use msg_h so the panel stops at the compose bar top, same as the message list.
+    const float panel_h = msg_h;
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
     {
         thread_list_view_->arrange(

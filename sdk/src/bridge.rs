@@ -1139,6 +1139,18 @@ pub mod ffi {
             info_json: &str,
         ) -> OpResult;
 
+        /// Send `m.sticker` into the thread rooted at `thread_root` (MSC3440).
+        /// Same semantics as `send_sticker` but emits a full `m.thread`
+        /// relation so the sticker appears inside the thread timeline.
+        fn send_thread_sticker(
+            self: &mut ClientFfi,
+            room_id: &str,
+            thread_root: &str,
+            body: &str,
+            image_url: &str,
+            info_json: &str,
+        ) -> OpResult;
+
         /// Add a sticker to the user's MSC2545 personal pack
         /// (`im.ponies.user_emotes`), creating the pack on first use with
         /// display_name "Saved Stickers". When the suggested `shortcode`
