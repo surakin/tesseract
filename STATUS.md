@@ -1,6 +1,30 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `master`. Last updated **2026-05-24**.
+Snapshot of every feature that has landed on `master`. Last updated **2026-05-26**.
+
+> **Matrix threads UI.**
+> A new "threads" button in `RoomHeader` (immediately left of the calendar
+> button) toggles a right-side panel that takes 40% of the room area, with the
+> main `MessageListView` shrinking to 60%. The panel has three states:
+> `Closed`, `List` (a `ThreadListView` showing every thread in the current
+> room, sourced from `Client::list_room_threads`), and `Open` (a `ThreadView`
+> showing one thread's reply timeline + its own `ComposeBar` that sends via
+> `Client::send_thread_message`). Clicking a thread-preview chip rendered
+> under any thread-root message in the main list jumps straight to `Open`;
+> the thread header's close button returns to whatever previous state opened
+> the panel. While a thread is open the main `MessageListView` dims and the
+> thread's root row is outlined + auto-scrolled into view. In-thread replies
+> are hidden from the main timeline (filtered at the `ShellBase` insert/update
+> path and again as defence in depth inside `MessageListView`). `ShellBase`
+> owns a pure `compute_thread_transition_` state machine + an applier that
+> maps transitions to `subscribe_thread` / `subscribe_room_threads` calls;
+> `EventHandlerBase` marshals the SDK's four `on_thread_*` callbacks +
+> `on_threads_updated` to `handle_thread_*_ui_` virtuals gated on
+> `(current_room_id_, current_thread_root_)`. Room switch closes the panel
+> via a `RoomSwitch` transition fired before every `current_room_id_`
+> assignment. Wired in all four shells (Qt6, GTK4, Win32, macOS).
+
+<!-- -->
 
 > **Privacy settings tab — presence toggle and room key export/import.**
 > A new "Privacy" tab in Settings contains two groups. The "Presence" group has a

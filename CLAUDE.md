@@ -63,6 +63,7 @@ ui/
     tk/        ← Canvas / Widget / Layout / Host abstractions + per-backend impls
     views/     ← MainAppWidget (root widget tree); LoginView, BrandView;
                   RoomListView, RoomView, MessageListView, ComposeBar;
+                  ThreadView, ThreadListView (right-side panel inside RoomView);
                   EmojiPicker, StickerPicker, AccountPicker;
                   ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
                   SettingsView, JoinRoomView, UserInfo;

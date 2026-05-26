@@ -7,7 +7,6 @@ Completed work is in [CHANGES.md](CHANGES.md). What follows is only the pending 
 Done: inline images, stickers, reply-to, message editing, voice messages (receive + send), ComposeBar, read receipts (display + sending, overlay only — never expand rows), hover timestamps, day separators, typing indicators, inline bold/italic/code/strikethrough via `formatted_body`, URL previews + hyperlinks (Qt6, GTK4, Win32), Markdown-to-HTML for sent messages, last-message preview in sidebar (regular-weight room name, 1px inter-room separator, compact row sizing), emoji reactions (reaction chips, toggle, `send_reaction` / `redact_reaction` FFI). Remaining:
 
 - **Message bubbles / cards** — visual polish pass on the message layout.
-- **Threaded reply panel** — slide-in sidebar (deferred from reply-to landing).
 - **ComposeBar gaps** — `/` command hints.
 
 ## Step 8 — MSC2545 phase A: remaining items
@@ -61,4 +60,3 @@ The "Sessions" tab landed with list + verification badges + this-device marker +
 - **Timeline persistence** — opt in to sqlite-backed `Timeline::with_focus(...)`, or memory-only?
 - **Room-list window** — `AllRooms` for desktop (recommended), or windowed?
 - **Pack-entry encrypted badging** — show a lock glyph on encrypted packs in the picker?
-- **Thread panel layout** — slide-in panel (Telegram style) vs inline thread expansion (Discord style) vs separate window?
