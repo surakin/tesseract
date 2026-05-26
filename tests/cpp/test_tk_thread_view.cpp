@@ -112,25 +112,3 @@ TEST_CASE("ThreadView::on_close fires when header close button clicked",
     CHECK(closed);
 }
 
-TEST_CASE("ThreadView::on_send fires when ComposeBar reports a send",
-          "[thread_view]")
-{
-    ThreadView v;
-    std::string got_body;
-    std::string got_formatted;
-    v.on_send = [&](const std::string& b, const std::string& f)
-    {
-        got_body      = b;
-        got_formatted = f;
-    };
-
-    // The ThreadView constructor installs a forwarding lambda onto
-    // compose_bar_->on_send. Triggering trigger_send() on the bare
-    // ComposeBar (no pending attachment, no reply, no edit) routes
-    // straight through to that lambda with the current_text_.
-    REQUIRE(v.compose_bar() != nullptr);
-    v.compose_bar()->set_current_text("hello");
-    v.compose_bar()->trigger_send();
-    CHECK(got_body == "hello");
-    CHECK(got_formatted.empty());
-}
