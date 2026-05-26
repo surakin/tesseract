@@ -268,7 +268,11 @@ jobs:
             libgl-dev \
             libopus-dev \
             golang perl \
-            libwayland-dev
+            libwayland-dev \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav
 
       - name: Expose opus to audiopus_sys
         run: |
@@ -293,21 +297,49 @@ jobs:
       - name: Install into AppDir
         run: cmake --install build/linux-qt6-release --prefix AppDir/usr
 
-      - name: Download linuxdeploy and Qt plugin
+      - name: Copy Wayland platform/shell/graphics/decoration plugins + Qt Wayland library, fix RPATHs
+        run: |
+          PLUGINS=$(qmake6 -query QT_INSTALL_PLUGINS)
+          LIBS=$(qmake6 -query QT_INSTALL_LIBS)
+          mkdir -p AppDir/usr/lib AppDir/usr/plugins/platforms
+          # Platform plugins
+          cp "$PLUGINS/platforms/libqwayland-generic.so" AppDir/usr/plugins/platforms/
+          cp "$PLUGINS/platforms/libqwayland-egl.so"     AppDir/usr/plugins/platforms/ 2>/dev/null || true
+          # Sub-plugin directories: shell integrations (xdg-shell etc.),
+          # graphics integrations (wayland-egl client buffer), decoration client
+          for subdir in wayland-shell-integration wayland-graphics-integration-client wayland-decoration-client; do
+            if [ -d "$PLUGINS/$subdir" ]; then
+              mkdir -p "AppDir/usr/plugins/$subdir"
+              cp "$PLUGINS/$subdir"/*.so "AppDir/usr/plugins/$subdir/" 2>/dev/null || true
+            fi
+          done
+          # patchelf every wayland plugin so its deps resolve inside AppDir/usr/lib
+          for f in AppDir/usr/plugins/platforms/libqwayland-*.so \
+                   AppDir/usr/plugins/wayland-shell-integration/*.so \
+                   AppDir/usr/plugins/wayland-graphics-integration-client/*.so \
+                   AppDir/usr/plugins/wayland-decoration-client/*.so; do
+            [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/../../lib' "$f"
+          done
+          # Qt Wayland client lib — dep of all wayland plugins; not auto-bundled
+          cp -L "$LIBS/libQt6WaylandClient.so.6" AppDir/usr/lib/
+          patchelf --set-rpath '$ORIGIN' AppDir/usr/lib/libQt6WaylandClient.so.6
+          
+      - name: Download linuxdeploy and Qt + GStreamer plugins
         run: |
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
-
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
+    
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
           QMAKE: /usr/bin/qmake6
-          EXTRA_QT_PLUGINS: "wayland-shell-integration;wayland-graphics-integration-client;wayland-decoration-client"
         run: |
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --plugin qt \
+            --plugin gstreamer \
             --output appimage
 
       - name: Upload AppImage artifact
