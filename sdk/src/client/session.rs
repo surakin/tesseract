@@ -281,6 +281,34 @@ impl ClientFfi {
             return err("not logged in");
         };
 
+        // Drop every live Timeline (room + thread) and ThreadList before
+        // clear_all_rooms reshapes each RoomEventCache's linked chunks. Each
+        // Timeline holds an `as_vector` observer subscribed to those chunks;
+        // if the observers are still around when the chunks are reset,
+        // matrix-sdk-common aborts the process with "Inserting new chunk at
+        // the end: The previous chunk is invalid" because its tracked state
+        // no longer matches the post-clear shape. stop_sync does not drop
+        // these handles.
+        #[cfg(not(test))]
+        {
+            let _guard = self.rt.enter();
+            for (_, th) in self.timelines.write().unwrap().drain() {
+                th.cancelled.store(true, Ordering::Release);
+                for h in th.abort_tasks {
+                    h.abort();
+                }
+            }
+            for (_, th) in self.thread_timelines.drain() {
+                th.cancelled.store(true, Ordering::Release);
+                for h in th.abort_tasks {
+                    h.abort();
+                }
+            }
+            for (_, h) in self.thread_lists.drain() {
+                h.abort.abort();
+            }
+        }
+
         let result = self.rt.block_on(async move {
             // Clear all in-memory event-cache chunks and their SQLite backing
             // rows.  This is the safe path — it notifies live observers instead
