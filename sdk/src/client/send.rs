@@ -547,19 +547,24 @@ impl ClientFfi {
         {
             return err("invalid in_reply_to id");
         }
-        // For plain thread messages (no explicit in_reply_to), use the subscribed
-        // thread timeline so the local echo fires via on_thread_inserted immediately.
-        if in_reply_to.is_empty() {
-            let key = (room_id.clone(), root.clone());
-            if let Some(handle) = self.thread_timelines.get(&key) {
-                let timeline = handle.timeline.clone();
-                let (mentions, html) = derive_mentions(formatted_body);
-                let mut msg = if html.is_empty() {
-                    RoomMessageEventContent::text_plain(body)
-                } else {
-                    RoomMessageEventContent::text_html(body, &html)
-                };
-                msg.mentions = mentions;
+        // When the thread timeline is subscribed, route through it so the
+        // local echo arrives via on_thread_inserted immediately:
+        // - plain thread send → timeline.send (thread focus auto-tags the relation),
+        // - reply within thread → timeline.send_reply (auto-applies
+        //   EnforceThread::Threaded(ReplyWithinThread::Yes) on a threaded timeline,
+        //   so the event lands with m.relates_to → m.thread + m.in_reply_to and
+        //   gets observed by the subscribed timeline).
+        let key = (room_id.clone(), root.clone());
+        if let Some(handle) = self.thread_timelines.get(&key) {
+            let timeline = handle.timeline.clone();
+            let (mentions, html) = derive_mentions(formatted_body);
+            let mut msg = if html.is_empty() {
+                RoomMessageEventContent::text_plain(body)
+            } else {
+                RoomMessageEventContent::text_html(body, &html)
+            };
+            msg.mentions = mentions;
+            if in_reply_to.is_empty() {
                 return match self
                     .rt
                     .block_on(async move { timeline.send(msg.into()).await })
@@ -568,9 +573,20 @@ impl ClientFfi {
                     Err(e) => err(e.to_string()),
                 };
             }
+            let reply_id: matrix_sdk::ruma::OwnedEventId = match in_reply_to.parse()
+            {
+                Ok(id) => id,
+                Err(e) => return err(format!("invalid in_reply_to id: {e}")),
+            };
+            return match self.rt.block_on(async move {
+                timeline.send_reply(msg.into(), reply_id).await
+            }) {
+                Ok(_) => ok(""),
+                Err(e) => err(e.to_string()),
+            };
         }
-        // Fallback: no active timeline subscription or explicit in_reply_to —
-        // send raw with the manual thread relation already encoded in the JSON.
+        // Fallback: no active thread timeline subscription — send raw with
+        // the thread relation encoded directly in the event JSON.
         let Some(room) = client.get_room(&room_id) else {
             return err("room not found");
         };

@@ -2481,6 +2481,21 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 s->_roomView->set_current_text({});
             }
         };
+        _mainApp->room_view()->on_thread_send_reply =
+            [weakSelf](const std::string& reply_id,
+                       const std::string& body,
+                       const std::string& formatted)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_thread_send_reply_requested(reply_id, body,
+                                                          formatted);
+                if (s->_roomTextArea)
+                    s->_roomTextArea->set_text("");
+                s->_roomView->set_current_text({});
+            }
+        };
         _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn)
         {
             MainWindowController* s = weakSelf;

@@ -15,18 +15,6 @@ using tesseract::views::ThreadView;
 namespace
 {
 
-MessageRowData make_preview()
-{
-    MessageRowData r;
-    r.kind               = MessageRowData::Kind::Text;
-    r.event_id           = "$root";
-    r.sender_name        = "Alice";
-    r.body               = "Hello";
-    r.is_thread_root     = true;
-    r.thread_reply_count = 3;
-    return r;
-}
-
 MessageRowData make_reply(const std::string& id)
 {
     MessageRowData r;
@@ -54,20 +42,9 @@ struct Stage
 
 } // namespace
 
-TEST_CASE("ThreadView::set_thread stores the root id and preview",
-          "[thread_view]")
-{
-    ThreadView v;
-    v.set_thread("$root", make_preview());
-    CHECK(v.thread_root() == "$root");
-    CHECK(v.root_preview().sender_name == "Alice");
-    CHECK(v.root_preview().body == "Hello");
-}
-
 TEST_CASE("ThreadView::set_messages forwards an empty list", "[thread_view]")
 {
     ThreadView v;
-    v.set_thread("$root", make_preview());
     v.set_messages({}, true);
     REQUIRE(v.message_list() != nullptr);
     CHECK(v.message_list()->messages().empty());
@@ -77,7 +54,6 @@ TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id",
           "[thread_view]")
 {
     ThreadView v;
-    v.set_thread("$root", make_preview());
     std::vector<MessageRowData> rows;
     rows.push_back(make_reply("$r1"));
     rows.push_back(make_reply("$r2"));
@@ -89,7 +65,7 @@ TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id",
     CHECK(v.message_list()->messages()[1].thread_root_id.empty());
 }
 
-TEST_CASE("ThreadView::on_close fires when header close button clicked",
+TEST_CASE("ThreadView::on_close fires when floating close button clicked",
           "[thread_view]")
 {
     Stage st;
@@ -99,16 +75,13 @@ TEST_CASE("ThreadView::on_close fires when header close button clicked",
     bool closed = false;
     v.on_close = [&] { closed = true; };
 
-    // Close button anchored to the right edge of the header. With
-    // bounds {0,0,400,600} the button sits at:
-    //   x = 400 - kPadX - kCloseSz, w = kCloseSz, h = kCloseSz
-    //   y centered in kHeaderH.
-    // Widget bounds origin is (0,0) so widget-local == world coords.
-    const float cx = 400.0f - ThreadView::kPadX
+    // Close button sits in the right side of the empty header strip.
+    const float cx = 400.0f - ThreadView::kCloseInset
                      - ThreadView::kCloseSz * 0.5f;
     const float cy = ThreadView::kHeaderH * 0.5f;
-    REQUIRE(v.on_pointer_down({cx, cy}));
-    v.on_pointer_up({cx, cy}, true);
+    tk::Widget* claimer = v.dispatch_pointer_down({cx, cy});
+    REQUIRE(claimer != nullptr);
+    const tk::Rect cb = claimer->bounds();
+    claimer->on_pointer_up({cx - cb.x, cy - cb.y}, /*inside_self=*/true);
     CHECK(closed);
 }
-

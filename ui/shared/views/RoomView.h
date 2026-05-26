@@ -168,6 +168,13 @@ public:
     std::function<void(const std::string& body,
                        const std::string& formatted_body)>
         on_thread_send;
+    // Reply send routed through the active thread instead of the room. Fires
+    // when compose_bar_->on_send_reply triggers and thread_panel_state_ ==
+    // Open; the shell calls send_thread_reply on the SDK.
+    std::function<void(const std::string& reply_to_event_id,
+                       const std::string& body,
+                       const std::string& formatted_body)>
+        on_thread_send_reply;
 
     // "Press Up in an empty composer to edit your last message." Wired by
     // the shell to the NativeTextArea's set_on_edit_last hook. No-op (and
@@ -309,7 +316,19 @@ public:
     void paint(tk::PaintCtx&) override;
 
 private:
+    // Transparent overlay placed on top of the main MessageListView while the
+    // thread panel is open. It eats hover events (so the timeline doesn't
+    // surface hover affordances behind the focused thread) and treats any
+    // click as a "close the thread panel" request. Defined in RoomView.cpp.
+    class MessageBlocker;
+
     void wire_internal_callbacks();
+    // Wire every MessageListView callback that is identical between the main
+    // timeline and the thread-panel timeline. Called from
+    // wire_internal_callbacks() for message_list_ and from set_thread_panel()
+    // for thread_view_->message_list() so action buttons (reply / edit /
+    // redact, reactions, media clicks, etc.) work in both contexts.
+    void wire_message_list_callbacks_(MessageListView* ml);
     void show_room_info();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
@@ -339,6 +358,9 @@ private:
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView*     thread_view_      = nullptr;
     ThreadListView* thread_list_view_ = nullptr;
+    // Click/hover blocker over message_list_, visible only while the
+    // thread panel is open. See the nested class doc above.
+    MessageBlocker* message_blocker_ = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;
     std::string thread_panel_root_;
     // Current room's members (mirrors what was last passed to

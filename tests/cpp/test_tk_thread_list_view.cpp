@@ -18,10 +18,10 @@ namespace
 ThreadInfo make_thread(const std::string& root, std::uint64_t replies)
 {
     ThreadInfo t;
-    t.root_event_id     = root;
-    t.root_sender_name  = "Alice";
-    t.root_body         = "Hello world";
-    t.root_timestamp    = 1000;
+    t.root_event_id      = root;
+    t.root_sender_name   = "Alice";
+    t.root_body          = "Hello world";
+    t.root_timestamp     = 1000;
     t.latest_sender_name = "Bob";
     t.latest_body        = "Reply!";
     t.num_replies        = replies;
@@ -54,7 +54,7 @@ TEST_CASE("ThreadListView::set_threads stores the list", "[thread_list]")
     CHECK(v.threads()[1].root_event_id == "$b");
 }
 
-TEST_CASE("ThreadListView::on_close fires when close button clicked",
+TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
           "[thread_list]")
 {
     Stage st;
@@ -63,15 +63,17 @@ TEST_CASE("ThreadListView::on_close fires when close button clicked",
     bool closed = false;
     v.on_close = [&] { closed = true; };
 
-    // Close button anchored to the right edge of the header. With
-    // bounds {0,0,300,400} the button sits at x ≈ 300 - kPadX - kCloseSz/2,
-    // y ≈ kHeaderH/2. View bounds origin is (0,0) so widget-local ==
-    // world coords.
-    const float cx = 300.0f - ThreadListView::kPadX
+    // Close button sits in the right side of the empty header strip.
+    const float cx = 300.0f - ThreadListView::kCloseInset
                      - ThreadListView::kCloseSz * 0.5f;
     const float cy = ThreadListView::kHeaderH * 0.5f;
-    REQUIRE(v.on_pointer_down({cx, cy}));
-    v.on_pointer_up({cx, cy}, true);
+    // Dispatch through the widget tree so the close-button child receives
+    // the click — calling ThreadListView::on_pointer_down directly would
+    // skip the child and route to the row hit-test.
+    tk::Widget* claimer = v.dispatch_pointer_down({cx, cy});
+    REQUIRE(claimer != nullptr);
+    const tk::Rect cb = claimer->bounds();
+    claimer->on_pointer_up({cx - cb.x, cy - cb.y}, /*inside_self=*/true);
     CHECK(closed);
 }
 
@@ -88,7 +90,7 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
     std::string clicked;
     v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
 
-    // First row centre: x ≈ 100, y ≈ kHeaderH + kRowH/2.
+    // First row centre: rows start below the empty header strip.
     {
         const tk::Point p{100.0f,
                           ThreadListView::kHeaderH +
@@ -126,8 +128,8 @@ TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside ro
                               ThreadListView::kRowH * 0.5f};
     REQUIRE(v.on_pointer_down(press));
     // Release inside the header strip (not the row) — must NOT fire the
-    // thread-click callback. The press-then-release-elsewhere pattern
-    // is essential for cancel-by-drag behaviour.
+    // thread-click callback. The press-then-release-elsewhere pattern is
+    // essential for cancel-by-drag behaviour.
     v.on_pointer_up({100.0f, 10.0f}, true);
     CHECK(clicked.empty());
 }

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 
 namespace tesseract::views
 {
@@ -42,15 +43,25 @@ std::string truncate_utf8(std::string s, std::size_t max_bytes)
 
 } // namespace
 
-ThreadListView::ThreadListView() = default;
+ThreadListView::ThreadListView()
+{
+    // Added as a child so dispatch_pointer_down walks it before our own
+    // on_pointer_down sees the row hit-test, and paint() renders it on top.
+    auto close = std::make_unique<tk::Button>(
+        "\xC3\x97", // U+00D7 ×
+        std::function<void()>{}, tk::Button::Variant::Icon);
+    close_btn_ = add_child(std::move(close));
+    close_btn_->set_on_click([this] {
+        if (on_close) on_close();
+    });
+}
 
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
 {
     threads_ = std::move(threads);
     // Drop any in-flight press: the row indices it refers to may now
     // point at a different thread (or nothing).
-    press_row_   = -1;
-    press_close_ = false;
+    press_row_ = -1;
     // Rebuild row_rects_ immediately so paint() can safely index it even
     // if arrange() hasn't run yet for this new thread count. arrange()
     // will correct positions whenever the bounds change.
@@ -76,19 +87,16 @@ void ThreadListView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 {
     tk::Widget::arrange(lc, bounds);
 
-    header_rect_ = {bounds.x, bounds.y, bounds.w, kHeaderH};
+    if (close_btn_)
+    {
+        const float cx = bounds.x + bounds.w - kCloseSz - kCloseInset;
+        const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
+        close_btn_->arrange(lc, {cx, cy, kCloseSz, kCloseSz});
+    }
 
-    // Close button anchored to the right edge of the header, vertically
-    // centred. The hit-test area is a fixed square; the actual glyph is
-    // drawn centred inside it during paint().
-    const float close_x = bounds.x + bounds.w - kCloseSz - kPadX;
-    const float close_y = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
-    close_rect_ = {close_x, close_y, kCloseSz, kCloseSz};
-
-    // One row per thread, stacked below the header. Rows clip at the
-    // bottom of the panel — callers can scroll later (Task 8); for now
-    // we just lay them out and let paint() handle the visible window via
-    // the canvas clip.
+    // Rows sit below the empty header strip and clip at the bottom of
+    // the panel — callers can scroll later; for now we just lay them
+    // out and let paint() handle the visible window via the canvas clip.
     row_rects_.clear();
     row_rects_.reserve(threads_.size());
     float y = bounds.y + kHeaderH;
@@ -108,50 +116,6 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
 
     // Panel background.
     cv.fill_rect(bounds_, pal.bg);
-
-    // Header strip with title + close button.
-    cv.fill_rect(header_rect_, pal.chrome_bg);
-
-    // Bottom border separating header from rows.
-    cv.fill_rect({header_rect_.x, header_rect_.bottom() - 1.0f,
-                  header_rect_.w, 1.0f},
-                 pal.separator);
-
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, close_rect_.x - header_rect_.x - kPadX * 2.0f);
-        auto title = ctx.factory.build_text("Threads", st);
-        if (title)
-        {
-            const tk::Size sz = title->measure();
-            const float ty = header_rect_.y + (kHeaderH - sz.h) * 0.5f;
-            cv.draw_text(*title,
-                         {header_rect_.x + kPadX, ty},
-                         pal.text_primary);
-        }
-    }
-
-    // Close-button background tint when pressed.
-    if (press_close_)
-    {
-        cv.fill_rounded_rect(close_rect_, 4.0f, pal.subtle_pressed);
-    }
-
-    // Close glyph: a centered "×" (multiplication sign, U+00D7).
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        auto x_layout = ctx.factory.build_text("\xC3\x97", st);
-        if (x_layout)
-        {
-            const tk::Size sz = x_layout->measure();
-            const float gx = close_rect_.x + (close_rect_.w - sz.w) * 0.5f;
-            const float gy = close_rect_.y + (close_rect_.h - sz.h) * 0.5f;
-            cv.draw_text(*x_layout, {gx, gy}, pal.text_secondary);
-        }
-    }
 
     // Rows.
     for (std::size_t i = 0; i < threads_.size(); ++i)
@@ -188,11 +152,11 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
             cv.draw_text(*count_layout, {cx, cy}, pal.text_secondary);
         }
 
-        const float text_left   = r.x + kPadX;
-        const float text_right  = r.x + r.w - kPadX
-                                  - count_w
-                                  - (count_w > 0.0f ? 8.0f : 0.0f);
-        const float text_max_w  = std::max(0.0f, text_right - text_left);
+        const float text_left  = r.x + kPadX;
+        const float text_right = r.x + r.w - kPadX
+                                 - count_w
+                                 - (count_w > 0.0f ? 8.0f : 0.0f);
+        const float text_max_w = std::max(0.0f, text_right - text_left);
 
         // Top line: "<root_sender_name>: <root_body snippet>".
         {
@@ -211,16 +175,14 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
             auto layout  = ctx.factory.build_text(preview, st);
             if (layout)
             {
-                const tk::Size sz = layout->measure();
                 cv.draw_text(*layout,
                              {text_left, r.y + kPadY},
                              pal.text_primary);
-                (void)sz;
             }
         }
 
-        // Bottom line: "↳ <latest_sender_name>: <latest_body snippet>"
-        // — only when a reply exists.
+        // Bottom line: "↳ <latest_sender_name>: <latest_body snippet>" —
+        // only when a reply exists.
         if (!t.latest_sender_name.empty())
         {
             std::string preview = "\xE2\x86\xB3 "; // U+21B3 ↳
@@ -245,17 +207,32 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Near-bottom hook: fire once when the last row is fully laid out
-    // inside the visible bounds. Cheap heuristic; Task 8 can replace
-    // this with real scroll-aware bookkeeping if needed.
-    if (!row_rects_.empty() && on_near_bottom)
+    // Children (the floating close button) paint last so they sit above
+    // the rows.
+    for (auto& ch : children())
     {
-        const float last_bottom = row_rects_.back().bottom();
-        if (last_bottom <= bounds_.bottom() + 1.0f)
+        if (ch->visible())
         {
-            // Don't actually fire from paint — paint should be idempotent.
-            // The hook will be triggered by arrange() later. For now this
-            // is a no-op: Task 8 wires real scrolling.
+            ch->paint(ctx);
+        }
+    }
+
+    // tk::Button(Icon) only paints its hover/press background — the glyph
+    // is expected to be drawn by the parent (mirroring RoomInfoPanel /
+    // ComposeBar). Draw the "×" centred inside the button so it stays
+    // visible at rest.
+    if (close_btn_ && close_btn_->visible())
+    {
+        const tk::Rect cb = close_btn_->bounds();
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Title;
+        auto glyph = ctx.factory.build_text("\xC3\x97", st); // U+00D7 ×
+        if (glyph)
+        {
+            const tk::Size sz = glyph->measure();
+            const float gx = cb.x + (cb.w - sz.w) * 0.5f;
+            const float gy = cb.y + (cb.h - sz.h) * 0.5f;
+            cv.draw_text(*glyph, {gx, gy}, pal.text_secondary);
         }
     }
 }
@@ -264,23 +241,17 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
 
 bool ThreadListView::on_pointer_down(tk::Point local)
 {
-    // `local` is in widget-local coords (Point - bounds.origin). Convert
-    // back to world space for our cached rects which are world-space.
+    // `dispatch_pointer_down` already walked into the close-button child;
+    // if we reach this method the click landed somewhere else, so it can
+    // only be a row hit. `local` is in widget-local coords — convert back
+    // to world space for our cached rects which are world-space.
     const tk::Point w{local.x + bounds_.x, local.y + bounds_.y};
-
-    if (rect_contains(close_rect_, w))
-    {
-        press_close_ = true;
-        press_row_   = -1;
-        return true;
-    }
 
     for (std::size_t i = 0; i < row_rects_.size(); ++i)
     {
         if (rect_contains(row_rects_[i], w))
         {
-            press_row_   = static_cast<int>(i);
-            press_close_ = false;
+            press_row_ = static_cast<int>(i);
             return true;
         }
     }
@@ -290,19 +261,6 @@ bool ThreadListView::on_pointer_down(tk::Point local)
 void ThreadListView::on_pointer_up(tk::Point local, bool /*inside_self*/)
 {
     const tk::Point w{local.x + bounds_.x, local.y + bounds_.y};
-
-    if (press_close_)
-    {
-        press_close_ = false;
-        if (rect_contains(close_rect_, w))
-        {
-            if (on_close)
-            {
-                on_close();
-            }
-        }
-        return;
-    }
 
     if (press_row_ >= 0)
     {

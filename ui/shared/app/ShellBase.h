@@ -137,6 +137,13 @@ public:
     void on_thread_close_requested();
     void on_thread_send_requested(const std::string& body,
                                   const std::string& formatted_body);
+    // Reply variant: send `body` as a reply to `in_reply_to_event_id`
+    // inside the currently-open thread. Wired from
+    // RoomView::on_thread_send_reply when the thread panel is Open and the
+    // compose bar fires on_send_reply.
+    void on_thread_send_reply_requested(const std::string& in_reply_to_event_id,
+                                        const std::string& body,
+                                        const std::string& formatted_body);
 
 protected:
     // Apply the side-effects of a ThreadTransition: subscribe / unsubscribe

@@ -1230,6 +1230,16 @@ MainWindow::MainWindow(GtkApplication* app) : app_(app)
                 room_text_area_->set_text("");
             room_view_->set_current_text({});
         };
+        room_view_->on_thread_send_reply =
+            [this](const std::string& reply_id,
+                   const std::string& body,
+                   const std::string& formatted)
+        {
+            on_thread_send_reply_requested(reply_id, body, formatted);
+            if (room_text_area_)
+                room_text_area_->set_text("");
+            room_view_->set_current_text({});
+        };
         room_view_->on_emoji = [this](tk::Rect btn)
         {
             if (!emoji_popover_)

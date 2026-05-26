@@ -973,8 +973,15 @@ public:
             }
             paint_btn(static_cache_.reply.get(),
                       owner_.hovered_row_geom_.reply_button);
+            // The homeserver rejects thread sends whose root has its own
+            // m.relates_to (MSC3440: "Cannot start threads from an event
+            // with a relation"). Hide the thread affordance on replies /
+            // in-thread rows unless the thread already exists.
+            const bool can_thread =
+                m.is_thread_root ||
+                (m.in_reply_to_id.empty() && m.thread_root_id.empty());
             if (m.kind != MessageRowData::Kind::Redacted &&
-                owner_.thread_button_visible_)
+                owner_.thread_button_visible_ && can_thread)
             {
                 paint_btn(static_cache_.thread_btn.get(),
                           owner_.hovered_row_geom_.thread_button);
@@ -1219,8 +1226,12 @@ public:
 
                 paint_strip_btn(static_cache_.reply.get(),
                                 owner_.hovered_row_geom_.reply_button, false);
+                // See can_thread comment above — same MSC3440 server constraint.
+                const bool can_thread =
+                    m.is_thread_root ||
+                    (m.in_reply_to_id.empty() && m.thread_root_id.empty());
                 if (m.kind != MessageRowData::Kind::Redacted &&
-                    owner_.thread_button_visible_)
+                    owner_.thread_button_visible_ && can_thread)
                 {
                     paint_strip_btn(static_cache_.thread_btn.get(),
                                     owner_.hovered_row_geom_.thread_button, false);
@@ -6139,35 +6150,58 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 
     tk::ListView::paint(ctx);
 
-    // Dim overlay + highlight outline. Drawn immediately after the rows so
-    // they sit above row content but below the scroll-pill / hover tooltip
-    // chrome (and below the chip preview rect ink, which is row-painted).
-    // The highlight is drawn *after* the dim so it stays bright when both
-    // are active (focused-thread mode: dim everything except the root row).
+    // Focused-thread dim. Painted above rows / below scroll-pill + hover
+    // tooltips. When highlighted_event_id_ is set we punch the matching row
+    // out of the scrim so it reads at full brightness — the un-dimmed row
+    // is what visually anchors the open thread panel to the main timeline.
     if (dimmed_)
     {
-        // ~24% opaque black scrim.
-        ctx.canvas.fill_rect(bounds(), tk::Color::rgba(0, 0, 0, 60));
-    }
-    if (!highlighted_event_id_.empty())
-    {
-        for (std::size_t i = 0; i < messages_.size(); ++i)
+        const tk::Rect B = bounds();
+        const tk::Color scrim = tk::Color::rgba(0, 0, 0, 60);
+
+        tk::Rect cutout{};
+        if (!highlighted_event_id_.empty())
         {
-            if (messages_[i].event_id != highlighted_event_id_)
+            for (std::size_t i = 0; i < messages_.size(); ++i)
             {
-                continue;
+                if (messages_[i].event_id != highlighted_event_id_)
+                    continue;
+                const tk::Rect r =
+                    tk::ListView::row_world_rect(static_cast<int>(i));
+                // Clip the row rect into the list bounds so a partially
+                // scrolled row punches only its visible slice.
+                const float x0 = std::max(B.x, r.x);
+                const float y0 = std::max(B.y, r.y);
+                const float x1 = std::min(B.right(), r.right());
+                const float y1 = std::min(B.bottom(), r.bottom());
+                if (x1 > x0 && y1 > y0)
+                    cutout = {x0, y0, x1 - x0, y1 - y0};
+                break;
             }
-            tk::Rect r =
-                tk::ListView::row_world_rect(static_cast<int>(i));
-            if (r.w > 0 && r.h > 0)
-            {
-                // Bright accent-coloured 2px outline. Rendered with high
-                // alpha so it remains visible above the dim overlay.
-                tk::Color outline =
-                    ctx.theme.palette.accent.with_alpha(220);
-                ctx.canvas.stroke_rounded_rect(r, 4.0f, outline, 2.0f);
-            }
-            break;
+        }
+
+        if (cutout.empty())
+        {
+            ctx.canvas.fill_rect(B, scrim);
+        }
+        else
+        {
+            const float top_h   = cutout.y - B.y;
+            const float bot_y   = cutout.bottom();
+            const float bot_h   = B.bottom() - bot_y;
+            const float left_w  = cutout.x - B.x;
+            const float right_x = cutout.right();
+            const float right_w = B.right() - right_x;
+            if (top_h > 0)
+                ctx.canvas.fill_rect({B.x, B.y, B.w, top_h}, scrim);
+            if (bot_h > 0)
+                ctx.canvas.fill_rect({B.x, bot_y, B.w, bot_h}, scrim);
+            if (left_w > 0)
+                ctx.canvas.fill_rect({B.x, cutout.y, left_w, cutout.h},
+                                     scrim);
+            if (right_w > 0)
+                ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h},
+                                     scrim);
         }
     }
 

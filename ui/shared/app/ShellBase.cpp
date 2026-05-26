@@ -2672,6 +2672,18 @@ void ShellBase::on_thread_send_requested(const std::string& body,
                                  formatted_body);
 }
 
+void ShellBase::on_thread_send_reply_requested(
+    const std::string& in_reply_to_event_id,
+    const std::string& body,
+    const std::string& formatted_body)
+{
+    if (!client_ || current_room_id_.empty() || current_thread_root_.empty() ||
+        in_reply_to_event_id.empty())
+        return;
+    client_->send_thread_reply(current_room_id_, current_thread_root_,
+                               in_reply_to_event_id, body, formatted_body);
+}
+
 // ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─
 
 void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,

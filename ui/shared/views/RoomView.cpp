@@ -6,6 +6,45 @@
 namespace tesseract::views
 {
 
+// Transparent, paints-nothing widget that sits on top of message_list_ while
+// the thread panel is open. Claims pointer-down (so the message list never
+// sees a click) and fires on_click on release; returns true from pointer
+// move so dispatch_pointer_move stops here, preventing the message list
+// from updating its hover state.
+class RoomView::MessageBlocker : public tk::Widget
+{
+public:
+    std::function<void()> on_click;
+
+    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    {
+        return constraints;
+    }
+    bool on_pointer_down(tk::Point /*local*/) override
+    {
+        pressed_ = true;
+        return true;
+    }
+    void on_pointer_up(tk::Point /*local*/, bool inside_self) override
+    {
+        const bool fire = pressed_ && inside_self;
+        pressed_ = false;
+        if (fire && on_click) on_click();
+    }
+    bool on_pointer_move(tk::Point /*local*/) override
+    {
+        return false;
+    }
+    void paint(tk::PaintCtx&) override
+    {
+        // Intentionally empty — the dim overlay is painted by MessageListView
+        // itself; this widget is purely an input shield.
+    }
+
+private:
+    bool pressed_ = false;
+};
+
 RoomView::RoomView()
 {
     auto brand = std::make_unique<BrandView>();
@@ -16,6 +55,26 @@ RoomView::RoomView()
 
     auto msg = std::make_unique<MessageListView>();
     message_list_ = add_child(std::move(msg));
+
+    // Added immediately after message_list_ so it dispatches BEFORE the
+    // message list (children walk reverse in dispatch_pointer_*), capturing
+    // clicks and hover while the thread panel is open. Hidden by default.
+    auto blocker = std::make_unique<MessageBlocker>();
+    message_blocker_ = add_child(std::move(blocker));
+    message_blocker_->set_visible(false);
+    message_blocker_->on_click = [this] {
+        // The shell's CloseThread trigger only fires when an individual
+        // thread is open — it's a no-op for List mode. Pick the callback
+        // that actually closes the panel in each state.
+        if (thread_panel_state_ == ThreadPanelState::Open)
+        {
+            if (on_thread_close_requested) on_thread_close_requested();
+        }
+        else if (thread_panel_state_ == ThreadPanelState::List)
+        {
+            if (on_threads_button_clicked) on_threads_button_clicked();
+        }
+    };
 
     auto compose = std::make_unique<ComposeBar>();
     compose_bar_ = add_child(std::move(compose));
@@ -30,38 +89,118 @@ RoomView::RoomView()
     wire_internal_callbacks();
 }
 
-void RoomView::wire_internal_callbacks()
+void RoomView::wire_message_list_callbacks_(MessageListView* ml)
 {
+    if (!ml) return;
+
     // Reply flow: hover ↩ → compose enters reply mode + focus.
-    message_list_->on_reply_requested = [this](const std::string& event_id,
-                                               const std::string& sender_name,
-                                               const std::string& body_preview)
+    ml->on_reply_requested = [this](const std::string& event_id,
+                                    const std::string& sender_name,
+                                    const std::string& body_preview)
     {
         compose_bar_->set_reply_to(event_id, sender_name, body_preview);
-        if (on_reply_focus)
-        {
-            on_reply_focus();
-        }
+        if (on_reply_focus) on_reply_focus();
     };
 
     // Edit flow: hover ✏ → compose enters edit mode, shell prefills textarea.
-    message_list_->on_edit_requested =
+    ml->on_edit_requested =
         [this](const std::string& event_id, const std::string& current_body)
     {
         compose_bar_->set_editing(event_id);
         compose_bar_->set_current_text(current_body);
-        if (on_edit_prefill)
-        {
-            on_edit_prefill(current_body);
-        }
+        if (on_edit_prefill) on_edit_prefill(current_body);
     };
 
     // Clipboard write — forwarded to the shell via on_set_clipboard.
-    message_list_->on_set_clipboard = [this](std::string_view text)
+    ml->on_set_clipboard = [this](std::string_view text)
     {
-        if (on_set_clipboard)
-            on_set_clipboard(text);
+        if (on_set_clipboard) on_set_clipboard(text);
     };
+
+    ml->on_delete_requested = [this](const std::string& event_id)
+    {
+        if (on_delete_requested) on_delete_requested(event_id);
+    };
+    ml->on_reaction_toggled =
+        [this](const std::string& event_id, const std::string& key,
+               const std::string& source_mxc)
+    {
+        if (on_reaction_toggled) on_reaction_toggled(event_id, key, source_mxc);
+    };
+    ml->on_add_reaction_requested =
+        [this](const std::string& event_id, tk::Rect anchor)
+    {
+        if (on_add_reaction_requested) on_add_reaction_requested(event_id, anchor);
+    };
+    ml->on_link_clicked = [this](const std::string& url)
+    {
+        if (on_link_clicked) on_link_clicked(url);
+        // Clicking anywhere on the canvas steals OS focus from the native
+        // text area overlay. Restore it after the browser opens.
+        if (on_reply_focus) on_reply_focus();
+    };
+    ml->on_link_hovered = [this](const std::string& url)
+    {
+        if (on_link_hovered) on_link_hovered(url);
+    };
+    ml->on_show_tooltip = [this](std::string text, tk::Rect anchor)
+    {
+        if (on_show_tooltip) on_show_tooltip(std::move(text), anchor);
+    };
+    ml->on_hide_tooltip = [this]()
+    {
+        if (on_hide_tooltip) on_hide_tooltip();
+    };
+    ml->on_receipt_needed = [this](const std::string& event_id)
+    {
+        if (on_receipt_needed) on_receipt_needed(event_id);
+    };
+    ml->on_image_clicked = [this](const MessageListView::ImageHit& hit)
+    {
+        if (on_image_clicked) on_image_clicked(hit);
+    };
+    ml->on_video_clicked = [this](const MessageListView::VideoHit& hit)
+    {
+        if (on_video_clicked) on_video_clicked(hit);
+    };
+    ml->on_file_clicked = [this](const MessageListView::FileHit& hit)
+    {
+        if (on_file_clicked) on_file_clicked(hit);
+    };
+    ml->on_scroll_to_original =
+        [this](const std::string& original_event_id)
+    {
+        if (on_scroll_to_original) on_scroll_to_original(original_event_id);
+    };
+    ml->on_sender_clicked =
+        [this](std::string uid, std::string name, std::string av)
+    {
+        show_user_profile(std::move(uid), std::move(name), std::move(av));
+    };
+    // Inline mention pill → resolve the clicked user against the current
+    // room's members and open the profile panel.
+    ml->on_mention_clicked = [this](const std::string& uid)
+    {
+        std::string name, avatar;
+        for (const auto& m : room_members_)
+        {
+            if (m.user_id == uid)
+            {
+                name   = m.display_name;
+                avatar = m.avatar_url;
+                break;
+            }
+        }
+        show_user_profile(uid, name, avatar);
+    };
+}
+
+void RoomView::wire_internal_callbacks()
+{
+    // Wire every MessageListView callback that's identical between the main
+    // timeline and the thread panel. Timeline-only ones (pagination, thread
+    // preview chips) stay below — see comments at each site.
+    wire_message_list_callbacks_(message_list_);
 
     // Forward compose callbacks that reach the shell.
     compose_bar_->on_size_changed = [this]
@@ -98,6 +237,12 @@ void RoomView::wire_internal_callbacks()
     compose_bar_->on_send_reply =
         [this](const std::string& reply_id, const std::string& body)
     {
+        if (thread_panel_state_ == ThreadPanelState::Open)
+        {
+            if (on_thread_send_reply)
+                on_thread_send_reply(reply_id, body, std::string{});
+            return;
+        }
         if (on_send_reply)
         {
             on_send_reply(reply_id, body);
@@ -206,65 +351,6 @@ void RoomView::wire_internal_callbacks()
         }
     };
 
-    // Forward message-list callbacks that reach the shell.
-    message_list_->on_delete_requested = [this](const std::string& event_id)
-    {
-        if (on_delete_requested)
-        {
-            on_delete_requested(event_id);
-        }
-    };
-    message_list_->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key,
-               const std::string& source_mxc)
-    {
-        if (on_reaction_toggled)
-        {
-            on_reaction_toggled(event_id, key, source_mxc);
-        }
-    };
-    message_list_->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
-    {
-        if (on_add_reaction_requested)
-        {
-            on_add_reaction_requested(event_id, anchor);
-        }
-    };
-    message_list_->on_link_clicked = [this](const std::string& url)
-    {
-        if (on_link_clicked)
-        {
-            on_link_clicked(url);
-        }
-        // Clicking anywhere on the canvas steals OS focus from the native
-        // text area overlay.  Restore it after the browser opens.
-        if (on_reply_focus)
-        {
-            on_reply_focus();
-        }
-    };
-    message_list_->on_link_hovered = [this](const std::string& url)
-    {
-        if (on_link_hovered)
-        {
-            on_link_hovered(url);
-        }
-    };
-    message_list_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
-    {
-        if (on_show_tooltip)
-        {
-            on_show_tooltip(std::move(text), anchor);
-        }
-    };
-    message_list_->on_hide_tooltip = [this]()
-    {
-        if (on_hide_tooltip)
-        {
-            on_hide_tooltip();
-        }
-    };
     header_->on_link_clicked = [this](const std::string& url)
     {
         if (on_link_clicked)
@@ -274,37 +360,6 @@ void RoomView::wire_internal_callbacks()
         if (on_reply_focus)
         {
             on_reply_focus();
-        }
-    };
-    message_list_->on_receipt_needed = [this](const std::string& event_id)
-    {
-        if (on_receipt_needed)
-        {
-            on_receipt_needed(event_id);
-        }
-    };
-    message_list_->on_image_clicked =
-        [this](const MessageListView::ImageHit& hit)
-    {
-        if (on_image_clicked)
-        {
-            on_image_clicked(hit);
-        }
-    };
-    message_list_->on_video_clicked =
-        [this](const MessageListView::VideoHit& hit)
-    {
-        if (on_video_clicked)
-        {
-            on_video_clicked(hit);
-        }
-    };
-    message_list_->on_file_clicked =
-        [this](const MessageListView::FileHit& hit)
-    {
-        if (on_file_clicked)
-        {
-            on_file_clicked(hit);
         }
     };
     message_list_->on_near_top = [this]
@@ -364,41 +419,8 @@ void RoomView::wire_internal_callbacks()
             on_hide_tooltip();
         }
     };
-    message_list_->on_scroll_to_original =
-        [this](const std::string& original_event_id)
-    {
-        if (on_scroll_to_original)
-        {
-            on_scroll_to_original(original_event_id);
-        }
-    };
-
     // Wire header info-requested to show room info panel.
     header_->on_info_requested = [this]() { show_room_info(); };
-
-    // Wire message list sender click to show user profile panel.
-    message_list_->on_sender_clicked =
-        [this](std::string uid, std::string name, std::string av)
-    {
-        show_user_profile(std::move(uid), std::move(name), std::move(av));
-    };
-
-    // Clicking an inline mention pill opens that user's profile panel,
-    // resolving the display name + avatar from the current room's members.
-    message_list_->on_mention_clicked = [this](const std::string& uid)
-    {
-        std::string name, avatar;
-        for (const auto& m : room_members_)
-        {
-            if (m.user_id == uid)
-            {
-                name = m.display_name;
-                avatar = m.avatar_url;
-                break;
-            }
-        }
-        show_user_profile(uid, name, avatar);
-    };
 
     // Wire room info panel callbacks.
     room_info_panel_->on_close = [this]()
@@ -911,6 +933,11 @@ void RoomView::set_thread_panel(ThreadPanelState state,
                 ml->set_avatar_provider(stored_avatar_provider_);
             if (stored_image_provider_)
                 ml->set_image_provider(stored_image_provider_);
+            // Wire the same hover-action / media / reaction callbacks as the
+            // main timeline so reply / edit / redact (and friends) work
+            // inside the thread panel. Reply sends are routed through the
+            // thread by the thread_panel_state_ branch in compose_bar_->on_send_reply.
+            wire_message_list_callbacks_(ml);
         }
         thread_view_->on_close = [this]
         {
@@ -924,6 +951,16 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         thread_view_->set_visible(state == ThreadPanelState::Open);
     if (thread_list_view_)
         thread_list_view_->set_visible(state == ThreadPanelState::List);
+
+    // Block hover + click on the main timeline whenever any thread panel
+    // is open. The blocker's on_click fires on_thread_close_requested.
+    const bool panel_open = state != ThreadPanelState::Closed;
+    if (message_blocker_)
+        message_blocker_->set_visible(panel_open);
+    // Clear any stale hover state on the main timeline so affordances
+    // from before the panel opened don't linger under the blocker.
+    if (panel_open && message_list_)
+        message_list_->on_pointer_leave();
 
     // Dim the main timeline + highlight the thread root when open.
     if (message_list_)
@@ -985,6 +1022,12 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (message_list_)
     {
         message_list_->arrange(ctx, {bounds.x, header_bottom, main_w, msg_h});
+    }
+
+    if (message_blocker_)
+    {
+        message_blocker_->arrange(ctx,
+                                  {bounds.x, header_bottom, main_w, msg_h});
     }
 
     if (compose_bar_)

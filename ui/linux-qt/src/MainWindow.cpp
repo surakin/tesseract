@@ -575,6 +575,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 roomTextArea_->set_text("");
             mainApp_->room_view()->clear_compose_text();
         };
+        mainApp_->room_view()->on_thread_send_reply =
+            [this](const std::string& reply_id,
+                   const std::string& body,
+                   const std::string& formatted)
+        {
+            on_thread_send_reply_requested(reply_id, body, formatted);
+            if (roomTextArea_)
+                roomTextArea_->set_text("");
+            mainApp_->room_view()->clear_compose_text();
+        };
         mainApp_->room_view()->on_delete_requested =
             [this](const std::string& event_id)
         {
