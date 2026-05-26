@@ -152,6 +152,13 @@ protected:
     // when entering List mode.
     void apply_thread_transition_(const ThreadTransition& t);
 
+    // Post-switch hook: called by tab_open/tab_select/tab_navigate/tab_close
+    // after current_room_id_ has been updated. Subscribes to the new active
+    // room's thread list so the threads-button visibility check has up-to-date
+    // data, and immediately seeds the button from the local snapshot (empty
+    // when this is a first-time visit).
+    void after_active_room_changed_();
+
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
     int active_account_index_ = -1;

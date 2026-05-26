@@ -899,6 +899,12 @@ std::string RoomView::topic_edit_initial_text() const
 
 // ── Thread panel ──────────────────────────────────────────────────────────
 
+void RoomView::set_show_threads_button(bool show)
+{
+    if (header_)
+        header_->set_show_threads_btn(show);
+}
+
 void RoomView::set_thread_panel(ThreadPanelState state,
                                 const std::string& root_event_id)
 {

@@ -160,6 +160,10 @@ public:
         return thread_panel_state_;
     }
 
+    // Show or hide the threads button in the room header. Driven by the shell
+    // from the latest SDK thread-list snapshot — hidden when empty.
+    void set_show_threads_button(bool show);
+
     // Forwarded by RoomView → shell.
     std::function<void()> on_threads_button_clicked;
     std::function<void(const std::string& root_event_id)>

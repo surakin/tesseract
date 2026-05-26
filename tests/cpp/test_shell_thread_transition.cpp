@@ -137,12 +137,16 @@ TEST_CASE("RoomSwitch from List releases list sub only",
     CHECK(t.unsubscribe_room_threads_);
 }
 
-TEST_CASE("RoomSwitch from Closed is a clean no-op",
+TEST_CASE("RoomSwitch from Closed still releases the room-thread sub",
           "[shell][thread_transition]")
 {
     auto t = ShellBase::compute_thread_transition_(
         P::Closed, P::Closed, "", Tr::RoomSwitch, "");
     CHECK(t.new_state == P::Closed);
     CHECK(t.threads_to_unsubscribe.empty());
-    CHECK_FALSE(t.unsubscribe_room_threads_);
+    // Shell keeps a background thread-list subscription on the active room
+    // (for the header threads-button visibility check) regardless of panel
+    // state, so every RoomSwitch must release it. Underlying unsubscribe is
+    // a no-op when no handle exists.
+    CHECK(t.unsubscribe_room_threads_);
 }

@@ -1861,9 +1861,10 @@ void ShellBase::handle_thread_removed_ui_(std::string room_id,
 
 void ShellBase::handle_threads_updated_ui_(std::string room_id)
 {
-    if (room_id != current_room_id_ || thread_panel_ == ThreadPanel::Closed)
-        return;
-    if (!client_)
+    // Update visibility regardless of panel state — the threads button needs
+    // the latest list to decide whether to render. apply_threads_list_ no-ops
+    // cheaply when the thread-list panel widget isn't around.
+    if (room_id != current_room_id_ || !client_)
         return;
     apply_threads_list_(client_->list_room_threads(room_id));
 }
@@ -2165,6 +2166,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
     }
@@ -2187,6 +2189,7 @@ void ShellBase::tab_open_room(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = room_id;
+    after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
 
@@ -2218,6 +2221,7 @@ void ShellBase::tab_select_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
     }
@@ -2236,6 +2240,7 @@ void ShellBase::tab_select_room(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = room_id;
+    after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
 
@@ -2262,6 +2267,7 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
             apply_thread_transition_(_tt);
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
+        after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
     }
@@ -2312,6 +2318,7 @@ void ShellBase::tab_close(const std::string& room_id)
         apply_thread_transition_(_tt);
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
+    after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
 
@@ -2576,9 +2583,12 @@ ShellBase::ThreadTransition ShellBase::compute_thread_transition_(
     case ThreadTrigger::RoomSwitch:
         if (cur == ThreadPanel::Open)
             t.threads_to_unsubscribe.push_back(current_root);
-        if (cur == ThreadPanel::List
-            || (cur == ThreadPanel::Open && prev == ThreadPanel::List))
-            t.unsubscribe_room_threads_ = true;
+        // Always release the outgoing room's thread-list subscription. The
+        // shell now keeps a background subscription on the active room (for
+        // the threads-button visibility check) regardless of panel state, so
+        // every room switch must clean it up — even when the panel was closed.
+        // unsubscribe_room_threads is a no-op when no handle exists.
+        t.unsubscribe_room_threads_ = true;
         t.new_state = ThreadPanel::Closed;
         t.new_prev  = ThreadPanel::Closed;
         t.new_root.clear();
@@ -2731,11 +2741,36 @@ void ShellBase::apply_thread_message_remove_(const std::string& /*thread_root*/,
 
 void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
 {
-    if (room_view_ && room_view_->thread_list_view())
+    if (!room_view_)
+        return;
+
+    // Drive header-button visibility off the latest snapshot. This runs on
+    // every on_threads_updated tick (including the initial empty tick after
+    // subscribe), so the button reveals when the SDK paginates non-empty and
+    // hides when the list goes empty (e.g., redactions, room switch).
+    room_view_->set_show_threads_button(!threads.empty());
+
+    if (room_view_->thread_list_view())
     {
         room_view_->thread_list_view()->set_threads(std::move(threads));
         request_relayout_();
     }
+}
+
+void ShellBase::after_active_room_changed_()
+{
+    if (!client_ || current_room_id_.empty())
+        return;
+    // Keep an always-on background subscription on the active room so the
+    // threads button reflects whether the room contains threads — long before
+    // the user opens the panel. subscribe_room_threads is idempotent (aborts
+    // any prior subscription for this room) and the RoomSwitch transition
+    // already released the outgoing room's handle.
+    client_->subscribe_room_threads(current_room_id_);
+    // Seed the button from the local snapshot. On a first visit the service
+    // hasn't paginated yet so this is empty, which correctly hides the
+    // button; on_threads_updated will reveal it once roots are discovered.
+    apply_threads_list_(client_->list_room_threads(current_room_id_));
 }
 
 } // namespace tesseract

@@ -237,13 +237,18 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-    // Right-side reserve: threads button is always shown (28px), plus optional
-    // calendar button (28px + 8px gap). Outer margin (kCalBtnMargin) on both
-    // ends matches the calendar-only layout.
+    // Right-side reserve: each visible action button takes 28 px; when both
+    // are shown they sit 8 px apart. When neither is shown the reserve is just
+    // the outer margin so the topic can use the freed width.
+    const int visible_btns =
+        (show_threads_btn_ ? 1 : 0) + (show_calendar_btn_ ? 1 : 0);
     const float right_reserve =
-        show_calendar_btn_
-            ? kCalBtnMargin + kCalBtnSize + 8.0f + kCalBtnSize + kCalBtnMargin
-            : kCalBtnMargin + kCalBtnSize + kCalBtnMargin;
+        visible_btns == 0
+            ? kCalBtnMargin
+            : (visible_btns == 1
+                   ? kCalBtnMargin + kCalBtnSize + kCalBtnMargin
+                   : kCalBtnMargin + kCalBtnSize + 8.0f + kCalBtnSize +
+                         kCalBtnMargin);
     const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
                                             kAvatarGap - right_reserve);
 
@@ -441,8 +446,10 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
                            ctx.theme.palette.text_primary);
     }
 
-    // Threads button — always shown, immediately left of the calendar button
-    // (or in the calendar button's slot when MSC3030 isn't supported).
+    // Threads button — shown only when the SDK reports the room has at least
+    // one thread root. Sits immediately left of the calendar button when both
+    // are visible, otherwise takes the right-most slot.
+    if (show_threads_btn_)
     {
         const float threads_right =
             show_calendar_btn_
@@ -461,6 +468,10 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(threads_btn_rect_, kCalBtnRadius, btn_bg);
         draw_threads_icon(ctx.canvas, threads_btn_rect_,
                           ctx.theme.palette.text_primary);
+    }
+    else
+    {
+        threads_btn_rect_ = {};
     }
 }
 
@@ -537,7 +548,8 @@ bool RoomHeader::on_pointer_down(tk::Point local)
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
     // Threads button takes priority — checked before calendar so its hit area
     // short-circuits, even though the rects don't overlap in practice.
-    if (world.x >= threads_btn_rect_.x &&
+    if (show_threads_btn_ &&
+        world.x >= threads_btn_rect_.x &&
         world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
         world.y >= threads_btn_rect_.y &&
         world.y < threads_btn_rect_.y + threads_btn_rect_.h)
@@ -669,7 +681,8 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
 
-    hover_threads_ = world.x >= threads_btn_rect_.x &&
+    hover_threads_ = show_threads_btn_ &&
+                     world.x >= threads_btn_rect_.x &&
                      world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
                      world.y >= threads_btn_rect_.y &&
                      world.y < threads_btn_rect_.y + threads_btn_rect_.h;

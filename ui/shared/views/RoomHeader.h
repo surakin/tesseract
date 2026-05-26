@@ -49,6 +49,17 @@ public:
         show_calendar_btn_ = enabled;
     }
 
+    // Show or hide the threads button. Hidden by default; the shell flips this
+    // on once the SDK reports that the room contains at least one thread.
+    void set_show_threads_btn(bool show)
+    {
+        show_threads_btn_ = show;
+    }
+    bool show_threads_btn() const
+    {
+        return show_threads_btn_;
+    }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint(tk::PaintCtx&) override;
@@ -94,6 +105,7 @@ private:
     bool press_calendar_ = false;
     tk::Rect calendar_btn_rect_{}; // updated each paint pass
 
+    bool show_threads_btn_ = false;
     bool hover_threads_ = false;
     bool press_threads_ = false;
     tk::Rect threads_btn_rect_{}; // updated each paint pass
