@@ -1010,14 +1010,11 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float header_bottom = bounds.y + header_h;
     const float compose_top = bounds.y + bounds.h - compose_h;
 
-    // 60/40 split when the thread panel is open. The header spans the full
-    // width so the threads button stays visible regardless of mode.
-    const bool panel_open = thread_panel_state_ != ThreadPanelState::Closed;
-    const float main_w  = panel_open ? bounds.w * 0.60f : bounds.w;
-    const float panel_w = std::max(0.0f, bounds.w - main_w);
-
-    // The message list spans header → composer; the typing indicator is a
-    // synthetic trailing row inside it, so no strip space is reserved here.
+    // Thread panel floats on top of the main column: header, message list,
+    // and compose bar always arrange at full width. The panel paints last
+    // and intercepts pointer events first (children dispatch in reverse),
+    // so the message list keeps its natural width — text doesn't reflow
+    // when the panel toggles.
     const float msg_h = std::max(0.0f, compose_top - header_bottom);
 
     if (header_)
@@ -1027,13 +1024,13 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (message_list_)
     {
-        message_list_->arrange(ctx, {bounds.x, header_bottom, main_w, msg_h});
+        message_list_->arrange(ctx, {bounds.x, header_bottom, bounds.w, msg_h});
     }
 
     if (message_blocker_)
     {
         message_blocker_->arrange(ctx,
-                                  {bounds.x, header_bottom, main_w, msg_h});
+                                  {bounds.x, header_bottom, bounds.w, msg_h});
     }
 
     if (compose_bar_)
@@ -1042,18 +1039,22 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                               {bounds.x, compose_top, bounds.w, compose_h});
     }
 
-    // Right-side thread panel (only one of {list, view} is visible at a time).
-    // Use msg_h so the panel stops at the compose bar top, same as the message list.
+    // Right-anchored floating panel. Fixed `kThreadPanelWidth`, clamped to
+    // the room bounds so narrow windows still get a sensible overlay (it
+    // just covers the message list entirely). Only one of {list, view} is
+    // visible at a time.
+    const float panel_w = std::min(kThreadPanelWidth, bounds.w);
+    const float panel_x = bounds.x + bounds.w - panel_w;
     const float panel_h = msg_h;
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
     {
         thread_list_view_->arrange(
-            ctx, {bounds.x + main_w, header_bottom, panel_w, panel_h});
+            ctx, {panel_x, header_bottom, panel_w, panel_h});
     }
     if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
     {
         thread_view_->arrange(
-            ctx, {bounds.x + main_w, header_bottom, panel_w, panel_h});
+            ctx, {panel_x, header_bottom, panel_w, panel_h});
     }
 
     // Overlay panels fill the full bounds (painted on top of all other children).

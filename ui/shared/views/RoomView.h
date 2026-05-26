@@ -146,6 +146,11 @@ public:
         return thread_list_view_;
     }
 
+    // Fixed width of the floating right-side thread overlay (panel paints
+    // on top of the message list rather than reshaping it). Clamped to
+    // `bounds.w` so narrow windows still get a sensible overlay.
+    static constexpr float kThreadPanelWidth = 420.0f;
+
     // Mirror enum (avoids include cycle with ShellBase::ThreadPanel).
     enum class ThreadPanelState
     {
