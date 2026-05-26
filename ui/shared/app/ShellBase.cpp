@@ -1749,10 +1749,6 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
             request_relayout_();
         }
     }
-    else
-    {
-        invalidate_message_cache_(room_id);
-    }
     dispatch_message_inserted_secondary_(room_id, index, *ev);
 }
 
@@ -1783,10 +1779,6 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
             request_relayout_();
         }
     }
-    else
-    {
-        invalidate_message_cache_(room_id);
-    }
     dispatch_message_updated_secondary_(room_id, index, *ev);
 }
 
@@ -1800,10 +1792,6 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
             room_view_->remove_message(index);
             request_relayout_();
         }
-    }
-    else
-    {
-        invalidate_message_cache_(room_id);
     }
     dispatch_message_removed_secondary_(room_id, index);
 }
@@ -2154,60 +2142,6 @@ size_t find_tab_(const std::vector<Tab>& tabs, const std::string& room_id)
 
 } // namespace
 
-void ShellBase::save_tab_message_cache_()
-{
-    const auto* msgs = get_current_messages_();
-    if (!msgs || msgs->empty() || current_room_id_.empty())
-    {
-        return;
-    }
-    auto map_it = message_cache_.find(current_room_id_);
-    if (map_it != message_cache_.end())
-    {
-        auto lru_it = std::find(message_cache_lru_.begin(),
-                                message_cache_lru_.end(), current_room_id_);
-        if (lru_it != message_cache_lru_.end())
-        {
-            message_cache_lru_.erase(lru_it);
-        }
-    }
-    else if (static_cast<int>(message_cache_.size()) >= kMsgCacheCapacity)
-    {
-        message_cache_.erase(message_cache_lru_.back());
-        message_cache_lru_.pop_back();
-    }
-    message_cache_lru_.push_front(current_room_id_);
-    message_cache_[current_room_id_] = *msgs;
-}
-
-bool ShellBase::try_restore_message_cache_(const std::string& room_id)
-{
-    auto it = message_cache_.find(room_id);
-    if (it == message_cache_.end() || it->second.empty())
-    {
-        return false;
-    }
-    view_displayed_room_id_ = room_id;
-    apply_cached_messages_(it->second);
-    return true;
-}
-
-void ShellBase::invalidate_message_cache_(const std::string& room_id)
-{
-    auto it = message_cache_.find(room_id);
-    if (it == message_cache_.end())
-    {
-        return;
-    }
-    message_cache_.erase(it);
-    auto lru_it = std::find(message_cache_lru_.begin(),
-                            message_cache_lru_.end(), room_id);
-    if (lru_it != message_cache_lru_.end())
-    {
-        message_cache_lru_.erase(lru_it);
-    }
-}
-
 void ShellBase::tab_open_room(const std::string& room_id)
 {
     if (room_id.empty())
@@ -2222,7 +2156,6 @@ void ShellBase::tab_open_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
-            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         {
@@ -2239,7 +2172,6 @@ void ShellBase::tab_open_room(const std::string& room_id)
     {
         tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
         tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
-        save_tab_message_cache_();
     }
     // Bootstrap: wrap current_room_id_ as first tab if tabs_ is empty.
     if (tabs_.empty() && !current_room_id_.empty())
@@ -2275,7 +2207,6 @@ void ShellBase::tab_select_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
-            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         {
@@ -2294,7 +2225,6 @@ void ShellBase::tab_select_room(const std::string& room_id)
     }
     else
     {
-        save_tab_message_cache_();
         tabs_[active_tab_idx_] = {room_id, 0.f, {}};
     }
     {
@@ -2321,7 +2251,6 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
             tabs_[active_tab_idx_].scroll_offset =
                 get_message_scroll_fraction_();
             tabs_[active_tab_idx_].compose_draft = get_compose_draft_();
-            save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
         {
@@ -2563,8 +2492,6 @@ void ShellBase::restart_sdk_()
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
-    message_cache_.clear();
-    message_cache_lru_.clear();
     on_tab_state_changed_ui_();
 
     client_->stop_sync();

@@ -473,10 +473,6 @@ private:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
-    const std::vector<tesseract::views::MessageRowData>*
-    get_current_messages_() override;
-    void apply_cached_messages_(
-        const std::vector<tesseract::views::MessageRowData>& msgs) override;
     tesseract::RoomWindowBase*
     create_secondary_room_window_(const std::string& room_id) override;
     void on_media_bytes_ready_(const std::string& cache_key, MediaKind kind,

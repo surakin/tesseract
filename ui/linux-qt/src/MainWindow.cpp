@@ -4091,7 +4091,6 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
-        try_restore_message_cache_(active.room_id);
         onRoomSelected(active.room_id);
 
         // Restore compose draft (onRoomSelected clears it via set_text("")).
@@ -4153,25 +4152,6 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     }
 }
 
-const std::vector<tesseract::views::MessageRowData>*
-MainWindow::get_current_messages_()
-{
-    auto* ml = mainApp_ ? mainApp_->room_view()->message_list() : nullptr;
-    return ml ? &ml->messages() : nullptr;
-}
-
-void MainWindow::apply_cached_messages_(
-    const std::vector<tesseract::views::MessageRowData>& msgs)
-{
-    if (mainApp_)
-    {
-        mainApp_->room_view()->set_messages(msgs, /*room_switch=*/false);
-    }
-    if (mainAppSurface_)
-    {
-        mainAppSurface_->relayout();
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4228,8 +4208,6 @@ void MainWindow::switchActiveAccount(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
-    message_cache_.clear();
-    message_cache_lru_.clear();
     clearMessages();
 
     reset_server_info_();
@@ -4393,8 +4371,6 @@ void MainWindow::logoutActiveAccount()
     invites_.clear();
     current_invite_room_id_.clear();
     current_invite_inviter_id_.clear();
-    message_cache_.clear();
-    message_cache_lru_.clear();
     reset_server_info_();
     refreshRoomList();
     clearMessages();

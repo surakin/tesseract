@@ -3737,9 +3737,6 @@ void MainWindow::on_tesseract_timeline_reset(PostedTimelineReset* payload)
                                  (ml && ml->messages().empty());
         view_displayed_room_id_ = payload->room_id;
         room_view_->set_messages(std::move(rows), room_switch);
-        // Keep the cache current so the next visit to this room bypasses
-        // the gate even if the user switched away before this reset fired.
-        save_tab_message_cache_();
         if (main_app_surface_)
         {
             main_app_surface_->relayout();
@@ -5194,8 +5191,6 @@ void MainWindow::switch_active_account(int new_idx)
     space_stack_.clear();
     pagination_.clear();
     reply_details_requested_.clear();
-    message_cache_.clear();
-    message_cache_lru_.clear();
 
     // Swap in cached rooms snapshot if available.
     auto it = per_account_rooms_.find(sess->user_id);
@@ -5388,8 +5383,6 @@ void MainWindow::logout_active_account()
     invites_.clear();
     current_invite_room_id_.clear();
     current_invite_inviter_id_.clear();
-    message_cache_.clear();
-    message_cache_lru_.clear();
     reset_server_info_();
     if (room_list_view_)
     {
@@ -6622,7 +6615,6 @@ void MainWindow::on_tab_state_changed_ui_()
     if (active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
-        try_restore_message_cache_(active.room_id);
         on_room_selected(active.room_id);
         if (!active.compose_draft.empty())
         {
@@ -6679,26 +6671,6 @@ void MainWindow::set_compose_draft_(const std::string& draft)
     if (room_view_)
     {
         room_view_->set_current_text(draft);
-    }
-}
-
-const std::vector<tesseract::views::MessageRowData>*
-MainWindow::get_current_messages_()
-{
-    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
-    return ml ? &ml->messages() : nullptr;
-}
-
-void MainWindow::apply_cached_messages_(
-    const std::vector<tesseract::views::MessageRowData>& msgs)
-{
-    if (room_view_)
-    {
-        room_view_->set_messages(msgs, /*room_switch=*/false);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
     }
 }
 

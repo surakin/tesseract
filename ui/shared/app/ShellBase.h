@@ -21,7 +21,6 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -180,15 +179,6 @@ protected:
     };
     std::vector<TabState> tabs_;
     size_t active_tab_idx_ = 0;
-
-    // ── Per-room message row cache ────────────────────────────────────────────
-    // Stores the last-seen MessageRowData snapshot for the N most recently
-    // visited rooms so that switching back to a room shows content instantly
-    // (before the SDK's on_timeline_reset callback arrives). Keyed by room_id;
-    // message_cache_lru_ tracks recency for eviction (front = most recent).
-    static constexpr int kMsgCacheCapacity = 10;
-    std::deque<std::string>                                              message_cache_lru_;
-    std::unordered_map<std::string, std::vector<views::MessageRowData>> message_cache_;
 
     // ── Rooms ─────────────────────────────────────────────────────────────────
     std::vector<RoomInfo> rooms_;
@@ -541,20 +531,6 @@ protected:
     }
     // Write text into the compose bar (called after a tab switch restores draft).
     virtual void set_compose_draft_(const std::string& /*s*/)
-    {
-    }
-
-    // Return a pointer to the message list currently displayed, or nullptr.
-    // Each shell overrides to return &room_view_->message_list()->messages().
-    virtual const std::vector<views::MessageRowData>* get_current_messages_()
-    {
-        return nullptr;
-    }
-    // Apply msgs to the view without arming a room-switch gate, then relayout.
-    // Each shell overrides to call room_view_->set_messages(msgs, false) and
-    // trigger a surface relayout. Called on the UI thread only.
-    virtual void apply_cached_messages_(
-        const std::vector<views::MessageRowData>& /*msgs*/)
     {
     }
 
@@ -991,21 +967,6 @@ protected:
     /// via on_media_bytes_ready_(key, MediaKind::Tile, bytes). On failure:
     /// inserts key into tile_fetch_failed_ to suppress retries this session.
     void ensure_tile_async(int z, int x, int y);
-
-    // Snapshot the current room's message rows into message_cache_ (LRU).
-    // Called at every point where the active tab is about to change rooms.
-    void save_tab_message_cache_();
-
-    // If message_cache_ has a non-empty entry for room_id, apply it via
-    // apply_cached_messages_() and pre-populate view_displayed_room_id_ so
-    // the subsequent on_timeline_reset lands as a quiet in-place update
-    // (no room-switch gate). Returns true when a cache hit was found.
-    bool try_restore_message_cache_(const std::string& room_id);
-
-    // Drop room_id's cached snapshot. Called when a timeline event arrives
-    // for a non-current room so its stale rows do not flash on navigation
-    // before the live timeline reset overwrites them.
-    void invalidate_message_cache_(const std::string& room_id);
 
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);

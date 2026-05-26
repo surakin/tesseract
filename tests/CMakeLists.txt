@@ -59,7 +59,6 @@ add_executable(tesseract_tests
     cpp/test_presence_tracker.cpp
     cpp/test_tray_unread.cpp
     cpp/test_find_existing_dm.cpp
-    cpp/test_shell_message_cache.cpp
     cpp/test_shell_thread_transition.cpp
     cpp/test_shell_thread_panel.cpp
     cpp/test_tk_message_list_threads.cpp

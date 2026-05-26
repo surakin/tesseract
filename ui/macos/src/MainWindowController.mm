@@ -165,11 +165,6 @@ protected:
     void set_message_scroll_fraction_(float t) override;
     std::string get_compose_draft_() override;
     void set_compose_draft_(const std::string&) override;
-    const std::vector<tesseract::views::MessageRowData>*
-    get_current_messages_() override;
-    void apply_cached_messages_(
-        const std::vector<tesseract::views::MessageRowData>& msgs) override;
-
     void navigate_to_room_(const std::string& room_id) override
     {
         tab_navigate_room(room_id);
@@ -217,8 +212,6 @@ public:
     using ShellBase::mark_room_read_;
     using ShellBase::maybe_send_read_receipt_;
     using ShellBase::media_fetches_in_flight_;
-    using ShellBase::message_cache_;
-    using ShellBase::message_cache_lru_;
     using ShellBase::my_avatar_url_;
     using ShellBase::my_display_name_;
     using ShellBase::my_user_id_;
@@ -1306,7 +1299,6 @@ void MacShell::on_tab_state_changed_ui_()
     if (ctrl_ && active_tab_idx_ < tabs_.size())
     {
         const auto& active = tabs_[active_tab_idx_];
-        try_restore_message_cache_(active.room_id);
         [ctrl_ onRoomSelected:active.room_id];
         if (!active.compose_draft.empty())
         {
@@ -1352,26 +1344,6 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if (ctrl_)
     {
         [ctrl_ _setComposeDraft:draft];
-    }
-}
-
-const std::vector<tesseract::views::MessageRowData>*
-MacShell::get_current_messages_()
-{
-    auto* ml = room_view_ ? room_view_->message_list() : nullptr;
-    return ml ? &ml->messages() : nullptr;
-}
-
-void MacShell::apply_cached_messages_(
-    const std::vector<tesseract::views::MessageRowData>& msgs)
-{
-    if (room_view_)
-    {
-        room_view_->set_messages(msgs, /*room_switch=*/false);
-    }
-    if (app_surface_)
-    {
-        app_surface_->relayout();
     }
 }
 
@@ -4498,8 +4470,6 @@ void MacShell::apply_cached_messages_(
 
     _shell->current_room_id_.clear();
     _shell->space_stack_.clear();
-    _shell->message_cache_.clear();
-    _shell->message_cache_lru_.clear();
 
     auto it = _shell->per_account_rooms_.find(_shell->my_user_id_);
     _shell->rooms_ = (it != _shell->per_account_rooms_.end())
@@ -4873,8 +4843,6 @@ void MacShell::apply_cached_messages_(
         _shell->current_invite_room_id_.clear();
         _shell->current_invite_inviter_id_.clear();
         _shell->space_stack_.clear();
-        _shell->message_cache_.clear();
-        _shell->message_cache_lru_.clear();
         [self _refreshRoomList];
         [self _refreshInviteList];
         _shell->handle_compose_room_leaving_(_shell->current_room_id_);
