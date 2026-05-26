@@ -21,10 +21,7 @@ use crate::ffi::TimelineEvent;
 #[cfg(not(test))]
 use futures_util::StreamExt;
 #[cfg(not(test))]
-use matrix_sdk::{
-    ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, UInt, UserId},
-    Client, Room,
-};
+use matrix_sdk::{ruma::OwnedRoomId, ruma::UInt, ruma::UserId, Client, Room};
 #[cfg(not(test))]
 use matrix_sdk_ui::{
     eyeball_im::VectorDiff,
@@ -116,7 +113,7 @@ pub(crate) fn visible_len(visible: &[bool]) -> u64 {
 // VectorDiff::Set confirmations land on the right slot and local echoes
 // transition from "sending" to "sent" correctly.
 #[cfg(not(test))]
-fn filter_for_channel(
+pub(super) fn filter_for_channel(
     ev: Option<TimelineEvent>,
     ch: &TimelineChannel,
 ) -> Option<TimelineEvent> {
@@ -334,85 +331,6 @@ pub(super) async fn handle_timeline_diff(
 }
 
 // ---------------------------------------------------------------------------
-// Thread root chip refresh
-// ---------------------------------------------------------------------------
-
-/// Re-fetch a thread root event from the homeserver and re-emit its row on the
-/// room timeline with the freshly-bundled `thread_summary` overlayed onto the
-/// FFI event.
-///
-/// Why this exists: matrix-sdk-ui's room timeline filters in-thread replies
-/// (they live in the thread sub-timeline), so the bundled `m.thread` relation
-/// on the cached root `EventTimelineItem` is never refreshed locally — its
-/// `thread_summary()` keeps returning `None` indefinitely, and the chip on the
-/// root never appears. The server, however, does start including the bundle in
-/// every `/event/{root_id}` response the moment the first reply lands; a fresh
-/// fetch gives us the authoritative count + latest reply preview in one hop.
-///
-/// Call sites: `send_thread_inner` (after sending) and the per-thread
-/// subscriber in `subscribe_thread` (when new replies are observed).
-#[cfg(not(test))]
-pub(super) async fn refresh_thread_root_chip(
-    room_timeline: Arc<matrix_sdk_ui::Timeline>,
-    handler: Arc<Mutex<SendHandler>>,
-    room: Room,
-    room_id_str: String,
-    me: Option<OwnedUserId>,
-    root_event_id: OwnedEventId,
-) {
-    use super::timeline_convert::bundled_event_preview;
-
-    // 1. Fetch the root from the server. The response carries
-    //    `unsigned.m.relations.m.thread` which matrix-sdk lifts into
-    //    `TimelineEvent::thread_summary` + `bundled_latest_thread_event`.
-    let fetched = match room.event(&root_event_id, None).await {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    let summary = match fetched.thread_summary.summary() {
-        Some(s) => s.clone(),
-        None => return, // server hasn't bundled a thread for this root yet.
-    };
-
-    // 2. Walk the live room-timeline items to find the root by event_id,
-    //    counting visible (FFI-emitting) slots before it so the C++ row
-    //    index matches what `handle_timeline_diff` would emit. Stop as soon
-    //    as we find it; rebuild the FFI event off the *current* item so we
-    //    keep all unrelated fields (reactions, receipts, sender, content)
-    //    intact, then overlay just the chip fields.
-    let items = room_timeline.items().await;
-    let mut visible_idx: u64 = 0;
-    let mut found: Option<(u64, TimelineEvent)> = None;
-    let root_id_str = root_event_id.as_str();
-    for item in items.iter() {
-        let ev = filter_for_channel(
-            timeline_item_to_ffi(item, &room_id_str, &room, me.as_deref()).await,
-            &TimelineChannel::Room,
-        );
-        if let Some(mut ev) = ev {
-            if ev.event_id == root_id_str {
-                ev.is_thread_root = true;
-                ev.thread_reply_count = summary.num_replies as u64;
-                if let Some(latest) = fetched.bundled_latest_thread_event.as_deref() {
-                    let (sname, body, ts) = bundled_event_preview(latest, &room).await;
-                    ev.thread_latest_sender_name = sname;
-                    ev.thread_latest_body = body;
-                    ev.thread_latest_ts = ts;
-                }
-                found = Some((visible_idx, ev));
-                break;
-            }
-            visible_idx += 1;
-        }
-    }
-    let Some((idx, ev)) = found else { return; };
-
-    if let Ok(g) = handler.lock() {
-        emit_updated(&g, &TimelineChannel::Room, &room_id_str, idx, &ev);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // ClientFfi timeline methods
 // ---------------------------------------------------------------------------
 
@@ -560,43 +478,6 @@ impl ClientFfi {
         (abort, fetch_abort)
     }
 
-    /// Schedule a non-blocking refresh of the thread root's chip on the
-    /// room timeline. Looks up the room's `Arc<Timeline>` once and spawns
-    /// the refresh on the runtime. No-op when the room isn't subscribed,
-    /// no handler is attached, or the client isn't logged in — those
-    /// states mean there's no UI to update.
-    #[cfg(not(test))]
-    pub(super) fn schedule_thread_root_refresh(
-        &self,
-        room_id: &OwnedRoomId,
-        root_event_id: &OwnedEventId,
-    ) {
-        let Some(client) = self.client.clone() else { return; };
-        let Some(handler) = self.handler.clone() else { return; };
-        let Some(room) = client.get_room(room_id) else { return; };
-        let room_timeline = match self.timelines.read() {
-            Ok(g) => match g.get(room_id) {
-                Some(h) => Arc::clone(&h.timeline),
-                None => return,
-            },
-            Err(_) => return,
-        };
-        let room_id_str = room_id.to_string();
-        let me = client.user_id().map(|u| u.to_owned());
-        let root = root_event_id.clone();
-        self.rt.spawn(async move {
-            refresh_thread_root_chip(
-                room_timeline,
-                handler,
-                room,
-                room_id_str,
-                me,
-                root,
-            )
-            .await;
-        });
-    }
-
     #[cfg(not(test))]
     pub fn subscribe_room(&mut self, room_id: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
@@ -666,7 +547,7 @@ impl ClientFfi {
             Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
 
         self.timelines.write().unwrap().insert(
-            room_id,
+            room_id.clone(),
             TimelineHandle {
                 timeline,
                 abort_tasks: vec![abort, fetch_abort],
@@ -676,6 +557,12 @@ impl ClientFfi {
         );
 
         self.sync_room_subscriptions();
+        // Auto-attach the ThreadListService: it drives the per-row "N
+        // replies" chip via `apply_thread_chips` inside the watcher task,
+        // and it's the same data source the threads panel consumes. Calling
+        // it here (idempotent — replaces any prior subscription) means the
+        // chip is live even when the user never opens the panel.
+        let _ = self.subscribe_room_threads(room_id.as_str());
         ok("")
     }
 
@@ -689,6 +576,9 @@ impl ClientFfi {
                 }
             }
         }
+        // Tear down the auto-attached ThreadListService watcher so it
+        // stops poking the room timeline (which we just unsubscribed).
+        self.unsubscribe_room_threads(room_id);
         self.sync_room_subscriptions();
     }
 

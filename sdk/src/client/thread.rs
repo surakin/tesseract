@@ -7,7 +7,7 @@ use crate::ffi::{OpResult, PaginateResult};
 #[cfg(not(test))]
 use super::{err, ok, ClientFfi, ThreadListHandle, TimelineHandle};
 #[cfg(not(test))]
-use super::timeline::{refresh_thread_root_chip, TimelineChannel};
+use super::timeline::TimelineChannel;
 #[cfg(not(test))]
 use super::timeline_convert::msglike_snippet;
 #[cfg(test)]
@@ -103,113 +103,11 @@ impl ClientFfi {
             let _ = tl_for_paginate.paginate_backwards(50).await;
         }).abort_handle();
 
-        // Continuous chip-refresh task: matrix-sdk-ui's room timeline never
-        // updates the cached root's bundled `m.thread` summary on its own
-        // (in-thread replies are intentionally filtered from the room
-        // timeline, so no local aggregation fires for the root). Subscribe
-        // to this thread's diff stream as a second observer: every batch
-        // with at least one event change triggers a `room.event()` re-fetch
-        // of the root so its chip on the room timeline picks up the fresh
-        // count + latest reply preview. An in-flight flag coalesces bursts
-        // of replies into one fetch.
-        let chip_abort = {
-            let room_tl_for_chip = self
-                .timelines
-                .read()
-                .ok()
-                .and_then(|g| g.get(&room_id).map(|h| Arc::clone(&h.timeline)));
-            if let Some(room_tl) = room_tl_for_chip {
-                let tl_for_chip = Arc::clone(&timeline);
-                let room_chip = room.clone();
-                let rid_chip = room_id_str.clone();
-                let root_chip = root.clone();
-                let handler_chip = Arc::clone(&handler);
-                let me_chip = client.user_id().map(|u| u.to_owned());
-                let cancelled_chip = Arc::clone(&cancelled);
-                Some(
-                    self.rt
-                        .spawn(async move {
-                            use futures_util::StreamExt;
-                            use matrix_sdk_ui::eyeball_im::VectorDiff;
-                            use std::sync::atomic::AtomicBool as ChipBool;
-
-                            // One-shot refresh up front so previously-existing
-                            // threads (where the cached root never had a bundle)
-                            // gain their chip the moment the user opens them.
-                            refresh_thread_root_chip(
-                                Arc::clone(&room_tl),
-                                Arc::clone(&handler_chip),
-                                room_chip.clone(),
-                                rid_chip.clone(),
-                                me_chip.clone(),
-                                root_chip.clone(),
-                            )
-                            .await;
-
-                            let (_initial, mut stream) = tl_for_chip.subscribe().await;
-                            let in_flight = Arc::new(ChipBool::new(false));
-
-                            while let Some(diffs) = stream.next().await {
-                                if cancelled_chip.load(Ordering::Acquire) {
-                                    break;
-                                }
-                                let touches_events = diffs.iter().any(|d| {
-                                    matches!(
-                                        d,
-                                        VectorDiff::Append { .. }
-                                            | VectorDiff::PushBack { .. }
-                                            | VectorDiff::PushFront { .. }
-                                            | VectorDiff::Insert { .. }
-                                            | VectorDiff::Set { .. }
-                                            | VectorDiff::Reset { .. }
-                                    )
-                                });
-                                if !touches_events {
-                                    continue;
-                                }
-                                if in_flight.swap(true, Ordering::Acquire) {
-                                    // A refresh is already running; it will
-                                    // observe whatever state lands by the
-                                    // time it issues `room.event()`.
-                                    continue;
-                                }
-                                let room_tl_inner = Arc::clone(&room_tl);
-                                let handler_inner = Arc::clone(&handler_chip);
-                                let room_inner = room_chip.clone();
-                                let rid_inner = rid_chip.clone();
-                                let me_inner = me_chip.clone();
-                                let root_inner = root_chip.clone();
-                                let in_flight_inner = Arc::clone(&in_flight);
-                                tokio::spawn(async move {
-                                    refresh_thread_root_chip(
-                                        room_tl_inner,
-                                        handler_inner,
-                                        room_inner,
-                                        rid_inner,
-                                        me_inner,
-                                        root_inner,
-                                    )
-                                    .await;
-                                    in_flight_inner.store(false, Ordering::Release);
-                                });
-                            }
-                        })
-                        .abort_handle(),
-                )
-            } else {
-                None
-            }
-        };
-
-        let mut abort_tasks = vec![abort, fetch_abort, paginate_abort];
-        if let Some(h) = chip_abort {
-            abort_tasks.push(h);
-        }
         self.thread_timelines.insert(
             key,
             TimelineHandle {
                 timeline,
-                abort_tasks,
+                abort_tasks: vec![abort, fetch_abort, paginate_abort],
                 is_focused: true,
                 cancelled,
             },
@@ -361,21 +259,76 @@ impl ClientFfi {
             });
         }
         // Watcher task: fire on_threads_updated once immediately, then on
-        // every subsequent change to the items vector.
+        // every subsequent change to the items vector. After each tick,
+        // also drive the per-row "N replies" chip on the room timeline via
+        // `apply_thread_chips`. Capture the room timeline once at spawn —
+        // it's None if subscribe_room_threads ran without a live room
+        // subscription (e.g. user opened the threads panel without
+        // entering the room first), in which case we just skip the chip
+        // pass on each tick and let `on_threads_updated` drive the panel
+        // by itself.
         let rid_str = rid.to_string();
         let svc_for_watch = std::sync::Arc::clone(&service);
         let h = handler.clone();
+        let room_for_chips = client.get_room(&rid);
+        let room_timeline_for_chips = self
+            .timelines
+            .read()
+            .ok()
+            .and_then(|g| g.get(&rid).map(|hh| std::sync::Arc::clone(&hh.timeline)));
+        let me_for_chips = client.user_id().map(|u| u.to_owned());
         let abort = self
             .rt
             .spawn(async move {
+                // matrix-sdk-ui 0.17 `ThreadListService` double-counts on
+                // every reply: its event-cache observer treats Insert (local
+                // echo) and Set (local echo → server-confirmed) as two
+                // separate events, bumping `num_replies` once per diff. The
+                // server's bundled count is correct, so we cache per-root
+                // and re-fetch `room.event(root)` whenever a thread's
+                // `latest_event` event_id changes, using its
+                // `thread_summary.num_replies` as the authoritative count.
+                let mut chip_cache: std::collections::HashMap<
+                    String,
+                    ChipCount,
+                > = std::collections::HashMap::new();
+
                 let (_initial, mut stream) =
                     svc_for_watch.subscribe_to_items_updates();
                 if let Ok(g) = h.lock() {
                     g.on_threads_updated(&rid_str);
                 }
+                if let (Some(ref tl), Some(ref room)) =
+                    (&room_timeline_for_chips, &room_for_chips)
+                {
+                    apply_thread_chips(
+                        tl,
+                        room,
+                        &h,
+                        &rid_str,
+                        me_for_chips.as_deref(),
+                        &svc_for_watch.items(),
+                        &mut chip_cache,
+                    )
+                    .await;
+                }
                 while stream.next().await.is_some() {
                     if let Ok(g) = h.lock() {
                         g.on_threads_updated(&rid_str);
+                    }
+                    if let (Some(ref tl), Some(ref room)) =
+                        (&room_timeline_for_chips, &room_for_chips)
+                    {
+                        apply_thread_chips(
+                            tl,
+                            room,
+                            &h,
+                            &rid_str,
+                            me_for_chips.as_deref(),
+                            &svc_for_watch.items(),
+                            &mut chip_cache,
+                        )
+                        .await;
                     }
                 }
             })
@@ -481,6 +434,154 @@ impl ClientFfi {
             reached_start: false,
             reached_end: false,
         }
+    }
+}
+
+/// Per-root cache for `apply_thread_chips`: remembers the last seen
+/// `latest_event` event_id and the authoritative count we last pulled
+/// from the server's bundled `m.thread` summary. Used to suppress the
+/// matrix-sdk-ui 0.17 ThreadListService bug where local-echo +
+/// server-confirm causes `num_replies` to bump by 2 per reply.
+#[cfg(not(test))]
+struct ChipCount {
+    last_latest_eid: String,
+    server_count: u64,
+}
+
+/// Walk the room timeline once and re-emit any thread root row whose chip
+/// fields differ from the corresponding `ThreadListItem`. Driven by the
+/// `ThreadListService` watcher task; this is the single path that gets the
+/// "N replies" chip onto the root row on the main timeline.
+///
+/// Count comes from `room.event(root)`'s server-bundled `thread_summary`
+/// (re-fetched only when `latest_event` event_id changes — see `ChipCount`
+/// cache) because matrix-sdk-ui 0.17's `ThreadListService` double-counts
+/// every reply. `latest_event` preview fields are taken straight from the
+/// `ThreadListItem` since matrix-sdk-ui already tracks the freshest reply
+/// for that field in real time.
+#[cfg(not(test))]
+async fn apply_thread_chips(
+    room_timeline: &matrix_sdk_ui::Timeline,
+    room: &matrix_sdk::Room,
+    handler: &std::sync::Arc<std::sync::Mutex<super::SendHandler>>,
+    room_id: &str,
+    me: Option<&matrix_sdk::ruma::UserId>,
+    items: &[matrix_sdk_ui::timeline::thread_list_service::ThreadListItem],
+    cache: &mut std::collections::HashMap<String, ChipCount>,
+) {
+    use super::timeline::{emit_updated, filter_for_channel, TimelineChannel};
+    use super::timeline_convert::timeline_item_to_ffi;
+    use std::collections::HashMap;
+
+    if items.is_empty() {
+        return;
+    }
+
+    // First pass: refresh the per-root authoritative count from the server
+    // for any thread whose `latest_event` event_id has changed (or is new
+    // to us). Bootstrap entries take the ThreadListService's `num_replies`
+    // as-is — the initial value comes from the server's /threads response
+    // which is already correct; the doubling bug only manifests on later
+    // live updates.
+    for item in items {
+        let root_eid = item.root_event.event_id.to_string();
+        let current_latest = item
+            .latest_event
+            .as_ref()
+            .map(|e| e.event_id.to_string())
+            .unwrap_or_default();
+        match cache.get(&root_eid) {
+            None => {
+                cache.insert(
+                    root_eid,
+                    ChipCount {
+                        last_latest_eid: current_latest,
+                        server_count: item.num_replies as u64,
+                    },
+                );
+            }
+            Some(prev) if prev.last_latest_eid == current_latest => {
+                // No change in latest event → server count can't have moved.
+            }
+            Some(_) => {
+                // Latest event changed — re-fetch the authoritative count
+                // from the server's bundled m.thread summary. matrix-sdk's
+                // `Room::event` only writes to the store via `save_events`
+                // (doc'd as not notifying observers), so it can't cause
+                // the room timeline to gain a duplicate row.
+                let server_count = match room
+                    .event(&item.root_event.event_id, None)
+                    .await
+                {
+                    Ok(fetched) => fetched
+                        .thread_summary
+                        .summary()
+                        .map(|s| s.num_replies as u64)
+                        .unwrap_or_else(|| item.num_replies as u64),
+                    // Network/decryption failure — fall back to the
+                    // (possibly inflated) value rather than zero, so the
+                    // chip never appears to lose replies.
+                    Err(_) => item.num_replies as u64,
+                };
+                cache.insert(
+                    root_eid,
+                    ChipCount {
+                        last_latest_eid: current_latest,
+                        server_count,
+                    },
+                );
+            }
+        }
+    }
+
+    // Second pass: walk the room timeline and emit chip updates. Index
+    // map keyed by event_id avoids re-finding the same root across passes.
+    let by_root: HashMap<&str, &_> = items
+        .iter()
+        .map(|it| (it.root_event.event_id.as_str(), it))
+        .collect();
+
+    let timeline_items = room_timeline.items().await;
+    let mut visible_idx: u64 = 0;
+    for tl_item in timeline_items.iter() {
+        let Some(mut ev) = filter_for_channel(
+            timeline_item_to_ffi(tl_item, room_id, room, me).await,
+            &TimelineChannel::Room,
+        ) else {
+            continue;
+        };
+        if let Some(item) = by_root.get(ev.event_id.as_str()) {
+            let count = cache
+                .get(ev.event_id.as_str())
+                .map(|c| c.server_count)
+                .unwrap_or(item.num_replies as u64);
+            let (latest_name, latest_body, latest_ts) = match &item.latest_event {
+                Some(le) => {
+                    let (_id, n, b, t) = thread_list_event_preview(le);
+                    (n, b, t)
+                }
+                None => (String::new(), String::new(), 0u64),
+            };
+            // Skip if the chip is already aligned — re-emitting an
+            // identical row would trigger a needless C++ relayout pass
+            // for every sync tick.
+            let already_aligned = ev.is_thread_root
+                && ev.thread_reply_count == count
+                && ev.thread_latest_sender_name == latest_name
+                && ev.thread_latest_body == latest_body
+                && ev.thread_latest_ts == latest_ts;
+            if !already_aligned {
+                ev.is_thread_root = true;
+                ev.thread_reply_count = count;
+                ev.thread_latest_sender_name = latest_name;
+                ev.thread_latest_body = latest_body;
+                ev.thread_latest_ts = latest_ts;
+                if let Ok(g) = handler.lock() {
+                    emit_updated(&g, &TimelineChannel::Room, room_id, visible_idx, &ev);
+                }
+            }
+        }
+        visible_idx += 1;
     }
 }
 

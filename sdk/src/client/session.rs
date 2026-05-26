@@ -7,7 +7,7 @@ use matrix_sdk::{
     authentication::oauth::{ClientId, OAuthSession, UserSession},
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     store::RoomLoadSettings,
-    Client,
+    Client, ThreadingSupport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -119,6 +119,12 @@ impl ClientFfi {
                 .with_encryption_settings(EncryptionSettings {
                     backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
                     ..Default::default()
+                })
+                // Keep parity with oauth.rs: route sync'd thread events to
+                // per-thread linked chunks so the focused thread Timeline
+                // sees live updates.
+                .with_threading_support(ThreadingSupport::Enabled {
+                    with_subscriptions: false,
                 })
                 .build()
                 .await

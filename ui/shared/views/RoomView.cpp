@@ -35,6 +35,15 @@ public:
     {
         return false;
     }
+    bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/) override
+    {
+        // Swallow wheel input on the dimmed main column. Without this,
+        // wheel over the floating thread overlay falls through to
+        // message_list_ whenever the thread view's MessageListView
+        // declines (e.g. its room-switch gate is still up), scrolling
+        // the main timeline behind the panel.
+        return true;
+    }
     void paint(tk::PaintCtx&) override
     {
         // Intentionally empty — the dim overlay is painted by MessageListView

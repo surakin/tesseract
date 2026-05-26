@@ -31,7 +31,7 @@ use matrix_sdk::{
     },
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     utils::UrlOrQuery,
-    Client,
+    Client, ThreadingSupport,
 };
 use tiny_http::{Method, Response, Server};
 use url::Url;
@@ -126,6 +126,13 @@ pub async fn begin(
         .with_encryption_settings(EncryptionSettings {
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             ..Default::default()
+        })
+        // matrix-sdk's room event cache only routes sync'd thread events to
+        // per-thread linked chunks (which our focused thread Timeline
+        // subscribes to) when threading support is enabled. Without this,
+        // the open thread panel never sees new replies arriving via sync.
+        .with_threading_support(ThreadingSupport::Enabled {
+            with_subscriptions: false,
         })
         .build()
         .await
