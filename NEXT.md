@@ -25,7 +25,7 @@ Add more things to the BrandView
 Pinned messages!
 Clear cache button?
 
-Presence polling could be done only on the visible rooms in the room list, and the active tab / window rooms
+Presence polling could be further narrowed to only the DM counterparts currently visible in the room list viewport (window-hidden suspension already lands in the unreleased changes)
 
 The room list is misbehaving. Read the code and make it follow these rules:
 The room list is composed of several sections with different behaviors.
