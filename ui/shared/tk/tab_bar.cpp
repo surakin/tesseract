@@ -108,6 +108,14 @@ Rect TabBar::close_scroll_rect_(int i) const
     return {cx, cy, kCloseSz, kCloseSz};
 }
 
+bool TabBar::close_button_hit_(int idx, Point local) const
+{
+    Rect cr = close_scroll_rect_(idx);
+    float widget_x = cr.x - scroll_x_;
+    return local.x >= widget_x && local.x < widget_x + kCloseSz &&
+           local.y >= cr.y - bounds_.y && local.y < cr.y - bounds_.y + kCloseSz;
+}
+
 int TabBar::tab_at_(float scroll_local) const
 {
     for (int i = 0; i < static_cast<int>(items_.size()); ++i)
@@ -292,13 +300,7 @@ bool TabBar::on_pointer_down(Point local)
     pressed_close_ = false;
     if (static_cast<int>(items_.size()) > 1)
     {
-        Rect cr = close_scroll_rect_(idx);
-        // cr.x is in scroll-space; convert to widget-local:
-        float widget_close_x = cr.x - scroll_x_;
-        pressed_close_ =
-            (local.x >= widget_close_x && local.x < widget_close_x + kCloseSz &&
-             local.y >= cr.y - bounds_.y &&
-             local.y < cr.y - bounds_.y + kCloseSz);
+        pressed_close_ = close_button_hit_(idx, local);
     }
     return true;
 }
@@ -316,12 +318,7 @@ void TabBar::on_pointer_up(Point local, bool inside_self)
         if (pressed_close_)
         {
             // Verify pointer is still in the close rect.
-            Rect cr = close_scroll_rect_(idx);
-            float widget_close_x = cr.x - scroll_x_;
-            bool still_on_close = (local.x >= widget_close_x &&
-                                   local.x < widget_close_x + kCloseSz &&
-                                   local.y >= cr.y - bounds_.y &&
-                                   local.y < cr.y - bounds_.y + kCloseSz);
+            bool still_on_close = close_button_hit_(idx, local);
             if (still_on_close && on_tab_closed)
             {
                 on_tab_closed(items_[idx].room_id);
@@ -350,12 +347,7 @@ bool TabBar::on_pointer_move(Point local)
         items_[i].close_hovered = false;
         if (i == hover_idx && show_close)
         {
-            Rect cr = close_scroll_rect_(i);
-            float widget_close_x = cr.x - scroll_x_;
-            items_[i].close_hovered = (local.x >= widget_close_x &&
-                                       local.x < widget_close_x + kCloseSz &&
-                                       local.y >= cr.y - bounds_.y &&
-                                       local.y < cr.y - bounds_.y + kCloseSz);
+            items_[i].close_hovered = close_button_hit_(i, local);
         }
     }
     return true;

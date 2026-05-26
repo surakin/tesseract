@@ -157,7 +157,7 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
 {
     ComposeBar bar;
     const float baseline = bar.natural_height();
-    CHECK_FALSE(bar.has_pending_image());
+    CHECK_FALSE(bar.has_pending());
 
     int size_changes = 0;
     bar.on_size_changed = [&]
@@ -178,7 +178,7 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
     bar.set_pending_image(
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
         "image/png");
-    CHECK(bar.has_pending_image());
+    CHECK(bar.has_pending());
     // Image previews float above the bar bounds — bar height stays unchanged.
     CHECK(bar.natural_height() == baseline);
     CHECK(size_changes == 1);
@@ -188,8 +188,8 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
     REQUIRE(send);
     CHECK(send->enabled());
 
-    bar.clear_pending_image();
-    CHECK_FALSE(bar.has_pending_image());
+    bar.clear_pending();
+    CHECK_FALSE(bar.has_pending());
     CHECK(bar.natural_height() == baseline);
     CHECK(size_changes == 2);
     CHECK_FALSE(send->enabled());
@@ -245,7 +245,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
     CHECK(got_caption == "look at this");
     CHECK(got_filename.rfind("clipboard-", 0) == 0);
     CHECK(plain_send == 0);
-    CHECK_FALSE(bar.has_pending_image());
+    CHECK_FALSE(bar.has_pending());
 }
 
 TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
@@ -283,7 +283,7 @@ TEST_CASE("ComposeBar second pending image replaces the first",
     ComposeBar bar;
     bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png");
-    REQUIRE(bar.has_pending_image());
+    REQUIRE(bar.has_pending());
     int changes = 0;
     bar.on_size_changed = [&]
     {
@@ -291,7 +291,7 @@ TEST_CASE("ComposeBar second pending image replaces the first",
     };
     bar.set_pending_image(std::vector<std::uint8_t>{0xFF, 0xD8, 0xFF, 0xE0},
                           "image/jpeg");
-    CHECK(bar.has_pending_image());
+    CHECK(bar.has_pending());
     // Replacement still fires on_size_changed even though height bucket
     // stays the same, so the host can refresh its envelope.
     CHECK(changes == 1);

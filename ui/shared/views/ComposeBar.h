@@ -145,11 +145,6 @@ public:
 
     /// Drop any attached payload (image or file). No-op when none.
     void clear_pending();
-    /// Back-compat alias — same as `clear_pending()`.
-    void clear_pending_image()
-    {
-        clear_pending();
-    }
 
     /// True while any attachment (image, video, audio, or file) is queued.
     bool has_pending() const
@@ -163,11 +158,6 @@ public:
     /// the background extractor so update_pending_attachment() can discard
     /// results that arrive after the user replaced or removed the attachment.
     std::uint32_t pending_gen() const { return pending_gen_; }
-    /// Back-compat alias — same as `has_pending()`.
-    bool has_pending_image() const
-    {
-        return pending_.has_value();
-    }
 
     // Attachment kinds — public so pending_for_test() callers can inspect them.
     struct PendingAttachment
@@ -379,6 +369,10 @@ public:
 private:
     void refresh_send_enabled();
     void recompute_height();
+    void notify_size_changed_();
+    void rebuild_chip_layouts_(tk::LayoutCtx& ctx, const std::string& key,
+                               const std::string& secondary_text);
+    void paint_two_line_chip_(tk::PaintCtx& ctx) const;
     bool point_in_remove_btn(tk::Point world) const;
     static std::string make_filename(const std::string& mime);
     // Cached layout used to paint the filename (and a second line for size or

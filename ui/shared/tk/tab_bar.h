@@ -110,6 +110,9 @@ private:
     // Rect of the × button for tab i, in scroll-space x-coordinates.
     Rect close_scroll_rect_(int i) const;
 
+    // True when widget-local `local` lands on the × close button of tab `idx`.
+    bool close_button_hit_(int idx, Point local) const;
+
     // Index of the tab that contains scroll_x_local (= pointer.x + scroll_x_),
     // or -1 if none.
     int tab_at_(float scroll_x_local) const;

@@ -101,6 +101,14 @@ float ListView::content_height() const
     return row_offsets_.empty() ? 0.0f : row_offsets_.back();
 }
 
+std::size_t ListView::first_visible_row_() const
+{
+    auto it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(), scroll_y_);
+    return it == row_offsets_.begin()
+               ? 0
+               : static_cast<std::size_t>(it - row_offsets_.begin() - 1);
+}
+
 std::pair<int, int> ListView::visible_range() const
 {
     const std::size_t n = adapter_ ? adapter_->count() : 0;
@@ -109,15 +117,8 @@ std::pair<int, int> ListView::visible_range() const
         return {0, -1};
     }
 
-    float viewport_top = scroll_y_;
     float viewport_bot = scroll_y_ + bounds_.h;
-
-    auto first_it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(),
-                                     viewport_top);
-    std::size_t first =
-        first_it == row_offsets_.begin()
-            ? 0
-            : static_cast<std::size_t>(first_it - row_offsets_.begin() - 1);
+    std::size_t first = first_visible_row_();
 
     int last = -1;
     for (std::size_t i = first; i < n; ++i)
@@ -253,68 +254,37 @@ void ListView::preserve_top_through(const std::function<void()>& mutate)
     }
 }
 
+void ListView::fire_latch_(bool now_near, bool& was_near,
+                           const std::function<void()>& callback)
+{
+    if (now_near && !was_near)
+    {
+        was_near = true;
+        if (callback)
+            callback();
+    }
+    else if (!now_near && was_near)
+    {
+        was_near = false;
+    }
+}
+
 void ListView::maybe_fire_near_top()
 {
-    if (!adapter_ || adapter_->count() == 0)
-    {
+    if (!adapter_ || adapter_->count() == 0 || stick_to_bottom_ || scrollbar_drag_)
         return;
-    }
-    if (stick_to_bottom_)
-    {
-        return;
-    }
-    if (scrollbar_drag_)
-    {
-        return;
-    }
-    bool now_near = scroll_y_ < near_top_threshold_px_;
-    if (now_near && !was_near_top_)
-    {
-        was_near_top_ = true;
-        if (on_near_top)
-        {
-            on_near_top();
-        }
-    }
-    else if (!now_near && was_near_top_)
-    {
-        was_near_top_ = false;
-    }
+    fire_latch_(scroll_y_ < near_top_threshold_px_, was_near_top_, on_near_top);
 }
 
 void ListView::maybe_fire_near_bottom()
 {
-    if (!adapter_ || adapter_->count() == 0)
-    {
+    if (!adapter_ || adapter_->count() == 0 || stick_to_bottom_ || scrollbar_drag_)
         return;
-    }
-    if (stick_to_bottom_)
-    {
-        return;
-    }
-    if (scrollbar_drag_)
-    {
-        return;
-    }
     float total = content_height();
     if (total <= bounds_.h)
-    {
-        return; // content not taller than viewport
-    }
-    bool now_near =
-        (total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_;
-    if (now_near && !was_near_bottom_)
-    {
-        was_near_bottom_ = true;
-        if (on_near_bottom)
-        {
-            on_near_bottom();
-        }
-    }
-    else if (!now_near && was_near_bottom_)
-    {
-        was_near_bottom_ = false;
-    }
+        return;
+    fire_latch_((total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_,
+                was_near_bottom_, on_near_bottom);
 }
 
 void ListView::rebuild_heights(LayoutCtx& ctx, float width)
@@ -408,14 +378,8 @@ void ListView::paint(PaintCtx& ctx)
     ctx.canvas.push_clip_rect(bounds_);
 
     // Find the first row whose end is past the viewport top.
-    float viewport_top = scroll_y_;
     float viewport_bot = scroll_y_ + bounds_.h;
-    auto first_it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(),
-                                     viewport_top);
-    std::size_t first =
-        first_it == row_offsets_.begin()
-            ? 0
-            : static_cast<std::size_t>(first_it - row_offsets_.begin() - 1);
+    std::size_t first = first_visible_row_();
 
     // Snapshot the canvas clip once (after push_clip_rect above). For partial
     // repaints such as animated-image ticks the clip is a small rect around the

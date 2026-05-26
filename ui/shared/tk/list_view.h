@@ -300,6 +300,9 @@ private:
     void update_hover(Point local);
     void maybe_fire_near_top();
     void maybe_fire_near_bottom();
+    void fire_latch_(bool now_near, bool& was_near,
+                     const std::function<void()>& callback);
+    std::size_t first_visible_row_() const;
 
     struct ThumbGeom
     {

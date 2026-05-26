@@ -1,5 +1,6 @@
 #include "VerificationBanner.h"
 
+#include "banner_style.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -10,21 +11,14 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kHeightNormal = 48.0f;
+constexpr float kHeightNormal    = 48.0f;
 constexpr float kHeightShowEmoji = 124.0f;
-constexpr float kPadX = 12.0f;
-constexpr float kPadY = 8.0f;
-constexpr float kGap = 8.0f;
-constexpr float kBtnH = 28.0f;
-constexpr float kDismissSide = 24.0f;
-constexpr float kEmojiTileH = 64.0f;
-constexpr float kEmojiGlyphH = 40.0f;
-constexpr float kEmojiLabelH = 24.0f;
-constexpr float kEmojiCorner = 4.0f;
+constexpr float kBtnH            = 28.0f;
+constexpr float kEmojiTileH      = 64.0f;
+constexpr float kEmojiGlyphH     = 40.0f;
+constexpr float kEmojiLabelH     = 24.0f;
+constexpr float kEmojiCorner     = 4.0f;
 
-const tk::Color kBannerBg = tk::Color::rgb(0xFFF4D6);
-const tk::Color kBannerBorder = tk::Color::rgb(0xE0C97A);
-const tk::Color kLabelText = tk::Color::rgb(0x5C4500);
 const tk::Color kEmojiTileBg = tk::Color::rgb(0xFFFBE8);
 
 } // namespace
@@ -32,7 +26,7 @@ const tk::Color kEmojiTileBg = tk::Color::rgb(0xFFFBE8);
 VerificationBanner::VerificationBanner()
 {
     auto label = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    label->set_colour(kLabelText);
+    label->set_colour(kBannerLabelText);
     label->set_halign(tk::TextHAlign::Leading);
     label->set_trim(tk::TextTrim::Ellipsis);
     label_ = add_child(std::move(label));
@@ -114,7 +108,7 @@ VerificationBanner::VerificationBanner()
                 on_dismiss();
             }
         });
-    dismiss->set_min_size({kDismissSide, kDismissSide});
+    dismiss->set_min_size({kBannerDismissSide, kBannerDismissSide});
     dismiss_ = add_child(std::move(dismiss));
 
     // "Use recovery key" link — visible in Prompt state only
@@ -269,9 +263,9 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         // ── ShowEmojis layout ─────────────────────────────────────────────
         // Top 48 px: label centred, no buttons.
-        label_rect_ = {bounds.x + kPadX,
+        label_rect_ = {bounds.x + kBannerPadX,
                        bounds.y + (kHeightNormal - 20.0f) * 0.5f,
-                       bounds.w - kPadX * 2, 20.0f};
+                       bounds.w - kBannerPadX * 2, 20.0f};
         if (label_)
         {
             label_->arrange(ctx, label_rect_);
@@ -279,27 +273,27 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
         // Bottom 76 px: 7 emoji tiles packed horizontally with equal gaps.
         float tile_y = bounds.y + kHeightNormal;
-        float tile_area = bounds.w - kPadX * 2;
-        float tile_w = (tile_area - kGap * (kEmojiCount - 1)) / kEmojiCount;
-        float tile_x = bounds.x + kPadX;
+        float tile_area = bounds.w - kBannerPadX * 2;
+        float tile_w = (tile_area - kBannerGap * (kEmojiCount - 1)) / kEmojiCount;
+        float tile_x = bounds.x + kBannerPadX;
         for (int i = 0; i < kEmojiCount; ++i)
         {
             emoji_rects_[i] = {tile_x, tile_y, tile_w, kEmojiTileH};
             emoji_label_rects_[i] = {tile_x, tile_y + kEmojiGlyphH, tile_w,
                                      kEmojiLabelH};
-            tile_x += tile_w + kGap;
+            tile_x += tile_w + kBannerGap;
         }
 
         // Buttons not shown in ShowEmojis — arrange They Match / No Match
         // in the normal strip area so pointer dispatch works.
         float btn_y = bounds.y + (kHeightNormal - kBtnH) * 0.5f;
-        float right = bounds.x + bounds.w - kPadX;
+        float right = bounds.x + bounds.w - kBannerPadX;
         if (secondary_ && secondary_->visible())
         {
             auto sz = secondary_->measure(ctx, {100.0f, kBtnH});
             secondary_rect_ = {right - sz.w, btn_y, sz.w, kBtnH};
             secondary_->arrange(ctx, secondary_rect_);
-            right = secondary_rect_.x - kGap;
+            right = secondary_rect_.x - kBannerGap;
         }
         if (primary_ && primary_->visible())
         {
@@ -312,16 +306,16 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // ── Normal 48 px layout ───────────────────────────────────────────────
-    float right = bounds.x + bounds.w - kPadX;
+    float right = bounds.x + bounds.w - kBannerPadX;
 
     dismiss_rect_ = {};
     if (dismiss_ && dismiss_->visible())
     {
-        dismiss_rect_ = {right - kDismissSide,
-                         bounds.y + (bounds.h - kDismissSide) * 0.5f,
-                         kDismissSide, kDismissSide};
+        dismiss_rect_ = {right - kBannerDismissSide,
+                         bounds.y + (bounds.h - kBannerDismissSide) * 0.5f,
+                         kBannerDismissSide, kBannerDismissSide};
         dismiss_->arrange(ctx, dismiss_rect_);
-        right = dismiss_rect_.x - kGap;
+        right = dismiss_rect_.x - kBannerGap;
     }
 
     secondary_rect_ = {};
@@ -331,7 +325,7 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         secondary_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f,
                            sz.w, kBtnH};
         secondary_->arrange(ctx, secondary_rect_);
-        right = secondary_rect_.x - kGap;
+        right = secondary_rect_.x - kBannerGap;
     }
 
     primary_rect_ = {};
@@ -341,7 +335,7 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         primary_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f,
                          sz.w, kBtnH};
         primary_->arrange(ctx, primary_rect_);
-        right = primary_rect_.x - kGap;
+        right = primary_rect_.x - kBannerGap;
     }
 
     link_rect_ = {};
@@ -351,11 +345,11 @@ void VerificationBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         link_rect_ = {right - sz.w, bounds.y + (bounds.h - kBtnH) * 0.5f, sz.w,
                       kBtnH};
         link_->arrange(ctx, link_rect_);
-        right = link_rect_.x - kGap;
+        right = link_rect_.x - kBannerGap;
     }
 
-    label_rect_ = {bounds.x + kPadX, bounds.y + (bounds.h - 20.0f) * 0.5f,
-                   std::max(0.0f, right - (bounds.x + kPadX)), 20.0f};
+    label_rect_ = {bounds.x + kBannerPadX, bounds.y + (bounds.h - 20.0f) * 0.5f,
+                   std::max(0.0f, right - (bounds.x + kBannerPadX)), 20.0f};
     if (label_)
     {
         label_->arrange(ctx, label_rect_);
@@ -410,7 +404,7 @@ void VerificationBanner::paint(tk::PaintCtx& ctx)
                             (glyph_rect.w - layout->measure().w) * 0.5f,
                         glyph_rect.y +
                             (glyph_rect.h - layout->measure().h) * 0.5f};
-                    ctx.canvas.draw_text(*layout, origin, kLabelText);
+                    ctx.canvas.draw_text(*layout, origin, kBannerLabelText);
                 }
             }
 
@@ -427,7 +421,7 @@ void VerificationBanner::paint(tk::PaintCtx& ctx)
                     tk::Point origin{lr.x + (lr.w - layout->measure().w) * 0.5f,
                                      lr.y +
                                          (lr.h - layout->measure().h) * 0.5f};
-                    ctx.canvas.draw_text(*layout, origin, kLabelText);
+                    ctx.canvas.draw_text(*layout, origin, kBannerLabelText);
                 }
             }
         }

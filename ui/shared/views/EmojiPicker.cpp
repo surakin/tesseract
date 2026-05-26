@@ -35,6 +35,19 @@ const char* builtin_tab_glyph(int idx)
         tesseract::emoji::kCategories[idx - 1]);
 }
 
+// Extract the first shortcode from a space-delimited list and wrap it in
+// colons — e.g. "thumbs_up thumbsup" → ":thumbs_up:". Returns "" when empty.
+std::string format_shortcode(std::string_view shortcodes)
+{
+    if (shortcodes.empty())
+    {
+        return {};
+    }
+    auto pos = shortcodes.find(' ');
+    auto tok = (pos == std::string_view::npos) ? shortcodes : shortcodes.substr(0, pos);
+    return ":" + std::string(tok) + ":";
+}
+
 bool icontains(const std::string& haystack, const std::string& needle)
 {
     if (needle.empty())
@@ -362,13 +375,7 @@ void EmojiPicker::rebuild_current_items()
             {
                 if (e.glyph == glyph && !e.shortcodes.empty())
                 {
-                    // First space-delimited token is the canonical shortcode.
-                    auto sv = e.shortcodes;
-                    auto pos = sv.find(' ');
-                    auto tok = (pos == std::string_view::npos)
-                                   ? sv
-                                   : sv.substr(0, pos);
-                    sc = ":" + std::string(tok) + ":";
+                    sc = format_shortcode(e.shortcodes);
                     break;
                 }
             }
@@ -384,16 +391,7 @@ void EmojiPicker::rebuild_current_items()
         for (const auto* e : entries)
         {
             current_glyphs_.emplace_back(e->glyph);
-            std::string sc;
-            if (!e->shortcodes.empty())
-            {
-                auto pos = e->shortcodes.find(' ');
-                auto tok = (pos == std::string_view::npos)
-                               ? e->shortcodes
-                               : e->shortcodes.substr(0, pos);
-                sc = ":" + std::string(tok) + ":";
-            }
-            current_shortcodes_.push_back(std::move(sc));
+            current_shortcodes_.push_back(format_shortcode(e->shortcodes));
         }
         break;
     }
@@ -430,16 +428,7 @@ void EmojiPicker::rebuild_current_items()
         for (const auto* e : entries)
         {
             current_glyphs_.emplace_back(e->glyph);
-            std::string sc;
-            if (!e->shortcodes.empty())
-            {
-                auto pos = e->shortcodes.find(' ');
-                auto tok = (pos == std::string_view::npos)
-                               ? e->shortcodes
-                               : e->shortcodes.substr(0, pos);
-                sc = ":" + std::string(tok) + ":";
-            }
-            current_shortcodes_.push_back(std::move(sc));
+            current_shortcodes_.push_back(format_shortcode(e->shortcodes));
         }
         break;
     }

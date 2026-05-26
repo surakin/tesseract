@@ -141,7 +141,7 @@ ComposeBar::ComposeBar()
     remove->set_on_click(
         [this]
         {
-            clear_pending_image();
+            clear_pending();
         });
     remove->set_min_size({kRemoveBtnSide, kRemoveBtnSide});
     remove->set_visible(false);
@@ -307,11 +307,7 @@ void ComposeBar::set_reply_to(std::string event_id, std::string sender_name,
             c = ' ';
     }
     reply_body_preview_ = std::move(body_preview);
-    recompute_height();
-    if (on_size_changed)
-    {
-        on_size_changed();
-    }
+    notify_size_changed_();
 }
 
 void ComposeBar::clear_reply()
@@ -325,11 +321,7 @@ void ComposeBar::clear_reply()
     reply_body_preview_.clear();
     reply_band_rect_ = {};
     reply_cancel_rect_ = {};
-    recompute_height();
-    if (on_size_changed)
-    {
-        on_size_changed();
-    }
+    notify_size_changed_();
 }
 
 void ComposeBar::set_editing(std::string event_id)
@@ -342,11 +334,7 @@ void ComposeBar::set_editing(std::string event_id)
     reply_cancel_rect_ = {};
 
     edit_event_id_ = std::move(event_id);
-    recompute_height();
-    if (on_size_changed)
-    {
-        on_size_changed();
-    }
+    notify_size_changed_();
 }
 
 void ComposeBar::clear_editing()
@@ -358,11 +346,7 @@ void ComposeBar::clear_editing()
     edit_event_id_.clear();
     edit_band_rect_ = {};
     edit_cancel_rect_ = {};
-    recompute_height();
-    if (on_size_changed)
-    {
-        on_size_changed();
-    }
+    notify_size_changed_();
 }
 
 void ComposeBar::set_current_text(std::string text)
@@ -566,9 +550,7 @@ void ComposeBar::update_pending_attachment(const MediaInfo& info)
     file_name_layout_.reset(); // force duration text re-layout
     file_size_layout_.reset();
     file_layout_key_.clear();
-    recompute_height();
-    if (on_size_changed)
-        on_size_changed();
+    notify_size_changed_();
 }
 
 void ComposeBar::clear_pending()
@@ -592,6 +574,43 @@ void ComposeBar::clear_pending()
     {
         on_size_changed();
     }
+}
+
+void ComposeBar::notify_size_changed_()
+{
+    recompute_height();
+    if (on_size_changed)
+        on_size_changed();
+}
+
+void ComposeBar::rebuild_chip_layouts_(tk::LayoutCtx& ctx, const std::string& key,
+                                        const std::string& secondary_text)
+{
+    if (file_layout_key_ == key)
+        return;
+    tk::TextStyle name_style{};
+    name_style.role = tk::FontRole::Body;
+    file_name_layout_ = ctx.factory.build_text(pending_->filename, name_style);
+    tk::TextStyle size_style{};
+    size_style.role = tk::FontRole::Small;
+    file_size_layout_ = ctx.factory.build_text(secondary_text, size_style);
+    file_layout_key_ = key;
+}
+
+void ComposeBar::paint_two_line_chip_(tk::PaintCtx& ctx) const
+{
+    if (!file_name_layout_ || !file_size_layout_)
+        return;
+    constexpr float kChipPadX = 12.0f;
+    float text_x = preview_band_rect_.x + kChipPadX;
+    tk::Size name_sz = file_name_layout_->measure();
+    tk::Size size_sz = file_size_layout_->measure();
+    float total_h = name_sz.h + size_sz.h;
+    float ty = preview_band_rect_.y + (preview_band_rect_.h - total_h) * 0.5f;
+    ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
+                         ctx.theme.palette.text_primary);
+    ctx.canvas.draw_text(*file_size_layout_, {text_x, ty + name_sz.h},
+                         ctx.theme.palette.text_secondary);
 }
 
 void ComposeBar::refresh_send_enabled()
@@ -683,21 +702,8 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         std::string key =
             pending_->filename + "|" + std::to_string(pending_->bytes.size());
-        if (file_layout_key_ != key)
-        {
-            tk::TextStyle name_style{};
-            name_style.role = tk::FontRole::Body;
-            file_name_layout_ =
-                ctx.factory.build_text(pending_->filename, name_style);
-
-            // Size line: human-readable bytes.
-            std::string size_str =
-                format_size(static_cast<std::uint64_t>(pending_->bytes.size()));
-            tk::TextStyle size_style{};
-            size_style.role = tk::FontRole::Small;
-            file_size_layout_ = ctx.factory.build_text(size_str, size_style);
-            file_layout_key_ = std::move(key);
-        }
+        rebuild_chip_layouts_(ctx, key,
+            format_size(static_cast<std::uint64_t>(pending_->bytes.size())));
     }
 
     // Video chip: filename + size (no thumbnail yet) or thumbnail (no chip).
@@ -707,20 +713,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         std::string key =
             pending_->filename + "|" + std::to_string(pending_->bytes.size());
-        if (file_layout_key_ != key)
-        {
-            tk::TextStyle name_style{};
-            name_style.role = tk::FontRole::Body;
-            file_name_layout_ =
-                ctx.factory.build_text(pending_->filename, name_style);
-            std::string size_str =
-                format_size(static_cast<std::uint64_t>(pending_->bytes.size()));
-            tk::TextStyle size_style{};
-            size_style.role = tk::FontRole::Small;
-            file_size_layout_ = ctx.factory.build_text(
-                pending_->loading ? "…" : size_str, size_style);
-            file_layout_key_ = std::move(key);
-        }
+        std::string size_str =
+            format_size(static_cast<std::uint64_t>(pending_->bytes.size()));
+        rebuild_chip_layouts_(ctx, key, pending_->loading ? "…" : size_str);
     }
 
     // Audio chip: filename + duration (or "…" while loading).
@@ -730,32 +725,21 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         std::string key =
             pending_->filename + "|" + std::to_string(pending_->duration_ms) +
             (pending_->loading ? "L" : "");
-        if (file_layout_key_ != key)
+        std::string dur_str;
+        if (pending_->loading)
         {
-            tk::TextStyle name_style{};
-            name_style.role = tk::FontRole::Body;
-            file_name_layout_ =
-                ctx.factory.build_text(pending_->filename, name_style);
-
-            std::string dur_str;
-            if (pending_->loading)
-            {
-                dur_str = "…";
-            }
-            else if (pending_->duration_ms > 0)
-            {
-                std::uint64_t secs = pending_->duration_ms / 1000;
-                char buf[16];
-                std::snprintf(buf, sizeof(buf), "%llu:%02llu",
-                              static_cast<unsigned long long>(secs / 60),
-                              static_cast<unsigned long long>(secs % 60));
-                dur_str = buf;
-            }
-            tk::TextStyle size_style{};
-            size_style.role = tk::FontRole::Small;
-            file_size_layout_ = ctx.factory.build_text(dur_str, size_style);
-            file_layout_key_ = std::move(key);
+            dur_str = "…";
         }
+        else if (pending_->duration_ms > 0)
+        {
+            std::uint64_t secs = pending_->duration_ms / 1000;
+            char buf[16];
+            std::snprintf(buf, sizeof(buf), "%llu:%02llu",
+                          static_cast<unsigned long long>(secs / 60),
+                          static_cast<unsigned long long>(secs % 60));
+            dur_str = buf;
+        }
+        rebuild_chip_layouts_(ctx, key, dur_str);
     }
 
     // ── Top banner (edit mode XOR reply mode — topmost when active) ──
@@ -1023,67 +1007,18 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             else
             {
                 // Loading chip: filename + size/ellipsis.
-                constexpr float kChipPadX = 12.0f;
-                float text_x = preview_band_rect_.x + kChipPadX;
-                if (file_name_layout_ && file_size_layout_)
-                {
-                    tk::Size name_sz = file_name_layout_->measure();
-                    tk::Size size_sz = file_size_layout_->measure();
-                    float total_h = name_sz.h + size_sz.h;
-                    float ty = preview_band_rect_.y +
-                               (preview_band_rect_.h - total_h) * 0.5f;
-                    ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
-                                         ctx.theme.palette.text_primary);
-                    ctx.canvas.draw_text(*file_size_layout_,
-                                         {text_x, ty + name_sz.h},
-                                         ctx.theme.palette.text_secondary);
-                }
+                paint_two_line_chip_(ctx);
             }
         }
         else if (pending_->kind == PendingAttachment::Kind::Audio)
         {
             // Audio chip: filename + duration (or "…" while loading).
-            constexpr float kChipPadX = 12.0f;
-            float text_x = preview_band_rect_.x + kChipPadX;
-            if (file_name_layout_ && file_size_layout_)
-            {
-                tk::Size name_sz = file_name_layout_->measure();
-                tk::Size size_sz = file_size_layout_->measure();
-                float total_h = name_sz.h + size_sz.h;
-                float ty = preview_band_rect_.y +
-                           (preview_band_rect_.h - total_h) * 0.5f;
-                ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
-                                     ctx.theme.palette.text_primary);
-                ctx.canvas.draw_text(*file_size_layout_,
-                                     {text_x, ty + name_sz.h},
-                                     ctx.theme.palette.text_secondary);
-            }
+            paint_two_line_chip_(ctx);
         }
         else
         {
-            // File chip: paperclip glyph + filename + size. Layout in arrange().
-            constexpr float kChipPadX = 12.0f;
-            float text_x = preview_band_rect_.x + kChipPadX;
-            float text_right =
-                remove_btn_rect_.empty()
-                    ? preview_band_rect_.x + preview_band_rect_.w - kChipPadX
-                    : remove_btn_rect_.x - kPadX;
-            float avail_w = std::max(0.0f, text_right - text_x);
-
-            if (file_name_layout_ && file_size_layout_)
-            {
-                tk::Size name_sz = file_name_layout_->measure();
-                tk::Size size_sz = file_size_layout_->measure();
-                float total_h = name_sz.h + size_sz.h;
-                float ty = preview_band_rect_.y +
-                           (preview_band_rect_.h - total_h) * 0.5f;
-                ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
-                                     ctx.theme.palette.text_primary);
-                ctx.canvas.draw_text(*file_size_layout_,
-                                     {text_x, ty + name_sz.h},
-                                     ctx.theme.palette.text_secondary);
-                (void)avail_w;
-            }
+            // File chip: filename + size. Layout in arrange().
+            paint_two_line_chip_(ctx);
         }
     }
 

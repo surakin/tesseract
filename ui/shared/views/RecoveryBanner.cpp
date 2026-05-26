@@ -1,5 +1,6 @@
 #include "RecoveryBanner.h"
 
+#include "banner_style.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -11,25 +12,15 @@ namespace
 {
 
 constexpr float kHeight = 48.0f;
-constexpr float kPadX = 12.0f;
-constexpr float kPadY = 8.0f;
 constexpr float kKeyFieldWidth = 220.0f;
 constexpr float kVerifyMinWidth = 80.0f;
-constexpr float kDismissSide = 24.0f;
-constexpr float kGap = 8.0f;
-
-// Warm-yellow banner tint, regardless of theme — the banner is always a
-// notice, not a decorative element.
-const tk::Color kBannerBg = tk::Color::rgb(0xFFF4D6);
-const tk::Color kBannerBorder = tk::Color::rgb(0xE0C97A);
-const tk::Color kLabelText = tk::Color::rgb(0x5C4500);
 
 } // namespace
 
 RecoveryBanner::RecoveryBanner()
 {
     auto label = std::make_unique<tk::Label>("", tk::FontRole::Body);
-    label->set_colour(kLabelText);
+    label->set_colour(kBannerLabelText);
     label->set_halign(tk::TextHAlign::Leading);
     label->set_trim(tk::TextTrim::Ellipsis);
     label_ = add_child(std::move(label));
@@ -57,7 +48,7 @@ RecoveryBanner::RecoveryBanner()
                 on_dismiss();
             }
         });
-    dismiss->set_min_size({kDismissSide, kDismissSide});
+    dismiss->set_min_size({kBannerDismissSide, kBannerDismissSide});
     dismiss_ = add_child(std::move(dismiss));
 
     apply_state();
@@ -149,32 +140,32 @@ void RecoveryBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     bounds_ = bounds;
 
     // Dismiss anchored to the right.
-    dismiss_rect_ = {bounds.x + bounds.w - kPadX - kDismissSide,
-                     bounds.y + (bounds.h - kDismissSide) * 0.5f, kDismissSide,
-                     kDismissSide};
+    dismiss_rect_ = {bounds.x + bounds.w - kBannerPadX - kBannerDismissSide,
+                     bounds.y + (bounds.h - kBannerDismissSide) * 0.5f, kBannerDismissSide,
+                     kBannerDismissSide};
 
-    float right_cursor = dismiss_rect_.x - kGap;
+    float right_cursor = dismiss_rect_.x - kBannerGap;
 
     bool show_field = recovery_key_field_visible();
     if (show_field)
     {
         // Verify button next.
-        tk::Size verify_size{kVerifyMinWidth, bounds.h - kPadY * 2};
+        tk::Size verify_size{kVerifyMinWidth, bounds.h - kBannerPadY * 2};
         if (verify_)
         {
             verify_size =
-                verify_->measure(ctx, {kVerifyMinWidth, bounds.h - kPadY * 2});
+                verify_->measure(ctx, {kVerifyMinWidth, bounds.h - kBannerPadY * 2});
         }
         verify_rect_ = {right_cursor - verify_size.w,
                         bounds.y + (bounds.h - verify_size.h) * 0.5f,
                         verify_size.w, verify_size.h};
-        right_cursor = verify_rect_.x - kGap;
+        right_cursor = verify_rect_.x - kBannerGap;
 
         // Key field overlay rect.
         key_field_rect_ = {right_cursor - kKeyFieldWidth,
                            bounds.y + (bounds.h - 28.0f) * 0.5f, kKeyFieldWidth,
                            28.0f};
-        right_cursor = key_field_rect_.x - kGap;
+        right_cursor = key_field_rect_.x - kBannerGap;
     }
     else
     {
@@ -183,8 +174,8 @@ void RecoveryBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // Label fills the remaining left segment.
-    label_rect_ = {bounds.x + kPadX, bounds.y + (bounds.h - 20.0f) * 0.5f,
-                   std::max(0.0f, right_cursor - (bounds.x + kPadX)), 20.0f};
+    label_rect_ = {bounds.x + kBannerPadX, bounds.y + (bounds.h - 20.0f) * 0.5f,
+                   std::max(0.0f, right_cursor - (bounds.x + kBannerPadX)), 20.0f};
 
     if (label_)
     {
