@@ -4196,6 +4196,7 @@ void MainWindow::refresh_room_list()
                 filtered.push_back(r);
             }
         }
+        apply_space_child_counts_(filtered);
     }
     else
     {

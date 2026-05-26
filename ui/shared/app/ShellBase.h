@@ -636,6 +636,11 @@ protected:
     // on_space_children_cache_ready_ui_(). Idempotent w.r.t. rooms_ contents.
     void update_space_children_cache_();
 
+    // For each space row in `rooms`, replace its notification_count and
+    // highlight_count with the aggregate of its children's counts (from
+    // space_children_cache_ and rooms_). Non-space rows are left unchanged.
+    void apply_space_child_counts_(std::vector<RoomInfo>& rooms) const;
+
     /// Reset server-info state on logout / account-switch. Call this instead of
     /// touching server_info_ and server_info_fetch_started_ directly from shells.
     void reset_server_info_()

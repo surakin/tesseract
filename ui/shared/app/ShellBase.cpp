@@ -1103,6 +1103,38 @@ void ShellBase::update_space_children_cache_()
         });
 }
 
+void ShellBase::apply_space_child_counts_(std::vector<RoomInfo>& rooms) const
+{
+    if (space_children_cache_.empty())
+        return;
+
+    std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> counts;
+    counts.reserve(rooms_.size());
+    for (const auto& r : rooms_)
+        counts[r.id] = {r.notification_count, r.highlight_count};
+
+    for (auto& r : rooms)
+    {
+        if (!r.is_space)
+            continue;
+        auto it = space_children_cache_.find(r.id);
+        if (it == space_children_cache_.end())
+            continue;
+        uint64_t nc = 0, hc = 0;
+        for (const auto& child_id : it->second)
+        {
+            auto ci = counts.find(child_id);
+            if (ci != counts.end())
+            {
+                nc += ci->second.first;
+                hc += ci->second.second;
+            }
+        }
+        r.notification_count = nc;
+        r.highlight_count    = hc;
+    }
+}
+
 std::pair<bool, bool> ShellBase::compute_tray_unread(
     const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account)
 {

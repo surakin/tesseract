@@ -3383,6 +3383,7 @@ void MainWindow::refreshRoomList()
                 filtered.push_back(r);
             }
         }
+        apply_space_child_counts_(filtered);
         if (mainApp_)
         {
             mainApp_->set_space_nav(false);

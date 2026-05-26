@@ -3615,6 +3615,7 @@ void MainWindow::refresh_room_list()
                 filtered.push_back(r);
             }
         }
+        apply_space_child_counts_(filtered);
         if (main_app_)
         {
             main_app_->set_space_nav(false);

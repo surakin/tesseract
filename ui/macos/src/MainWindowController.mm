@@ -251,6 +251,7 @@ public:
     using ShellBase::set_theme_preference_;
     using ShellBase::shortcode_for_mxc_;
     using ShellBase::shutting_down_;
+    using ShellBase::apply_space_child_counts_;
     using ShellBase::space_children_cache_;
     using ShellBase::space_stack_;
     using ShellBase::sticker_fetches_in_flight_;
@@ -5650,6 +5651,7 @@ void MacShell::apply_cached_messages_(
                 filtered.push_back(r);
             }
         }
+        _shell->apply_space_child_counts_(filtered);
         if (_mainApp)
         {
             _mainApp->set_space_nav(false);
