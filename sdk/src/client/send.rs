@@ -324,6 +324,48 @@ pub(crate) fn build_thread_message_content(
 // ---------------------------------------------------------------------------
 
 impl ClientFfi {
+    /// Find the matrix-sdk-ui `Timeline` that currently carries `event_id`
+    /// in `room_id`. Searches every subscribed thread Timeline for the room
+    /// first (their items aren't visible from the room Timeline because
+    /// `hide_threaded_events: true` filters in-thread replies out), then
+    /// falls back to the live room Timeline. Returns `None` when no
+    /// subscribed Timeline has the event — caller decides what to do (the
+    /// thread root will always be found in the room Timeline if subscribed).
+    ///
+    /// Used by `send_reaction` and `redact_event` because matrix-sdk-ui's
+    /// `Timeline::toggle_reaction` / `Timeline::redact` require the target
+    /// event to live in *that* Timeline's items vector — they derive
+    /// toggle / local-echo state from there.
+    #[cfg(not(test))]
+    async fn timeline_for_event(
+        &self,
+        room_id: &matrix_sdk::ruma::OwnedRoomId,
+        event_id: &matrix_sdk::ruma::EventId,
+    ) -> Option<Arc<matrix_sdk_ui::Timeline>> {
+        let candidates: Vec<Arc<matrix_sdk_ui::Timeline>> = {
+            let mut out = Vec::new();
+            // Thread Timelines for this room first.
+            for ((rid, _root), handle) in self.thread_timelines.iter() {
+                if rid == room_id {
+                    out.push(Arc::clone(&handle.timeline));
+                }
+            }
+            // Room Timeline last (fallback for non-threaded events).
+            if let Ok(guard) = self.timelines.read() {
+                if let Some(handle) = guard.get(room_id) {
+                    out.push(Arc::clone(&handle.timeline));
+                }
+            }
+            out
+        };
+        for tl in candidates {
+            if tl.item_by_event_id(event_id).await.is_some() {
+                return Some(tl);
+            }
+        }
+        None
+    }
+
     #[cfg(not(test))]
     pub fn send_message(&mut self, room_id: &str, body: &str, formatted_body: &str) -> OpResult {
         let Some(client) = self.client.clone() else {
@@ -1219,12 +1261,15 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
 
-        let tl = {
-            let guard = self.timelines.read().unwrap();
-            let Some(handle) = guard.get(&room_id) else {
-                return err("room not subscribed; call subscribe_room first");
-            };
-            Arc::clone(&handle.timeline)
+        // Thread replies live only in their thread Timeline (the room
+        // Timeline filters them out), so we have to route the toggle to
+        // whichever Timeline currently holds the event.
+        let tl = match self
+            .rt
+            .block_on(async { self.timeline_for_event(&room_id, &event_id).await })
+        {
+            Some(tl) => tl,
+            None => return err("event not found in any subscribed timeline"),
         };
         let item_id = TimelineEventItemId::EventId(event_id);
         let key = key.to_owned();
@@ -1387,12 +1432,14 @@ impl ClientFfi {
             Err(e) => return err(format!("invalid event id: {e}")),
         };
 
-        let tl = {
-            let guard = self.timelines.read().unwrap();
-            let Some(handle) = guard.get(&room_id) else {
-                return err("room not subscribed; call subscribe_room first");
-            };
-            Arc::clone(&handle.timeline)
+        // Same Timeline-routing rule as `send_reaction`: in-thread replies
+        // live in their thread Timeline only.
+        let tl = match self
+            .rt
+            .block_on(async { self.timeline_for_event(&room_id, &event_id).await })
+        {
+            Some(tl) => tl,
+            None => return err("event not found in any subscribed timeline"),
         };
         let item_id = TimelineEventItemId::EventId(event_id);
         let reason_opt = if reason.is_empty() {
