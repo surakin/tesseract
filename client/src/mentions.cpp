@@ -1,4 +1,5 @@
 #include "tesseract/mentions.h"
+#include "html_util.h"
 
 #include <cstddef>
 #include <string_view>
@@ -7,31 +8,6 @@ namespace tesseract
 {
 namespace
 {
-
-void escape_html_to(std::string_view s, std::string& out)
-{
-    for (char c : s)
-    {
-        switch (c)
-        {
-        case '&':
-            out += "&amp;";
-            break;
-        case '<':
-            out += "&lt;";
-            break;
-        case '>':
-            out += "&gt;";
-            break;
-        case '"':
-            out += "&quot;";
-            break;
-        default:
-            out += c;
-            break;
-        }
-    }
-}
 
 // Private-use delimiters (U+E000 … U+E001) survive both markdown conversion
 // and HTML escaping unchanged, so a mention's placeholder can be located and
@@ -85,9 +61,9 @@ std::string anchor_for(const MentionSeg& m)
         out += "@room\">@room</a>";
         return out;
     }
-    escape_html_to(m.user_id, out);
+    html_escape_to(m.user_id, out);
     out += "\">";
-    escape_html_to(m.display_name, out);
+    html_escape_to(m.display_name, out);
     out += "</a>";
     return out;
 }

@@ -1,4 +1,5 @@
 #include "tesseract/markdown.h"
+#include "html_util.h"
 #include <cctype>
 #include <string>
 #include <string_view>
@@ -6,35 +7,6 @@
 
 namespace tesseract
 {
-
-// ---------------------------------------------------------------------------
-// HTML escaping
-// ---------------------------------------------------------------------------
-
-static void html_escape_to(std::string_view s, std::string& out)
-{
-    for (char c : s)
-    {
-        switch (c)
-        {
-        case '&':
-            out += "&amp;";
-            break;
-        case '<':
-            out += "&lt;";
-            break;
-        case '>':
-            out += "&gt;";
-            break;
-        case '"':
-            out += "&quot;";
-            break;
-        default:
-            out += c;
-            break;
-        }
-    }
-}
 
 // Extract the first token of a fenced-code info string (the text after ```),
 // lower-cased and restricted to a safe class-attribute charset. Returns empty

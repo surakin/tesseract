@@ -20,6 +20,14 @@ pub fn init(path: &Path) {
     });
 }
 
+fn waveform_to_bytes(waveform: &[u16]) -> Vec<u8> {
+    waveform.iter().flat_map(|&v| v.to_le_bytes()).collect()
+}
+
+fn bytes_to_waveform(bytes: Vec<u8>) -> Vec<u16> {
+    bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect()
+}
+
 pub fn load(mxc_uri: &str) -> Vec<u16> {
     let Some(db) = DB.get() else { return vec![] };
     let db = db.lock().unwrap();
@@ -28,18 +36,13 @@ pub fn load(mxc_uri: &str) -> Vec<u16> {
         params![mxc_uri],
         |row| row.get::<_, Vec<u8>>(0),
     )
-    .map(|bytes| {
-        bytes
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
-            .collect()
-    })
+    .map(bytes_to_waveform)
     .unwrap_or_default()
 }
 
 pub fn store(mxc_uri: &str, waveform: &[u16]) {
     let Some(db) = DB.get() else { return };
-    let bytes: Vec<u8> = waveform.iter().flat_map(|&v| v.to_le_bytes()).collect();
+    let bytes = waveform_to_bytes(waveform);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -88,7 +91,7 @@ mod tests {
     }
 
     fn insert(conn: &Connection, mxc: &str, waveform: &[u16], stored_at: i64) {
-        let bytes: Vec<u8> = waveform.iter().flat_map(|&v| v.to_le_bytes()).collect();
+        let bytes = waveform_to_bytes(waveform);
         conn.execute(
             "INSERT OR REPLACE INTO voice_waveforms (mxc_uri, waveform, stored_at) \
              VALUES (?1, ?2, ?3)",
@@ -103,11 +106,7 @@ mod tests {
             params![mxc],
             |row| row.get::<_, Vec<u8>>(0),
         )
-        .map(|b| {
-            b.chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect()
-        })
+        .map(bytes_to_waveform)
         .unwrap_or_default()
     }
 

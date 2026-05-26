@@ -5,6 +5,7 @@
 #include "tesseract/types.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tesseract
 {
@@ -373,6 +374,16 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     auto ev = std::make_unique<UnhandledEvent>(msg_type);
     assign_base(*ev, e);
     return ev;
+}
+
+template <typename T, typename U>
+std::vector<T> ffi_vec(const rust::Vec<U>& src)
+{
+    std::vector<T> out;
+    out.reserve(src.size());
+    for (const auto& x : src)
+        out.push_back(from_ffi(x));
+    return out;
 }
 
 } // namespace tesseract

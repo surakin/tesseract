@@ -68,6 +68,31 @@ fn err(msg: impl Into<String>) -> OpResult {
     }
 }
 
+/// Early-return an `OpResult` error from a `Result<_, OpResult>` expression.
+/// Usage: `let value = try_op!(some_fn_returning_result());`
+#[cfg(not(test))]
+macro_rules! try_op {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => return e,
+        }
+    };
+}
+
+#[cfg(not(test))]
+fn parse_room_id(id: &str) -> Result<OwnedRoomId, OpResult> {
+    id.parse::<OwnedRoomId>()
+        .map_err(|e| err(format!("invalid room id: {e}")))
+}
+
+#[cfg(not(test))]
+fn require_room(client: &Client, room_id: &str) -> Result<(OwnedRoomId, Room), OpResult> {
+    let id = parse_room_id(room_id)?;
+    let room = client.get_room(&id).ok_or_else(|| err("room not found"))?;
+    Ok((id, room))
+}
+
 /// Map a UTD cause to a single-line user-facing message. Padlock glyph
 /// matches the system-message style already used for "Message deleted".
 /// Used by the timeline converter when matrix-sdk-ui surfaces an
@@ -503,6 +528,74 @@ async fn fetch_notification_image(
     match client.media().get_media_content(&request, true).await {
         Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b,
         _ => Vec::new(),
+    }
+}
+
+/// Shared logic for message and sticker notification handlers. Evaluates push
+/// rules, resolves display names and avatars, fetches the preview image, and
+/// calls `on_notification`. Callers extract the type-specific `body`,
+/// `msg_type_str`, and `preview_source` then delegate here.
+#[cfg(not(test))]
+async fn emit_notification(
+    client: &Client,
+    room: Room,
+    sender_id: &matrix_sdk::ruma::UserId,
+    body: &str,
+    msg_type_str: &str,
+    event_id: &str,
+    ts: u64,
+    preview_source: Option<matrix_sdk::ruma::events::room::MediaSource>,
+    handler: &Arc<Mutex<SendHandler>>,
+) {
+    use matrix_sdk::ruma::events::room::MediaSource;
+    if client.user_id() == Some(sender_id) {
+        return;
+    }
+    let room_id = room.room_id().as_str().to_owned();
+    let synthetic =
+        build_push_rule_json(&room_id, event_id, sender_id.as_str(), body, msg_type_str, ts);
+    let (should_notify, is_mention) = evaluate_push_rules(client, &room, &synthetic).await;
+    if !should_notify {
+        return;
+    }
+    let room_name = room
+        .display_name()
+        .await
+        .map(|n| n.to_string())
+        .unwrap_or_else(|_| room_id.clone());
+    let sender_member = room.get_member_no_sync(sender_id).await.ok().flatten();
+    let sender_name = sender_member
+        .as_ref()
+        .and_then(|m| m.display_name().map(str::to_owned))
+        .unwrap_or_else(|| sender_id.localpart().to_string());
+    let room_avatar = room
+        .avatar(matrix_sdk::media::MediaFormat::File)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let avatar = if !room_avatar.is_empty() {
+        room_avatar
+    } else if let Some(url) = sender_member.as_ref().and_then(|m| m.avatar_url()) {
+        use matrix_sdk::media::MediaRequestParameters;
+        let req = MediaRequestParameters {
+            source: MediaSource::Plain(url.to_owned()),
+            format: matrix_sdk::media::MediaFormat::File,
+        };
+        client
+            .media()
+            .get_media_content(&req, true)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let preview = match preview_source {
+        Some(src) => fetch_notification_image(client, src).await,
+        None => Vec::new(),
+    };
+    if let Ok(g) = handler.lock() {
+        g.on_notification(&room_id, &room_name, &sender_name, body, is_mention, &avatar, &preview);
     }
 }
 
@@ -1309,85 +1402,23 @@ impl ClientFfi {
                         if body.is_empty() {
                             return;
                         }
-                        let me = client_clone.user_id().map(|u| u.to_owned());
-                        let sender = ev.sender.as_str().to_owned();
-                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) {
-                            return;
-                        }
-                        let room_id = room.room_id().as_str().to_owned();
-                        let event_id = ev.event_id.as_str();
-                        let ts: u64 = ev.origin_server_ts.get().into();
-                        let synthetic = build_push_rule_json(
-                            &room_id,
-                            event_id,
-                            &sender,
+                        // Image messages carry a preview picture; other msgtypes get none.
+                        let preview_source = match &ev.content.msgtype {
+                            MessageType::Image(i) => Some(i.source.clone()),
+                            _ => None,
+                        };
+                        emit_notification(
+                            &client_clone,
+                            room,
+                            &ev.sender,
                             &body,
                             msg_type_str,
-                            ts,
-                        );
-                        let (should_notify, is_mention) =
-                            evaluate_push_rules(&client_clone, &room, &synthetic).await;
-                        if should_notify {
-                            let room_name = room
-                                .display_name()
-                                .await
-                                .map(|n| n.to_string())
-                                .unwrap_or_else(|_| room_id.clone());
-                            // Resolve the sender's display name and keep the
-                            // member for the avatar fallback below.
-                            let sender_member =
-                                room.get_member_no_sync(&ev.sender).await.ok().flatten();
-                            let sender_name = sender_member
-                                .as_ref()
-                                .and_then(|m| m.display_name().map(str::to_owned))
-                                .unwrap_or_else(|| ev.sender.localpart().to_string());
-                            // Room avatar, falling back to the sender's avatar
-                            // (covers DMs and rooms that have no room icon).
-                            let room_avatar = room
-                                .avatar(matrix_sdk::media::MediaFormat::File)
-                                .await
-                                .ok()
-                                .flatten()
-                                .unwrap_or_default();
-                            let avatar = if !room_avatar.is_empty() {
-                                room_avatar
-                            } else if let Some(url) =
-                                sender_member.as_ref().and_then(|m| m.avatar_url())
-                            {
-                                use matrix_sdk::media::MediaRequestParameters;
-                                use matrix_sdk::ruma::events::room::MediaSource;
-                                let req = MediaRequestParameters {
-                                    source: MediaSource::Plain(url.to_owned()),
-                                    format: matrix_sdk::media::MediaFormat::File,
-                                };
-                                client_clone
-                                    .media()
-                                    .get_media_content(&req, true)
-                                    .await
-                                    .unwrap_or_default()
-                            } else {
-                                Vec::new()
-                            };
-                            // Image messages carry a preview picture; other
-                            // msgtypes get an empty slice (text + avatar only).
-                            let preview = match &ev.content.msgtype {
-                                MessageType::Image(i) => {
-                                    fetch_notification_image(&client_clone, i.source.clone()).await
-                                }
-                                _ => Vec::new(),
-                            };
-                            if let Ok(g) = h.lock() {
-                                g.on_notification(
-                                    &room_id,
-                                    &room_name,
-                                    &sender_name,
-                                    &body,
-                                    is_mention,
-                                    &avatar,
-                                    &preview,
-                                );
-                            }
-                        }
+                            ev.event_id.as_str(),
+                            ev.origin_server_ts.get().into(),
+                            preview_source,
+                            &h,
+                        )
+                        .await;
                     }
                 },
             ));
@@ -1396,9 +1427,7 @@ impl ClientFfi {
         // Sticker notification handler. `m.sticker` is a distinct event type
         // (StickerEventContent, not RoomMessageEventContent) so it is invisible
         // to the message handler above — without this, sticker messages never
-        // notify at all. Mirrors the message handler: self-filter, push-rule
-        // eval (synthetic "m.sticker" m.room.message), display name, avatar,
-        // and the sticker image as the preview.
+        // notify at all.
         {
             use matrix_sdk::ruma::events::room::MediaSource;
             use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
@@ -1414,89 +1443,27 @@ impl ClientFfi {
                         if body.is_empty() {
                             return;
                         }
-                        let me = client_clone.user_id().map(|u| u.to_owned());
-                        let sender = ev.sender.as_str().to_owned();
-                        if me.as_deref().map(|u| u.as_str()) == Some(&sender) {
-                            return;
-                        }
-                        let room_id = room.room_id().as_str().to_owned();
-                        let event_id = ev.event_id.as_str();
-                        let ts: u64 = ev.origin_server_ts.get().into();
-                        let synthetic = build_push_rule_json(
-                            &room_id,
-                            event_id,
-                            &sender,
+                        let preview_source = match &ev.content.source {
+                            StickerMediaSource::Plain(uri) => {
+                                Some(MediaSource::Plain(uri.clone()))
+                            }
+                            StickerMediaSource::Encrypted(f) => {
+                                Some(MediaSource::Encrypted(f.clone()))
+                            }
+                            _ => None,
+                        };
+                        emit_notification(
+                            &client_clone,
+                            room,
+                            &ev.sender,
                             &body,
                             "m.sticker",
-                            ts,
-                        );
-                        let (should_notify, is_mention) =
-                            evaluate_push_rules(&client_clone, &room, &synthetic).await;
-                        if should_notify {
-                            let room_name = room
-                                .display_name()
-                                .await
-                                .map(|n| n.to_string())
-                                .unwrap_or_else(|_| room_id.clone());
-                            let sender_member =
-                                room.get_member_no_sync(&ev.sender).await.ok().flatten();
-                            let sender_name = sender_member
-                                .as_ref()
-                                .and_then(|m| m.display_name().map(str::to_owned))
-                                .unwrap_or_else(|| ev.sender.localpart().to_string());
-                            let room_avatar = room
-                                .avatar(matrix_sdk::media::MediaFormat::File)
-                                .await
-                                .ok()
-                                .flatten()
-                                .unwrap_or_default();
-                            let avatar = if !room_avatar.is_empty() {
-                                room_avatar
-                            } else if let Some(url) =
-                                sender_member.as_ref().and_then(|m| m.avatar_url())
-                            {
-                                use matrix_sdk::media::MediaRequestParameters;
-                                let req = MediaRequestParameters {
-                                    source: MediaSource::Plain(url.to_owned()),
-                                    format: matrix_sdk::media::MediaFormat::File,
-                                };
-                                client_clone
-                                    .media()
-                                    .get_media_content(&req, true)
-                                    .await
-                                    .unwrap_or_default()
-                            } else {
-                                Vec::new()
-                            };
-                            let preview = match &ev.content.source {
-                                StickerMediaSource::Plain(uri) => {
-                                    fetch_notification_image(
-                                        &client_clone,
-                                        MediaSource::Plain(uri.clone()),
-                                    )
-                                    .await
-                                }
-                                StickerMediaSource::Encrypted(f) => {
-                                    fetch_notification_image(
-                                        &client_clone,
-                                        MediaSource::Encrypted(f.clone()),
-                                    )
-                                    .await
-                                }
-                                _ => Vec::new(),
-                            };
-                            if let Ok(g) = h.lock() {
-                                g.on_notification(
-                                    &room_id,
-                                    &room_name,
-                                    &sender_name,
-                                    &body,
-                                    is_mention,
-                                    &avatar,
-                                    &preview,
-                                );
-                            }
-                        }
+                            ev.event_id.as_str(),
+                            ev.origin_server_ts.get().into(),
+                            preview_source,
+                            &h,
+                        )
+                        .await;
                     }
                 },
             ));
@@ -3549,13 +3516,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(&client, room_id));
         room.send_queue().set_enabled(true);
         ok("")
     }
@@ -4836,13 +4797,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         if room.state() != matrix_sdk::RoomState::Invited {
             return err("room is not in invited state");
         }
@@ -4873,13 +4828,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         match self.rt.block_on(room.leave()) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -5247,13 +5196,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         match self.rt.block_on(room.leave()) {
             Ok(_) => ok(""),
             Err(e) => err(e.to_string()),
@@ -5309,13 +5252,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
-        let room_id: OwnedRoomId = match room_id.parse() {
-            Ok(id) => id,
-            Err(e) => return err(format!("invalid room id: {e}")),
-        };
-        let Some(room) = client.get_room(&room_id) else {
-            return err("room not found");
-        };
+        let (_, room) = try_op!(require_room(client, room_id));
         let content = RoomTopicEventContent::new(topic.to_owned());
         match self.rt.block_on(room.send_state_event(content)) {
             Ok(_) => ok(""),

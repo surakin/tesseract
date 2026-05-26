@@ -158,26 +158,12 @@ tesseract::Result Client::clear_caches()
 
 std::vector<RoomInfo> Client::list_rooms() const
 {
-    auto ffi_rooms = impl_->ffi->list_rooms();
-    std::vector<RoomInfo> result;
-    result.reserve(ffi_rooms.size());
-    for (const auto& r : ffi_rooms)
-    {
-        result.push_back(from_ffi(r));
-    }
-    return result;
+    return ffi_vec<RoomInfo>(impl_->ffi->list_rooms());
 }
 
 std::vector<InviteInfo> Client::list_invites() const
 {
-    auto ffi_invites = impl_->ffi->list_invites();
-    std::vector<InviteInfo> result;
-    result.reserve(ffi_invites.size());
-    for (const auto& i : ffi_invites)
-    {
-        result.push_back(from_ffi(i));
-    }
-    return result;
+    return ffi_vec<InviteInfo>(impl_->ffi->list_invites());
 }
 
 Result Client::accept_invite(const std::string& room_id)
@@ -279,12 +265,7 @@ void Client::unsubscribe_room_threads(const std::string& room_id)
 
 std::vector<ThreadInfo> Client::list_room_threads(const std::string& room_id)
 {
-    std::vector<ThreadInfo> out;
-    auto ffi_threads = impl_->ffi->list_room_threads(room_id);
-    out.reserve(ffi_threads.size());
-    for (const auto& t : ffi_threads)
-        out.push_back(from_ffi(t));
-    return out;
+    return ffi_vec<ThreadInfo>(impl_->ffi->list_room_threads(room_id));
 }
 
 PaginateResult Client::paginate_room_threads(const std::string& room_id)
@@ -1103,41 +1084,20 @@ Client::UrlPreview Client::get_url_preview(const std::string& url)
 
 std::vector<ImagePack> Client::list_image_packs() const
 {
-    auto raw = impl_->ffi->list_image_packs();
-    std::vector<ImagePack> out;
-    out.reserve(raw.size());
-    for (const auto& p : raw)
-    {
-        out.push_back(from_ffi(p));
-    }
-    return out;
+    return ffi_vec<ImagePack>(impl_->ffi->list_image_packs());
 }
 
 std::vector<ImagePackImage>
 Client::list_pack_images(const std::string& pack_id,
                          PackUsageFilter filter) const
 {
-    auto raw =
-        impl_->ffi->list_pack_images(pack_id, pack_usage_filter_to_str(filter));
-    std::vector<ImagePackImage> out;
-    out.reserve(raw.size());
-    for (const auto& e : raw)
-    {
-        out.push_back(from_ffi(e));
-    }
-    return out;
+    return ffi_vec<ImagePackImage>(
+        impl_->ffi->list_pack_images(pack_id, pack_usage_filter_to_str(filter)));
 }
 
 std::vector<ImagePackImage> Client::list_favorite_stickers() const
 {
-    auto raw = impl_->ffi->list_favorite_stickers();
-    std::vector<ImagePackImage> out;
-    out.reserve(raw.size());
-    for (const auto& e : raw)
-    {
-        out.push_back(from_ffi(e));
-    }
-    return out;
+    return ffi_vec<ImagePackImage>(impl_->ffi->list_favorite_stickers());
 }
 
 Result Client::send_sticker(const std::string& room_id, const std::string& body,

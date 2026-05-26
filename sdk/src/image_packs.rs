@@ -67,24 +67,19 @@ pub struct PackImage {
     pub extra: serde_json::Map<String, Value>,
 }
 
+fn decode_usage<'a>(iter: impl Iterator<Item = &'a str>) -> u8 {
+    let mask = iter.fold(0u8, |m, s| match s {
+        "sticker" => m | USAGE_STICKER,
+        "emoticon" => m | USAGE_EMOTICON,
+        _ => m,
+    });
+    if mask == 0 { USAGE_ANY } else { mask }
+}
+
 /// Convert a `usage` array of strings (from `PackImage`) to a bitmask.
 fn usage_strs_to_mask(strs: &[String]) -> u8 {
-    if strs.is_empty() {
-        return USAGE_ANY;
-    }
-    let mut mask = 0u8;
-    for s in strs {
-        match s.as_str() {
-            "sticker" => mask |= USAGE_STICKER,
-            "emoticon" => mask |= USAGE_EMOTICON,
-            _ => {}
-        }
-    }
-    if mask == 0 {
-        USAGE_ANY
-    } else {
-        mask
-    }
+    if strs.is_empty() { return USAGE_ANY; }
+    decode_usage(strs.iter().map(|s| s.as_str()))
 }
 
 pub const USAGE_STICKER: u8 = 1 << 0;
@@ -171,24 +166,8 @@ impl ImagePack {
 /// "any usage allowed" per MSC2545; an array containing only unknown values
 /// is treated the same way (forwards-compat).
 fn usage_array_to_mask(arr: &[Value]) -> u8 {
-    if arr.is_empty() {
-        return USAGE_ANY;
-    }
-    let mut mask = 0u8;
-    for v in arr {
-        if let Some(s) = v.as_str() {
-            match s {
-                "sticker" => mask |= USAGE_STICKER,
-                "emoticon" => mask |= USAGE_EMOTICON,
-                _ => {}
-            }
-        }
-    }
-    if mask == 0 {
-        USAGE_ANY
-    } else {
-        mask
-    }
+    if arr.is_empty() { return USAGE_ANY; }
+    decode_usage(arr.iter().filter_map(|v| v.as_str()))
 }
 
 /// Parse the `content` of an image pack event (user account_data, or
