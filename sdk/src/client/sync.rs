@@ -229,23 +229,14 @@ impl ClientFfi {
         // SyncService uses SlidingSync (MSC3575) which does not include the
         // presence extension, so add_event_handler(PresenceEvent) never fires.
         // Instead poll GET /_matrix/client/v3/presence/{userId}/status for each
-        // DM counterpart on a 30-second interval.
+        // DM counterpart on a 60-second interval.
         {
-            use matrix_sdk::ruma::api::client::presence::get_presence;
-            use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
-            use std::collections::HashSet;
             let h = Arc::clone(&handler);
             let client_p = client.clone();
             let mut stop_rx_presence = stop_rx.clone();
-            // Users that returned 403 Forbidden — typically bridge puppet
-            // accounts with presence privacy enabled. They never recover
-            // mid-session so we record them and skip future polls. Lives
-            // for the lifetime of this start_sync; a re-login starts
-            // fresh (cheap: one 403 per session per puppet).
-            let forbidden_presence: Arc<std::sync::Mutex<HashSet<matrix_sdk::ruma::OwnedUserId>>> =
-                Arc::new(std::sync::Mutex::new(HashSet::new()));
             let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
             let dm_counterparts = Arc::clone(&self.dm_counterparts);
+            let forbidden_presence = Arc::clone(&self.forbidden_presence);
             self.spawn_tracked(async move {
                 // 60s tick: matrix-sdk delivers presence EDUs through the
                 // sync stream for free; this polling loop is a fallback for
@@ -267,71 +258,13 @@ impl ClientFfi {
                     if !presence_enabled_p.load(std::sync::atomic::Ordering::Relaxed) {
                         continue;
                     }
-                    if client_p.user_id().is_none() { continue }
-                    // Snapshot the cached counterpart set under the read
-                    // lock, then drop the lock before any await. The cache
-                    // is refreshed from RoomInfo.dm_counterpart_user_id by
-                    // the room-list rebuild path — no per-tick scan of
-                    // joined_rooms or per-room dm_other_user lookup here.
-                    let counterparts: Vec<String> = {
-                        let Ok(set) = dm_counterparts.read() else { continue };
-                        set.iter().cloned().collect()
-                    };
-                    if counterparts.is_empty() { continue }
-                    let mut futs = Vec::new();
-                    for uid in counterparts {
-                        let cp = client_p.clone();
-                        let h_ref = Arc::clone(&h);
-                        let forbidden_clone = Arc::clone(&forbidden_presence);
-                        futs.push(async move {
-                            let user_id: matrix_sdk::ruma::OwnedUserId =
-                                uid.parse().ok()?;
-                            // Skip users known to return 403 Forbidden.
-                            if forbidden_clone
-                                .lock()
-                                .ok()?
-                                .contains(&user_id)
-                            {
-                                return None;
-                            }
-                            let req = get_presence::v3::Request::new(user_id.clone());
-                            match cp.send(req).await {
-                                Ok(resp) => {
-                                    let state: u8 = match resp.presence {
-                                        RumaPresence::Online => 1,
-                                        RumaPresence::Unavailable => 2,
-                                        _ => 3,
-                                    };
-                                    if let Ok(g) = h_ref.lock() {
-                                        g.on_presence_changed(&uid, state);
-                                    }
-                                    Some(())
-                                }
-                                Err(e) => {
-                                    if is_presence_forbidden(
-                                        e.client_api_error_kind(),
-                                    ) {
-                                        if let Ok(mut set) =
-                                            forbidden_clone.lock()
-                                        {
-                                            if set.insert(user_id) {
-                                                tracing::info!(
-                                                    "presence: stopping polls \
-                                                     for {uid} (homeserver \
-                                                     forbids)"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    // Other transient errors (404, 5xx,
-                                    // network) silently ignored — the next
-                                    // tick will retry.
-                                    None
-                                }
-                            }
-                        });
-                    }
-                    futures_util::future::join_all(futs).await;
+                    poll_presence_once(
+                        &client_p,
+                        &h,
+                        &dm_counterparts,
+                        &forbidden_presence,
+                    )
+                    .await;
                 }
             });
         }
@@ -1048,4 +981,109 @@ impl ClientFfi {
         self.presence_polling_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// Issue one immediate round of DM presence polls, regardless of the
+    /// 60s interval cadence. Used by the UI shell when the window returns
+    /// to focus so contacts don't appear stale for up to a minute after
+    /// un-minimize. No-op if sync hasn't been started, presence polling
+    /// is disabled, or there are no DM counterparts cached. Thread-safe.
+    pub fn poll_presence_now(&mut self) {
+        if !self
+            .presence_polling_enabled
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        let Some(handler) = self.handler.as_ref().map(Arc::clone) else {
+            return;
+        };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let dm_counterparts = Arc::clone(&self.dm_counterparts);
+        let forbidden_presence = Arc::clone(&self.forbidden_presence);
+        self.spawn_tracked(async move {
+            poll_presence_once(
+                &client,
+                &handler,
+                &dm_counterparts,
+                &forbidden_presence,
+            )
+            .await;
+        });
+    }
+}
+
+/// One pass of the DM presence poll: snapshot the counterpart set, fan out
+/// `GET /presence/{user}/status` for each, and deliver `on_presence_changed`
+/// callbacks. Records users that return 403 Forbidden into
+/// `forbidden_presence` so subsequent passes skip them. The 60s interval
+/// loop and `poll_presence_now` both call this.
+async fn poll_presence_once(
+    client: &matrix_sdk::Client,
+    handler: &Arc<Mutex<SendHandler>>,
+    dm_counterparts: &Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+    forbidden_presence: &Arc<
+        std::sync::Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>,
+    >,
+) {
+    use matrix_sdk::ruma::api::client::presence::get_presence;
+    use matrix_sdk::ruma::presence::PresenceState as RumaPresence;
+    if client.user_id().is_none() {
+        return;
+    }
+    // Snapshot the cached counterpart set under the read lock, then drop
+    // the lock before any await. The cache is refreshed from
+    // RoomInfo.dm_counterpart_user_id by the room-list rebuild path — no
+    // per-tick scan of joined_rooms or per-room dm_other_user lookup here.
+    let counterparts: Vec<String> = {
+        let Ok(set) = dm_counterparts.read() else { return };
+        set.iter().cloned().collect()
+    };
+    if counterparts.is_empty() {
+        return;
+    }
+    let mut futs = Vec::new();
+    for uid in counterparts {
+        let cp = client.clone();
+        let h_ref = Arc::clone(handler);
+        let forbidden_clone = Arc::clone(forbidden_presence);
+        futs.push(async move {
+            let user_id: matrix_sdk::ruma::OwnedUserId = uid.parse().ok()?;
+            // Skip users known to return 403 Forbidden.
+            if forbidden_clone.lock().ok()?.contains(&user_id) {
+                return None;
+            }
+            let req = get_presence::v3::Request::new(user_id.clone());
+            match cp.send(req).await {
+                Ok(resp) => {
+                    let state: u8 = match resp.presence {
+                        RumaPresence::Online => 1,
+                        RumaPresence::Unavailable => 2,
+                        _ => 3,
+                    };
+                    if let Ok(g) = h_ref.lock() {
+                        g.on_presence_changed(&uid, state);
+                    }
+                    Some(())
+                }
+                Err(e) => {
+                    if is_presence_forbidden(e.client_api_error_kind()) {
+                        if let Ok(mut set) = forbidden_clone.lock() {
+                            if set.insert(user_id) {
+                                tracing::info!(
+                                    "presence: stopping polls for {uid} \
+                                     (homeserver forbids)"
+                                );
+                            }
+                        }
+                    }
+                    // Other transient errors (404, 5xx, network) silently
+                    // ignored — the next tick will retry.
+                    None
+                }
+            }
+        });
+    }
+    futures_util::future::join_all(futs).await;
 }

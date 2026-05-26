@@ -1980,6 +1980,20 @@ void ShellBase::notify_window_active_(bool active)
     {
         presence_tracker_->notify_window_active(active);
     }
+    // The DM-presence polling loop in the Rust SDK only produces data that's
+    // visible to the user while the window is on-screen, so suspend it while
+    // the window is hidden/minimized/unfocused. The kick on re-focus avoids
+    // up to 60 s of stale presence after the loop is re-enabled. Gated by
+    // the same `send_presence` Privacy setting that `handle_send_presence_toggle_`
+    // owns — if the user has presence disabled, never re-enable polling here.
+    if (client_ && tesseract::Settings::instance().send_presence)
+    {
+        client_->set_presence_polling_enabled(active);
+        if (active)
+        {
+            client_->poll_presence_now();
+        }
+    }
 }
 
 void ShellBase::notify_presence_tick_()

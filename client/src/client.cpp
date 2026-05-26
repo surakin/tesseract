@@ -1184,6 +1184,11 @@ void Client::set_presence_polling_enabled(bool enabled)
     impl_->ffi->set_presence_polling_enabled(enabled);
 }
 
+void Client::poll_presence_now()
+{
+    impl_->ffi->poll_presence_now();
+}
+
 Result Client::request_self_verification()
 {
     return from_ffi(impl_->ffi->request_self_verification());

@@ -829,6 +829,12 @@ public:
     /// called from the UI thread.
     void set_presence_polling_enabled(bool enabled);
 
+    /// Issue one immediate round of DM presence polls without waiting for
+    /// the 60s interval. Called by the shell when the window returns to
+    /// focus so contacts don't appear stale after un-minimize. No-op if
+    /// sync isn't running or polling is disabled. Thread-safe.
+    void poll_presence_now();
+
     // ------------------------------------------------------------------
     // Cross-signing / SAS device verification
     // ------------------------------------------------------------------

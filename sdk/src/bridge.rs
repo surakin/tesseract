@@ -1344,6 +1344,12 @@ pub mod ffi {
         /// any thread.
         fn set_presence_polling_enabled(self: &mut ClientFfi, enabled: bool);
 
+        /// Issue one immediate round of DM presence polls without waiting
+        /// for the 60s interval. Used by the UI shell when the window
+        /// returns to focus so contacts don't appear stale after un-minimize.
+        /// No-op if sync isn't running or polling is disabled. Thread-safe.
+        fn poll_presence_now(self: &mut ClientFfi);
+
         /// Return room ID of an existing DM with user_id, or create one.
         /// Returns empty string on error. Blocks — worker thread.
         fn get_or_create_dm(self: &mut ClientFfi, user_id: &str) -> String;

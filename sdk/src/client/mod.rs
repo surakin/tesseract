@@ -386,6 +386,15 @@ pub struct ClientFfi {
     #[cfg(not(test))]
     pub(super) dm_counterparts:
         Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+    /// Users that returned 403 Forbidden on the presence endpoint —
+    /// typically bridge puppet accounts with presence privacy enabled.
+    /// They never recover mid-session so we record them and skip future
+    /// polls. Shared between the long-running 60s polling loop and
+    /// one-off `poll_presence_now` kicks (e.g. on window re-focus).
+    /// Lives for the lifetime of this ClientFfi; a re-login starts fresh.
+    #[cfg(not(test))]
+    pub(super) forbidden_presence:
+        Arc<Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>>,
     /// Maps verification `flow_id` → `user_id` for in-flight verification
     /// requests (both incoming and outgoing). Allows `accept_verification`,
     /// `start_sas`, etc. to look up the VerificationRequest via the
@@ -636,6 +645,10 @@ impl ClientFfi {
                 std::collections::HashSet::new(),
             )),
             #[cfg(not(test))]
+            forbidden_presence: Arc::new(Mutex::new(
+                std::collections::HashSet::new(),
+            )),
+            #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -743,6 +756,11 @@ impl ClientFfi {
         self.presence_polling_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// Test-only no-op stub mirroring the production `poll_presence_now`
+    /// (which lives in `client::sync` and needs the watcher task to exist).
+    #[cfg(test)]
+    pub fn poll_presence_now(&mut self) {}
 
 }
 
