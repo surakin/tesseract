@@ -62,6 +62,10 @@ set(_tk_sources
     views/EmojiPicker.cpp
     views/StickerPicker.h
     views/StickerPicker.cpp
+    views/ThreadListView.h
+    views/ThreadListView.cpp
+    views/ThreadView.h
+    views/ThreadView.cpp
     views/RecoveryBanner.h
     views/RecoveryBanner.cpp
     views/VerificationBanner.h

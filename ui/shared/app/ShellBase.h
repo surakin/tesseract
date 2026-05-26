@@ -130,7 +130,22 @@ public:
         ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
         ThreadTrigger trigger, const std::string& trigger_root);
 
+    // ── Thread panel public entry points (wired from RoomView callbacks) ──
+    // Each computes a transition via compute_thread_transition_() and
+    // applies it through apply_thread_transition_().
+    void on_threads_button_clicked();
+    void on_thread_open_requested(const std::string& root_event_id);
+    void on_thread_close_requested();
+    void on_thread_send_requested(const std::string& body,
+                                  const std::string& formatted_body);
+
 protected:
+    // Apply the side-effects of a ThreadTransition: subscribe / unsubscribe
+    // threads on the client, update local thread_panel_ state, drive the
+    // RoomView's right-side panel, and refresh the thread-list snapshot
+    // when entering List mode.
+    void apply_thread_transition_(const ThreadTransition& t);
+
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
     int active_account_index_ = -1;
@@ -543,6 +558,24 @@ protected:
     {
     }
 
+    // Push a fresh thread reply timeline into the currently-open ThreadView.
+    // Default implementations route into room_view_->thread_view() /
+    // thread_list_view() when present; shells (Qt6/GTK4/Win32) inherit
+    // unchanged. macOS / tests may override to redirect into their own
+    // view tree.
+    virtual void apply_thread_messages_(
+        const std::string& thread_root,
+        std::vector<views::MessageRowData> rows, bool room_switch);
+    virtual void apply_thread_message_insert_(
+        const std::string& thread_root, std::size_t index,
+        views::MessageRowData row);
+    virtual void apply_thread_message_update_(
+        const std::string& thread_root, std::size_t index,
+        views::MessageRowData row);
+    virtual void apply_thread_message_remove_(
+        const std::string& thread_root, std::size_t index);
+    virtual void apply_threads_list_(std::vector<ThreadInfo> threads);
+
     // ── EventHandlerBase UI-thread hooks ─────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshaling. Default
     // implementations are no-ops; each shell overrides what it needs.
@@ -562,6 +595,21 @@ protected:
                                             std::unique_ptr<Event> ev);
     virtual void handle_message_removed_ui_(std::string room_id,
                                             std::size_t index);
+    virtual void handle_thread_reset_ui_(std::string room_id,
+                                         std::string thread_root,
+                                         EventList snapshot);
+    virtual void handle_thread_inserted_ui_(std::string room_id,
+                                            std::string thread_root,
+                                            std::size_t index,
+                                            std::unique_ptr<Event> ev);
+    virtual void handle_thread_updated_ui_(std::string room_id,
+                                           std::string thread_root,
+                                           std::size_t index,
+                                           std::unique_ptr<Event> ev);
+    virtual void handle_thread_removed_ui_(std::string room_id,
+                                           std::string thread_root,
+                                           std::size_t index);
+    virtual void handle_threads_updated_ui_(std::string room_id);
     virtual void handle_sync_error_ui_(std::string /*context*/,
                                        std::string /*user_id*/,
                                        std::string /*description*/,

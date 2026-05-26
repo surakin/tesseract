@@ -554,6 +554,24 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             openJumpToDateDialog();
         };
+        mainApp_->room_view()->on_threads_button_clicked = [this]
+        {
+            on_threads_button_clicked();
+        };
+        mainApp_->room_view()->on_thread_open_requested =
+            [this](const std::string& root)
+        {
+            on_thread_open_requested(root);
+        };
+        mainApp_->room_view()->on_thread_close_requested = [this]
+        {
+            on_thread_close_requested();
+        };
+        mainApp_->room_view()->on_thread_send =
+            [this](const std::string& body, const std::string& formatted)
+        {
+            on_thread_send_requested(body, formatted);
+        };
         mainApp_->room_view()->on_delete_requested =
             [this](const std::string& event_id)
         {

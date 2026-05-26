@@ -331,6 +331,21 @@ void RoomView::wire_internal_callbacks()
             on_jump_to_date_requested();
         }
     };
+    header_->on_threads_requested = [this]
+    {
+        if (on_threads_button_clicked)
+        {
+            on_threads_button_clicked();
+        }
+    };
+    message_list_->on_thread_preview_clicked =
+        [this](const std::string& root_event_id)
+    {
+        if (on_thread_open_requested)
+        {
+            on_thread_open_requested(root_event_id);
+        }
+    };
     header_->on_show_tooltip = [this](std::string text, tk::Rect anchor)
     {
         if (on_show_tooltip)
@@ -836,6 +851,67 @@ std::string RoomView::topic_edit_initial_text() const
     return room_info_panel_ ? room_info_panel_->topic_edit_initial_text() : std::string{};
 }
 
+// ── Thread panel ──────────────────────────────────────────────────────────
+
+void RoomView::set_thread_panel(ThreadPanelState state,
+                                const std::string& root_event_id)
+{
+    thread_panel_state_ = state;
+    thread_panel_root_  = root_event_id;
+
+    // Lazily instantiate the child widgets the first time each panel mode
+    // is requested. Once created they live for the lifetime of the
+    // RoomView and toggle visibility via set_visible.
+    if (state == ThreadPanelState::List && !thread_list_view_)
+    {
+        auto tlv = std::make_unique<ThreadListView>();
+        thread_list_view_ = add_child(std::move(tlv));
+        thread_list_view_->on_close = [this]
+        {
+            if (on_threads_button_clicked) on_threads_button_clicked();
+        };
+        thread_list_view_->on_thread_clicked =
+            [this](const std::string& root)
+        {
+            if (on_thread_open_requested) on_thread_open_requested(root);
+        };
+    }
+    if (state == ThreadPanelState::Open && !thread_view_)
+    {
+        auto tv = std::make_unique<ThreadView>();
+        thread_view_ = add_child(std::move(tv));
+        thread_view_->on_close = [this]
+        {
+            if (on_thread_close_requested) on_thread_close_requested();
+        };
+        thread_view_->on_send =
+            [this](const std::string& body, const std::string& formatted)
+        {
+            if (on_thread_send) on_thread_send(body, formatted);
+        };
+    }
+
+    // Toggle child visibility so the tk pointer-dispatch + paint loop
+    // honours the active mode automatically.
+    if (thread_view_)
+        thread_view_->set_visible(state == ThreadPanelState::Open);
+    if (thread_list_view_)
+        thread_list_view_->set_visible(state == ThreadPanelState::List);
+
+    // Dim the main timeline + highlight the thread root when open.
+    if (message_list_)
+    {
+        message_list_->set_dimmed(state == ThreadPanelState::Open);
+        message_list_->set_highlighted_event(
+            state == ThreadPanelState::Open ? root_event_id : std::string{});
+        if (state == ThreadPanelState::Open && !root_event_id.empty())
+            message_list_->scroll_to_event_id(root_event_id);
+    }
+
+    if (on_layout_changed) on_layout_changed();
+    if (repaint_requester_) repaint_requester_();
+}
+
 // ── tk::Widget overrides ───────────────────────────────────────────────────
 
 tk::Size RoomView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -865,6 +941,13 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                                : RoomHeader::kHeight;
     const float header_bottom = bounds.y + header_h;
     const float compose_top = bounds.y + bounds.h - compose_h;
+
+    // 60/40 split when the thread panel is open. The header spans the full
+    // width so the threads button stays visible regardless of mode.
+    const bool panel_open = thread_panel_state_ != ThreadPanelState::Closed;
+    const float main_w  = panel_open ? bounds.w * 0.60f : bounds.w;
+    const float panel_w = std::max(0.0f, bounds.w - main_w);
+
     // The message list spans header → composer; the typing indicator is a
     // synthetic trailing row inside it, so no strip space is reserved here.
     const float msg_h = std::max(0.0f, compose_top - header_bottom);
@@ -876,13 +959,26 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (message_list_)
     {
-        message_list_->arrange(ctx, {bounds.x, header_bottom, bounds.w, msg_h});
+        message_list_->arrange(ctx, {bounds.x, header_bottom, main_w, msg_h});
     }
 
     if (compose_bar_)
     {
         compose_bar_->arrange(ctx,
-                              {bounds.x, compose_top, bounds.w, compose_h});
+                              {bounds.x, compose_top, main_w, compose_h});
+    }
+
+    // Right-side thread panel (only one of {list, view} is visible at a time).
+    const float panel_h = std::max(0.0f, bounds.y + bounds.h - header_bottom);
+    if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
+    {
+        thread_list_view_->arrange(
+            ctx, {bounds.x + main_w, header_bottom, panel_w, panel_h});
+    }
+    if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
+    {
+        thread_view_->arrange(
+            ctx, {bounds.x + main_w, header_bottom, panel_w, panel_h});
     }
 
     // Overlay panels fill the full bounds (painted on top of all other children).
@@ -919,6 +1015,12 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         compose_bar_->paint(ctx);
     }
+
+    // Right-side thread panel.
+    if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
+        thread_list_view_->paint(ctx);
+    if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
+        thread_view_->paint(ctx);
 
     if (room_info_panel_ && room_info_panel_->is_open())
         room_info_panel_->paint(ctx);

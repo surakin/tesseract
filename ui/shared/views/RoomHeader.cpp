@@ -237,9 +237,13 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     const float text_x = bounds.x + kPadX + kAvatarSize + kAvatarGap;
-    const float right_reserve = show_calendar_btn_
-                                    ? kCalBtnMargin + kCalBtnSize + kCalBtnMargin
-                                    : 0.0f;
+    // Right-side reserve: threads button is always shown (28px), plus optional
+    // calendar button (28px + 8px gap). Outer margin (kCalBtnMargin) on both
+    // ends matches the calendar-only layout.
+    const float right_reserve =
+        show_calendar_btn_
+            ? kCalBtnMargin + kCalBtnSize + 8.0f + kCalBtnSize + kCalBtnMargin
+            : kCalBtnMargin + kCalBtnSize + kCalBtnMargin;
     const float text_w = std::max(0.0f, bounds.w - kPadX - kAvatarSize -
                                             kAvatarGap - right_reserve);
 
@@ -436,6 +440,28 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         draw_calendar_icon(ctx.canvas, calendar_btn_rect_,
                            ctx.theme.palette.text_primary);
     }
+
+    // Threads button — always shown, immediately left of the calendar button
+    // (or in the calendar button's slot when MSC3030 isn't supported).
+    {
+        const float threads_right =
+            show_calendar_btn_
+                ? (calendar_btn_rect_.x - 8.0f)
+                : (bounds_.x + bounds_.w - kCalBtnMargin);
+        threads_btn_rect_ = {threads_right - kCalBtnSize,
+                             bounds_.y + (kHeight - kCalBtnSize) * 0.5f,
+                             kCalBtnSize, kCalBtnSize};
+
+        const tk::Color btn_bg =
+            press_threads_ ? ctx.theme.palette.subtle_pressed
+            : hover_threads_
+                ? ctx.theme.palette.subtle_hover
+                : ctx.theme.palette.chrome_bg;
+
+        ctx.canvas.fill_rounded_rect(threads_btn_rect_, kCalBtnRadius, btn_bg);
+        draw_threads_icon(ctx.canvas, threads_btn_rect_,
+                          ctx.theme.palette.text_primary);
+    }
 }
 
 void RoomHeader::draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
@@ -472,6 +498,20 @@ void RoomHeader::draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
     }
 }
 
+void RoomHeader::draw_threads_icon(tk::Canvas& canvas, tk::Rect button,
+                                   tk::Color tint)
+{
+    // 16x16 icon box, pixel-snapped and centred. The glyph is three stacked
+    // horizontal bars of decreasing length — reads as a thread / reply stack.
+    const float ox = std::floor(button.x + (button.w - 16.0f) * 0.5f);
+    const float oy = std::floor(button.y + (button.h - 16.0f) * 0.5f);
+
+    // Three bars of widths 12, 10, 8 px, each 2 px tall with 3 px gaps.
+    canvas.fill_rounded_rect({ox + 2.0f, oy + 2.0f, 12.0f, 2.0f}, 1.0f, tint);
+    canvas.fill_rounded_rect({ox + 2.0f, oy + 7.0f, 10.0f, 2.0f}, 1.0f, tint);
+    canvas.fill_rounded_rect({ox + 2.0f, oy + 12.0f, 8.0f, 2.0f}, 1.0f, tint);
+}
+
 void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
                                 tk::Color tint)
 {
@@ -491,9 +531,20 @@ void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
 
 bool RoomHeader::on_pointer_down(tk::Point local)
 {
-    // calendar_btn_rect_ is in world coords; reconstruct the world point
-    // from the widget-local `local` by adding the widget's own origin.
+    // calendar_btn_rect_ / threads_btn_rect_ are in world coords; reconstruct
+    // the world point from the widget-local `local` by adding the widget's
+    // own origin.
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+    // Threads button takes priority — checked before calendar so its hit area
+    // short-circuits, even though the rects don't overlap in practice.
+    if (world.x >= threads_btn_rect_.x &&
+        world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
+        world.y >= threads_btn_rect_.y &&
+        world.y < threads_btn_rect_.y + threads_btn_rect_.h)
+    {
+        press_threads_ = true;
+        return true;
+    }
     if (show_calendar_btn_ &&
         world.x >= calendar_btn_rect_.x &&
         world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
@@ -515,7 +566,28 @@ bool RoomHeader::on_pointer_down(tk::Point local)
 
 void RoomHeader::on_pointer_up(tk::Point local, bool inside_self)
 {
-    // Calendar button takes priority: if it captured the press, handle it first.
+    // Threads button: handle first since its press has priority.
+    if (press_threads_)
+    {
+        press_threads_ = false;
+        if (inside_self)
+        {
+            const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
+            if (world.x >= threads_btn_rect_.x &&
+                world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
+                world.y >= threads_btn_rect_.y &&
+                world.y < threads_btn_rect_.y + threads_btn_rect_.h)
+            {
+                if (on_threads_requested)
+                {
+                    on_threads_requested();
+                }
+            }
+        }
+        return;
+    }
+
+    // Calendar button takes priority over name/avatar click area.
     if (press_calendar_)
     {
         press_calendar_ = false;
@@ -597,13 +669,19 @@ bool RoomHeader::on_pointer_move(tk::Point local)
 {
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
 
-    hover_calendar_ = show_calendar_btn_ &&
+    hover_threads_ = world.x >= threads_btn_rect_.x &&
+                     world.x < threads_btn_rect_.x + threads_btn_rect_.w &&
+                     world.y >= threads_btn_rect_.y &&
+                     world.y < threads_btn_rect_.y + threads_btn_rect_.h;
+
+    hover_calendar_ = !hover_threads_ && show_calendar_btn_ &&
                       world.x >= calendar_btn_rect_.x &&
                       world.x < calendar_btn_rect_.x + calendar_btn_rect_.w &&
                       world.y >= calendar_btn_rect_.y &&
                       world.y < calendar_btn_rect_.y + calendar_btn_rect_.h;
 
-    const bool new_hover_topic = !hover_calendar_ && world.x >= topic_rect_.x &&
+    const bool new_hover_topic = !hover_calendar_ && !hover_threads_ &&
+                                 world.x >= topic_rect_.x &&
                                  world.x < topic_rect_.x + topic_rect_.w &&
                                  world.y >= topic_rect_.y &&
                                  world.y < topic_rect_.y + topic_rect_.h;
@@ -630,6 +708,8 @@ void RoomHeader::on_pointer_leave()
 {
     hover_calendar_ = false;
     press_calendar_ = false;
+    hover_threads_ = false;
+    press_threads_ = false;
     press_info_ = false;
     if (hover_topic_ && on_hide_tooltip)
     {

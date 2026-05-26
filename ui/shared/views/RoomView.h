@@ -24,6 +24,8 @@
 #include "MessageListView.h"
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
+#include "ThreadListView.h"
+#include "ThreadView.h"
 #include "UserProfilePanel.h"
 
 #include "tk/audio.h"
@@ -135,6 +137,37 @@ public:
     {
         return room_info_panel_;
     }
+    ThreadView* thread_view() const
+    {
+        return thread_view_;
+    }
+    ThreadListView* thread_list_view() const
+    {
+        return thread_list_view_;
+    }
+
+    // Mirror enum (avoids include cycle with ShellBase::ThreadPanel).
+    enum class ThreadPanelState
+    {
+        Closed,
+        List,
+        Open,
+    };
+    void set_thread_panel(ThreadPanelState state,
+                          const std::string& root_event_id);
+    ThreadPanelState thread_panel_state() const
+    {
+        return thread_panel_state_;
+    }
+
+    // Forwarded by RoomView → shell.
+    std::function<void()> on_threads_button_clicked;
+    std::function<void(const std::string& root_event_id)>
+        on_thread_open_requested;
+    std::function<void()> on_thread_close_requested;
+    std::function<void(const std::string& body,
+                       const std::string& formatted_body)>
+        on_thread_send;
 
     // "Press Up in an empty composer to edit your last message." Wired by
     // the shell to the NativeTextArea's set_on_edit_last hook. No-op (and
@@ -299,6 +332,12 @@ private:
     ComposeBar* compose_bar_ = nullptr;
     RoomInfoPanel*    room_info_panel_    = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
+    // Lazily created when the thread panel first opens. Owned by the tk
+    // child list (add_child); we keep a borrowed pointer for access.
+    ThreadView*     thread_view_      = nullptr;
+    ThreadListView* thread_list_view_ = nullptr;
+    ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;
+    std::string thread_panel_root_;
     // Current room's members (mirrors what was last passed to
     // set_room_members) — used to resolve a clicked mention's display name
     // and avatar for the profile panel.

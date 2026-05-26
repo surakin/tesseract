@@ -151,6 +151,16 @@ struct MessageRowData
     double location_lon = 0.0;
     std::string location_description;
     tesseract::views::MapViewport map_viewport; // mutable: updated by pan/zoom
+
+    // MSC3440 threads. Mirror of tesseract::Event's thread fields. Used by
+    // MessageListView to filter in-thread replies out of the main list and
+    // to render the "N replies" preview chip under thread-root rows.
+    std::string thread_root_id;  // non-empty iff this row is an in-thread reply
+    bool is_thread_root = false; // true when this row roots a thread
+    std::uint64_t thread_reply_count = 0;
+    std::string thread_latest_sender_name;
+    std::string thread_latest_body;
+    std::uint64_t thread_latest_ts = 0;
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -575,9 +585,49 @@ public:
     // historical mode.
     std::function<void()> on_return_to_live;
 
+    // Fired when the user clicks the "N replies" preview chip drawn under
+    // a thread-root row. `thread_root_id` is the root event id (i.e. the
+    // event_id of the row the chip belongs to).
+    std::function<void(const std::string& thread_root_id)>
+        on_thread_preview_clicked;
+
+    // Paint a semi-transparent dark overlay over the list bounds. The
+    // highlight outline (see below) is painted after this overlay so it
+    // remains visible above the dim.
+    void set_dimmed(bool dimmed);
+    bool dimmed() const { return dimmed_; }
+
+    // Paint a coloured 2px outline around the row whose event_id matches.
+    // Pass the empty string to clear the highlight.
+    void set_highlighted_event(const std::string& event_id);
+    const std::string& highlighted_event() const
+    {
+        return highlighted_event_id_;
+    }
+
+    // Per-chip geometry recorded by the most recent paint pass. Each entry
+    // is the world-coords hit rect of a thread-preview chip and the
+    // root event id its click should fire. Public for tests.
+    struct ChipHit
+    {
+        std::string root_event_id;
+        tk::Rect rect{};
+    };
+    const std::vector<ChipHit>& chip_hit_rects_for_test() const
+    {
+        return chip_hit_rects_;
+    }
+
 private:
     class Adapter;
     friend class Adapter;
+
+    // Thread overlay state (see set_dimmed / set_highlighted_event).
+    bool dimmed_ = false;
+    std::string highlighted_event_id_;
+    // Per-paint chip hit rects (world coords). Cleared at the top of each
+    // paint pass; populated when paint_row draws a thread-root chip.
+    mutable std::vector<ChipHit> chip_hit_rects_;
 
     std::vector<MessageRowData> messages_;
     // True while waiting for the SDK to relocate the read marker after a

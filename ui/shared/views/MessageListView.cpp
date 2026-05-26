@@ -130,6 +130,13 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     }
     row.is_edited = ev.is_edited;
 
+    row.thread_root_id = ev.thread_root_id;
+    row.is_thread_root = ev.is_thread_root;
+    row.thread_reply_count = ev.thread_reply_count;
+    row.thread_latest_sender_name = ev.thread_latest_sender_name;
+    row.thread_latest_body = ev.thread_latest_body;
+    row.thread_latest_ts = ev.thread_latest_ts;
+
     if (ev.pending_state == "sending")
     {
         row.pending_state = MessageRowData::PendingState::Sending;
@@ -376,6 +383,14 @@ constexpr float kEditBtnW = 28.0f;
 constexpr float kEditedBadgeGap = 4.0f;
 // Reduced top padding for continuation rows (no avatar/sender chrome).
 constexpr float kContPadY = 2.0f;
+
+// Thread preview chip ("N replies — latest reply preview") — painted at the
+// bottom of thread-root rows that have at least one reply. Click fires
+// MessageListView::on_thread_preview_clicked.
+constexpr float kThreadChipH = 28.0f;
+constexpr float kThreadChipGap = 4.0f; // gap between row body and chip
+constexpr float kThreadChipPadX = 10.0f;
+constexpr float kThreadChipRadius = 6.0f;
 
 // Virtual timeline item heights.
 constexpr float kDaySepH = 28.0f;
@@ -772,6 +787,13 @@ public:
         if (cont && chips_h == 0.0f)
         {
             raw_h = std::max(raw_h, chip_h());
+        }
+        // Thread preview chip ("N replies"): adds a small band under any
+        // thread-root row that has at least one reply. Click fires
+        // on_thread_preview_clicked.
+        if (m.is_thread_root && m.thread_reply_count > 0)
+        {
+            raw_h += kThreadChipH + kThreadChipGap;
         }
         return raw_h;
     }
@@ -1436,6 +1458,120 @@ public:
                 }
             }
         }
+
+        // Thread preview chip — drawn at the bottom of the row when this
+        // row roots a thread with at least one reply. Records its world-
+        // space rect in owner_.chip_hit_rects_ so on_pointer_down can fire
+        // on_thread_preview_clicked when the user taps it.
+        if (m.is_thread_root && m.thread_reply_count > 0)
+        {
+            paint_thread_chip(m, ctx, bounds, col_x, col_w);
+        }
+    }
+
+    // Helper: render the "N replies — <latest sender>: <snippet>" chip and
+    // register its hit rect. Called from paint_row when a row is a thread
+    // root with reply_count > 0. Chip height/gap are reserved in
+    // measure_row_height so the chip lives in row-local padding (no overlap
+    // with the body block or the read-receipt cluster above).
+    void paint_thread_chip(const MessageRowData& m, tk::PaintCtx& ctx,
+                           tk::Rect bounds, float col_x, float col_w)
+    {
+        tk::Rect chip{col_x,
+                      bounds.y + bounds.h - kPadY - kThreadChipH,
+                      std::min(col_w, 360.0f),
+                      kThreadChipH};
+        if (chip.w <= 0.0f)
+        {
+            return;
+        }
+
+        // Background — slightly darker when the list is dimmed so the chip
+        // stays distinguishable from the dim overlay.
+        tk::Color bg = owner_.dimmed_
+                           ? ctx.theme.palette.subtle_pressed
+                           : ctx.theme.palette.subtle_hover;
+        ctx.canvas.fill_rounded_rect(chip, kThreadChipRadius, bg);
+        ctx.canvas.stroke_rounded_rect(chip, kThreadChipRadius,
+                                       ctx.theme.palette.border, 1.0f);
+
+        // Right-side reply-count label ("N replies"). Reserve its width
+        // before laying out the left-side latest-reply preview.
+        char count_buf[48];
+        std::snprintf(count_buf, sizeof(count_buf),
+                      m.thread_reply_count == 1 ? "%llu reply" : "%llu replies",
+                      static_cast<unsigned long long>(m.thread_reply_count));
+        tk::TextStyle cs{};
+        cs.role = tk::FontRole::Small;
+        cs.wrap = false;
+        auto count_layout = ctx.factory.build_text(count_buf, cs);
+        float count_w = 0.0f;
+        if (count_layout)
+        {
+            tk::Size csz = count_layout->measure();
+            count_w = csz.w;
+            float cx = chip.x + chip.w - kThreadChipPadX - csz.w;
+            float cy = chip.y + (chip.h - csz.h) * 0.5f;
+            ctx.canvas.draw_text(*count_layout, {cx, cy},
+                                 ctx.theme.palette.text_secondary);
+        }
+
+        // Left-side preview: "<sender>: <body snippet…>".
+        // Truncate the body to ~80 chars (UTF-8-safe: clip at byte 80 and back
+        // off until we land on a UTF-8 start byte) before letting the text
+        // backend ellipsise on width.
+        std::string preview;
+        if (!m.thread_latest_sender_name.empty())
+        {
+            preview = m.thread_latest_sender_name + ": ";
+        }
+        {
+            std::string body = m.thread_latest_body;
+            // Collapse newlines (chip is one line).
+            for (char& c : body)
+            {
+                if (c == '\n' || c == '\r')
+                {
+                    c = ' ';
+                }
+            }
+            constexpr std::size_t kMaxBodyBytes = 80;
+            if (body.size() > kMaxBodyBytes)
+            {
+                std::size_t cut = kMaxBodyBytes;
+                // Back off into a UTF-8 start byte.
+                while (cut > 0 &&
+                       (static_cast<unsigned char>(body[cut]) & 0xC0) == 0x80)
+                {
+                    --cut;
+                }
+                body.resize(cut);
+                body += "...";
+            }
+            preview += body;
+        }
+        if (!preview.empty())
+        {
+            tk::TextStyle ps{};
+            ps.role = tk::FontRole::Small;
+            ps.wrap = false;
+            ps.trim = tk::TextTrim::Ellipsis;
+            float preview_max =
+                std::max(0.0f, chip.w - 2.0f * kThreadChipPadX - count_w -
+                                   (count_w > 0.0f ? 8.0f : 0.0f));
+            ps.max_width = preview_max;
+            auto p_layout = ctx.factory.build_text(preview, ps);
+            if (p_layout)
+            {
+                tk::Size psz = p_layout->measure();
+                float py = chip.y + (chip.h - psz.h) * 0.5f;
+                ctx.canvas.draw_text(*p_layout,
+                                     {chip.x + kThreadChipPadX, py},
+                                     ctx.theme.palette.text_primary);
+            }
+        }
+
+        owner_.chip_hit_rects_.push_back({m.event_id, chip});
     }
 
     // Cache management — called from MessageListView mutation methods.
@@ -3461,6 +3597,16 @@ MessageListView::file_hit_at(tk::Point world) const
 void MessageListView::set_messages(std::vector<MessageRowData> msgs,
                                    bool room_switch)
 {
+    // Defence-in-depth: drop any in-thread replies. The main timeline
+    // shows only top-level events + thread roots; in-thread replies are
+    // rendered in the ThreadPanel. ShellBase already routes inserts away
+    // from this view, but we strip again here in case a caller bypasses
+    // that path (tests, future code).
+    msgs.erase(std::remove_if(msgs.begin(), msgs.end(),
+                              [](const MessageRowData& m)
+                              { return !m.thread_root_id.empty(); }),
+               msgs.end());
+
     inline_players_.clear();
     revealed_spoilers_.clear();
     link_layout_cache_.clear();
@@ -3701,6 +3847,11 @@ void MessageListView::set_post_delayed(
 
 void MessageListView::insert_message(std::size_t index, MessageRowData msg)
 {
+    // Defence-in-depth: drop in-thread replies (handled by ThreadPanel).
+    if (!msg.thread_root_id.empty())
+    {
+        return;
+    }
     if (index > messages_.size())
     {
         index = messages_.size();
@@ -3757,6 +3908,11 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
 
 void MessageListView::update_message(std::size_t index, MessageRowData msg)
 {
+    // Defence-in-depth: in-thread replies don't live in this view.
+    if (!msg.thread_root_id.empty())
+    {
+        return;
+    }
     if (index >= messages_.size())
     {
         return;
@@ -3849,6 +4005,32 @@ void MessageListView::remove_message(std::size_t index)
 void MessageListView::append_message(MessageRowData msg)
 {
     insert_message(messages_.size(), std::move(msg));
+}
+
+void MessageListView::set_dimmed(bool dimmed)
+{
+    if (dimmed_ == dimmed)
+    {
+        return;
+    }
+    dimmed_ = dimmed;
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+}
+
+void MessageListView::set_highlighted_event(const std::string& event_id)
+{
+    if (highlighted_event_id_ == event_id)
+    {
+        return;
+    }
+    highlighted_event_id_ = event_id;
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
 }
 
 void MessageListView::set_typing_text(std::string text)
@@ -4889,6 +5071,25 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
+    // Thread-preview chip hit: fires on_thread_preview_clicked(root_event_id)
+    // and consumes the event so the message-row click handler doesn't also
+    // see it. World coordinates because chip_hit_rects_ is recorded in
+    // world space by paint_row.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        for (const auto& hit : chip_hit_rects_)
+        {
+            if (rect_contains(hit.rect, world))
+            {
+                if (on_thread_preview_clicked)
+                {
+                    on_thread_preview_clicked(hit.root_event_id);
+                }
+                return true;
+            }
+        }
+    }
+
     // Map pan: start drag on Kind::Location rows.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -5846,6 +6047,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     audio_card_geom_.clear();
     quote_block_geom_.clear();
     preview_card_geom_.clear();
+    chip_hit_rects_.clear();
 
     // Room-switch gate: hold the list invisible until the rows that will
     // be visible have their height-affecting content loaded + measured, so
@@ -5872,6 +6074,39 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     }
 
     tk::ListView::paint(ctx);
+
+    // Dim overlay + highlight outline. Drawn immediately after the rows so
+    // they sit above row content but below the scroll-pill / hover tooltip
+    // chrome (and below the chip preview rect ink, which is row-painted).
+    // The highlight is drawn *after* the dim so it stays bright when both
+    // are active (focused-thread mode: dim everything except the root row).
+    if (dimmed_)
+    {
+        // ~24% opaque black scrim.
+        ctx.canvas.fill_rect(bounds(), tk::Color::rgba(0, 0, 0, 60));
+    }
+    if (!highlighted_event_id_.empty())
+    {
+        for (std::size_t i = 0; i < messages_.size(); ++i)
+        {
+            if (messages_[i].event_id != highlighted_event_id_)
+            {
+                continue;
+            }
+            tk::Rect r =
+                tk::ListView::row_world_rect(static_cast<int>(i));
+            if (r.w > 0 && r.h > 0)
+            {
+                // Bright accent-coloured 2px outline. Rendered with high
+                // alpha so it remains visible above the dim overlay.
+                tk::Color outline =
+                    ctx.theme.palette.accent.with_alpha(220);
+                ctx.canvas.stroke_rounded_rect(r, 4.0f, outline, 2.0f);
+            }
+            break;
+        }
+    }
+
     maybe_notify_receipt_();
 
     // After paint_row() has repopulated hovered_row_geom_, re-evaluate the

@@ -2469,6 +2469,40 @@ void MacShell::apply_cached_messages_(
                 [s openJumpToDateDialog];
             }
         };
+        _mainApp->room_view()->on_threads_button_clicked = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_threads_button_clicked();
+            }
+        };
+        _mainApp->room_view()->on_thread_open_requested =
+            [weakSelf](const std::string& root)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_thread_open_requested(root);
+            }
+        };
+        _mainApp->room_view()->on_thread_close_requested = [weakSelf]
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_thread_close_requested();
+            }
+        };
+        _mainApp->room_view()->on_thread_send =
+            [weakSelf](const std::string& body, const std::string& formatted)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_thread_send_requested(body, formatted);
+            }
+        };
         _mainApp->room_view()->on_emoji = [weakSelf](tk::Rect btn)
         {
             MainWindowController* s = weakSelf;

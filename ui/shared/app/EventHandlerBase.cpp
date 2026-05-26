@@ -74,6 +74,93 @@ void EventHandlerBase::on_message_removed(const std::string& room_id,
         });
 }
 
+void EventHandlerBase::on_thread_reset(
+    const std::string& room_id, const std::string& thread_root,
+    EventList snapshot)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        EventList snap;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, std::move(snapshot)});
+    shell_->post_to_ui_(
+        [shell = shell_, p]() mutable
+        {
+            shell->handle_thread_reset_ui_(std::move(p->rid),
+                                           std::move(p->root),
+                                           std::move(p->snap));
+        });
+}
+
+void EventHandlerBase::on_thread_inserted(
+    const std::string& room_id, const std::string& thread_root,
+    std::size_t index, std::unique_ptr<Event> event)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        std::size_t idx;
+        std::unique_ptr<Event> ev;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, index, std::move(event)});
+    shell_->post_to_ui_(
+        [shell = shell_, p]() mutable
+        {
+            shell->handle_thread_inserted_ui_(
+                std::move(p->rid), std::move(p->root), p->idx,
+                std::move(p->ev));
+        });
+}
+
+void EventHandlerBase::on_thread_updated(
+    const std::string& room_id, const std::string& thread_root,
+    std::size_t index, std::unique_ptr<Event> event)
+{
+    struct Payload
+    {
+        std::string rid;
+        std::string root;
+        std::size_t idx;
+        std::unique_ptr<Event> ev;
+    };
+    auto p = std::make_shared<Payload>(
+        Payload{room_id, thread_root, index, std::move(event)});
+    shell_->post_to_ui_(
+        [shell = shell_, p]() mutable
+        {
+            shell->handle_thread_updated_ui_(
+                std::move(p->rid), std::move(p->root), p->idx,
+                std::move(p->ev));
+        });
+}
+
+void EventHandlerBase::on_thread_removed(
+    const std::string& room_id, const std::string& thread_root,
+    std::size_t index)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, rid = room_id, root = thread_root,
+         idx = index]() mutable
+        {
+            shell->handle_thread_removed_ui_(std::move(rid), std::move(root),
+                                             idx);
+        });
+}
+
+void EventHandlerBase::on_threads_updated(const std::string& room_id)
+{
+    shell_->post_to_ui_(
+        [shell = shell_, rid = room_id]() mutable
+        {
+            shell->handle_threads_updated_ui_(std::move(rid));
+        });
+}
+
 void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 {
     auto rs = rooms; // one copy; moved into the lambda below

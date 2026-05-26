@@ -40,6 +40,22 @@ public:
                             std::unique_ptr<Event> event) override;
     void on_message_removed(const std::string& room_id,
                             std::size_t index) override;
+    void
+    on_thread_reset(const std::string& room_id,
+                    const std::string& thread_root,
+                    EventList snapshot) override;
+    void on_thread_inserted(const std::string& room_id,
+                            const std::string& thread_root,
+                            std::size_t index,
+                            std::unique_ptr<Event> event) override;
+    void on_thread_updated(const std::string& room_id,
+                           const std::string& thread_root,
+                           std::size_t index,
+                           std::unique_ptr<Event> event) override;
+    void on_thread_removed(const std::string& room_id,
+                           const std::string& thread_root,
+                           std::size_t index) override;
+    void on_threads_updated(const std::string& room_id) override;
     void on_rooms_updated(const std::vector<RoomInfo>& rooms) override;
     void on_invites_updated(const std::vector<InviteInfo>& invites) override;
     void on_sync_error(const std::string& context,

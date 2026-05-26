@@ -1690,6 +1690,12 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     }
     if (room_id == current_room_id_)
     {
+        // In-thread replies belong to a thread, not the main list.
+        if (!ev->thread_root_id.empty())
+        {
+            dispatch_message_inserted_secondary_(room_id, index, *ev);
+            return;
+        }
         if (room_view_)
         {
             prep_row_media_(*ev);
@@ -1719,6 +1725,11 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     }
     if (room_id == current_room_id_)
     {
+        if (!ev->thread_root_id.empty())
+        {
+            dispatch_message_updated_secondary_(room_id, index, *ev);
+            return;
+        }
         if (room_view_)
         {
             prep_row_media_(*ev);
@@ -1754,6 +1765,78 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
         invalidate_message_cache_(room_id);
     }
     dispatch_message_removed_secondary_(room_id, index);
+}
+
+void ShellBase::handle_thread_reset_ui_(std::string room_id,
+                                        std::string thread_root,
+                                        EventList snapshot)
+{
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    std::vector<views::MessageRowData> rows;
+    rows.reserve(snapshot.size());
+    for (auto& ev : snapshot)
+    {
+        if (!ev || ev->type == tesseract::EventType::Unhandled)
+            continue;
+        prep_row_media_(*ev);
+        if (!ev->in_reply_to_id.empty())
+            ensure_reply_details_(ev->event_id);
+        rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
+    }
+    apply_thread_messages_(thread_root, std::move(rows), /*room_switch=*/true);
+}
+
+void ShellBase::handle_thread_inserted_ui_(std::string room_id,
+                                           std::string thread_root,
+                                           std::size_t index,
+                                           std::unique_ptr<Event> ev)
+{
+    if (!ev || ev->type == tesseract::EventType::Unhandled)
+        return;
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    prep_row_media_(*ev);
+    if (!ev->in_reply_to_id.empty())
+        ensure_reply_details_(ev->event_id);
+    apply_thread_message_insert_(
+        thread_root, index,
+        tesseract::views::make_row_data(*ev, my_user_id_));
+}
+
+void ShellBase::handle_thread_updated_ui_(std::string room_id,
+                                          std::string thread_root,
+                                          std::size_t index,
+                                          std::unique_ptr<Event> ev)
+{
+    if (!ev || ev->type == tesseract::EventType::Unhandled)
+        return;
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    prep_row_media_(*ev);
+    if (!ev->in_reply_to_id.empty())
+        ensure_reply_details_(ev->event_id);
+    apply_thread_message_update_(
+        thread_root, index,
+        tesseract::views::make_row_data(*ev, my_user_id_));
+}
+
+void ShellBase::handle_thread_removed_ui_(std::string room_id,
+                                          std::string thread_root,
+                                          std::size_t index)
+{
+    if (room_id != current_room_id_ || thread_root != current_thread_root_)
+        return;
+    apply_thread_message_remove_(thread_root, index);
+}
+
+void ShellBase::handle_threads_updated_ui_(std::string room_id)
+{
+    if (room_id != current_room_id_ || thread_panel_ == ThreadPanel::Closed)
+        return;
+    if (!client_)
+        return;
+    apply_threads_list_(client_->list_room_threads(room_id));
 }
 
 void ShellBase::handle_image_packs_updated_ui_()
@@ -2101,6 +2184,12 @@ void ShellBase::tab_open_room(const std::string& room_id)
             save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
+        {
+            auto _tt = compute_thread_transition_(
+                thread_panel_, thread_panel_prev_, current_thread_root_,
+                ThreadTrigger::RoomSwitch, {});
+            apply_thread_transition_(_tt);
+        }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         on_tab_state_changed_ui_();
         return;
@@ -2118,6 +2207,12 @@ void ShellBase::tab_open_room(const std::string& room_id)
     }
     tabs_.push_back({room_id, 0.f, {}});
     active_tab_idx_ = tabs_.size() - 1;
+    {
+        auto _tt = compute_thread_transition_(
+            thread_panel_, thread_panel_prev_, current_thread_root_,
+            ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
+    }
     current_room_id_ = room_id;
     on_tab_state_changed_ui_();
 }
@@ -2142,6 +2237,12 @@ void ShellBase::tab_select_room(const std::string& room_id)
             save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
+        {
+            auto _tt = compute_thread_transition_(
+                thread_panel_, thread_panel_prev_, current_thread_root_,
+                ThreadTrigger::RoomSwitch, {});
+            apply_thread_transition_(_tt);
+        }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         on_tab_state_changed_ui_();
         return;
@@ -2154,6 +2255,12 @@ void ShellBase::tab_select_room(const std::string& room_id)
     {
         save_tab_message_cache_();
         tabs_[active_tab_idx_] = {room_id, 0.f, {}};
+    }
+    {
+        auto _tt = compute_thread_transition_(
+            thread_panel_, thread_panel_prev_, current_thread_root_,
+            ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
     }
     current_room_id_ = room_id;
     on_tab_state_changed_ui_();
@@ -2176,6 +2283,12 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
             save_tab_message_cache_();
         }
         active_tab_idx_ = existing;
+        {
+            auto _tt = compute_thread_transition_(
+                thread_panel_, thread_panel_prev_, current_thread_root_,
+                ThreadTrigger::RoomSwitch, {});
+            apply_thread_transition_(_tt);
+        }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         on_tab_state_changed_ui_();
         return;
@@ -2220,6 +2333,12 @@ void ShellBase::tab_close(const std::string& room_id)
 
     tabs_.erase(tabs_.begin() + static_cast<std::ptrdiff_t>(idx));
     active_tab_idx_ = new_active;
+    {
+        auto _tt = compute_thread_transition_(
+            thread_panel_, thread_panel_prev_, current_thread_root_,
+            ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
+    }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     on_tab_state_changed_ui_();
 }
@@ -2392,6 +2511,12 @@ void ShellBase::restart_sdk_()
         return;
 
     // Deselect the active room — cached timeline data is about to be wiped.
+    {
+        auto _tt = compute_thread_transition_(
+            thread_panel_, thread_panel_prev_, current_thread_root_,
+            ThreadTrigger::RoomSwitch, {});
+        apply_thread_transition_(_tt);
+    }
     current_room_id_.clear();
     tabs_.clear();
     space_stack_.clear();
@@ -2490,6 +2615,115 @@ ShellBase::ThreadTransition ShellBase::compute_thread_transition_(
         break;
     }
     return t;
+}
+
+// ── Thread panel applier + public entry points ────────────────────────────
+
+void ShellBase::apply_thread_transition_(const ThreadTransition& t)
+{
+    if (client_)
+    {
+        for (const auto& root : t.threads_to_unsubscribe)
+            client_->unsubscribe_thread(current_room_id_, root);
+        if (t.unsubscribe_room_threads_)
+            client_->unsubscribe_room_threads(current_room_id_);
+        if (t.subscribe_room_threads_)
+            client_->subscribe_room_threads(current_room_id_);
+        for (const auto& root : t.threads_to_subscribe)
+            client_->subscribe_thread(current_room_id_, root);
+    }
+
+    thread_panel_         = t.new_state;
+    thread_panel_prev_    = t.new_prev;
+    current_thread_root_  = t.new_root;
+
+    if (room_view_)
+    {
+        using S = views::RoomView::ThreadPanelState;
+        const S vs = (t.new_state == ThreadPanel::Closed) ? S::Closed
+                  : (t.new_state == ThreadPanel::List)    ? S::List
+                                                          : S::Open;
+        room_view_->set_thread_panel(vs, t.new_root);
+        request_relayout_();
+    }
+
+    if (client_ && t.new_state == ThreadPanel::List)
+        apply_threads_list_(client_->list_room_threads(current_room_id_));
+}
+
+void ShellBase::on_threads_button_clicked()
+{
+    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
+                                        current_thread_root_,
+                                        ThreadTrigger::ToggleList, {});
+    apply_thread_transition_(t);
+}
+
+void ShellBase::on_thread_open_requested(const std::string& root_event_id)
+{
+    const auto trigger = (thread_panel_ == ThreadPanel::List)
+                             ? ThreadTrigger::OpenFromList
+                             : ThreadTrigger::OpenFromMain;
+    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
+                                        current_thread_root_, trigger,
+                                        root_event_id);
+    apply_thread_transition_(t);
+}
+
+void ShellBase::on_thread_close_requested()
+{
+    auto t = compute_thread_transition_(thread_panel_, thread_panel_prev_,
+                                        current_thread_root_,
+                                        ThreadTrigger::CloseThread, {});
+    apply_thread_transition_(t);
+}
+
+void ShellBase::on_thread_send_requested(const std::string& body,
+                                         const std::string& formatted_body)
+{
+    if (!client_ || current_room_id_.empty() || current_thread_root_.empty())
+        return;
+    client_->send_thread_message(current_room_id_, current_thread_root_, body,
+                                 formatted_body);
+}
+
+// ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─
+
+void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,
+                                       std::vector<views::MessageRowData> rows,
+                                       bool room_switch)
+{
+    if (room_view_ && room_view_->thread_view())
+        room_view_->thread_view()->set_messages(std::move(rows), room_switch);
+}
+
+void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/,
+                                             std::size_t index,
+                                             views::MessageRowData row)
+{
+    if (room_view_ && room_view_->thread_view())
+        room_view_->thread_view()->insert_message(index, std::move(row));
+}
+
+void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/,
+                                             std::size_t index,
+                                             views::MessageRowData row)
+{
+    if (room_view_ && room_view_->thread_view())
+        room_view_->thread_view()->update_message(index, std::move(row));
+}
+
+void ShellBase::apply_thread_message_remove_(const std::string& /*thread_root*/,
+                                             std::size_t index)
+{
+    if (room_view_ && room_view_->thread_view())
+        room_view_->thread_view()->remove_message(index);
+}
+
+void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
+{
+    if (room_view_ && room_view_->thread_list_view())
+        room_view_->thread_list_view()->set_threads(std::move(threads));
 }
 
 } // namespace tesseract

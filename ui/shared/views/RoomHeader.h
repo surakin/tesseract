@@ -66,6 +66,9 @@ public:
     // Fired when the user clicks the calendar/jump-to-date button.
     std::function<void()> on_jump_to_date_requested;
 
+    // Fired when the user clicks the threads button.
+    std::function<void()> on_threads_requested;
+
     // Fired when the user clicks the room name or avatar area (not on a topic
     // hyperlink or calendar button).
     std::function<void()> on_info_requested;
@@ -80,6 +83,8 @@ private:
     // Draws a vector calendar icon centred in `button`, tinted with `tint`.
     void draw_calendar_icon(tk::Canvas& canvas, tk::Rect button,
                             tk::Color tint);
+    // Draws a vector "threads" (stacked replies) icon centred in `button`.
+    void draw_threads_icon(tk::Canvas& canvas, tk::Rect button, tk::Color tint);
     // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
     void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
 
@@ -88,6 +93,19 @@ private:
     bool hover_calendar_ = false;
     bool press_calendar_ = false;
     tk::Rect calendar_btn_rect_{}; // updated each paint pass
+
+    bool hover_threads_ = false;
+    bool press_threads_ = false;
+    tk::Rect threads_btn_rect_{}; // updated each paint pass
+
+public:
+    // Test-only accessor for the threads button's world-coordinate rect.
+    tk::Rect threads_btn_rect_for_test() const
+    {
+        return threads_btn_rect_;
+    }
+
+private:
 
     bool encrypted_ = false;
     tk::Rect lock_icon_rect_{};
