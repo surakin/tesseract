@@ -2202,6 +2202,8 @@ void ShellBase::tab_select_room(const std::string& room_id)
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
+        if (existing == active_tab_idx_)
+            return;
         if (active_tab_idx_ < tabs_.size())
         {
             tabs_[active_tab_idx_].scroll_offset =
