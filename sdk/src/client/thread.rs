@@ -7,7 +7,7 @@ use crate::ffi::{OpResult, PaginateResult};
 #[cfg(not(test))]
 use super::{err, ok, ClientFfi, ThreadListHandle, TimelineHandle};
 #[cfg(not(test))]
-use super::timeline::TimelineChannel;
+use super::timeline::{refresh_thread_root_chip, TimelineChannel};
 #[cfg(not(test))]
 use super::timeline_convert::msglike_snippet;
 #[cfg(test)]
@@ -88,7 +88,7 @@ impl ClientFfi {
         let (abort, fetch_abort) = Self::spawn_timeline_tasks(
             &timeline,
             &room,
-            room_id_str,
+            room_id_str.clone(),
             &handler,
             &client,
             &self.rt,
@@ -102,11 +102,114 @@ impl ClientFfi {
         let paginate_abort = self.rt.spawn(async move {
             let _ = tl_for_paginate.paginate_backwards(50).await;
         }).abort_handle();
+
+        // Continuous chip-refresh task: matrix-sdk-ui's room timeline never
+        // updates the cached root's bundled `m.thread` summary on its own
+        // (in-thread replies are intentionally filtered from the room
+        // timeline, so no local aggregation fires for the root). Subscribe
+        // to this thread's diff stream as a second observer: every batch
+        // with at least one event change triggers a `room.event()` re-fetch
+        // of the root so its chip on the room timeline picks up the fresh
+        // count + latest reply preview. An in-flight flag coalesces bursts
+        // of replies into one fetch.
+        let chip_abort = {
+            let room_tl_for_chip = self
+                .timelines
+                .read()
+                .ok()
+                .and_then(|g| g.get(&room_id).map(|h| Arc::clone(&h.timeline)));
+            if let Some(room_tl) = room_tl_for_chip {
+                let tl_for_chip = Arc::clone(&timeline);
+                let room_chip = room.clone();
+                let rid_chip = room_id_str.clone();
+                let root_chip = root.clone();
+                let handler_chip = Arc::clone(&handler);
+                let me_chip = client.user_id().map(|u| u.to_owned());
+                let cancelled_chip = Arc::clone(&cancelled);
+                Some(
+                    self.rt
+                        .spawn(async move {
+                            use futures_util::StreamExt;
+                            use matrix_sdk_ui::eyeball_im::VectorDiff;
+                            use std::sync::atomic::AtomicBool as ChipBool;
+
+                            // One-shot refresh up front so previously-existing
+                            // threads (where the cached root never had a bundle)
+                            // gain their chip the moment the user opens them.
+                            refresh_thread_root_chip(
+                                Arc::clone(&room_tl),
+                                Arc::clone(&handler_chip),
+                                room_chip.clone(),
+                                rid_chip.clone(),
+                                me_chip.clone(),
+                                root_chip.clone(),
+                            )
+                            .await;
+
+                            let (_initial, mut stream) = tl_for_chip.subscribe().await;
+                            let in_flight = Arc::new(ChipBool::new(false));
+
+                            while let Some(diffs) = stream.next().await {
+                                if cancelled_chip.load(Ordering::Acquire) {
+                                    break;
+                                }
+                                let touches_events = diffs.iter().any(|d| {
+                                    matches!(
+                                        d,
+                                        VectorDiff::Append { .. }
+                                            | VectorDiff::PushBack { .. }
+                                            | VectorDiff::PushFront { .. }
+                                            | VectorDiff::Insert { .. }
+                                            | VectorDiff::Set { .. }
+                                            | VectorDiff::Reset { .. }
+                                    )
+                                });
+                                if !touches_events {
+                                    continue;
+                                }
+                                if in_flight.swap(true, Ordering::Acquire) {
+                                    // A refresh is already running; it will
+                                    // observe whatever state lands by the
+                                    // time it issues `room.event()`.
+                                    continue;
+                                }
+                                let room_tl_inner = Arc::clone(&room_tl);
+                                let handler_inner = Arc::clone(&handler_chip);
+                                let room_inner = room_chip.clone();
+                                let rid_inner = rid_chip.clone();
+                                let me_inner = me_chip.clone();
+                                let root_inner = root_chip.clone();
+                                let in_flight_inner = Arc::clone(&in_flight);
+                                tokio::spawn(async move {
+                                    refresh_thread_root_chip(
+                                        room_tl_inner,
+                                        handler_inner,
+                                        room_inner,
+                                        rid_inner,
+                                        me_inner,
+                                        root_inner,
+                                    )
+                                    .await;
+                                    in_flight_inner.store(false, Ordering::Release);
+                                });
+                            }
+                        })
+                        .abort_handle(),
+                )
+            } else {
+                None
+            }
+        };
+
+        let mut abort_tasks = vec![abort, fetch_abort, paginate_abort];
+        if let Some(h) = chip_abort {
+            abort_tasks.push(h);
+        }
         self.thread_timelines.insert(
             key,
             TimelineHandle {
                 timeline,
-                abort_tasks: vec![abort, fetch_abort, paginate_abort],
+                abort_tasks,
                 is_focused: true,
                 cancelled,
             },

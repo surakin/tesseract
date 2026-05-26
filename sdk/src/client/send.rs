@@ -596,7 +596,14 @@ impl ClientFfi {
             .rt
             .block_on(async move { room.send_raw("m.room.message", content).await })
         {
-            Ok(_) => ok(""),
+            Ok(_) => {
+                // No thread subscriber is listening to catch up the root's
+                // chip, so do it here. `room.send_raw` returns after server
+                // confirmation, so the bundle on the next `room.event()`
+                // call already includes this reply.
+                self.schedule_thread_root_refresh(&room_id, &root);
+                ok("")
+            }
             Err(e) => err(e.to_string()),
         }
     }

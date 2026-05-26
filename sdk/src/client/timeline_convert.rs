@@ -236,6 +236,67 @@ pub(super) fn embedded_event_preview(
     (name, body, ts)
 }
 
+/// Extract (sender_display_name, body_snippet, timestamp_ms) from a
+/// matrix-sdk `TimelineEvent` representing the *bundled latest thread event*
+/// returned by `Room::event()` in `unsigned.m.relations.m.thread.latest_event`.
+///
+/// Used by the thread-chip refresh path: when we re-fetch a thread root after
+/// a reply lands, the server bundles the latest reply alongside the count.
+/// matrix-sdk pre-decrypts it for us; we just need to project it into the
+/// three fields the C++ chip renders.
+///
+/// Returns empty strings / zero on any deserialization failure or
+/// non-message-like event content (matching the `msglike_snippet` fallback).
+#[cfg(not(test))]
+pub(super) async fn bundled_event_preview(
+    ev: &matrix_sdk::deserialized_responses::TimelineEvent,
+    room: &Room,
+) -> (String, String, u64) {
+    use matrix_sdk::ruma::events::{
+        room::message::MessageType, AnySyncMessageLikeEvent, AnySyncTimelineEvent,
+        SyncMessageLikeEvent,
+    };
+    let raw = ev.raw();
+    let parsed = match raw.deserialize() {
+        Ok(p) => p,
+        Err(_) => return (String::new(), String::new(), 0),
+    };
+    let sender = parsed.sender().to_owned();
+    let ts: u64 = parsed.origin_server_ts().get().into();
+    let body = match &parsed {
+        AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
+            SyncMessageLikeEvent::Original(orig),
+        )) => match &orig.content.msgtype {
+            MessageType::Text(t) => t.body.clone(),
+            MessageType::Image(_) => "(image)".to_owned(),
+            MessageType::File(_) => "(file)".to_owned(),
+            MessageType::Audio(a) => {
+                if a.voice.is_some() {
+                    "(voice)".to_owned()
+                } else {
+                    "(audio)".to_owned()
+                }
+            }
+            MessageType::Video(_) => "(video)".to_owned(),
+            MessageType::Notice(n) => n.body.clone(),
+            MessageType::Emote(e) => e.body.clone(),
+            _ => "(message)".to_owned(),
+        },
+        AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(_)) => {
+            "(sticker)".to_owned()
+        }
+        _ => String::new(),
+    };
+    let name = match room.get_member_no_sync(&sender).await {
+        Ok(Some(m)) => m
+            .display_name()
+            .map(str::to_owned)
+            .unwrap_or_else(|| sender.to_string()),
+        _ => sender.to_string(),
+    };
+    (name, body, ts)
+}
+
 /// Returns (url, encrypted_json) for the thumbnail (or full-res when no
 /// thumbnail is present) when the embedded event is an `m.image` message.
 /// Returns ("", "") for all other message types.
