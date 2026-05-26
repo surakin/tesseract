@@ -282,19 +282,26 @@ impl ClientFfi {
     // Cache management
     // -----------------------------------------------------------------------
 
+    /// Drop the matrix-sdk Client and wipe the on-disk event cache. State and
+    /// crypto stores survive, so `restore_session` lands on the same identity
+    /// and room list and `start_sync` resumes from the saved sync token.
+    ///
+    /// Calling `event_cache().clear_all_rooms()` on a live client is unsafe in
+    /// our setup: any still-subscribed observer (matrix_sdk_ui::Timeline's
+    /// internal as_vector, or one of its aborted-but-not-yet-dropped tasks)
+    /// can panic mid-update inside the linked-chunk's write lock, poisoning
+    /// it; the next `clear_pending` unwraps the PoisonError and aborts the
+    /// process. Dropping the Client outright deletes every observer + linked
+    /// chunk in one shot, so the subsequent file delete touches nothing
+    /// in-memory.
     pub fn clear_caches(&mut self) -> crate::ffi::OpResult {
-        let Some(client) = self.client.clone() else {
+        if self.client.is_none() {
             return err("not logged in");
-        };
+        }
 
-        // Drop every live Timeline (room + thread) and ThreadList before
-        // clear_all_rooms reshapes each RoomEventCache's linked chunks. Each
-        // Timeline holds an `as_vector` observer subscribed to those chunks;
-        // if the observers are still around when the chunks are reset,
-        // matrix-sdk-common aborts the process with "Inserting new chunk at
-        // the end: The previous chunk is invalid" because its tracked state
-        // no longer matches the post-clear shape. stop_sync does not drop
-        // these handles.
+        // Drain every live Timeline / ThreadList first, so their spawned
+        // tasks are signalled cancelled before the Client they reference
+        // disappears underneath them.
         #[cfg(not(test))]
         {
             let _guard = self.rt.enter();
@@ -315,31 +322,26 @@ impl ClientFfi {
             }
         }
 
-        let result = self.rt.block_on(async move {
-            // Clear all in-memory event-cache chunks and their SQLite backing
-            // rows.  This is the safe path — it notifies live observers instead
-            // of deleting rows from under them.
-            client
-                .event_cache()
-                .clear_all_rooms()
-                .await
-                .context("clear event cache")?;
-            anyhow::Ok(())
-        });
-
-        if let Err(e) = result {
-            return err(e.to_string());
+        // Drop the Client inside the runtime context: matrix-sdk's
+        // SqliteStateStore calls Handle::current() in its Drop chain.
+        {
+            let _guard = self.rt.enter();
+            drop(self.client.take());
         }
 
-        // Drop the open connection first so all WAL frames are checkpointed,
-        // then delete the file and clear the in-memory preview cache so the
-        // next backfill run starts from a clean slate.
         #[cfg(not(test))]
         {
             if let Ok(mut db) = self.app_cache_db.lock() {
                 *db = None;
             }
             let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
+            for sidecar in [
+                "matrix-sdk-event-cache.sqlite3",
+                "matrix-sdk-event-cache.sqlite3-wal",
+                "matrix-sdk-event-cache.sqlite3-shm",
+            ] {
+                let _ = std::fs::remove_file(self.data_dir.join(sidecar));
+            }
             if let Ok(mut cache) = self.backfill_previews.lock() {
                 cache.clear();
             }
