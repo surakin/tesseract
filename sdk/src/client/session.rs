@@ -1,0 +1,380 @@
+//! OAuth login, session restore/export, server info, logout, cache clearing.
+//!
+//! Split out of `client/mod.rs` in the modularization refactor; behavior unchanged.
+
+use anyhow::Context as _;
+use matrix_sdk::{
+    authentication::oauth::{ClientId, OAuthSession, UserSession},
+    encryption::{BackupDownloadStrategy, EncryptionSettings},
+    store::RoomLoadSettings,
+    Client,
+};
+use serde::{Deserialize, Serialize};
+
+use super::{err, ok, oauth_err, ClientFfi};
+use crate::ffi::{OAuthBegin, OpResult};
+use crate::oauth;
+
+use std::sync::atomic::Ordering;
+
+#[cfg(not(test))]
+use super::BACKUP_STATE_UNKNOWN;
+
+/// Serialisable wrapper for a full OAuth session (client_id + user session).
+#[derive(Serialize, Deserialize)]
+pub(super) struct PersistedSession {
+    pub(super) client_id: ClientId,
+    #[serde(flatten)]
+    pub(super) user: UserSession,
+}
+
+impl ClientFfi {
+    // -----------------------------------------------------------------------
+    // OAuth login
+    // -----------------------------------------------------------------------
+
+    pub fn oauth_begin(&mut self, homeserver: &str, register_account: bool) -> OAuthBegin {
+        if let Some(prev) = self.oauth_flow.take() {
+            oauth::cancel(&prev);
+        }
+
+        let hs = homeserver.to_owned();
+        let path = self.data_dir.clone();
+
+        // Only start from a clean store when there is no active session. If a
+        // session was already restored (e.g. the user hit "Sign in again"
+        // after a timeout, or a second flow), wiping here would silently
+        // destroy the live SQLite cache for the restored account. The store
+        // is cleared explicitly on logout instead.
+        if self.client.is_none() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+        let _ = std::fs::create_dir_all(&path);
+
+        match self.rt.block_on(oauth::begin(&hs, &path, register_account)) {
+            Ok(begin) => {
+                let auth_url = begin.auth_url;
+                let redirect_uri = begin.redirect_uri;
+                self.oauth_flow = Some(begin.flow);
+                OAuthBegin {
+                    ok: true,
+                    message: String::new(),
+                    auth_url,
+                    redirect_uri,
+                }
+            }
+            Err(e) => oauth_err(e.to_string()),
+        }
+    }
+
+    pub fn homeserver_supports_registration(&mut self, homeserver: &str) -> bool {
+        let hs = homeserver.to_owned();
+        self.rt.block_on(oauth::supports_registration(&hs))
+    }
+
+    pub fn oauth_await_callback(&mut self) -> OpResult {
+        let Some(flow) = self.oauth_flow.take() else {
+            return err("no oauth flow in progress; call oauth_begin first");
+        };
+
+        match self.rt.block_on(oauth::await_callback(flow)) {
+            Ok(client) => {
+                // Enter the runtime so any prior Client we're overwriting drops
+                // with a tokio context in TLS — matrix-sdk's SqliteStateStore /
+                // deadpool tear-down calls Handle::current() in its Drop impl.
+                let _guard = self.rt.enter();
+                self.client = Some(client);
+                ok("")
+            }
+            Err(e) => err(format!("{e:#}")),
+        }
+    }
+
+    pub fn oauth_cancel(&mut self) {
+        if let Some(flow) = self.oauth_flow.take() {
+            oauth::cancel(&flow);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Session persistence
+    // -----------------------------------------------------------------------
+
+    pub fn restore_session(&mut self, session_json: &str) -> OpResult {
+        let persisted: PersistedSession = match serde_json::from_str(session_json) {
+            Ok(s) => s,
+            Err(e) => return err(format!("parse session JSON: {e}")),
+        };
+
+        let homeserver = persisted.user.meta.user_id.server_name().to_string();
+        let path = self.data_dir.clone();
+        let _ = std::fs::create_dir_all(&path);
+
+        let result = self.rt.block_on(async move {
+            let client = Client::builder()
+                .server_name_or_homeserver_url(homeserver)
+                .sqlite_store(&path, None)
+                .handle_refresh_tokens()
+                .user_agent(crate::oauth::build_user_agent())
+                .with_encryption_settings(EncryptionSettings {
+                    backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+                    ..Default::default()
+                })
+                .build()
+                .await
+                .context("build client")?;
+
+            let session = OAuthSession {
+                client_id: persisted.client_id,
+                user: persisted.user,
+            };
+            client
+                .oauth()
+                .restore_session(session, RoomLoadSettings::default())
+                .await
+                .context("restore oauth session")?;
+
+            // Install a synchronous save_session_callback so that any token
+            // refresh that completes — even if the tokio runtime is being torn
+            // down and our async TokensRefreshed watcher is aborted mid-flight
+            // — immediately persists the new tokens.  Without this, servers
+            // that rotate refresh tokens (e.g. MAS on matrix.org) can mark RT_n
+            // as used before the app receives the response, leaving a stale RT_n
+            // persisted and causing invalid_grant on the next launch.
+            //
+            // The save MUST land in the same authoritative store the next launch
+            // restores from: the platform secret store (Credential Manager /
+            // Keychain / libsecret) via SessionStore::save_account — reached here
+            // through the persist_session FFI.  Writing a plaintext session.json
+            // beside the sqlite store does NOT work: after the secret-store
+            // migration that file holds only a sentinel and load_account ignores
+            // it, so the rotated token would be silently dropped.
+            let _ = client.set_session_callbacks(
+                Box::new(move |c: Client| {
+                    c.session_tokens().ok_or_else(|| "no session tokens".into())
+                }),
+                Box::new(move |c: Client| {
+                    let Some(full) = c.oauth().full_session() else {
+                        return Ok(());
+                    };
+                    let user_id = full.user.meta.user_id.to_string();
+                    let persisted = PersistedSession {
+                        client_id: full.client_id,
+                        user: full.user,
+                    };
+                    let json = serde_json::to_string(&persisted)
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                    crate::ffi::persist_session(&user_id, &json);
+                    Ok(())
+                }),
+            );
+
+            anyhow::Ok(client)
+        });
+
+        match result {
+            Ok(c) => {
+                // Enter the runtime so the previous Client (still in self.client
+                // after an auth-error → re-restore path) drops with a tokio
+                // context in TLS — matrix-sdk's SqliteStateStore / deadpool
+                // tear-down calls Handle::current() in its Drop impl.
+                let _guard = self.rt.enter();
+                self.client = Some(c);
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    pub fn export_session(&self) -> String {
+        let Some(client) = &self.client else {
+            return String::new();
+        };
+        let Some(session) = client.oauth().full_session() else {
+            return String::new();
+        };
+        let persisted = PersistedSession {
+            client_id: session.client_id,
+            user: session.user,
+        };
+        serde_json::to_string(&persisted).unwrap_or_default()
+    }
+
+    /// Fetch homeserver spec versions and enabled capabilities.
+    /// Returns a JSON blob or empty string when not logged in or on any error.
+    /// Blocks the calling thread — call only from a worker thread.
+    pub fn get_server_info(&self) -> String {
+        let Some(client) = &self.client else {
+            return String::new();
+        };
+        let client = client.clone();
+        let http = self.http_client.clone();
+
+        self.rt.block_on(async move {
+            let base = {
+                let url = client.homeserver().to_string();
+                url.trim_end_matches('/').to_owned()
+            };
+            let access_token = client.access_token().unwrap_or_default();
+
+            let (versions_resp, caps_resp) = tokio::join!(
+                http.get(format!("{base}/_matrix/client/versions")).send(),
+                http.get(format!("{base}/_matrix/client/v3/capabilities"))
+                    .bearer_auth(&access_token)
+                    .send()
+            );
+
+            let versions_json: serde_json::Value = match versions_resp {
+                Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
+                Err(_) => serde_json::Value::Null,
+            };
+
+            let spec_versions: Vec<String> = versions_json["versions"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let supports_msc3030 = versions_json
+                .pointer("/unstable_features/org.matrix.msc3030")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let caps: serde_json::Value = match caps_resp {
+                Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
+                Err(_) => serde_json::Value::Null,
+            };
+
+            let cap_bool = |key: &str| -> bool {
+                caps.pointer(&format!("/capabilities/{key}/enabled"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true)
+            };
+            let default_room_ver = caps
+                .pointer("/capabilities/m.room_versions/default")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+
+            serde_json::json!({
+                "homeserver": base,
+                "spec_versions": spec_versions,
+                "supports_msc3030": supports_msc3030,
+                "can_change_password": cap_bool("m.change_password"),
+                "can_set_displayname": cap_bool("m.set_displayname"),
+                "can_set_avatar": cap_bool("m.set_avatar_url"),
+                "default_room_version": default_room_ver
+            })
+            .to_string()
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Cache management
+    // -----------------------------------------------------------------------
+
+    pub fn clear_caches(&mut self) -> crate::ffi::OpResult {
+        let Some(client) = self.client.clone() else {
+            return err("not logged in");
+        };
+
+        let result = self.rt.block_on(async move {
+            // Clear all in-memory event-cache chunks and their SQLite backing
+            // rows.  This is the safe path — it notifies live observers instead
+            // of deleting rows from under them.
+            client
+                .event_cache()
+                .clear_all_rooms()
+                .await
+                .context("clear event cache")?;
+            anyhow::Ok(())
+        });
+
+        if let Err(e) = result {
+            return err(e.to_string());
+        }
+
+        // Drop the open connection first so all WAL frames are checkpointed,
+        // then delete the file and clear the in-memory preview cache so the
+        // next backfill run starts from a clean slate.
+        #[cfg(not(test))]
+        {
+            if let Ok(mut db) = self.app_cache_db.lock() {
+                *db = None;
+            }
+            let _ = std::fs::remove_file(self.data_dir.join("app_cache.db"));
+            if let Ok(mut cache) = self.backfill_previews.lock() {
+                cache.clear();
+            }
+        }
+
+        ok(String::new())
+    }
+
+    // -----------------------------------------------------------------------
+    // Logout
+    // -----------------------------------------------------------------------
+
+    pub fn logout(&mut self) -> OpResult {
+        self.stop_sync();
+
+        // Close the app cache DB before remove_dir_all so WAL frames are
+        // checkpointed and the file handle is released (required on Windows).
+        // Also clear the in-memory backfill cache so nothing stale persists
+        // after a re-login on the same process.
+        #[cfg(not(test))]
+        {
+            if let Ok(mut db) = self.app_cache_db.lock() {
+                *db = None;
+            }
+            if let Ok(mut cache) = self.backfill_previews.lock() {
+                cache.clear();
+            }
+        }
+
+        if let Some(flow) = self.oauth_flow.take() {
+            oauth::cancel(&flow);
+        }
+
+        // Abort each timeline's background tasks before dropping the handles,
+        // mirroring Drop. Plain `.clear()` drops the AbortHandles without
+        // cancelling the spawned futures, which would keep an Arc<Timeline>
+        // (and the HTTP client) alive past the token revocation below.
+        #[cfg(not(test))]
+        {
+            let _guard = self.rt.enter();
+            for (_, th) in self.timelines.write().unwrap().drain() {
+                th.cancelled.store(true, Ordering::Release);
+                for h in th.abort_tasks {
+                    h.abort();
+                }
+            }
+        }
+        #[cfg(not(test))]
+        {
+            self.imported_keys.store(0, Ordering::Relaxed);
+            self.backup_state_code
+                .store(BACKUP_STATE_UNKNOWN, Ordering::Relaxed);
+        }
+        self.media_upload_limit.store(0, Ordering::Relaxed);
+
+        let Some(client) = self.client.take() else {
+            let _ = std::fs::remove_dir_all(&self.data_dir);
+            return ok("");
+        };
+
+        let revoke = self
+            .rt
+            .block_on(async move { client.oauth().logout().await });
+
+        let _ = std::fs::remove_dir_all(&self.data_dir);
+
+        match revoke {
+            Ok(_) => ok(""),
+            Err(e) => err(format!("oauth logout failed (local store cleared): {e}")),
+        }
+    }
+}

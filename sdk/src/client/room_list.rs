@@ -1,0 +1,366 @@
+//! Room list / invites / room management (join, leave, members, topic,
+//! room summary, space children).
+//!
+//! Split out of `client.rs` in the modularization refactor; behavior unchanged.
+
+use super::{err, ok, ClientFfi};
+
+use crate::ffi::OpResult;
+
+#[cfg(not(test))]
+use super::{
+    build_invite_infos, build_room_infos, require_room, stop_fut, try_op,
+};
+
+#[cfg(not(test))]
+use matrix_sdk::ruma::OwnedRoomId;
+
+impl ClientFfi {
+    pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
+        #[cfg(not(test))]
+        {
+            let Some(client) = self.client.clone() else {
+                return Vec::new();
+            };
+            self.rt.block_on(build_room_infos(&client))
+        }
+        #[cfg(test)]
+        {
+            Vec::new()
+        }
+    }
+
+    /// Snapshot of all pending room invitations. Reads the local SDK cache —
+    /// no network roundtrip. Blocks — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn list_invites(&self) -> Vec<crate::ffi::InviteInfo> {
+        let Some(client) = self.client.clone() else {
+            return Vec::new();
+        };
+        self.rt.block_on(build_invite_infos(&client))
+    }
+
+    #[cfg(test)]
+    pub fn list_invites(&self) -> Vec<crate::ffi::InviteInfo> {
+        Vec::new()
+    }
+
+    /// Accept a pending room invitation. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn accept_invite(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        if room.state() != matrix_sdk::RoomState::Invited {
+            return err("room is not in invited state");
+        }
+        // Joining does not populate m.direct, so a DM invite would otherwise
+        // land in the regular room list. Capture the invite's DM flag (from the
+        // stripped m.room.member event) before joining, then persist it.
+        let was_direct = self.rt.block_on(room.is_direct()).unwrap_or(false);
+        match self.rt.block_on(room.join()) {
+            Ok(_) => {
+                if was_direct {
+                    let _ = self.rt.block_on(room.set_is_direct(true));
+                }
+                ok("")
+            }
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn accept_invite(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Decline a pending room invitation. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn decline_invite(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        match self.rt.block_on(room.leave()) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn decline_invite(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Decline a room invitation and ignore the inviter. Calls `room.leave()`
+    /// then `account().ignore_user(inviter_user_id)`. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn block_invite(&mut self, room_id: &str, inviter_user_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        if inviter_user_id.is_empty() {
+            return err("inviter_user_id is empty; use decline_invite instead");
+        }
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid room id: {e}")),
+        };
+        let Ok(uid) = matrix_sdk::ruma::UserId::parse(inviter_user_id) else {
+            return err("invalid user id");
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        if let Err(e) = self.rt.block_on(room.leave()) {
+            return err(e.to_string());
+        }
+        match self.rt.block_on(client.account().ignore_user(&uid)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn block_invite(&mut self, _room_id: &str, _inviter_user_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    pub fn space_children(&self, space_id: &str) -> Vec<String> {
+        #[cfg(not(test))]
+        {
+            let Some(client) = self.client.as_ref() else {
+                return vec![];
+            };
+            let Ok(room_id) = OwnedRoomId::try_from(space_id) else {
+                return vec![];
+            };
+            let Some(space_room) = client.get_room(&room_id) else {
+                return vec![];
+            };
+            let client = client.clone();
+
+            self.rt.block_on(async move {
+                use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+                use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+                use matrix_sdk::ruma::events::SyncStateEvent;
+
+                let Ok(events) = space_room
+                    .get_state_events_static::<SpaceChildEventContent>()
+                    .await
+                else {
+                    return vec![];
+                };
+
+                // Mirror the pattern used by Room::parent_spaces() in matrix-sdk.
+                // SpaceChildEventContent has state_key_type = OwnedRoomId, so
+                // e.state_key is already typed — no JSON access needed.
+                events
+                    .into_iter()
+                    .filter_map(|ev| match ev.deserialize() {
+                        Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(e))) => {
+                            Some(e.state_key.to_owned())
+                        }
+                        Ok(SyncOrStrippedState::Sync(SyncStateEvent::Redacted(_))) => None,
+                        Ok(SyncOrStrippedState::Stripped(e)) => Some(e.state_key.to_owned()),
+                        Err(_) => None,
+                    })
+                    .filter(|child_id| client.get_room(child_id).is_some())
+                    .map(|id| id.to_string())
+                    .collect()
+            })
+        }
+        #[cfg(test)]
+        {
+            let _ = space_id;
+            vec![]
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn get_room_summary(&mut self, room_id_or_alias: &str) -> String {
+        use matrix_sdk::ruma::api::client::room::get_summary::v1::Request;
+        use matrix_sdk::ruma::room::{JoinRuleSummary, RoomType};
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if room_id_or_alias.is_empty() {
+            return String::new();
+        }
+
+        let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
+            Ok(id) => id,
+            Err(_) => return String::new(),
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            let req = Request::new(id, vec![]);
+            tokio::select! {
+                result = client.send(req) => {
+                    match result {
+                        Ok(resp) => {
+                            let s = &resp.summary;
+                            let join_rule = match &s.join_rule {
+                                JoinRuleSummary::Public        => "public",
+                                JoinRuleSummary::Invite        => "invite",
+                                JoinRuleSummary::Knock         => "knock",
+                                JoinRuleSummary::KnockRestricted(_) => "knock_restricted",
+                                JoinRuleSummary::Restricted(_) => "restricted",
+                                JoinRuleSummary::Private       => "private",
+                                _                              => "unknown",
+                            };
+                            let encryption = s.encryption.as_ref()
+                                .map(|e| e.as_str())
+                                .unwrap_or("");
+                            let is_space = matches!(s.room_type, Some(RoomType::Space));
+                            let membership = resp.membership.as_ref()
+                                .map(|m| m.as_str())
+                                .unwrap_or("");
+                            serde_json::json!({
+                                "room_id":            s.room_id.as_str(),
+                                "canonical_alias":    s.canonical_alias.as_ref().map(|a| a.as_str()).unwrap_or(""),
+                                "name":               s.name.as_deref().unwrap_or(""),
+                                "topic":              s.topic.as_deref().unwrap_or(""),
+                                "avatar_url":         s.avatar_url.as_ref().map(|u| u.as_str()).unwrap_or(""),
+                                "num_joined_members": u64::from(s.num_joined_members),
+                                "join_rule":          join_rule,
+                                "world_readable":     s.world_readable,
+                                "guest_can_join":     s.guest_can_join,
+                                "encryption":         encryption,
+                                "is_space":           is_space,
+                                "membership":         membership,
+                            }).to_string()
+                        }
+                        Err(_) => String::new(),
+                    }
+                }
+                _ = stop_fut(stop_rx) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn get_room_summary(&mut self, _room_id_or_alias: &str) -> String {
+        String::new()
+    }
+
+    #[cfg(not(test))]
+    pub fn join_room(&mut self, room_id_or_alias: &str) -> String {
+        use matrix_sdk::ruma::OwnedRoomOrAliasId;
+
+        let Some(client) = self.client.clone() else {
+            return String::new();
+        };
+        if room_id_or_alias.is_empty() {
+            return String::new();
+        }
+
+        let id: OwnedRoomOrAliasId = match room_id_or_alias.try_into() {
+            Ok(id) => id,
+            Err(_) => return String::new(),
+        };
+        let stop_rx = self.stop_rx.clone();
+        self.rt.block_on(async move {
+            tokio::select! {
+                result = client.join_room_by_id_or_alias(&id, &[]) => {
+                    match result {
+                        Ok(room) => room.room_id().to_string(),
+                        Err(_)   => String::new(),
+                    }
+                }
+                _ = stop_fut(stop_rx) => String::new(),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn join_room(&mut self, _room_id_or_alias: &str) -> String {
+        String::new()
+    }
+
+    // -----------------------------------------------------------------------
+    // Room management
+    // -----------------------------------------------------------------------
+
+    /// Leave a room. Blocks the calling thread — call from a worker thread.
+    #[cfg(not(test))]
+    pub fn leave_room(&mut self, room_id: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        match self.rt.block_on(room.leave()) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn leave_room(&mut self, _room_id: &str) -> OpResult {
+        err("not logged in")
+    }
+
+    /// Fetch the joined member list for a room. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn get_room_members(&mut self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return Vec::new();
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return Vec::new(),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return Vec::new();
+        };
+        match self.rt.block_on(room.members(matrix_sdk::RoomMemberships::JOIN)) {
+            Ok(members) => members
+                .into_iter()
+                .map(|m| crate::ffi::RoomMember {
+                    user_id: m.user_id().to_string(),
+                    display_name: m
+                        .display_name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| m.user_id().localpart().to_string()),
+                    avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn get_room_members(&mut self, _room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        Vec::new()
+    }
+
+    /// Send an m.room.topic state event. Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn set_room_topic(&mut self, room_id: &str, topic: &str) -> OpResult {
+        let _enter = self.rt.enter();
+        use matrix_sdk::ruma::events::room::topic::RoomTopicEventContent;
+
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+        let (_, room) = try_op!(require_room(client, room_id));
+        let content = RoomTopicEventContent::new(topic.to_owned());
+        match self.rt.block_on(room.send_state_event(content)) {
+            Ok(_) => ok(""),
+            Err(e) => err(e.to_string()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_room_topic(&mut self, _room_id: &str, _topic: &str) -> OpResult {
+        err("not logged in")
+    }
+}
