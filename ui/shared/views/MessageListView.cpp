@@ -777,7 +777,7 @@ public:
         float body_w = std::max(0.0f, body_text_max_width(width) -
                                           receipt_reserve_width(m));
         float body_h = measure_body_block_height(m, ctx, body_w);
-        float eff_chip_h = cont ? std::min(chip_h(), body_h) : chip_h();
+        float eff_chip_h = chip_h();
         float chips_h = !m.reactions.empty() ? eff_chip_h : 0.0f;
         float top_pad = cont ? kContPadY : kPadY;
         float header_h = cont ? 0.0f : kAvatarSize;
@@ -914,10 +914,7 @@ public:
             cont ? (bounds.y + kContPadY) : (bounds.y + kPadY + kAvatarSize);
         float cursor = body_top;
         cursor = paint_body_block(m, ctx, col_x, cursor, col_w);
-        // For continuation rows (no avatar), cap reaction chips to body height
-        // so a single-line message's chip strip never exceeds the text area.
-        float eff_chip_h =
-            cont ? std::min(chip_h(), cursor - body_top) : chip_h();
+        float eff_chip_h = chip_h();
         float eff_chip_r = eff_chip_h * 0.5f;
 
         // ── Hover-button overlay (no reactions / no receipts) ───────────────
