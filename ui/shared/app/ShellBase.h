@@ -909,6 +909,11 @@ protected:
     // (no room-switch gate). Returns true when a cache hit was found.
     bool try_restore_message_cache_(const std::string& room_id);
 
+    // Drop room_id's cached snapshot. Called when a timeline event arrives
+    // for a non-current room so its stale rows do not flash on navigation
+    // before the live timeline reset overwrites them.
+    void invalidate_message_cache_(const std::string& room_id);
+
     // Fire a synchronous SDK call to fetch reply-to metadata.
     void ensure_reply_details_(const std::string& event_id);
 

@@ -1656,16 +1656,23 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     {
         return;
     }
-    if (room_id == current_room_id_ && room_view_)
+    if (room_id == current_room_id_)
     {
-        prep_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
+        if (room_view_)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev->event_id);
+            }
+            room_view_->insert_message(
+                index, tesseract::views::make_row_data(*ev, my_user_id_));
+            request_relayout_();
         }
-        room_view_->insert_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
-        request_relayout_();
+    }
+    else
+    {
+        invalidate_message_cache_(room_id);
     }
     dispatch_message_inserted_secondary_(room_id, index, *ev);
 }
@@ -1678,16 +1685,23 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     {
         return;
     }
-    if (room_id == current_room_id_ && room_view_)
+    if (room_id == current_room_id_)
     {
-        prep_row_media_(*ev);
-        if (!ev->in_reply_to_id.empty())
+        if (room_view_)
         {
-            ensure_reply_details_(ev->event_id);
+            prep_row_media_(*ev);
+            if (!ev->in_reply_to_id.empty())
+            {
+                ensure_reply_details_(ev->event_id);
+            }
+            room_view_->update_message(
+                index, tesseract::views::make_row_data(*ev, my_user_id_));
+            request_relayout_();
         }
-        room_view_->update_message(
-            index, tesseract::views::make_row_data(*ev, my_user_id_));
-        request_relayout_();
+    }
+    else
+    {
+        invalidate_message_cache_(room_id);
     }
     dispatch_message_updated_secondary_(room_id, index, *ev);
 }
@@ -1695,10 +1709,17 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
 void ShellBase::handle_message_removed_ui_(std::string room_id,
                                            std::size_t index)
 {
-    if (room_id == current_room_id_ && room_view_)
+    if (room_id == current_room_id_)
     {
-        room_view_->remove_message(index);
-        request_relayout_();
+        if (room_view_)
+        {
+            room_view_->remove_message(index);
+            request_relayout_();
+        }
+    }
+    else
+    {
+        invalidate_message_cache_(room_id);
     }
     dispatch_message_removed_secondary_(room_id, index);
 }
@@ -2013,6 +2034,22 @@ bool ShellBase::try_restore_message_cache_(const std::string& room_id)
     view_displayed_room_id_ = room_id;
     apply_cached_messages_(it->second);
     return true;
+}
+
+void ShellBase::invalidate_message_cache_(const std::string& room_id)
+{
+    auto it = message_cache_.find(room_id);
+    if (it == message_cache_.end())
+    {
+        return;
+    }
+    message_cache_.erase(it);
+    auto lru_it = std::find(message_cache_lru_.begin(),
+                            message_cache_lru_.end(), room_id);
+    if (lru_it != message_cache_lru_.end())
+    {
+        message_cache_lru_.erase(lru_it);
+    }
 }
 
 void ShellBase::tab_open_room(const std::string& room_id)
