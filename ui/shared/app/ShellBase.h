@@ -95,6 +95,41 @@ public:
     // Call once per shell after main_app_ and room_view_ are set.
     void setup_dm_callbacks();
 
+    // ── Thread panel state machine ────────────────────────────────────────────
+    enum class ThreadPanel
+    {
+        Closed,
+        List,
+        Open,
+    };
+
+    enum class ThreadTrigger
+    {
+        ToggleList,      // RoomHeader threads button
+        OpenFromList,    // row click in ThreadListView
+        OpenFromMain,    // preview chip click in MessageListView
+        CloseThread,     // back/close in ThreadView
+        RoomSwitch,      // current_room_id_ about to change
+    };
+
+    struct ThreadTransition
+    {
+        ThreadPanel new_state = ThreadPanel::Closed;
+        ThreadPanel new_prev  = ThreadPanel::Closed;
+        std::string new_root;
+        // Effects (executed in order by the applier):
+        std::vector<std::string> threads_to_unsubscribe;
+        std::vector<std::string> threads_to_subscribe;
+        bool subscribe_room_threads_   = false;
+        bool unsubscribe_room_threads_ = false;
+    };
+
+    // Pure: returns the next state + the subscription side-effects to apply.
+    // No Client calls, no UI calls — safe to call from tests.
+    static ThreadTransition compute_thread_transition_(
+        ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
+        ThreadTrigger trigger, const std::string& trigger_root);
+
 protected:
     // ── Multi-account ─────────────────────────────────────────────────────────
     std::vector<std::unique_ptr<AccountSession>> accounts_;
@@ -161,6 +196,11 @@ protected:
     std::string view_displayed_room_id_;
     std::string pending_restore_room_;
     std::vector<std::string> space_stack_;
+
+    // ── Thread panel state ────────────────────────────────────────────────────
+    ThreadPanel thread_panel_      = ThreadPanel::Closed;
+    ThreadPanel thread_panel_prev_ = ThreadPanel::Closed;
+    std::string current_thread_root_;
     bool compose_typing_active_ = false;
     bool typing_bar_visible_ = false;
 

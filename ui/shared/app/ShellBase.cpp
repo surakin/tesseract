@@ -2407,4 +2407,89 @@ void ShellBase::restart_sdk_()
         client_->start_sync(event_handler_);
 }
 
+// static
+ShellBase::ThreadTransition ShellBase::compute_thread_transition_(
+    ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
+    ThreadTrigger trigger, const std::string& trigger_root)
+{
+    ThreadTransition t;
+    t.new_state = cur;
+    t.new_prev  = prev;
+    t.new_root  = current_root;
+
+    switch (trigger)
+    {
+    case ThreadTrigger::ToggleList:
+        if (cur == ThreadPanel::Closed)
+        {
+            t.new_state = ThreadPanel::List;
+            t.new_prev  = ThreadPanel::Closed;
+            t.new_root.clear();
+            t.subscribe_room_threads_ = true;
+        }
+        else if (cur == ThreadPanel::List)
+        {
+            t.new_state = ThreadPanel::Closed;
+            t.new_prev  = ThreadPanel::Closed;
+            t.new_root.clear();
+            t.unsubscribe_room_threads_ = true;
+        }
+        else // Open
+        {
+            // Toggle while a thread is open: close everything (matches
+            // the spec — main button is a Closed<->List toggle and any
+            // thread sub gets released).
+            t.new_state = ThreadPanel::Closed;
+            t.new_prev  = ThreadPanel::Closed;
+            t.threads_to_unsubscribe.push_back(current_root);
+            t.new_root.clear();
+            if (prev == ThreadPanel::List)
+                t.unsubscribe_room_threads_ = true;
+        }
+        break;
+
+    case ThreadTrigger::OpenFromList:
+        if (cur == ThreadPanel::Open)
+            t.threads_to_unsubscribe.push_back(current_root);
+        t.new_state = ThreadPanel::Open;
+        t.new_prev  = ThreadPanel::List;
+        t.new_root  = trigger_root;
+        t.threads_to_subscribe.push_back(trigger_root);
+        break;
+
+    case ThreadTrigger::OpenFromMain:
+        if (cur == ThreadPanel::Open)
+            t.threads_to_unsubscribe.push_back(current_root);
+        t.new_state = ThreadPanel::Open;
+        t.new_prev  = (cur == ThreadPanel::List) ? ThreadPanel::List
+                                                 : ThreadPanel::Closed;
+        t.new_root  = trigger_root;
+        t.threads_to_subscribe.push_back(trigger_root);
+        break;
+
+    case ThreadTrigger::CloseThread:
+        if (cur != ThreadPanel::Open)
+            break; // no-op
+        t.threads_to_unsubscribe.push_back(current_root);
+        t.new_state = prev;            // back to whatever opened us
+        t.new_prev  = ThreadPanel::Closed;
+        t.new_root.clear();
+        if (prev == ThreadPanel::Closed)
+            t.unsubscribe_room_threads_ = false; // never subscribed
+        break;
+
+    case ThreadTrigger::RoomSwitch:
+        if (cur == ThreadPanel::Open)
+            t.threads_to_unsubscribe.push_back(current_root);
+        if (cur == ThreadPanel::List
+            || (cur == ThreadPanel::Open && prev == ThreadPanel::List))
+            t.unsubscribe_room_threads_ = true;
+        t.new_state = ThreadPanel::Closed;
+        t.new_prev  = ThreadPanel::Closed;
+        t.new_root.clear();
+        break;
+    }
+    return t;
+}
+
 } // namespace tesseract
