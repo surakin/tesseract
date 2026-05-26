@@ -370,6 +370,22 @@ pub struct ClientFfi {
     /// so it can be updated from the UI thread while the polling task runs on
     /// a worker thread without requiring a lock or a full stop/restart.
     pub(super) presence_polling_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Last set of room IDs pushed to `RoomListService::subscribe_to_rooms`.
+    /// Used by `sync_room_subscriptions` to skip the re-push (and the SQL
+    /// fan-out it triggers inside matrix-sdk) when the subscribed set is
+    /// unchanged — e.g. re-selecting the same room, or toggling a thread that
+    /// belongs to an already-subscribed room.
+    #[cfg(not(test))]
+    pub(super) last_sync_room_subscriptions:
+        Arc<std::sync::Mutex<std::collections::HashSet<OwnedRoomId>>>,
+    /// Cached set of DM counterpart user IDs (as Matrix user-id strings).
+    /// Repopulated after every `build_room_infos` sweep — `RoomInfo` already
+    /// carries `dm_counterpart_user_id` — so the presence polling loop does
+    /// not have to walk every joined room (with the per-room
+    /// `dm_other_user` member-list lookup that goes with it) on every tick.
+    #[cfg(not(test))]
+    pub(super) dm_counterparts:
+        Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
     /// Maps verification `flow_id` → `user_id` for in-flight verification
     /// requests (both incoming and outgoing). Allows `accept_verification`,
     /// `start_sas`, etc. to look up the VerificationRequest via the
@@ -612,6 +628,14 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             #[cfg(not(test))]
+            last_sync_room_subscriptions: Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
+            #[cfg(not(test))]
+            dm_counterparts: Arc::new(std::sync::RwLock::new(
+                std::collections::HashSet::new(),
+            )),
+            #[cfg(not(test))]
             verification_flow_users: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             sas_emoji_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -667,17 +691,34 @@ impl ClientFfi {
     // so the server always sees the union of all open timeline rooms.
     // RoomListService::subscribe_to_rooms calls clear_and_subscribe internally,
     // so we always pass the complete set — never just the delta.
+    //
+    // Diff-aware: skips the re-push when the set is identical to the last one
+    // pushed. matrix-sdk's `subscribe_to_rooms` walks the state store for
+    // every subscribed room, which triggers `chunk_large_query_over` calls;
+    // re-pushing an unchanged set during routine UI churn (selecting the
+    // already-active room, opening a thread in an already-subscribed room)
+    // burned CPU on low-power machines for no observable benefit.
     #[cfg(not(test))]
     pub(super) fn sync_room_subscriptions(&self) {
         let Some(svc) = self.sync_service.clone() else {
             return;
         };
-        let mut ids: Vec<OwnedRoomId> = self.timelines.read().unwrap().keys().cloned().collect();
+        let mut new_set: std::collections::HashSet<OwnedRoomId> =
+            self.timelines.read().unwrap().keys().cloned().collect();
         for (rid, _root) in self.thread_timelines.keys() {
-            if !ids.contains(rid) {
-                ids.push(rid.clone());
-            }
+            new_set.insert(rid.clone());
         }
+        // Compare-and-swap against the last-pushed set. If identical, skip
+        // the spawn entirely. The lock window is short (set comparison +
+        // assignment) and only contended by sync_room_subscriptions itself.
+        {
+            let mut guard = self.last_sync_room_subscriptions.lock().unwrap();
+            if *guard == new_set {
+                return;
+            }
+            *guard = new_set.clone();
+        }
+        let ids: Vec<OwnedRoomId> = new_set.into_iter().collect();
         self.rt.spawn(async move {
             let refs: Vec<&matrix_sdk::ruma::RoomId> =
                 ids.iter().map(OwnedRoomId::as_ref).collect();

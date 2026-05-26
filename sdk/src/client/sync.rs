@@ -245,9 +245,17 @@ impl ClientFfi {
             let forbidden_presence: Arc<std::sync::Mutex<HashSet<matrix_sdk::ruma::OwnedUserId>>> =
                 Arc::new(std::sync::Mutex::new(HashSet::new()));
             let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
+            let dm_counterparts = Arc::clone(&self.dm_counterparts);
             self.spawn_tracked(async move {
+                // 60s tick: matrix-sdk delivers presence EDUs through the
+                // sync stream for free; this polling loop is a fallback for
+                // servers that omit them for non-following users. The cache
+                // population (in the room-list rebuild path) means the very
+                // first tick reads no users until build_room_infos has
+                // finished its initial sweep — that's fine, presence is
+                // not load-bearing for the first frame.
                 let mut interval =
-                    tokio::time::interval(tokio::time::Duration::from_secs(30));
+                    tokio::time::interval(tokio::time::Duration::from_secs(60));
                 interval.set_missed_tick_behavior(
                     tokio::time::MissedTickBehavior::Skip,
                 );
@@ -259,19 +267,23 @@ impl ClientFfi {
                     if !presence_enabled_p.load(std::sync::atomic::Ordering::Relaxed) {
                         continue;
                     }
-                    let Some(me) = client_p.user_id() else { continue };
-                    let me = me.to_owned();
-                    let rooms = client_p.joined_rooms();
+                    if client_p.user_id().is_none() { continue }
+                    // Snapshot the cached counterpart set under the read
+                    // lock, then drop the lock before any await. The cache
+                    // is refreshed from RoomInfo.dm_counterpart_user_id by
+                    // the room-list rebuild path — no per-tick scan of
+                    // joined_rooms or per-room dm_other_user lookup here.
+                    let counterparts: Vec<String> = {
+                        let Ok(set) = dm_counterparts.read() else { continue };
+                        set.iter().cloned().collect()
+                    };
+                    if counterparts.is_empty() { continue }
                     let mut futs = Vec::new();
-                    for room in rooms {
+                    for uid in counterparts {
                         let cp = client_p.clone();
-                        let me_ref = me.clone();
                         let h_ref = Arc::clone(&h);
                         let forbidden_clone = Arc::clone(&forbidden_presence);
                         futs.push(async move {
-                            let counterpart =
-                                dm_other_user(&room, &me_ref).await?;
-                            let uid = counterpart.user_id;
                             let user_id: matrix_sdk::ruma::OwnedUserId =
                                 uid.parse().ok()?;
                             // Skip users known to return 403 Forbidden.
@@ -367,6 +379,24 @@ impl ClientFfi {
                 }
             }
             let previews = Arc::clone(&self.backfill_previews);
+            let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
+
+            // Helper: refresh the cached DM-counterpart set from a freshly
+            // built room list. Called after every build_room_infos so the
+            // presence polling task never has to walk joined_rooms itself.
+            fn refresh_dm_counterparts(
+                cache: &std::sync::RwLock<std::collections::HashSet<String>>,
+                rooms: &[crate::ffi::RoomInfo],
+            ) {
+                let new_set: std::collections::HashSet<String> = rooms
+                    .iter()
+                    .map(|r| r.dm_counterpart_user_id.clone())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if let Ok(mut g) = cache.write() {
+                    *g = new_set;
+                }
+            }
 
             self.spawn_tracked(async move {
                 // Initial snapshot. `room_info_notable_update_receiver`
@@ -383,6 +413,7 @@ impl ClientFfi {
                 // first sync's notable update.
                 let mut rooms = build_room_infos(&client_clone).await;
                 apply_backfill_previews(&mut rooms, &previews);
+                refresh_dm_counterparts(&dm_counterparts_w, &rooms);
                 if let Ok(guard) = h.lock() {
                     guard.on_rooms_updated(&rooms);
                 }
@@ -416,25 +447,69 @@ impl ClientFfi {
                 if let Ok(guard) = h.lock() { guard.on_image_packs_updated(); }
 
                 loop {
+                    use matrix_sdk_base::RoomInfoNotableUpdateReasons;
                     tokio::select! {
                         _ = stop_rx_rooms.changed() => {
                             if *stop_rx_rooms.borrow() { break; }
                         }
                         result = notable_rx.recv() => {
-                            use tokio::sync::broadcast::error::RecvError;
+                            use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+                            // Accumulate reasons across a short debounce
+                            // window. matrix-sdk emits 5-30 notable updates
+                            // per second during read-receipt / latest-event
+                            // bursts; on low-power machines each previously
+                            // triggered a full build_room_infos sweep that
+                            // fanned out into many state-store queries
+                            // (visible as `chunk_large_query_over` in perf
+                            // profiles). Collapsing the burst into one
+                            // rebuild eliminates the fan-out without
+                            // changing what the UI ultimately sees.
+                            let mut combined = RoomInfoNotableUpdateReasons::empty();
                             match result {
-                                Ok(_)                      => {}
-                                Err(RecvError::Lagged(_))  => {}
-                                Err(RecvError::Closed)     => break,
+                                Ok(update)              => { combined |= update.reasons; }
+                                Err(RecvError::Lagged(_)) => {
+                                    // Missed updates — assume the worst so
+                                    // we rebuild everything that might
+                                    // have changed.
+                                    combined = RoomInfoNotableUpdateReasons::all();
+                                }
+                                Err(RecvError::Closed) => break,
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                            loop {
+                                match notable_rx.try_recv() {
+                                    Ok(u) => { combined |= u.reasons; }
+                                    Err(TryRecvError::Empty)     => break,
+                                    Err(TryRecvError::Closed)    => break,
+                                    Err(TryRecvError::Lagged(_)) => {
+                                        combined = RoomInfoNotableUpdateReasons::all();
+                                    }
+                                }
                             }
                             let mut rooms = build_room_infos(&client_clone).await;
                             apply_backfill_previews(&mut rooms, &previews);
+                            refresh_dm_counterparts(&dm_counterparts_w, &rooms);
                             if let Ok(guard) = h.lock() {
                                 guard.on_rooms_updated(&rooms);
                             }
                             let invites = build_invite_infos(&client_clone).await;
                             if let Ok(guard) = h.lock() {
                                 guard.on_invites_updated(&invites);
+                            }
+                            // Image packs only change when account-data or
+                            // state-event content changes — never on a
+                            // pure read-receipt / recency-stamp / latest-
+                            // event update. matrix-sdk routes those
+                            // changes through the catch-all NONE reason
+                            // (membership and display-name flag them
+                            // explicitly). Skip the rebuild when none of
+                            // those bits are set.
+                            let pack_relevant =
+                                RoomInfoNotableUpdateReasons::MEMBERSHIP
+                                    | RoomInfoNotableUpdateReasons::DISPLAY_NAME
+                                    | RoomInfoNotableUpdateReasons::NONE;
+                            if !combined.intersects(pack_relevant) {
+                                continue;
                             }
                             // Refresh image packs on the same tick.
                             // Account-data and state-event changes that

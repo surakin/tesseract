@@ -136,7 +136,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 | Suite | Count |
 | ----- | ----- |
 | Rust unit tests (`cargo test -p tesseract-sdk-ffi`) | 150 |
-| C++ Catch2 tests via ctest (Qt6 preset) | 476 |
+| C++ Catch2 tests via ctest (Qt6 preset) | 545 |
 
 ## Platforms
 
@@ -175,6 +175,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Kind-aware last-message preview** — each room row's preview uses `formatted_body`'s first plain line for text/notice/emote, shows "\<sender\> sent an image/video/file/voice message" for media kinds, and draws an inline ~28 px thumbnail for sticker last-messages (`RoomListView` `sticker_provider_` backed by the shells' shared image cache; wired on all four platforms).
 - **Tombstoned (upgraded) rooms hidden** from the room list.
 - **Graceful shutdown** — `Drop` on `ClientFfi` calls `stop_sync()`.
+- **Low-power CPU optimisations** — the sync worker no longer fans out into matrix-sdk SQLite queries on every notable update. The room-info watcher coalesces `RoomInfoNotableUpdate` bursts in a 150 ms window and folds their reasons, skipping the image-pack/prefs rebuild when only read-receipt / latest-event / recency bits are set. `sync_room_subscriptions` is diff-aware — a re-selection of the already-open room or a thread toggle that lands in an already-subscribed room is a no-op. The presence polling loop reads a cached DM-counterpart set (refreshed from `RoomInfo.dm_counterpart_user_id` after every room-list rebuild) instead of walking every joined room with a `dm_other_user` lookup per tick, and the tick interval is raised from 30 s to 60 s. On low-end laptops these collapse a previously dominant `chunk_large_query_over` hotspot.
 
 ## Spaces (Step 7)
 
