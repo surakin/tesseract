@@ -189,6 +189,7 @@ public:
     using ShellBase::compose_typing_active_;
     using ShellBase::compute_cache_sizes_;
     using ShellBase::current_room_id_;
+    using ShellBase::current_thread_root_;
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
     using ShellBase::emoji_fetches_in_flight_;
@@ -254,6 +255,8 @@ public:
     using ShellBase::tab_open_room;
     using ShellBase::tab_select_room;
     using ShellBase::tabs_;
+    using ShellBase::ThreadPanel;
+    using ShellBase::thread_panel_;
     using ShellBase::tick_anim_;
     using ShellBase::tk_avatars_;
     using ShellBase::tk_images_;
@@ -6115,7 +6118,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         std::string u = url.UTF8String ?: "";
         std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        if (s->_shell->thread_panel_ == ThreadPanel::Open &&
+        if (s->_shell->thread_panel_ == tesseract::ShellBase::ThreadPanel::Open &&
             !s->_shell->current_thread_root_.empty())
         {
             s->_shell->client_->send_thread_sticker(
@@ -6179,7 +6182,7 @@ void MacShell::set_compose_draft_(const std::string& draft)
         std::string u = url.UTF8String ?: "";
         std::string b = body.UTF8String ?: "";
         std::string j = infoJson.UTF8String ?: "{}";
-        if (s->_shell->thread_panel_ == ThreadPanel::Open &&
+        if (s->_shell->thread_panel_ == tesseract::ShellBase::ThreadPanel::Open &&
             !s->_shell->current_thread_root_.empty())
         {
             s->_shell->client_->send_thread_sticker(
