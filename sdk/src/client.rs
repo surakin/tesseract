@@ -230,7 +230,7 @@ fn dirs_like_home() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------------------
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[cfg(not(test))]
 struct SendHandler(UniquePtr<EventHandlerBridge>);
@@ -252,6 +252,9 @@ struct TimelineHandle {
     /// a specific event); `false` for the live timeline built by
     /// `subscribe_room`. `paginate_forward` requires `is_focused == true`.
     is_focused: bool,
+    /// Set to `true` before aborting the tasks so any in-flight emission that
+    /// slips past the cooperative-cancellation window is silently dropped.
+    cancelled: Arc<AtomicBool>,
 }
 
 #[cfg(not(test))]
@@ -401,12 +404,14 @@ impl Drop for ClientFfi {
             let _guard = self.rt.enter();
             #[cfg(not(test))]
             for (_, th) in self.timelines.write().unwrap().drain() {
+                th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
                 }
             }
             #[cfg(not(test))]
             for (_, th) in self.thread_timelines.drain() {
+                th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
                 }
@@ -2336,6 +2341,7 @@ impl ClientFfi {
         client: &Client,
         rt: &tokio::runtime::Runtime,
         channel: TimelineChannel,
+        cancelled: Arc<AtomicBool>,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
@@ -2344,6 +2350,10 @@ impl ClientFfi {
         let me = client.user_id().map(|u| u.to_owned());
         let client_ref = client.clone();
         let ch = channel;
+
+        // Cancellation flag clones — one per task.
+        let cancelled_stream  = Arc::clone(&cancelled);
+        let cancelled_members = cancelled;
 
         // Extra clones for the receipt-refresh pass after fetch_members (below).
         let h_for_receipts    = Arc::clone(handler);
@@ -2366,17 +2376,21 @@ impl ClientFfi {
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
                 for item in initial_items.iter() {
                     let ev = timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await;
+                    let ev = filter_for_channel(ev, &ch);
                     visible.push(ev.is_some());
                     if let Some(ev) = ev {
                         snapshot.push(ev);
                     }
                 }
-                if let Ok(guard) = h.lock() {
-                    emit_reset(&guard, &ch, &rid, &snapshot);
+                if !cancelled_stream.load(Ordering::Acquire) {
+                    if let Ok(guard) = h.lock() {
+                        emit_reset(&guard, &ch, &rid, &snapshot);
+                    }
                 }
                 drop(snapshot);
 
                 while let Some(diffs) = stream.next().await {
+                    if cancelled_stream.load(Ordering::Acquire) { break; }
                     for diff in diffs {
                         handle_timeline_diff(
                             diff,
@@ -2387,6 +2401,7 @@ impl ClientFfi {
                             me.as_deref(),
                             &client_ref,
                             &ch,
+                            &cancelled_stream,
                         )
                         .await;
                     }
@@ -2427,8 +2442,11 @@ impl ClientFfi {
                         me_for_receipts.as_deref(),
                     )
                     .await;
+                    let ev = filter_for_channel(ev, &ch_for_receipts);
                     if let Some(ev) = ev {
-                        if !ev.read_receipts.is_empty() {
+                        if !ev.read_receipts.is_empty()
+                            && !cancelled_members.load(Ordering::Acquire)
+                        {
                             if let Ok(g) = h_for_receipts.lock() {
                                 emit_updated(
                                     &g,
@@ -2466,6 +2484,7 @@ impl ClientFfi {
         {
             let mut guard = self.timelines.write().unwrap();
             if let Some(prev) = guard.remove(&room_id) {
+                prev.cancelled.store(true, Ordering::Release);
                 for h in prev.abort_tasks {
                     h.abort();
                 }
@@ -2504,8 +2523,9 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
+        let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
 
         self.timelines.write().unwrap().insert(
             room_id,
@@ -2513,6 +2533,7 @@ impl ClientFfi {
                 timeline,
                 abort_tasks: vec![abort, fetch_abort],
                 is_focused: false,
+                cancelled,
             },
         );
 
@@ -2524,6 +2545,7 @@ impl ClientFfi {
     pub fn unsubscribe_room(&mut self, room_id: &str) {
         if let Ok(id) = room_id.parse::<OwnedRoomId>() {
             if let Some(h) = self.timelines.write().unwrap().remove(&id) {
+                h.cancelled.store(true, Ordering::Release);
                 for abort in h.abort_tasks {
                     abort.abort();
                 }
@@ -2740,6 +2762,7 @@ impl ClientFfi {
         {
             let mut guard = self.timelines.write().unwrap();
             if let Some(prev) = guard.remove(&room_id) {
+                prev.cancelled.store(true, Ordering::Release);
                 for h in prev.abort_tasks {
                     h.abort();
                 }
@@ -2781,8 +2804,9 @@ impl ClientFfi {
             guard.on_timeline_reset(&room_id_str, &empty);
         }
 
+        let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) =
-            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room);
+            Self::spawn_timeline_tasks(&timeline, &room, room_id_str, &handler, &client, &self.rt, TimelineChannel::Room, Arc::clone(&cancelled));
 
         self.timelines.write().unwrap().insert(
             room_id,
@@ -2790,6 +2814,7 @@ impl ClientFfi {
                 timeline,
                 abort_tasks: vec![abort, fetch_abort],
                 is_focused: true,
+                cancelled,
             },
         );
 
@@ -2922,6 +2947,7 @@ impl ClientFfi {
         };
         let key = (room_id.clone(), root.clone());
         if let Some(prev) = self.thread_timelines.remove(&key) {
+            prev.cancelled.store(true, Ordering::Release);
             for h in prev.abort_tasks {
                 h.abort();
             }
@@ -2950,6 +2976,7 @@ impl ClientFfi {
             let empty: Vec<TimelineEvent> = Vec::new();
             guard.on_thread_reset(&room_id_str, &root_str, &empty);
         }
+        let cancelled = Arc::new(AtomicBool::new(false));
         let (abort, fetch_abort) = Self::spawn_timeline_tasks(
             &timeline,
             &room,
@@ -2958,6 +2985,7 @@ impl ClientFfi {
             &client,
             &self.rt,
             TimelineChannel::Thread(root_str),
+            Arc::clone(&cancelled),
         );
         self.thread_timelines.insert(
             key,
@@ -2965,6 +2993,7 @@ impl ClientFfi {
                 timeline,
                 abort_tasks: vec![abort, fetch_abort],
                 is_focused: true,
+                cancelled,
             },
         );
         self.sync_room_subscriptions();
@@ -2988,6 +3017,7 @@ impl ClientFfi {
             root_event_id.parse::<matrix_sdk::ruma::OwnedEventId>(),
         ) {
             if let Some(h) = self.thread_timelines.remove(&(rid, root)) {
+                h.cancelled.store(true, Ordering::Release);
                 for abort in h.abort_tasks {
                     abort.abort();
                 }
@@ -6648,6 +6678,7 @@ impl ClientFfi {
         {
             let _guard = self.rt.enter();
             for (_, th) in self.timelines.write().unwrap().drain() {
+                th.cancelled.store(true, Ordering::Release);
                 for h in th.abort_tasks {
                     h.abort();
                 }
@@ -9130,6 +9161,22 @@ fn visible_len(visible: &[bool]) -> u64 {
     visible.iter().filter(|b| **b).count() as u64
 }
 
+// Thread-reply events belong to the ThreadPanel (TimelineChannel::Thread),
+// not to the main room timeline. MessageListView's defence filter drops them
+// on the C++ side, so they must also be invisible in the Rust `visible`
+// mirror — otherwise every thread reply creates an index-desync that causes
+// local-echo triplication when a new message is sent.
+#[cfg(not(test))]
+fn filter_for_channel(
+    ev: Option<TimelineEvent>,
+    ch: &TimelineChannel,
+) -> Option<TimelineEvent> {
+    match ch {
+        TimelineChannel::Room => ev.filter(|e| e.thread_root_id.is_empty()),
+        TimelineChannel::Thread(_) => ev,
+    }
+}
+
 /// Builds a minimal raw Matrix event JSON envelope suitable for passing to
 /// `Ruleset::get_actions`. Uses `serde_json::to_string` for string fields so
 /// control characters (\n, \r, \t, …) are escaped correctly.
@@ -9275,11 +9322,16 @@ async fn handle_timeline_diff(
     me: Option<&UserId>,
     _client: &Client,
     channel: &TimelineChannel,
+    cancelled: &AtomicBool,
 ) {
+    if cancelled.load(Ordering::Acquire) { return; }
     match diff {
         VectorDiff::Append { values } => {
             for item in values {
-                let ev = timeline_item_to_ffi(&item, room_id, room, me).await;
+                let ev = filter_for_channel(
+                    timeline_item_to_ffi(&item, room_id, room, me).await,
+                    channel,
+                );
                 if let Some(ev) = ev {
                     let idx = visible_len(visible);
                     visible.push(true);
@@ -9292,7 +9344,10 @@ async fn handle_timeline_diff(
             }
         }
         VectorDiff::PushBack { value } => {
-            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            let ev = filter_for_channel(
+                timeline_item_to_ffi(&value, room_id, room, me).await,
+                channel,
+            );
             if let Some(ev) = ev {
                 let idx = visible_len(visible);
                 visible.push(true);
@@ -9304,7 +9359,10 @@ async fn handle_timeline_diff(
             }
         }
         VectorDiff::PushFront { value } => {
-            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            let ev = filter_for_channel(
+                timeline_item_to_ffi(&value, room_id, room, me).await,
+                channel,
+            );
             if let Some(ev) = ev {
                 visible.insert(0, true);
                 if let Ok(g) = handler.lock() {
@@ -9319,7 +9377,10 @@ async fn handle_timeline_diff(
             // emit that, but a bad index on a task thread must not crash
             // timeline tracking — clamp to an append.
             let index = index.min(visible.len());
-            let ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            let ev = filter_for_channel(
+                timeline_item_to_ffi(&value, room_id, room, me).await,
+                channel,
+            );
             if let Some(ev) = ev {
                 let v_idx = visible_index_of(visible, index);
                 visible.insert(index, true);
@@ -9347,7 +9408,10 @@ async fn handle_timeline_diff(
                 );
                 return;
             }
-            let new_ev = timeline_item_to_ffi(&value, room_id, room, me).await;
+            let new_ev = filter_for_channel(
+                timeline_item_to_ffi(&value, room_id, room, me).await,
+                channel,
+            );
             let was_visible = visible.get(index).copied().unwrap_or(false);
             match (was_visible, new_ev) {
                 (true, Some(ev)) => {
@@ -9439,7 +9503,10 @@ async fn handle_timeline_diff(
             visible.reserve(values.len());
             let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in &values {
-                let ev = timeline_item_to_ffi(item, room_id, room, me).await;
+                let ev = filter_for_channel(
+                    timeline_item_to_ffi(item, room_id, room, me).await,
+                    channel,
+                );
                 visible.push(ev.is_some());
                 if let Some(ev) = ev {
                     snapshot.push(ev);
