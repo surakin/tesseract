@@ -1179,6 +1179,86 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
             int cursor = roomTextArea_->cursor_byte_pos();
 
+            // Slash-command popup: activate when the composer starts with '/'
+            // and contains only name chars after it (no args yet).
+            {
+                auto m = slash_engine_.find_prefix(s, cursor);
+                if (m.has_value())
+                {
+                    auto items = slash_engine_.lookup(m->prefix);
+                    if (items.empty())
+                    {
+                        hide_slash_popup_();
+                    }
+                    else
+                    {
+                        hide_shortcode_popup_();
+                        hide_mention_popup_();
+                        bool was_visible = slash_popup_visible_();
+                        show_slash_popup_(items, roomTextArea_->cursor_rect());
+                        if (!was_visible)
+                        {
+                            roomTextArea_->set_on_popup_nav(
+                                [this](tk::NativeTextArea::NavKey nk) -> bool
+                                {
+                                    if (!slash_popup_visible_())
+                                    {
+                                        return false;
+                                    }
+                                    int cur =
+                                        slash_popup_widget_->selected_index();
+                                    int n = slash_popup_widget_->visible_rows();
+                                    if (n <= 0)
+                                    {
+                                        return true;
+                                    }
+                                    int next = cur;
+                                    switch (nk)
+                                    {
+                                    case tk::NativeTextArea::NavKey::Up:
+                                        next = std::max(0, cur - 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Down:
+                                        next = std::min(n - 1, cur + 1);
+                                        break;
+                                    case tk::NativeTextArea::NavKey::Tab:
+                                    {
+                                        int sel =
+                                            slash_popup_widget_->selected_index();
+                                        if (sel >= 0 &&
+                                            sel < slash_popup_widget_->visible_rows() &&
+                                            slash_popup_widget_->on_accepted)
+                                        {
+                                            slash_popup_widget_->on_accepted(
+                                                slash_popup_widget_->suggestion_at(
+                                                    sel));
+                                        }
+                                        else
+                                        {
+                                            hide_slash_popup_();
+                                        }
+                                        return true;
+                                    }
+                                    case tk::NativeTextArea::NavKey::ShiftTab:
+                                        return false;
+                                    case tk::NativeTextArea::NavKey::Escape:
+                                        hide_slash_popup_();
+                                        return true;
+                                    }
+                                    slash_popup_widget_->set_selected_index(next);
+                                    slash_popup_surface_->update();
+                                    return true;
+                                });
+                        }
+                    }
+                    return;
+                }
+                if (slash_popup_visible_())
+                {
+                    hide_slash_popup_();
+                }
+            }
+
             // Auto-expand: ":smile:" + space → replace with glyph
             auto complete = shortcode_engine_.find_complete(s, cursor);
             if (complete)
@@ -1287,6 +1367,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     roomTextArea_->set_on_submit(
         [this]
         {
+            if (slash_popup_visible_())
+            {
+                int sel = slash_popup_widget_->selected_index();
+                if (sel >= 0 && sel < slash_popup_widget_->visible_rows() &&
+                    slash_popup_widget_->on_accepted)
+                {
+                    slash_popup_widget_->on_accepted(
+                        slash_popup_widget_->suggestion_at(sel));
+                    return;
+                }
+                hide_slash_popup_();
+            }
             if (mention_popup_visible_())
             {
                 int sel = mention_popup_widget_->selected_index();
@@ -2578,6 +2670,7 @@ void MainWindow::onRoomSelected(const std::string& room_id)
         }
     }
 
+    hide_slash_popup_();
     hide_shortcode_popup_();
     hide_mention_popup_();
     handle_compose_room_leaving_(current_room_id_);
@@ -3836,6 +3929,16 @@ void MainWindow::openSettings()
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
+    if (slash_popup_visible_() && event->type() == QEvent::MouseButtonPress)
+    {
+        auto* me = static_cast<QMouseEvent*>(event);
+        QPoint global = me->globalPosition().toPoint();
+        if (!slash_popup_frame_->rect().contains(
+                slash_popup_frame_->mapFromGlobal(global)))
+        {
+            hide_slash_popup_();
+        }
+    }
     if (shortcode_popup_visible_() && event->type() == QEvent::MouseButtonPress)
     {
         auto* me = static_cast<QMouseEvent*>(event);
@@ -4704,6 +4807,114 @@ void MainWindow::on_portal_setting_changed_(const QString& ns,
 // ---------------------------------------------------------------------------
 // Shortcode popup
 // ---------------------------------------------------------------------------
+
+// ── Slash-command popup ─────────────────────────────────────────────────────
+
+void MainWindow::show_slash_popup_(
+    const std::vector<tesseract::views::SlashCommandSuggestion>& items,
+    tk::Rect cursor_local)
+{
+    if (!slash_popup_frame_)
+    {
+        // Regular child widget — no separate window, so focus never leaves
+        // the compose text area regardless of window manager behaviour.
+        slash_popup_frame_ = new QWidget(this);
+        slash_popup_frame_->setFocusPolicy(Qt::NoFocus);
+
+        slash_popup_surface_ = std::make_unique<tk::qt6::Surface>(
+            mainAppSurface_ ? mainAppSurface_->theme() : tk::Theme::light(),
+            slash_popup_frame_,
+            /*transparent=*/false);
+        slash_popup_surface_->setFocusPolicy(Qt::NoFocus);
+
+        auto widget = std::make_unique<tesseract::views::SlashCommandPopup>();
+        slash_popup_widget_ = widget.get();
+        slash_popup_surface_->set_root(std::move(widget));
+
+        slash_popup_widget_->on_accepted =
+            [this](tesseract::views::SlashCommandSuggestion s)
+        {
+            hide_slash_popup_();
+            if (!roomTextArea_) return;
+            if (!client_ || current_room_id_.empty())
+            {
+                // Account torn down while the popup was open — nothing to send.
+                return;
+            }
+            if (s.args_hint.empty())
+            {
+                // No args — send immediately.
+                std::string body = "/" + s.name;
+                (void)tesseract::dispatch_compose_send(
+                    *client_, current_room_id_, body, std::string{});
+                roomTextArea_->set_text("");
+                mainApp_->room_view()->clear_compose_text();
+            }
+            else
+            {
+                // Needs args — autocomplete to `/name ` and leave the
+                // composer open for the user to type arguments.
+                std::string body = "/" + s.name + " ";
+                roomTextArea_->set_text(body);
+            }
+        };
+        slash_popup_widget_->on_dismissed = [this]
+        {
+            hide_slash_popup_();
+        };
+
+        auto* lay = new QVBoxLayout(slash_popup_frame_);
+        lay->setContentsMargins(0, 0, 0, 0);
+        lay->setSpacing(0);
+        lay->addWidget(slash_popup_surface_.get());
+    }
+
+    slash_popup_widget_->set_suggestions(items);
+    slash_popup_widget_->set_selected_index(0);
+
+    int rows = std::min((int)items.size(),
+                        (int)tesseract::views::SlashCommandPopup::kMaxRows);
+    int h = int(rows * tesseract::views::SlashCommandPopup::kRowHeight);
+    int w = int(tesseract::views::SlashCommandPopup::kWidth);
+
+    // Map cursor rect from surface-local into main-window coordinates.
+    QPoint parent_cursor = mainAppSurface_->mapTo(
+        this, QPoint(int(cursor_local.x), int(cursor_local.y)));
+
+    QRect work = rect(); // main window bounds — popup is clipped to this
+    int x = parent_cursor.x();
+    int y_above = parent_cursor.y() - h - 4;
+    int y_below = parent_cursor.y() + int(cursor_local.h) + 4;
+    int y = (y_above >= work.top()) ? y_above : y_below;
+    x = std::clamp(x, work.left(), work.right() - w);
+    y = std::clamp(y, work.top(), work.bottom() - h);
+
+    const bool was_hidden = !slash_popup_frame_->isVisible();
+    slash_popup_frame_->setGeometry(x, y, w, h);
+    slash_popup_surface_->resize(w, h);
+    slash_popup_frame_->show();
+    slash_popup_frame_->raise();
+    slash_popup_surface_->relayout();
+    if (was_hidden)
+    {
+        qApp->installEventFilter(this);
+    }
+}
+
+void MainWindow::hide_slash_popup_()
+{
+    qApp->removeEventFilter(this);
+    if (slash_popup_frame_)
+    {
+        slash_popup_frame_->hide();
+    }
+    if (roomTextArea_)
+    {
+        roomTextArea_->set_on_popup_nav(nullptr);
+    }
+}
+
+// ── Shortcode popup ─────────────────────────────────────────────────────────
 
 void MainWindow::show_shortcode_popup_(
     const std::vector<tesseract::views::ShortcodeSuggestion>& suggestions,
