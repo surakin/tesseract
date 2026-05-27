@@ -1,5 +1,7 @@
 # Tesseract
 
+![Brand new account (Qt6)](./screenshots/brand_new_account_qt6.png)
+
 A stupid vibe-coded multiplatform matrix client, based on the matrix rust sdk
 
 ## Minimum OS requirements
