@@ -1000,6 +1000,21 @@ Result Client::set_room_topic(const std::string& room_id, const std::string& top
     return from_ffi(impl_->ffi->set_room_topic(room_id, topic));
 }
 
+Result Client::pin_event(const std::string& room_id, const std::string& event_id)
+{
+    return from_ffi(impl_->ffi->pin_event(room_id, event_id));
+}
+
+Result Client::unpin_event(const std::string& room_id, const std::string& event_id)
+{
+    return from_ffi(impl_->ffi->unpin_event(room_id, event_id));
+}
+
+bool Client::can_pin_in_room(const std::string& room_id)
+{
+    return impl_->ffi->can_pin_in_room(room_id);
+}
+
 std::string Client::get_room_notification_mode(std::string room_id) const
 {
     return std::string(impl_->ffi->get_room_notification_mode(room_id));

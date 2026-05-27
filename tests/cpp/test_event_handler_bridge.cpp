@@ -361,3 +361,51 @@ TEST_CASE("assign_base populates read receipts", "[ffi][assign_base]")
     CHECK(ev->read_receipts[0].display_name == "Reader");
     CHECK(ev->read_receipts[0].avatar_url == "mxc://server/r");
 }
+
+// ---------------------------------------------------------------------------
+// PinnedEvent — round-trip the m.room.pinned_events banner data attached to
+// every RoomInfo. The Rust side sorts newest-first; the C++ side has to
+// preserve order and copy every field through to the UI.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("from_ffi copies PinnedEvent fields", "[ffi][pinned]")
+{
+    tesseract_ffi::PinnedEvent in{};
+    in.event_id     = "$pinned:server";
+    in.sender_name  = "Alice";
+    in.body_preview = "Important announcement";
+    in.timestamp    = 1700000000000ULL;
+
+    auto out = tesseract::from_ffi(in);
+    CHECK(out.event_id == "$pinned:server");
+    CHECK(out.sender_name == "Alice");
+    CHECK(out.body_preview == "Important announcement");
+    CHECK(out.timestamp == 1700000000000ULL);
+}
+
+TEST_CASE("from_ffi(RoomInfo) propagates pinned_events", "[ffi][pinned]")
+{
+    tesseract_ffi::RoomInfo in{};
+    in.id = "!room:server";
+
+    tesseract_ffi::PinnedEvent p1{};
+    p1.event_id    = "$a:s";
+    p1.sender_name = "Alice";
+    p1.body_preview = "first";
+    p1.timestamp   = 1000;
+    in.pinned_events.push_back(std::move(p1));
+
+    tesseract_ffi::PinnedEvent p2{};
+    p2.event_id    = "$b:s";
+    p2.sender_name = "Bob";
+    p2.body_preview = "second";
+    p2.timestamp   = 2000;
+    in.pinned_events.push_back(std::move(p2));
+
+    auto out = tesseract::from_ffi(in);
+    REQUIRE(out.pinned_events.size() == 2);
+    CHECK(out.pinned_events[0].event_id == "$a:s");
+    CHECK(out.pinned_events[0].sender_name == "Alice");
+    CHECK(out.pinned_events[1].event_id == "$b:s");
+    CHECK(out.pinned_events[1].timestamp == 2000);
+}

@@ -559,6 +559,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         {
             on_threads_button_clicked();
         };
+        mainApp_->room_view()->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        mainApp_->room_view()->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         mainApp_->room_view()->on_thread_open_requested =
             [this](const std::string& root)
         {

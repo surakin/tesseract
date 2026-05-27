@@ -921,6 +921,9 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     rooms_ = std::move(rooms);
     update_space_children_cache_();
     on_rooms_updated_();
+    // Refresh the pinned-events banner from the now-updated cache. Picks up
+    // both pin/unpin state-event changes and PL changes that flip can_pin.
+    refresh_pinned_for_current_room_();
 
     // When inactive grouping is enabled, ensure every room (not just the
     // visible slice) has its last_activity_ts populated so the inactive
@@ -2708,6 +2711,60 @@ void ShellBase::on_thread_send_reply_requested(
                                in_reply_to_event_id, body, formatted_body);
 }
 
+void ShellBase::on_pin_requested(const std::string& event_id)
+{
+    if (!client_ || current_room_id_.empty() || event_id.empty())
+        return;
+    auto r = client_->pin_event(current_room_id_, event_id);
+    if (!r.ok)
+    {
+        // TODO: surface this via a transient status mechanism once one exists
+        std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n",
+                     event_id.c_str(), current_room_id_.c_str(),
+                     r.message.c_str());
+    }
+}
+
+void ShellBase::on_unpin_requested(const std::string& event_id)
+{
+    if (!client_ || current_room_id_.empty() || event_id.empty())
+        return;
+    auto r = client_->unpin_event(current_room_id_, event_id);
+    if (!r.ok)
+    {
+        // TODO: surface this via a transient status mechanism once one exists
+        std::fprintf(stderr, "[pin] unpin failed for %s in %s: %s\n",
+                     event_id.c_str(), current_room_id_.c_str(),
+                     r.message.c_str());
+    }
+}
+
+void ShellBase::refresh_pinned_for_current_room_()
+{
+    if (!room_view_)
+        return;
+    if (current_room_id_.empty())
+    {
+        room_view_->set_pinned({});
+        room_view_->set_can_pin(false);
+        return;
+    }
+    for (const auto& r : rooms_)
+    {
+        if (r.id == current_room_id_)
+        {
+            room_view_->set_pinned(r.pinned_events);
+            room_view_->set_can_pin(
+                client_ ? client_->can_pin_in_room(current_room_id_) : false);
+            return;
+        }
+    }
+    // Room not in cache (rare — e.g. mid-switch before push_rooms_ runs).
+    // Clear so the previous room's banner doesn't bleed through.
+    room_view_->set_pinned({});
+    room_view_->set_can_pin(false);
+}
+
 // ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─
 
 void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,
@@ -2785,6 +2842,9 @@ void ShellBase::after_active_room_changed_()
     // hasn't paginated yet so this is empty, which correctly hides the
     // button; on_threads_updated will reveal it once roots are discovered.
     apply_threads_list_(client_->list_room_threads(current_room_id_));
+    // Refresh the pinned-events banner immediately on room switch so the new
+    // room's pin state appears without waiting for the next sync tick.
+    refresh_pinned_for_current_room_();
 }
 
 } // namespace tesseract

@@ -1802,6 +1802,10 @@ void MainWindow::on_create(HWND hwnd)
         {
             on_threads_button_clicked();
         };
+        room_view_->on_pin_requested =
+            [this](const std::string& ev) { on_pin_requested(ev); };
+        room_view_->on_unpin_requested =
+            [this](const std::string& ev) { on_unpin_requested(ev); };
         room_view_->on_thread_open_requested =
             [this](const std::string& root)
         {

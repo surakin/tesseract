@@ -2465,6 +2465,24 @@ void MacShell::set_compose_draft_(const std::string& draft)
                 s->_shell->on_threads_button_clicked();
             }
         };
+        _mainApp->room_view()->on_pin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_pin_requested(ev);
+            }
+        };
+        _mainApp->room_view()->on_unpin_requested =
+            [weakSelf](const std::string& ev)
+        {
+            MainWindowController* s = weakSelf;
+            if (s)
+            {
+                s->_shell->on_unpin_requested(ev);
+            }
+        };
         _mainApp->room_view()->on_thread_open_requested =
             [weakSelf](const std::string& root)
         {

@@ -145,7 +145,19 @@ public:
                                         const std::string& body,
                                         const std::string& formatted_body);
 
+    // ── Pinned events public entry points (wired from RoomView callbacks) ──
+    // Each forwards to the SDK and logs a failure on error. Idempotent on the
+    // SDK side: pin of an already-pinned event / unpin of an already-unpinned
+    // event are no-ops.
+    void on_pin_requested(const std::string& event_id);
+    void on_unpin_requested(const std::string& event_id);
+
 protected:
+    // Push the current room's pinned_events + can_pin bit to room_view_,
+    // looking up the RoomInfo in the rooms_ cache. Called from push_rooms_
+    // (per sync tick) and after_active_room_changed_ (per room switch). When
+    // the room is not yet in the cache, clears both so the banner hides.
+    void refresh_pinned_for_current_room_();
     // Apply the side-effects of a ThreadTransition: subscribe / unsubscribe
     // threads on the client, update local thread_panel_ state, drive the
     // RoomView's right-side panel, and refresh the thread-list snapshot

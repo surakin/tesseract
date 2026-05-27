@@ -850,6 +850,7 @@ public:
             owner_.hovered_row_geom_.reply_button = tk::Rect{};
             owner_.hovered_row_geom_.edit_button = tk::Rect{};
             owner_.hovered_row_geom_.delete_button = tk::Rect{};
+            owner_.hovered_row_geom_.pin_button = tk::Rect{};
             owner_.hovered_row_geom_.retry_button = tk::Rect{};
             owner_.hovered_row_geom_.abort_button = tk::Rect{};
         }
@@ -970,6 +971,21 @@ public:
             {
                 paint_btn(static_cache_.edit.get(),
                           owner_.hovered_row_geom_.edit_button);
+            }
+            // Pin / Unpin — only when the user has m.room.pinned_events PL.
+            // Suppressed on Redacted/UTD rows where the affordance is
+            // meaningless. Pin vs Unpin is decided by whether the row's
+            // event_id is in the cached pinned set.
+            if (owner_.can_pin_ &&
+                m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd)
+            {
+                const bool is_pinned =
+                    owner_.pinned_event_ids_.find(m.event_id) !=
+                    owner_.pinned_event_ids_.end();
+                paint_btn(is_pinned ? static_cache_.unpin.get()
+                                    : static_cache_.pin.get(),
+                          owner_.hovered_row_geom_.pin_button);
             }
             paint_btn(static_cache_.reply.get(),
                       owner_.hovered_row_geom_.reply_button);
@@ -1242,12 +1258,28 @@ public:
                                     owner_.hovered_row_geom_.edit_button,
                                     false);
                 }
-                if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
-                    m.kind != MessageRowData::Kind::Utd)
+                const bool own_deletable =
+                    m.is_own && m.kind != MessageRowData::Kind::Redacted &&
+                    m.kind != MessageRowData::Kind::Utd;
+                const bool show_pin =
+                    owner_.can_pin_ &&
+                    m.kind != MessageRowData::Kind::Redacted &&
+                    m.kind != MessageRowData::Kind::Utd;
+                if (own_deletable)
                 {
                     paint_strip_btn(static_cache_.trash.get(),
                                     owner_.hovered_row_geom_.delete_button,
-                                    true);
+                                    /*last=*/!show_pin);
+                }
+                if (show_pin)
+                {
+                    const bool is_pinned =
+                        owner_.pinned_event_ids_.find(m.event_id) !=
+                        owner_.pinned_event_ids_.end();
+                    paint_strip_btn(is_pinned ? static_cache_.unpin.get()
+                                              : static_cache_.pin.get(),
+                                    owner_.hovered_row_geom_.pin_button,
+                                    /*last=*/true);
                 }
             }
         }
@@ -3466,6 +3498,8 @@ private:
         std::unique_ptr<tk::TextLayout> thread_btn;
         std::unique_ptr<tk::TextLayout> edit;
         std::unique_ptr<tk::TextLayout> trash;
+        std::unique_ptr<tk::TextLayout> pin;
+        std::unique_ptr<tk::TextLayout> unpin;
 
         void ensure(tk::CanvasFactory& f)
         {
@@ -3480,6 +3514,13 @@ private:
             thread_btn = f.build_text("\xF0\x9F\x92\xAC", st); // 💬
             edit       = f.build_text("\xE2\x9C\x8F", st);     // ✏
             trash      = f.build_text("\xF0\x9F\x97\x91", st); // 🗑
+            pin        = f.build_text("\xF0\x9F\x93\x8C", st); // 📌
+            // Pushpin with stroke through it (visually distinct "unpin");
+            // falls back to a plain pushpin on fonts without U+1F4CC + combining
+            // stroke. Render together as "📌" with a leading "✕" prefix would
+            // be noisy, so we use the same glyph for both — the hover tooltip
+            // (set by the host) is what disambiguates Pin vs Unpin.
+            unpin      = f.build_text("\xF0\x9F\x93\x8C", st); // 📌
         }
         void clear()
         {
@@ -3488,6 +3529,8 @@ private:
             thread_btn.reset();
             edit.reset();
             trash.reset();
+            pin.reset();
+            unpin.reset();
         }
     };
 
@@ -3640,6 +3683,11 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     press_sel_ = false;
     messages_ = std::move(msgs);
     pending_scroll_event_id_.clear();
+    if (room_switch)
+    {
+        pinned_event_ids_.clear();
+        can_pin_ = false;
+    }
     invalidate_data();
     scroll_to_bottom();
     // Start inline players for animated video rows near the bottom (most
@@ -4051,6 +4099,32 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
         return;
     }
     highlighted_event_id_ = event_id;
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+}
+
+void MessageListView::set_pinned_event_ids(std::unordered_set<std::string> ids)
+{
+    if (pinned_event_ids_ == ids)
+    {
+        return;
+    }
+    pinned_event_ids_ = std::move(ids);
+    if (request_repaint_)
+    {
+        request_repaint_();
+    }
+}
+
+void MessageListView::set_can_pin(bool can_pin)
+{
+    if (can_pin_ == can_pin)
+    {
+        return;
+    }
+    can_pin_ = can_pin;
     if (request_repaint_)
     {
         request_repaint_();
@@ -5285,6 +5359,22 @@ bool MessageListView::on_pointer_down(tk::Point local)
         }
     }
 
+    // Pin / Unpin button hit-test.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        const tk::Rect& pb = hovered_row_geom_.pin_button;
+        if (pb.w > 0 && rect_contains(pb, world))
+        {
+            std::size_t row = hovered_row_geom_.row_index;
+            if (row < messages_.size())
+            {
+                press_pin_btn_ = true;
+                press_pin_event_id_ = messages_[row].event_id;
+                return true;
+            }
+        }
+    }
+
     // Retry/abort pending send buttons.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -5811,6 +5901,38 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                 if (on_delete_requested)
                 {
                     on_delete_requested(ev);
+                }
+            }
+        }
+        return;
+    }
+    if (press_pin_btn_)
+    {
+        bool fire = inside_self && !press_pin_event_id_.empty();
+        std::string ev = std::move(press_pin_event_id_);
+        press_pin_btn_ = false;
+        press_pin_event_id_.clear();
+        if (fire)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            const tk::Rect& pb = hovered_row_geom_.pin_button;
+            if (pb.w > 0 && rect_contains(pb, world))
+            {
+                const bool is_pinned =
+                    pinned_event_ids_.find(ev) != pinned_event_ids_.end();
+                if (is_pinned)
+                {
+                    if (on_unpin_requested)
+                    {
+                        on_unpin_requested(ev);
+                    }
+                }
+                else
+                {
+                    if (on_pin_requested)
+                    {
+                        on_pin_requested(ev);
+                    }
                 }
             }
         }
