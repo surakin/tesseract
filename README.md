@@ -91,6 +91,39 @@ If that's a dealbreaker for you, that's a fair call to make — the source is op
 
 ---
 
+## Project status
+
+This started as a Claude Code experiment, because eventually I gave up and decided to learn what was all this fuzz about. I thought what was the app I always wanted to do my way and never had the time and/or energy? Yes! A Matrix client, of course.
+
+<!-- One honest paragraph. Solo project? Say so. How actively maintained?
+     What's the support expectation? What's NOT promised? Setting this
+     explicitly attracts the right users and filters out the wrong ones. -->
+
+---
+
+## Contributing
+
+<!-- Decide your stance before publishing:
+     - PRs welcome on any frontend? Or core-only with community-owned shells?
+     - The shared-core/thin-shell design means a contributor could own one
+       frontend without touching the core — say if that's how you'd want it.
+     - Link a CONTRIBUTING.md if you write one. -->
+
+---
+
+## Acknowledgements
+
+- Built on [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk)
+<!-- Notable crates, the Matrix spec/community, anything you leaned on heavily. -->
+
+---
+
+## License
+
+Tesseract is licensed under the [GNU Public License v3](./LICENSE)
+
+---
+
 ### Notes
 
 - **Windows** — the build targets `_WIN32_WINNT=0x0A00`. `GetDpiForWindow`
