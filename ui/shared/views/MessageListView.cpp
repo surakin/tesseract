@@ -918,64 +918,51 @@ public:
         float eff_chip_h = chip_h();
         float eff_chip_r = eff_chip_h * 0.5f;
 
-        // ── Hover-button overlay (no reactions / no receipts) ───────────────
-        // When there is nothing to permanently show below the body, the row
-        // is compact (chips_h == 0). In that case the +/↩/✏ hover buttons
-        // float right-aligned at the avatar-band height so they never push
-        // the row taller. Built right-to-left so the cluster stays flush with
-        // the right edge regardless of which buttons are present.
-        if (hovered && m.reactions.empty())
+        // ── Action pill (top-right, all hovered rows) ───────────────────────
+        // One compact pill of square cells — reply / thread / edit / delete /
+        // pin — anchored to the top-right of the row whether or not reactions
+        // exist. Each enabled action is a w==h cell separated by a 1px
+        // divider; the whole strip uses one rounded background and one outer
+        // stroke. The +react chip is not part of this pill; it lives at the
+        // end of the reactions strip when reactions exist, and as a deferred
+        // bottom-left overlay otherwise (see below).
+        if (hovered)
         {
             static_cache_.ensure(ctx.factory);
-            float btn_y =
-                cont ? (bounds.y + (bounds.h - chip_h()) * 0.5f)
-                     : (bounds.y + kPadY + (kAvatarSize - chip_h()) * 0.5f);
-            float btn_right = bounds.x + bounds.w - kPadX;
-            if (!m.read_receipts.empty())
-            {
-                const std::size_t n =
-                    std::min(m.read_receipts.size(), kReceiptCap);
-                float cluster_w =
-                    kReceiptSize + static_cast<float>(n - 1) * kReceiptStride;
-                btn_right -= cluster_w + chip_gap();
-            }
 
-            auto paint_btn = [&](const tk::TextLayout* l, tk::Rect& geom_out)
+            // Cell list in display order. Conditions match the original
+            // per-button gates (own/text for edit, own/non-redacted for
+            // delete, can_pin_ for pin, thread visibility + MSC3440 for
+            // thread). reply is unconditional.
+            struct ActionCell
             {
-                if (!l)
-                {
-                    return;
-                }
-                tk::Size sz = l->measure();
-                float w = std::max(sz.w + kReplyBtnPadX * 2, chip_h() + 4.0f);
-                tk::Rect pill{btn_right - w, btn_y, w, chip_h()};
-                ctx.canvas.fill_rounded_rect(pill, chip_radius(),
-                                             ctx.theme.palette.subtle_hover);
-                ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                                               ctx.theme.palette.border, 1.0f);
-                ctx.canvas.draw_text(
-                    *l,
-                    {pill.x + kReplyBtnPadX, pill.y + (pill.h - sz.h) * 0.5f},
-                    ctx.theme.palette.text_secondary);
-                geom_out = pill;
-                btn_right -= w + chip_gap();
+                const tk::TextLayout* glyph;
+                tk::Rect* geom_out;
             };
-
-            if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
-                m.kind != MessageRowData::Kind::Utd)
+            std::vector<ActionCell> cells;
+            cells.reserve(5);
+            cells.push_back({static_cache_.reply.get(),
+                             &owner_.hovered_row_geom_.reply_button});
+            const bool can_thread =
+                m.is_thread_root ||
+                (m.in_reply_to_id.empty() && m.thread_root_id.empty());
+            if (m.kind != MessageRowData::Kind::Redacted &&
+                owner_.thread_button_visible_ && can_thread)
             {
-                paint_btn(static_cache_.trash.get(),
-                          owner_.hovered_row_geom_.delete_button);
+                cells.push_back({static_cache_.thread_btn.get(),
+                                 &owner_.hovered_row_geom_.thread_button});
             }
             if (m.is_own && m.kind == MessageRowData::Kind::Text)
             {
-                paint_btn(static_cache_.edit.get(),
-                          owner_.hovered_row_geom_.edit_button);
+                cells.push_back({static_cache_.edit.get(),
+                                 &owner_.hovered_row_geom_.edit_button});
             }
-            // Pin / Unpin — only when the user has m.room.pinned_events PL.
-            // Suppressed on Redacted/UTD rows where the affordance is
-            // meaningless. Pin vs Unpin is decided by whether the row's
-            // event_id is in the cached pinned set.
+            if (m.is_own && m.kind != MessageRowData::Kind::Redacted &&
+                m.kind != MessageRowData::Kind::Utd)
+            {
+                cells.push_back({static_cache_.trash.get(),
+                                 &owner_.hovered_row_geom_.delete_button});
+            }
             if (owner_.can_pin_ &&
                 m.kind != MessageRowData::Kind::Redacted &&
                 m.kind != MessageRowData::Kind::Utd)
@@ -983,51 +970,136 @@ public:
                 const bool is_pinned =
                     owner_.pinned_event_ids_.find(m.event_id) !=
                     owner_.pinned_event_ids_.end();
-                paint_btn(is_pinned ? static_cache_.unpin.get()
-                                    : static_cache_.pin.get(),
-                          owner_.hovered_row_geom_.pin_button);
+                cells.push_back({is_pinned ? static_cache_.unpin.get()
+                                           : static_cache_.pin.get(),
+                                 &owner_.hovered_row_geom_.pin_button});
             }
-            paint_btn(static_cache_.reply.get(),
-                      owner_.hovered_row_geom_.reply_button);
-            // The homeserver rejects thread sends whose root has its own
-            // m.relates_to (MSC3440: "Cannot start threads from an event
-            // with a relation"). Hide the thread affordance on replies /
-            // in-thread rows unless the thread already exists.
-            const bool can_thread =
-                m.is_thread_root ||
-                (m.in_reply_to_id.empty() && m.thread_root_id.empty());
-            if (m.kind != MessageRowData::Kind::Redacted &&
-                owner_.thread_button_visible_ && can_thread)
+
+            if (!cells.empty())
             {
-                paint_btn(static_cache_.thread_btn.get(),
-                          owner_.hovered_row_geom_.thread_button);
-            }
-            // Reaction-add pill is suppressed on UTD rows — reacting to an
-            // unreadable body is meaningless.
-            const tk::TextLayout* plus_lo =
-                m.kind == MessageRowData::Kind::Utd ? nullptr
-                                                     : static_cache_.plus.get();
-            if (const auto* l = plus_lo)
-            {
-                tk::Size sz = l->measure();
-                float w = std::max(sz.w + kChipPadX * 2, chip_h() + 8.0f);
-                tk::Rect pill{btn_right - w, btn_y, w, chip_h()};
-                bool add_hov = owner_.hover_target_ == HoverTarget::AddButton;
+                const float cell_side = chip_h();
+                const float div_w = 1.0f;
+                const float pill_w =
+                    cell_side * static_cast<float>(cells.size()) +
+                    div_w * static_cast<float>(cells.size() - 1);
+                const float pill_h = cell_side;
+                const float pill_r = chip_radius();
+
+                const float pill_y =
+                    cont ? (bounds.y + (bounds.h - pill_h) * 0.5f)
+                         : (bounds.y + kPadY +
+                            (kAvatarSize - pill_h) * 0.5f);
+                float right_edge = bounds.x + bounds.w - kPadX;
+                if (!m.read_receipts.empty())
+                {
+                    const std::size_t n =
+                        std::min(m.read_receipts.size(), kReceiptCap);
+                    float cluster_w = kReceiptSize +
+                                      static_cast<float>(n - 1) *
+                                          kReceiptStride;
+                    right_edge -= cluster_w + chip_gap();
+                }
+                tk::Rect pill{right_edge - pill_w, pill_y, pill_w, pill_h};
+
                 ctx.canvas.fill_rounded_rect(
-                    pill, chip_radius(),
-                    add_hov ? ctx.theme.palette.subtle_pressed
-                            : ctx.theme.palette.subtle_hover);
-                ctx.canvas.stroke_rounded_rect(pill, chip_radius(),
-                                               add_hov
-                                                   ? ctx.theme.palette.accent
-                                                   : ctx.theme.palette.border,
-                                               add_hov ? 1.5f : 1.0f);
-                ctx.canvas.draw_text(
-                    *l, {pill.x + kChipPadX, pill.y + (pill.h - sz.h) * 0.5f},
-                    ctx.theme.palette.text_secondary);
-                owner_.hovered_row_geom_.add_button = pill;
-                owner_.hovered_row_geom_.add_visible = true;
+                    pill, pill_r, ctx.theme.palette.subtle_hover);
+
+                // Pointer in world-coords for per-cell hover detection.
+                // The reply/edit/delete/pin/thread cells use press_*_btn_
+                // rather than HoverTarget, so the hover indicator can't be
+                // derived from hover_target_ — read the latest pointer
+                // position directly.
+                const tk::Point world_ptr{
+                    owner_.last_pointer_local_.x + owner_.bounds().x,
+                    owner_.last_pointer_local_.y + owner_.bounds().y};
+
+                for (std::size_t i = 0; i < cells.size(); ++i)
+                {
+                    tk::Rect cell_rect{
+                        pill.x +
+                            static_cast<float>(i) * (cell_side + div_w),
+                        pill.y, cell_side, pill.h};
+
+                    if (rect_contains(cell_rect, world_ptr))
+                    {
+                        // Inset the hover fill on outer cells so it doesn't
+                        // bleed past the pill's rounded corners.
+                        tk::Rect hov = cell_rect;
+                        const float corner_inset = pill_r * 0.5f;
+                        if (i == 0)
+                        {
+                            hov.x += corner_inset;
+                            hov.w -= corner_inset;
+                        }
+                        if (i + 1 == cells.size())
+                        {
+                            hov.w -= corner_inset;
+                        }
+                        ctx.canvas.fill_rect(
+                            hov, ctx.theme.palette.subtle_pressed);
+                    }
+
+                    if (cells[i].glyph)
+                    {
+                        tk::Size sz = cells[i].glyph->measure();
+                        float gx = cell_rect.x + (cell_rect.w - sz.w) * 0.5f;
+                        // Centre by ascent() — colour-emoji glyphs occupy
+                        // only the ascent region; using full line-height
+                        // pushes them visually high.
+                        float gy = cell_rect.y +
+                                   (cell_rect.h -
+                                    cells[i].glyph->ascent()) *
+                                       0.5f;
+                        ctx.canvas.draw_text(
+                            *cells[i].glyph, {gx, gy},
+                            ctx.theme.palette.text_secondary);
+                    }
+                    *cells[i].geom_out = cell_rect;
+                }
+
+                // 1px dividers between cells. Use border colour at reduced
+                // alpha so they read as subtle separators rather than the
+                // pill's own outline.
+                const tk::Color div_col =
+                    ctx.theme.palette.border.with_alpha(static_cast<
+                        std::uint8_t>(ctx.theme.palette.border.a * 0.6f));
+                for (std::size_t i = 1; i < cells.size(); ++i)
+                {
+                    float x = pill.x +
+                              static_cast<float>(i) * cell_side +
+                              static_cast<float>(i - 1) * div_w;
+                    ctx.canvas.fill_rect({x, pill.y + 2.0f, div_w,
+                                          pill.h - 4.0f},
+                                         div_col);
+                }
+
+                ctx.canvas.stroke_rounded_rect(
+                    pill, pill_r, ctx.theme.palette.border, 1.0f);
             }
+        }
+
+        // ── Floating +react overlay (deferred paint) ────────────────────────
+        // When the row is hovered and has no reactions yet (and isn't a UTD
+        // row, where reacting is meaningless), record a + pill anchored to
+        // the body column's left edge at the row's bottom — half-overlapping
+        // the row below. The actual paint happens in MessageListView::paint
+        // after every row is drawn, so the next row's body cannot occlude
+        // the overlay.
+        if (hovered && m.reactions.empty() &&
+            m.kind != MessageRowData::Kind::Utd &&
+            m.kind != MessageRowData::Kind::Redacted)
+        {
+            const float pill_h = chip_h();
+            const float pill_w = pill_h + 8.0f;
+            // Anchor vertically so the chip's centre sits on the row's
+            // bottom edge: the top half overlaps the body, the bottom half
+            // extends into the next row.
+            const float pill_y =
+                bounds.y + bounds.h - pill_h * 0.5f;
+            owner_.add_overlay_.active = true;
+            owner_.add_overlay_.row_index = index;
+            owner_.add_overlay_.event_id = m.event_id;
+            owner_.add_overlay_.pill = {col_x, pill_y, pill_w, pill_h};
         }
 
         // Disc centre Y for receipts. Receipts always overlay the row — they
@@ -1186,8 +1258,13 @@ public:
 
             // Trailing "+" pseudo-chip: only painted while the row is
             // hovered. Reads as a discoverable affordance, not a real
-            // reaction — muted background, subtle border.
-            if (hovered)
+            // reaction — muted background, subtle border. The other action
+            // buttons live in the top-right action pill (painted above);
+            // only the +react chip belongs at the end of the reactions row.
+            // Redacted and UTD rows can't accept reactions, so the affordance
+            // would be misleading on those.
+            if (hovered && m.kind != MessageRowData::Kind::Utd &&
+                m.kind != MessageRowData::Kind::Redacted)
             {
                 static_cache_.ensure(ctx.factory);
                 if (const auto* layout = static_cache_.plus.get())
@@ -1211,75 +1288,6 @@ public:
                         ctx.theme.palette.text_secondary);
                     owner_.hovered_row_geom_.add_button = pill;
                     owner_.hovered_row_geom_.add_visible = true;
-                    chip_x += w + chip_gap();
-                }
-
-                auto paint_strip_btn =
-                    [&](const tk::TextLayout* l, tk::Rect& geom_out, bool last)
-                {
-                    if (!l)
-                    {
-                        return;
-                    }
-                    tk::Size sz = l->measure();
-                    float w =
-                        std::max(sz.w + kReplyBtnPadX * 2, eff_chip_h + 4.0f);
-                    tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
-                    ctx.canvas.fill_rounded_rect(
-                        pill, eff_chip_r, ctx.theme.palette.subtle_hover);
-                    ctx.canvas.stroke_rounded_rect(
-                        pill, eff_chip_r, ctx.theme.palette.border, 1.0f);
-                    ctx.canvas.draw_text(*l,
-                                         {pill.x + kReplyBtnPadX,
-                                          pill.y + (pill.h - sz.h) * 0.5f},
-                                         ctx.theme.palette.text_secondary);
-                    geom_out = pill;
-                    if (!last)
-                    {
-                        chip_x += w + chip_gap();
-                    }
-                };
-
-                paint_strip_btn(static_cache_.reply.get(),
-                                owner_.hovered_row_geom_.reply_button, false);
-                // See can_thread comment above — same MSC3440 server constraint.
-                const bool can_thread =
-                    m.is_thread_root ||
-                    (m.in_reply_to_id.empty() && m.thread_root_id.empty());
-                if (m.kind != MessageRowData::Kind::Redacted &&
-                    owner_.thread_button_visible_ && can_thread)
-                {
-                    paint_strip_btn(static_cache_.thread_btn.get(),
-                                    owner_.hovered_row_geom_.thread_button, false);
-                }
-                if (m.is_own && m.kind == MessageRowData::Kind::Text)
-                {
-                    paint_strip_btn(static_cache_.edit.get(),
-                                    owner_.hovered_row_geom_.edit_button,
-                                    false);
-                }
-                const bool own_deletable =
-                    m.is_own && m.kind != MessageRowData::Kind::Redacted &&
-                    m.kind != MessageRowData::Kind::Utd;
-                const bool show_pin =
-                    owner_.can_pin_ &&
-                    m.kind != MessageRowData::Kind::Redacted &&
-                    m.kind != MessageRowData::Kind::Utd;
-                if (own_deletable)
-                {
-                    paint_strip_btn(static_cache_.trash.get(),
-                                    owner_.hovered_row_geom_.delete_button,
-                                    /*last=*/!show_pin);
-                }
-                if (show_pin)
-                {
-                    const bool is_pinned =
-                        owner_.pinned_event_ids_.find(m.event_id) !=
-                        owner_.pinned_event_ids_.end();
-                    paint_strip_btn(is_pinned ? static_cache_.unpin.get()
-                                              : static_cache_.pin.get(),
-                                    owner_.hovered_row_geom_.pin_button,
-                                    /*last=*/true);
                 }
             }
         }
@@ -4903,6 +4911,18 @@ bool MessageListView::on_pointer_move(tk::Point local)
     }
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
+    // Floating +react overlay: lives outside the hovered row's natural
+    // bounds, so chip_hit_at's row_bounds gate rejects it once the pointer
+    // slips into the next row. Test the overlay rect directly here.
+    if (t == HoverTarget::None && add_overlay_.active)
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        if (rect_contains(add_overlay_.pill, world))
+        {
+            t = HoverTarget::AddButton;
+            chip_idx = -1;
+        }
+    }
     if (t != hover_target_ || chip_idx != hover_chip_idx_)
     {
         hover_target_ = t;
@@ -5551,6 +5571,22 @@ bool MessageListView::on_pointer_down(tk::Point local)
 
     int chip_idx = -1;
     HoverTarget t = chip_hit_at(hovered_row_geom_, bounds(), local, chip_idx);
+    // Floating +react overlay press — mirrors the overlay branch in
+    // on_pointer_move. The overlay rect can extend below the hovered row's
+    // natural bounds, so chip_hit_at rejects it; honour it explicitly here
+    // and pull the event_id from the overlay's own record (the row that
+    // hovered_row_geom_ points at may not be the overlay's owning row).
+    if (t == HoverTarget::None && add_overlay_.active)
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        if (rect_contains(add_overlay_.pill, world))
+        {
+            press_target_ = HoverTarget::AddButton;
+            press_chip_idx_ = -1;
+            press_event_id_ = add_overlay_.event_id;
+            return true;
+        }
+    }
     if (t == HoverTarget::None)
     {
         // Spoiler reveal + text-selection anchor: capture click on the row
@@ -6180,16 +6216,30 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     }
     else if (t == HoverTarget::AddButton)
     {
+        // Two acceptable release positions: (a) inside the in-strip + chip
+        // (reactions present), or (b) inside the floating overlay (no
+        // reactions). Either re-confirms the click.
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
         int now_idx = -1;
         HoverTarget now_t =
             chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
-        if (now_t != HoverTarget::AddButton)
+        tk::Rect anchor;
+        if (now_t == HoverTarget::AddButton)
+        {
+            anchor = hovered_row_geom_.add_button;
+        }
+        else if (add_overlay_.active &&
+                 rect_contains(add_overlay_.pill, world))
+        {
+            anchor = add_overlay_.pill;
+        }
+        else
         {
             return;
         }
         if (on_add_reaction_requested)
         {
-            on_add_reaction_requested(ev, hovered_row_geom_.add_button);
+            on_add_reaction_requested(ev, anchor);
         }
     }
 }
@@ -6245,6 +6295,10 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     quote_block_geom_.clear();
     preview_card_geom_.clear();
     chip_hit_rects_.clear();
+    // Adapter::paint_row writes into add_overlay_ when a hovered no-reactions
+    // row wants the floating +react chip. Reset before each paint pass; the
+    // deferred-overlay block below picks up whatever paint_row left.
+    add_overlay_.active = false;
 
     // Room-switch gate: hold the list invisible until the rows that will
     // be visible have their height-affecting content loaded + measured, so
@@ -6271,6 +6325,41 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     }
 
     tk::ListView::paint(ctx);
+
+    // Floating +react overlay (deferred). Painted AFTER every row so it can
+    // overdraw the row below — the chip sits half over the hovered row and
+    // half over its successor, and we want the successor's body painted
+    // first so the chip wins on overlap. Recording lives in
+    // Adapter::paint_row; we just consume it here.
+    if (add_overlay_.active)
+    {
+        const tk::Rect& pill = add_overlay_.pill;
+        const bool add_hov = hover_target_ == HoverTarget::AddButton;
+        const tk::Color bg = add_hov ? ctx.theme.palette.subtle_pressed
+                                     : ctx.theme.palette.subtle_hover;
+        const tk::Color border = add_hov ? ctx.theme.palette.accent
+                                         : ctx.theme.palette.border;
+        const float r = pill.h * 0.5f;
+        ctx.canvas.fill_rounded_rect(pill, r, bg);
+        ctx.canvas.stroke_rounded_rect(pill, r, border,
+                                       add_hov ? 1.5f : 1.0f);
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Title;
+        auto glyph = ctx.factory.build_text("+", st);
+        if (glyph)
+        {
+            tk::Size sz = glyph->measure();
+            float gx = pill.x + (pill.w - sz.w) * 0.5f;
+            float gy = pill.y + (pill.h - glyph->ascent()) * 0.5f;
+            ctx.canvas.draw_text(*glyph, {gx, gy},
+                                 ctx.theme.palette.text_secondary);
+        }
+        // Keep hovered_row_geom_ in sync so the existing on_pointer_up path
+        // (which reads hovered_row_geom_.add_button as the popup anchor)
+        // works without special-casing.
+        hovered_row_geom_.add_button = pill;
+        hovered_row_geom_.add_visible = true;
+    }
 
     // Focused-thread dim. Painted above rows / below scroll-pill + hover
     // tooltips. When highlighted_event_id_ is set we punch the matching row

@@ -726,6 +726,21 @@ private:
     // can write into it from a const-ish paint pass.
     mutable RowChipGeom hovered_row_geom_;
 
+    // Floating +react overlay for hovered rows that have no reactions yet.
+    // Adapter::paint_row records the planned pill here without painting it;
+    // MessageListView::paint then paints it AFTER all rows so it can overdraw
+    // the row below. State is kept on the view (not in RowChipGeom) because
+    // the pointer slipping into the next row's natural bounds invalidates
+    // hovered_row_geom_ — the overlay must remain hittable across that.
+    struct PendingAddOverlay
+    {
+        bool active = false;
+        std::size_t row_index = 0;
+        std::string event_id;
+        tk::Rect pill{};
+    };
+    mutable PendingAddOverlay add_overlay_;
+
     // Per-frame inline-sticker geometry, keyed by event_id. Populated by
     // `Adapter::paint_row` when it paints a Kind::Sticker row; consumed by
     // `sticker_hit_at` on demand. Cleared at the top of each paint pass so
