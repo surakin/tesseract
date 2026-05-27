@@ -3037,6 +3037,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             mention_popup_surface_->update();
         }
+        if (accountPickerPopover_ && accountPickerPopover_->isVisible() &&
+            accountPickerSurface_)
+        {
+            accountPickerSurface_->update();
+        }
         return;
     }
 
@@ -4574,6 +4579,10 @@ void MainWindow::rebuildAccountPicker()
             a.avatar_url,
             static_cast<int>(i) == active_account_index_,
         });
+        if (!a.avatar_url.empty())
+        {
+            ensure_user_avatar_(a.avatar_url);
+        }
     }
     accountPicker_->set_entries(std::move(entries));
 }

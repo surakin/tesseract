@@ -446,6 +446,7 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)_onComposeSend;
 - (void)_relayoutShortcodePopupIfVisible;
 - (void)_relayoutSlashPopupIfVisible;
+- (void)_relayoutAccountPickerIfVisible;
 @end
 
 namespace
@@ -629,6 +630,7 @@ void MacShell::on_media_bytes_ready_(const std::string& key,
     else if (kind == MediaKind::UserAvatar)
     {
         [c _relayoutChatSurface];
+        [c _relayoutAccountPickerIfVisible];
     }
 }
 
@@ -3772,6 +3774,15 @@ void MacShell::set_compose_draft_(const std::string& draft)
     if ([self shortcodePopupVisible] && _shortcodePopupSurface)
     {
         _shortcodePopupSurface->relayout();
+    }
+}
+
+- (void)_relayoutAccountPickerIfVisible
+{
+    if (_accountPickerPopover && _accountPickerPopover.isShown &&
+        _accountPickerSurface)
+    {
+        _accountPickerSurface->relayout();
     }
 }
 

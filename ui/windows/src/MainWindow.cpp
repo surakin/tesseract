@@ -4580,6 +4580,11 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
         {
             tk_avatars_.emplace(cache_key, std::move(img));
         }
+        if (hAccountPicker_ && IsWindowVisible(hAccountPicker_) &&
+            account_picker_surface_)
+        {
+            account_picker_surface_->relayout();
+        }
         break;
     case MediaKind::MediaImage:
         try_load_animation(cache_key, bytes);
@@ -5673,6 +5678,10 @@ void MainWindow::rebuild_account_picker()
     {
         entries.push_back({s->user_id, s->display_name, s->avatar_url,
                            s->user_id == my_user_id_});
+        if (!s->avatar_url.empty())
+        {
+            ensure_user_avatar_(s->avatar_url);
+        }
     }
     if (account_picker_)
     {

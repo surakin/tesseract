@@ -3964,6 +3964,12 @@ void MainWindow::on_media_bytes_ready_(const std::string& cache_key,
                     {
                         shortcode_popup_surface_->relayout();
                     }
+                    if (is_avatar && account_picker_surface_ &&
+                        account_picker_popover_ &&
+                        gtk_widget_get_visible(account_picker_popover_))
+                    {
+                        account_picker_surface_->relayout();
+                    }
                 });
         });
 }
@@ -6115,6 +6121,10 @@ void MainWindow::rebuild_account_picker()
         e.avatar_url = sess->avatar_url;
         e.active = (sess->user_id == my_user_id_);
         entries.push_back(std::move(e));
+        if (!sess->avatar_url.empty())
+        {
+            ensure_user_avatar_(sess->avatar_url);
+        }
     }
     account_picker_->set_entries(std::move(entries));
     if (account_picker_surface_)
